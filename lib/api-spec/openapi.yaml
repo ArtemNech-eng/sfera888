@@ -1,22 +1,37 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: CRM for repair orders management
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication
+  - name: users
+    description: User management
+  - name: leads
+    description: Lead/application management
+  - name: orders
+    description: Order buffer management
+  - name: masters
+    description: Master management
+  - name: finance
+    description: Financial management
+  - name: settings
+    description: Settings management
+  - name: analytics
+    description: Analytics
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +39,595 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Logout
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /auth/me:
+    get:
+      operationId: getCurrentUser
+      tags: [auth]
+      summary: Get current user
+      responses:
+        "200":
+          description: Current user info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /users:
+    get:
+      operationId: getUsers
+      tags: [users]
+      summary: Get all users (admin only)
+      responses:
+        "200":
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+    post:
+      operationId: createUser
+      tags: [users]
+      summary: Create user (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /users/{id}:
+    delete:
+      operationId: deleteUser
+      tags: [users]
+      summary: Delete user (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: User deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /leads:
+    get:
+      operationId: getLeads
+      tags: [leads]
+      summary: Get leads
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of leads
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Lead"
+    post:
+      operationId: createLead
+      tags: [leads]
+      summary: Create new lead
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLeadRequest"
+      responses:
+        "201":
+          description: Lead created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Lead"
+
+  /leads/{id}:
+    get:
+      operationId: getLead
+      tags: [leads]
+      summary: Get lead by id
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Lead
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Lead"
+    patch:
+      operationId: updateLead
+      tags: [leads]
+      summary: Update lead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateLeadRequest"
+      responses:
+        "200":
+          description: Updated lead
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Lead"
+
+  /leads/{id}/send-to-buffer:
+    post:
+      operationId: sendLeadToBuffer
+      tags: [leads]
+      summary: Send lead to order buffer
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Lead sent to buffer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+
+  /orders:
+    get:
+      operationId: getOrders
+      tags: [orders]
+      summary: Get orders from buffer
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Order"
+
+  /orders/{id}:
+    get:
+      operationId: getOrder
+      tags: [orders]
+      summary: Get order by id
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+    patch:
+      operationId: updateOrder
+      tags: [orders]
+      summary: Update order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateOrderRequest"
+      responses:
+        "200":
+          description: Updated order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+
+  /orders/{id}/assign-master:
+    post:
+      operationId: assignMaster
+      tags: [orders]
+      summary: Assign master to order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignMasterRequest"
+      responses:
+        "200":
+          description: Master assigned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+
+  /masters:
+    get:
+      operationId: getMasters
+      tags: [masters]
+      summary: Get masters list
+      responses:
+        "200":
+          description: List of masters
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Master"
+    post:
+      operationId: createMaster
+      tags: [masters]
+      summary: Create master
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMasterRequest"
+      responses:
+        "201":
+          description: Master created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Master"
+
+  /masters/{id}:
+    get:
+      operationId: getMaster
+      tags: [masters]
+      summary: Get master by id
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Master
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Master"
+    patch:
+      operationId: updateMaster
+      tags: [masters]
+      summary: Update master
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMasterRequest"
+      responses:
+        "200":
+          description: Updated master
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Master"
+    delete:
+      operationId: deleteMaster
+      tags: [masters]
+      summary: Delete master
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Master deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /finance/transactions:
+    get:
+      operationId: getTransactions
+      tags: [finance]
+      summary: Get transactions (admin only)
+      parameters:
+        - name: masterId
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: string
+        - name: to
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of transactions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Transaction"
+
+  /finance/transactions/{id}:
+    patch:
+      operationId: updateTransaction
+      tags: [finance]
+      summary: Update transaction (mark as paid etc)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTransactionRequest"
+      responses:
+        "200":
+          description: Updated transaction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transaction"
+
+  /finance/summary:
+    get:
+      operationId: getFinanceSummary
+      tags: [finance]
+      summary: Get finance summary (admin only)
+      parameters:
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [today, week, month]
+      responses:
+        "200":
+          description: Finance summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FinanceSummary"
+
+  /analytics/dashboard:
+    get:
+      operationId: getDashboard
+      tags: [analytics]
+      summary: Get dashboard stats (admin only)
+      responses:
+        "200":
+          description: Dashboard stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+
+  /analytics/funnel:
+    get:
+      operationId: getSalesFunnel
+      tags: [analytics]
+      summary: Get sales funnel (admin only)
+      responses:
+        "200":
+          description: Sales funnel data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SalesFunnel"
+
+  /settings/cities:
+    get:
+      operationId: getCities
+      tags: [settings]
+      summary: Get cities
+      responses:
+        "200":
+          description: List of cities
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/City"
+    post:
+      operationId: createCity
+      tags: [settings]
+      summary: Create city
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCityRequest"
+      responses:
+        "201":
+          description: City created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/City"
+
+  /settings/cities/{id}:
+    delete:
+      operationId: deleteCity
+      tags: [settings]
+      summary: Delete city
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: City deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /settings/services:
+    get:
+      operationId: getServices
+      tags: [settings]
+      summary: Get service types
+      responses:
+        "200":
+          description: List of services
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ServiceType"
+    post:
+      operationId: createService
+      tags: [settings]
+      summary: Create service type
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateServiceRequest"
+      responses:
+        "201":
+          description: Service created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceType"
+
+  /settings/services/{id}:
+    delete:
+      operationId: deleteService
+      tags: [settings]
+      summary: Delete service type
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Service deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -31,6 +635,439 @@ components:
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+      required: [success]
+
+    LoginRequest:
+      type: object
+      properties:
+        login:
+          type: string
+        password:
+          type: string
+      required: [login, password]
+
+    LoginResponse:
+      type: object
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+      required: [user]
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        login:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+          enum: [admin, lead_operator, master_operator]
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, login, name, role, createdAt]
+
+    CreateUserRequest:
+      type: object
+      properties:
+        login:
+          type: string
+        password:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+          enum: [admin, lead_operator, master_operator]
+      required: [login, password, name, role]
+
+    Lead:
+      type: object
+      properties:
+        id:
+          type: integer
+        clientName:
+          type: string
+        clientPhone:
+          type: string
+        city:
+          type: string
+        district:
+          type: string
+        serviceType:
+          type: string
+        area:
+          type: number
+        scheduledAt:
+          type: string
+          nullable: true
+        comment:
+          type: string
+          nullable: true
+        source:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [new, processing, sent_to_work, non_target, client_refusal]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, clientName, clientPhone, city, district, serviceType, area, status, createdAt, updatedAt]
+
+    CreateLeadRequest:
+      type: object
+      properties:
+        clientName:
+          type: string
+        clientPhone:
+          type: string
+        city:
+          type: string
+        district:
+          type: string
+        serviceType:
+          type: string
+        area:
+          type: number
+        scheduledAt:
+          type: string
+          nullable: true
+        comment:
+          type: string
+          nullable: true
+        source:
+          type: string
+          nullable: true
+      required: [clientName, clientPhone, city, district, serviceType, area]
+
+    UpdateLeadRequest:
+      type: object
+      properties:
+        clientName:
+          type: string
+        clientPhone:
+          type: string
+        city:
+          type: string
+        district:
+          type: string
+        serviceType:
+          type: string
+        area:
+          type: number
+        scheduledAt:
+          type: string
+          nullable: true
+        comment:
+          type: string
+          nullable: true
+        source:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [new, processing, sent_to_work, non_target, client_refusal]
+
+    Order:
+      type: object
+      properties:
+        id:
+          type: integer
+        leadId:
+          type: integer
+        city:
+          type: string
+        district:
+          type: string
+        serviceType:
+          type: string
+        area:
+          type: number
+        scheduledAt:
+          type: string
+          nullable: true
+        comment:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [waiting_master, master_assigned, in_progress, completed, cancelled]
+        masterId:
+          type: integer
+          nullable: true
+        masterName:
+          type: string
+          nullable: true
+        orderAmount:
+          type: number
+          nullable: true
+        commission:
+          type: number
+          nullable: true
+        clientRating:
+          type: integer
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, leadId, city, district, serviceType, area, status, createdAt, updatedAt]
+
+    UpdateOrderRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [waiting_master, master_assigned, in_progress, completed, cancelled]
+        orderAmount:
+          type: number
+          nullable: true
+        commission:
+          type: number
+          nullable: true
+        clientRating:
+          type: integer
+          nullable: true
+
+    AssignMasterRequest:
+      type: object
+      properties:
+        masterId:
+          type: integer
+      required: [masterId]
+
+    Master:
+      type: object
+      properties:
+        id:
+          type: integer
+        alias:
+          type: string
+        city:
+          type: string
+        specialization:
+          type: string
+        telegramId:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [active, suspended, inactive]
+        rating:
+          type: number
+        totalOrders:
+          type: integer
+        acceptedOrders:
+          type: integer
+        avgResponseTime:
+          type: number
+          nullable: true
+        debt:
+          type: number
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, alias, city, specialization, status, rating, totalOrders, acceptedOrders, debt, createdAt]
+
+    CreateMasterRequest:
+      type: object
+      properties:
+        alias:
+          type: string
+        city:
+          type: string
+        specialization:
+          type: string
+        telegramId:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+      required: [alias, city, specialization]
+
+    UpdateMasterRequest:
+      type: object
+      properties:
+        alias:
+          type: string
+        city:
+          type: string
+        specialization:
+          type: string
+        telegramId:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [active, suspended, inactive]
+
+    Transaction:
+      type: object
+      properties:
+        id:
+          type: integer
+        orderId:
+          type: integer
+        masterId:
+          type: integer
+        masterAlias:
+          type: string
+        orderAmount:
+          type: number
+        commission:
+          type: number
+        paymentStatus:
+          type: string
+          enum: [pending, paid, overdue]
+        createdAt:
+          type: string
+          format: date-time
+        paidAt:
+          type: string
+          format: date-time
+          nullable: true
+      required: [id, orderId, masterId, masterAlias, orderAmount, commission, paymentStatus, createdAt]
+
+    UpdateTransactionRequest:
+      type: object
+      properties:
+        paymentStatus:
+          type: string
+          enum: [pending, paid, overdue]
+        commission:
+          type: number
+
+    FinanceSummary:
+      type: object
+      properties:
+        totalIncome:
+          type: number
+        totalDebt:
+          type: number
+        paidCount:
+          type: integer
+        pendingCount:
+          type: integer
+        overdueCount:
+          type: integer
+      required: [totalIncome, totalDebt, paidCount, pendingCount, overdueCount]
+
+    DashboardStats:
+      type: object
+      properties:
+        leadsToday:
+          type: integer
+        leadsWeek:
+          type: integer
+        leadsMonth:
+          type: integer
+        ordersTotal:
+          type: integer
+        ordersActive:
+          type: integer
+        incomeMonth:
+          type: number
+        totalDebt:
+          type: number
+        conversionRate:
+          type: number
+        avgCheck:
+          type: number
+        topMasters:
+          type: array
+          items:
+            $ref: "#/components/schemas/MasterRating"
+      required: [leadsToday, leadsWeek, leadsMonth, ordersTotal, ordersActive, incomeMonth, totalDebt, conversionRate, avgCheck, topMasters]
+
+    MasterRating:
+      type: object
+      properties:
+        id:
+          type: integer
+        alias:
+          type: string
+        rating:
+          type: number
+        totalOrders:
+          type: integer
+        city:
+          type: string
+      required: [id, alias, rating, totalOrders, city]
+
+    SalesFunnel:
+      type: object
+      properties:
+        total:
+          type: integer
+        processing:
+          type: integer
+        sentToWork:
+          type: integer
+        completed:
+          type: integer
+        nonTarget:
+          type: integer
+        refusal:
+          type: integer
+      required: [total, processing, sentToWork, completed, nonTarget, refusal]
+
+    City:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+      required: [id, name]
+
+    CreateCityRequest:
+      type: object
+      properties:
+        name:
+          type: string
+      required: [name]
+
+    ServiceType:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+      required: [id, name]
+
+    CreateServiceRequest:
+      type: object
+      properties:
+        name:
+          type: string
+      required: [name]

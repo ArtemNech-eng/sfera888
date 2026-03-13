@@ -1,0 +1,135 @@
+import { Router } from "express";
+import { db, leadsTable, ordersTable } from "@workspace/db";
+import { eq, and } from "drizzle-orm";
+import { requireRole } from "../middlewares/requireAuth.js";
+
+const router = Router();
+
+const allLeadRoles = requireRole("admin", "lead_operator");
+
+router.get("/", allLeadRoles, async (req, res) => {
+  const { status } = req.query;
+  let rows;
+  if (status) {
+    rows = await db.select().from(leadsTable).where(eq(leadsTable.status, status as any));
+  } else {
+    rows = await db.select().from(leadsTable).orderBy(leadsTable.createdAt);
+  }
+  res.json(rows.map(l => ({
+    ...l,
+    area: Number(l.area),
+    scheduledAt: l.scheduledAt ?? null,
+    comment: l.comment ?? null,
+    source: l.source ?? null,
+  })));
+});
+
+router.post("/", allLeadRoles, async (req, res) => {
+  const { clientName, clientPhone, city, district, serviceType, area, scheduledAt, comment, source } = req.body;
+  if (!clientName || !clientPhone || !city || !district || !serviceType || !area) {
+    return res.status(400).json({ error: "Required fields missing" });
+  }
+  const result = await db.insert(leadsTable).values({
+    clientName,
+    clientPhone,
+    city,
+    district,
+    serviceType,
+    area: String(area),
+    scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
+    comment: comment ?? null,
+    source: source ?? null,
+    status: "new",
+  }).returning();
+  const lead = result[0];
+  return res.status(201).json({
+    ...lead,
+    area: Number(lead.area),
+    scheduledAt: lead.scheduledAt ?? null,
+    comment: lead.comment ?? null,
+    source: lead.source ?? null,
+  });
+});
+
+router.get("/:id", allLeadRoles, async (req, res) => {
+  const id = parseInt(req.params.id);
+  const rows = await db.select().from(leadsTable).where(eq(leadsTable.id, id));
+  if (!rows[0]) return res.status(404).json({ error: "Lead not found" });
+  const l = rows[0];
+  res.json({
+    ...l,
+    area: Number(l.area),
+    scheduledAt: l.scheduledAt ?? null,
+    comment: l.comment ?? null,
+    source: l.source ?? null,
+  });
+});
+
+router.patch("/:id", allLeadRoles, async (req, res) => {
+  const id = parseInt(req.params.id);
+  const { clientName, clientPhone, city, district, serviceType, area, scheduledAt, comment, source, status } = req.body;
+  const updates: any = { updatedAt: new Date() };
+  if (clientName !== undefined) updates.clientName = clientName;
+  if (clientPhone !== undefined) updates.clientPhone = clientPhone;
+  if (city !== undefined) updates.city = city;
+  if (district !== undefined) updates.district = district;
+  if (serviceType !== undefined) updates.serviceType = serviceType;
+  if (area !== undefined) updates.area = String(area);
+  if (scheduledAt !== undefined) updates.scheduledAt = scheduledAt ? new Date(scheduledAt) : null;
+  if (comment !== undefined) updates.comment = comment;
+  if (source !== undefined) updates.source = source;
+  if (status !== undefined) updates.status = status;
+
+  const result = await db.update(leadsTable).set(updates).where(eq(leadsTable.id, id)).returning();
+  if (!result[0]) return res.status(404).json({ error: "Lead not found" });
+  const l = result[0];
+  res.json({
+    ...l,
+    area: Number(l.area),
+    scheduledAt: l.scheduledAt ?? null,
+    comment: l.comment ?? null,
+    source: l.source ?? null,
+  });
+});
+
+router.post("/:id/send-to-buffer", allLeadRoles, async (req, res) => {
+  const id = parseInt(req.params.id);
+  const rows = await db.select().from(leadsTable).where(eq(leadsTable.id, id));
+  const lead = rows[0];
+  if (!lead) return res.status(404).json({ error: "Lead not found" });
+
+  await db.update(leadsTable).set({ status: "sent_to_work", updatedAt: new Date() }).where(eq(leadsTable.id, id));
+
+  const orderResult = await db.insert(ordersTable).values({
+    leadId: lead.id,
+    city: lead.city,
+    district: lead.district,
+    serviceType: lead.serviceType,
+    area: lead.area,
+    scheduledAt: lead.scheduledAt,
+    comment: lead.comment,
+    status: "waiting_master",
+  }).returning();
+  const order = orderResult[0];
+
+  res.json({
+    id: order.id,
+    leadId: order.leadId,
+    city: order.city,
+    district: order.district,
+    serviceType: order.serviceType,
+    area: Number(order.area),
+    scheduledAt: order.scheduledAt ?? null,
+    comment: order.comment ?? null,
+    status: order.status,
+    masterId: order.masterId ?? null,
+    masterName: null,
+    orderAmount: order.orderAmount ? Number(order.orderAmount) : null,
+    commission: order.commission ? Number(order.commission) : null,
+    clientRating: order.clientRating ?? null,
+    createdAt: order.createdAt,
+    updatedAt: order.updatedAt,
+  });
+});
+
+export default router;

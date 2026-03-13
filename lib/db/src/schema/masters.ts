@@ -1,0 +1,25 @@
+import { pgTable, serial, text, timestamp, numeric, integer, pgEnum } from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
+import { z } from "zod/v4";
+
+export const masterStatusEnum = pgEnum("master_status", ["active", "suspended", "inactive"]);
+
+export const mastersTable = pgTable("masters", {
+  id: serial("id").primaryKey(),
+  alias: text("alias").notNull(),
+  city: text("city").notNull(),
+  specialization: text("specialization").notNull(),
+  telegramId: text("telegram_id"),
+  phone: text("phone"),
+  status: masterStatusEnum("status").notNull().default("active"),
+  rating: numeric("rating", { precision: 3, scale: 2 }).notNull().default("3.0"),
+  totalOrders: integer("total_orders").notNull().default(0),
+  acceptedOrders: integer("accepted_orders").notNull().default(0),
+  avgResponseTime: numeric("avg_response_time", { precision: 10, scale: 2 }),
+  debt: numeric("debt", { precision: 12, scale: 2 }).notNull().default("0"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertMasterSchema = createInsertSchema(mastersTable).omit({ id: true, createdAt: true });
+export type InsertMaster = z.infer<typeof insertMasterSchema>;
+export type Master = typeof mastersTable.$inferSelect;
