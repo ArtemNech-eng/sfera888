@@ -8,6 +8,7 @@ import mastersRouter from "./masters.js";
 import financeRouter from "./finance.js";
 import analyticsRouter from "./analytics.js";
 import settingsRouter from "./settings.js";
+import telegramRouter from "./telegram.js";
 
 const router = Router();
 
@@ -20,5 +21,6 @@ router.use("/masters", mastersRouter);
 router.use("/finance", financeRouter);
 router.use("/analytics", analyticsRouter);
 router.use("/settings", settingsRouter);
+router.use("/telegram", telegramRouter);
 
 export default router;

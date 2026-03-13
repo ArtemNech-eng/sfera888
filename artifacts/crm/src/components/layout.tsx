@@ -11,7 +11,8 @@ import {
   Settings, 
   UserCog,
   LogOut,
-  Menu
+  Menu,
+  MessageCircle
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -27,6 +28,7 @@ export function Layout({ children }: LayoutProps) {
 
   const navItems = [
     { href: "/", label: "Дашборд", icon: LayoutDashboard, roles: ['admin'] },
+    { href: "/voronka", label: "Воронка Telegram", icon: MessageCircle, roles: ['admin', 'lead_operator', 'master_operator'] },
     { href: "/leads", label: "Заявки", icon: Inbox, roles: ['admin', 'lead_operator'] },
     { href: "/orders", label: "Буфер заказов", icon: Briefcase, roles: ['admin', 'master_operator'] },
     { href: "/masters", label: "Мастера", icon: Users, roles: ['admin', 'master_operator'] },

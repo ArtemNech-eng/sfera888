@@ -14,6 +14,7 @@ import Finance from "@/pages/finance";
 import Analytics from "@/pages/analytics";
 import Settings from "@/pages/settings";
 import Users from "@/pages/users";
+import Voronka from "@/pages/voronka";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -30,6 +31,7 @@ function Router() {
       <Route path="/analytics" component={Analytics} />
       <Route path="/settings" component={Settings} />
       <Route path="/users" component={Users} />
+      <Route path="/voronka" component={Voronka} />
       <Route component={NotFound} />
     </Switch>
   );
