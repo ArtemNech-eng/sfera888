@@ -6,7 +6,7 @@ import {
 } from "@workspace/db";
 import { eq, desc, inArray, and, ne } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
-import { createYandexPayOrder } from "./yandex-pay.js";
+import { createYandexPayOrder, pollYandexPayStatus, confirmPayment } from "./yandex-pay.js";
 
 // ─── Available specializations (synced with service_types) ────────────────────
 
@@ -737,11 +737,12 @@ async function handleCallback(callbackQuery: any) {
       await editOrSend(chatId, messageId,
         `💳 <b>Оплата комиссии ${commission.toLocaleString("ru-RU")} ₽</b>\n\n` +
         `Нажмите кнопку ниже для оплаты через Яндекс Пэй.\n\n` +
-        `После оплаты статус обновится автоматически.`,
+        `После оплаты нажмите <b>«Я оплатил — проверить»</b>.`,
         {
           reply_markup: {
             inline_keyboard: [
               [{ text: `💳 Оплатить ${commission.toLocaleString("ru-RU")} ₽`, url: paymentUrl }],
+              [{ text: "✅ Я оплатил — проверить", callback_data: `check_payment_${tx.id}` }],
               [{ text: "« Назад", callback_data: "my_unpaid" }],
             ],
           },
@@ -752,6 +753,64 @@ async function handleCallback(callbackQuery: any) {
       await editOrSend(chatId, messageId,
         `⚠️ <b>Не удалось создать ссылку на оплату</b>\n\nПопробуйте позже или оплатите вручную:\n<code>89892860863</code> · Альфа Банк · Игорь К.`,
         { reply_markup: { inline_keyboard: [[{ text: "« Назад", callback_data: "my_unpaid" }]] } }
+      );
+    }
+    return;
+  }
+
+  // ─── Check payment status (manual polling after paying) ──────────────────
+
+  if (data.startsWith("check_payment_")) {
+    const txId = parseInt(data.replace("check_payment_", ""));
+    await answerCallback(callbackQueryId, "⏳ Проверяем...");
+
+    const txRows = await db.select().from(transactionsTable).where(
+      and(eq(transactionsTable.id, txId), eq(transactionsTable.masterId, master.id))
+    );
+    const tx = txRows[0];
+    if (!tx) {
+      await editOrSend(chatId, messageId, "⚠️ Транзакция не найдена.", { reply_markup: { inline_keyboard: [[{ text: "« Назад", callback_data: "my_unpaid" }]] } });
+      return;
+    }
+
+    if (tx.paymentStatus === "paid") {
+      await editOrSend(chatId, messageId,
+        `✅ <b>Оплата уже подтверждена!</b>\n\nКомиссия по заказу #${tx.orderId} оплачена. Спасибо!`,
+        { reply_markup: { inline_keyboard: [[{ text: "« В меню", callback_data: "main_menu" }]] } }
+      );
+      return;
+    }
+
+    // Poll Yandex Pay API
+    const isPaid = await pollYandexPayStatus(txId);
+
+    if (isPaid) {
+      const result = await confirmPayment(txId);
+      if (result === "confirmed") {
+        const newDebt = Math.max(0, Number(master.debt) - Number(tx.commission));
+        await editOrSend(chatId, messageId,
+          `✅ <b>Оплата подтверждена!</b>\n\nКомиссия по заказу #${tx.orderId} в размере <b>${Number(tx.commission).toLocaleString("ru-RU")} ₽</b> оплачена. Спасибо!\n\n` +
+          (newDebt > 0 ? `Оставшийся долг: <b>${newDebt.toLocaleString("ru-RU")} ₽</b>` : `Все задолженности погашены 🎉`),
+          { reply_markup: { inline_keyboard: [[{ text: "« В меню", callback_data: "main_menu" }]] } }
+        );
+      } else {
+        await editOrSend(chatId, messageId,
+          `✅ <b>Оплата уже была подтверждена ранее.</b>`,
+          { reply_markup: { inline_keyboard: [[{ text: "« В меню", callback_data: "main_menu" }]] } }
+        );
+      }
+    } else {
+      // Payment not confirmed yet — show retry button
+      await editOrSend(chatId, messageId,
+        `⏳ <b>Оплата ещё не подтверждена.</b>\n\nЕсли вы уже оплатили, подождите пару секунд и нажмите снова.`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🔄 Проверить ещё раз", callback_data: `check_payment_${txId}` }],
+              [{ text: "« Назад", callback_data: "my_unpaid" }],
+            ],
+          },
+        }
       );
     }
     return;
