@@ -24,6 +24,8 @@ const SPECIALIZATIONS = [
 // ─── In-memory bot state machine ─────────────────────────────────────────────
 
 type BotState =
+  | { step: "awaiting_alias"; masterId: number }
+  | { step: "awaiting_city"; masterId: number }
   | { step: "selecting_specs"; masterId: number; selected: string[]; pickerMessageId?: number }
   | { step: "awaiting_message"; masterId: number }
   | { step: "awaiting_phone"; masterId: number };
@@ -284,47 +286,91 @@ async function showProfile(chatId: string, master: any, messageId?: number) {
   });
 }
 
+// ─── Registration step helpers ────────────────────────────────────────────────
+
+async function askAlias(chatId: string, masterId: number) {
+  pendingState.set(chatId, { step: "awaiting_alias", masterId });
+  await sendMessage(chatId,
+    `👋 <b>Добро пожаловать в систему заказов!</b>\n\n` +
+    `Пройдите короткую регистрацию — это займёт меньше минуты.\n\n` +
+    `<b>Шаг 1 из 4</b> 📝\n\nКак вас зовут? Введите имя или псевдоним, который будет виден операторам:`
+  );
+}
+
+async function askCity(chatId: string, masterId: number) {
+  pendingState.set(chatId, { step: "awaiting_city", masterId });
+  await sendMessage(chatId,
+    `✅ Имя сохранено!\n\n<b>Шаг 2 из 4</b> 🏙️\n\nВ каком городе вы работаете? Напишите название города:`
+  );
+}
+
+async function askSpecs(chatId: string, masterId: number) {
+  pendingState.set(chatId, { step: "selecting_specs", masterId, selected: [] });
+  await sendMessage(chatId, `✅ Город сохранён!\n\n<b>Шаг 3 из 4</b> 🔧`);
+  await sendSpecPicker(chatId, []);
+}
+
+async function askPhone(chatId: string, masterId: number) {
+  pendingState.set(chatId, { step: "awaiting_phone", masterId });
+  await tgRequest("sendMessage", {
+    chat_id: chatId,
+    text: `✅ Специальности сохранены!\n\n<b>Шаг 4 из 4</b> 📱\n\nПоделитесь номером телефона — операторы будут использовать его для связи с вами:`,
+    parse_mode: "HTML",
+    reply_markup: {
+      keyboard: [[{ text: "📱 Поделиться номером телефона", request_contact: true }]],
+      resize_keyboard: true,
+      one_time_keyboard: true,
+    },
+  });
+}
+
 // ─── Handle /start ────────────────────────────────────────────────────────────
 
 async function handleStart(from: any, chatId: string) {
   const { master, isNew } = await findOrCreateMaster(from, chatId);
 
   if (isNew) {
-    // New master: show specialization picker
-    pendingState.set(chatId, { step: "selecting_specs", masterId: master.id, selected: [] });
-    const msg: any = await sendMessage(
-      chatId,
-      `👋 <b>Добро пожаловать в систему заказов!</b>\n\nВы зарегистрированы как мастер <b>${master.alias}</b>.\n\nТеперь укажите ваши специальности:`,
-    );
-    const pickerMsgId = msg?.result?.message_id;
-    const state = pendingState.get(chatId);
-    if (state && state.step === "selecting_specs") state.pickerMessageId = pickerMsgId;
-    await sendSpecPicker(chatId, []);
-  } else {
-    // Existing master: check if they have specializations set
-    if (!master.specializations || master.specializations.length === 0) {
-      pendingState.set(chatId, { step: "selecting_specs", masterId: master.id, selected: [] });
-      await sendMessage(chatId, `👋 <b>Добро пожаловать, ${master.alias}!</b>\n\nПожалуйста, укажите ваши специальности:`);
-      await sendSpecPicker(chatId, []);
-      return;
-    }
-
-    let colName = "Не в воронке";
-    if (master.voronkaColumnId) {
-      const col = await db.select().from(voronkaColumnsTable).where(eq(voronkaColumnsTable.id, master.voronkaColumnId));
-      if (col[0]) colName = col[0].name;
-    }
-
-    await sendMessage(
-      chatId,
-      `✅ <b>Добро пожаловать обратно, ${master.alias}!</b>\n\n` +
-      `📍 Статус: <b>${colName}</b>\n` +
-      `🔧 Специальности: <b>${master.specializations.join(", ")}</b>\n` +
-      `📦 Всего заказов: <b>${master.totalOrders}</b>\n` +
-      `⭐ Рейтинг: <b>${Number(master.rating).toFixed(1)}</b>`,
-      mainMenuKeyboard()
-    );
+    // New master — start registration from step 1
+    await askAlias(chatId, master.id);
+    return;
   }
+
+  // Returning master — check what's missing and resume from there
+  if (!master.city || master.city === "Не указан") {
+    await sendMessage(chatId, `👋 <b>Добро пожаловать, ${master.alias}!</b>\n\nДавайте завершим регистрацию.`);
+    await askCity(chatId, master.id);
+    return;
+  }
+
+  if (!master.specializations || master.specializations.length === 0) {
+    await sendMessage(chatId, `👋 <b>Добро пожаловать, ${master.alias}!</b>\n\nПожалуйста, укажите ваши специальности:`);
+    await askSpecs(chatId, master.id);
+    return;
+  }
+
+  if (!master.phone) {
+    await sendMessage(chatId, `👋 <b>Добро пожаловать, ${master.alias}!</b>\n\nОстался последний шаг:`);
+    await askPhone(chatId, master.id);
+    return;
+  }
+
+  // Fully registered — show main menu
+  let colName = "Не в воронке";
+  if (master.voronkaColumnId) {
+    const col = await db.select().from(voronkaColumnsTable).where(eq(voronkaColumnsTable.id, master.voronkaColumnId));
+    if (col[0]) colName = col[0].name;
+  }
+
+  await sendMessage(
+    chatId,
+    `✅ <b>Добро пожаловать обратно, ${master.alias}!</b>\n\n` +
+    `🏙️ Город: <b>${master.city}</b>\n` +
+    `📍 Статус: <b>${colName}</b>\n` +
+    `🔧 Специальности: <b>${master.specializations.join(", ")}</b>\n` +
+    `📦 Заказов: <b>${master.totalOrders}</b>\n` +
+    `⭐ Рейтинг: <b>${Number(master.rating).toFixed(1)}</b>`,
+    mainMenuKeyboard()
+  );
 }
 
 // ─── Handle callback_query ────────────────────────────────────────────────────
@@ -417,25 +463,18 @@ async function handleCallback(callbackQuery: any) {
       specialization: specText,
     }).where(eq(mastersTable.id, master.id));
 
-    // Check if master already has phone — if yes, go to menu; if not, request phone
-    if (master.phone) {
+    // Re-fetch master to get latest phone value after possible update
+    const freshMasterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, master.id));
+    const freshMaster = freshMasterRows[0];
+
+    if (freshMaster?.phone) {
       pendingState.delete(chatId);
       await editMessage(chatId, messageId,
         `✅ <b>Специальности сохранены!</b>\n\n🔧 ${specText}\n\nТеперь вы можете пользоваться всеми функциями бота:`,
         mainMenuKeyboard()
       );
     } else {
-      pendingState.set(chatId, { step: "awaiting_phone", masterId: master.id });
-      await tgRequest("sendMessage", {
-        chat_id: chatId,
-        text: `✅ <b>Специальности сохранены!</b>\n\n🔧 ${specText}\n\n📱 Теперь поделитесь вашим номером телефона, чтобы операторы могли с вами связаться:`,
-        parse_mode: "HTML",
-        reply_markup: {
-          keyboard: [[{ text: "📱 Поделиться номером телефона", request_contact: true }]],
-          resize_keyboard: true,
-          one_time_keyboard: true,
-        },
-      });
+      await askPhone(chatId, master.id);
     }
     return;
   }
@@ -691,7 +730,12 @@ router.post("/webhook", async (req, res) => {
         pendingState.delete(chatId);
         await tgRequest("sendMessage", {
           chat_id: chatId,
-          text: `✅ <b>Номер телефона сохранён!</b>\n\n📱 ${contact.phone_number}\n\nТеперь вы можете пользоваться всеми функциями бота:`,
+          text:
+            `🎉 <b>Регистрация завершена!</b>\n\n` +
+            `👤 Имя: <b>${contactMaster.alias}</b>\n` +
+            `🏙️ Город: <b>${contactMaster.city}</b>\n` +
+            `📱 Телефон: <b>${contact.phone_number}</b>\n\n` +
+            `Теперь вы можете принимать заказы. Удачной работы! 🚀`,
           parse_mode: "HTML",
           reply_markup: { remove_keyboard: true },
         });
@@ -700,8 +744,25 @@ router.post("/webhook", async (req, res) => {
       return;
     }
 
-    // Check pending state for awaiting_message
+    // Check pending state
     const state = pendingState.get(chatId);
+
+    // ── Step 1: awaiting alias ────────────────────────────────────────────────
+    if (state?.step === "awaiting_alias" && text) {
+      const alias = text.slice(0, 80).trim();
+      await db.update(mastersTable).set({ alias }).where(eq(mastersTable.id, state.masterId));
+      await askCity(chatId, state.masterId);
+      return;
+    }
+
+    // ── Step 2: awaiting city ─────────────────────────────────────────────────
+    if (state?.step === "awaiting_city" && text) {
+      const city = text.slice(0, 100).trim();
+      await db.update(mastersTable).set({ city }).where(eq(mastersTable.id, state.masterId));
+      await askSpecs(chatId, state.masterId);
+      return;
+    }
+
     if (state?.step === "awaiting_message") {
       const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.telegramId, String(from.id)));
       const master = masterRows[0];
