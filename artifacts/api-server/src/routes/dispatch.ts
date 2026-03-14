@@ -161,7 +161,10 @@ router.post("/:orderId/broadcast", ops, async (req, res) => {
 
   const cardText = buildOrderCard(order, orderId);
   const replyMarkup = {
-    inline_keyboard: [[{ text: "Откликнуться 🙋", callback_data: `respond_order_${orderId}` }]],
+    inline_keyboard: [
+      [{ text: "Откликнуться 🙋", callback_data: `respond_order_${orderId}` }],
+      [{ text: "💬 Задать вопрос оператору", callback_data: `ask_question_${orderId}` }],
+    ],
   };
 
   let sent = 0;

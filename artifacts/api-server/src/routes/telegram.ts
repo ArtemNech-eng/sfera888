@@ -32,7 +32,8 @@ type BotState =
   | { step: "confirming_phone"; masterId: number; phone: string }
   | { step: "awaiting_photo"; masterId: number }
   | { step: "awaiting_amount"; masterId: number; orderId: number }
-  | { step: "awaiting_cancel_reason"; masterId: number; orderId: number };
+  | { step: "awaiting_cancel_reason"; masterId: number; orderId: number }
+  | { step: "awaiting_question"; masterId: number; orderId: number };
 
 const pendingState = new Map<string, BotState>();
 
@@ -813,6 +814,29 @@ async function handleCallback(callbackQuery: any) {
     return;
   }
 
+  // ── Ask operator a question about an order ──────────────────────────────────
+  if (data.startsWith("ask_question_")) {
+    const orderId = parseInt(data.replace("ask_question_", ""));
+    if (!master) { await answerCallback(cbId, "⚠️ Профиль не найден"); return; }
+
+    pendingState.set(chatId, { step: "awaiting_question", masterId: master.id, orderId });
+    await answerCallback(cbId, "✍️ Напишите ваш вопрос");
+    await sendMessage(chatId,
+      `💬 <b>Задать вопрос по заявке #${orderId}</b>\n\n` +
+      `Напишите ваш вопрос оператору — он получит его в чат и ответит вам здесь.\n\n` +
+      `<i>Чтобы отменить, нажмите кнопку ниже.</i>`,
+      { reply_markup: { inline_keyboard: [[{ text: "❌ Отмена", callback_data: "cancel_question" }]] } }
+    );
+    return;
+  }
+
+  if (data === "cancel_question") {
+    pendingState.delete(chatId);
+    await answerCallback(cbId, "Отменено");
+    await sendMessage(chatId, "↩️ Вопрос отменён.", mainMenuKeyboard());
+    return;
+  }
+
   if (data.startsWith("take_order_")) {
     const orderId = parseInt(data.replace("take_order_", ""));
     await answerCallback(cbId, "⏳ Обрабатываем...");
@@ -1256,6 +1280,40 @@ router.post("/webhook", async (req, res) => {
         `Заказ #${orderId} — <b>ожидает решения оператора.</b>\n\n` +
         `Указанная причина: <i>${reason}</i>\n\n` +
         `Оператор рассмотрит запрос и подтвердит или отклонит отмену.`,
+        mainMenuKeyboard()
+      );
+      return;
+    }
+
+    // ── Awaiting question for operator ──────────────────────────────────────
+    if (state?.step === "awaiting_question" && text) {
+      const { masterId, orderId } = state;
+      const question = text.trim();
+      if (!question) {
+        await sendMessage(chatId, "⚠️ Пожалуйста, напишите вопрос текстом.");
+        return;
+      }
+
+      pendingState.delete(chatId);
+
+      const qMasterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
+      const qAlias = qMasterRows[0]?.alias ?? "Мастер";
+
+      // Save as a regular master message (visible in CRM chat)
+      await db.insert(masterMessagesTable).values({
+        masterId,
+        telegramChatId: chatId,
+        text: `❓ Вопрос по заявке #${orderId}: ${question}`,
+        fromMaster: true,
+        senderName: qAlias,
+        isRead: false,
+        photoUrl: null,
+      });
+
+      await sendMessage(chatId,
+        `✅ <b>Вопрос отправлен оператору</b>\n\n` +
+        `<i>${question}</i>\n\n` +
+        `Оператор увидит его в чате и ответит вам здесь.`,
         mainMenuKeyboard()
       );
       return;

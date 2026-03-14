@@ -229,7 +229,10 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
 
     const cardText = buildOrderCard(o, id);
     const replyMarkup = {
-      inline_keyboard: [[{ text: "Откликнуться 🙋", callback_data: `respond_order_${id}` }]],
+      inline_keyboard: [
+        [{ text: "Откликнуться 🙋", callback_data: `respond_order_${id}` }],
+        [{ text: "💬 Задать вопрос оператору", callback_data: `ask_question_${id}` }],
+      ],
     };
 
     let sent = 0;
