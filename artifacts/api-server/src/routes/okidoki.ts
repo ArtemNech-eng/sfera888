@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, mastersTable, telegramChatsTable } from "@workspace/db";
+import { db, mastersTable, telegramChatsTable, masterMessagesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { notifyMasterActivated } from "../telegram-notify.js";
 
@@ -35,6 +35,15 @@ router.post("/webhook", async (req, res) => {
     if (master?.telegramId) {
       const tgRows = await db.select().from(telegramChatsTable).where(eq(telegramChatsTable.telegramChatId, master.telegramId));
       const chatId = tgRows[0]?.telegramChatId ?? master.telegramId;
+      // Log to CRM chat
+      await db.insert(masterMessagesTable).values({
+        masterId,
+        telegramChatId: chatId,
+        text: "✅ Договор подписан — аккаунт активирован",
+        fromMaster: false,
+        senderName: "system",
+        isRead: true,
+      }).catch(() => {});
       await notifyMasterActivated(chatId, master.alias);
     }
   } catch (err) {

@@ -148,6 +148,23 @@ async function createOkidokiContract(master: { id: number; alias: string; phone:
   }
 }
 
+// ─── CRM chat logger — saves registration events as system messages ───────────
+
+async function logToChat(masterId: number, chatId: string, text: string) {
+  try {
+    await db.insert(masterMessagesTable).values({
+      masterId,
+      telegramChatId: chatId,
+      text,
+      fromMaster: false,
+      senderName: "system",
+      isRead: true,
+    });
+  } catch {
+    // non-critical, ignore errors
+  }
+}
+
 // ─── Master helpers ───────────────────────────────────────────────────────────
 
 async function findOrCreateMaster(from: any, chatId: string) {
@@ -428,6 +445,7 @@ async function completeRegistration(chatId: string, master: { id: number; alias:
 
   if (contractLink) {
     await db.update(mastersTable).set({ status: "pending_contract" }).where(eq(mastersTable.id, master.id));
+    await logToChat(master.id, chatId, `📝 Договор отправлен на подписание`);
     await sendMessage(chatId,
       `📝 <b>Осталось подписать договор!</b>\n\n` +
       `👤 Имя: <b>${master.alias}</b>\n` +
@@ -447,6 +465,7 @@ async function completeRegistration(chatId: string, master: { id: number; alias:
   } else {
     // OkiDoki unavailable — set pending, wait for admin to activate manually
     await db.update(mastersTable).set({ status: "pending_contract" }).where(eq(mastersTable.id, master.id));
+    await logToChat(master.id, chatId, `📋 Заявка передана администратору на проверку`);
     await sendMessage(chatId,
       `✅ <b>Заявка принята!</b>\n\n` +
       `👤 Имя: <b>${master.alias}</b>\n` +
@@ -464,6 +483,7 @@ async function handleStart(from: any, chatId: string) {
 
   if (isNew) {
     // New master — start registration from step 1
+    await logToChat(master.id, chatId, "🆕 Начало регистрации через Telegram-бот");
     await askAlias(chatId, master.id);
     return;
   }
@@ -607,6 +627,7 @@ async function handleCallback(callbackQuery: any) {
       specializations: specs,
       specialization: specText,
     }).where(eq(mastersTable.id, master.id));
+    await logToChat(master.id, chatId, `🔧 Специальности: ${specText}`);
 
     // Re-fetch master to get latest phone value after possible update
     const freshMasterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, master.id));
@@ -687,6 +708,7 @@ async function handleCallback(callbackQuery: any) {
     pendingState.delete(chatId);
 
     await db.update(mastersTable).set({ phone }).where(eq(mastersTable.id, masterId));
+    await logToChat(masterId, chatId, `📱 Телефон: ${phone}`);
     await editMessage(chatId, messageId, `📱 Телефон <b>${phone}</b> сохранён.`);
     await askPhoto(chatId, masterId);
     return;
@@ -938,6 +960,7 @@ router.post("/webhook", async (req, res) => {
     if (state?.step === "awaiting_alias" && text) {
       const alias = text.slice(0, 80).trim();
       await db.update(mastersTable).set({ alias }).where(eq(mastersTable.id, state.masterId));
+      await logToChat(state.masterId, chatId, `✏️ Имя: ${alias}`);
       await askCity(chatId, state.masterId);
       return;
     }
@@ -946,6 +969,7 @@ router.post("/webhook", async (req, res) => {
     if (state?.step === "awaiting_city" && text) {
       const city = text.slice(0, 100).trim();
       await db.update(mastersTable).set({ city }).where(eq(mastersTable.id, state.masterId));
+      await logToChat(state.masterId, chatId, `🏙️ Город: ${city}`);
       await askSpecs(chatId, state.masterId);
       return;
     }
@@ -983,6 +1007,7 @@ router.post("/webhook", async (req, res) => {
         pendingState.delete(chatId);
         const freshRows = await db.select().from(mastersTable).where(eq(mastersTable.id, state.masterId));
         const fresh = freshRows[0];
+        await logToChat(state.masterId, chatId, `📸 Фото профиля загружено`);
         await sendMessage(chatId, `📸 Фото сохранено!`);
         await completeRegistration(chatId, { id: state.masterId, alias: fresh?.alias ?? "", city: fresh?.city ?? "", phone: fresh?.phone ?? null });
         return;

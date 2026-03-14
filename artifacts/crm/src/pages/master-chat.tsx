@@ -283,6 +283,18 @@ export default function MasterChat() {
                   {/* Messages */}
                   <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
                     {conv?.messages.map(msg => {
+                      // System event — render as centered gray pill
+                      if (msg.senderName === "system") {
+                        return (
+                          <div key={msg.id} className="flex justify-center my-1">
+                            <div className="flex items-center gap-1.5 bg-gray-100 text-gray-500 text-[11px] rounded-full px-3 py-1">
+                              <span>{msg.text}</span>
+                              <span className="text-gray-400 text-[10px]">{timeStamp(msg.createdAt)}</span>
+                            </div>
+                          </div>
+                        );
+                      }
+
                       const isMaster = msg.fromMaster;
                       const senderLabel = msg.senderName ?? (isMaster ? conv.master.alias : "Оператор");
                       return (

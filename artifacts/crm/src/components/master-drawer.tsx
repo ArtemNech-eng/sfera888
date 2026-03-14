@@ -342,6 +342,18 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                 {!chatLoaded && <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"/></div>}
                 {chatLoaded && chatMessages.length === 0 && <div className="text-center text-sm text-gray-300 mt-8">Нет сообщений</div>}
                 {chatMessages.map(msg => {
+                  // System event — centered gray pill
+                  if (msg.senderName === "system") {
+                    return (
+                      <div key={msg.id} className="flex justify-center my-1">
+                        <div className="flex items-center gap-1.5 bg-gray-100 text-gray-500 text-[10px] rounded-full px-3 py-1">
+                          <span>{msg.text}</span>
+                          <span className="text-gray-400 text-[9px]">{ts(msg.createdAt)}</span>
+                        </div>
+                      </div>
+                    );
+                  }
+
                   const isMaster = msg.fromMaster;
                   const senderLabel = msg.senderName ?? (isMaster ? master.alias : "Оператор");
                   return (
