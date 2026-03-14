@@ -66,7 +66,7 @@ async function answerCallback(callbackQueryId: string, text?: string) {
 }
 
 // ─── Banners ──────────────────────────────────────────────────────────────────
-const DOMAIN = process.env.REPLIT_DEV_DOMAIN ?? "";
+const DOMAIN = (process.env.REPLIT_DOMAINS ?? "").split(",")[0].trim();
 const BANNERS = {
   welcome:        DOMAIN ? `https://${DOMAIN}/api/banners/welcome.png` : null,
   new_order:      DOMAIN ? `https://${DOMAIN}/api/banners/new_order.png` : null,

@@ -5,7 +5,7 @@ import { requireRole } from "../middlewares/requireAuth.js";
 
 const router = Router();
 const TELEGRAM_API = `https://api.telegram.org/bot${process.env["TELEGRAM_BOT_TOKEN"]}`;
-const _DOMAIN = process.env.REPLIT_DEV_DOMAIN ?? "";
+const _DOMAIN = (process.env.REPLIT_DOMAINS ?? "").split(",")[0].trim();
 const BANNER_NEW_ORDER = _DOMAIN ? `https://${_DOMAIN}/api/banners/new_order.png` : null;
 const BANNER_ASSIGNED  = _DOMAIN ? `https://${_DOMAIN}/api/banners/order_assigned.png` : null;
 
