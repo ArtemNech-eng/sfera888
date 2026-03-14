@@ -7,9 +7,10 @@ import { StatusBadge } from "@/components/status-badge";
 import { formatDate } from "@/lib/utils";
 import {
   Loader2, MapPin, Send, Users, CheckCircle2, Clock, X, UserCheck,
-  DollarSign, Check, Pencil, AlertCircle, MessageSquare,
+  DollarSign, Check, Pencil, AlertCircle, MessageSquare, Trash2,
 } from "lucide-react";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 
 interface DispatchInfo {
   dispatchStatus: string;
@@ -48,6 +49,15 @@ export default function Orders() {
   const [editAmountId, setEditAmountId] = useState<number | null>(null);
   const [editAmountValue, setEditAmountValue] = useState("");
   const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const deleteOrderMutation = useMutation({
+    mutationFn: (id: number) => fetch(`/api/orders/${id}`, { method: "DELETE", credentials: "include" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      toast({ title: "Перемещено в корзину", description: "Заказ будет удалён через 30 дней. Восстановите в разделе «Корзина»." });
+    },
+  });
 
   const openMasterChat = (masterId: number) => setLocation(`/master-chat?masterId=${masterId}`);
 
@@ -376,6 +386,13 @@ export default function Orders() {
                         </td>
                         <td className="px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => deleteOrderMutation.mutate(order.id)}
+                              title="В корзину"
+                              className="w-7 h-7 flex items-center justify-center rounded-lg text-muted-foreground/30 hover:text-red-500 hover:bg-red-50 transition-all"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                             <DispatchBadge status={ds} />
                             {order.status === OrderStatus.waiting_master && ds === "none" && (
                               <button

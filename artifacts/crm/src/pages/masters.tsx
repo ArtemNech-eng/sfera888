@@ -1,13 +1,14 @@
 import { useState, useMemo, useEffect } from "react";
 import { Layout } from "@/components/layout";
-import { ProtectedRoute } from "@/hooks/use-auth";
+import { ProtectedRoute, useAuth } from "@/hooks/use-auth";
 import {
   Loader2, Plus, Star, Phone, MessageSquare, Briefcase,
-  AlertTriangle, MapPin, Search, X, Users, Zap, UserX, Filter, FileSignature,
+  AlertTriangle, MapPin, Search, X, Users, Zap, UserX, Filter, FileSignature, Trash2,
 } from "lucide-react";
 import { Avatar, MasterDrawer } from "@/components/master-drawer";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { useCreateMaster, useGetCities } from "@workspace/api-client-react";
+import { useToast } from "@/hooks/use-toast";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -60,12 +61,24 @@ function StatusPill({ master }: { master: Master }) {
 // ─── Masters page ─────────────────────────────────────────────────────────────
 
 export default function Masters() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [cityFilter, setCityFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "free" | "onsite" | "suspended" | "pending_contract">("all");
   const [drawerMaster, setDrawerMaster] = useState<Master | null>(null);
   const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const deleteMasterMutation = useMutation({
+    mutationFn: (id: number) => fetch(`/api/masters/${id}`, { method: "DELETE", credentials: "include" }),
+    onSuccess: (_, id) => {
+      setMasters(prev => prev.filter(m => m.id !== id));
+      queryClient.invalidateQueries({ queryKey: ["/api/masters"] });
+      toast({ title: "Перемещено в корзину", description: "Мастер будет удалён через 30 дней. Восстановите в разделе «Корзина»." });
+    },
+  });
 
   const [masters, setMasters] = useState<Master[]>([]);
   const [loading, setLoading] = useState(true);
@@ -231,7 +244,7 @@ export default function Masters() {
                 <p className="text-sm">Никого не найдено</p>
               </div>
             ) : filtered.map(m => (
-              <MasterRow key={m.id} master={m} onOpenDrawer={setDrawerMaster} />
+              <MasterRow key={m.id} master={m} onOpenDrawer={setDrawerMaster} onDelete={isAdmin ? id => deleteMasterMutation.mutate(id) : undefined} />
             ))}
           </div>
         </div>
@@ -304,7 +317,7 @@ export default function Masters() {
 
 // ─── Compact master row ───────────────────────────────────────────────────────
 
-function MasterRow({ master, onOpenDrawer }: { master: Master; onOpenDrawer: (m: Master) => void }) {
+function MasterRow({ master, onOpenDrawer, onDelete }: { master: Master; onOpenDrawer: (m: Master) => void; onDelete?: (id: number) => void }) {
   const specs = master.specializations.length > 0 ? master.specializations : master.specialization ? [master.specialization] : [];
 
   return (
@@ -358,6 +371,15 @@ function MasterRow({ master, onOpenDrawer }: { master: Master; onOpenDrawer: (m:
             <span>{(master.debt / 1000).toFixed(0)}k₽</span>
           </div>
         ) : null}
+        {onDelete && (
+          <button
+            onClick={e => { e.stopPropagation(); onDelete(master.id); }}
+            title="В корзину"
+            className="opacity-0 group-hover:opacity-100 w-7 h-7 flex items-center justify-center rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-all"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
     </div>
   );

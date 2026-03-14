@@ -6,7 +6,8 @@ import { StatusBadge } from "@/components/status-badge";
 import { formatDate } from "@/lib/utils";
 import { Loader2, Plus, Search, Filter, Play, Trash2, User, Phone, MapPin, ChevronDown, Sparkles, Images } from "lucide-react";
 import { PhotoUploader } from "@/components/photo-uploader";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 
 interface ServiceRow {
   type: string;
@@ -18,6 +19,15 @@ export default function Leads() {
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const deleteLeadMutation = useMutation({
+    mutationFn: (id: number) => fetch(`/api/leads/${id}`, { method: "DELETE", credentials: "include" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      toast({ title: "Перемещено в корзину", description: "Заявка будет удалена через 30 дней. Восстановите в разделе «Корзина»." });
+    },
+  });
 
   const { data: leads, isLoading } = useGetLeads(
     { status: statusFilter || undefined },
@@ -251,15 +261,24 @@ export default function Leads() {
                           <StatusBadge status={lead.status} type="lead" />
                         </td>
                         <td className="px-6 py-4 text-right">
-                          {(lead.status === LeadStatus.new || lead.status === LeadStatus.processing) && (
+                          <div className="flex items-center justify-end gap-2">
+                            {(lead.status === LeadStatus.new || lead.status === LeadStatus.processing) && (
+                              <button
+                                onClick={() => sendToWorkMutation.mutate({ id: lead.id })}
+                                disabled={sendToWorkMutation.isPending}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground rounded-lg font-medium text-xs transition-colors"
+                              >
+                                <Play className="w-3 h-3" /> В работу
+                              </button>
+                            )}
                             <button
-                              onClick={() => sendToWorkMutation.mutate({ id: lead.id })}
-                              disabled={sendToWorkMutation.isPending}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground rounded-lg font-medium text-xs transition-colors"
+                              onClick={() => deleteLeadMutation.mutate(lead.id)}
+                              title="В корзину"
+                              className="w-7 h-7 flex items-center justify-center rounded-lg text-muted-foreground/30 hover:text-red-500 hover:bg-red-50 transition-all"
                             >
-                              <Play className="w-3 h-3" /> В работу
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
-                          )}
+                          </div>
                         </td>
                       </tr>
                     );
