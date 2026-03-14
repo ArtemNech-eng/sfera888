@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { db, masterMessagesTable, mastersTable } from "@workspace/db";
-import { eq, desc, and } from "drizzle-orm";
+import { db, masterMessagesTable, mastersTable, telegramChatsTable } from "@workspace/db";
+import { eq, desc, and, inArray } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
 import multer from "multer";
 
@@ -52,6 +52,15 @@ router.get("/", requireRole("admin", "master_operator"), async (_req, res) => {
   const masters = await db.select().from(mastersTable);
   const masterMap = new Map(masters.map(m => [m.id, m]));
 
+  // Lookup avatarUrl from telegram_chats by telegramId
+  const telegramIds = masters.filter(m => m.telegramId).map(m => m.telegramId!);
+  const tgChats = telegramIds.length > 0
+    ? await db.select({ telegramChatId: telegramChatsTable.telegramChatId, avatarUrl: telegramChatsTable.avatarUrl })
+        .from(telegramChatsTable)
+        .where(inArray(telegramChatsTable.telegramChatId, telegramIds))
+    : [];
+  const avatarMap = new Map(tgChats.map(c => [c.telegramChatId, c.avatarUrl ?? null]));
+
   const threadMap = new Map<number, { lastMessage: string; lastAt: Date; unread: number; telegramChatId: string }>();
   for (const msg of messages) {
     if (!threadMap.has(msg.masterId)) {
@@ -69,12 +78,13 @@ router.get("/", requireRole("admin", "master_operator"), async (_req, res) => {
 
   const threads = Array.from(threadMap.entries()).map(([masterId, info]) => {
     const master = masterMap.get(masterId);
+    const avatarUrl = master?.telegramId ? (avatarMap.get(master.telegramId) ?? null) : null;
     return {
       masterId,
       alias: master?.alias ?? "Неизвестный мастер",
       city: master?.city ?? "",
       telegramId: master?.telegramId ?? null,
-      avatarUrl: master?.avatarUrl ?? null,
+      avatarUrl,
       lastMessage: info.lastMessage,
       lastAt: info.lastAt,
       unread: info.unread,
@@ -104,8 +114,17 @@ router.get("/:masterId", requireRole("admin", "master_operator"), async (req, re
   const master = masterRows[0];
   if (!master) return res.status(404).json({ error: "Master not found" });
 
+  // Lookup avatarUrl from telegram_chats
+  let avatarUrl: string | null = null;
+  if (master.telegramId) {
+    const tgRows = await db.select({ avatarUrl: telegramChatsTable.avatarUrl })
+      .from(telegramChatsTable)
+      .where(eq(telegramChatsTable.telegramChatId, master.telegramId));
+    avatarUrl = tgRows[0]?.avatarUrl ?? null;
+  }
+
   res.json({
-    master: { id: master.id, alias: master.alias, city: master.city, telegramId: master.telegramId, avatarUrl: master.avatarUrl ?? null },
+    master: { id: master.id, alias: master.alias, city: master.city, telegramId: master.telegramId, avatarUrl },
     messages,
   });
 });
