@@ -95,12 +95,13 @@ router.post("/:orderId/broadcast", ops, async (req, res) => {
     return res.status(400).json({ error: "Already dispatched" });
   }
 
-  // Find eligible masters: active, with telegramId
-  const allMasters = await db.select().from(mastersTable).where(eq(mastersTable.status, "active"));
+  // Find eligible masters: active, with telegramId, in the same city as the order
+  const allMasters = await db.select().from(mastersTable)
+    .where(and(eq(mastersTable.status, "active"), eq(mastersTable.city, order.city)));
   const withTg = allMasters.filter(m => m.telegramId);
 
   if (withTg.length === 0) {
-    return res.status(400).json({ error: "Нет доступных мастеров" });
+    return res.status(400).json({ error: `Нет активных мастеров с Telegram в городе «${order.city}»` });
   }
 
   // Load all active orders to check per-master limits
