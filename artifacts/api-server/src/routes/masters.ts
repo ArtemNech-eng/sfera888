@@ -102,6 +102,11 @@ router.patch("/:id", requireRole("admin", "master_operator"), async (req, res) =
   const result = await db.update(mastersTable).set(updates).where(eq(mastersTable.id, id)).returning();
   if (!result[0]) return res.status(404).json({ error: "Master not found" });
 
+  // Clear cached contract link on manual activation
+  if (status === "active" && oldStatus === "pending_contract") {
+    await db.update(mastersTable).set({ contractLink: null }).where(eq(mastersTable.id, id));
+  }
+
   // Notify master in Telegram when admin activates from pending_contract
   const updated = result[0];
   if (status === "active" && oldStatus === "pending_contract" && updated.telegramId) {

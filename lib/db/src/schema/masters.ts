@@ -22,6 +22,7 @@ export const mastersTable = pgTable("masters", {
   isTestMaster: boolean("is_test_master").notNull().default(true),
   tags: text("tags").array().notNull().default([]),
   customAvatarUrl: text("custom_avatar_url"),
+  contractLink: text("contract_link"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

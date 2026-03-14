@@ -22,9 +22,9 @@ router.post("/webhook", async (req, res) => {
     const masterId = parseInt(String(externalId), 10);
     if (isNaN(masterId)) return;
 
-    // Activate the master
+    // Activate the master and clear the cached contract link
     await db.update(mastersTable)
-      .set({ status: "active" })
+      .set({ status: "active", contractLink: null })
       .where(eq(mastersTable.id, masterId));
 
     console.log(`[OkiDoki] Master ${masterId} activated after contract signing`);

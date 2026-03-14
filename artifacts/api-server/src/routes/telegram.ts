@@ -116,7 +116,13 @@ async function getAwaitingPaymentColumn() {
 
 const OKIDOKI_API_URL = "https://api.doki.online";
 
-async function createOkidokiContract(master: { id: number; alias: string; phone: string | null }): Promise<string | null> {
+async function createOkidokiContract(master: { id: number; alias: string; phone: string | null; contractLink?: string | null }): Promise<string | null> {
+  // ── Reuse cached link if already created and not yet signed ──────────────
+  if (master.contractLink) {
+    console.log(`[OkiDoki] Reusing cached contract link for master ${master.id}`);
+    return master.contractLink;
+  }
+
   const apiKey = process.env.OKIDOKI_API_KEY;
   const templateIdRaw = process.env.OKIDOKI_TEMPLATE_ID;
   if (!apiKey || !templateIdRaw) {
@@ -172,8 +178,13 @@ async function createOkidokiContract(master: { id: number; alias: string; phone:
       console.error("[OkiDoki] API error:", JSON.stringify(data));
       return null;
     }
-    console.log("[OkiDoki] Contract created, link:", data.link);
-    return data.link;
+    const link: string = data.link;
+    console.log("[OkiDoki] Contract created, link:", link);
+
+    // ── Save link to DB so it's reused on next /start press ──────────────
+    await db.update(mastersTable).set({ contractLink: link }).where(eq(mastersTable.id, master.id));
+
+    return link;
   } catch (err) {
     console.error("[OkiDoki] Error creating contract:", err);
     return null;
