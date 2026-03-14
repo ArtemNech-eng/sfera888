@@ -2,7 +2,7 @@ import { pgTable, serial, text, timestamp, numeric, integer, boolean, pgEnum } f
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
-export const masterStatusEnum = pgEnum("master_status", ["active", "suspended", "inactive"]);
+export const masterStatusEnum = pgEnum("master_status", ["active", "suspended", "inactive", "pending_contract"]);
 
 export const mastersTable = pgTable("masters", {
   id: serial("id").primaryKey(),

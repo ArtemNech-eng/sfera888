@@ -230,6 +230,7 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
               <p className="font-bold text-gray-800 text-[15px]">{master.alias}</p>
               {master.isTestMaster && <span className="text-[10px] bg-amber-100 text-amber-700 rounded-full px-1.5 py-0.5 font-semibold">ТЕСТ</span>}
               {master.status === "suspended" && <span className="text-[10px] bg-red-100 text-red-600 rounded-full px-1.5 py-0.5 font-semibold">Отстранён</span>}
+              {master.status === "pending_contract" && <span className="text-[10px] bg-amber-100 text-amber-600 rounded-full px-1.5 py-0.5 font-semibold">Ожидает договора</span>}
             </div>
             <p className="text-xs text-gray-400 mt-0.5">{colName} · {master.city}</p>
           </div>

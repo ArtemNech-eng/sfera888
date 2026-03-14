@@ -4,7 +4,7 @@ import {
   mastersTable, ordersTable, voronkaColumnsTable, leadsTable,
   masterMessagesTable,
 } from "@workspace/db";
-import { eq, desc, inArray, and } from "drizzle-orm";
+import { eq, desc, inArray, and, ne } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
 
 // ─── Available specializations (synced with service_types) ────────────────────
@@ -78,6 +78,59 @@ async function getOnSiteColumn() {
   // Column 3 by position (not receivesOrders, not first)
   const nonReceiving = cols.filter(c => !c.receivesOrders);
   return nonReceiving.find(c => c.position > 1) ?? nonReceiving[0] ?? null;
+}
+
+// ─── OkiDoki contract creation ────────────────────────────────────────────────
+
+const OKIDOKI_API_URL = "https://api.doki.online";
+
+async function createOkidokiContract(master: { id: number; alias: string; phone: string | null }): Promise<string | null> {
+  const apiKey = process.env.OKIDOKI_API_KEY;
+  const templateId = process.env.OKIDOKI_TEMPLATE_ID;
+  if (!apiKey || !templateId) {
+    console.warn("[OkiDoki] Missing OKIDOKI_API_KEY or OKIDOKI_TEMPLATE_ID");
+    return null;
+  }
+
+  const callbackUrl = process.env.REPLIT_DEV_DOMAIN
+    ? `https://${process.env.REPLIT_DEV_DOMAIN}/api/okidoki/webhook`
+    : process.env.APP_URL
+      ? `${process.env.APP_URL}/api/okidoki/webhook`
+      : null;
+
+  const nameParts = master.alias.trim().split(/\s+/);
+  const firstName = nameParts[0] ?? "";
+  const lastName = nameParts[1] ?? "";
+
+  const systemEntities: { keyword: string; value: string }[] = [
+    { keyword: "client_first_name", value: firstName },
+  ];
+  if (lastName) systemEntities.push({ keyword: "client_last_name", value: lastName });
+  if (master.phone) systemEntities.push({ keyword: "client_phone_number", value: master.phone });
+
+  const body: Record<string, any> = {
+    api_key: apiKey,
+    template_id: templateId,
+    external_id: String(master.id),
+    source: "RepairCRM",
+    system_entities: systemEntities,
+    entities: [],
+  };
+  if (callbackUrl) body.callback_url = callbackUrl;
+
+  try {
+    const resp = await fetch(`${OKIDOKI_API_URL}/external/contract`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json() as any;
+    console.log("[OkiDoki] contract created:", JSON.stringify(data));
+    return data?.link ?? null;
+  } catch (err) {
+    console.error("[OkiDoki] Error creating contract:", err);
+    return null;
+  }
 }
 
 // ─── Master helpers ───────────────────────────────────────────────────────────
@@ -167,6 +220,23 @@ async function editOrSend(chatId: string, messageId: number | undefined, text: s
 
 async function showAvailableOrders(chatId: string, master: any, messageId?: number) {
   const backBtn = [{ text: "« Меню", callback_data: "main_menu" }];
+
+  // Block if master has not signed the contract yet
+  if (master.status === "pending_contract") {
+    const contractLink = await createOkidokiContract(master);
+    if (contractLink) {
+      await editOrSend(chatId, messageId,
+        `📝 <b>Необходимо подписать договор</b>\n\nДоступ к заказам откроется после подписания договора о сотрудничестве.`,
+        { reply_markup: { inline_keyboard: [[{ text: "✍️ Подписать договор", url: contractLink }], backBtn] } }
+      );
+    } else {
+      await editOrSend(chatId, messageId,
+        `⏳ <b>Ваша заявка рассматривается.</b>\n\nМы сообщим вам, когда аккаунт будет активирован.`,
+        { reply_markup: { inline_keyboard: [backBtn] } }
+      );
+    }
+    return;
+  }
 
   // Check if master's column allows receiving orders
   if (master.voronkaColumnId) {
@@ -337,15 +407,39 @@ async function askPhoto(chatId: string, masterId: number) {
   );
 }
 
-async function completeRegistration(chatId: string, master: { alias: string; city: string; phone: string | null }) {
-  await sendMessage(chatId,
-    `🎉 <b>Регистрация завершена!</b>\n\n` +
-    `👤 Имя: <b>${master.alias}</b>\n` +
-    `🏙️ Город: <b>${master.city}</b>\n` +
-    `📱 Телефон: <b>${master.phone ?? "не указан"}</b>\n\n` +
-    `Теперь вы можете принимать заказы. Удачной работы! 🚀`,
-    mainMenuKeyboard()
-  );
+async function completeRegistration(chatId: string, master: { id: number; alias: string; city: string; phone: string | null }) {
+  // Create OkiDoki contract and put master in pending_contract status
+  const contractLink = await createOkidokiContract(master);
+
+  if (contractLink) {
+    await db.update(mastersTable).set({ status: "pending_contract" }).where(eq(mastersTable.id, master.id));
+    await sendMessage(chatId,
+      `📝 <b>Осталось подписать договор!</b>\n\n` +
+      `👤 Имя: <b>${master.alias}</b>\n` +
+      `🏙️ Город: <b>${master.city}</b>\n` +
+      `📱 Телефон: <b>${master.phone ?? "не указан"}</b>\n\n` +
+      `Для активации аккаунта необходимо подписать договор о сотрудничестве.\n\n` +
+      `✍️ <b><a href="${contractLink}">Подписать договор</a></b>\n\n` +
+      `После подписания вы получите доступ к заказам. Если ссылка не открывается, нажмите кнопку ниже.`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "✍️ Подписать договор", url: contractLink }],
+          ],
+        },
+      }
+    );
+  } else {
+    // OkiDoki unavailable — activate directly (fallback)
+    await sendMessage(chatId,
+      `🎉 <b>Регистрация завершена!</b>\n\n` +
+      `👤 Имя: <b>${master.alias}</b>\n` +
+      `🏙️ Город: <b>${master.city}</b>\n` +
+      `📱 Телефон: <b>${master.phone ?? "не указан"}</b>\n\n` +
+      `Теперь вы можете принимать заказы. Удачной работы! 🚀`,
+      mainMenuKeyboard()
+    );
+  }
 }
 
 // ─── Handle /start ────────────────────────────────────────────────────────────
@@ -356,6 +450,32 @@ async function handleStart(from: any, chatId: string) {
   if (isNew) {
     // New master — start registration from step 1
     await askAlias(chatId, master.id);
+    return;
+  }
+
+  // Blocked master (suspended) — refuse access
+  if (master.status === "suspended") {
+    await sendMessage(chatId, `⛔ <b>Ваш аккаунт заблокирован.</b>\n\nОбратитесь к администратору.`);
+    return;
+  }
+
+  // Master waiting to sign contract
+  if (master.status === "pending_contract") {
+    const contractLink = await createOkidokiContract(master);
+    if (contractLink) {
+      await sendMessage(chatId,
+        `📝 <b>Ваш договор ещё не подписан.</b>\n\nДля активации аккаунта необходимо подписать договор о сотрудничестве.\n\nПосле подписания вы получите доступ к заказам.`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "✍️ Подписать договор", url: contractLink }],
+            ],
+          },
+        }
+      );
+    } else {
+      await sendMessage(chatId, `⏳ <b>Ваша заявка рассматривается.</b>\n\nМы сообщим вам, когда аккаунт будет активирован.`);
+    }
     return;
   }
 
@@ -545,9 +665,24 @@ async function handleCallback(callbackQuery: any) {
       await answerCallback(cbId, "⚠️ Ошибка, начните заново");
       return;
     }
-    await answerCallback(cbId, "✅ Номер сохранён!");
     const phone = state.phone;
     const masterId = state.masterId;
+
+    // Duplicate phone check — block if another master with this phone is suspended
+    const duplicates = await db.select().from(mastersTable).where(
+      and(eq(mastersTable.phone, phone), ne(mastersTable.id, masterId))
+    );
+    const suspendedDuplicate = duplicates.find(m => m.status === "suspended");
+    if (suspendedDuplicate) {
+      await answerCallback(cbId, "⛔ Регистрация заблокирована");
+      await editMessage(chatId, messageId,
+        `⛔ <b>Регистрация заблокирована</b>\n\nНомер <b>${phone}</b> уже был использован ранее и заблокирован.\n\nОбратитесь к администратору.`
+      );
+      pendingState.delete(chatId);
+      return;
+    }
+
+    await answerCallback(cbId, "✅ Номер сохранён!");
     pendingState.delete(chatId);
 
     await db.update(mastersTable).set({ phone }).where(eq(mastersTable.id, masterId));
@@ -848,7 +983,7 @@ router.post("/webhook", async (req, res) => {
         const freshRows = await db.select().from(mastersTable).where(eq(mastersTable.id, state.masterId));
         const fresh = freshRows[0];
         await sendMessage(chatId, `📸 Фото сохранено!`);
-        await completeRegistration(chatId, { alias: fresh?.alias ?? "", city: fresh?.city ?? "", phone: fresh?.phone ?? null });
+        await completeRegistration(chatId, { id: state.masterId, alias: fresh?.alias ?? "", city: fresh?.city ?? "", phone: fresh?.phone ?? null });
         return;
       }
 

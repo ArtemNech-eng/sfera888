@@ -3,7 +3,7 @@ import { Layout } from "@/components/layout";
 import { ProtectedRoute } from "@/hooks/use-auth";
 import {
   Loader2, Plus, Star, Phone, MessageSquare, Briefcase,
-  AlertTriangle, MapPin, Search, X, Users, Zap, UserX, Filter,
+  AlertTriangle, MapPin, Search, X, Users, Zap, UserX, Filter, FileSignature,
 } from "lucide-react";
 import { Avatar, MasterDrawer } from "@/components/master-drawer";
 import { useQueryClient } from "@tanstack/react-query";
@@ -48,6 +48,9 @@ function StatusPill({ master }: { master: Master }) {
   if (master.status === "suspended") {
     return <span className="text-[10px] bg-red-100 text-red-600 rounded-full px-2 py-0.5 font-semibold">Отстранён</span>;
   }
+  if (master.status === "pending_contract") {
+    return <span className="text-[10px] bg-amber-100 text-amber-600 rounded-full px-2 py-0.5 font-semibold">Ожидает договора</span>;
+  }
   if (master.activeOrders.length > 0) {
     return <span className="text-[10px] bg-blue-100 text-blue-600 rounded-full px-2 py-0.5 font-semibold flex items-center gap-0.5"><Zap className="w-2.5 h-2.5" />На объекте</span>;
   }
@@ -60,7 +63,7 @@ export default function Masters() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [cityFilter, setCityFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState<"all" | "free" | "onsite" | "suspended">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "free" | "onsite" | "suspended" | "pending_contract">("all");
   const [drawerMaster, setDrawerMaster] = useState<Master | null>(null);
   const queryClient = useQueryClient();
 
@@ -105,9 +108,10 @@ export default function Masters() {
 
   const counts = useMemo(() => ({
     total: masters.length,
-    free: masters.filter(m => m.status !== "suspended" && m.activeOrders.length === 0).length,
+    free: masters.filter(m => m.status !== "suspended" && m.status !== "pending_contract" && m.activeOrders.length === 0).length,
     onsite: masters.filter(m => m.activeOrders.length > 0).length,
     suspended: masters.filter(m => m.status === "suspended").length,
+    pending: masters.filter(m => m.status === "pending_contract").length,
   }), [masters]);
 
   const filtered = useMemo(() => {
@@ -121,9 +125,10 @@ export default function Masters() {
         if (!match) return false;
       }
       if (cityFilter !== "all" && m.city !== cityFilter) return false;
-      if (statusFilter === "free" && (m.status === "suspended" || m.activeOrders.length > 0)) return false;
+      if (statusFilter === "free" && (m.status === "suspended" || m.status === "pending_contract" || m.activeOrders.length > 0)) return false;
       if (statusFilter === "onsite" && m.activeOrders.length === 0) return false;
       if (statusFilter === "suspended" && m.status !== "suspended") return false;
+      if (statusFilter === "pending_contract" && m.status !== "pending_contract") return false;
       return true;
     });
   }, [masters, search, cityFilter, statusFilter]);
@@ -155,6 +160,7 @@ export default function Masters() {
               { label: "Всего", value: counts.total, icon: Users, color: "text-gray-600 bg-gray-50 border-gray-100", active: statusFilter === "all", onClick: () => setStatusFilter("all") },
               { label: "Свободные", value: counts.free, icon: Users, color: "text-emerald-600 bg-emerald-50 border-emerald-100", active: statusFilter === "free", onClick: () => setStatusFilter(statusFilter === "free" ? "all" : "free") },
               { label: "На объекте", value: counts.onsite, icon: Zap, color: "text-blue-600 bg-blue-50 border-blue-100", active: statusFilter === "onsite", onClick: () => setStatusFilter(statusFilter === "onsite" ? "all" : "onsite") },
+              { label: "Договор", value: counts.pending, icon: FileSignature, color: "text-amber-600 bg-amber-50 border-amber-100", active: statusFilter === "pending_contract", onClick: () => setStatusFilter(statusFilter === "pending_contract" ? "all" : "pending_contract") },
               { label: "Отстранённые", value: counts.suspended, icon: UserX, color: "text-red-500 bg-red-50 border-red-100", active: statusFilter === "suspended", onClick: () => setStatusFilter(statusFilter === "suspended" ? "all" : "suspended") },
             ].map(s => (
               <button

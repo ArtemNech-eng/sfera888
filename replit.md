@@ -101,6 +101,7 @@ artifacts-monorepo/
 - `POST /api/telegram/setup-webhook` — Re-register webhook
 - `POST /api/telegram/notify-new-order` — Notify free masters of new order
 - `POST /api/orders/:id/assign-master` — Assign master (enforces column + limit rules)
+- `POST /api/okidoki/webhook` — Receives contract signing status from doki.online; activates master on status "Подписан" (internal_id=2)
 
 ## Commission Logic
 
