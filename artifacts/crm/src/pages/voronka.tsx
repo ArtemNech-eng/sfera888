@@ -451,9 +451,9 @@ export default function Voronka() {
   };
 
   const sorted = [...columns].sort((a, b) => a.position - b.position);
-  // Suspended without any column → shown in separate SuspendedColumn section
-  const suspendedNoCol = masters.filter(m => m.status === "suspended" && (!m.voronkaColumnId || !columns.find(c => c.id === m.voronkaColumnId)));
-  // Unassigned: active masters with no column (suspended ones go to suspendedNoCol above)
+  // ALL suspended masters → separate SuspendedColumn (never appear in regular columns)
+  const suspended = masters.filter(m => m.status === "suspended");
+  // Active masters without a column → "Без колонки" section
   const unassigned = masters.filter(m => m.status !== "suspended" && (!m.voronkaColumnId || !columns.find(c => c.id === m.voronkaColumnId)));
 
   const totalDebt = masters.reduce((s, m) => s + m.debt, 0);
@@ -488,7 +488,7 @@ export default function Voronka() {
             <div className="voronka-scroll flex gap-3 overflow-x-auto pb-4 flex-1 min-h-0">
               {sorted.map(col => (
                 <KanbanColumn key={col.id} col={col}
-                  masters={masters.filter(m => m.voronkaColumnId === col.id)}
+                  masters={masters.filter(m => m.status !== "suspended" && m.voronkaColumnId === col.id)}
                   columns={columns} onMove={moveMaster} onOpenDrawer={setDrawerMaster}
                   draggingId={draggingId}
                   onDragStartMaster={setDraggingId}
@@ -504,9 +504,9 @@ export default function Voronka() {
                   onDropMaster={(mid, colId) => { moveMaster(mid, colId); setDraggingId(null); }}
                 />
               )}
-              {/* ── Suspended without column ── */}
-              {suspendedNoCol.length > 0 && (
-                <SuspendedColumn masters={suspendedNoCol} onOpenDrawer={setDrawerMaster} />
+              {/* ── ALL suspended masters ── */}
+              {suspended.length > 0 && (
+                <SuspendedColumn masters={suspended} onOpenDrawer={setDrawerMaster} />
               )}
             </div>
           )}
