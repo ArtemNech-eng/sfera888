@@ -112,83 +112,12 @@ async function getAwaitingPaymentColumn() {
   return cols.find(c => c.name === "Ожидает оплаты") ?? null;
 }
 
-// ─── OkiDoki contract creation ────────────────────────────────────────────────
+// ─── Contract link (static — same for all masters) ────────────────────────────
 
-const OKIDOKI_API_URL = "https://api.doki.online";
+const CONTRACT_LINK = "https://desktop.doki.online/contract/6916b2861ea1593f469a6786";
 
-async function createOkidokiContract(master: { id: number; alias: string; phone: string | null; contractLink?: string | null }): Promise<string | null> {
-  // ── Reuse cached link if already created and not yet signed ──────────────
-  if (master.contractLink) {
-    console.log(`[OkiDoki] Reusing cached contract link for master ${master.id}`);
-    return master.contractLink;
-  }
-
-  const apiKey = process.env.OKIDOKI_API_KEY;
-  const templateIdRaw = process.env.OKIDOKI_TEMPLATE_ID;
-  if (!apiKey || !templateIdRaw) {
-    console.warn("[OkiDoki] Missing OKIDOKI_API_KEY or OKIDOKI_TEMPLATE_ID");
-    return null;
-  }
-  // If the env var contains a full URL, extract just the ID (last path segment)
-  const templateId = templateIdRaw.startsWith("http")
-    ? templateIdRaw.split("/").filter(Boolean).pop()!
-    : templateIdRaw;
-
-  const callbackUrl = process.env.REPLIT_DEV_DOMAIN
-    ? `https://${process.env.REPLIT_DEV_DOMAIN}/api/okidoki/webhook`
-    : process.env.APP_URL
-      ? `${process.env.APP_URL}/api/okidoki/webhook`
-      : null;
-
-  const nameParts = master.alias.trim().split(/\s+/);
-  const firstName = nameParts[0] ?? "";
-  const lastName = nameParts[1] ?? "";
-
-  const systemEntities: { keyword: string; value: string }[] = [
-    { keyword: "client_first_name", value: firstName },
-  ];
-  if (lastName) systemEntities.push({ keyword: "client_last_name", value: lastName });
-  if (master.phone) systemEntities.push({ keyword: "client_phone_number", value: master.phone });
-
-  const body: Record<string, any> = {
-    api_key: apiKey,
-    template_id: templateId,
-    external_id: String(master.id),
-    source: "RepairCRM",
-    system_entities: systemEntities,
-    entities: [],
-  };
-  if (callbackUrl) body.callback_url = callbackUrl;
-
-  try {
-    const resp = await fetch(`${OKIDOKI_API_URL}/external/contract`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const rawText = await resp.text();
-    let data: any;
-    try {
-      data = JSON.parse(rawText);
-    } catch {
-      console.error("[OkiDoki] Non-JSON response:", rawText);
-      return null;
-    }
-    if (!resp.ok || !data?.link) {
-      console.error("[OkiDoki] API error:", JSON.stringify(data));
-      return null;
-    }
-    const link: string = data.link;
-    console.log("[OkiDoki] Contract created, link:", link);
-
-    // ── Save link to DB so it's reused on next /start press ──────────────
-    await db.update(mastersTable).set({ contractLink: link }).where(eq(mastersTable.id, master.id));
-
-    return link;
-  } catch (err) {
-    console.error("[OkiDoki] Error creating contract:", err);
-    return null;
-  }
+function createOkidokiContract(_master: { id: number }): string {
+  return CONTRACT_LINK;
 }
 
 // ─── CRM chat logger — saves registration events as system messages ───────────
@@ -314,18 +243,11 @@ async function showAvailableOrders(chatId: string, master: any, messageId?: numb
 
   // Block if master has not signed the contract yet
   if (master.status === "pending_contract") {
-    const contractLink = await createOkidokiContract(master);
-    if (contractLink) {
-      await editOrSend(chatId, messageId,
-        `📝 <b>Необходимо подписать договор</b>\n\nДоступ к заказам откроется после подписания договора о сотрудничестве.`,
-        { reply_markup: { inline_keyboard: [[{ text: "✍️ Подписать договор", url: contractLink }], backBtn] } }
-      );
-    } else {
-      await editOrSend(chatId, messageId,
-        `⏳ <b>Ваша заявка рассматривается.</b>\n\nМы сообщим вам, когда аккаунт будет активирован.`,
-        { reply_markup: { inline_keyboard: [backBtn] } }
-      );
-    }
+    const contractLink = createOkidokiContract(master);
+    await editOrSend(chatId, messageId,
+      `📝 <b>Необходимо подписать договор</b>\n\nДоступ к заказам откроется после подписания договора о сотрудничестве.`,
+      { reply_markup: { inline_keyboard: [[{ text: "✍️ Подписать договор", url: contractLink }], backBtn] } }
+    );
     return;
   }
 
@@ -581,40 +503,26 @@ async function askPhoto(chatId: string, masterId: number) {
 }
 
 async function completeRegistration(chatId: string, master: { id: number; alias: string; city: string; phone: string | null }) {
-  // Create OkiDoki contract and put master in pending_contract status
-  const contractLink = await createOkidokiContract(master);
+  const contractLink = createOkidokiContract(master);
 
-  if (contractLink) {
-    await db.update(mastersTable).set({ status: "pending_contract" }).where(eq(mastersTable.id, master.id));
-    await logToChat(master.id, chatId, `📝 Договор отправлен на подписание`);
-    await sendBanner(chatId, "welcome",
-      `📝 <b>Осталось подписать договор!</b>\n\n` +
-      `👤 Имя: <b>${master.alias}</b>\n` +
-      `🏙️ Город: <b>${master.city}</b>\n` +
-      `📱 Телефон: <b>${master.phone ?? "не указан"}</b>\n\n` +
-      `Для активации аккаунта необходимо подписать договор о сотрудничестве.\n\n` +
-      `✍️ <b><a href="${contractLink}">Подписать договор</a></b>\n\n` +
-      `После подписания вы получите доступ к заказам. Если ссылка не открывается, нажмите кнопку ниже.`,
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "✍️ Подписать договор", url: contractLink }],
-          ],
-        },
-      }
-    );
-  } else {
-    // OkiDoki unavailable — set pending, wait for admin to activate manually
-    await db.update(mastersTable).set({ status: "pending_contract" }).where(eq(mastersTable.id, master.id));
-    await logToChat(master.id, chatId, `📋 Заявка передана администратору на проверку`);
-    await sendBanner(chatId, "welcome",
-      `✅ <b>Заявка принята!</b>\n\n` +
-      `👤 Имя: <b>${master.alias}</b>\n` +
-      `🏙️ Город: <b>${master.city}</b>\n` +
-      `📱 Телефон: <b>${master.phone ?? "не указан"}</b>\n\n` +
-      `Ваша анкета передана администратору на проверку. После подтверждения вы получите уведомление и доступ к заказам.`
-    );
-  }
+  await db.update(mastersTable).set({ status: "pending_contract" }).where(eq(mastersTable.id, master.id));
+  await logToChat(master.id, chatId, `📝 Договор отправлен на подписание`);
+  await sendBanner(chatId, "welcome",
+    `📝 <b>Осталось подписать договор!</b>\n\n` +
+    `👤 Имя: <b>${master.alias}</b>\n` +
+    `🏙️ Город: <b>${master.city}</b>\n` +
+    `📱 Телефон: <b>${master.phone ?? "не указан"}</b>\n\n` +
+    `Для активации аккаунта необходимо подписать договор о сотрудничестве.\n\n` +
+    `✍️ <b><a href="${contractLink}">Подписать договор</a></b>\n\n` +
+    `После подписания вы получите доступ к заказам. Если ссылка не открывается, нажмите кнопку ниже.`,
+    {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "✍️ Подписать договор", url: contractLink }],
+        ],
+      },
+    }
+  );
 }
 
 // ─── Handle /start ────────────────────────────────────────────────────────────
