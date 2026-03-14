@@ -11,7 +11,7 @@ title = "Баннер: приветствие / регистрация"
 id = "tZxV8mGgxTgCEggjiMZag"
 uri = "file://artifacts/api-server/public/banners/new_order.png"
 type = "image"
-title = "Баннер: новый заказ"
+title = "Баннер: Новый заназ"
 
 [[outputs]]
 id = "aVIxXRbrmQZiADi4MWxC4"
