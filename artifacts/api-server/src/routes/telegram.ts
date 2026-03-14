@@ -316,24 +316,26 @@ async function showAvailableOrders(chatId: string, master: any, messageId?: numb
     return;
   }
 
-  // Check if master's column allows receiving orders
-  if (master.voronkaColumnId) {
-    const col = await db.select().from(voronkaColumnsTable).where(eq(voronkaColumnsTable.id, master.voronkaColumnId));
-    if (col[0] && !col[0].receivesOrders) {
-      const colName = col[0].name;
-      await editOrSend(chatId, messageId, `⛔ <b>Вы не можете принимать заказы.</b>\n\nВаш статус: <b>${colName}</b>\n\nОбратитесь к оператору для изменения статуса.`, { reply_markup: { inline_keyboard: [backBtn] } });
-      return;
-    }
+  // Fetch column, active orders, and waiting orders in parallel
+  const [colRows, allActiveOrders, waitingOrders] = await Promise.all([
+    master.voronkaColumnId
+      ? db.select().from(voronkaColumnsTable).where(eq(voronkaColumnsTable.id, master.voronkaColumnId))
+      : Promise.resolve([] as any[]),
+    db.select({ masterId: ordersTable.masterId }).from(ordersTable)
+      .where(inArray(ordersTable.status, ["master_assigned", "in_progress"])),
+    db.select().from(ordersTable).where(eq(ordersTable.status, "waiting_master")),
+  ]);
+
+  // Column check
+  if (colRows[0] && !colRows[0].receivesOrders) {
+    await editOrSend(chatId, messageId, `⛔ <b>Вы не можете принимать заказы.</b>\n\nВаш статус: <b>${colRows[0].name}</b>\n\nОбратитесь к оператору для изменения статуса.`, { reply_markup: { inline_keyboard: [backBtn] } });
+    return;
   }
 
-  // Check debt
+  // Active order limit check
   const masterDebt = Number(master.debt);
   const hasDebt = masterDebt > 0;
-
-  // Check active order limit (debt-aware)
-  const activeOrders = await db.select().from(ordersTable)
-    .where(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
-  const myActiveCount = activeOrders.filter(o => o.masterId === master.id).length;
+  const myActiveCount = allActiveOrders.filter((o: any) => o.masterId === master.id).length;
   const limit = master.isTestMaster ? 1 : 2;
 
   if (myActiveCount >= limit) {
@@ -351,18 +353,16 @@ async function showAvailableOrders(chatId: string, master: any, messageId?: numb
     return;
   }
 
-  // Get waiting orders
-  const waitingOrders = await db.select().from(ordersTable)
-    .where(eq(ordersTable.status, "waiting_master"));
-
   if (waitingOrders.length === 0) {
     await editOrSend(chatId, messageId, "📭 <b>Нет доступных заказов</b>\n\nПока заказов нет. Вы получите уведомление, когда появится новый заказ.", { reply_markup: { inline_keyboard: [backBtn] } });
     return;
   }
 
-  // Get lead info for orders
-  const leadIds = [...new Set(waitingOrders.map(o => o.leadId))];
-  const leads = await db.select().from(leadsTable).where(inArray(leadsTable.id, leadIds));
+  // Fetch lead info in parallel with nothing else needed
+  const leadIds = [...new Set(waitingOrders.map((o: any) => o.leadId).filter(Boolean))];
+  const leads = leadIds.length > 0
+    ? await db.select().from(leadsTable).where(inArray(leadsTable.id, leadIds as number[]))
+    : [];
   const leadMap = new Map(leads.map(l => [l.id, l]));
 
   let text = `📋 <b>Доступные заказы (${waitingOrders.length})</b>\n\nВыберите заказ, который хотите взять:\n\n`;
@@ -635,17 +635,19 @@ async function handleCallback(callbackQuery: any) {
   const messageId = callbackQuery.message.message_id;
   const cbId = callbackQuery.id;
 
-  // Find master
-  const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.telegramId, String(from.id)));
+  // Answer callback & find master in parallel — spinner clears immediately
+  const [, masterRows] = await Promise.all([
+    answerCallback(cbId),
+    db.select().from(mastersTable).where(eq(mastersTable.telegramId, String(from.id))),
+  ]);
   const master = masterRows[0];
 
   if (!master) {
-    await answerCallback(cbId, "⛔ Вы не зарегистрированы. Отправьте /start");
+    await tgRequest("sendMessage", { chat_id: chatId, text: "⛔ Вы не зарегистрированы. Отправьте /start" });
     return;
   }
 
   if (data === "main_menu") {
-    await answerCallback(cbId);
     await editMessage(chatId, messageId,
       `✅ <b>${master.alias}</b> — главное меню`,
       mainMenuKeyboard()
@@ -654,19 +656,16 @@ async function handleCallback(callbackQuery: any) {
   }
 
   if (data === "show_orders") {
-    await answerCallback(cbId);
     await showAvailableOrders(chatId, master, messageId);
     return;
   }
 
   if (data === "my_orders") {
-    await answerCallback(cbId);
     await showMyOrders(chatId, master, messageId);
     return;
   }
 
   if (data === "my_profile") {
-    await answerCallback(cbId);
     await showProfile(chatId, master, messageId);
     return;
   }
@@ -687,7 +686,6 @@ async function handleCallback(callbackQuery: any) {
     if (idx >= 0) state.selected.splice(idx, 1);
     else state.selected.push(spec);
 
-    await answerCallback(cbId);
     await editMessage(chatId, messageId,
       `🔧 <b>Выберите ваши специальности</b>\n\nОтметьте все виды работ, которые вы выполняете.\nМожно выбрать несколько:`,
       buildSpecKeyboard(state.selected)
@@ -737,7 +735,6 @@ async function handleCallback(callbackQuery: any) {
     // Allow master to update specializations from profile
     const currentSpecs = master.specializations ?? [];
     pendingState.set(chatId, { step: "selecting_specs", masterId: master.id, selected: [...currentSpecs] });
-    await answerCallback(cbId);
     await editMessage(chatId, messageId,
       `🔧 <b>Изменить специальности</b>\n\nОтметьте все виды работ, которые вы выполняете:`,
       buildSpecKeyboard(currentSpecs)
@@ -748,7 +745,6 @@ async function handleCallback(callbackQuery: any) {
   // ─── Operator message callbacks ────────────────────────────────────────────
 
   if (data === "message_operator") {
-    await answerCallback(cbId);
     pendingState.set(chatId, { step: "awaiting_message", masterId: master.id });
     await editMessage(chatId, messageId,
       `✉️ <b>Написать оператору</b>\n\nНапишите ваш вопрос или сообщение следующим сообщением.\nОператор ответит вам в этом чате.`,
@@ -758,7 +754,6 @@ async function handleCallback(callbackQuery: any) {
   }
 
   if (data === "cancel_message") {
-    await answerCallback(cbId);
     pendingState.delete(chatId);
     await editMessage(chatId, messageId,
       `✅ <b>${master.alias}</b> — главное меню`,
@@ -768,7 +763,6 @@ async function handleCallback(callbackQuery: any) {
   }
 
   if (data === "send_payment_proof") {
-    await answerCallback(cbId);
     pendingState.set(chatId, { step: "awaiting_payment_proof", masterId: master.id });
     await sendMessage(chatId,
       `📸 <b>Отправьте скриншот оплаты</b>\n\nПришлите фото чека или скриншот перевода — оператор проверит и подтвердит оплату.`,
@@ -778,7 +772,6 @@ async function handleCallback(callbackQuery: any) {
   }
 
   if (data === "cancel_payment_proof") {
-    await answerCallback(cbId);
     pendingState.delete(chatId);
     await sendMessage(chatId, `✅ Отмена. Чтобы отправить скриншот позже, нажмите кнопку в сообщении с реквизитами.`);
     return;
@@ -823,7 +816,6 @@ async function handleCallback(callbackQuery: any) {
     const state = pendingState.get(chatId);
     const masterId = state?.masterId ?? master.id;
     pendingState.set(chatId, { step: "awaiting_phone", masterId });
-    await answerCallback(cbId);
     await editMessage(chatId, messageId,
       `📱 Введите номер телефона заново:\n\n<i>Пример: +79001234567</i>`
     );
@@ -1012,7 +1004,6 @@ async function handleCallback(callbackQuery: any) {
     }
 
     // Ask master to enter the final work amount
-    await answerCallback(cbId);
     pendingState.set(chatId, { step: "awaiting_amount", masterId: master.id, orderId });
     await editMessage(chatId, messageId,
       `💰 <b>Завершение заказа #${orderId}</b>\n\n` +
@@ -1028,7 +1019,6 @@ async function handleCallback(callbackQuery: any) {
   if (data.startsWith("cancel_amount_")) {
     const orderId = parseInt(data.replace("cancel_amount_", ""));
     pendingState.delete(chatId);
-    await answerCallback(cbId);
     await showMyOrders(chatId, master, messageId);
     return;
   }
@@ -1045,7 +1035,6 @@ async function handleCallback(callbackQuery: any) {
       return;
     }
 
-    await answerCallback(cbId);
     pendingState.set(chatId, { step: "awaiting_cancel_reason", masterId: master.id, orderId });
     await editMessage(chatId, messageId,
       `❌ <b>Отмена заказа #${orderId}</b>\n\n` +
@@ -1059,7 +1048,6 @@ async function handleCallback(callbackQuery: any) {
 
   if (data.startsWith("abort_cancel_")) {
     pendingState.delete(chatId);
-    await answerCallback(cbId);
     await showMyOrders(chatId, master, messageId);
     return;
   }
@@ -1085,39 +1073,48 @@ router.post("/webhook", async (req, res) => {
     const from = message.from;
     const chatId = String(message.chat.id);
     const text = (message.text ?? "").trim();
+    const senderName = [from.first_name, from.last_name].filter(Boolean).join(" ") || from.username || "Мастер";
+    const now = new Date();
 
-    // Register/update telegram chat record
-    const existing = await db.select().from(telegramChatsTable).where(eq(telegramChatsTable.telegramChatId, chatId));
+    // Fetch chat record and master in parallel
+    const [existing, masterRows] = await Promise.all([
+      db.select().from(telegramChatsTable).where(eq(telegramChatsTable.telegramChatId, chatId)),
+      db.select().from(mastersTable).where(eq(mastersTable.telegramId, String(from.id))),
+    ]);
+    const master = masterRows[0];
+
+    // Upsert chat record and save message in parallel (fire-and-forget for speed)
+    const chatOps: Promise<any>[] = [];
     if (!existing[0]) {
-      await db.insert(telegramChatsTable).values({
+      chatOps.push(db.insert(telegramChatsTable).values({
         telegramChatId: chatId,
         username: from.username ?? null,
         firstName: from.first_name ?? null,
         lastName: from.last_name ?? null,
         stage: "new",
         lastMessage: text,
-        lastMessageAt: new Date(),
+        lastMessageAt: now,
         unreadCount: 1,
-      });
+      }));
     } else {
-      await db.update(telegramChatsTable).set({
+      chatOps.push(db.update(telegramChatsTable).set({
         lastMessage: text,
-        lastMessageAt: new Date(),
+        lastMessageAt: now,
         unreadCount: (existing[0].unreadCount || 0) + 1,
-        updatedAt: new Date(),
-      }).where(eq(telegramChatsTable.telegramChatId, chatId));
+        updatedAt: now,
+      }).where(eq(telegramChatsTable.telegramChatId, chatId)));
     }
-
-    // Save message
     if (text) {
-      await db.insert(telegramMessagesTable).values({
+      chatOps.push(db.insert(telegramMessagesTable).values({
         chatId,
         telegramMessageId: message.message_id,
         text,
         fromBot: false,
-        senderName: [from.first_name, from.last_name].filter(Boolean).join(" ") || from.username || "Мастер",
-      });
+        senderName,
+      }));
     }
+    // Run DB writes without blocking command handling
+    Promise.all(chatOps).catch(e => console.error("[msg-db]", e));
 
     // Handle commands
     if (text === "/start" || text.startsWith("/start ")) {
@@ -1125,57 +1122,37 @@ router.post("/webhook", async (req, res) => {
       return;
     }
 
+    const notRegistered = () => sendMessage(chatId, "⛔ Вы не зарегистрированы. Отправьте /start для регистрации.");
+
     if (text === "/orders") {
-      const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.telegramId, String(from.id)));
-      if (!masterRows[0]) {
-        await sendMessage(chatId, "⛔ Вы не зарегистрированы. Отправьте /start для регистрации.");
-        return;
-      }
-      await showAvailableOrders(chatId, masterRows[0]);
+      if (!master) { await notRegistered(); return; }
+      await showAvailableOrders(chatId, master);
       return;
     }
 
     if (text === "/myorders") {
-      const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.telegramId, String(from.id)));
-      if (!masterRows[0]) {
-        await sendMessage(chatId, "⛔ Вы не зарегистрированы. Отправьте /start для регистрации.");
-        return;
-      }
-      await showMyOrders(chatId, masterRows[0]);
+      if (!master) { await notRegistered(); return; }
+      await showMyOrders(chatId, master);
       return;
     }
 
     if (text === "/profile") {
-      const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.telegramId, String(from.id)));
-      if (!masterRows[0]) {
-        await sendMessage(chatId, "⛔ Вы не зарегистрированы. Отправьте /start для регистрации.");
-        return;
-      }
-      await showProfile(chatId, masterRows[0]);
+      if (!master) { await notRegistered(); return; }
+      await showProfile(chatId, master);
       return;
     }
 
     if (text === "/menu") {
-      const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.telegramId, String(from.id)));
-      if (!masterRows[0]) {
-        await sendMessage(chatId, "⛔ Вы не зарегистрированы. Отправьте /start для регистрации.");
-        return;
-      }
-      const master = masterRows[0];
-      await sendMessage(chatId,
-        `✅ <b>${master.alias}</b> — главное меню`,
-        mainMenuKeyboard()
-      );
+      if (!master) { await notRegistered(); return; }
+      await sendMessage(chatId, `✅ <b>${master.alias}</b> — главное меню`, mainMenuKeyboard());
       return;
     }
 
     // Handle shared contact (phone number)
     const contact = (update.message as any)?.contact;
     if (contact && contact.phone_number) {
-      const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.telegramId, String(from.id)));
-      const contactMaster = masterRows[0];
-      if (contactMaster) {
-        await db.update(mastersTable).set({ phone: contact.phone_number }).where(eq(mastersTable.id, contactMaster.id));
+      if (master) {
+        await db.update(mastersTable).set({ phone: contact.phone_number }).where(eq(mastersTable.id, master.id));
         pendingState.delete(chatId);
         await tgRequest("sendMessage", {
           chat_id: chatId,
@@ -1183,7 +1160,7 @@ router.post("/webhook", async (req, res) => {
           parse_mode: "HTML",
           reply_markup: { remove_keyboard: true },
         });
-        await askPhoto(chatId, contactMaster.id);
+        await askPhoto(chatId, master.id);
       }
       return;
     }
@@ -1536,8 +1513,7 @@ router.post("/webhook", async (req, res) => {
 
     // For non-command messages from registered masters:
     // if a conversation already exists (operator wrote first), treat as a free reply
-    const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.telegramId, String(from.id)));
-    const masterFallback = masterRows[0];
+    const masterFallback = master;
     if (masterFallback && (text || (update.message as any)?.photo)) {
       const photoArr2 = (update.message as any)?.photo as { file_id: string }[] | undefined;
       const hasPhoto2 = photoArr2 && photoArr2.length > 0;
