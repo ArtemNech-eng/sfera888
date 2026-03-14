@@ -1204,11 +1204,19 @@ router.post("/webhook", async (req, res) => {
         return;
       }
 
-      const { orderId } = state;
+      const { masterId: amountMasterId, orderId } = state;
+      const amountMasterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, amountMasterId));
+      const amountMaster = amountMasterRows[0];
+      if (!amountMaster) {
+        await sendMessage(chatId, "❌ Мастер не найден.");
+        pendingState.delete(chatId);
+        return;
+      }
+
       const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
       const order = orderRows[0];
 
-      if (!order || order.masterId !== master.id) {
+      if (!order || order.masterId !== amountMaster.id) {
         await sendMessage(chatId, "❌ Заказ не найден или не ваш.");
         pendingState.delete(chatId);
         return;
@@ -1230,14 +1238,14 @@ router.post("/webhook", async (req, res) => {
       if (awaitingCol) {
         await db.update(mastersTable).set({
           voronkaColumnId: awaitingCol.id,
-        }).where(eq(mastersTable.id, master.id));
+        }).where(eq(mastersTable.id, amountMaster.id));
       }
       // If column doesn't exist — leave master in current column (don't move to free)
 
       pendingState.delete(chatId);
 
       // Log to CRM chat
-      await logToChat(master.id, chatId,
+      await logToChat(amountMaster.id, chatId,
         `💰 Завершил заказ #${orderId}. Предложенная сумма: ${amount.toLocaleString("ru-RU")} ₽`
       );
 
