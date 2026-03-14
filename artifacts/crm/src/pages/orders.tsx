@@ -6,6 +6,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { formatDate } from "@/lib/utils";
 import {
   Loader2, MapPin, Send, Users, CheckCircle2, Clock, X, UserCheck,
+  DollarSign, Check, Pencil,
 } from "lucide-react";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 
@@ -36,11 +37,17 @@ function DispatchBadge({ status }: { status: string }) {
   return null;
 }
 
+function fmt(n: number) {
+  return n.toLocaleString("ru-RU") + " ₽";
+}
+
 export default function Orders() {
   const [openDispatchId, setOpenDispatchId] = useState<number | null>(null);
+  const [editAmountId, setEditAmountId] = useState<number | null>(null);
+  const [editAmountValue, setEditAmountValue] = useState("");
   const queryClient = useQueryClient();
 
-  const { data: orders, isLoading } = useGetOrders({}, { query: { refetchInterval: 10000 } });
+  const { data: orders, isLoading } = useGetOrders({}, { query: { refetchInterval: 8000 } });
   const { data: dispatchData, isLoading: dispatchLoading } = useDispatch(openDispatchId);
 
   const broadcastMutation = useMutation({
@@ -67,8 +74,42 @@ export default function Orders() {
     },
   });
 
+  const acceptProposedMutation = useMutation({
+    mutationFn: async (orderId: number) => {
+      const r = await fetch(`/api/orders/${orderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ acceptProposed: true }),
+      });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Ошибка"); }
+      return r.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/orders"] }),
+  });
+
+  const setAmountMutation = useMutation({
+    mutationFn: async ({ orderId, amount }: { orderId: number; amount: number }) => {
+      const r = await fetch(`/api/orders/${orderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ orderAmount: amount }),
+      });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Ошибка"); }
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      setEditAmountId(null);
+      setEditAmountValue("");
+    },
+  });
+
   const openOrder = openDispatchId ? orders?.find(o => o.id === openDispatchId) : null;
   const respondents = dispatchData?.dispatches.filter(d => d.status === "responded") ?? [];
+
+  const pendingAmountOrders = orders?.filter(o => (o as any).proposedAmount && !(o as any).orderAmount) ?? [];
 
   return (
     <ProtectedRoute allowedRoles={['admin', 'master_operator']}>
@@ -78,6 +119,50 @@ export default function Orders() {
             <h1 className="text-3xl font-display font-bold text-foreground">Буфер заказов</h1>
             <p className="text-muted-foreground mt-1">Распределение заказов по мастерам</p>
           </div>
+
+          {/* Proposed amount banner */}
+          {pendingAmountOrders.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-2">
+              <div className="flex items-center gap-2 text-amber-800 font-semibold text-sm mb-1">
+                <DollarSign className="w-4 h-4" />
+                {pendingAmountOrders.length === 1
+                  ? "1 заказ ожидает подтверждения суммы"
+                  : `${pendingAmountOrders.length} заказа ожидают подтверждения суммы`}
+              </div>
+              {pendingAmountOrders.map(order => (
+                <div key={order.id} className="flex items-center justify-between bg-white rounded-xl border border-amber-100 px-4 py-3">
+                  <div>
+                    <span className="font-medium text-foreground">#{order.id}</span>
+                    <span className="mx-2 text-muted-foreground">·</span>
+                    <span className="text-foreground">{order.serviceType}</span>
+                    <span className="mx-2 text-muted-foreground">·</span>
+                    <span className="text-amber-700 font-semibold">{fmt(Number((order as any).proposedAmount))}</span>
+                    <span className="ml-2 text-xs text-muted-foreground">предложил мастер {order.masterName}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => acceptProposedMutation.mutate(order.id)}
+                      disabled={acceptProposedMutation.isPending}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-500 text-white hover:bg-green-600 rounded-lg font-medium text-xs transition-colors disabled:opacity-50"
+                    >
+                      {acceptProposedMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                      Принять
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditAmountId(order.id);
+                        setEditAmountValue(String((order as any).proposedAmount));
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg font-medium text-xs transition-colors"
+                    >
+                      <Pencil className="w-3 h-3" />
+                      Изменить
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="bg-card rounded-2xl border border-border/50 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
@@ -89,26 +174,29 @@ export default function Orders() {
                     <th className="px-6 py-4">Услуга / Объем</th>
                     <th className="px-6 py-4">Статус</th>
                     <th className="px-6 py-4">Мастер</th>
+                    <th className="px-6 py-4">Сумма</th>
                     <th className="px-6 py-4 text-right">Рассылка</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/50">
                   {isLoading ? (
                     <tr>
-                      <td colSpan={6} className="px-6 py-12 text-center">
+                      <td colSpan={7} className="px-6 py-12 text-center">
                         <Loader2 className="w-6 h-6 animate-spin text-primary mx-auto" />
                       </td>
                     </tr>
                   ) : orders?.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-6 py-12 text-center text-muted-foreground">
+                      <td colSpan={7} className="px-6 py-12 text-center text-muted-foreground">
                         Заказов в буфере нет
                       </td>
                     </tr>
                   ) : orders?.map((order) => {
                     const ds = (order as any).dispatchStatus ?? "none";
+                    const proposed = (order as any).proposedAmount ? Number((order as any).proposedAmount) : null;
+                    const confirmed = (order as any).orderAmount ? Number((order as any).orderAmount) : null;
                     return (
-                      <tr key={order.id} className="hover:bg-slate-50/50 transition-colors">
+                      <tr key={order.id} className={`hover:bg-slate-50/50 transition-colors ${proposed && !confirmed ? "bg-amber-50/30" : ""}`}>
                         <td className="px-6 py-4">
                           <span className="font-medium text-foreground">#{order.id}</span>
                           <div className="text-xs text-muted-foreground mt-1">{formatDate(order.createdAt)}</div>
@@ -132,6 +220,25 @@ export default function Orders() {
                             <span className="font-medium">{order.masterName}</span>
                           ) : (
                             <span className="text-muted-foreground italic">Не назначен</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          {confirmed ? (
+                            <div>
+                              <span className="font-semibold text-foreground">{fmt(confirmed)}</span>
+                              {(order as any).commission && (
+                                <div className="text-xs text-muted-foreground mt-0.5">ком. {fmt(Number((order as any).commission))}</div>
+                              )}
+                            </div>
+                          ) : proposed ? (
+                            <div className="space-y-1">
+                              <span className="inline-flex items-center gap-1 text-[10px] bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2 py-0.5 font-medium">
+                                <DollarSign className="w-3 h-3" />Предложено
+                              </span>
+                              <div className="font-semibold text-amber-700">{fmt(proposed)}</div>
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
                           )}
                         </td>
                         <td className="px-6 py-4 text-right">
@@ -167,12 +274,65 @@ export default function Orders() {
           </div>
         </div>
 
+        {/* Edit amount modal */}
+        {editAmountId && (
+          <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-card rounded-3xl border border-border shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+              <div className="px-6 py-4 border-b border-border/50 flex items-center justify-between">
+                <h2 className="font-display font-bold text-lg">Изменить сумму</h2>
+                <button onClick={() => { setEditAmountId(null); setEditAmountValue(""); }} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100">
+                  <X className="w-4 h-4 text-muted-foreground" />
+                </button>
+              </div>
+              <div className="p-6 space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Укажите итоговую стоимость заказа #{editAmountId}. Комиссия будет пересчитана автоматически.
+                </p>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min={0}
+                    value={editAmountValue}
+                    onChange={e => setEditAmountValue(e.target.value)}
+                    placeholder="Введите сумму..."
+                    className="w-full pr-8 pl-4 py-2.5 rounded-xl border border-border focus:border-primary focus:ring-1 focus:ring-primary outline-none"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">₽</span>
+                </div>
+                {setAmountMutation.isError && (
+                  <p className="text-sm text-destructive">{(setAmountMutation.error as Error).message}</p>
+                )}
+                <div className="flex gap-3 justify-end">
+                  <button
+                    onClick={() => { setEditAmountId(null); setEditAmountValue(""); }}
+                    className="px-4 py-2 rounded-xl text-sm font-medium text-muted-foreground hover:bg-slate-100"
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    onClick={() => {
+                      const amt = parseFloat(editAmountValue);
+                      if (!isNaN(amt) && amt > 0 && editAmountId) {
+                        setAmountMutation.mutate({ orderId: editAmountId, amount: amt });
+                      }
+                    }}
+                    disabled={setAmountMutation.isPending || !editAmountValue || parseFloat(editAmountValue) <= 0}
+                    className="px-4 py-2 rounded-xl text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {setAmountMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                    Сохранить
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Dispatch Panel */}
         {openDispatchId && openOrder && (
           <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="bg-card rounded-3xl border border-border shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
 
-              {/* Header */}
               <div className="px-6 py-4 border-b border-border/50 flex items-center justify-between">
                 <div>
                   <h2 className="text-lg font-display font-bold text-foreground">Рассылка заявки #{openDispatchId}</h2>
@@ -185,11 +345,10 @@ export default function Orders() {
 
               <div className="p-6 space-y-4">
 
-                {/* Broadcast button if not yet dispatched */}
                 {((openOrder as any).dispatchStatus ?? "none") === "none" && (
                   <div className="space-y-3">
                     <p className="text-sm text-muted-foreground">
-                      Заявка будет отправлена всем активным мастерам в боте. Телефон клиента скрыт — он передаётся только после назначения.
+                      Заявка будет отправлена активным мастерам в городе <b>{openOrder.city}</b>. Телефон клиента скрыт — передаётся только после назначения.
                     </p>
                     {broadcastMutation.isError && (
                       <p className="text-sm text-red-500">{(broadcastMutation.error as Error).message}</p>
@@ -198,7 +357,7 @@ export default function Orders() {
                       <div className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl p-3 space-y-0.5">
                         <p>✅ Разослано: <b>{broadcastMutation.data?.sent}</b> мастеров</p>
                         {broadcastMutation.data?.skipped > 0 && (
-                          <p className="text-muted-foreground text-xs">⏭ Пропущено {broadcastMutation.data.skipped} — достигли лимита заказов или не оплатили комиссию</p>
+                          <p className="text-muted-foreground text-xs">⏭ Пропущено {broadcastMutation.data.skipped} — достигли лимита заказов</p>
                         )}
                       </div>
                     )}
@@ -213,7 +372,6 @@ export default function Orders() {
                   </div>
                 )}
 
-                {/* Respondents list */}
                 {((openOrder as any).dispatchStatus ?? "none") !== "none" && (
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
@@ -262,7 +420,6 @@ export default function Orders() {
                       </div>
                     )}
 
-                    {/* All dispatches */}
                     {(dispatchData?.dispatches.length ?? 0) > 0 && (
                       <details className="text-xs text-muted-foreground">
                         <summary className="cursor-pointer hover:text-foreground">Все получившие заявку ({dispatchData?.dispatches.length})</summary>

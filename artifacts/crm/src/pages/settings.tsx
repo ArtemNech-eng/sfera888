@@ -23,7 +23,8 @@ function useCommission() {
   });
 }
 
-function formatNum(n: number) {
+function formatNum(n: number | undefined | null) {
+  if (n == null || isNaN(n)) return "—";
   return n.toLocaleString("ru-RU");
 }
 

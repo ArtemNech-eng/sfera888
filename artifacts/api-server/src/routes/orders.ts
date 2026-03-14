@@ -45,6 +45,7 @@ router.get("/", allOrderRoles, async (req, res) => {
     dispatchStatus: o.dispatchStatus,
     masterId: o.masterId ?? null,
     masterName: o.masterId ? (masterMap.get(o.masterId)?.alias ?? null) : null,
+    proposedAmount: o.proposedAmount ? Number(o.proposedAmount) : null,
     orderAmount: o.orderAmount ? Number(o.orderAmount) : null,
     commission: o.commission ? Number(o.commission) : null,
     clientRating: o.clientRating ?? null,
@@ -85,7 +86,7 @@ router.get("/:id", allOrderRoles, async (req, res) => {
 
 router.patch("/:id", allOrderRoles, async (req, res) => {
   const id = parseInt(req.params.id);
-  const { status, orderAmount, commission, clientRating } = req.body;
+  const { status, orderAmount, commission, clientRating, proposedAmount, acceptProposed } = req.body;
 
   // Fetch current order to get masterId before update
   const currentRows = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
@@ -94,13 +95,24 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
 
   const updates: any = { updatedAt: new Date() };
   if (status !== undefined) updates.status = status;
-  if (orderAmount !== undefined) updates.orderAmount = orderAmount !== null ? String(orderAmount) : null;
-  if (commission !== undefined) {
-    updates.commission = commission !== null ? String(commission) : null;
-  } else if (orderAmount !== undefined && orderAmount !== null) {
-    // Auto-calculate commission from current settings when amount is set
+  if (proposedAmount !== undefined) updates.proposedAmount = proposedAmount !== null ? String(proposedAmount) : null;
+
+  // "Accept proposed" — copy proposedAmount → orderAmount and auto-calc commission
+  if (acceptProposed && current.proposedAmount) {
+    const amt = Number(current.proposedAmount);
+    updates.orderAmount = String(amt);
     const commSettings = await getCommissionSettings();
-    updates.commission = String(calculateCommission(Number(orderAmount), commSettings));
+    updates.commission = String(calculateCommission(amt, commSettings));
+  } else if (orderAmount !== undefined) {
+    updates.orderAmount = orderAmount !== null ? String(orderAmount) : null;
+    if (commission !== undefined) {
+      updates.commission = commission !== null ? String(commission) : null;
+    } else if (orderAmount !== null) {
+      const commSettings = await getCommissionSettings();
+      updates.commission = String(calculateCommission(Number(orderAmount), commSettings));
+    }
+  } else if (commission !== undefined) {
+    updates.commission = commission !== null ? String(commission) : null;
   }
   if (clientRating !== undefined) updates.clientRating = clientRating;
 

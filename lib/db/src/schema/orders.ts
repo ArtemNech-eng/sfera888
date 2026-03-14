@@ -23,6 +23,7 @@ export const ordersTable = pgTable("orders", {
   comment: text("comment"),
   status: orderStatusEnum("status").notNull().default("waiting_master"),
   masterId: integer("master_id").references(() => mastersTable.id),
+  proposedAmount: numeric("proposed_amount", { precision: 12, scale: 2 }),
   orderAmount: numeric("order_amount", { precision: 12, scale: 2 }),
   commission: numeric("commission", { precision: 12, scale: 2 }),
   clientRating: integer("client_rating"),

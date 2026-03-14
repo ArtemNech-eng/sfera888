@@ -30,7 +30,8 @@ type BotState =
   | { step: "awaiting_message"; masterId: number }
   | { step: "awaiting_phone"; masterId: number }
   | { step: "confirming_phone"; masterId: number; phone: string }
-  | { step: "awaiting_photo"; masterId: number };
+  | { step: "awaiting_photo"; masterId: number }
+  | { step: "awaiting_amount"; masterId: number; orderId: number };
 
 const pendingState = new Map<string, BotState>();
 
@@ -874,32 +875,34 @@ async function handleCallback(callbackQuery: any) {
 
   if (data.startsWith("complete_order_")) {
     const orderId = parseInt(data.replace("complete_order_", ""));
-    await answerCallback(cbId, "⏳ Обрабатываем...");
 
     const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
     const order = orderRows[0];
 
     if (!order || order.masterId !== master.id) {
-      await sendMessage(chatId, "❌ Заказ не найден или не ваш.");
+      await answerCallback(cbId, "❌ Заказ не найден или не ваш");
       return;
     }
 
-    // Complete order
-    await db.update(ordersTable).set({
-      status: "completed",
-      updatedAt: new Date(),
-    }).where(eq(ordersTable.id, orderId));
-
-    // Move master back to free column
-    const freeCol = await getFreeColumn();
-    await db.update(mastersTable).set({
-      voronkaColumnId: freeCol?.id ?? master.voronkaColumnId,
-    }).where(eq(mastersTable.id, master.id));
-
+    // Ask master to enter the final work amount
+    await answerCallback(cbId);
+    pendingState.set(chatId, { step: "awaiting_amount", masterId: master.id, orderId });
     await editMessage(chatId, messageId,
-      `✅ <b>Заказ #${orderId} завершён!</b>\n\nОжидайте подтверждения оплаты от оператора.\n\nВаш новый статус: <b>${freeCol?.name ?? "Свободен"}</b>`,
-      mainMenuKeyboard()
+      `💰 <b>Завершение заказа #${orderId}</b>\n\n` +
+      `🔧 ${order.serviceType} — ${order.city}${order.district ? ", " + order.district : ""}\n\n` +
+      `Введите итоговую стоимость выполненных работ в рублях.\n` +
+      `<i>Пример: 35000</i>\n\n` +
+      `<b>Только цифры, без пробелов и знаков.</b>`,
+      { reply_markup: { inline_keyboard: [[{ text: "❌ Отмена", callback_data: `cancel_amount_${orderId}` }]] } }
     );
+    return;
+  }
+
+  if (data.startsWith("cancel_amount_")) {
+    const orderId = parseInt(data.replace("cancel_amount_", ""));
+    pendingState.delete(chatId);
+    await answerCallback(cbId);
+    await showMyOrders(chatId, master, messageId);
     return;
   }
 }
@@ -1119,6 +1122,60 @@ router.post("/webhook", async (req, res) => {
             ],
           },
         }
+      );
+      return;
+    }
+
+    // ── Awaiting order amount from master ────────────────────────────────────
+    if (state?.step === "awaiting_amount") {
+      const amount = parseFloat(text.replace(/\s+/g, "").replace(",", "."));
+      if (isNaN(amount) || amount <= 0 || amount > 100_000_000) {
+        await sendMessage(chatId,
+          `⚠️ Некорректная сумма. Введите только цифры, без пробелов и знаков.\n\n<i>Пример: 35000</i>`
+        );
+        return;
+      }
+
+      const { orderId } = state;
+      const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
+      const order = orderRows[0];
+
+      if (!order || order.masterId !== master.id) {
+        await sendMessage(chatId, "❌ Заказ не найден или не ваш.");
+        pendingState.delete(chatId);
+        return;
+      }
+
+      // Save proposed amount and mark order completed
+      const { calculateCommission, getCommissionSettings } = await import("../lib/commission.js");
+      const commSettings = await getCommissionSettings();
+      const autoCommission = calculateCommission(amount, commSettings);
+
+      await db.update(ordersTable).set({
+        proposedAmount: String(amount),
+        status: "completed",
+        updatedAt: new Date(),
+      }).where(eq(ordersTable.id, orderId));
+
+      // Move master back to free column
+      const freeCol = await getFreeColumn();
+      await db.update(mastersTable).set({
+        voronkaColumnId: freeCol?.id ?? master.voronkaColumnId,
+      }).where(eq(mastersTable.id, master.id));
+
+      pendingState.delete(chatId);
+
+      // Log to CRM chat
+      await logToChat(master.id, chatId,
+        `💰 Завершил заказ #${orderId}. Предложенная сумма: ${amount.toLocaleString("ru-RU")} ₽`
+      );
+
+      await sendMessage(chatId,
+        `✅ <b>Заказ #${orderId} завершён!</b>\n\n` +
+        `💰 Сумма <b>${amount.toLocaleString("ru-RU")} ₽</b> отправлена оператору на проверку.\n` +
+        `🔸 Комиссия (предварительно): <b>${autoCommission.toLocaleString("ru-RU")} ₽</b>\n\n` +
+        `После подтверждения оператором комиссия будет начислена.\n\nВаш новый статус: <b>${freeCol?.name ?? "Свободен"}</b>`,
+        mainMenuKeyboard()
       );
       return;
     }
