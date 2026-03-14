@@ -38,38 +38,73 @@ artifacts-monorepo/
 
 1. **admin** (login: `admin`, pass: `admin123`) — Full access
 2. **lead_operator** (login: `operator1`, pass: `operator123`) — Leads management
-3. **master_operator** (login: `master_op`, pass: `master123`) — Order buffer & masters
+3. **master_operator** (login: `master_op`, pass: `master123`) — Masters & orders
 
-## CRM Features
+## DB Tables
 
-- **Dashboard** (admin): stats cards, top masters, sales funnel
-- **Leads** (admin, lead_operator): manage incoming leads, create new, change status, send to buffer
-- **Order Buffer** (admin, master_operator): anonymized orders, assign masters
-- **Masters** (admin, master_operator): master list with rating, status
-- **Finance** (admin): transactions table, commission tracking
-- **Analytics** (admin): sales funnel chart, master ratings
-- **Settings** (admin): manage cities and service types
-- **Users** (admin): manage operators
+- `users` — CRM users
+- `leads` — Incoming leads/requests from clients
+- `orders` — Orders sent to buffer from leads
+- `masters` — Masters with voronka_column_id, is_test_master, telegram_id
+- `transactions` — Commission transactions
+- `cities`, `service_types` — Settings
+- `telegram_chats`, `telegram_messages` — Telegram operator chat history
+- `voronka_columns` — Configurable Kanban columns for masters board
 
-## DB Schema
+## Telegram Bot
 
-- `users` - System users (admin, lead_operator, master_operator)
-- `leads` - Client applications with contact info
-- `orders` - Anonymized order buffer (without client contacts)
-- `masters` - Master workers
-- `transactions` - Commission transactions
-- `cities` - City settings
-- `service_types` - Service type settings
+- **Token**: stored as `TELEGRAM_BOT_TOKEN` env var
+- **Webhook**: set to `https://{domain}/api/telegram/webhook`
+- **allowed_updates**: `["message", "callback_query"]`
 
-## Commission Rules
+### Bot Commands
 
-- Order ≤ 50,000₽ → 5,000₽ fixed
-- Order 50,001–100,000₽ → 15%
-- Order > 100,000₽ → Manual entry (default 15%)
+- `/start` — Register new master → placed in column 1 ("Новые"); existing master → welcome back
+- `/orders` — Show available orders (only if column has receivesOrders=true)
+- `/myorders` — Show active orders with client name + phone
+- `/profile` — Show master profile, rating, debt
+- `/menu` — Show inline menu
 
-## Running
+### Order Flow via Bot
 
-- API: `pnpm --filter @workspace/api-server run dev`
-- Frontend: `pnpm --filter @workspace/crm run dev`
-- Seed DB: `pnpm --filter @workspace/scripts run seed`
-- Push DB schema: `pnpm --filter @workspace/db run push`
+1. Master sends `/start` → created in DB → placed in "Новые" column → board updates
+2. Operator moves master to "Свободен" (receivesOrders=true) column
+3. Master presses "Доступные заказы" → sees list with take buttons
+4. Master presses "Взять заказ" → order assigned, master auto-moved to "На объекте" column
+5. Master presses "Завершить заказ" → order completed, master auto-moved back to "Свободен"
+
+### Order Limits
+
+- **Test master** (`is_test_master=true`): max 1 active order; unlocked when commission paid
+- **Regular master** (`is_test_master=false`): max 2 active orders simultaneously
+- Masters in columns with `receivesOrders=false` cannot take orders (blocked in API and bot)
+
+## Voronka (Masters Kanban Board)
+
+- Fully configurable columns (add, rename, reorder, delete, color, receivesOrders flag)
+- Default columns: Новые (pos 1), Свободен (pos 2, receivesOrders=true), На объекте (pos 3), Отстранён (pos 4)
+- Auto-refreshes every 7 seconds
+- Shows active orders on each master card with client phone/name
+- Masters can be moved between columns via dropdown on card
+
+## Key API Routes
+
+- `POST /api/auth/login` — Login
+- `GET /api/voronka/columns` — List Kanban columns
+- `POST /api/voronka/columns` — Create column
+- `PATCH /api/voronka/columns/:id` — Update column
+- `POST /api/voronka/columns/reorder` — Reorder columns
+- `DELETE /api/voronka/columns/:id` — Delete column
+- `GET /api/voronka/masters` — Masters with active orders info
+- `PATCH /api/voronka/masters/:id/column` — Move master to column
+- `POST /api/telegram/webhook` — Telegram webhook (no auth)
+- `POST /api/telegram/setup-webhook` — Re-register webhook
+- `POST /api/telegram/notify-new-order` — Notify free masters of new order
+- `POST /api/orders/:id/assign-master` — Assign master (enforces column + limit rules)
+
+## Commission Logic
+
+- ≤50,000₽ → fixed 5,000₽
+- 50,001–100,000₽ → 15%
+- >100,000₽ → manual (defaults to 15%)
+- When commission marked as "paid" → `is_test_master` set to false
