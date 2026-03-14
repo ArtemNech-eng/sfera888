@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Layout } from "@/components/layout";
 import { ProtectedRoute } from "@/hooks/use-auth";
 import { useAuth } from "@/hooks/use-auth";
-import { Send, MessageSquare, RefreshCw, Check, CheckCheck, Paperclip, X, Image } from "lucide-react";
+import { Send, MessageSquare, RefreshCw, Check, CheckCheck, Paperclip, X, Image, Camera } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
 
@@ -75,8 +75,10 @@ export default function MasterChat() {
   const [loading, setLoading] = useState(true);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   const fetchThreads = useCallback(async () => {
     const r = await fetch("/api/master-chat");
@@ -143,6 +145,21 @@ export default function MasterChat() {
       }
     } finally {
       setSending(false);
+    }
+  };
+
+  const uploadAvatar = async (file: File) => {
+    if (!selectedId) return;
+    setAvatarUploading(true);
+    try {
+      const form = new FormData();
+      form.append("avatar", file);
+      const r = await fetch(`/api/masters/${selectedId}/avatar`, { method: "POST", body: form });
+      if (r.ok) {
+        await Promise.all([fetchConversation(selectedId), fetchThreads()]);
+      }
+    } finally {
+      setAvatarUploading(false);
     }
   };
 
@@ -232,7 +249,27 @@ export default function MasterChat() {
                   {/* Conv header */}
                   {conv && (
                     <div className="px-4 py-3 border-b border-gray-50 flex items-center gap-3 flex-shrink-0">
-                      <ChatAvatar name={conv.master.alias} id={conv.master.id} avatarUrl={conv.master.avatarUrl} size={38} />
+                      {/* Clickable avatar — click to upload photo */}
+                      <input
+                        ref={avatarInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={e => { const f = e.target.files?.[0]; if (f) uploadAvatar(f); e.target.value = ""; }}
+                      />
+                      <button
+                        onClick={() => avatarInputRef.current?.click()}
+                        className="relative group flex-shrink-0"
+                        title="Загрузить фото мастера"
+                        disabled={avatarUploading}
+                      >
+                        <ChatAvatar name={conv.master.alias} id={conv.master.id} avatarUrl={conv.master.avatarUrl} size={38} />
+                        <span className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          {avatarUploading
+                            ? <RefreshCw className="w-4 h-4 text-white animate-spin" />
+                            : <Camera className="w-4 h-4 text-white" />}
+                        </span>
+                      </button>
                       <div>
                         <p className="font-semibold text-sm text-gray-800">{conv.master.alias}</p>
                         <p className="text-[11px] text-gray-400">

@@ -2,6 +2,27 @@ import { Router } from "express";
 import { db, mastersTable, masterTasksTable, ordersTable, leadsTable } from "@workspace/db";
 import { eq, desc, inArray } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
+import multer from "multer";
+import path from "path";
+import { fileURLToPath } from "url";
+import fs from "fs";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const UPLOAD_DIR = path.join(__dirname, "../../../public/uploads/avatars");
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+const avatarStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
+  filename: (req, _file, cb) => cb(null, `master-${req.params.id}-${Date.now()}.jpg`),
+});
+const avatarUpload = multer({
+  storage: avatarStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith("image/")) cb(null, true);
+    else cb(new Error("Only images allowed"));
+  },
+});
 
 const router = Router();
 const allMasterRoles = requireRole("admin", "master_operator");
@@ -24,6 +45,7 @@ function formatMaster(m: any) {
     debt: Number(m.debt),
     voronkaColumnId: m.voronkaColumnId ?? null,
     isTestMaster: m.isTestMaster,
+    customAvatarUrl: m.customAvatarUrl ?? null,
     createdAt: m.createdAt,
   };
 }
@@ -174,6 +196,43 @@ router.patch("/:id/tasks/:taskId", allMasterRoles, async (req, res) => {
 router.delete("/:id/tasks/:taskId", allMasterRoles, async (req, res) => {
   const taskId = parseInt(req.params.taskId);
   await db.delete(masterTasksTable).where(eq(masterTasksTable.id, taskId));
+  res.json({ success: true });
+});
+
+// POST /api/masters/:id/avatar — upload custom avatar photo
+router.post("/:id/avatar", allMasterRoles, avatarUpload.single("avatar"), async (req, res) => {
+  const masterId = parseInt(req.params.id);
+  if (isNaN(masterId)) return res.status(400).json({ error: "Invalid id" });
+  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+  // Build public URL — served at /api/uploads/avatars/<filename> (Replit routes /api/* to this server)
+  const avatarUrl = `/api/uploads/avatars/${req.file.filename}`;
+
+  const [updated] = await db.update(mastersTable)
+    .set({ customAvatarUrl: avatarUrl })
+    .where(eq(mastersTable.id, masterId))
+    .returning();
+
+  if (!updated) return res.status(404).json({ error: "Master not found" });
+  res.json({ customAvatarUrl: avatarUrl });
+});
+
+// DELETE /api/masters/:id/avatar — remove custom avatar
+router.delete("/:id/avatar", allMasterRoles, async (req, res) => {
+  const masterId = parseInt(req.params.id);
+  if (isNaN(masterId)) return res.status(400).json({ error: "Invalid id" });
+
+  const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
+  if (!master) return res.status(404).json({ error: "Master not found" });
+
+  // Delete file from disk if it's a local upload
+  if (master.customAvatarUrl?.includes("/uploads/avatars/")) {
+    const filename = master.customAvatarUrl.split("/uploads/avatars/")[1];
+    const filePath = path.join(UPLOAD_DIR, filename);
+    try { fs.unlinkSync(filePath); } catch {}
+  }
+
+  await db.update(mastersTable).set({ customAvatarUrl: null }).where(eq(mastersTable.id, masterId));
   res.json({ success: true });
 });
 

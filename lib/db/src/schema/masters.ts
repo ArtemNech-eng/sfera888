@@ -21,6 +21,7 @@ export const mastersTable = pgTable("masters", {
   voronkaColumnId: integer("voronka_column_id"),
   isTestMaster: boolean("is_test_master").notNull().default(true),
   tags: text("tags").array().notNull().default([]),
+  customAvatarUrl: text("custom_avatar_url"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

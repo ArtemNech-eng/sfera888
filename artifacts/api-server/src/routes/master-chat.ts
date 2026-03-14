@@ -59,7 +59,7 @@ router.get("/", requireRole("admin", "master_operator"), async (_req, res) => {
         .from(telegramChatsTable)
         .where(inArray(telegramChatsTable.telegramChatId, telegramIds))
     : [];
-  const avatarMap = new Map(tgChats.map(c => [c.telegramChatId, c.avatarUrl ?? null]));
+  const tgAvatarMap = new Map(tgChats.map(c => [c.telegramChatId, c.avatarUrl ?? null]));
 
   const threadMap = new Map<number, { lastMessage: string; lastAt: Date; unread: number; telegramChatId: string }>();
   for (const msg of messages) {
@@ -78,7 +78,8 @@ router.get("/", requireRole("admin", "master_operator"), async (_req, res) => {
 
   const threads = Array.from(threadMap.entries()).map(([masterId, info]) => {
     const master = masterMap.get(masterId);
-    const avatarUrl = master?.telegramId ? (avatarMap.get(master.telegramId) ?? null) : null;
+    const tgAvatar = master?.telegramId ? (tgAvatarMap.get(master.telegramId) ?? null) : null;
+    const avatarUrl = tgAvatar ?? master?.customAvatarUrl ?? null;
     return {
       masterId,
       alias: master?.alias ?? "Неизвестный мастер",
@@ -114,13 +115,13 @@ router.get("/:masterId", requireRole("admin", "master_operator"), async (req, re
   const master = masterRows[0];
   if (!master) return res.status(404).json({ error: "Master not found" });
 
-  // Lookup avatarUrl from telegram_chats
-  let avatarUrl: string | null = null;
+  // Lookup avatarUrl from telegram_chats, then fall back to custom avatar
+  let avatarUrl: string | null = master.customAvatarUrl ?? null;
   if (master.telegramId) {
     const tgRows = await db.select({ avatarUrl: telegramChatsTable.avatarUrl })
       .from(telegramChatsTable)
       .where(eq(telegramChatsTable.telegramChatId, master.telegramId));
-    avatarUrl = tgRows[0]?.avatarUrl ?? null;
+    avatarUrl = tgRows[0]?.avatarUrl ?? master.customAvatarUrl ?? null;
   }
 
   res.json({
