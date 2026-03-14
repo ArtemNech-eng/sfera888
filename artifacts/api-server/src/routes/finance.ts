@@ -5,8 +5,9 @@ import { requireRole } from "../middlewares/requireAuth.js";
 
 const router = Router();
 const adminOnly = requireRole("admin");
+const opsAndAdmin = requireRole("admin", "master_operator");
 
-router.get("/transactions", adminOnly, async (req, res) => {
+router.get("/transactions", opsAndAdmin, async (req, res) => {
   const { masterId, status, from, to } = req.query;
 
   let rows = await db.select().from(transactionsTable).orderBy(transactionsTable.createdAt);
@@ -32,7 +33,7 @@ router.get("/transactions", adminOnly, async (req, res) => {
   })));
 });
 
-router.patch("/transactions/:id", adminOnly, async (req, res) => {
+router.patch("/transactions/:id", opsAndAdmin, async (req, res) => {
   const id = parseInt(req.params.id);
   const { paymentStatus, commission } = req.body;
   const updates: any = {};

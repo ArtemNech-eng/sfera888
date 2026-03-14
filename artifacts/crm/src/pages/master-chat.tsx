@@ -46,6 +46,15 @@ interface PendingOrder {
   cancelReason: string | null;
 }
 
+interface PendingTransaction {
+  id: number;
+  orderId: number;
+  orderAmount: number;
+  commission: number;
+  paymentStatus: string;
+  createdAt: string;
+}
+
 // Inline avatar — falls back to coloured initials
 function ChatAvatar({ name, id, avatarUrl, size = 32 }: { name: string; id: number; avatarUrl?: string | null; size?: number }) {
   const [failed, setFailed] = useState(false);
@@ -87,6 +96,7 @@ export default function MasterChat() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [conv, setConv] = useState<ConversationData | null>(null);
   const [pendingOrders, setPendingOrders] = useState<PendingOrder[]>([]);
+  const [pendingTransactions, setPendingTransactions] = useState<PendingTransaction[]>([]);
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -180,18 +190,32 @@ export default function MasterChat() {
     } catch {}
   }, []);
 
+  // Load pending commission transactions for selected master
+  const fetchPendingTransactions = useCallback(async (masterId: number) => {
+    try {
+      const r = await fetch(`/api/finance/transactions?masterId=${masterId}&status=pending`, { credentials: "include" });
+      if (r.ok) {
+        const data = await r.json();
+        setPendingTransactions(data);
+      }
+    } catch {}
+  }, []);
+
   useEffect(() => {
     if (selectedId) {
       fetchPendingOrders(selectedId);
       fetchRespondedOrders(selectedId);
+      fetchPendingTransactions(selectedId);
       const t1 = setInterval(() => fetchPendingOrders(selectedId), 8000);
       const t2 = setInterval(() => fetchRespondedOrders(selectedId), 7000);
-      return () => { clearInterval(t1); clearInterval(t2); };
+      const t3 = setInterval(() => fetchPendingTransactions(selectedId), 9000);
+      return () => { clearInterval(t1); clearInterval(t2); clearInterval(t3); };
     } else {
       setPendingOrders([]);
       setRespondedOrders([]);
+      setPendingTransactions([]);
     }
-  }, [selectedId, fetchPendingOrders, fetchRespondedOrders]);
+  }, [selectedId, fetchPendingOrders, fetchRespondedOrders, fetchPendingTransactions]);
 
   // Mutations for order actions in chat
   const approveCancellationMutation = useMutation({
@@ -227,7 +251,34 @@ export default function MasterChat() {
       if (!r.ok) throw new Error("Ошибка");
       return r.json();
     },
-    onSuccess: () => selectedId && fetchPendingOrders(selectedId),
+    onSuccess: () => {
+      if (selectedId) {
+        fetchPendingOrders(selectedId);
+        // Wait briefly for transaction to be created, then refresh
+        setTimeout(() => fetchPendingTransactions(selectedId), 600);
+      }
+    },
+  });
+
+  const confirmPaymentMutation = useMutation({
+    mutationFn: async (txId: number) => {
+      const r = await fetch(`/api/finance/transactions/${txId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        credentials: "include", body: JSON.stringify({ paymentStatus: "paid" }),
+      });
+      if (!r.ok) throw new Error("Ошибка подтверждения оплаты");
+      return r.json();
+    },
+    onSuccess: () => {
+      if (selectedId) {
+        fetchPendingTransactions(selectedId);
+        // Refresh threads to update master's column display
+        fetch("/api/messages/threads", { credentials: "include" })
+          .then(r => r.ok ? r.json() : null)
+          .then(data => data && setThreads(data))
+          .catch(() => {});
+      }
+    },
   });
 
   const setAmountMutation = useMutation({
@@ -517,6 +568,44 @@ export default function MasterChat() {
                               Назначить
                             </button>
                           </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Commission payment receipt cards */}
+                  {pendingTransactions.length > 0 && (
+                    <div className="border-t border-gray-100 px-4 py-3 space-y-2 flex-shrink-0">
+                      {pendingTransactions.map(tx => (
+                        <div key={tx.id} className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 space-y-3">
+                          {/* Header */}
+                          <div className="flex items-center gap-2">
+                            <DollarSign className="w-4 h-4 text-violet-600 flex-shrink-0" />
+                            <span className="text-xs font-semibold text-violet-800">Оплата комиссии по заказу #{tx.orderId}</span>
+                          </div>
+                          {/* Receipt body */}
+                          <div className="bg-white rounded-lg border border-violet-100 px-3 py-2.5 space-y-1.5">
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-gray-500">Стоимость работ</span>
+                              <span className="font-semibold text-gray-800">{fmt(tx.orderAmount)}</span>
+                            </div>
+                            <div className="border-t border-dashed border-gray-100 my-1" />
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-gray-500">Комиссия (к оплате)</span>
+                              <span className="font-bold text-violet-700 text-sm">{fmt(tx.commission)}</span>
+                            </div>
+                          </div>
+                          {/* Confirm button */}
+                          <button
+                            onClick={() => confirmPaymentMutation.mutate(tx.id)}
+                            disabled={confirmPaymentMutation.isPending}
+                            className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-violet-600 text-white hover:bg-violet-700 rounded-lg font-medium text-xs transition-colors disabled:opacity-50"
+                          >
+                            {confirmPaymentMutation.isPending
+                              ? <Loader2 className="w-3 h-3 animate-spin" />
+                              : <Check className="w-3 h-3" />}
+                            Подтвердить оплату
+                          </button>
                         </div>
                       ))}
                     </div>
