@@ -1,10 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { Layout } from "@/components/layout";
 import { ProtectedRoute } from "@/hooks/use-auth";
-import { useQueryClient } from "@tanstack/react-query";
-import { MessageSquare, Send, User, Clock, ChevronRight, X, RefreshCw, Check } from "lucide-react";
+import { MessageSquare, Send, User, X, RefreshCw, Check } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { ru } from "date-fns/locale/ru";
+import { ru } from "date-fns/locale";
 
 const STAGES = [
   { key: "new", label: "Новые диалоги", color: "border-t-blue-500", badge: "bg-blue-100 text-blue-700" },
