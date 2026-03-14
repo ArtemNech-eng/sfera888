@@ -227,6 +227,7 @@ function mainMenuKeyboard() {
       inline_keyboard: [
         [{ text: "📋 Доступные заказы", callback_data: "show_orders" }],
         [{ text: "📊 Мои активные заказы", callback_data: "my_orders" }],
+        [{ text: "💳 Неоплаченные заказы", callback_data: "my_unpaid" }],
         [{ text: "👤 Мой профиль", callback_data: "my_profile" }],
         [{ text: "✉️ Написать оператору", callback_data: "message_operator" }],
       ],
@@ -452,6 +453,50 @@ async function showMyOrders(chatId: string, master: any, messageId?: number) {
   await editOrSend(chatId, messageId, text.trimEnd(), { reply_markup: { inline_keyboard: [...buttons, backBtn] } });
 }
 
+// ─── Show unpaid orders ───────────────────────────────────────────────────────
+
+async function showUnpaidOrders(chatId: string, master: any, messageId?: number) {
+  const backBtn = [{ text: "« Меню", callback_data: "main_menu" }];
+
+  const unpaidTxs = await db.select().from(transactionsTable).where(and(
+    eq(transactionsTable.masterId, master.id),
+    eq(transactionsTable.paymentStatus, "pending")
+  ));
+
+  if (unpaidTxs.length === 0) {
+    await editOrSend(chatId, messageId, "✅ <b>Нет неоплаченных заказов</b>\n\nВсе комиссии оплачены.", { reply_markup: { inline_keyboard: [backBtn] } });
+    return;
+  }
+
+  const unpaidOrderIds = unpaidTxs.map(t => t.orderId);
+  const unpaidOrders = await db.select().from(ordersTable).where(inArray(ordersTable.id, unpaidOrderIds));
+  const txByOrder = new Map(unpaidTxs.map(t => [t.orderId, t]));
+
+  let text = `💳 <b>Неоплаченные комиссии (${unpaidOrders.length})</b>\n\n`;
+
+  for (const o of unpaidOrders) {
+    const tx = txByOrder.get(o.id);
+    text += `<b>Заказ #${o.id}: ${o.serviceType}</b>\n`;
+    text += `📍 ${o.city}, ${o.district}\n`;
+    if (tx) {
+      text += `💰 Стоимость работ: <b>${Number(tx.orderAmount).toLocaleString("ru-RU")} ₽</b>\n`;
+      text += `🔸 Комиссия: <b>${Number(tx.commission).toLocaleString("ru-RU")} ₽</b>\n`;
+    }
+    text += `\n`;
+  }
+
+  text += `📲 Реквизиты: <code>89892860863</code> · Альфа Банк · Игорь К.`;
+
+  await editOrSend(chatId, messageId, text, {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "📸 Отправить скриншот оплаты", callback_data: "send_payment_proof" }],
+        backBtn,
+      ],
+    },
+  });
+}
+
 // ─── Show master profile ──────────────────────────────────────────────────────
 
 async function showProfile(chatId: string, master: any, messageId?: number) {
@@ -662,6 +707,11 @@ async function handleCallback(callbackQuery: any) {
 
   if (data === "my_orders") {
     await showMyOrders(chatId, master, messageId);
+    return;
+  }
+
+  if (data === "my_unpaid") {
+    await showUnpaidOrders(chatId, master, messageId);
     return;
   }
 
