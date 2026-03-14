@@ -11,11 +11,40 @@ const TG_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
 const YANDEX_PAY_BASE = "https://sandbox.pay.yandex.ru/api/merchant/v1";
 
-// ─── In-memory store: txId → yandexPayOrderId ────────────────────────────────
-// Cleared on server restart; sufficient for the short payment window
-const pendingOrders = new Map<number, string>();
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-// ─── Create a Yandex Pay order ────────────────────────────────────────────────
+function orderIdForTx(transactionId: number) {
+  return `commission-${transactionId}`;
+}
+
+async function ypGet(path: string): Promise<any> {
+  const res = await fetch(`${YANDEX_PAY_BASE}${path}`, {
+    headers: {
+      Authorization: `Api-Key ${YANDEX_PAY_API_KEY}`,
+      "X-Request-Id": `get-${path}-${Date.now()}`,
+      "X-Request-Timeout": "10000",
+      "X-Request-Attempt": "0",
+    },
+  });
+  return res.json();
+}
+
+async function ypPost(path: string, body: object): Promise<any> {
+  const res = await fetch(`${YANDEX_PAY_BASE}${path}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Api-Key ${YANDEX_PAY_API_KEY}`,
+      "Content-Type": "application/json",
+      "X-Request-Id": `post-${path}-${Date.now()}`,
+      "X-Request-Timeout": "10000",
+      "X-Request-Attempt": "0",
+    },
+    body: JSON.stringify(body),
+  });
+  return res.json();
+}
+
+// ─── Create or retrieve Yandex Pay order, return paymentUrl ──────────────────
 
 export async function createYandexPayOrder(
   transactionId: number,
@@ -24,99 +53,91 @@ export async function createYandexPayOrder(
 ): Promise<string> {
   if (!YANDEX_PAY_API_KEY) throw new Error("YANDEX_PAY_API_KEY not set");
 
-  const orderId = `commission-${transactionId}-${Date.now()}`;
+  const orderId = orderIdForTx(transactionId);
   const amount = amountRub.toFixed(2);
 
-  const res = await fetch(`${YANDEX_PAY_BASE}/orders`, {
-    method: "POST",
-    headers: {
-      Authorization: `Api-Key ${YANDEX_PAY_API_KEY}`,
-      "Content-Type": "application/json",
-      "X-Request-Id": `${orderId}`,
-      "X-Request-Timeout": "10000",
-      "X-Request-Attempt": "0",
+  const data = await ypPost("/orders", {
+    orderId,
+    currencyCode: "RUB",
+    cart: {
+      items: [{ productId: orderId, title: description, quantity: { count: "1" }, total: amount }],
+      total: { amount },
     },
-    body: JSON.stringify({
-      orderId,
-      currencyCode: "RUB",
-      cart: {
-        items: [{
-          productId: orderId,
-          title: description,
-          quantity: { count: "1" },
-          total: amount,
-        }],
-        total: { amount },
-      },
-      redirectUrls: {
-        onSuccess: `https://${DOMAIN}/api/yandex-pay/success`,
-        onError: `https://${DOMAIN}/api/yandex-pay/error`,
-      },
-    }),
+    redirectUrls: {
+      onSuccess: `https://${DOMAIN}/api/yandex-pay/success`,
+      onError: `https://${DOMAIN}/api/yandex-pay/error`,
+    },
   });
 
-  const data = (await res.json()) as any;
-
+  // If order already exists — fetch it to get the existing paymentUrl
   if (data?.status !== "success") {
+    if (data?.reasonCode === "ORDER_ALREADY_EXISTS") {
+      console.log(`[yandex-pay] order ${orderId} already exists, fetching existing...`);
+      const existing = await ypGet(`/orders/${encodeURIComponent(orderId)}`);
+      console.log(`[yandex-pay] existing order:`, JSON.stringify(existing).slice(0, 300));
+      const paymentUrl = existing?.data?.paymentUrl ?? existing?.data?.order?.paymentUrl;
+      if (paymentUrl) return paymentUrl as string;
+    }
     console.error("[yandex-pay] create order failed:", JSON.stringify(data));
     throw new Error(data?.reason ?? "Yandex Pay create order failed");
   }
 
-  // Store orderId so we can poll status later
-  pendingOrders.set(transactionId, orderId);
   console.log(`[yandex-pay] order created: ${orderId}`);
-
   return data.data.paymentUrl as string;
 }
 
-// ─── Shared: confirm payment in DB and notify master ─────────────────────────
-
-export async function confirmPayment(transactionId: number): Promise<"already_paid" | "not_paid" | "confirmed"> {
-  const txRows = await db.select().from(transactionsTable).where(eq(transactionsTable.id, transactionId));
-  const tx = txRows[0];
-  if (!tx) return "not_paid";
-  if (tx.paymentStatus === "paid") return "already_paid";
-
-  await db.update(transactionsTable).set({ paymentStatus: "paid", paidAt: new Date() })
-    .where(eq(transactionsTable.id, transactionId));
-
-  const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, tx.masterId));
-  const master = masterRows[0];
-  if (master) {
-    const newDebt = Math.max(0, Number(master.debt) - Number(tx.commission));
-    await db.update(mastersTable).set({ debt: String(newDebt) }).where(eq(mastersTable.id, master.id));
-  }
-
-  pendingOrders.delete(transactionId);
-  return "confirmed";
-}
-
-// ─── Poll Yandex Pay for payment status ───────────────────────────────────────
+// ─── Poll Yandex Pay for payment status (no in-memory dependency) ─────────────
 
 export async function pollYandexPayStatus(transactionId: number): Promise<boolean> {
-  const orderId = pendingOrders.get(transactionId);
-  if (!orderId) return false;
-
+  const orderId = orderIdForTx(transactionId);
   try {
-    const res = await fetch(`${YANDEX_PAY_BASE}/orders/${encodeURIComponent(orderId)}`, {
-      headers: {
-        Authorization: `Api-Key ${YANDEX_PAY_API_KEY}`,
-        "X-Request-Id": `poll-${orderId}-${Date.now()}`,
-        "X-Request-Timeout": "10000",
-        "X-Request-Attempt": "0",
-      },
-    });
-    const data = (await res.json()) as any;
-    console.log(`[yandex-pay] poll ${orderId}:`, JSON.stringify(data).slice(0, 300));
+    const data = await ypGet(`/orders/${encodeURIComponent(orderId)}`);
+    console.log(`[yandex-pay] poll ${orderId}:`, JSON.stringify(data).slice(0, 400));
 
-    const order = data?.data ?? data?.order ?? data;
-    const status: string = order?.paymentStatus ?? order?.status ?? "";
-    const isPaid = ["CAPTURED", "PAID", "SUCCESS", "captured", "paid", "success"].includes(status);
-    return isPaid;
+    const order = data?.data?.order ?? data?.data ?? data?.order ?? data;
+    const status: string =
+      order?.paymentStatus ?? order?.payment_status ?? order?.status ?? "";
+    console.log(`[yandex-pay] poll status: "${status}"`);
+
+    return ["CAPTURED", "PAID", "SUCCESS", "captured", "paid", "success"].includes(status);
   } catch (e) {
     console.error("[yandex-pay] poll error:", e);
     return false;
   }
+}
+
+// ─── Shared: confirm payment in DB ────────────────────────────────────────────
+
+export async function confirmPayment(
+  transactionId: number
+): Promise<"already_paid" | "not_found" | "confirmed"> {
+  const txRows = await db
+    .select()
+    .from(transactionsTable)
+    .where(eq(transactionsTable.id, transactionId));
+  const tx = txRows[0];
+  if (!tx) return "not_found";
+  if (tx.paymentStatus === "paid") return "already_paid";
+
+  await db
+    .update(transactionsTable)
+    .set({ paymentStatus: "paid", paidAt: new Date() })
+    .where(eq(transactionsTable.id, transactionId));
+
+  const masterRows = await db
+    .select()
+    .from(mastersTable)
+    .where(eq(mastersTable.id, tx.masterId));
+  const master = masterRows[0];
+  if (master) {
+    const newDebt = Math.max(0, Number(master.debt) - Number(tx.commission));
+    await db
+      .update(mastersTable)
+      .set({ debt: String(newDebt) })
+      .where(eq(mastersTable.id, master.id));
+  }
+
+  return "confirmed";
 }
 
 // ─── Webhook from Yandex Pay ─────────────────────────────────────────────────
@@ -128,8 +149,10 @@ router.post("/webhook", async (req, res) => {
   try {
     const body = req.body as any;
     const order = body?.order ?? body?.event?.order ?? body;
-    const orderId: string = order?.orderId ?? order?.order_id ?? body?.orderId ?? "";
-    const status: string = order?.paymentStatus ?? order?.status ?? body?.status ?? "";
+    const orderId: string =
+      order?.orderId ?? order?.order_id ?? body?.orderId ?? "";
+    const status: string =
+      order?.paymentStatus ?? order?.status ?? body?.status ?? "";
 
     console.log(`[yandex-pay webhook] orderId=${orderId} status=${status}`);
     if (!orderId || !status) return;
@@ -145,9 +168,14 @@ router.post("/webhook", async (req, res) => {
     if (result !== "confirmed") return;
 
     // Notify master
-    const txRows = await db.select().from(transactionsTable).where(eq(transactionsTable.id, transactionId));
+    const txRows = await db
+      .select()
+      .from(transactionsTable)
+      .where(eq(transactionsTable.id, transactionId));
     const tx = txRows[0];
-    const masterRows = tx ? await db.select().from(mastersTable).where(eq(mastersTable.id, tx.masterId)) : [];
+    const masterRows = tx
+      ? await db.select().from(mastersTable).where(eq(mastersTable.id, tx.masterId))
+      : [];
     const master = masterRows[0];
 
     if (master?.telegramId && BOT_TOKEN) {
@@ -157,8 +185,12 @@ router.post("/webhook", async (req, res) => {
         body: JSON.stringify({
           chat_id: master.telegramId,
           parse_mode: "HTML",
-          text: `✅ <b>Оплата подтверждена!</b>\n\nКомиссия по заказу #${tx?.orderId} в размере <b>${Number(tx?.commission).toLocaleString("ru-RU")} ₽</b> оплачена. Спасибо!`,
-          reply_markup: { inline_keyboard: [[{ text: "« Меню", callback_data: "main_menu" }]] },
+          text:
+            `✅ <b>Оплата подтверждена!</b>\n\n` +
+            `Комиссия по заказу #${tx?.orderId} в размере <b>${Number(tx?.commission).toLocaleString("ru-RU")} ₽</b> оплачена. Спасибо!`,
+          reply_markup: {
+            inline_keyboard: [[{ text: "« Меню", callback_data: "main_menu" }]],
+          },
         }),
       });
     }

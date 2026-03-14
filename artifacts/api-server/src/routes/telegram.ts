@@ -762,7 +762,6 @@ async function handleCallback(callbackQuery: any) {
 
   if (data.startsWith("check_payment_")) {
     const txId = parseInt(data.replace("check_payment_", ""));
-    await answerCallback(callbackQueryId, "⏳ Проверяем...");
 
     const txRows = await db.select().from(transactionsTable).where(
       and(eq(transactionsTable.id, txId), eq(transactionsTable.masterId, master.id))
