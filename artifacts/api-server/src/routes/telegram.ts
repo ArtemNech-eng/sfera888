@@ -67,24 +67,23 @@ async function answerCallback(callbackQueryId: string, text?: string) {
 
 // ─── Banners ──────────────────────────────────────────────────────────────────
 const DOMAIN = (process.env.REPLIT_DOMAINS ?? "").split(",")[0].trim();
-console.log(`[banners] DOMAIN="${DOMAIN}" welcome=${DOMAIN ? `https://${DOMAIN}/api/banners/welcome.png` : "none"}`);
 const BANNERS = {
   welcome:        DOMAIN ? `https://${DOMAIN}/api/banners/welcome.png` : null,
   new_order:      DOMAIN ? `https://${DOMAIN}/api/banners/new_order.png` : null,
   order_assigned: DOMAIN ? `https://${DOMAIN}/api/banners/order_assigned.png` : null,
 };
 
+// Track which message IDs are photo messages (to avoid double API calls in editOrSend)
+const photoMessages = new Map<string, number>(); // key: `${chatId}:${messageId}`
+
 async function sendBanner(chatId: string | number, bannerKey: keyof typeof BANNERS, caption: string, extra?: object) {
   const url = BANNERS[bannerKey];
-  if (!url) {
-    console.warn(`[banner] DOMAIN not set, falling back to text for ${bannerKey}`);
-    return sendMessage(chatId, caption, extra);
-  }
+  if (!url) return sendMessage(chatId, caption, extra);
   const result = await tgRequest("sendPhoto", { chat_id: chatId, photo: url, caption, parse_mode: "HTML", ...extra });
-  if (result?.ok === false) {
-    console.warn(`[banner] sendPhoto failed (${bannerKey}): ${result?.description} — falling back to text`);
-    return sendMessage(chatId, caption, extra);
-  }
+  if (result?.ok === false) return sendMessage(chatId, caption, extra);
+  // Mark this message as a photo so editOrSend skips editMessageText
+  const msgId = result?.result?.message_id;
+  if (msgId) photoMessages.set(`${chatId}:${msgId}`, Date.now());
   return result;
 }
 
@@ -274,18 +273,23 @@ async function sendSpecPicker(chatId: string, selected: string[], messageId?: nu
 
 async function editOrSend(chatId: string, messageId: number | undefined, text: string, extra?: object) {
   if (messageId) {
-    // Try editing as text message first
-    const r: any = await editMessage(chatId, messageId, text, extra);
-    if (r?.ok !== false) return r;
+    const key = `${chatId}:${messageId}`;
+    const isPhoto = photoMessages.has(key);
 
-    // If that failed the message might be a photo — try editing caption
-    const r2: any = await tgRequest("editMessageCaption", {
-      chat_id: chatId, message_id: messageId, caption: text, parse_mode: "HTML", ...extra,
-    });
-    if (r2?.ok !== false) return r2;
-
-    // Both failed — delete old message and send new one to avoid duplication
-    await tgRequest("deleteMessage", { chat_id: chatId, message_id: messageId }).catch(() => {});
+    if (isPhoto) {
+      // Photo message — edit caption directly (no wasted editMessageText call)
+      const r: any = await tgRequest("editMessageCaption", {
+        chat_id: chatId, message_id: messageId, caption: text, parse_mode: "HTML", ...extra,
+      });
+      if (r?.ok !== false) return r;
+      // Failed — delete and resend as text
+      photoMessages.delete(key);
+      await tgRequest("deleteMessage", { chat_id: chatId, message_id: messageId }).catch(() => {});
+    } else {
+      // Text message — edit normally
+      const r: any = await editMessage(chatId, messageId, text, extra);
+      if (r?.ok !== false) return r;
+    }
   }
   return sendMessage(chatId, text, extra);
 }
