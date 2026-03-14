@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, ordersTable, mastersTable, orderDispatchesTable, leadsTable, masterMessagesTable } from "@workspace/db";
+import { db, ordersTable, mastersTable, orderDispatchesTable, leadsTable, masterMessagesTable, voronkaColumnsTable } from "@workspace/db";
 import { eq, and, ne, inArray } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 
@@ -241,6 +241,16 @@ router.post("/:orderId/assign/:masterId", ops, async (req, res) => {
   await db.update(orderDispatchesTable)
     .set({ status: "rejected" })
     .where(and(eq(orderDispatchesTable.orderId, orderId), ne(orderDispatchesTable.masterId, masterId)));
+
+  // Move master to "На объекте" column and update stats
+  const allCols = await db.select().from(voronkaColumnsTable).orderBy(voronkaColumnsTable.position);
+  const nonReceiving = allCols.filter(c => !c.receivesOrders);
+  const onSiteCol = nonReceiving.find(c => c.position > 1) ?? nonReceiving[0] ?? null;
+  await db.update(mastersTable).set({
+    voronkaColumnId: onSiteCol?.id ?? master.voronkaColumnId,
+    totalOrders: master.totalOrders + 1,
+    acceptedOrders: master.acceptedOrders + 1,
+  }).where(eq(mastersTable.id, masterId));
 
   // Notify assigned master with full info including phone
   if (master.telegramId) {
