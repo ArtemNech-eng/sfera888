@@ -4,7 +4,7 @@ import { useGetLeads, useCreateLead, useSendLeadToBuffer, useGetCities, useGetSe
 import { ProtectedRoute } from "@/hooks/use-auth";
 import { StatusBadge } from "@/components/status-badge";
 import { formatDate } from "@/lib/utils";
-import { Loader2, Plus, Search, Filter, Play, Trash2 } from "lucide-react";
+import { Loader2, Plus, Search, Filter, Play, Trash2, User, Phone, MapPin, ChevronDown, Sparkles } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
 interface ServiceRow {
@@ -230,134 +230,244 @@ export default function Leads() {
 
         {/* Create Modal */}
         {isCreateOpen && (
-          <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-card rounded-3xl border border-border shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
-              <div className="px-6 py-4 border-b border-border/50 flex items-center justify-between sticky top-0 bg-card z-10">
-                <h2 className="text-lg font-display font-bold text-foreground">Новая заявка</h2>
-                <button onClick={() => { setIsCreateOpen(false); resetForm(); }} className="text-muted-foreground hover:text-foreground">✕</button>
-              </div>
-              <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.55)", backdropFilter: "blur(6px)" }}>
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col animate-in fade-in zoom-in-95 duration-200" style={{ boxShadow: "0 32px 80px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.06)" }}>
 
-                {/* Client info */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium">Имя клиента</label>
-                    <input required value={formData.clientName} onChange={e => setFormData({...formData, clientName: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-border focus:border-primary focus:ring-1 focus:ring-primary outline-none" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium">Телефон</label>
-                    <input required value={formData.clientPhone} onChange={e => setFormData({...formData, clientPhone: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-border focus:border-primary focus:ring-1 focus:ring-primary outline-none" placeholder="+7..." />
-                  </div>
-                </div>
-
-                {/* Location */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium">Город</label>
-                    <select required value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-border focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-background">
-                      <option value="">Выберите город</option>
-                      {cities?.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium">Район</label>
-                    <input required value={formData.district} onChange={e => setFormData({...formData, district: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-border focus:border-primary focus:ring-1 focus:ring-primary outline-none" />
-                  </div>
-                </div>
-
-                {/* Services */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium">Услуги</label>
-                    {(totalArea > 0 || totalEstimate > 0) && (
-                      <span className="text-xs text-muted-foreground">
-                        Итого: {totalArea} м²
-                        {totalEstimate > 0 && <span className="ml-2 font-semibold text-green-700">≈ {fmt(totalEstimate)}</span>}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="rounded-xl border border-border overflow-hidden">
-                    <div className="grid grid-cols-[1fr_90px_110px_32px] gap-0 bg-slate-50/70 border-b border-border/50 px-3 py-2 text-xs font-medium text-muted-foreground">
-                      <span>Тип услуги</span>
-                      <span>Площадь, м²</span>
-                      <span>Цена, ₽/м²</span>
-                      <span />
+              {/* Header */}
+              <div className="relative px-7 pt-7 pb-5 flex items-center justify-between flex-shrink-0">
+                <div>
+                  <div className="flex items-center gap-2.5 mb-1">
+                    <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center">
+                      <Sparkles className="w-4 h-4 text-primary" />
                     </div>
-                    <div className="divide-y divide-border/50">
-                      {serviceRows.map((row, i) => (
-                        <div key={i} className="grid grid-cols-[1fr_90px_110px_32px] gap-0 items-center px-3 py-2">
-                          <select
-                            required
-                            value={row.type}
-                            onChange={e => updateRow(i, "type", e.target.value)}
-                            className="w-full pr-2 py-1.5 text-sm rounded-lg border border-transparent hover:border-border focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-transparent"
-                          >
-                            <option value="">Выберите...</option>
-                            {services?.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-                          </select>
+                    <h2 className="text-xl font-display font-bold text-gray-900">Новая заявка</h2>
+                  </div>
+                  <p className="text-sm text-gray-400 ml-10">Заполните данные клиента и список работ</p>
+                </div>
+                <button
+                  onClick={() => { setIsCreateOpen(false); resetForm(); }}
+                  className="w-9 h-9 flex items-center justify-center rounded-2xl bg-gray-100 hover:bg-gray-200 text-gray-500 hover:text-gray-700 transition-all"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Scrollable body */}
+              <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-y-auto">
+                <div className="px-7 pb-6 space-y-5">
+
+                  {/* Client section */}
+                  <div className="rounded-2xl border border-gray-100 bg-gray-50/60 p-4 space-y-4">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Клиент</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium text-gray-700">Имя клиента</label>
+                        <div className="relative">
+                          <User className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                           <input
                             required
-                            type="number"
-                            min="0.1"
-                            step="0.1"
-                            value={row.area}
-                            onChange={e => updateRow(i, "area", e.target.value)}
-                            placeholder="0"
-                            className="w-full px-2 py-1.5 text-sm rounded-lg border border-transparent hover:border-border focus:border-primary focus:ring-1 focus:ring-primary outline-none text-right"
+                            value={formData.clientName}
+                            onChange={e => setFormData({...formData, clientName: e.target.value})}
+                            className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-200 bg-white focus:border-primary focus:ring-2 focus:ring-primary/15 outline-none text-sm transition-all"
+                            placeholder="Иван Иванов"
                           />
-                          <div className="relative">
-                            <input
-                              type="number"
-                              min="0"
-                              step="1"
-                              value={row.pricePerM2}
-                              onChange={e => updateRow(i, "pricePerM2", e.target.value)}
-                              placeholder="0"
-                              className="w-full pl-2 pr-7 py-1.5 text-sm rounded-lg border border-transparent hover:border-border focus:border-primary focus:ring-1 focus:ring-primary outline-none text-right"
-                            />
-                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">₽</span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => removeRow(i)}
-                            disabled={serviceRows.length === 1}
-                            className="w-8 h-8 flex items-center justify-center text-muted-foreground hover:text-red-500 disabled:opacity-30 transition-colors rounded-lg"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
                         </div>
-                      ))}
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium text-gray-700">Телефон</label>
+                        <div className="relative">
+                          <Phone className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                          <input
+                            required
+                            value={formData.clientPhone}
+                            onChange={e => setFormData({...formData, clientPhone: e.target.value})}
+                            className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-200 bg-white focus:border-primary focus:ring-2 focus:ring-primary/15 outline-none text-sm transition-all"
+                            placeholder="+7 999 000-00-00"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium text-gray-700">Город</label>
+                        <div className="relative">
+                          <MapPin className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                          <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                          <select
+                            required
+                            value={formData.city}
+                            onChange={e => setFormData({...formData, city: e.target.value})}
+                            className="w-full pl-9 pr-8 py-2.5 rounded-xl border border-gray-200 bg-white focus:border-primary focus:ring-2 focus:ring-primary/15 outline-none text-sm appearance-none transition-all"
+                          >
+                            <option value="">Выберите город</option>
+                            {cities?.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium text-gray-700">Район</label>
+                        <input
+                          required
+                          value={formData.district}
+                          onChange={e => setFormData({...formData, district: e.target.value})}
+                          className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-white focus:border-primary focus:ring-2 focus:ring-primary/15 outline-none text-sm transition-all"
+                          placeholder="Центральный"
+                        />
+                      </div>
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={addRow}
-                    className="w-full py-2 rounded-xl border border-dashed border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary/50 hover:bg-primary/5 transition-colors flex items-center justify-center gap-2"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Добавить услугу
-                  </button>
+                  {/* Services section */}
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Услуги</p>
+                      {(totalArea > 0 || totalEstimate > 0) && (
+                        <div className="flex items-center gap-3 text-xs">
+                          {totalArea > 0 && (
+                            <span className="text-gray-500">Итого: <b className="text-gray-700">{totalArea} м²</b></span>
+                          )}
+                          {totalEstimate > 0 && (
+                            <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 font-semibold px-2.5 py-0.5 rounded-full border border-emerald-100">
+                              ≈ {fmt(totalEstimate)}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="rounded-2xl border border-gray-200 overflow-hidden bg-white">
+                      {/* Table header */}
+                      <div className="grid items-center bg-gray-50 border-b border-gray-100 px-4 py-2.5 text-[11px] font-semibold text-gray-400 uppercase tracking-wide" style={{ gridTemplateColumns: "1fr 88px 116px 36px" }}>
+                        <span>Тип услуги</span>
+                        <span className="text-center">Площадь, м²</span>
+                        <span className="text-center">Цена, ₽/м²</span>
+                        <span />
+                      </div>
+
+                      {/* Rows */}
+                      <div className="divide-y divide-gray-100">
+                        {serviceRows.map((row, i) => {
+                          const rowTotal = (parseFloat(row.area) || 0) * (parseFloat(row.pricePerM2) || 0);
+                          return (
+                            <div key={i} className="group px-2 py-2" style={{ gridTemplateColumns: "1fr 88px 116px 36px", display: "grid", alignItems: "center", gap: 0 }}>
+                              {/* Service type */}
+                              <div className="relative pr-1">
+                                <select
+                                  required
+                                  value={row.type}
+                                  onChange={e => updateRow(i, "type", e.target.value)}
+                                  className="w-full pl-3 pr-7 py-2 text-sm rounded-xl border border-transparent bg-transparent hover:bg-gray-50 hover:border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/15 focus:bg-white outline-none appearance-none transition-all cursor-pointer"
+                                >
+                                  <option value="">Выберите...</option>
+                                  {services?.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                                </select>
+                                <ChevronDown className="w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                              </div>
+
+                              {/* Area */}
+                              <input
+                                required
+                                type="number"
+                                min="0.1"
+                                step="0.1"
+                                value={row.area}
+                                onChange={e => updateRow(i, "area", e.target.value)}
+                                placeholder="0"
+                                className="px-2 py-2 text-sm rounded-xl border border-transparent bg-transparent hover:bg-gray-50 hover:border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/15 focus:bg-white outline-none text-center transition-all w-full"
+                              />
+
+                              {/* Price per m² */}
+                              <div className="relative px-1">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="1"
+                                  value={row.pricePerM2}
+                                  onChange={e => updateRow(i, "pricePerM2", e.target.value)}
+                                  placeholder="0"
+                                  className="w-full pl-2 pr-6 py-2 text-sm rounded-xl border border-transparent bg-transparent hover:bg-gray-50 hover:border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/15 focus:bg-white outline-none text-center transition-all"
+                                />
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">₽</span>
+                                {rowTotal > 0 && (
+                                  <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[10px] text-emerald-600 font-semibold whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
+                                    ≈ {rowTotal.toLocaleString("ru-RU")} ₽
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Delete */}
+                              <button
+                                type="button"
+                                onClick={() => removeRow(i)}
+                                disabled={serviceRows.length === 1}
+                                className="w-8 h-8 flex items-center justify-center rounded-xl text-gray-300 hover:text-red-400 hover:bg-red-50 disabled:opacity-0 disabled:pointer-events-none transition-all mx-auto"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Add row */}
+                      <div className="border-t border-dashed border-gray-200">
+                        <button
+                          type="button"
+                          onClick={addRow}
+                          className="w-full py-3 flex items-center justify-center gap-2 text-sm text-gray-400 hover:text-primary hover:bg-primary/5 transition-all"
+                        >
+                          <div className="w-5 h-5 rounded-full bg-gray-100 flex items-center justify-center group-hover:bg-primary/10 transition-colors">
+                            <Plus className="w-3 h-3" />
+                          </div>
+                          Добавить услугу
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Comment */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Комментарий</label>
+                    <textarea
+                      value={formData.comment}
+                      onChange={e => setFormData({...formData, comment: e.target.value})}
+                      rows={2}
+                      placeholder="Дополнительная информация по заявке..."
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 bg-gray-50/60 focus:border-primary focus:ring-2 focus:ring-primary/15 focus:bg-white outline-none resize-none text-sm transition-all"
+                    />
+                  </div>
                 </div>
 
-                {/* Comment */}
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Комментарий (необязательно)</label>
-                  <textarea value={formData.comment} onChange={e => setFormData({...formData, comment: e.target.value})} rows={2} className="w-full px-3 py-2 rounded-xl border border-border focus:border-primary focus:ring-1 focus:ring-primary outline-none resize-none" />
-                </div>
-
-                <div className="pt-2 flex justify-end gap-3">
-                  <button type="button" onClick={() => { setIsCreateOpen(false); resetForm(); }} className="px-4 py-2.5 rounded-xl font-medium text-muted-foreground hover:bg-slate-100">
-                    Отмена
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={createMutation.isPending || serviceRows.every(r => !r.type || !r.area)}
-                    className="px-6 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 flex items-center gap-2 disabled:opacity-50"
-                  >
-                    {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                    Создать заявку
-                  </button>
+                {/* Footer */}
+                <div className="px-7 py-5 border-t border-gray-100 flex items-center justify-between flex-shrink-0 bg-gray-50/50 rounded-b-3xl">
+                  {totalEstimate > 0 ? (
+                    <div className="text-sm">
+                      <span className="text-gray-500">Смета:</span>
+                      <span className="ml-2 font-bold text-emerald-600 text-base">{fmt(totalEstimate)}</span>
+                      {totalArea > 0 && <span className="ml-2 text-gray-400 text-xs">{totalArea} м²</span>}
+                    </div>
+                  ) : (
+                    <div />
+                  )}
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => { setIsCreateOpen(false); resetForm(); }}
+                      className="px-5 py-2.5 rounded-xl font-medium text-gray-500 hover:bg-gray-200 transition-colors text-sm"
+                    >
+                      Отмена
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={createMutation.isPending || serviceRows.every(r => !r.type || !r.area)}
+                      className="px-6 py-2.5 bg-primary text-white rounded-xl font-semibold hover:bg-primary/90 flex items-center gap-2 disabled:opacity-50 transition-all text-sm shadow-sm shadow-primary/30"
+                    >
+                      {createMutation.isPending
+                        ? <Loader2 className="w-4 h-4 animate-spin" />
+                        : <Sparkles className="w-4 h-4" />}
+                      Создать заявку
+                    </button>
+                  </div>
                 </div>
               </form>
             </div>
