@@ -1,4 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Layout } from "@/components/layout";
+import { ProtectedRoute } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Trash2, RotateCcw, AlertTriangle } from "lucide-react";
@@ -153,58 +155,62 @@ export default function TrashPage() {
   const total = (data?.masters?.length ?? 0) + (data?.orders?.length ?? 0) + (data?.leads?.length ?? 0);
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-10 h-10 rounded-xl bg-destructive/10 flex items-center justify-center">
-          <Trash2 className="w-5 h-5 text-destructive" />
-        </div>
-        <div>
-          <h1 className="text-xl font-bold">Корзина</h1>
-          <p className="text-sm text-muted-foreground">Элементы хранятся 30 дней, затем удаляются автоматически</p>
-        </div>
-      </div>
+    <ProtectedRoute allowedRoles={["admin"]}>
+      <Layout>
+        <div className="p-6 max-w-3xl mx-auto">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 rounded-xl bg-destructive/10 flex items-center justify-center">
+              <Trash2 className="w-5 h-5 text-destructive" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold">Корзина</h1>
+              <p className="text-sm text-muted-foreground">Элементы хранятся 30 дней, затем удаляются автоматически</p>
+            </div>
+          </div>
 
-      {isLoading && (
-        <div className="text-center py-16 text-muted-foreground text-sm">Загрузка…</div>
-      )}
+          {isLoading && (
+            <div className="text-center py-16 text-muted-foreground text-sm">Загрузка…</div>
+          )}
 
-      {!isLoading && total === 0 && (
-        <div className="text-center py-20">
-          <Trash2 className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
-          <p className="text-muted-foreground font-medium">Корзина пуста</p>
-          <p className="text-sm text-muted-foreground/60 mt-1">Удалённые мастера, заказы и заявки появятся здесь</p>
-        </div>
-      )}
-
-      {data && (
-        <>
-          {(data.masters ?? []).some(m => m.daysLeft <= 3) && (
-            <div className="flex items-center gap-2 bg-destructive/10 text-destructive rounded-xl px-4 py-3 mb-6 text-sm">
-              <AlertTriangle className="w-4 h-4 shrink-0" />
-              Некоторые записи будут удалены в ближайшие 3 дня — восстановите их сейчас.
+          {!isLoading && total === 0 && (
+            <div className="text-center py-20">
+              <Trash2 className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
+              <p className="text-muted-foreground font-medium">Корзина пуста</p>
+              <p className="text-sm text-muted-foreground/60 mt-1">Удалённые мастера, заказы и заявки появятся здесь</p>
             </div>
           )}
 
-          <TrashSection
-            label="Мастера"
-            items={data.masters ?? []}
-            onRestore={item => restoreMut.mutate(item)}
-            onDelete={item => deleteMut.mutate(item)}
-          />
-          <TrashSection
-            label="Заказы"
-            items={data.orders ?? []}
-            onRestore={item => restoreMut.mutate(item)}
-            onDelete={item => deleteMut.mutate(item)}
-          />
-          <TrashSection
-            label="Заявки"
-            items={data.leads ?? []}
-            onRestore={item => restoreMut.mutate(item)}
-            onDelete={item => deleteMut.mutate(item)}
-          />
-        </>
-      )}
-    </div>
+          {data && (
+            <>
+              {(data.masters ?? []).some(m => m.daysLeft <= 3) && (
+                <div className="flex items-center gap-2 bg-destructive/10 text-destructive rounded-xl px-4 py-3 mb-6 text-sm">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  Некоторые записи будут удалены в ближайшие 3 дня — восстановите их сейчас.
+                </div>
+              )}
+
+              <TrashSection
+                label="Мастера"
+                items={data.masters ?? []}
+                onRestore={item => restoreMut.mutate(item)}
+                onDelete={item => deleteMut.mutate(item)}
+              />
+              <TrashSection
+                label="Заказы"
+                items={data.orders ?? []}
+                onRestore={item => restoreMut.mutate(item)}
+                onDelete={item => deleteMut.mutate(item)}
+              />
+              <TrashSection
+                label="Заявки"
+                items={data.leads ?? []}
+                onRestore={item => restoreMut.mutate(item)}
+                onDelete={item => deleteMut.mutate(item)}
+              />
+            </>
+          )}
+        </div>
+      </Layout>
+    </ProtectedRoute>
   );
 }
