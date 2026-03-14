@@ -33,6 +33,7 @@ export const ordersTable = pgTable("orders", {
   dispatchStatus: text("dispatch_status").notNull().default("none"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
 });
 
 export const insertOrderSchema = createInsertSchema(ordersTable).omit({ id: true, createdAt: true, updatedAt: true });

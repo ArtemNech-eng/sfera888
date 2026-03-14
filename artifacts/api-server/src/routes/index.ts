@@ -15,6 +15,7 @@ import okidokiRouter from "./okidoki.js";
 import dispatchRouter from "./dispatch.js";
 import storageRouter from "./storage.js";
 import yandexPayRouter from "./yandex-pay.js";
+import trashRouter, { runTrashCleanup } from "./trash.js";
 
 const router = Router();
 
@@ -34,5 +35,10 @@ router.use("/okidoki", okidokiRouter);
 router.use("/dispatch", dispatchRouter);
 router.use("/yandex-pay", yandexPayRouter);
 router.use("/", storageRouter);
+router.use("/trash", trashRouter);
+
+// Run trash cleanup on startup, then every hour
+runTrashCleanup().catch(console.error);
+setInterval(() => runTrashCleanup().catch(console.error), 60 * 60 * 1000);
 
 export default router;

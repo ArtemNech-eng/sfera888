@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, mastersTable, masterTasksTable, ordersTable, leadsTable, telegramChatsTable, voronkaColumnsTable } from "@workspace/db";
-import { eq, desc, inArray } from "drizzle-orm";
+import { eq, desc, inArray, isNull } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { notifyMasterActivated } from "../telegram-notify.js";
 import multer from "multer";
@@ -53,7 +53,7 @@ function formatMaster(m: any) {
 
 // GET /api/masters
 router.get("/", allMasterRoles, async (_req, res) => {
-  const masters = await db.select().from(mastersTable).orderBy(mastersTable.createdAt);
+  const masters = await db.select().from(mastersTable).where(isNull(mastersTable.deletedAt)).orderBy(mastersTable.createdAt);
   res.json(masters.map(formatMaster));
 });
 
@@ -122,10 +122,10 @@ router.patch("/:id", requireRole("admin", "master_operator"), async (req, res) =
   res.json(formatMaster(result[0]));
 });
 
-// DELETE /api/masters/:id
+// DELETE /api/masters/:id — soft delete (move to trash)
 router.delete("/:id", requireRole("admin"), async (req, res) => {
   const id = parseInt(req.params.id);
-  await db.delete(mastersTable).where(eq(mastersTable.id, id));
+  await db.update(mastersTable).set({ deletedAt: new Date() }).where(eq(mastersTable.id, id));
   res.json({ success: true });
 });
 

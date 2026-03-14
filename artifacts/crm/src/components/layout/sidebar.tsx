@@ -11,7 +11,8 @@ import {
   Settings, 
   UserCog,
   LogOut,
-  Wrench
+  Wrench,
+  Trash2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -68,6 +69,12 @@ export function Sidebar() {
       href: "/users", 
       label: "Пользователи", 
       icon: UserCog, 
+      roles: ["admin"] 
+    },
+    { 
+      href: "/trash", 
+      label: "Корзина", 
+      icon: Trash2, 
       roles: ["admin"] 
     },
   ];

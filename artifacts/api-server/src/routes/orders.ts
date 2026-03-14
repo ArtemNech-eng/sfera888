@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, ordersTable, mastersTable, transactionsTable, voronkaColumnsTable, orderDispatchesTable, leadsTable } from "@workspace/db";
-import { eq, inArray, and, ne } from "drizzle-orm";
+import { eq, inArray, and, ne, isNull } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { calculateCommission, getCommissionSettings } from "../lib/commission.js";
 
@@ -59,11 +59,8 @@ router.get("/", allOrderRoles, async (req, res) => {
   const conditions: any[] = [];
   if (status) conditions.push(eq(ordersTable.status, status as any));
   if (masterId) conditions.push(eq(ordersTable.masterId, parseInt(masterId as string)));
-  if (conditions.length > 0) {
-    orders = await db.select().from(ordersTable).where(conditions.length === 1 ? conditions[0] : and(...conditions)).orderBy(ordersTable.createdAt);
-  } else {
-    orders = await db.select().from(ordersTable).orderBy(ordersTable.createdAt);
-  }
+  conditions.push(isNull(ordersTable.deletedAt));
+  orders = await db.select().from(ordersTable).where(and(...conditions)).orderBy(ordersTable.createdAt);
 
   const masters = await db.select().from(mastersTable);
   const masterMap = new Map(masters.map(m => [m.id, m]));
@@ -411,6 +408,13 @@ router.post("/:id/assign-master", allOrderRoles, async (req, res) => {
     createdAt: o.createdAt,
     updatedAt: o.updatedAt,
   });
+});
+
+// DELETE /api/orders/:id — soft delete (move to trash)
+router.delete("/:id", requireRole("admin"), async (req, res) => {
+  const id = parseInt(req.params.id);
+  await db.update(ordersTable).set({ deletedAt: new Date() }).where(eq(ordersTable.id, id));
+  res.json({ success: true });
 });
 
 export default router;

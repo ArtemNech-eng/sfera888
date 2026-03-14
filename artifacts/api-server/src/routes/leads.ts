@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, leadsTable, ordersTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 
 const router = Router();
@@ -24,9 +24,9 @@ router.get("/", allLeadRoles, async (req, res) => {
   const { status } = req.query;
   let rows;
   if (status) {
-    rows = await db.select().from(leadsTable).where(eq(leadsTable.status, status as any));
+    rows = await db.select().from(leadsTable).where(and(eq(leadsTable.status, status as any), isNull(leadsTable.deletedAt)));
   } else {
-    rows = await db.select().from(leadsTable).orderBy(leadsTable.createdAt);
+    rows = await db.select().from(leadsTable).where(isNull(leadsTable.deletedAt)).orderBy(leadsTable.createdAt);
   }
   res.json(rows.map(l => ({
     ...l,
@@ -168,6 +168,13 @@ router.post("/:id/send-to-buffer", allLeadRoles, async (req, res) => {
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
   });
+});
+
+// DELETE /api/leads/:id — soft delete (move to trash)
+router.delete("/:id", allLeadRoles, async (req, res) => {
+  const id = parseInt(req.params.id);
+  await db.update(leadsTable).set({ deletedAt: new Date() }).where(eq(leadsTable.id, id));
+  res.json({ success: true });
 });
 
 export default router;
