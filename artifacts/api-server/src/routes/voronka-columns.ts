@@ -117,6 +117,7 @@ router.get("/masters", requireAuth, async (_req, res) => {
     debt: Number(m.debt),
     voronkaColumnId: m.voronkaColumnId ?? null,
     isTestMaster: m.isTestMaster,
+    specializations: m.specializations ?? [],
     avatarUrl: m.telegramId ? (avatarMap.get(m.telegramId) ?? null) : null,
     activeOrders: masterActiveOrders.get(m.id) ?? [],
     createdAt: m.createdAt,

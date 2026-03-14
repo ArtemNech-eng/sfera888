@@ -9,6 +9,7 @@ export const mastersTable = pgTable("masters", {
   alias: text("alias").notNull(),
   city: text("city").notNull(),
   specialization: text("specialization").notNull(),
+  specializations: text("specializations").array().notNull().default([]),
   telegramId: text("telegram_id"),
   phone: text("phone"),
   status: masterStatusEnum("status").notNull().default("active"),

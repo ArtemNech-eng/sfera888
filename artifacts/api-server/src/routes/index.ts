@@ -10,6 +10,7 @@ import analyticsRouter from "./analytics.js";
 import settingsRouter from "./settings.js";
 import telegramRouter from "./telegram.js";
 import voronkaColumnsRouter from "./voronka-columns.js";
+import masterChatRouter from "./master-chat.js";
 
 const router = Router();
 
@@ -24,5 +25,6 @@ router.use("/analytics", analyticsRouter);
 router.use("/settings", settingsRouter);
 router.use("/telegram", telegramRouter);
 router.use("/voronka", voronkaColumnsRouter);
+router.use("/master-chat", masterChatRouter);
 
 export default router;

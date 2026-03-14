@@ -6,3 +6,4 @@ export * from "./transactions";
 export * from "./settings";
 export * from "./telegram";
 export * from "./voronka";
+export * from "./master-messages";

@@ -15,6 +15,7 @@ import Analytics from "@/pages/analytics";
 import Settings from "@/pages/settings";
 import Users from "@/pages/users";
 import Voronka from "@/pages/voronka";
+import MasterChatPage from "@/pages/master-chat";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -32,6 +33,7 @@ function Router() {
       <Route path="/settings" component={Settings} />
       <Route path="/users" component={Users} />
       <Route path="/voronka" component={Voronka} />
+      <Route path="/master-chat" component={MasterChatPage} />
       <Route component={NotFound} />
     </Switch>
   );

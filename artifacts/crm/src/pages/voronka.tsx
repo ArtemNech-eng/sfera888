@@ -11,7 +11,7 @@ import {
 
 interface VoronkaColumn { id: number; name: string; position: number; receivesOrders: boolean; color: string; }
 interface ActiveOrder { orderId: number; district: string; city: string; serviceType: string; status: string; clientPhone: string | null; clientName: string | null; scheduledAt: string | null; }
-interface VoronkaMaster { id: number; alias: string; city: string; specialization: string; telegramId: string | null; phone: string | null; status: string; rating: number; totalOrders: number; acceptedOrders: number; debt: number; voronkaColumnId: number | null; isTestMaster: boolean; avatarUrl: string | null; activeOrders: ActiveOrder[]; createdAt: string; }
+interface VoronkaMaster { id: number; alias: string; city: string; specialization: string; specializations: string[]; telegramId: string | null; phone: string | null; status: string; rating: number; totalOrders: number; acceptedOrders: number; debt: number; voronkaColumnId: number | null; isTestMaster: boolean; avatarUrl: string | null; activeOrders: ActiveOrder[]; createdAt: string; }
 
 // ─── Color map ────────────────────────────────────────────────────────────────
 
@@ -82,7 +82,17 @@ function MasterCard({ master, columns, onMove }: { master: VoronkaMaster; column
                 </span>
               )}
             </div>
-            <p className="text-[11px] text-gray-400 mt-0.5">{master.city} · {master.specialization}</p>
+            <p className="text-[11px] text-gray-400 mt-0.5">{master.city}</p>
+            {(master.specializations?.length > 0 ? master.specializations : master.specialization ? [master.specialization] : []).length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-1">
+                {(master.specializations?.length > 0 ? master.specializations : [master.specialization]).slice(0,3).map(s => (
+                  <span key={s} className="text-[9px] bg-gray-100 text-gray-500 rounded px-1.5 py-0.5 font-medium leading-tight">{s}</span>
+                ))}
+                {(master.specializations?.length > 3) && (
+                  <span className="text-[9px] bg-gray-100 text-gray-400 rounded px-1.5 py-0.5">+{master.specializations.length - 3}</span>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

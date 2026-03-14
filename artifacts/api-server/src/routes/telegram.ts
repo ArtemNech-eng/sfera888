@@ -2,9 +2,32 @@ import { Router } from "express";
 import {
   db, telegramChatsTable, telegramMessagesTable, usersTable,
   mastersTable, ordersTable, voronkaColumnsTable, leadsTable,
+  masterMessagesTable,
 } from "@workspace/db";
 import { eq, desc, inArray, and } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
+
+// ─── Available specializations (synced with service_types) ────────────────────
+
+const SPECIALIZATIONS = [
+  "Укладка плитки",
+  "Поклейка обоев",
+  "Покраска стен",
+  "Монтаж ламината",
+  "Штукатурка стен",
+  "Электромонтаж",
+  "Сантехника",
+  "Натяжные потолки",
+  "Комплексный ремонт",
+];
+
+// ─── In-memory bot state machine ─────────────────────────────────────────────
+
+type BotState =
+  | { step: "selecting_specs"; masterId: number; selected: string[]; pickerMessageId?: number }
+  | { step: "awaiting_message"; masterId: number };
+
+const pendingState = new Map<string, BotState>();
 
 const router = Router();
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -84,9 +107,45 @@ function mainMenuKeyboard() {
         [{ text: "📋 Доступные заказы", callback_data: "show_orders" }],
         [{ text: "📊 Мои активные заказы", callback_data: "my_orders" }],
         [{ text: "👤 Мой профиль", callback_data: "my_profile" }],
+        [{ text: "✉️ Написать оператору", callback_data: "message_operator" }],
       ],
     },
   };
+}
+
+// ─── Specialization picker ────────────────────────────────────────────────────
+
+function buildSpecKeyboard(selected: string[]) {
+  const selectedSet = new Set(selected);
+  const rows: any[][] = [];
+
+  for (let i = 0; i < SPECIALIZATIONS.length; i += 2) {
+    const row = [SPECIALIZATIONS[i], SPECIALIZATIONS[i + 1]].filter(Boolean).map(s => ({
+      text: (selectedSet.has(s) ? "✅ " : "☐ ") + s,
+      callback_data: `spec_toggle_${s}`,
+    }));
+    rows.push(row);
+  }
+
+  const count = selected.length;
+  rows.push([{
+    text: count > 0
+      ? `✅ Подтвердить (${count} ${count === 1 ? "специальность" : count < 5 ? "специальности" : "специальностей"})`
+      : "⚠️ Выберите хотя бы одну",
+    callback_data: count > 0 ? "spec_confirm" : "spec_noop",
+  }]);
+
+  return { reply_markup: { inline_keyboard: rows } };
+}
+
+async function sendSpecPicker(chatId: string, selected: string[], messageId?: number) {
+  const text = `🔧 <b>Выберите ваши специальности</b>\n\nОтметьте все виды работ, которые вы выполняете.\nМожно выбрать несколько:`;
+  const kb = buildSpecKeyboard(selected);
+  if (messageId) {
+    const r: any = await editMessage(chatId, messageId, text, kb);
+    if (r?.ok !== false) return r;
+  }
+  return sendMessage(chatId, text, kb);
 }
 
 // ─── Helper: edit or fallback to send ────────────────────────────────────────
@@ -204,14 +263,24 @@ async function showProfile(chatId: string, master: any, messageId?: number) {
   let text = `👤 <b>Ваш профиль</b>\n\n`;
   text += `🏷️ Псевдоним: <b>${master.alias}</b>\n`;
   text += `🏙️ Город: <b>${master.city}</b>\n`;
-  text += `🔧 Специализация: <b>${master.specialization}</b>\n`;
+  const specs = master.specializations && master.specializations.length > 0
+    ? master.specializations.join(", ")
+    : master.specialization || "Не указана";
+  text += `🔧 Специальности: <b>${specs}</b>\n`;
   text += `📍 Статус: <b>${colName}</b>\n`;
   text += `${stars} Рейтинг: <b>${rating.toFixed(1)}</b>\n`;
   text += `📦 Всего заказов: <b>${master.totalOrders}</b>\n`;
   if (debt > 0) text += `⚠️ Долг по комиссии: <b>${debt.toLocaleString("ru")} ₽</b>\n`;
   if (master.isTestMaster) text += `\n🔰 <i>Тестовый период: лимит 1 заказ одновременно</i>`;
 
-  await editOrSend(chatId, messageId, text, mainMenuKeyboard());
+  await editOrSend(chatId, messageId, text, {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "✏️ Изменить специальности", callback_data: "edit_specs" }],
+        [{ text: "« Меню", callback_data: "main_menu" }],
+      ],
+    },
+  });
 }
 
 // ─── Handle /start ────────────────────────────────────────────────────────────
@@ -220,19 +289,25 @@ async function handleStart(from: any, chatId: string) {
   const { master, isNew } = await findOrCreateMaster(from, chatId);
 
   if (isNew) {
-    const firstCol = await getFirstColumn();
-    const colName = firstCol?.name ?? "Новые";
-    await sendMessage(
+    // New master: show specialization picker
+    pendingState.set(chatId, { step: "selecting_specs", masterId: master.id, selected: [] });
+    const msg: any = await sendMessage(
       chatId,
-      `👋 <b>Добро пожаловать в систему заказов!</b>\n\n` +
-      `Вы зарегистрированы как мастер:\n` +
-      `🏷️ <b>${master.alias}</b>\n\n` +
-      `📍 Ваш статус: <b>${colName}</b>\n\n` +
-      `Сейчас вы находитесь в очереди новых мастеров. Оператор свяжется с вами для подтверждения.\n\n` +
-      `<i>После одобрения вы сможете принимать заказы через меню.</i>`,
-      mainMenuKeyboard()
+      `👋 <b>Добро пожаловать в систему заказов!</b>\n\nВы зарегистрированы как мастер <b>${master.alias}</b>.\n\nТеперь укажите ваши специальности:`,
     );
+    const pickerMsgId = msg?.result?.message_id;
+    const state = pendingState.get(chatId);
+    if (state && state.step === "selecting_specs") state.pickerMessageId = pickerMsgId;
+    await sendSpecPicker(chatId, []);
   } else {
+    // Existing master: check if they have specializations set
+    if (!master.specializations || master.specializations.length === 0) {
+      pendingState.set(chatId, { step: "selecting_specs", masterId: master.id, selected: [] });
+      await sendMessage(chatId, `👋 <b>Добро пожаловать, ${master.alias}!</b>\n\nПожалуйста, укажите ваши специальности:`);
+      await sendSpecPicker(chatId, []);
+      return;
+    }
+
     let colName = "Не в воронке";
     if (master.voronkaColumnId) {
       const col = await db.select().from(voronkaColumnsTable).where(eq(voronkaColumnsTable.id, master.voronkaColumnId));
@@ -242,7 +317,8 @@ async function handleStart(from: any, chatId: string) {
     await sendMessage(
       chatId,
       `✅ <b>Добро пожаловать обратно, ${master.alias}!</b>\n\n` +
-      `📍 Ваш статус: <b>${colName}</b>\n` +
+      `📍 Статус: <b>${colName}</b>\n` +
+      `🔧 Специальности: <b>${master.specializations.join(", ")}</b>\n` +
       `📦 Всего заказов: <b>${master.totalOrders}</b>\n` +
       `⭐ Рейтинг: <b>${Number(master.rating).toFixed(1)}</b>`,
       mainMenuKeyboard()
@@ -292,6 +368,94 @@ async function handleCallback(callbackQuery: any) {
   if (data === "my_profile") {
     await answerCallback(cbId);
     await showProfile(chatId, master, messageId);
+    return;
+  }
+
+  // ─── Specialization picker callbacks ───────────────────────────────────────
+
+  if (data.startsWith("spec_toggle_")) {
+    const spec = data.replace("spec_toggle_", "");
+    let state = pendingState.get(chatId);
+
+    if (!state || state.step !== "selecting_specs") {
+      // No active state — start fresh (master updating their specs)
+      state = { step: "selecting_specs", masterId: master.id, selected: master.specializations ?? [] };
+      pendingState.set(chatId, state);
+    }
+
+    const idx = state.selected.indexOf(spec);
+    if (idx >= 0) state.selected.splice(idx, 1);
+    else state.selected.push(spec);
+
+    await answerCallback(cbId);
+    await editMessage(chatId, messageId,
+      `🔧 <b>Выберите ваши специальности</b>\n\nОтметьте все виды работ, которые вы выполняете.\nМожно выбрать несколько:`,
+      buildSpecKeyboard(state.selected)
+    );
+    return;
+  }
+
+  if (data === "spec_noop") {
+    await answerCallback(cbId, "⚠️ Выберите хотя бы одну специальность");
+    return;
+  }
+
+  if (data === "spec_confirm") {
+    const state = pendingState.get(chatId);
+    if (!state || state.step !== "selecting_specs" || state.selected.length === 0) {
+      await answerCallback(cbId, "⚠️ Выберите хотя бы одну специальность");
+      return;
+    }
+    await answerCallback(cbId, "✅ Сохранено!");
+
+    const specs = state.selected;
+    const specText = specs.join(", ");
+
+    await db.update(mastersTable).set({
+      specializations: specs,
+      specialization: specText,
+    }).where(eq(mastersTable.id, master.id));
+
+    pendingState.delete(chatId);
+
+    await editMessage(chatId, messageId,
+      `✅ <b>Специальности сохранены!</b>\n\n🔧 ${specText}\n\nТеперь вы можете пользоваться всеми функциями бота:`,
+      mainMenuKeyboard()
+    );
+    return;
+  }
+
+  if (data === "edit_specs") {
+    // Allow master to update specializations from profile
+    const currentSpecs = master.specializations ?? [];
+    pendingState.set(chatId, { step: "selecting_specs", masterId: master.id, selected: [...currentSpecs] });
+    await answerCallback(cbId);
+    await editMessage(chatId, messageId,
+      `🔧 <b>Изменить специальности</b>\n\nОтметьте все виды работ, которые вы выполняете:`,
+      buildSpecKeyboard(currentSpecs)
+    );
+    return;
+  }
+
+  // ─── Operator message callbacks ────────────────────────────────────────────
+
+  if (data === "message_operator") {
+    await answerCallback(cbId);
+    pendingState.set(chatId, { step: "awaiting_message", masterId: master.id });
+    await editMessage(chatId, messageId,
+      `✉️ <b>Написать оператору</b>\n\nНапишите ваш вопрос или сообщение следующим сообщением.\nОператор ответит вам в этом чате.`,
+      { reply_markup: { inline_keyboard: [[{ text: "❌ Отмена", callback_data: "cancel_message" }]] } }
+    );
+    return;
+  }
+
+  if (data === "cancel_message") {
+    await answerCallback(cbId);
+    pendingState.delete(chatId);
+    await editMessage(chatId, messageId,
+      `✅ <b>${master.alias}</b> — главное меню`,
+      mainMenuKeyboard()
+    );
     return;
   }
 
@@ -499,6 +663,33 @@ router.post("/webhook", async (req, res) => {
         `✅ <b>${master.alias}</b> — главное меню`,
         mainMenuKeyboard()
       );
+      return;
+    }
+
+    // Check pending state for awaiting_message
+    const state = pendingState.get(chatId);
+    if (state?.step === "awaiting_message") {
+      const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.telegramId, String(from.id)));
+      const master = masterRows[0];
+      if (master && text) {
+        pendingState.delete(chatId);
+
+        // Save message in master_messages
+        await db.insert(masterMessagesTable).values({
+          masterId: master.id,
+          telegramChatId: chatId,
+          text,
+          fromMaster: true,
+          senderName: master.alias,
+          isRead: false,
+        });
+
+        await sendMessage(
+          chatId,
+          `✅ <b>Сообщение отправлено оператору!</b>\n\n<i>«${text}»</i>\n\nОтвет придёт сюда же. Обычно отвечаем в течение нескольких часов.`,
+          mainMenuKeyboard()
+        );
+      }
       return;
     }
 
