@@ -29,7 +29,8 @@ type BotState =
   | { step: "selecting_specs"; masterId: number; selected: string[]; pickerMessageId?: number }
   | { step: "awaiting_message"; masterId: number }
   | { step: "awaiting_phone"; masterId: number }
-  | { step: "confirming_phone"; masterId: number; phone: string };
+  | { step: "confirming_phone"; masterId: number; phone: string }
+  | { step: "awaiting_photo"; masterId: number };
 
 const pendingState = new Map<string, BotState>();
 
@@ -305,27 +306,50 @@ async function askAlias(chatId: string, masterId: number) {
   await sendMessage(chatId,
     `👋 <b>Добро пожаловать в систему заказов!</b>\n\n` +
     `Пройдите короткую регистрацию — это займёт меньше минуты.\n\n` +
-    `<b>Шаг 1 из 4</b> 📝\n\nКак вас зовут? Введите имя или псевдоним, который будет виден операторам:`
+    `<b>Шаг 1 из 5</b> 📝\n\nКак вас зовут? Введите имя или псевдоним, который будет виден операторам:`
   );
 }
 
 async function askCity(chatId: string, masterId: number) {
   pendingState.set(chatId, { step: "awaiting_city", masterId });
   await sendMessage(chatId,
-    `✅ Имя сохранено!\n\n<b>Шаг 2 из 4</b> 🏙️\n\nВ каком городе вы работаете? Напишите название города:`
+    `✅ Имя сохранено!\n\n<b>Шаг 2 из 5</b> 🏙️\n\nВ каком городе вы работаете? Напишите название города:`
   );
 }
 
 async function askSpecs(chatId: string, masterId: number) {
   pendingState.set(chatId, { step: "selecting_specs", masterId, selected: [] });
-  await sendMessage(chatId, `✅ Город сохранён!\n\n<b>Шаг 3 из 4</b> 🔧`);
+  await sendMessage(chatId, `✅ Город сохранён!\n\n<b>Шаг 3 из 5</b> 🔧`);
   await sendSpecPicker(chatId, []);
 }
 
 async function askPhone(chatId: string, masterId: number) {
   pendingState.set(chatId, { step: "awaiting_phone", masterId });
   await sendMessage(chatId,
-    `✅ Специальности сохранены!\n\n<b>Шаг 4 из 4</b> 📱\n\nВведите ваш номер телефона вручную.\nОператоры будут использовать его для связи с вами.\n\n<i>Пример: +79001234567</i>`
+    `✅ Специальности сохранены!\n\n<b>Шаг 4 из 5</b> 📱\n\nВведите ваш номер телефона вручную.\nОператоры будут использовать его для связи с вами.\n\n<i>Пример: +79001234567</i>`
+  );
+}
+
+async function askPhoto(chatId: string, masterId: number) {
+  pendingState.set(chatId, { step: "awaiting_photo", masterId });
+  await sendMessage(chatId,
+    `✅ Телефон сохранён!\n\n<b>Шаг 5 из 5</b> 🤳\n\nОтправьте ваше фото — оно будет отображаться в CRM системе рядом с вашим именем.\n\nЕсли не хотите добавлять фото — нажмите «Пропустить»:`,
+    {
+      reply_markup: {
+        inline_keyboard: [[{ text: "⏭ Пропустить", callback_data: "skip_photo" }]],
+      },
+    }
+  );
+}
+
+async function completeRegistration(chatId: string, master: { alias: string; city: string; phone: string | null }) {
+  await sendMessage(chatId,
+    `🎉 <b>Регистрация завершена!</b>\n\n` +
+    `👤 Имя: <b>${master.alias}</b>\n` +
+    `🏙️ Город: <b>${master.city}</b>\n` +
+    `📱 Телефон: <b>${master.phone ?? "не указан"}</b>\n\n` +
+    `Теперь вы можете принимать заказы. Удачной работы! 🚀`,
+    mainMenuKeyboard()
   );
 }
 
@@ -532,19 +556,20 @@ async function handleCallback(callbackQuery: any) {
     pendingState.delete(chatId);
 
     await db.update(mastersTable).set({ phone }).where(eq(mastersTable.id, masterId));
+    await editMessage(chatId, messageId, `📱 Телефон <b>${phone}</b> сохранён.`);
+    await askPhoto(chatId, masterId);
+    return;
+  }
 
-    // Fetch fresh master for the completion message
+  if (data === "skip_photo") {
+    const state = pendingState.get(chatId);
+    const masterId = state?.masterId ?? master.id;
+    pendingState.delete(chatId);
+    await answerCallback(cbId, "⏭ Фото пропущено");
+    // Fetch fresh master
     const freshRows = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
-    const fresh = freshRows[0];
-
-    await editMessage(chatId, messageId,
-      `🎉 <b>Регистрация завершена!</b>\n\n` +
-      `👤 Имя: <b>${fresh?.alias ?? master.alias}</b>\n` +
-      `🏙️ Город: <b>${fresh?.city ?? master.city}</b>\n` +
-      `📱 Телефон: <b>${phone}</b>\n\n` +
-      `Теперь вы можете принимать заказы. Удачной работы! 🚀`,
-      mainMenuKeyboard()
-    );
+    const fresh = freshRows[0] ?? master;
+    await completeRegistration(chatId, { alias: fresh.alias, city: fresh.city, phone: fresh.phone ?? null });
     return;
   }
 
@@ -778,16 +803,11 @@ router.post("/webhook", async (req, res) => {
         pendingState.delete(chatId);
         await tgRequest("sendMessage", {
           chat_id: chatId,
-          text:
-            `🎉 <b>Регистрация завершена!</b>\n\n` +
-            `👤 Имя: <b>${contactMaster.alias}</b>\n` +
-            `🏙️ Город: <b>${contactMaster.city}</b>\n` +
-            `📱 Телефон: <b>${contact.phone_number}</b>\n\n` +
-            `Теперь вы можете принимать заказы. Удачной работы! 🚀`,
+          text: `📱 Телефон <b>${contact.phone_number}</b> сохранён.`,
           parse_mode: "HTML",
           reply_markup: { remove_keyboard: true },
         });
-        await sendMessage(chatId, `👇 Главное меню:`, mainMenuKeyboard());
+        await askPhoto(chatId, contactMaster.id);
       }
       return;
     }
@@ -808,6 +828,52 @@ router.post("/webhook", async (req, res) => {
       const city = text.slice(0, 100).trim();
       await db.update(mastersTable).set({ city }).where(eq(mastersTable.id, state.masterId));
       await askSpecs(chatId, state.masterId);
+      return;
+    }
+
+    // ── Step 5: awaiting photo ─────────────────────────────────────────────────
+    if (state?.step === "awaiting_photo") {
+      const photoArr = (update.message as any)?.photo as { file_id: string; width: number; height: number }[] | undefined;
+      const hasPhoto = photoArr && photoArr.length > 0;
+
+      if (hasPhoto) {
+        // Download the largest photo and save URL
+        const fileId = photoArr[photoArr.length - 1].file_id;
+        const fileResp = await fetch(`${TELEGRAM_API}/getFile?file_id=${fileId}`);
+        const fileData = await fileResp.json() as any;
+        const filePath = fileData?.result?.file_path;
+        const photoUrl = filePath ? `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}` : null;
+
+        if (photoUrl) {
+          // Save to telegram_chats.avatar_url
+          const tgExisting = await db.select().from(telegramChatsTable).where(eq(telegramChatsTable.telegramChatId, chatId));
+          if (tgExisting[0]) {
+            await db.update(telegramChatsTable).set({ avatarUrl: photoUrl }).where(eq(telegramChatsTable.telegramChatId, chatId));
+          } else {
+            await db.insert(telegramChatsTable).values({
+              telegramChatId: chatId,
+              avatarUrl: photoUrl,
+              lastMessage: "",
+              lastMessageAt: new Date(),
+            });
+          }
+          // Also save to masters.customAvatarUrl as backup
+          await db.update(mastersTable).set({ customAvatarUrl: photoUrl }).where(eq(mastersTable.id, state.masterId));
+        }
+
+        pendingState.delete(chatId);
+        const freshRows = await db.select().from(mastersTable).where(eq(mastersTable.id, state.masterId));
+        const fresh = freshRows[0];
+        await sendMessage(chatId, `📸 Фото сохранено!`);
+        await completeRegistration(chatId, { alias: fresh?.alias ?? "", city: fresh?.city ?? "", phone: fresh?.phone ?? null });
+        return;
+      }
+
+      // Text received instead of photo — prompt again or skip
+      await sendMessage(chatId,
+        `📸 Пожалуйста, отправьте фотографию (не файл, а именно фото).\n\nЕсли не хотите добавлять — нажмите «Пропустить»:`,
+        { reply_markup: { inline_keyboard: [[{ text: "⏭ Пропустить", callback_data: "skip_photo" }]] } }
+      );
       return;
     }
 
