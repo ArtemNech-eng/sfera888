@@ -42,6 +42,7 @@ router.get("/", allOrderRoles, async (req, res) => {
     scheduledAt: o.scheduledAt ?? null,
     comment: o.comment ?? null,
     status: o.status,
+    dispatchStatus: o.dispatchStatus,
     masterId: o.masterId ?? null,
     masterName: o.masterId ? (masterMap.get(o.masterId)?.alias ?? null) : null,
     orderAmount: o.orderAmount ? Number(o.orderAmount) : null,

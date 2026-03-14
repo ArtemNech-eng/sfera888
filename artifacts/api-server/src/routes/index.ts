@@ -12,6 +12,7 @@ import telegramRouter from "./telegram.js";
 import voronkaColumnsRouter from "./voronka-columns.js";
 import masterChatRouter from "./master-chat.js";
 import okidokiRouter from "./okidoki.js";
+import dispatchRouter from "./dispatch.js";
 
 const router = Router();
 
@@ -28,5 +29,6 @@ router.use("/telegram", telegramRouter);
 router.use("/voronka", voronkaColumnsRouter);
 router.use("/master-chat", masterChatRouter);
 router.use("/okidoki", okidokiRouter);
+router.use("/dispatch", dispatchRouter);
 
 export default router;

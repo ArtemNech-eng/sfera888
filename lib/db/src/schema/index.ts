@@ -2,6 +2,7 @@ export * from "./users";
 export * from "./leads";
 export * from "./masters";
 export * from "./orders";
+export * from "./order-dispatches";
 export * from "./transactions";
 export * from "./settings";
 export * from "./telegram";

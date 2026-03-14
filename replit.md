@@ -102,6 +102,9 @@ artifacts-monorepo/
 - `POST /api/telegram/notify-new-order` — Notify free masters of new order
 - `POST /api/orders/:id/assign-master` — Assign master (enforces column + limit rules)
 - `POST /api/okidoki/webhook` — Receives contract signing status from doki.online; activates master on status "Подписан" (internal_id=2)
+- `GET /api/dispatch/:orderId` — Dispatch status and respondents list
+- `POST /api/dispatch/:orderId/broadcast` — Send order card to all active masters (without client phone)
+- `POST /api/dispatch/:orderId/assign/:masterId` — Assign order to responding master; notifies with phone; updates others' messages
 
 ## Commission Logic
 

@@ -2,7 +2,7 @@ import { Router } from "express";
 import {
   db, telegramChatsTable, telegramMessagesTable, usersTable,
   mastersTable, ordersTable, voronkaColumnsTable, leadsTable,
-  masterMessagesTable,
+  masterMessagesTable, orderDispatchesTable,
 } from "@workspace/db";
 import { eq, desc, inArray, and, ne } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
@@ -722,6 +722,64 @@ async function handleCallback(callbackQuery: any) {
     await editMessage(chatId, messageId,
       `📱 Введите номер телефона заново:\n\n<i>Пример: +79001234567</i>`
     );
+    return;
+  }
+
+  // ─── Respond to dispatched order ───────────────────────────────────────────
+  if (data.startsWith("respond_order_")) {
+    const orderId = parseInt(data.replace("respond_order_", ""));
+
+    const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
+    const order = orderRows[0];
+
+    // Order already assigned to someone else
+    if (!order || order.dispatchStatus === "assigned") {
+      await answerCallback(cbId, "⛔ Заказ уже назначен другому мастеру");
+      const takenText =
+        `📋 <b>Заявка #${orderId}</b>\n\n` +
+        (order ? `🔧 Услуга: ${order.serviceType}\n📍 Район: ${order.city}${order.district ? ", " + order.district : ""}\n\n` : "") +
+        `⛔ <b>Заявка уже назначена другому мастеру.</b>`;
+      await editMessage(chatId, messageId, takenText, { reply_markup: { inline_keyboard: [] } });
+      return;
+    }
+
+    // Check this master's dispatch record
+    const dispatchRows = await db.select().from(orderDispatchesTable)
+      .where(and(eq(orderDispatchesTable.orderId, orderId), eq(orderDispatchesTable.masterId, master.id)));
+    const dispatch = dispatchRows[0];
+
+    if (!dispatch) {
+      await answerCallback(cbId, "⚠️ Заявка не найдена");
+      return;
+    }
+
+    if (dispatch.status === "responded") {
+      await answerCallback(cbId, "✅ Вы уже откликнулись — ожидайте оператора");
+      return;
+    }
+
+    // Mark responded
+    await db.update(orderDispatchesTable).set({
+      status: "responded",
+      respondedAt: new Date(),
+    }).where(eq(orderDispatchesTable.id, dispatch.id));
+
+    await answerCallback(cbId, "✅ Отклик отправлен!");
+
+    // Update bot message
+    const respondedCard =
+      `📋 <b>Заявка #${orderId}</b>\n\n` +
+      `🔧 Услуга: <b>${order.serviceType}</b>\n` +
+      `📍 Район: <b>${order.city}${order.district ? ", " + order.district : ""}</b>\n` +
+      `📐 Объём: <b>${order.area} м²</b>\n\n` +
+      `✅ <b>Вы откликнулись!</b> Ожидайте подтверждения оператора.\n` +
+      `<i>После подтверждения вы получите контакт клиента.</i>`;
+
+    await editMessage(chatId, messageId, respondedCard, { reply_markup: { inline_keyboard: [] } });
+
+    // Log to CRM chat as system message
+    await logToChat(master.id, chatId, `🙋 Откликнулся на заявку #${orderId}`);
+
     return;
   }
 
