@@ -715,7 +715,7 @@ function KanbanColumn({ col, masters, columns, onMove, onOpenDrawer }: {
           {masters.length}
         </span>
       </div>
-      <div className="flex-1 bg-gray-50/60 border border-t-0 border-gray-100 rounded-b-2xl overflow-y-auto p-2.5 space-y-2.5" style={{ maxHeight: "calc(100vh - 195px)" }}>
+      <div className="voronka-scroll flex-1 bg-gray-50/60 border border-t-0 border-gray-100 rounded-b-2xl overflow-y-auto p-2.5 space-y-2.5" style={{ maxHeight: "calc(100vh - 195px)" }}>
         {masters.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10 text-gray-300">
             <User className="w-8 h-8 mb-2" />
@@ -936,7 +936,7 @@ export default function Voronka() {
               <div className="w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"/>
             </div>
           ) : (
-            <div className="flex gap-3 overflow-x-auto pb-4 flex-1 min-h-0">
+            <div className="voronka-scroll flex gap-3 overflow-x-auto pb-4 flex-1 min-h-0">
               {sorted.map(col => (
                 <KanbanColumn key={col.id} col={col}
                   masters={masters.filter(m => m.voronkaColumnId === col.id)}

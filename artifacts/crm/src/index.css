@@ -127,3 +127,18 @@
     @apply tracking-tight font-semibold;
   }
 }
+
+.voronka-scroll::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+.voronka-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.voronka-scroll::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 999px;
+}
+.voronka-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.32);
+}
