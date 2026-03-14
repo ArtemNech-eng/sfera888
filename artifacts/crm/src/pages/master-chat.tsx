@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { Layout } from "@/components/layout";
 import { ProtectedRoute } from "@/hooks/use-auth";
 import { useAuth } from "@/hooks/use-auth";
-import { Send, MessageSquare, RefreshCw, Check, CheckCheck, Paperclip, X, Camera, DollarSign, AlertCircle, RotateCcw, Pencil, Loader2 } from "lucide-react";
+import { Send, MessageSquare, RefreshCw, Check, CheckCheck, Paperclip, X, Camera, DollarSign, AlertCircle, RotateCcw, Pencil, Loader2, UserCheck, MapPin } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -95,6 +95,15 @@ export default function MasterChat() {
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [editAmountId, setEditAmountId] = useState<number | null>(null);
   const [editAmountValue, setEditAmountValue] = useState("");
+
+  interface RespondedOrder {
+    orderId: number;
+    serviceType: string;
+    city: string;
+    district: string | null;
+    respondentCount: number;
+  }
+  const [respondedOrders, setRespondedOrders] = useState<RespondedOrder[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -142,6 +151,20 @@ export default function MasterChat() {
     }
   }, [location]);
 
+  // Load responded dispatches for selected master
+  const fetchRespondedOrders = useCallback(async (masterId: number) => {
+    try {
+      const r = await fetch("/api/dispatch/pending", { credentials: "include" });
+      if (r.ok) {
+        const all = await r.json();
+        const mine = all.filter((item: any) =>
+          item.respondents.some((resp: any) => resp.masterId === masterId)
+        );
+        setRespondedOrders(mine);
+      }
+    } catch {}
+  }, []);
+
   // Load pending orders for selected master
   const fetchPendingOrders = useCallback(async (masterId: number) => {
     try {
@@ -160,12 +183,15 @@ export default function MasterChat() {
   useEffect(() => {
     if (selectedId) {
       fetchPendingOrders(selectedId);
-      const t = setInterval(() => fetchPendingOrders(selectedId), 8000);
-      return () => clearInterval(t);
+      fetchRespondedOrders(selectedId);
+      const t1 = setInterval(() => fetchPendingOrders(selectedId), 8000);
+      const t2 = setInterval(() => fetchRespondedOrders(selectedId), 7000);
+      return () => { clearInterval(t1); clearInterval(t2); };
     } else {
       setPendingOrders([]);
+      setRespondedOrders([]);
     }
-  }, [selectedId, fetchPendingOrders]);
+  }, [selectedId, fetchPendingOrders, fetchRespondedOrders]);
 
   // Mutations for order actions in chat
   const approveCancellationMutation = useMutation({
@@ -214,6 +240,17 @@ export default function MasterChat() {
       return r.json();
     },
     onSuccess: () => { selectedId && fetchPendingOrders(selectedId); setEditAmountId(null); setEditAmountValue(""); },
+  });
+
+  const assignMutation = useMutation({
+    mutationFn: async ({ orderId, masterId }: { orderId: number; masterId: number }) => {
+      const r = await fetch(`/api/dispatch/${orderId}/assign/${masterId}`, {
+        method: "POST", credentials: "include",
+      });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Ошибка"); }
+      return r.json();
+    },
+    onSuccess: () => { selectedId && fetchRespondedOrders(selectedId); },
   });
 
   const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -447,6 +484,43 @@ export default function MasterChat() {
                     )}
                     <div ref={bottomRef} />
                   </div>
+
+                  {/* Responded dispatch cards — assign master directly from chat */}
+                  {respondedOrders.length > 0 && (
+                    <div className="border-t border-gray-100 px-4 py-3 space-y-2 flex-shrink-0">
+                      {respondedOrders.map(item => (
+                        <div key={item.orderId} className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <UserCheck className="w-4 h-4 text-green-600 flex-shrink-0" />
+                              <span className="text-xs font-semibold text-green-800">
+                                Откликнулся на заявку #{item.orderId}
+                              </span>
+                              <span className="text-xs text-gray-500 truncate">{item.serviceType}</span>
+                              <span className="inline-flex items-center gap-1 text-[10px] text-gray-500">
+                                <MapPin className="w-3 h-3" />{item.city}{item.district ? `, ${item.district}` : ""}
+                              </span>
+                              {item.respondentCount > 1 && (
+                                <span className="text-[10px] text-green-600 bg-green-100 rounded-full px-1.5 py-0.5 font-medium">
+                                  +{item.respondentCount - 1} ещё
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => selectedId && assignMutation.mutate({ orderId: item.orderId, masterId: selectedId })}
+                              disabled={assignMutation.isPending}
+                              className="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-500 text-white hover:bg-green-600 rounded-lg font-medium text-xs transition-colors disabled:opacity-50"
+                            >
+                              {assignMutation.isPending
+                                ? <Loader2 className="w-3 h-3 animate-spin" />
+                                : <UserCheck className="w-3 h-3" />}
+                              Назначить
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Pending order action cards */}
                   {pendingOrders.length > 0 && (
