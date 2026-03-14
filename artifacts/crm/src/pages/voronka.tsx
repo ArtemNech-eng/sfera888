@@ -661,22 +661,26 @@ function MasterCard({ master, columns, onMove, onOpenDrawer }: {
           <ArrowRight className="w-3 h-3" />Переместить
         </button>
         {open && (
-          <div className="absolute bottom-full left-0 right-0 bg-white border border-gray-100 rounded-xl shadow-xl z-30 overflow-hidden">
-            {others.map(col => {
-              const c = clr(col.color);
-              return (
-                <button key={col.id} onClick={() => { onMove(master.id, col.id); setOpen(false); }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[12px] text-gray-700 hover:bg-gray-50 transition-colors">
-                  <span className={`w-2 h-2 rounded-full ${c.dot}`} />
-                  {col.name}
-                </button>
-              );
-            })}
-            <button onClick={() => { onMove(master.id, null); setOpen(false); }}
-              className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[12px] text-gray-400 hover:bg-gray-50 transition-colors border-t border-gray-50">
-              Без колонки
-            </button>
-          </div>
+          <>
+            {/* Invisible full-screen overlay to close on click anywhere */}
+            <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
+            <div className="absolute bottom-full left-0 right-0 bg-white border border-gray-100 rounded-xl shadow-xl z-30 overflow-hidden">
+              {others.map(col => {
+                const c = clr(col.color);
+                return (
+                  <button key={col.id} onClick={() => { onMove(master.id, col.id); setOpen(false); }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[12px] text-gray-700 hover:bg-gray-50 transition-colors">
+                    <span className={`w-2 h-2 rounded-full ${c.dot}`} />
+                    {col.name}
+                  </button>
+                );
+              })}
+              <button onClick={() => { onMove(master.id, null); setOpen(false); }}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[12px] text-gray-400 hover:bg-gray-50 transition-colors border-t border-gray-50">
+                Без колонки
+              </button>
+            </div>
+          </>
         )}
       </div>
     </div>
