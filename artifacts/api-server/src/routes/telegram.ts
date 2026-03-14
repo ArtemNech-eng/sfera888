@@ -81,6 +81,11 @@ async function getOnSiteColumn() {
   return nonReceiving.find(c => c.position > 1) ?? nonReceiving[0] ?? null;
 }
 
+async function getAwaitingPaymentColumn() {
+  const cols = await db.select().from(voronkaColumnsTable).orderBy(voronkaColumnsTable.position);
+  return cols.find(c => c.name === "Ожидает оплаты") ?? null;
+}
+
 // ─── OkiDoki contract creation ────────────────────────────────────────────────
 
 const OKIDOKI_API_URL = "https://api.doki.online";
@@ -1157,11 +1162,14 @@ router.post("/webhook", async (req, res) => {
         updatedAt: new Date(),
       }).where(eq(ordersTable.id, orderId));
 
-      // Move master back to free column
-      const freeCol = await getFreeColumn();
-      await db.update(mastersTable).set({
-        voronkaColumnId: freeCol?.id ?? master.voronkaColumnId,
-      }).where(eq(mastersTable.id, master.id));
+      // Move master to "Ожидает оплаты" — NOT to free column
+      const awaitingCol = await getAwaitingPaymentColumn();
+      if (awaitingCol) {
+        await db.update(mastersTable).set({
+          voronkaColumnId: awaitingCol.id,
+        }).where(eq(mastersTable.id, master.id));
+      }
+      // If column doesn't exist — leave master in current column (don't move to free)
 
       pendingState.delete(chatId);
 
@@ -1175,8 +1183,9 @@ router.post("/webhook", async (req, res) => {
         `💰 Указанная сумма: <b>${amount.toLocaleString("ru-RU")} ₽</b>\n` +
         `🔸 Предварительная комиссия: <b>${autoCommission.toLocaleString("ru-RU")} ₽</b>\n\n` +
         `⏳ <b>Сумма отправлена на модерацию.</b>\n` +
-        `Оператор проверит и подтвердит её — после этого комиссия будет начислена.\n\n` +
-        `Ваш новый статус: <b>${freeCol?.name ?? "Свободен"}</b>`,
+        `Оператор проверит и подтвердит её — после этого будет начислена комиссия.\n\n` +
+        `💳 Ваш статус: <b>Ожидает оплаты комиссии</b>\n` +
+        `После оплаты комиссии вы сможете брать новые заказы.`,
         mainMenuKeyboard()
       );
       return;

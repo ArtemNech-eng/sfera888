@@ -20,6 +20,11 @@ async function getFreeColumn() {
   return cols.find(c => c.receivesOrders) ?? null;
 }
 
+async function getAwaitingPaymentColumn() {
+  const cols = await db.select().from(voronkaColumnsTable).orderBy(voronkaColumnsTable.position);
+  return cols.find(c => c.name === "Ожидает оплаты") ?? null;
+}
+
 router.get("/", allOrderRoles, async (req, res) => {
   const { status } = req.query;
   let orders;
@@ -133,7 +138,13 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
         if (onSiteCol) {
           await db.update(mastersTable).set({ voronkaColumnId: onSiteCol.id }).where(eq(mastersTable.id, masterId));
         }
-      } else if (status === "completed" || status === "cancelled") {
+      } else if (status === "completed") {
+        // Move to "Ожидает оплаты" — free only after commission paid
+        const awaitingCol = await getAwaitingPaymentColumn();
+        if (awaitingCol) {
+          await db.update(mastersTable).set({ voronkaColumnId: awaitingCol.id }).where(eq(mastersTable.id, masterId));
+        }
+      } else if (status === "cancelled") {
         // Move back to "Свободен"
         const freeCol = await getFreeColumn();
         if (freeCol) {
