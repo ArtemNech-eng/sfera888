@@ -33,7 +33,7 @@ export function Layout({ children }: LayoutProps) {
   const { data: unreadData } = useQuery<{ count: number }>({
     queryKey: ["/api/master-chat/stats/unread"],
     enabled: !!canSeeChat,
-    refetchInterval: 30_000,
+    refetchInterval: 10_000,
   });
   const unreadCount = unreadData?.count ?? 0;
 
@@ -79,7 +79,7 @@ export function Layout({ children }: LayoutProps) {
                 <item.icon className={cn("w-5 h-5 shrink-0", isActive ? "text-primary" : "text-sidebar-foreground/50")} />
                 <span className="flex-1 truncate">{item.label}</span>
                 {'badge' in item && item.badge != null && (
-                  <span className="ml-auto min-w-[20px] h-5 px-1.5 flex items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[11px] font-bold leading-none">
+                  <span className="ml-auto min-w-[20px] h-5 px-1.5 flex items-center justify-center rounded-full bg-red-500 text-white text-[11px] font-bold leading-none animate-pulse shadow-sm shadow-red-300">
                     {item.badge > 99 ? '99+' : item.badge}
                   </span>
                 )}
