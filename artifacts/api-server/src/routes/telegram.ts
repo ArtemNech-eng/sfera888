@@ -1405,10 +1405,51 @@ router.post("/webhook", async (req, res) => {
       return;
     }
 
-    // For non-command messages from registered masters, show menu hint
+    // For non-command messages from registered masters:
+    // if a conversation already exists (operator wrote first), treat as a free reply
     const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.telegramId, String(from.id)));
-    if (masterRows[0]) {
-      await sendMessage(chatId, "Используйте кнопки меню ниже 👇", mainMenuKeyboard());
+    const masterFallback = masterRows[0];
+    if (masterFallback && (text || (update.message as any)?.photo)) {
+      const photoArr2 = (update.message as any)?.photo as { file_id: string }[] | undefined;
+      const hasPhoto2 = photoArr2 && photoArr2.length > 0;
+
+      // Check if there's an existing conversation thread with this master
+      const existingMsgs = await db.select().from(masterMessagesTable)
+        .where(eq(masterMessagesTable.masterId, masterFallback.id))
+        .orderBy(desc(masterMessagesTable.createdAt))
+        .limit(1);
+
+      if (existingMsgs.length > 0) {
+        // Conversation exists — save this as a direct reply
+        let photoUrl2: string | null = null;
+        if (hasPhoto2) {
+          const fileId = photoArr2[photoArr2.length - 1].file_id;
+          const fileResp = await fetch(`${TELEGRAM_API}/getFile?file_id=${fileId}`);
+          const fileData = await fileResp.json() as any;
+          const filePath = fileData?.result?.file_path;
+          if (filePath) photoUrl2 = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
+        }
+
+        await db.insert(masterMessagesTable).values({
+          masterId: masterFallback.id,
+          telegramChatId: chatId,
+          text: text ?? "",
+          fromMaster: true,
+          senderName: masterFallback.alias,
+          isRead: false,
+          photoUrl: photoUrl2,
+        });
+
+        const previewText2 = hasPhoto2 ? "📷 Фото" : `<i>«${text}»</i>`;
+        await sendMessage(
+          chatId,
+          `✅ <b>Сообщение отправлено оператору!</b>\n\n${previewText2}\n\nОтвет придёт сюда же.`,
+          mainMenuKeyboard()
+        );
+      } else {
+        // No conversation — show menu hint
+        await sendMessage(chatId, "Используйте кнопки меню ниже 👇", mainMenuKeyboard());
+      }
     }
 
   } catch (err) {
