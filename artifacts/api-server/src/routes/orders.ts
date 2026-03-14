@@ -7,6 +7,19 @@ import { calculateCommission } from "../lib/auth.js";
 const router = Router();
 const allOrderRoles = requireRole("admin", "master_operator");
 
+// ─── Column helpers ───────────────────────────────────────────────────────────
+
+async function getOnSiteColumn() {
+  const cols = await db.select().from(voronkaColumnsTable).orderBy(voronkaColumnsTable.position);
+  const nonReceiving = cols.filter(c => !c.receivesOrders);
+  return nonReceiving.find(c => c.position > 1) ?? nonReceiving[0] ?? null;
+}
+
+async function getFreeColumn() {
+  const cols = await db.select().from(voronkaColumnsTable).orderBy(voronkaColumnsTable.position);
+  return cols.find(c => c.receivesOrders) ?? null;
+}
+
 router.get("/", allOrderRoles, async (req, res) => {
   const { status } = req.query;
   let orders;
@@ -72,6 +85,12 @@ router.get("/:id", allOrderRoles, async (req, res) => {
 router.patch("/:id", allOrderRoles, async (req, res) => {
   const id = parseInt(req.params.id);
   const { status, orderAmount, commission, clientRating } = req.body;
+
+  // Fetch current order to get masterId before update
+  const currentRows = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
+  if (!currentRows[0]) return res.status(404).json({ error: "Order not found" });
+  const current = currentRows[0];
+
   const updates: any = { updatedAt: new Date() };
   if (status !== undefined) updates.status = status;
   if (orderAmount !== undefined) updates.orderAmount = orderAmount !== null ? String(orderAmount) : null;
@@ -81,6 +100,29 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
   const result = await db.update(ordersTable).set(updates).where(eq(ordersTable.id, id)).returning();
   if (!result[0]) return res.status(404).json({ error: "Order not found" });
   const o = result[0];
+
+  // Auto-move master between voronka columns based on status change
+  if (status !== undefined && current.masterId) {
+    const masterId = current.masterId;
+    const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
+    const master = masterRows[0];
+    if (master) {
+      if (status === "master_assigned" || status === "in_progress") {
+        // Move to "На объекте"
+        const onSiteCol = await getOnSiteColumn();
+        if (onSiteCol) {
+          await db.update(mastersTable).set({ voronkaColumnId: onSiteCol.id }).where(eq(mastersTable.id, masterId));
+        }
+      } else if (status === "completed" || status === "cancelled") {
+        // Move back to "Свободен"
+        const freeCol = await getFreeColumn();
+        if (freeCol) {
+          await db.update(mastersTable).set({ voronkaColumnId: freeCol.id }).where(eq(mastersTable.id, masterId));
+        }
+      }
+    }
+  }
+
   let masterName: string | null = null;
   if (o.masterId) {
     const m = await db.select().from(mastersTable).where(eq(mastersTable.id, o.masterId));
@@ -148,10 +190,12 @@ router.post("/:id/assign-master", allOrderRoles, async (req, res) => {
   if (!result[0]) return res.status(404).json({ error: "Order not found" });
   const o = result[0];
 
-  // Update master stats
+  // Update master stats + move to "На объекте" column automatically
+  const onSiteCol = await getOnSiteColumn();
   await db.update(mastersTable).set({
     totalOrders: master.totalOrders + 1,
     acceptedOrders: master.acceptedOrders + 1,
+    voronkaColumnId: onSiteCol?.id ?? master.voronkaColumnId,
   }).where(eq(mastersTable.id, masterId));
 
   res.json({
