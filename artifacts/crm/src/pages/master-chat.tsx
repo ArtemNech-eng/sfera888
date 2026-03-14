@@ -594,6 +594,11 @@ export default function MasterChat() {
                               <span className="text-gray-500">Комиссия (к оплате)</span>
                               <span className="font-bold text-violet-700 text-sm">{fmt(tx.commission)}</span>
                             </div>
+                            <div className="border-t border-dashed border-gray-100 my-1" />
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-gray-500">Реквизиты для перевода</span>
+                              <span className="font-mono font-semibold text-gray-800 select-all">89892860863</span>
+                            </div>
                           </div>
                           {/* Confirm button */}
                           <button
