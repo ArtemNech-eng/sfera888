@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/use-auth";
 import {
   X, Phone, MapPin, MessageSquare, Star, Briefcase, AlertTriangle,
   User, Tag, Plus, CheckSquare, Square, Clock, Trash2, History,
-  Send, Paperclip, Check, CheckCheck, Calendar, DollarSign, Loader2,
+  Send, Paperclip, Check, CheckCheck, Calendar, DollarSign, Loader2, CheckCircle2,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -113,6 +113,8 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
   const [chatLoaded, setChatLoaded] = useState(false);
   const [pendingTxs, setPendingTxs] = useState<PendingTx[]>([]);
   const [confirmingTx, setConfirmingTx] = useState(false);
+  const [showActivatePopover, setShowActivatePopover] = useState(false);
+  const [activatingContract, setActivatingContract] = useState(false);
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
@@ -163,6 +165,24 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
       }
     } finally {
       setConfirmingTx(false);
+    }
+  };
+
+  const activateManually = async () => {
+    setActivatingContract(true);
+    try {
+      const r = await fetch(`/api/masters/${master.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ status: "active" }),
+      });
+      if (r.ok) {
+        onMasterUpdate(master.id, { status: "active" });
+        setShowActivatePopover(false);
+      }
+    } finally {
+      setActivatingContract(false);
     }
   };
 
@@ -249,7 +269,37 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
               <p className="font-bold text-gray-800 text-[15px]">{master.alias}</p>
               {master.isTestMaster && <span className="text-[10px] bg-amber-100 text-amber-700 rounded-full px-1.5 py-0.5 font-semibold">ТЕСТ</span>}
               {master.status === "suspended" && <span className="text-[10px] bg-red-100 text-red-600 rounded-full px-1.5 py-0.5 font-semibold">Отстранён</span>}
-              {master.status === "pending_contract" && <span className="text-[10px] bg-amber-100 text-amber-600 rounded-full px-1.5 py-0.5 font-semibold">Ожидает договора</span>}
+              {master.status === "pending_contract" && (
+                <div className="relative">
+                  <button
+                    onClick={() => setShowActivatePopover(v => !v)}
+                    className="text-[10px] bg-amber-100 text-amber-600 rounded-full px-1.5 py-0.5 font-semibold hover:bg-amber-200 transition-colors cursor-pointer"
+                  >
+                    Ожидает договора ▾
+                  </button>
+                  {showActivatePopover && (
+                    <div className="absolute left-0 top-6 z-50 bg-white border border-gray-200 rounded-xl shadow-xl p-3 w-52">
+                      <p className="text-[11px] text-gray-500 mb-2 leading-tight">Договор подписан вручную или через другой канал?</p>
+                      <button
+                        onClick={activateManually}
+                        disabled={activatingContract}
+                        className="w-full flex items-center justify-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-[12px] font-semibold rounded-lg px-3 py-2 transition-colors disabled:opacity-60"
+                      >
+                        {activatingContract
+                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          : <CheckCircle2 className="w-3.5 h-3.5" />}
+                        Активировать вручную
+                      </button>
+                      <button
+                        onClick={() => setShowActivatePopover(false)}
+                        className="w-full text-center text-[11px] text-gray-400 hover:text-gray-600 mt-1.5 py-1"
+                      >
+                        Отмена
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <p className="text-xs text-gray-400 mt-0.5">{colName} · {master.city}</p>
           </div>
