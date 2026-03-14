@@ -138,11 +138,31 @@ export default function Orders() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/orders"] }),
   });
 
+  interface PendingDispatch {
+    orderId: number;
+    serviceType: string;
+    city: string;
+    district: string | null;
+    respondentCount: number;
+    respondents: { masterId: number; masterName: string; respondedAt: string | null }[];
+  }
+
+  const { data: pendingDispatches } = useQuery<PendingDispatch[]>({
+    queryKey: ["/api/dispatch/pending"],
+    queryFn: async () => {
+      const r = await fetch("/api/dispatch/pending", { credentials: "include" });
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+    refetchInterval: 6000,
+  });
+
   const openOrder = openDispatchId ? orders?.find(o => o.id === openDispatchId) : null;
   const respondents = dispatchData?.dispatches.filter(d => d.status === "responded") ?? [];
 
   const pendingAmountOrders = orders?.filter(o => (o as any).proposedAmount && !(o as any).orderAmount) ?? [];
   const cancellationOrders = orders?.filter(o => o.status === "cancellation_requested" as any) ?? [];
+  const pendingResponseOrders = pendingDispatches ?? [];
 
   return (
     <ProtectedRoute allowedRoles={['admin', 'master_operator']}>
@@ -190,6 +210,43 @@ export default function Orders() {
                       <span className="font-medium">Причина: </span>{(order as any).cancelReason}
                     </div>
                   )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Pending responses banner */}
+          {pendingResponseOrders.length > 0 && (
+            <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 space-y-2">
+              <div className="flex items-center gap-2 text-blue-800 font-semibold text-sm mb-1">
+                <Users className="w-4 h-4" />
+                {pendingResponseOrders.length === 1
+                  ? `1 заявка — есть отклики от мастеров`
+                  : `${pendingResponseOrders.length} заявки — есть отклики от мастеров`}
+              </div>
+              {pendingResponseOrders.map(item => (
+                <div key={item.orderId} className="flex items-center justify-between bg-white rounded-xl border border-blue-100 px-4 py-3">
+                  <div>
+                    <span className="font-medium text-foreground">#{item.orderId}</span>
+                    <span className="mx-2 text-muted-foreground">·</span>
+                    <span className="text-foreground">{item.serviceType}</span>
+                    <span className="mx-2 text-muted-foreground">·</span>
+                    <span className="text-muted-foreground text-xs">{item.city}{item.district ? `, ${item.district}` : ""}</span>
+                    <span className="ml-3 inline-flex items-center gap-1 text-xs font-medium text-blue-700 bg-blue-100 rounded-full px-2 py-0.5">
+                      <UserCheck className="w-3 h-3" />
+                      {item.respondentCount} {item.respondentCount === 1 ? "отклик" : item.respondentCount < 5 ? "отклика" : "откликов"}
+                    </span>
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      {item.respondents.map(r => r.masterName).join(", ")}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setOpenDispatchId(item.orderId)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-500 text-white hover:bg-blue-600 rounded-lg font-medium text-xs transition-colors"
+                  >
+                    <UserCheck className="w-3 h-3" />
+                    Назначить мастера
+                  </button>
                 </div>
               ))}
             </div>
@@ -259,8 +316,9 @@ export default function Orders() {
                     const ds = (order as any).dispatchStatus ?? "none";
                     const proposed = (order as any).proposedAmount ? Number((order as any).proposedAmount) : null;
                     const confirmed = (order as any).orderAmount ? Number((order as any).orderAmount) : null;
+                    const pendingResp = pendingResponseOrders.find(p => p.orderId === order.id);
                     return (
-                      <tr key={order.id} className={`hover:bg-slate-50/50 transition-colors ${proposed && !confirmed ? "bg-amber-50/30" : ""}`}>
+                      <tr key={order.id} className={`hover:bg-slate-50/50 transition-colors ${proposed && !confirmed ? "bg-amber-50/30" : pendingResp ? "bg-blue-50/30" : ""}`}>
                         <td className="px-6 py-4">
                           <span className="font-medium text-foreground">#{order.id}</span>
                           <div className="text-xs text-muted-foreground mt-1">{formatDate(order.createdAt)}</div>
@@ -322,9 +380,10 @@ export default function Orders() {
                             {ds === "dispatching" && (
                               <button
                                 onClick={() => setOpenDispatchId(order.id)}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground rounded-lg font-medium text-xs transition-colors"
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-xs transition-colors ${pendingResp ? "bg-blue-500 text-white hover:bg-blue-600" : "bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground"}`}
                               >
-                                <Users className="w-3 h-3" /> Отклики
+                                <Users className="w-3 h-3" />
+                                {pendingResp ? `Отклики (${pendingResp.respondentCount})` : "Отклики"}
                               </button>
                             )}
                           </div>

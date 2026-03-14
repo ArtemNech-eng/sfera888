@@ -55,6 +55,46 @@ function buildOrderCard(order: any, orderId: number): string {
   );
 }
 
+// ─── GET /api/dispatch/pending — orders with unprocessed responses ────────────
+
+router.get("/pending", ops, async (req, res) => {
+  // Find all dispatch records with status "responded"
+  const responded = await db.select().from(orderDispatchesTable)
+    .where(eq(orderDispatchesTable.status, "responded"));
+
+  if (responded.length === 0) return res.json([]);
+
+  const orderIds = [...new Set(responded.map(d => d.orderId))];
+  const orders = await db.select().from(ordersTable)
+    .where(inArray(ordersTable.id, orderIds));
+
+  // Only return orders that are still in dispatching state (not yet assigned)
+  const pendingOrders = orders.filter(o => o.dispatchStatus === "dispatching");
+  if (pendingOrders.length === 0) return res.json([]);
+
+  const masterIds = [...new Set(responded.map(d => d.masterId))];
+  const masters = masterIds.length > 0
+    ? await db.select().from(mastersTable).where(inArray(mastersTable.id, masterIds))
+    : [];
+  const masterMap = new Map(masters.map(m => [m.id, m]));
+
+  res.json(pendingOrders.map(o => {
+    const orderRespondents = responded.filter(d => d.orderId === o.id);
+    return {
+      orderId: o.id,
+      serviceType: o.serviceType,
+      city: o.city,
+      district: o.district,
+      respondentCount: orderRespondents.length,
+      respondents: orderRespondents.map(d => ({
+        masterId: d.masterId,
+        masterName: masterMap.get(d.masterId)?.alias ?? "?",
+        respondedAt: d.respondedAt,
+      })),
+    };
+  }));
+});
+
 // ─── GET /api/dispatch/:orderId — dispatch status ──────────────────────────────
 
 router.get("/:orderId", ops, async (req, res) => {
