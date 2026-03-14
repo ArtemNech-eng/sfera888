@@ -5,6 +5,9 @@ import { requireRole } from "../middlewares/requireAuth.js";
 
 const router = Router();
 const TELEGRAM_API = `https://api.telegram.org/bot${process.env["TELEGRAM_BOT_TOKEN"]}`;
+const _DOMAIN = process.env.REPLIT_DEV_DOMAIN ?? "";
+const BANNER_NEW_ORDER = _DOMAIN ? `https://${_DOMAIN}/api/banners/new_order.png` : null;
+const BANNER_ASSIGNED  = _DOMAIN ? `https://${_DOMAIN}/api/banners/order_assigned.png` : null;
 
 const ops = requireRole("admin", "master_operator");
 
@@ -23,6 +26,22 @@ async function sendTg(chatId: string, text: string, replyMarkup?: object): Promi
     return json?.result?.message_id?.toString() ?? null;
   } catch {
     return null;
+  }
+}
+
+async function sendTgPhoto(chatId: string, photoUrl: string, caption: string, replyMarkup?: object): Promise<string | null> {
+  try {
+    const body: any = { chat_id: chatId, photo: photoUrl, caption, parse_mode: "HTML" };
+    if (replyMarkup) body.reply_markup = replyMarkup;
+    const r = await fetch(`${TELEGRAM_API}/sendPhoto`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const json = await r.json() as any;
+    return json?.result?.message_id?.toString() ?? null;
+  } catch {
+    return sendTg(chatId, caption, replyMarkup); // fallback to text
   }
 }
 
@@ -191,7 +210,9 @@ router.post("/:orderId/broadcast", ops, async (req, res) => {
       skipped++;
       continue;
     }
-    const msgId = await sendTg(master.telegramId, cardText, replyMarkup);
+    const msgId = BANNER_NEW_ORDER
+      ? await sendTgPhoto(master.telegramId, BANNER_NEW_ORDER, cardText, replyMarkup)
+      : await sendTg(master.telegramId, cardText, replyMarkup);
     await db.insert(orderDispatchesTable).values({
       orderId,
       masterId: master.id,
@@ -263,7 +284,9 @@ router.post("/:orderId/assign/:masterId", ops, async (req, res) => {
       (order.comment ? `\n💬 Комментарий: ${order.comment}` : "") +
       (lead ? `\n\n📞 Клиент: <b>${lead.clientName}</b>\nТелефон: <b>${lead.clientPhone}</b>` : "");
 
-    await sendTg(master.telegramId, assignedMsg);
+    BANNER_ASSIGNED
+      ? await sendTgPhoto(master.telegramId, BANNER_ASSIGNED, assignedMsg)
+      : await sendTg(master.telegramId, assignedMsg);
 
     // Log to CRM chat
     await db.insert(masterMessagesTable).values({

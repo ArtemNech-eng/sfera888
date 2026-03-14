@@ -1,0 +1,20 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "wqwBA_AQtVRvGnFns1FfF"
+uri = "file://artifacts/api-server/public/banners/welcome.png"
+type = "image"
+title = "Баннер: приветствие / регистрация"
+
+[[outputs]]
+id = "tZxV8mGgxTgCEggjiMZag"
+uri = "file://artifacts/api-server/public/banners/new_order.png"
+type = "image"
+title = "Баннер: новый заказ"
+
+[[outputs]]
+id = "aVIxXRbrmQZiADi4MWxC4"
+uri = "file://artifacts/api-server/public/banners/order_assigned.png"
+type = "image"
+title = "Баннер: заказ назначен мастеру"

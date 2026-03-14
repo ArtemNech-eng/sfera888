@@ -28,6 +28,8 @@ app.use(session({
 
 // Serve uploaded avatars as static files (path must start with /api since Replit routes /api/* here)
 app.use("/api/uploads", express.static(path.join(__dirname, "../../public/uploads")));
+// Serve banner images
+app.use("/api/banners", express.static(path.join(__dirname, "../public/banners")));
 
 app.use("/api", router);
 

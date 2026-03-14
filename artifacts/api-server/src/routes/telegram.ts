@@ -65,6 +65,25 @@ async function answerCallback(callbackQueryId: string, text?: string) {
   return tgRequest("answerCallbackQuery", { callback_query_id: callbackQueryId, text });
 }
 
+// ─── Banners ──────────────────────────────────────────────────────────────────
+const DOMAIN = process.env.REPLIT_DEV_DOMAIN ?? "";
+const BANNERS = {
+  welcome:        DOMAIN ? `https://${DOMAIN}/api/banners/welcome.png` : null,
+  new_order:      DOMAIN ? `https://${DOMAIN}/api/banners/new_order.png` : null,
+  order_assigned: DOMAIN ? `https://${DOMAIN}/api/banners/order_assigned.png` : null,
+};
+
+async function sendBanner(chatId: string | number, bannerKey: keyof typeof BANNERS, caption: string, extra?: object) {
+  const url = BANNERS[bannerKey];
+  if (!url) return sendMessage(chatId, caption, extra);
+  try {
+    const result = await tgRequest("sendPhoto", { chat_id: chatId, photo: url, caption, parse_mode: "HTML", ...extra });
+    return result;
+  } catch {
+    return sendMessage(chatId, caption, extra);
+  }
+}
+
 // ─── Column helpers ───────────────────────────────────────────────────────────
 
 async function getFirstColumn() {
@@ -455,7 +474,7 @@ async function showProfile(chatId: string, master: any, messageId?: number) {
 
 async function askAlias(chatId: string, masterId: number) {
   pendingState.set(chatId, { step: "awaiting_alias", masterId });
-  await sendMessage(chatId,
+  await sendBanner(chatId, "welcome",
     `👋 <b>Добро пожаловать в систему заказов!</b>\n\n` +
     `Пройдите короткую регистрацию — это займёт меньше минуты.\n\n` +
     `<b>Шаг 1 из 5</b> 📝\n\nКак вас зовут? Введите имя или псевдоним, который будет виден операторам:`
@@ -496,7 +515,7 @@ async function completeRegistration(chatId: string, master: { id: number; alias:
   if (contractLink) {
     await db.update(mastersTable).set({ status: "pending_contract" }).where(eq(mastersTable.id, master.id));
     await logToChat(master.id, chatId, `📝 Договор отправлен на подписание`);
-    await sendMessage(chatId,
+    await sendBanner(chatId, "welcome",
       `📝 <b>Осталось подписать договор!</b>\n\n` +
       `👤 Имя: <b>${master.alias}</b>\n` +
       `🏙️ Город: <b>${master.city}</b>\n` +
@@ -516,7 +535,7 @@ async function completeRegistration(chatId: string, master: { id: number; alias:
     // OkiDoki unavailable — set pending, wait for admin to activate manually
     await db.update(mastersTable).set({ status: "pending_contract" }).where(eq(mastersTable.id, master.id));
     await logToChat(master.id, chatId, `📋 Заявка передана администратору на проверку`);
-    await sendMessage(chatId,
+    await sendBanner(chatId, "welcome",
       `✅ <b>Заявка принята!</b>\n\n` +
       `👤 Имя: <b>${master.alias}</b>\n` +
       `🏙️ Город: <b>${master.city}</b>\n` +
