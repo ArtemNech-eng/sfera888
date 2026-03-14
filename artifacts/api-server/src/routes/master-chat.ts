@@ -128,6 +128,8 @@ router.get("/:masterId", requireRole("admin", "master_operator", "lead_operator"
   const pendingTx = await db.select().from(transactionsTable)
     .where(and(eq(transactionsTable.masterId, masterId), eq(transactionsTable.paymentStatus, "pending")));
 
+  console.log(`[master-chat] masterId=${masterId} pendingTx count=${pendingTx.length}`, pendingTx.map(t => t.id));
+
   res.json({
     master: { id: master.id, alias: master.alias, city: master.city, telegramId: master.telegramId, avatarUrl },
     messages,

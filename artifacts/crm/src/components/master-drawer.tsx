@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/use-auth";
 import {
   X, Phone, MapPin, MessageSquare, Star, Briefcase, AlertTriangle,
   User, Tag, Plus, CheckSquare, Square, Clock, Trash2, History,
-  Send, Paperclip, Check, CheckCheck, Calendar,
+  Send, Paperclip, Check, CheckCheck, Calendar, DollarSign, Loader2,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -23,6 +23,7 @@ export interface DrawerMaster {
 interface MasterTask { id: number; masterId: number; text: string; dueAt: string | null; isCompleted: boolean; createdBy: string | null; createdAt: string; }
 interface HistoryOrder { id: number; status: string; serviceType: string; district: string; city: string; clientName: string | null; clientPhone: string | null; scheduledAt: string | null; completedAt: string | null; createdAt: string; }
 interface ChatMessage { id: number; text: string; photoUrl: string | null; fromMaster: boolean; senderName: string | null; isRead: boolean; createdAt: string; }
+interface PendingTx { id: number; orderId: number; orderAmount: number; commission: number; }
 type DrawerTab = "profile" | "chat" | "orders" | "tasks";
 
 // ─── Avatar ───────────────────────────────────────────────────────────────────
@@ -110,6 +111,8 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatLoaded, setChatLoaded] = useState(false);
+  const [pendingTxs, setPendingTxs] = useState<PendingTx[]>([]);
+  const [confirmingTx, setConfirmingTx] = useState(false);
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
@@ -122,7 +125,7 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
     setTags(master.tags ?? []);
     setTab("profile");
     setOrders([]); setOrdersLoaded(false);
-    setChatMessages([]); setChatLoaded(false);
+    setChatMessages([]); setChatLoaded(false); setPendingTxs([]);
   }, [master.id]);
 
   useEffect(() => {
@@ -142,8 +145,24 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
     if (r.ok) {
       const data = await r.json();
       setChatMessages(data.messages ?? []);
+      setPendingTxs(data.pendingTransactions ?? []);
       setChatLoaded(true);
       await fetch(`/api/master-chat/${master.id}/read`, { method: "PATCH" });
+    }
+  };
+
+  const confirmPayment = async (txId: number) => {
+    setConfirmingTx(true);
+    try {
+      const r = await fetch(`/api/finance/transactions/${txId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        credentials: "include", body: JSON.stringify({ paymentStatus: "paid" }),
+      });
+      if (r.ok) {
+        setPendingTxs(p => p.filter(t => t.id !== txId));
+      }
+    } finally {
+      setConfirmingTx(false);
     }
   };
 
@@ -391,6 +410,40 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                 })}
                 <div ref={chatBottomRef} />
               </div>
+              {/* Commission payment receipt cards */}
+              {pendingTxs.map(tx => (
+                <div key={tx.id} className="mx-3 mb-2 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 space-y-2.5 flex-shrink-0">
+                  <div className="flex items-center gap-2">
+                    <DollarSign className="w-4 h-4 text-violet-600 flex-shrink-0" />
+                    <span className="text-xs font-semibold text-violet-800">Оплата комиссии по заказу #{tx.orderId}</span>
+                  </div>
+                  <div className="bg-white rounded-lg border border-violet-100 px-3 py-2 space-y-1.5">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-gray-500">Стоимость работ</span>
+                      <span className="font-semibold text-gray-800">{tx.orderAmount.toLocaleString("ru-RU")} ₽</span>
+                    </div>
+                    <div className="border-t border-dashed border-gray-100" />
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-gray-500">Комиссия (к оплате)</span>
+                      <span className="font-bold text-violet-700">{tx.commission.toLocaleString("ru-RU")} ₽</span>
+                    </div>
+                    <div className="border-t border-dashed border-gray-100" />
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-gray-500">Реквизиты</span>
+                      <span className="font-mono font-semibold text-gray-800 select-all text-[11px]">89892860863 · Альфа Банк · Игорь К.</span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => confirmPayment(tx.id)}
+                    disabled={confirmingTx}
+                    className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-violet-600 text-white hover:bg-violet-700 rounded-lg font-medium text-xs transition-colors disabled:opacity-50"
+                  >
+                    {confirmingTx ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                    Подтвердить оплату
+                  </button>
+                </div>
+              ))}
+
               {photoPreview && (
                 <div className="px-4 pt-2 flex items-center gap-2 border-t border-gray-50">
                   <div className="relative">
