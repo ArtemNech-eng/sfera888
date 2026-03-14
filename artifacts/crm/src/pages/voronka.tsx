@@ -550,20 +550,30 @@ function Row({ icon, label, children }: { icon: React.ReactNode; label: string; 
 
 // ─── Master Card ──────────────────────────────────────────────────────────────
 
-function MasterCard({ master, columns, onMove, onOpenDrawer }: {
+function MasterCard({ master, columns, onMove, onOpenDrawer, onDragStart, onDragEnd, isDragging }: {
   master: VoronkaMaster;
   columns: VoronkaColumn[];
   onMove: (id: number, colId: number | null) => void;
   onOpenDrawer: (master: VoronkaMaster) => void;
+  onDragStart: (id: number) => void;
+  onDragEnd: () => void;
+  isDragging: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const others = columns.filter(c => c.id !== master.voronkaColumnId);
   const hasActiveOrders = master.activeOrders.length > 0;
 
   return (
-    <div className="bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden">
+    <div
+      draggable
+      onDragStart={e => { e.dataTransfer.effectAllowed = "move"; onDragStart(master.id); }}
+      onDragEnd={onDragEnd}
+      className={`bg-white border border-gray-100 rounded-2xl shadow-sm transition-all duration-200 overflow-hidden ${
+        isDragging ? "opacity-40 scale-95 shadow-none cursor-grabbing" : "hover:shadow-md cursor-grab"
+      }`}
+    >
       {/* Clickable card body */}
-      <div className="cursor-pointer" onClick={() => onOpenDrawer(master)}>
+      <div className="cursor-pointer" onClick={() => { if (!isDragging) onOpenDrawer(master); }}>
         {/* Card top bar */}
         <div className="px-3.5 pt-3.5 pb-2.5">
           <div className="flex items-start gap-3">
@@ -689,16 +699,23 @@ function MasterCard({ master, columns, onMove, onOpenDrawer }: {
 
 // ─── Column ───────────────────────────────────────────────────────────────────
 
-function KanbanColumn({ col, masters, columns, onMove, onOpenDrawer }: {
+function KanbanColumn({ col, masters, columns, onMove, onOpenDrawer, draggingId, onDragStartMaster, onDragEndMaster, onDropMaster }: {
   col: VoronkaColumn | null;
   masters: VoronkaMaster[];
   columns: VoronkaColumn[];
   onMove: (id: number, colId: number | null) => void;
   onOpenDrawer: (master: VoronkaMaster) => void;
+  draggingId: number | null;
+  onDragStartMaster: (id: number) => void;
+  onDragEndMaster: () => void;
+  onDropMaster: (masterId: number, colId: number | null) => void;
 }) {
+  const [dragOver, setDragOver] = useState(false);
   const c = col ? clr(col.color) : { top: "border-t-gray-300", header: "from-gray-50 to-white", badge: "bg-gray-400", dot: "bg-gray-300", btn: "" };
   const name = col?.name ?? "Без колонки";
   const receivesOrders = col?.receivesOrders ?? false;
+
+  const isActiveDrop = dragOver && draggingId !== null;
 
   return (
     <div className="flex-shrink-0 w-[280px] flex flex-col">
@@ -715,14 +732,32 @@ function KanbanColumn({ col, masters, columns, onMove, onOpenDrawer }: {
           {masters.length}
         </span>
       </div>
-      <div className="voronka-scroll flex-1 bg-gray-50/60 border border-t-0 border-gray-100 rounded-b-2xl overflow-y-auto p-2.5 space-y-2.5" style={{ maxHeight: "calc(100vh - 195px)" }}>
-        {masters.length === 0 ? (
+      <div
+        onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={e => { e.preventDefault(); setDragOver(false); if (draggingId !== null) onDropMaster(draggingId, col?.id ?? null); }}
+        className={`voronka-scroll flex-1 border border-t-0 rounded-b-2xl overflow-y-auto p-2.5 space-y-2.5 transition-colors duration-150 ${
+          isActiveDrop ? "bg-blue-50/70 border-blue-200" : "bg-gray-50/60 border-gray-100"
+        }`}
+        style={{ maxHeight: "calc(100vh - 195px)" }}
+      >
+        {masters.length === 0 && !isActiveDrop ? (
           <div className="flex flex-col items-center justify-center py-10 text-gray-300">
             <User className="w-8 h-8 mb-2" />
             <p className="text-[12px]">Пусто</p>
           </div>
+        ) : masters.length === 0 && isActiveDrop ? (
+          <div className="flex flex-col items-center justify-center py-10 text-blue-300">
+            <div className="w-10 h-10 rounded-2xl border-2 border-dashed border-blue-300 mb-2" />
+            <p className="text-[12px]">Отпустите здесь</p>
+          </div>
         ) : masters.map(m => (
-          <MasterCard key={m.id} master={m} columns={columns} onMove={onMove} onOpenDrawer={onOpenDrawer} />
+          <MasterCard
+            key={m.id} master={m} columns={columns} onMove={onMove} onOpenDrawer={onOpenDrawer}
+            onDragStart={onDragStartMaster}
+            onDragEnd={onDragEndMaster}
+            isDragging={m.id === draggingId}
+          />
         ))}
       </div>
     </div>
@@ -852,6 +887,7 @@ export default function Voronka() {
   const [loading, setLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [drawerMaster, setDrawerMaster] = useState<VoronkaMaster | null>(null);
+  const [draggingId, setDraggingId] = useState<number | null>(null);
 
   const fetchAll = useCallback(async () => {
     const [cR, mR] = await Promise.all([fetch("/api/voronka/columns"), fetch("/api/voronka/masters")]);
@@ -940,10 +976,20 @@ export default function Voronka() {
               {sorted.map(col => (
                 <KanbanColumn key={col.id} col={col}
                   masters={masters.filter(m => m.voronkaColumnId === col.id)}
-                  columns={columns} onMove={moveMaster} onOpenDrawer={setDrawerMaster} />
+                  columns={columns} onMove={moveMaster} onOpenDrawer={setDrawerMaster}
+                  draggingId={draggingId}
+                  onDragStartMaster={setDraggingId}
+                  onDragEndMaster={() => setDraggingId(null)}
+                  onDropMaster={(mid, colId) => { moveMaster(mid, colId); setDraggingId(null); }}
+                />
               ))}
               {unassigned.length > 0 && (
-                <KanbanColumn col={null} masters={unassigned} columns={columns} onMove={moveMaster} onOpenDrawer={setDrawerMaster} />
+                <KanbanColumn col={null} masters={unassigned} columns={columns} onMove={moveMaster} onOpenDrawer={setDrawerMaster}
+                  draggingId={draggingId}
+                  onDragStartMaster={setDraggingId}
+                  onDragEndMaster={() => setDraggingId(null)}
+                  onDropMaster={(mid, colId) => { moveMaster(mid, colId); setDraggingId(null); }}
+                />
               )}
             </div>
           )}
