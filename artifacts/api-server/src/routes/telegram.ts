@@ -33,7 +33,8 @@ type BotState =
   | { step: "awaiting_photo"; masterId: number }
   | { step: "awaiting_amount"; masterId: number; orderId: number }
   | { step: "awaiting_cancel_reason"; masterId: number; orderId: number }
-  | { step: "awaiting_question"; masterId: number; orderId: number };
+  | { step: "awaiting_question"; masterId: number; orderId: number }
+  | { step: "awaiting_payment_proof"; masterId: number };
 
 const pendingState = new Map<string, BotState>();
 
@@ -694,6 +695,23 @@ async function handleCallback(callbackQuery: any) {
     return;
   }
 
+  if (data === "send_payment_proof") {
+    await answerCallback(cbId);
+    pendingState.set(chatId, { step: "awaiting_payment_proof", masterId: master.id });
+    await sendMessage(chatId,
+      `📸 <b>Отправьте скриншот оплаты</b>\n\nПришлите фото чека или скриншот перевода — оператор проверит и подтвердит оплату.`,
+      { reply_markup: { inline_keyboard: [[{ text: "❌ Отмена", callback_data: "cancel_payment_proof" }]] } }
+    );
+    return;
+  }
+
+  if (data === "cancel_payment_proof") {
+    await answerCallback(cbId);
+    pendingState.delete(chatId);
+    await sendMessage(chatId, `✅ Отмена. Чтобы отправить скриншот позже, нажмите кнопку в сообщении с реквизитами.`);
+    return;
+  }
+
   // ─── Phone confirmation callbacks ──────────────────────────────────────────
 
   if (data === "confirm_phone") {
@@ -1116,6 +1134,45 @@ router.post("/webhook", async (req, res) => {
       await db.update(mastersTable).set({ city }).where(eq(mastersTable.id, state.masterId));
       await logToChat(state.masterId, chatId, `🏙️ Город: ${city}`);
       await askSpecs(chatId, state.masterId);
+      return;
+    }
+
+    // ── Payment proof photo ────────────────────────────────────────────────────
+    if (state?.step === "awaiting_payment_proof") {
+      const photoArr = (update.message as any)?.photo as { file_id: string }[] | undefined;
+      const hasPhoto = photoArr && photoArr.length > 0;
+
+      if (!hasPhoto) {
+        await sendMessage(chatId, `📸 Нужно отправить именно фотографию (скриншот). Попробуйте ещё раз.`);
+        return;
+      }
+
+      const fileId = photoArr[photoArr.length - 1].file_id;
+      const fileResp = await fetch(`${TELEGRAM_API}/getFile?file_id=${fileId}`);
+      const fileData = await fileResp.json() as any;
+      const filePath = fileData?.result?.file_path;
+      const photoUrl = filePath ? `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}` : null;
+
+      if (!photoUrl) {
+        await sendMessage(chatId, `⚠️ Не удалось загрузить фото. Попробуйте ещё раз.`);
+        return;
+      }
+
+      const proofMasterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, state.masterId));
+      const proofAlias = proofMasterRows[0]?.alias ?? "Мастер";
+
+      await db.insert(masterMessagesTable).values({
+        masterId: state.masterId,
+        telegramChatId: chatId,
+        text: `📸 Скриншот оплаты комиссии`,
+        fromMaster: true,
+        senderName: proofAlias,
+        isRead: false,
+        photoUrl,
+      });
+
+      pendingState.delete(chatId);
+      await sendMessage(chatId, `✅ Скриншот получен! Оператор проверит оплату и переведёт вас в статус «Свободен».`);
       return;
     }
 

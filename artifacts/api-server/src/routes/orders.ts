@@ -193,13 +193,25 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
         await db.update(mastersTable).set({ debt: String(newDebt) }).where(eq(mastersTable.id, o.masterId));
         // Notify master in Telegram
         if (m.telegramId) {
-          await sendTg(m.telegramId,
-            `✅ <b>Сумма по заказу #${id} подтверждена</b>\n\n` +
-            `💰 Стоимость работ: <b>${Number(o.orderAmount).toLocaleString("ru-RU")} ₽</b>\n` +
-            `🔸 Комиссия: <b>${Number(o.commission).toLocaleString("ru-RU")} ₽</b>\n\n` +
-            `📲 Реквизиты для перевода:\n<code>89892860863</code> · Альфа Банк · Игорь К.\n\n` +
-            `После оплаты комиссии вы сможете принимать новые заказы.`
-          );
+          await fetch(`${TELEGRAM_API}/sendMessage`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chat_id: m.telegramId,
+              text:
+                `✅ <b>Сумма по заказу #${id} подтверждена</b>\n\n` +
+                `💰 Стоимость работ: <b>${Number(o.orderAmount).toLocaleString("ru-RU")} ₽</b>\n` +
+                `🔸 Комиссия: <b>${Number(o.commission).toLocaleString("ru-RU")} ₽</b>\n\n` +
+                `📲 Реквизиты для перевода:\n<code>89892860863</code> · Альфа Банк · Игорь К.\n\n` +
+                `После оплаты комиссии отправьте скриншот чека кнопкой ниже.`,
+              parse_mode: "HTML",
+              reply_markup: {
+                inline_keyboard: [[
+                  { text: "📸 Отправить скриншот оплаты", callback_data: "send_payment_proof" }
+                ]],
+              },
+            }),
+          }).catch(() => {});
         }
       }
     }
