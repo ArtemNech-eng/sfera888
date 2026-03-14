@@ -6,6 +6,7 @@ import {
 } from "@workspace/db";
 import { eq, desc, inArray, and, ne } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
+import { createYandexPayOrder } from "./yandex-pay.js";
 
 // ─── Available specializations (synced with service_types) ────────────────────
 
@@ -472,29 +473,26 @@ async function showUnpaidOrders(chatId: string, master: any, messageId?: number)
   const unpaidOrders = await db.select().from(ordersTable).where(inArray(ordersTable.id, unpaidOrderIds));
   const txByOrder = new Map(unpaidTxs.map(t => [t.orderId, t]));
 
-  let text = `💳 <b>Неоплаченные комиссии (${unpaidOrders.length})</b>\n\n`;
+  let text = `💳 <b>Неоплаченные комиссии (${unpaidTxs.length})</b>\n\n`;
+  const buttons: any[][] = [];
 
   for (const o of unpaidOrders) {
     const tx = txByOrder.get(o.id);
+    if (!tx) continue;
+    const commission = Number(tx.commission);
     text += `<b>Заказ #${o.id}: ${o.serviceType}</b>\n`;
     text += `📍 ${o.city}, ${o.district}\n`;
-    if (tx) {
-      text += `💰 Стоимость работ: <b>${Number(tx.orderAmount).toLocaleString("ru-RU")} ₽</b>\n`;
-      text += `🔸 Комиссия: <b>${Number(tx.commission).toLocaleString("ru-RU")} ₽</b>\n`;
-    }
-    text += `\n`;
+    text += `💰 Стоимость работ: <b>${Number(tx.orderAmount).toLocaleString("ru-RU")} ₽</b>\n`;
+    text += `🔸 Комиссия: <b>${commission.toLocaleString("ru-RU")} ₽</b>\n\n`;
+    buttons.push([{ text: `💳 Оплатить ${commission.toLocaleString("ru-RU")} ₽ онлайн`, callback_data: `pay_online_${tx.id}` }]);
   }
 
-  text += `📲 Реквизиты: <code>89892860863</code> · Альфа Банк · Игорь К.`;
+  text += `📲 Или переведите вручную: <code>89892860863</code> · Альфа Банк · Игорь К.`;
 
-  await editOrSend(chatId, messageId, text, {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: "📸 Отправить скриншот оплаты", callback_data: "send_payment_proof" }],
-        backBtn,
-      ],
-    },
-  });
+  buttons.push([{ text: "📸 Отправить скриншот оплаты", callback_data: "send_payment_proof" }]);
+  buttons.push(backBtn);
+
+  await editOrSend(chatId, messageId, text, { reply_markup: { inline_keyboard: buttons } });
 }
 
 // ─── Show master profile ──────────────────────────────────────────────────────
@@ -712,6 +710,50 @@ async function handleCallback(callbackQuery: any) {
 
   if (data === "my_unpaid") {
     await showUnpaidOrders(chatId, master, messageId);
+    return;
+  }
+
+  if (data.startsWith("pay_online_")) {
+    const txId = parseInt(data.replace("pay_online_", ""));
+    const txRows = await db.select().from(transactionsTable).where(
+      and(eq(transactionsTable.id, txId), eq(transactionsTable.masterId, master.id))
+    );
+    const tx = txRows[0];
+    if (!tx) {
+      await editOrSend(chatId, messageId, "⚠️ Транзакция не найдена.", { reply_markup: { inline_keyboard: [[{ text: "« Назад", callback_data: "my_unpaid" }]] } });
+      return;
+    }
+    if (tx.paymentStatus === "paid") {
+      await editOrSend(chatId, messageId, "✅ Эта комиссия уже оплачена.", { reply_markup: { inline_keyboard: [[{ text: "« Назад", callback_data: "my_unpaid" }]] } });
+      return;
+    }
+    try {
+      const commission = Number(tx.commission);
+      const paymentUrl = await createYandexPayOrder(
+        tx.id,
+        commission,
+        `Комиссия по заказу #${tx.orderId}`
+      );
+      await editOrSend(chatId, messageId,
+        `💳 <b>Оплата комиссии ${commission.toLocaleString("ru-RU")} ₽</b>\n\n` +
+        `Нажмите кнопку ниже для оплаты через Яндекс Пэй.\n\n` +
+        `После оплаты статус обновится автоматически.`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: `💳 Оплатить ${commission.toLocaleString("ru-RU")} ₽`, url: paymentUrl }],
+              [{ text: "« Назад", callback_data: "my_unpaid" }],
+            ],
+          },
+        }
+      );
+    } catch (e: any) {
+      console.error("[pay_online]", e);
+      await editOrSend(chatId, messageId,
+        `⚠️ <b>Не удалось создать ссылку на оплату</b>\n\nПопробуйте позже или оплатите вручную:\n<code>89892860863</code> · Альфа Банк · Игорь К.`,
+        { reply_markup: { inline_keyboard: [[{ text: "« Назад", callback_data: "my_unpaid" }]] } }
+      );
+    }
     return;
   }
 
