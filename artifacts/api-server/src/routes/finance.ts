@@ -46,13 +46,16 @@ router.patch("/transactions/:id", adminOnly, async (req, res) => {
   if (!result[0]) return res.status(404).json({ error: "Transaction not found" });
   const t = result[0];
 
-  // update master debt
+  // update master debt and remove test period flag
   if (paymentStatus === "paid") {
     const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, t.masterId));
     const master = masterRows[0];
     if (master) {
       const newDebt = Math.max(0, Number(master.debt) - Number(t.commission));
-      await db.update(mastersTable).set({ debt: String(newDebt) }).where(eq(mastersTable.id, t.masterId));
+      await db.update(mastersTable).set({
+        debt: String(newDebt),
+        isTestMaster: false, // once commission paid, test period ends
+      }).where(eq(mastersTable.id, t.masterId));
     }
   }
 

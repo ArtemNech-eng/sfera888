@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, numeric, integer, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, timestamp, numeric, integer, boolean, pgEnum } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -17,6 +17,8 @@ export const mastersTable = pgTable("masters", {
   acceptedOrders: integer("accepted_orders").notNull().default(0),
   avgResponseTime: numeric("avg_response_time", { precision: 10, scale: 2 }),
   debt: numeric("debt", { precision: 12, scale: 2 }).notNull().default("0"),
+  voronkaColumnId: integer("voronka_column_id"),
+  isTestMaster: boolean("is_test_master").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

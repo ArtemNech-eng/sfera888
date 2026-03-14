@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { db, ordersTable, mastersTable, transactionsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { db, ordersTable, mastersTable, transactionsTable, voronkaColumnsTable } from "@workspace/db";
+import { eq, inArray } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { calculateCommission } from "../lib/auth.js";
 
@@ -114,6 +114,30 @@ router.post("/:id/assign-master", allOrderRoles, async (req, res) => {
   const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
   if (!masterRows[0]) return res.status(404).json({ error: "Master not found" });
   const master = masterRows[0];
+
+  // Check if master's column allows receiving orders
+  if (master.voronkaColumnId) {
+    const colRows = await db.select().from(voronkaColumnsTable).where(eq(voronkaColumnsTable.id, master.voronkaColumnId));
+    if (colRows[0] && !colRows[0].receivesOrders) {
+      return res.status(400).json({ error: "Мастер не может принимать заказы в текущем статусе" });
+    }
+  }
+
+  // Check active order count limits
+  const activeOrders = await db.select().from(ordersTable)
+    .where(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
+  const masterActiveCount = activeOrders.filter(o => o.masterId === masterId).length;
+
+  if (master.isTestMaster && masterActiveCount >= 1) {
+    return res.status(400).json({
+      error: "Тестовый период: мастер может иметь только 1 активный заказ. Дождитесь завершения и оплаты комиссии."
+    });
+  }
+  if (!master.isTestMaster && masterActiveCount >= 2) {
+    return res.status(400).json({
+      error: "Максимум 2 активных заказа на мастера"
+    });
+  }
 
   const result = await db.update(ordersTable).set({
     masterId,

@@ -20,6 +20,8 @@ router.get("/", allMasterRoles, async (req, res) => {
     acceptedOrders: m.acceptedOrders,
     avgResponseTime: m.avgResponseTime ? Number(m.avgResponseTime) : null,
     debt: Number(m.debt),
+    voronkaColumnId: m.voronkaColumnId ?? null,
+    isTestMaster: m.isTestMaster,
     createdAt: m.createdAt,
   })));
 });
@@ -68,13 +70,15 @@ router.get("/:id", allMasterRoles, async (req, res) => {
     acceptedOrders: m.acceptedOrders,
     avgResponseTime: m.avgResponseTime ? Number(m.avgResponseTime) : null,
     debt: Number(m.debt),
+    voronkaColumnId: m.voronkaColumnId ?? null,
+    isTestMaster: m.isTestMaster,
     createdAt: m.createdAt,
   });
 });
 
 router.patch("/:id", requireRole("admin"), async (req, res) => {
   const id = parseInt(req.params.id);
-  const { alias, city, specialization, telegramId, phone, status } = req.body;
+  const { alias, city, specialization, telegramId, phone, status, isTestMaster } = req.body;
   const updates: any = {};
   if (alias !== undefined) updates.alias = alias;
   if (city !== undefined) updates.city = city;
@@ -82,6 +86,7 @@ router.patch("/:id", requireRole("admin"), async (req, res) => {
   if (telegramId !== undefined) updates.telegramId = telegramId;
   if (phone !== undefined) updates.phone = phone;
   if (status !== undefined) updates.status = status;
+  if (isTestMaster !== undefined) updates.isTestMaster = isTestMaster;
 
   const result = await db.update(mastersTable).set(updates).where(eq(mastersTable.id, id)).returning();
   if (!result[0]) return res.status(404).json({ error: "Master not found" });
@@ -98,6 +103,8 @@ router.patch("/:id", requireRole("admin"), async (req, res) => {
     acceptedOrders: m.acceptedOrders,
     avgResponseTime: m.avgResponseTime ? Number(m.avgResponseTime) : null,
     debt: Number(m.debt),
+    voronkaColumnId: m.voronkaColumnId ?? null,
+    isTestMaster: m.isTestMaster,
     createdAt: m.createdAt,
   });
 });
