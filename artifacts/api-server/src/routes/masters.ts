@@ -1,7 +1,8 @@
 import { Router } from "express";
-import { db, mastersTable, masterTasksTable, ordersTable, leadsTable } from "@workspace/db";
+import { db, mastersTable, masterTasksTable, ordersTable, leadsTable, telegramChatsTable } from "@workspace/db";
 import { eq, desc, inArray } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
+import { sendTelegramMessage } from "../telegram-notify.js";
 import multer from "multer";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -82,6 +83,11 @@ router.get("/:id", allMasterRoles, async (req, res) => {
 router.patch("/:id", requireRole("admin", "master_operator"), async (req, res) => {
   const id = parseInt(req.params.id);
   const { alias, city, specialization, specializations, telegramId, phone, status, isTestMaster, tags } = req.body;
+
+  // Get old status before update for notifications
+  const oldRows = await db.select().from(mastersTable).where(eq(mastersTable.id, id));
+  const oldStatus = oldRows[0]?.status;
+
   const updates: any = {};
   if (alias !== undefined) updates.alias = alias;
   if (city !== undefined) updates.city = city;
@@ -95,6 +101,19 @@ router.patch("/:id", requireRole("admin", "master_operator"), async (req, res) =
 
   const result = await db.update(mastersTable).set(updates).where(eq(mastersTable.id, id)).returning();
   if (!result[0]) return res.status(404).json({ error: "Master not found" });
+
+  // Notify master in Telegram when admin activates from pending_contract
+  const updated = result[0];
+  if (status === "active" && oldStatus === "pending_contract" && updated.telegramId) {
+    const tgRows = await db.select().from(telegramChatsTable).where(eq(telegramChatsTable.telegramChatId, updated.telegramId));
+    const chatId = tgRows[0]?.telegramChatId ?? updated.telegramId;
+    sendTelegramMessage(chatId,
+      `🎉 <b>Аккаунт активирован!</b>\n\n` +
+      `Добро пожаловать, <b>${updated.alias}</b>!\n\n` +
+      `Администратор подтвердил вашу заявку. Теперь вам доступны заказы.\n\nНажмите /start чтобы перейти в меню.`
+    ).catch(() => {});
+  }
+
   res.json(formatMaster(result[0]));
 });
 

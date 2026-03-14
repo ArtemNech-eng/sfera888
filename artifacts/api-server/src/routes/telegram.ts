@@ -430,14 +430,14 @@ async function completeRegistration(chatId: string, master: { id: number; alias:
       }
     );
   } else {
-    // OkiDoki unavailable — activate directly (fallback)
+    // OkiDoki unavailable — set pending, wait for admin to activate manually
+    await db.update(mastersTable).set({ status: "pending_contract" }).where(eq(mastersTable.id, master.id));
     await sendMessage(chatId,
-      `🎉 <b>Регистрация завершена!</b>\n\n` +
+      `✅ <b>Заявка принята!</b>\n\n` +
       `👤 Имя: <b>${master.alias}</b>\n` +
       `🏙️ Город: <b>${master.city}</b>\n` +
       `📱 Телефон: <b>${master.phone ?? "не указан"}</b>\n\n` +
-      `Теперь вы можете принимать заказы. Удачной работы! 🚀`,
-      mainMenuKeyboard()
+      `Ваша анкета передана администратору на проверку. После подтверждения вы получите уведомление и доступ к заказам.`
     );
   }
 }
@@ -459,23 +459,9 @@ async function handleStart(from: any, chatId: string) {
     return;
   }
 
-  // Master waiting to sign contract
+  // Master waiting to sign contract or admin activation
   if (master.status === "pending_contract") {
-    const contractLink = await createOkidokiContract(master);
-    if (contractLink) {
-      await sendMessage(chatId,
-        `📝 <b>Ваш договор ещё не подписан.</b>\n\nДля активации аккаунта необходимо подписать договор о сотрудничестве.\n\nПосле подписания вы получите доступ к заказам.`,
-        {
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "✍️ Подписать договор", url: contractLink }],
-            ],
-          },
-        }
-      );
-    } else {
-      await sendMessage(chatId, `⏳ <b>Ваша заявка рассматривается.</b>\n\nМы сообщим вам, когда аккаунт будет активирован.`);
-    }
+    await sendMessage(chatId, `⏳ <b>Ваша заявка на рассмотрении.</b>\n\nМы сообщим вам, как только аккаунт будет активирован. Если у вас есть вопросы — обратитесь к администратору.`);
     return;
   }
 
