@@ -182,26 +182,39 @@ export default function Leads() {
                           <div className="text-foreground">{lead.city}</div>
                           <div className="text-xs text-muted-foreground mt-1">{lead.district}</div>
                         </td>
-                        <td className="px-6 py-4 max-w-[260px]">
+                        <td className="px-6 py-4 max-w-[280px]">
                           {srvs && srvs.length > 0 ? (
-                            <div className="space-y-1">
-                              {srvs.map((s, i) => (
-                                <div key={i} className="text-xs">
-                                  <span className="font-medium text-foreground">{s.type}</span>
-                                  <span className="text-muted-foreground ml-1">{s.area} м²</span>
-                                  {s.pricePerM2 > 0 && (
-                                    <span className="text-muted-foreground ml-1">× {s.pricePerM2.toLocaleString("ru-RU")} ₽/м²</span>
-                                  )}
-                                </div>
-                              ))}
+                            <div className="space-y-1.5">
+                              <div className="flex flex-wrap gap-1.5">
+                                {srvs.map((s, i) => {
+                                  const lineTotal = s.area * (s.pricePerM2 || 0);
+                                  return (
+                                    <div key={i} className="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1">
+                                      <span className="text-xs font-medium text-slate-700">{s.type}</span>
+                                      <span className="w-px h-3 bg-slate-300" />
+                                      <span className="text-xs text-slate-500">{s.area} м²</span>
+                                      {lineTotal > 0 && (
+                                        <>
+                                          <span className="w-px h-3 bg-slate-300" />
+                                          <span className="text-xs font-semibold text-emerald-600">{lineTotal.toLocaleString("ru-RU")} ₽</span>
+                                        </>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
                               {estimate > 0 && (
-                                <div className="text-xs font-semibold text-green-700 mt-0.5">≈ {fmt(estimate)}</div>
+                                <div className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full">
+                                  <span>Итого:</span>
+                                  <span>{fmt(estimate)}</span>
+                                </div>
                               )}
                             </div>
                           ) : (
-                            <div>
-                              <div className="text-foreground">{lead.serviceType}</div>
-                              <div className="text-xs text-muted-foreground mt-1">{lead.area} м²</div>
+                            <div className="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1">
+                              <span className="text-xs font-medium text-slate-700">{lead.serviceType}</span>
+                              <span className="w-px h-3 bg-slate-300" />
+                              <span className="text-xs text-slate-500">{lead.area} м²</span>
                             </div>
                           )}
                         </td>
@@ -337,10 +350,11 @@ export default function Leads() {
 
                     <div className="rounded-2xl border border-gray-200 overflow-hidden bg-white">
                       {/* Table header */}
-                      <div className="grid items-center bg-gray-50 border-b border-gray-100 px-4 py-2.5 text-[11px] font-semibold text-gray-400 uppercase tracking-wide" style={{ gridTemplateColumns: "1fr 88px 116px 36px" }}>
+                      <div className="grid items-center bg-gray-50 border-b border-gray-100 px-3 py-2.5 text-[11px] font-semibold text-gray-400 uppercase tracking-wide" style={{ gridTemplateColumns: "1fr 80px 100px 90px 32px" }}>
                         <span>Тип услуги</span>
-                        <span className="text-center">Площадь, м²</span>
-                        <span className="text-center">Цена, ₽/м²</span>
+                        <span className="text-center">м²</span>
+                        <span className="text-center">₽/м²</span>
+                        <span className="text-right pr-2">Итого</span>
                         <span />
                       </div>
 
@@ -349,19 +363,19 @@ export default function Leads() {
                         {serviceRows.map((row, i) => {
                           const rowTotal = (parseFloat(row.area) || 0) * (parseFloat(row.pricePerM2) || 0);
                           return (
-                            <div key={i} className="group px-2 py-2" style={{ gridTemplateColumns: "1fr 88px 116px 36px", display: "grid", alignItems: "center", gap: 0 }}>
+                            <div key={i} className="group px-3 py-1.5" style={{ gridTemplateColumns: "1fr 80px 100px 90px 32px", display: "grid", alignItems: "center", gap: 0 }}>
                               {/* Service type */}
-                              <div className="relative pr-1">
+                              <div className="relative">
                                 <select
                                   required
                                   value={row.type}
                                   onChange={e => updateRow(i, "type", e.target.value)}
-                                  className="w-full pl-3 pr-7 py-2 text-sm rounded-xl border border-transparent bg-transparent hover:bg-gray-50 hover:border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/15 focus:bg-white outline-none appearance-none transition-all cursor-pointer"
+                                  className="w-full pl-2 pr-6 py-2 text-sm rounded-lg border border-transparent bg-transparent hover:bg-gray-50 hover:border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/15 focus:bg-white outline-none appearance-none transition-all cursor-pointer"
                                 >
                                   <option value="">Выберите...</option>
                                   {services?.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                                 </select>
-                                <ChevronDown className="w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                                <ChevronDown className="w-3 h-3 absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                               </div>
 
                               {/* Area */}
@@ -372,8 +386,8 @@ export default function Leads() {
                                 step="0.1"
                                 value={row.area}
                                 onChange={e => updateRow(i, "area", e.target.value)}
-                                placeholder="0"
-                                className="px-2 py-2 text-sm rounded-xl border border-transparent bg-transparent hover:bg-gray-50 hover:border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/15 focus:bg-white outline-none text-center transition-all w-full"
+                                placeholder="—"
+                                className="px-2 py-2 text-sm rounded-lg border border-transparent bg-transparent hover:bg-gray-50 hover:border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/15 focus:bg-white outline-none text-center transition-all w-full"
                               />
 
                               {/* Price per m² */}
@@ -384,14 +398,20 @@ export default function Leads() {
                                   step="1"
                                   value={row.pricePerM2}
                                   onChange={e => updateRow(i, "pricePerM2", e.target.value)}
-                                  placeholder="0"
-                                  className="w-full pl-2 pr-6 py-2 text-sm rounded-xl border border-transparent bg-transparent hover:bg-gray-50 hover:border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/15 focus:bg-white outline-none text-center transition-all"
+                                  placeholder="—"
+                                  className="w-full pl-2 pr-5 py-2 text-sm rounded-lg border border-transparent bg-transparent hover:bg-gray-50 hover:border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/15 focus:bg-white outline-none text-center transition-all"
                                 />
-                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">₽</span>
-                                {rowTotal > 0 && (
-                                  <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[10px] text-emerald-600 font-semibold whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
-                                    ≈ {rowTotal.toLocaleString("ru-RU")} ₽
-                                  </div>
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-gray-400 pointer-events-none">₽</span>
+                              </div>
+
+                              {/* Row total — always visible */}
+                              <div className="text-right pr-2">
+                                {rowTotal > 0 ? (
+                                  <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                                    {rowTotal.toLocaleString("ru-RU")} ₽
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-gray-300">—</span>
                                 )}
                               </div>
 
@@ -400,7 +420,7 @@ export default function Leads() {
                                 type="button"
                                 onClick={() => removeRow(i)}
                                 disabled={serviceRows.length === 1}
-                                className="w-8 h-8 flex items-center justify-center rounded-xl text-gray-300 hover:text-red-400 hover:bg-red-50 disabled:opacity-0 disabled:pointer-events-none transition-all mx-auto"
+                                className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-300 hover:text-red-400 hover:bg-red-50 disabled:opacity-0 disabled:pointer-events-none transition-all mx-auto"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
