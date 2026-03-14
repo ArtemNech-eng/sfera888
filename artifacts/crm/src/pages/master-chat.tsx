@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Layout } from "@/components/layout";
 import { ProtectedRoute } from "@/hooks/use-auth";
 import { useAuth } from "@/hooks/use-auth";
-import { Send, MessageSquare, RefreshCw, Check, CheckCheck } from "lucide-react";
+import { Send, MessageSquare, RefreshCw, Check, CheckCheck, Paperclip, X, Image } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
 
@@ -21,6 +21,7 @@ interface Message {
   masterId: number;
   telegramChatId: string;
   text: string;
+  photoUrl: string | null;
   fromMaster: boolean;
   senderName: string | null;
   isRead: boolean;
@@ -33,15 +34,13 @@ interface ConversationData {
 }
 
 function timeAgo(dateStr: string) {
-  try {
-    return formatDistanceToNow(new Date(dateStr), { addSuffix: true, locale: ru });
-  } catch { return ""; }
+  try { return formatDistanceToNow(new Date(dateStr), { addSuffix: true, locale: ru }); }
+  catch { return ""; }
 }
 
 function timeStamp(dateStr: string) {
-  try {
-    return format(new Date(dateStr), "HH:mm", { locale: ru });
-  } catch { return ""; }
+  try { return format(new Date(dateStr), "HH:mm", { locale: ru }); }
+  catch { return ""; }
 }
 
 export default function MasterChat() {
@@ -52,15 +51,14 @@ export default function MasterChat() {
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchThreads = useCallback(async () => {
     const r = await fetch("/api/master-chat");
-    if (r.ok) {
-      const data = await r.json();
-      setThreads(data);
-      setLoading(false);
-    }
+    if (r.ok) { setThreads(await r.json()); setLoading(false); }
   }, []);
 
   const fetchConversation = useCallback(async (masterId: number) => {
@@ -68,7 +66,6 @@ export default function MasterChat() {
     if (r.ok) {
       const data = await r.json();
       setConv(data);
-      // Mark as read
       await fetch(`/api/master-chat/${masterId}/read`, { method: "PATCH" });
       setThreads(p => p.map(t => t.masterId === masterId ? { ...t, unread: 0 } : t));
     }
@@ -92,24 +89,34 @@ export default function MasterChat() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [conv?.messages.length]);
 
-  const selectThread = async (masterId: number) => {
-    setSelectedId(masterId);
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoFile(file);
+    const reader = new FileReader();
+    reader.onload = ev => setPhotoPreview(ev.target?.result as string);
+    reader.readAsDataURL(file);
+    e.target.value = "";
   };
 
+  const clearPhoto = () => { setPhotoFile(null); setPhotoPreview(null); };
+
   const sendReply = async () => {
-    if (!reply.trim() || !selectedId || sending) return;
+    if ((!reply.trim() && !photoFile) || !selectedId || sending) return;
     setSending(true);
     try {
+      const form = new FormData();
+      if (reply.trim()) form.append("text", reply.trim());
+      form.append("operatorName", user?.name ?? "Оператор");
+      if (photoFile) form.append("photo", photoFile);
+
       const r = await fetch(`/api/master-chat/${selectedId}/reply`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: reply.trim(),
-          operatorName: user?.name ?? "Оператор",
-        }),
+        body: form,
       });
       if (r.ok) {
         setReply("");
+        clearPhoto();
         await fetchConversation(selectedId);
       }
     } finally {
@@ -151,7 +158,6 @@ export default function MasterChat() {
                   {loading ? "Загрузка..." : `${threads.length} диалогов`}
                 </p>
               </div>
-
               <div className="flex-1 overflow-y-auto">
                 {threads.length === 0 && !loading && (
                   <div className="flex flex-col items-center justify-center py-12 text-center px-4">
@@ -163,8 +169,10 @@ export default function MasterChat() {
                 {threads.map(t => (
                   <button
                     key={t.masterId}
-                    onClick={() => selectThread(t.masterId)}
-                    className={`w-full text-left px-4 py-3 border-b border-gray-50 hover:bg-gray-50 transition-colors ${selectedId === t.masterId ? "bg-blue-50 border-l-2 border-l-blue-500" : ""}`}
+                    onClick={() => setSelectedId(t.masterId)}
+                    className={`w-full text-left px-4 py-3 border-b border-gray-50 hover:bg-gray-50 transition-colors ${
+                      selectedId === t.masterId ? "bg-blue-50 border-l-2 border-l-blue-500" : ""
+                    }`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
@@ -190,7 +198,7 @@ export default function MasterChat() {
             <div className="flex-1 bg-white border border-gray-100 rounded-2xl shadow-sm flex flex-col overflow-hidden min-w-0">
               {!selectedId ? (
                 <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
-                  <MessageSquare className="w-14 h-14 text-gray-150 mb-4" />
+                  <MessageSquare className="w-14 h-14 text-gray-200 mb-4" />
                   <p className="text-gray-400 font-medium">Выберите диалог</p>
                   <p className="text-sm text-gray-300 mt-1">Выберите мастера из списка слева</p>
                 </div>
@@ -204,7 +212,8 @@ export default function MasterChat() {
                       </div>
                       <div>
                         <p className="font-semibold text-sm text-gray-800">{conv.master.alias}</p>
-                        <p className="text-[11px] text-gray-400">{conv.master.city}
+                        <p className="text-[11px] text-gray-400">
+                          {conv.master.city}
                           {conv.master.telegramId && <span className="ml-1 text-blue-400">· TG: {conv.master.telegramId}</span>}
                         </p>
                       </div>
@@ -220,10 +229,35 @@ export default function MasterChat() {
                             ? "bg-gray-100 text-gray-800 rounded-tl-sm"
                             : "bg-blue-500 text-white rounded-tr-sm"
                         }`}>
-                          {msg.fromMaster && (
-                            <p className="text-[10px] font-semibold text-gray-500 mb-1">{msg.senderName ?? "Мастер"}</p>
+                          {/* Sender label */}
+                          <p className={`text-[10px] font-semibold mb-1 ${
+                            msg.fromMaster ? "text-gray-500" : "text-blue-100"
+                          }`}>
+                            {msg.senderName ?? (msg.fromMaster ? "Мастер" : "Оператор")}
+                          </p>
+
+                          {/* Photo */}
+                          {msg.photoUrl && (
+                            <a href={msg.photoUrl} target="_blank" rel="noopener noreferrer" className="block mb-2">
+                              <img
+                                src={msg.photoUrl}
+                                alt="фото"
+                                className="rounded-xl max-w-full max-h-52 object-cover cursor-zoom-in"
+                                onError={e => {
+                                  (e.target as HTMLImageElement).style.display = "none";
+                                  (e.target as HTMLImageElement).nextElementSibling?.classList.remove("hidden");
+                                }}
+                              />
+                              <div className="hidden flex items-center gap-1 text-xs opacity-70 mt-1">
+                                <Image className="w-3 h-3" /> Фото (открыть)
+                              </div>
+                            </a>
                           )}
-                          <p className="text-sm leading-relaxed">{msg.text}</p>
+
+                          {/* Text */}
+                          {msg.text && <p className="text-sm leading-relaxed">{msg.text}</p>}
+
+                          {/* Timestamp */}
                           <div className={`flex items-center gap-1 mt-1 ${msg.fromMaster ? "justify-start" : "justify-end"}`}>
                             <span className={`text-[10px] ${msg.fromMaster ? "text-gray-400" : "text-blue-100"}`}>
                               {timeStamp(msg.createdAt)}
@@ -243,8 +277,40 @@ export default function MasterChat() {
                     <div ref={bottomRef} />
                   </div>
 
+                  {/* Photo preview bar */}
+                  {photoPreview && (
+                    <div className="px-4 pt-3 flex items-center gap-3 border-t border-gray-50">
+                      <div className="relative inline-block">
+                        <img src={photoPreview} alt="preview" className="h-16 w-16 rounded-xl object-cover border border-gray-200" />
+                        <button
+                          onClick={clearPhoto}
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-gray-700 text-white rounded-full flex items-center justify-center hover:bg-gray-900 transition-colors"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <p className="text-xs text-gray-400">{photoFile?.name}</p>
+                    </div>
+                  )}
+
                   {/* Reply input */}
-                  <div className="px-4 py-3.5 border-t border-gray-50 flex items-end gap-3 flex-shrink-0">
+                  <div className="px-4 py-3.5 border-t border-gray-50 flex items-end gap-2 flex-shrink-0">
+                    {/* Photo attach button */}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handlePhotoSelect}
+                    />
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-xl border border-gray-200 hover:bg-gray-50 text-gray-400 hover:text-gray-600 transition-colors"
+                      title="Прикрепить фото"
+                    >
+                      <Paperclip className="w-4 h-4" />
+                    </button>
+
                     <textarea
                       value={reply}
                       onChange={e => setReply(e.target.value)}
@@ -254,9 +320,10 @@ export default function MasterChat() {
                       className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-800 outline-none focus:ring-2 focus:ring-blue-100 resize-none"
                       style={{ minHeight: 42, maxHeight: 120 }}
                     />
+
                     <button
                       onClick={sendReply}
-                      disabled={!reply.trim() || sending || !conv?.master.telegramId}
+                      disabled={(!reply.trim() && !photoFile) || sending || !conv?.master.telegramId}
                       className="flex-shrink-0 w-10 h-10 bg-blue-500 text-white rounded-xl flex items-center justify-center hover:bg-blue-600 disabled:opacity-40 transition-colors"
                       title={!conv?.master.telegramId ? "Мастер не подключён к боту" : "Отправить"}
                     >

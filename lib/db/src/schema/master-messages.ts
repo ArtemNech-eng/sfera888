@@ -10,6 +10,7 @@ export const masterMessagesTable = pgTable("master_messages", {
   fromMaster: boolean("from_master").notNull().default(true),
   senderName: text("sender_name"),
   isRead: boolean("is_read").notNull().default(false),
+  photoUrl: text("photo_url"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

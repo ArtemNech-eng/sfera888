@@ -671,22 +671,33 @@ router.post("/webhook", async (req, res) => {
     if (state?.step === "awaiting_message") {
       const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.telegramId, String(from.id)));
       const master = masterRows[0];
-      if (master && text) {
+      const photoArr = (update.message as any)?.photo as { file_id: string; width: number; height: number }[] | undefined;
+      const hasPhoto = photoArr && photoArr.length > 0;
+      if (master && (text || hasPhoto)) {
         pendingState.delete(chatId);
+        let photoUrl: string | null = null;
+        if (hasPhoto) {
+          const fileId = photoArr[photoArr.length - 1].file_id;
+          const fileResp = await fetch(`${TELEGRAM_API}/getFile?file_id=${fileId}`);
+          const fileData = await fileResp.json() as any;
+          const filePath = fileData?.result?.file_path;
+          if (filePath) photoUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
+        }
 
-        // Save message in master_messages
         await db.insert(masterMessagesTable).values({
           masterId: master.id,
           telegramChatId: chatId,
-          text,
+          text: text ?? "",
           fromMaster: true,
           senderName: master.alias,
           isRead: false,
+          photoUrl,
         });
 
+        const previewText = hasPhoto ? "📷 Фото" : `<i>«${text}»</i>`;
         await sendMessage(
           chatId,
-          `✅ <b>Сообщение отправлено оператору!</b>\n\n<i>«${text}»</i>\n\nОтвет придёт сюда же. Обычно отвечаем в течение нескольких часов.`,
+          `✅ <b>Сообщение отправлено оператору!</b>\n\n${previewText}\n\nОтвет придёт сюда же. Обычно отвечаем в течение нескольких часов.`,
           mainMenuKeyboard()
         );
       }
