@@ -67,6 +67,7 @@ async function answerCallback(callbackQueryId: string, text?: string) {
 
 // ─── Banners ──────────────────────────────────────────────────────────────────
 const DOMAIN = (process.env.REPLIT_DOMAINS ?? "").split(",")[0].trim();
+console.log(`[banners] DOMAIN="${DOMAIN}" welcome=${DOMAIN ? `https://${DOMAIN}/api/banners/welcome.png` : "none"}`);
 const BANNERS = {
   welcome:        DOMAIN ? `https://${DOMAIN}/api/banners/welcome.png` : null,
   new_order:      DOMAIN ? `https://${DOMAIN}/api/banners/new_order.png` : null,
@@ -75,13 +76,16 @@ const BANNERS = {
 
 async function sendBanner(chatId: string | number, bannerKey: keyof typeof BANNERS, caption: string, extra?: object) {
   const url = BANNERS[bannerKey];
-  if (!url) return sendMessage(chatId, caption, extra);
-  try {
-    const result = await tgRequest("sendPhoto", { chat_id: chatId, photo: url, caption, parse_mode: "HTML", ...extra });
-    return result;
-  } catch {
+  if (!url) {
+    console.warn(`[banner] DOMAIN not set, falling back to text for ${bannerKey}`);
     return sendMessage(chatId, caption, extra);
   }
+  const result = await tgRequest("sendPhoto", { chat_id: chatId, photo: url, caption, parse_mode: "HTML", ...extra });
+  if (result?.ok === false) {
+    console.warn(`[banner] sendPhoto failed (${bannerKey}): ${result?.description} — falling back to text`);
+    return sendMessage(chatId, caption, extra);
+  }
+  return result;
 }
 
 // ─── Column helpers ───────────────────────────────────────────────────────────
@@ -595,8 +599,9 @@ async function handleStart(from: any, chatId: string) {
     if (col[0]) colName = col[0].name;
   }
 
-  await sendMessage(
+  await sendBanner(
     chatId,
+    "welcome",
     `✅ <b>Добро пожаловать обратно, ${master.alias}!</b>\n\n` +
     `🏙️ Город: <b>${master.city}</b>\n` +
     `📍 Статус: <b>${colName}</b>\n` +
