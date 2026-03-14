@@ -566,7 +566,12 @@ export default function Orders() {
                                 : d.status === "rejected" ? "bg-red-400"
                                 : "bg-gray-300"
                               }`} />
-                              <span>{d.masterName}</span>
+                              <button
+                                onClick={() => { setOpenDispatchId(null); openMasterChat(d.masterId); }}
+                                className="font-medium text-foreground hover:text-blue-600 hover:underline transition-colors text-left"
+                              >
+                                {d.masterName}
+                              </button>
                               <span className="text-muted-foreground/60">
                                 {d.status === "assigned" ? "назначен"
                                 : d.status === "responded" ? "откликнулся"
