@@ -242,10 +242,10 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
         <div className="flex border-b border-gray-100 flex-shrink-0">
           {TABS.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
-              className={`flex-1 flex flex-col items-center gap-0.5 py-2.5 text-[11px] font-medium transition-colors ${
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[11px] font-medium transition-colors ${
                 tab === t.id ? "text-blue-600 border-b-2 border-blue-500" : "text-gray-400 hover:text-gray-600"
               }`}>
-              <t.icon className="w-4 h-4" />{t.label}
+              <t.icon className="w-3.5 h-3.5 flex-shrink-0" />{t.label}
             </button>
           ))}
         </div>

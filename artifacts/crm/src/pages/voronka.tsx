@@ -62,64 +62,50 @@ function MasterCard({ master, columns, onMove, onOpenDrawer, onDragStart, onDrag
       draggable
       onDragStart={e => { e.dataTransfer.effectAllowed = "move"; onDragStart(master.id); }}
       onDragEnd={onDragEnd}
-      className={`bg-white border border-gray-100 rounded-2xl shadow-sm transition-all duration-200 overflow-hidden ${
+      className={`bg-white border border-gray-100 rounded-xl shadow-sm transition-all duration-200 overflow-hidden ${
         isDragging ? "opacity-40 scale-95 shadow-none cursor-grabbing" : "hover:shadow-md cursor-grab"
       }`}
     >
       {/* Clickable card body */}
       <div className="cursor-pointer" onClick={() => { if (!isDragging) onOpenDrawer(master); }}>
-        {/* Card top bar */}
-        <div className="px-3.5 pt-3.5 pb-2.5">
-          <div className="flex items-start gap-3">
-            <Avatar name={master.alias} id={master.id} avatarUrl={master.avatarUrl} size={40} />
+        <div className="px-2.5 pt-2.5 pb-2">
+          <div className="flex items-center gap-2">
+            <Avatar name={master.alias} id={master.id} avatarUrl={master.avatarUrl} size={30} />
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="font-semibold text-[13px] text-gray-800 leading-tight">{master.alias}</span>
-                {master.isTestMaster && (
-                  <span className="text-[10px] bg-amber-100 text-amber-700 rounded-full px-1.5 py-0.5 font-semibold">ТЕСТ</span>
-                )}
-                {master.telegramId && (
-                  <span className="text-[10px] bg-blue-100 text-blue-600 rounded-full px-1.5 py-0.5 font-semibold flex items-center gap-0.5">
-                    <MessageSquare className="w-2.5 h-2.5" />TG
-                  </span>
-                )}
+              <div className="flex items-center gap-1 flex-wrap">
+                <span className="font-semibold text-[12px] text-gray-800 leading-tight truncate">{master.alias}</span>
+                {master.telegramId && <MessageSquare className="w-2.5 h-2.5 text-blue-400 flex-shrink-0" />}
+                {master.isTestMaster && <span className="text-[9px] bg-amber-100 text-amber-700 rounded px-1 font-semibold flex-shrink-0">ТЕСТ</span>}
               </div>
-              <p className="text-[11px] text-gray-400 mt-0.5">{master.city}</p>
-              {(master.specializations?.length > 0 ? master.specializations : master.specialization ? [master.specialization] : []).length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {(master.specializations?.length > 0 ? master.specializations : [master.specialization]).slice(0,3).map(s => (
-                    <span key={s} className="text-[9px] bg-gray-100 text-gray-500 rounded px-1.5 py-0.5 font-medium leading-tight">{s}</span>
-                  ))}
-                  {master.specializations?.length > 3 && (
-                    <span className="text-[9px] bg-gray-100 text-gray-400 rounded px-1.5 py-0.5">+{master.specializations.length - 3}</span>
-                  )}
-                </div>
-              )}
-              {master.tags?.length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {master.tags.slice(0, 3).map(tag => (
-                    <span key={tag} className="text-[9px] bg-violet-50 text-violet-600 rounded px-1.5 py-0.5 font-medium leading-tight">#{tag}</span>
-                  ))}
-                </div>
-              )}
+              <p className="text-[10px] text-gray-400 truncate">{master.city}</p>
             </div>
-            <ChevronRight className="w-3.5 h-3.5 text-gray-300 flex-shrink-0 mt-1" />
+            <ChevronRight className="w-3 h-3 text-gray-300 flex-shrink-0" />
           </div>
 
-          {/* Stars + stats */}
-          <div className="flex items-center justify-between mt-2.5">
+          {/* Specs */}
+          {(master.specializations?.length > 0 || master.specialization) && (
+            <div className="flex flex-wrap gap-0.5 mt-1.5">
+              {(master.specializations?.length > 0 ? master.specializations : [master.specialization]).slice(0, 2).map(s => (
+                <span key={s} className="text-[9px] bg-gray-100 text-gray-500 rounded px-1 py-0.5 font-medium leading-tight truncate max-w-[80px]">{s}</span>
+              ))}
+              {(master.specializations?.length ?? 0) > 2 && (
+                <span className="text-[9px] bg-gray-100 text-gray-400 rounded px-1 py-0.5">+{master.specializations.length - 2}</span>
+              )}
+            </div>
+          )}
+
+          {/* Stats row */}
+          <div className="flex items-center justify-between mt-1.5">
             <div className="flex items-center gap-0.5">
               {[1,2,3,4,5].map(i => (
-                <Star key={i} className={`w-3 h-3 ${i <= Math.round(master.rating) ? "fill-yellow-400 text-yellow-400" : "text-gray-200"}`} />
+                <Star key={i} className={`w-2.5 h-2.5 ${i <= Math.round(master.rating) ? "fill-yellow-400 text-yellow-400" : "text-gray-200"}`} />
               ))}
-              <span className="text-[11px] text-gray-500 ml-1">{master.rating.toFixed(1)}</span>
             </div>
-            <div className="flex items-center gap-2 text-[11px] text-gray-400">
-              {master.phone && <span className="flex items-center gap-0.5 text-emerald-600"><Phone className="w-3 h-3" />{master.phone}</span>}
-              <span className="flex items-center gap-1"><Briefcase className="w-3 h-3" />{master.totalOrders}</span>
+            <div className="flex items-center gap-1.5 text-[10px] text-gray-400">
+              <span className="flex items-center gap-0.5"><Briefcase className="w-2.5 h-2.5" />{master.totalOrders}</span>
               {master.debt > 0 && (
                 <span className="flex items-center gap-0.5 text-red-500 font-medium">
-                  <AlertTriangle className="w-3 h-3" />{(master.debt/1000).toFixed(0)}k₽
+                  <AlertTriangle className="w-2.5 h-2.5" />{(master.debt/1000).toFixed(0)}k
                 </span>
               )}
             </div>
@@ -128,26 +114,16 @@ function MasterCard({ master, columns, onMove, onOpenDrawer, onDragStart, onDrag
 
         {/* Active orders */}
         {hasActiveOrders && (
-          <div className="border-t border-gray-50 px-3.5 py-2 space-y-2 bg-blue-50/40">
+          <div className="border-t border-gray-50 px-2.5 py-1.5 space-y-1 bg-blue-50/40">
             {master.activeOrders.map(o => (
-              <div key={o.orderId} className="text-[11px]">
-                <div className="flex items-center gap-1 font-semibold text-blue-700 mb-0.5">
-                  <Zap className="w-3 h-3" />
-                  <span>#{o.orderId} · {o.serviceType}</span>
-                </div>
-                <div className="flex items-center gap-1 text-gray-500">
-                  <MapPin className="w-3 h-3 text-orange-400 flex-shrink-0" />
-                  {o.city}, {o.district}
-                </div>
-                {o.clientName && (
-                  <div className="flex items-center gap-1 text-gray-500">
-                    <User className="w-3 h-3 text-gray-400 flex-shrink-0" />{o.clientName}
-                  </div>
-                )}
+              <div key={o.orderId} className="flex items-center gap-1 text-[10px]">
+                <Zap className="w-2.5 h-2.5 text-blue-500 flex-shrink-0" />
+                <span className="font-semibold text-blue-700 flex-shrink-0">#{o.orderId}</span>
+                <span className="text-gray-500 truncate">{o.serviceType}</span>
                 {o.clientPhone && (
                   <a href={`tel:${o.clientPhone}`} onClick={e => e.stopPropagation()}
-                    className="flex items-center gap-1 text-emerald-600 font-semibold hover:underline">
-                    <Phone className="w-3 h-3 flex-shrink-0" />{o.clientPhone}
+                    className="ml-auto text-emerald-600 font-medium hover:underline flex-shrink-0 flex items-center gap-0.5">
+                    <Phone className="w-2.5 h-2.5" />
                   </a>
                 )}
               </div>
@@ -160,9 +136,9 @@ function MasterCard({ master, columns, onMove, onOpenDrawer, onDragStart, onDrag
       <div className="border-t border-gray-50 relative" onClick={e => e.stopPropagation()}>
         <button
           onClick={() => setOpen(v => !v)}
-          className="w-full flex items-center justify-center gap-1.5 py-2 text-[11px] text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors"
+          className="w-full flex items-center justify-center gap-1 py-1.5 text-[10px] text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors"
         >
-          <ArrowRight className="w-3 h-3" />Переместить
+          <ArrowRight className="w-2.5 h-2.5" />Переместить
         </button>
         {open && (
           <>
@@ -200,38 +176,31 @@ function SuspendedColumn({ masters, onOpenDrawer }: {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
-    <div className="flex-shrink-0 w-[260px] flex flex-col rounded-2xl border-2 border-dashed border-red-200 bg-red-50/50 overflow-hidden">
+    <div className="flex-shrink-0 w-[200px] flex flex-col rounded-xl border-2 border-dashed border-red-200 bg-red-50/50 overflow-hidden">
       {/* Header */}
-      <div className="flex items-center gap-2 px-3.5 py-3 border-b border-red-100 bg-red-50">
-        <UserX className="w-4 h-4 text-red-400" />
-        <span className="font-semibold text-red-700 text-sm flex-1">Отстранённые</span>
-        <span className="text-xs font-bold bg-red-200 text-red-700 rounded-full px-2 py-0.5">{masters.length}</span>
+      <div className="flex items-center gap-1.5 px-2.5 py-1.5 border-b border-red-100 bg-red-50">
+        <UserX className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
+        <span className="font-semibold text-red-700 text-[12px] flex-1">Отстранённые</span>
+        <span className="text-[10px] font-bold bg-red-200 text-red-700 rounded-full px-1.5 py-0.5">{masters.length}</span>
         <button onClick={() => setCollapsed(c => !c)} className="p-0.5 rounded hover:bg-red-100 transition-colors">
-          {collapsed ? <ChevronDown className="w-3.5 h-3.5 text-red-400" /> : <ChevronUp className="w-3.5 h-3.5 text-red-400" />}
+          {collapsed ? <ChevronDown className="w-3 h-3 text-red-400" /> : <ChevronUp className="w-3 h-3 text-red-400" />}
         </button>
       </div>
 
       {/* Cards */}
       {!collapsed && (
-        <div className="voronka-scroll flex-1 overflow-y-auto p-2 space-y-2 min-h-0">
+        <div className="voronka-scroll flex-1 overflow-y-auto p-1.5 space-y-1.5 min-h-0">
           {masters.map(m => (
             <div key={m.id}
               onClick={() => onOpenDrawer(m)}
-              className="bg-white border border-red-100 rounded-xl p-3 cursor-pointer hover:shadow-md transition-all duration-150 flex items-center gap-3"
+              className="bg-white border border-red-100 rounded-lg px-2 py-1.5 cursor-pointer hover:shadow-md transition-all duration-150 flex items-center gap-2"
             >
-              <Avatar name={m.alias} id={m.id} avatarUrl={m.avatarUrl} size={36} />
+              <Avatar name={m.alias} id={m.id} avatarUrl={m.avatarUrl} size={26} />
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-700 truncate">{m.alias}</p>
-                <p className="text-[11px] text-gray-400 truncate">{m.city}</p>
-                {m.phone && (
-                  <p className="text-[11px] text-gray-400 truncate flex items-center gap-1 mt-0.5">
-                    <Phone className="w-2.5 h-2.5" />{m.phone}
-                  </p>
-                )}
+                <p className="text-[11px] font-semibold text-gray-700 truncate">{m.alias}</p>
+                <p className="text-[10px] text-gray-400 truncate">{m.city}</p>
               </div>
-              {m.telegramId && (
-                <div className="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0" title="В Telegram" />
-              )}
+              {m.telegramId && <div className="w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0" />}
             </div>
           ))}
         </div>
@@ -261,17 +230,15 @@ function KanbanColumn({ col, masters, columns, onMove, onOpenDrawer, draggingId,
   const isActiveDrop = dragOver && draggingId !== null;
 
   return (
-    <div className="flex-shrink-0 w-[280px] flex flex-col">
-      <div className={`rounded-t-2xl bg-gradient-to-b ${c.header} border border-b-0 border-gray-100 px-4 py-3 flex items-center justify-between border-t-4 ${c.top}`}>
-        <div className="flex items-center gap-2">
-          <span className="font-semibold text-[13px] text-gray-700">{name}</span>
+    <div className="flex-shrink-0 w-[220px] flex flex-col">
+      <div className={`rounded-t-xl bg-gradient-to-b ${c.header} border border-b-0 border-gray-100 px-3 py-2 flex items-center justify-between border-t-[3px] ${c.top}`}>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="font-semibold text-[12px] text-gray-700 truncate">{name}</span>
           {receivesOrders && (
-            <span className="text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-full px-1.5 py-0.5 font-semibold flex items-center gap-0.5">
-              <Zap className="w-2.5 h-2.5" />Заказы
-            </span>
+            <Zap className="w-3 h-3 text-emerald-500 flex-shrink-0" title="Принимает заказы" />
           )}
         </div>
-        <span className={`${c.badge} text-white text-[11px] font-bold rounded-full min-w-[22px] h-[22px] flex items-center justify-center px-1.5`}>
+        <span className={`${c.badge} text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 flex-shrink-0 ml-1`}>
           {masters.length}
         </span>
       </div>
@@ -279,20 +246,20 @@ function KanbanColumn({ col, masters, columns, onMove, onOpenDrawer, draggingId,
         onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={e => { e.preventDefault(); setDragOver(false); if (draggingId !== null) onDropMaster(draggingId, col?.id ?? null); }}
-        className={`voronka-scroll flex-1 border border-t-0 rounded-b-2xl overflow-y-auto p-2.5 space-y-2.5 transition-colors duration-150 ${
+        className={`voronka-scroll flex-1 border border-t-0 rounded-b-xl overflow-y-auto p-1.5 space-y-1.5 transition-colors duration-150 ${
           isActiveDrop ? "bg-blue-50/70 border-blue-200" : "bg-gray-50/60 border-gray-100"
         }`}
-        style={{ maxHeight: "calc(100vh - 195px)" }}
+        style={{ maxHeight: "calc(100vh - 185px)" }}
       >
         {masters.length === 0 && !isActiveDrop ? (
-          <div className="flex flex-col items-center justify-center py-10 text-gray-300">
-            <User className="w-8 h-8 mb-2" />
-            <p className="text-[12px]">Пусто</p>
+          <div className="flex flex-col items-center justify-center py-6 text-gray-300">
+            <User className="w-5 h-5 mb-1" />
+            <p className="text-[11px]">Пусто</p>
           </div>
         ) : masters.length === 0 && isActiveDrop ? (
-          <div className="flex flex-col items-center justify-center py-10 text-blue-300">
-            <div className="w-10 h-10 rounded-2xl border-2 border-dashed border-blue-300 mb-2" />
-            <p className="text-[12px]">Отпустите здесь</p>
+          <div className="flex flex-col items-center justify-center py-6 text-blue-300">
+            <div className="w-8 h-8 rounded-xl border-2 border-dashed border-blue-300 mb-1" />
+            <p className="text-[11px]">Сюда</p>
           </div>
         ) : masters.map(m => (
           <MasterCard
