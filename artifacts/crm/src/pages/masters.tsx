@@ -5,6 +5,7 @@ import {
   Loader2, Plus, Star, Phone, MessageSquare, Briefcase,
   AlertTriangle, MapPin, Search, X, Users, Zap, UserX, Filter,
 } from "lucide-react";
+import { Avatar, MasterDrawer } from "@/components/master-drawer";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCreateMaster, useGetCities } from "@workspace/api-client-react";
 
@@ -40,24 +41,6 @@ interface Master {
   createdAt: string;
 }
 
-// ─── Tiny avatar ──────────────────────────────────────────────────────────────
-
-function Avatar({ name, id, size = 32 }: { name: string; id: number; size?: number }) {
-  const colors = [
-    "bg-blue-100 text-blue-700", "bg-violet-100 text-violet-700",
-    "bg-emerald-100 text-emerald-700", "bg-amber-100 text-amber-700",
-    "bg-rose-100 text-rose-700", "bg-cyan-100 text-cyan-700",
-  ];
-  const col = colors[id % colors.length];
-  return (
-    <div
-      className={`flex-shrink-0 rounded-full flex items-center justify-center font-bold ${col}`}
-      style={{ width: size, height: size, fontSize: size * 0.38 }}
-    >
-      {name.charAt(0).toUpperCase()}
-    </div>
-  );
-}
 
 // ─── Status pill ──────────────────────────────────────────────────────────────
 
@@ -78,6 +61,7 @@ export default function Masters() {
   const [search, setSearch] = useState("");
   const [cityFilter, setCityFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "free" | "onsite" | "suspended">("all");
+  const [drawerMaster, setDrawerMaster] = useState<Master | null>(null);
   const queryClient = useQueryClient();
 
   const [masters, setMasters] = useState<Master[]>([]);
@@ -86,8 +70,8 @@ export default function Masters() {
   // Fetch enriched masters from voronka endpoint
   useEffect(() => {
     fetch("/api/voronka/masters")
-      .then(r => r.json())
-      .then(data => { setMasters(data); setLoading(false); })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => { setMasters(Array.isArray(data) ? data : []); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
 
@@ -241,7 +225,7 @@ export default function Masters() {
                 <p className="text-sm">Никого не найдено</p>
               </div>
             ) : filtered.map(m => (
-              <MasterRow key={m.id} master={m} />
+              <MasterRow key={m.id} master={m} onOpenDrawer={setDrawerMaster} />
             ))}
           </div>
         </div>
@@ -297,6 +281,16 @@ export default function Masters() {
             </div>
           </div>
         )}
+        {drawerMaster && (
+          <MasterDrawer
+            master={drawerMaster}
+            onClose={() => setDrawerMaster(null)}
+            onMasterUpdate={(id, data) => {
+              setMasters(prev => prev.map(m => m.id === id ? { ...m, ...data } : m));
+              if (drawerMaster?.id === id) setDrawerMaster(prev => prev ? { ...prev, ...data } : prev);
+            }}
+          />
+        )}
       </Layout>
     </ProtectedRoute>
   );
@@ -304,13 +298,16 @@ export default function Masters() {
 
 // ─── Compact master row ───────────────────────────────────────────────────────
 
-function MasterRow({ master }: { master: Master }) {
+function MasterRow({ master, onOpenDrawer }: { master: Master; onOpenDrawer: (m: Master) => void }) {
   const specs = master.specializations.length > 0 ? master.specializations : master.specialization ? [master.specialization] : [];
 
   return (
-    <div className="bg-white border border-gray-100 rounded-xl px-3.5 py-2.5 flex items-center gap-3 hover:shadow-sm transition-all group">
+    <div
+      onClick={() => onOpenDrawer(master)}
+      className="bg-white border border-gray-100 rounded-xl px-3.5 py-2.5 flex items-center gap-3 hover:shadow-md transition-all cursor-pointer group"
+    >
       {/* Avatar */}
-      <Avatar name={master.alias} id={master.id} size={36} />
+      <Avatar name={master.alias} id={master.id} avatarUrl={master.avatarUrl} size={36} />
 
       {/* Main info */}
       <div className="flex-1 min-w-0">
