@@ -10,6 +10,7 @@ export const orderStatusEnum = pgEnum("order_status", [
   "in_progress",
   "completed",
   "cancelled",
+  "cancellation_requested",
 ]);
 
 export const ordersTable = pgTable("orders", {
@@ -27,6 +28,7 @@ export const ordersTable = pgTable("orders", {
   orderAmount: numeric("order_amount", { precision: 12, scale: 2 }),
   commission: numeric("commission", { precision: 12, scale: 2 }),
   clientRating: integer("client_rating"),
+  cancelReason: text("cancel_reason"),
   dispatchStatus: text("dispatch_status").notNull().default("none"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

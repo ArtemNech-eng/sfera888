@@ -31,7 +31,8 @@ type BotState =
   | { step: "awaiting_phone"; masterId: number }
   | { step: "confirming_phone"; masterId: number; phone: string }
   | { step: "awaiting_photo"; masterId: number }
-  | { step: "awaiting_amount"; masterId: number; orderId: number };
+  | { step: "awaiting_amount"; masterId: number; orderId: number }
+  | { step: "awaiting_cancel_reason"; masterId: number; orderId: number };
 
 const pendingState = new Map<string, BotState>();
 
@@ -343,7 +344,7 @@ async function showMyOrders(chatId: string, master: any, messageId?: number) {
   const myOrders = await db.select().from(ordersTable)
     .where(and(
       eq(ordersTable.masterId, master.id),
-      inArray(ordersTable.status, ["master_assigned", "in_progress"])
+      inArray(ordersTable.status, ["master_assigned", "in_progress", "cancellation_requested"])
     ));
 
   if (myOrders.length === 0) {
@@ -360,12 +361,19 @@ async function showMyOrders(chatId: string, master: any, messageId?: number) {
 
   for (const o of myOrders) {
     const lead = leadMap.get(o.leadId);
+    const isCancelPending = o.status === "cancellation_requested";
     text += `<b>Заказ #${o.id}: ${o.serviceType}</b>\n`;
     text += `📍 ${o.city}, ${o.district}\n`;
     if (lead?.clientName) text += `👤 Клиент: ${lead.clientName}\n`;
     if (lead?.clientPhone) text += `📞 Телефон: ${lead.clientPhone}\n`;
+    if (isCancelPending) text += `⏳ <i>Запрос на отмену рассматривается оператором</i>\n`;
     text += `\n`;
-    buttons.push([{ text: `✅ Завершить заказ #${o.id}`, callback_data: `complete_order_${o.id}` }]);
+    if (!isCancelPending) {
+      buttons.push([
+        { text: `✅ Завершить заказ #${o.id}`, callback_data: `complete_order_${o.id}` },
+        { text: `❌ Отменить #${o.id}`, callback_data: `cancel_order_${o.id}` },
+      ]);
+    }
   }
 
   await editOrSend(chatId, messageId, text, { reply_markup: { inline_keyboard: [...buttons, backBtn] } });
@@ -910,6 +918,37 @@ async function handleCallback(callbackQuery: any) {
     await showMyOrders(chatId, master, messageId);
     return;
   }
+
+  // ── Request order cancellation ────────────────────────────────────────────
+  if (data.startsWith("cancel_order_")) {
+    const orderId = parseInt(data.replace("cancel_order_", ""));
+
+    const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
+    const order = orderRows[0];
+
+    if (!order || order.masterId !== master.id) {
+      await answerCallback(cbId, "❌ Заказ не найден или не ваш");
+      return;
+    }
+
+    await answerCallback(cbId);
+    pendingState.set(chatId, { step: "awaiting_cancel_reason", masterId: master.id, orderId });
+    await editMessage(chatId, messageId,
+      `❌ <b>Отмена заказа #${orderId}</b>\n\n` +
+      `🔧 ${order.serviceType} — ${order.city}${order.district ? ", " + order.district : ""}\n\n` +
+      `Укажите причину отмены — оператор её рассмотрит и примет решение.\n\n` +
+      `<i>Например: клиент отменил, не смог выехать, изменились обстоятельства...</i>`,
+      { reply_markup: { inline_keyboard: [[{ text: "« Назад", callback_data: `abort_cancel_${orderId}` }]] } }
+    );
+    return;
+  }
+
+  if (data.startsWith("abort_cancel_")) {
+    pendingState.delete(chatId);
+    await answerCallback(cbId);
+    await showMyOrders(chatId, master, messageId);
+    return;
+  }
 }
 
 // ─── Webhook ──────────────────────────────────────────────────────────────────
@@ -1186,6 +1225,37 @@ router.post("/webhook", async (req, res) => {
         `Оператор проверит и подтвердит её — после этого будет начислена комиссия.\n\n` +
         `💳 Ваш статус: <b>Ожидает оплаты комиссии</b>\n` +
         `После оплаты комиссии вы сможете брать новые заказы.`,
+        mainMenuKeyboard()
+      );
+      return;
+    }
+
+    // ── Awaiting cancel reason ───────────────────────────────────────────────
+    if (state?.step === "awaiting_cancel_reason" && text) {
+      const { masterId, orderId } = state;
+      const reason = text.trim();
+      if (!reason) {
+        await sendMessage(chatId, "⚠️ Пожалуйста, введите причину отмены текстом.");
+        return;
+      }
+
+      await db.update(ordersTable).set({
+        status: "cancellation_requested",
+        cancelReason: reason,
+        updatedAt: new Date(),
+      }).where(and(eq(ordersTable.id, orderId), eq(ordersTable.masterId, masterId)));
+
+      pendingState.delete(chatId);
+
+      await logToChat(masterId, chatId,
+        `❌ Запросил отмену заказа #${orderId}. Причина: ${reason}`
+      );
+
+      await sendMessage(chatId,
+        `📋 <b>Запрос на отмену отправлен</b>\n\n` +
+        `Заказ #${orderId} — <b>ожидает решения оператора.</b>\n\n` +
+        `Указанная причина: <i>${reason}</i>\n\n` +
+        `Оператор рассмотрит запрос и подтвердит или отклонит отмену.`,
         mainMenuKeyboard()
       );
       return;

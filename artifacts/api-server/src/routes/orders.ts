@@ -54,6 +54,7 @@ router.get("/", allOrderRoles, async (req, res) => {
     orderAmount: o.orderAmount ? Number(o.orderAmount) : null,
     commission: o.commission ? Number(o.commission) : null,
     clientRating: o.clientRating ?? null,
+    cancelReason: o.cancelReason ?? null,
     createdAt: o.createdAt,
     updatedAt: o.updatedAt,
   })));
@@ -85,6 +86,7 @@ router.get("/:id", allOrderRoles, async (req, res) => {
     orderAmount: o.orderAmount ? Number(o.orderAmount) : null,
     commission: o.commission ? Number(o.commission) : null,
     clientRating: o.clientRating ?? null,
+    cancelReason: o.cancelReason ?? null,
     createdAt: o.createdAt,
     updatedAt: o.updatedAt,
   });
@@ -92,7 +94,7 @@ router.get("/:id", allOrderRoles, async (req, res) => {
 
 router.patch("/:id", allOrderRoles, async (req, res) => {
   const id = parseInt(req.params.id);
-  const { status, orderAmount, commission, clientRating, proposedAmount, acceptProposed } = req.body;
+  const { status, orderAmount, commission, clientRating, proposedAmount, acceptProposed, approveCancellation, rejectCancellation } = req.body;
 
   // Fetch current order to get masterId before update
   const currentRows = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
@@ -102,6 +104,16 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
   const updates: any = { updatedAt: new Date() };
   if (status !== undefined) updates.status = status;
   if (proposedAmount !== undefined) updates.proposedAmount = proposedAmount !== null ? String(proposedAmount) : null;
+
+  // Approve cancellation → set status cancelled
+  if (approveCancellation) {
+    updates.status = "cancelled";
+  }
+  // Reject cancellation → restore in_progress, clear reason
+  if (rejectCancellation) {
+    updates.status = "in_progress";
+    updates.cancelReason = null;
+  }
 
   // "Accept proposed" — copy proposedAmount → orderAmount and auto-calc commission
   if (acceptProposed && current.proposedAmount) {
@@ -144,11 +156,17 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
         if (awaitingCol) {
           await db.update(mastersTable).set({ voronkaColumnId: awaitingCol.id }).where(eq(mastersTable.id, masterId));
         }
-      } else if (status === "cancelled") {
+      } else if (status === "cancelled" || approveCancellation) {
         // Move back to "Свободен"
         const freeCol = await getFreeColumn();
         if (freeCol) {
           await db.update(mastersTable).set({ voronkaColumnId: freeCol.id }).where(eq(mastersTable.id, masterId));
+        }
+      } else if (rejectCancellation) {
+        // Restore master to "На объекте"
+        const onSiteCol = await getOnSiteColumn();
+        if (onSiteCol) {
+          await db.update(mastersTable).set({ voronkaColumnId: onSiteCol.id }).where(eq(mastersTable.id, masterId));
         }
       }
     }

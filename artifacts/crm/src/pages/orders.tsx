@@ -6,7 +6,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { formatDate } from "@/lib/utils";
 import {
   Loader2, MapPin, Send, Users, CheckCircle2, Clock, X, UserCheck,
-  DollarSign, Check, Pencil,
+  DollarSign, Check, Pencil, AlertCircle, RotateCcw,
 } from "lucide-react";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 
@@ -106,10 +106,39 @@ export default function Orders() {
     },
   });
 
+  const approveCancellationMutation = useMutation({
+    mutationFn: async (orderId: number) => {
+      const r = await fetch(`/api/orders/${orderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ approveCancellation: true }),
+      });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Ошибка"); }
+      return r.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/orders"] }),
+  });
+
+  const rejectCancellationMutation = useMutation({
+    mutationFn: async (orderId: number) => {
+      const r = await fetch(`/api/orders/${orderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ rejectCancellation: true }),
+      });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Ошибка"); }
+      return r.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/orders"] }),
+  });
+
   const openOrder = openDispatchId ? orders?.find(o => o.id === openDispatchId) : null;
   const respondents = dispatchData?.dispatches.filter(d => d.status === "responded") ?? [];
 
   const pendingAmountOrders = orders?.filter(o => (o as any).proposedAmount && !(o as any).orderAmount) ?? [];
+  const cancellationOrders = orders?.filter(o => o.status === "cancellation_requested" as any) ?? [];
 
   return (
     <ProtectedRoute allowedRoles={['admin', 'master_operator']}>
@@ -119,6 +148,57 @@ export default function Orders() {
             <h1 className="text-3xl font-display font-bold text-foreground">Буфер заказов</h1>
             <p className="text-muted-foreground mt-1">Распределение заказов по мастерам</p>
           </div>
+
+          {/* Cancellation request banner */}
+          {cancellationOrders.length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-2xl p-4 space-y-2">
+              <div className="flex items-center gap-2 text-red-800 font-semibold text-sm mb-1">
+                <AlertCircle className="w-4 h-4" />
+                {cancellationOrders.length === 1
+                  ? "1 запрос на отмену заказа"
+                  : `${cancellationOrders.length} запроса на отмену заказа`}
+              </div>
+              {cancellationOrders.map(order => (
+                <div key={order.id} className="bg-white rounded-xl border border-red-100 px-4 py-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="font-medium text-foreground">#{order.id}</span>
+                      <span className="mx-2 text-muted-foreground">·</span>
+                      <span className="text-foreground">{order.serviceType}</span>
+                      <span className="mx-2 text-muted-foreground">·</span>
+                      <span className="text-muted-foreground text-xs">{order.city}</span>
+                      {order.masterName && (
+                        <span className="ml-2 text-xs text-muted-foreground">мастер {order.masterName}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => approveCancellationMutation.mutate(order.id)}
+                        disabled={approveCancellationMutation.isPending}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-500 text-white hover:bg-red-600 rounded-lg font-medium text-xs transition-colors disabled:opacity-50"
+                      >
+                        {approveCancellationMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
+                        Подтвердить отмену
+                      </button>
+                      <button
+                        onClick={() => rejectCancellationMutation.mutate(order.id)}
+                        disabled={rejectCancellationMutation.isPending}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg font-medium text-xs transition-colors disabled:opacity-50"
+                      >
+                        {rejectCancellationMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+                        Отклонить
+                      </button>
+                    </div>
+                  </div>
+                  {(order as any).cancelReason && (
+                    <div className="text-sm text-red-700 bg-red-50 rounded-lg px-3 py-2">
+                      <span className="font-medium">Причина: </span>{(order as any).cancelReason}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Proposed amount banner */}
           {pendingAmountOrders.length > 0 && (

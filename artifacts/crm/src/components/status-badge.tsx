@@ -20,6 +20,7 @@ const statusMaps = {
     in_progress: { label: "В работе", class: "bg-indigo-100 text-indigo-800 border-indigo-200" },
     completed: { label: "Завершён", class: "bg-emerald-100 text-emerald-800 border-emerald-200" },
     cancelled: { label: "Отменён", class: "bg-red-100 text-red-800 border-red-200" },
+    cancellation_requested: { label: "Запрос на отмену", class: "bg-orange-100 text-orange-800 border-orange-200" },
   },
   payment: {
     pending: { label: "Ожидает", class: "bg-amber-100 text-amber-800 border-amber-200" },
