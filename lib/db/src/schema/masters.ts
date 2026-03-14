@@ -20,6 +20,7 @@ export const mastersTable = pgTable("masters", {
   debt: numeric("debt", { precision: 12, scale: 2 }).notNull().default("0"),
   voronkaColumnId: integer("voronka_column_id"),
   isTestMaster: boolean("is_test_master").notNull().default(true),
+  tags: text("tags").array().notNull().default([]),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

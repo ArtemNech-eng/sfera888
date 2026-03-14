@@ -25,7 +25,8 @@ const SPECIALIZATIONS = [
 
 type BotState =
   | { step: "selecting_specs"; masterId: number; selected: string[]; pickerMessageId?: number }
-  | { step: "awaiting_message"; masterId: number };
+  | { step: "awaiting_message"; masterId: number }
+  | { step: "awaiting_phone"; masterId: number };
 
 const pendingState = new Map<string, BotState>();
 
@@ -416,12 +417,26 @@ async function handleCallback(callbackQuery: any) {
       specialization: specText,
     }).where(eq(mastersTable.id, master.id));
 
-    pendingState.delete(chatId);
-
-    await editMessage(chatId, messageId,
-      `✅ <b>Специальности сохранены!</b>\n\n🔧 ${specText}\n\nТеперь вы можете пользоваться всеми функциями бота:`,
-      mainMenuKeyboard()
-    );
+    // Check if master already has phone — if yes, go to menu; if not, request phone
+    if (master.phone) {
+      pendingState.delete(chatId);
+      await editMessage(chatId, messageId,
+        `✅ <b>Специальности сохранены!</b>\n\n🔧 ${specText}\n\nТеперь вы можете пользоваться всеми функциями бота:`,
+        mainMenuKeyboard()
+      );
+    } else {
+      pendingState.set(chatId, { step: "awaiting_phone", masterId: master.id });
+      await tgRequest("sendMessage", {
+        chat_id: chatId,
+        text: `✅ <b>Специальности сохранены!</b>\n\n🔧 ${specText}\n\n📱 Теперь поделитесь вашим номером телефона, чтобы операторы могли с вами связаться:`,
+        parse_mode: "HTML",
+        reply_markup: {
+          keyboard: [[{ text: "📱 Поделиться номером телефона", request_contact: true }]],
+          resize_keyboard: true,
+          one_time_keyboard: true,
+        },
+      });
+    }
     return;
   }
 
@@ -663,6 +678,25 @@ router.post("/webhook", async (req, res) => {
         `✅ <b>${master.alias}</b> — главное меню`,
         mainMenuKeyboard()
       );
+      return;
+    }
+
+    // Handle shared contact (phone number)
+    const contact = (update.message as any)?.contact;
+    if (contact && contact.phone_number) {
+      const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.telegramId, String(from.id)));
+      const contactMaster = masterRows[0];
+      if (contactMaster) {
+        await db.update(mastersTable).set({ phone: contact.phone_number }).where(eq(mastersTable.id, contactMaster.id));
+        pendingState.delete(chatId);
+        await tgRequest("sendMessage", {
+          chat_id: chatId,
+          text: `✅ <b>Номер телефона сохранён!</b>\n\n📱 ${contact.phone_number}\n\nТеперь вы можете пользоваться всеми функциями бота:`,
+          parse_mode: "HTML",
+          reply_markup: { remove_keyboard: true },
+        });
+        await sendMessage(chatId, `👇 Главное меню:`, mainMenuKeyboard());
+      }
       return;
     }
 
