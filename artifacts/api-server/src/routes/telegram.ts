@@ -1310,12 +1310,54 @@ router.post("/webhook", async (req, res) => {
         photoUrl: null,
       });
 
+      // Mark dispatch as "responded" so operator sees the "Назначить" button in CRM chat
+      const dispatchRows = await db.select().from(orderDispatchesTable)
+        .where(and(eq(orderDispatchesTable.orderId, orderId), eq(orderDispatchesTable.masterId, masterId)));
+      const dispatch = dispatchRows[0];
+      if (dispatch && dispatch.status === "sent") {
+        await db.update(orderDispatchesTable).set({
+          status: "responded",
+          respondedAt: new Date(),
+        }).where(eq(orderDispatchesTable.id, dispatch.id));
+      }
+
+      // Confirm question sent
       await sendMessage(chatId,
         `✅ <b>Вопрос отправлен оператору</b>\n\n` +
         `<i>${question}</i>\n\n` +
-        `Оператор увидит его в чате и ответит вам здесь.`,
-        mainMenuKeyboard()
+        `Оператор увидит его в чате и ответит вам здесь.`
       );
+
+      // Re-send the order card with "Откликнуться" button so master can still respond
+      const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
+      const order = orderRows[0];
+      if (order && order.dispatchStatus === "dispatching") {
+        let servicesBlock = "";
+        try {
+          const srvs = order.services ? JSON.parse(order.services) : null;
+          if (Array.isArray(srvs) && srvs.length > 0) {
+            servicesBlock = "\n🔧 Услуги:\n" + srvs.map((s: any, i: number) =>
+              `   ${i + 1}. <b>${s.type}</b> — ${s.area} м²${s.pricePerM2 ? ` × ${s.pricePerM2.toLocaleString("ru-RU")} ₽/м²` : ""}`
+            ).join("\n") + "\n";
+          }
+        } catch {}
+        if (!servicesBlock) servicesBlock = `\n🔧 Услуга: <b>${order.serviceType}</b>\n📐 Объём: <b>${order.area} м²</b>\n`;
+        const cardText =
+          `📋 <b>Заявка #${orderId}</b>\n` + servicesBlock +
+          `📍 Район: <b>${order.city}${order.district ? ", " + order.district : ""}</b>` +
+          (order.comment ? `\n💬 Комментарий: ${order.comment}` : "") +
+          `\n\n<i>Нажмите кнопку, чтобы откликнуться.</i>`;
+        await sendMessage(chatId, cardText, {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "Откликнуться 🙋", callback_data: `respond_order_${orderId}` }],
+              [{ text: "💬 Задать вопрос оператору", callback_data: `ask_question_${orderId}` }],
+            ],
+          },
+        });
+      } else {
+        await sendMessage(chatId, "Используйте кнопки меню ниже 👇", mainMenuKeyboard());
+      }
       return;
     }
 
