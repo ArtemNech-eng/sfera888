@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, voronkaColumnsTable, mastersTable, ordersTable, leadsTable } from "@workspace/db";
+import { db, voronkaColumnsTable, mastersTable, ordersTable, leadsTable, telegramChatsTable } from "@workspace/db";
 import { eq, inArray, and } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
 
@@ -66,6 +66,15 @@ router.delete("/columns/:id", requireRole("admin"), async (req, res) => {
 router.get("/masters", requireAuth, async (_req, res) => {
   const masters = await db.select().from(mastersTable).orderBy(mastersTable.createdAt);
 
+  // Get avatar URLs from telegram_chats for masters with telegramId
+  const telegramIds = masters.filter(m => m.telegramId).map(m => m.telegramId!);
+  const tgChats = telegramIds.length > 0
+    ? await db.select({ telegramChatId: telegramChatsTable.telegramChatId, avatarUrl: telegramChatsTable.avatarUrl })
+        .from(telegramChatsTable)
+        .where(inArray(telegramChatsTable.telegramChatId, telegramIds))
+    : [];
+  const avatarMap = new Map(tgChats.map(c => [c.telegramChatId, c.avatarUrl ?? null]));
+
   // Get active orders per master
   const activeOrders = await db.select().from(ordersTable)
     .where(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
@@ -108,6 +117,7 @@ router.get("/masters", requireAuth, async (_req, res) => {
     debt: Number(m.debt),
     voronkaColumnId: m.voronkaColumnId ?? null,
     isTestMaster: m.isTestMaster,
+    avatarUrl: m.telegramId ? (avatarMap.get(m.telegramId) ?? null) : null,
     activeOrders: masterActiveOrders.get(m.id) ?? [],
     createdAt: m.createdAt,
   })));

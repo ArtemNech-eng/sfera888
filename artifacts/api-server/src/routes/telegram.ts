@@ -89,15 +89,27 @@ function mainMenuKeyboard() {
   };
 }
 
+// ─── Helper: edit or fallback to send ────────────────────────────────────────
+
+async function editOrSend(chatId: string, messageId: number | undefined, text: string, extra?: object) {
+  if (messageId) {
+    const r: any = await editMessage(chatId, messageId, text, extra);
+    if (r?.ok !== false) return r;
+  }
+  return sendMessage(chatId, text, extra);
+}
+
 // ─── Show available orders ────────────────────────────────────────────────────
 
-async function showAvailableOrders(chatId: string, master: any) {
+async function showAvailableOrders(chatId: string, master: any, messageId?: number) {
+  const backBtn = [{ text: "« Меню", callback_data: "main_menu" }];
+
   // Check if master's column allows receiving orders
   if (master.voronkaColumnId) {
     const col = await db.select().from(voronkaColumnsTable).where(eq(voronkaColumnsTable.id, master.voronkaColumnId));
     if (col[0] && !col[0].receivesOrders) {
       const colName = col[0].name;
-      await sendMessage(chatId, `⛔ <b>Вы не можете принимать заказы.</b>\n\nВаш статус: <b>${colName}</b>\n\nОбратитесь к оператору для изменения статуса.`);
+      await editOrSend(chatId, messageId, `⛔ <b>Вы не можете принимать заказы.</b>\n\nВаш статус: <b>${colName}</b>\n\nОбратитесь к оператору для изменения статуса.`, { reply_markup: { inline_keyboard: [backBtn] } });
       return;
     }
   }
@@ -112,7 +124,7 @@ async function showAvailableOrders(chatId: string, master: any) {
     const limitText = master.isTestMaster
       ? "У вас уже есть активный заказ. В тестовый период нельзя брать более 1 заказа.\n\nПосле завершения первого заказа и оплаты комиссии лимит будет увеличен до 2."
       : "У вас уже 2 активных заказа. Завершите один из них, чтобы взять новый.";
-    await sendMessage(chatId, `⛔ <b>Лимит заказов</b>\n\n${limitText}`);
+    await editOrSend(chatId, messageId, `⛔ <b>Лимит заказов</b>\n\n${limitText}`, { reply_markup: { inline_keyboard: [backBtn] } });
     return;
   }
 
@@ -121,7 +133,7 @@ async function showAvailableOrders(chatId: string, master: any) {
     .where(eq(ordersTable.status, "waiting_master"));
 
   if (waitingOrders.length === 0) {
-    await sendMessage(chatId, "📭 <b>Нет доступных заказов</b>\n\nПока заказов нет. Вы получите уведомление, когда появится новый заказ.");
+    await editOrSend(chatId, messageId, "📭 <b>Нет доступных заказов</b>\n\nПока заказов нет. Вы получите уведомление, когда появится новый заказ.", { reply_markup: { inline_keyboard: [backBtn] } });
     return;
   }
 
@@ -133,19 +145,18 @@ async function showAvailableOrders(chatId: string, master: any) {
   let text = `📋 <b>Доступные заказы (${waitingOrders.length})</b>\n\nВыберите заказ, который хотите взять:\n\n`;
 
   const buttons = waitingOrders.slice(0, 8).map((o, i) => {
-    const lead = leadMap.get(o.leadId);
     const area = o.area ? `${Number(o.area)} м²` : "";
-    const label = `${i + 1}. ${o.serviceType} · ${o.city}, ${o.district} ${area}`;
     text += `<b>${i + 1}. ${o.serviceType}</b>\n📍 ${o.city}, ${o.district}${area ? ` · ${area}` : ""}\n${o.comment ? `💬 ${o.comment}\n` : ""}\n`;
     return [{ text: `✅ Взять заказ #${o.id}: ${o.serviceType} (${o.city})`, callback_data: `take_order_${o.id}` }];
   });
 
-  await sendMessage(chatId, text, { reply_markup: { inline_keyboard: buttons } });
+  await editOrSend(chatId, messageId, text, { reply_markup: { inline_keyboard: [...buttons, backBtn] } });
 }
 
 // ─── Show master's active orders ──────────────────────────────────────────────
 
-async function showMyOrders(chatId: string, master: any) {
+async function showMyOrders(chatId: string, master: any, messageId?: number) {
+  const backBtn = [{ text: "« Меню", callback_data: "main_menu" }];
   const myOrders = await db.select().from(ordersTable)
     .where(and(
       eq(ordersTable.masterId, master.id),
@@ -153,7 +164,7 @@ async function showMyOrders(chatId: string, master: any) {
     ));
 
   if (myOrders.length === 0) {
-    await sendMessage(chatId, "📭 <b>У вас нет активных заказов.</b>\n\nВозьмите новый заказ через меню.", mainMenuKeyboard());
+    await editOrSend(chatId, messageId, "📭 <b>У вас нет активных заказов.</b>\n\nВозьмите новый заказ через меню.", mainMenuKeyboard());
     return;
   }
 
@@ -171,17 +182,15 @@ async function showMyOrders(chatId: string, master: any) {
     if (lead?.clientName) text += `👤 Клиент: ${lead.clientName}\n`;
     if (lead?.clientPhone) text += `📞 Телефон: ${lead.clientPhone}\n`;
     text += `\n`;
-    buttons.push([
-      { text: `✅ Завершить заказ #${o.id}`, callback_data: `complete_order_${o.id}` },
-    ]);
+    buttons.push([{ text: `✅ Завершить заказ #${o.id}`, callback_data: `complete_order_${o.id}` }]);
   }
 
-  await sendMessage(chatId, text, { reply_markup: { inline_keyboard: [...buttons, [{ text: "« Меню", callback_data: "main_menu" }]] } });
+  await editOrSend(chatId, messageId, text, { reply_markup: { inline_keyboard: [...buttons, backBtn] } });
 }
 
 // ─── Show master profile ──────────────────────────────────────────────────────
 
-async function showProfile(chatId: string, master: any) {
+async function showProfile(chatId: string, master: any, messageId?: number) {
   let colName = "Не в воронке";
   if (master.voronkaColumnId) {
     const col = await db.select().from(voronkaColumnsTable).where(eq(voronkaColumnsTable.id, master.voronkaColumnId));
@@ -202,7 +211,7 @@ async function showProfile(chatId: string, master: any) {
   if (debt > 0) text += `⚠️ Долг по комиссии: <b>${debt.toLocaleString("ru")} ₽</b>\n`;
   if (master.isTestMaster) text += `\n🔰 <i>Тестовый период: лимит 1 заказ одновременно</i>`;
 
-  await sendMessage(chatId, text, mainMenuKeyboard());
+  await editOrSend(chatId, messageId, text, mainMenuKeyboard());
 }
 
 // ─── Handle /start ────────────────────────────────────────────────────────────
@@ -270,19 +279,19 @@ async function handleCallback(callbackQuery: any) {
 
   if (data === "show_orders") {
     await answerCallback(cbId);
-    await showAvailableOrders(chatId, master);
+    await showAvailableOrders(chatId, master, messageId);
     return;
   }
 
   if (data === "my_orders") {
     await answerCallback(cbId);
-    await showMyOrders(chatId, master);
+    await showMyOrders(chatId, master, messageId);
     return;
   }
 
   if (data === "my_profile") {
     await answerCallback(cbId);
-    await showProfile(chatId, master);
+    await showProfile(chatId, master, messageId);
     return;
   }
 

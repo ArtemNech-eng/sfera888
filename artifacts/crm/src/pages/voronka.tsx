@@ -11,7 +11,7 @@ import {
 
 interface VoronkaColumn { id: number; name: string; position: number; receivesOrders: boolean; color: string; }
 interface ActiveOrder { orderId: number; district: string; city: string; serviceType: string; status: string; clientPhone: string | null; clientName: string | null; scheduledAt: string | null; }
-interface VoronkaMaster { id: number; alias: string; city: string; specialization: string; telegramId: string | null; phone: string | null; status: string; rating: number; totalOrders: number; acceptedOrders: number; debt: number; voronkaColumnId: number | null; isTestMaster: boolean; activeOrders: ActiveOrder[]; createdAt: string; }
+interface VoronkaMaster { id: number; alias: string; city: string; specialization: string; telegramId: string | null; phone: string | null; status: string; rating: number; totalOrders: number; acceptedOrders: number; debt: number; voronkaColumnId: number | null; isTestMaster: boolean; avatarUrl: string | null; activeOrders: ActiveOrder[]; createdAt: string; }
 
 // ─── Color map ────────────────────────────────────────────────────────────────
 
@@ -32,9 +32,23 @@ function clr(key: string) { return COLORS[key] ?? COLORS.blue; }
 // ─── Avatar ───────────────────────────────────────────────────────────────────
 
 const AVATAR_COLORS = ["bg-blue-500","bg-purple-500","bg-emerald-500","bg-orange-500","bg-pink-500","bg-teal-500","bg-amber-500","bg-indigo-500"];
-function Avatar({ name, id, size = 36 }: { name: string; id: number; size?: number }) {
+function Avatar({ name, id, avatarUrl, size = 36 }: { name: string; id: number; avatarUrl?: string | null; size?: number }) {
+  const [imgFailed, setImgFailed] = useState(false);
   const initials = name.split(" ").map(w => w[0]).join("").slice(0,2).toUpperCase() || "?";
   const bg = AVATAR_COLORS[id % AVATAR_COLORS.length];
+
+  if (avatarUrl && !imgFailed) {
+    return (
+      <img
+        src={avatarUrl}
+        alt={name}
+        className="rounded-full object-cover flex-shrink-0 border border-gray-100"
+        style={{ width: size, height: size }}
+        onError={() => setImgFailed(true)}
+      />
+    );
+  }
+
   return (
     <div className={`${bg} rounded-full flex items-center justify-center text-white font-bold flex-shrink-0`}
       style={{ width: size, height: size, fontSize: size * 0.35 }}>
@@ -55,7 +69,7 @@ function MasterCard({ master, columns, onMove }: { master: VoronkaMaster; column
       {/* Card top bar */}
       <div className="px-3.5 pt-3.5 pb-2.5">
         <div className="flex items-start gap-3">
-          <Avatar name={master.alias} id={master.id} size={40} />
+          <Avatar name={master.alias} id={master.id} avatarUrl={master.avatarUrl} size={40} />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
               <p className="font-semibold text-[13px] text-gray-800 leading-tight">{master.alias}</p>
