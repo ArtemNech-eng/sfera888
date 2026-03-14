@@ -3,186 +3,144 @@ import { Layout } from "@/components/layout";
 import { ProtectedRoute } from "@/hooks/use-auth";
 import {
   Plus, Settings, X, Check, ChevronUp, ChevronDown, Trash2,
-  Star, Phone, MapPin, Briefcase, AlertTriangle, GripVertical,
-  User, ArrowRight, Edit2
+  Star, Phone, MapPin, Briefcase, AlertTriangle, User,
+  ArrowRight, Edit2, MessageSquare, Zap, Clock
 } from "lucide-react";
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-interface VoronkaColumn {
-  id: number;
-  name: string;
-  position: number;
-  receivesOrders: boolean;
-  color: string;
-}
+interface VoronkaColumn { id: number; name: string; position: number; receivesOrders: boolean; color: string; }
+interface ActiveOrder { orderId: number; district: string; city: string; serviceType: string; status: string; clientPhone: string | null; clientName: string | null; scheduledAt: string | null; }
+interface VoronkaMaster { id: number; alias: string; city: string; specialization: string; telegramId: string | null; phone: string | null; status: string; rating: number; totalOrders: number; acceptedOrders: number; debt: number; voronkaColumnId: number | null; isTestMaster: boolean; activeOrders: ActiveOrder[]; createdAt: string; }
 
-interface ActiveOrder {
-  orderId: number;
-  district: string;
-  city: string;
-  serviceType: string;
-  status: string;
-  clientPhone: string | null;
-  clientName: string | null;
-  scheduledAt: string | null;
-}
+// ─── Color map ────────────────────────────────────────────────────────────────
 
-interface VoronkaMaster {
-  id: number;
-  alias: string;
-  city: string;
-  specialization: string;
-  telegramId: string | null;
-  phone: string | null;
-  status: string;
-  rating: number;
-  totalOrders: number;
-  acceptedOrders: number;
-  debt: number;
-  voronkaColumnId: number | null;
-  isTestMaster: boolean;
-  activeOrders: ActiveOrder[];
-  createdAt: string;
-}
+const COLORS: Record<string, { top: string; header: string; badge: string; dot: string; btn: string }> = {
+  blue:   { top: "border-t-blue-400",   header: "from-blue-50 to-white",   badge: "bg-blue-500",   dot: "bg-blue-400",   btn: "bg-blue-50 text-blue-700 hover:bg-blue-100" },
+  green:  { top: "border-t-emerald-400",header: "from-emerald-50 to-white",badge: "bg-emerald-500",dot: "bg-emerald-400",btn: "bg-emerald-50 text-emerald-700 hover:bg-emerald-100" },
+  orange: { top: "border-t-orange-400", header: "from-orange-50 to-white", badge: "bg-orange-500", dot: "bg-orange-400", btn: "bg-orange-50 text-orange-700 hover:bg-orange-100" },
+  red:    { top: "border-t-red-400",    header: "from-red-50 to-white",    badge: "bg-red-500",    dot: "bg-red-400",    btn: "bg-red-50 text-red-700 hover:bg-red-100" },
+  purple: { top: "border-t-purple-400", header: "from-purple-50 to-white", badge: "bg-purple-500", dot: "bg-purple-400", btn: "bg-purple-50 text-purple-700 hover:bg-purple-100" },
+  yellow: { top: "border-t-yellow-400", header: "from-yellow-50 to-white", badge: "bg-yellow-500", dot: "bg-yellow-400", btn: "bg-yellow-50 text-yellow-700 hover:bg-yellow-100" },
+  teal:   { top: "border-t-teal-400",   header: "from-teal-50 to-white",   badge: "bg-teal-500",   dot: "bg-teal-400",   btn: "bg-teal-50 text-teal-700 hover:bg-teal-100" },
+  pink:   { top: "border-t-pink-400",   header: "from-pink-50 to-white",   badge: "bg-pink-500",   dot: "bg-pink-400",   btn: "bg-pink-50 text-pink-700 hover:bg-pink-100" },
+};
 
-// ─── Color helpers ────────────────────────────────────────────────────────────
+const COLOR_OPTS = Object.keys(COLORS);
+function clr(key: string) { return COLORS[key] ?? COLORS.blue; }
 
-const COLOR_OPTIONS = [
-  { key: "blue", top: "border-t-blue-500", badge: "bg-blue-100 text-blue-700", dot: "bg-blue-500" },
-  { key: "green", top: "border-t-green-500", badge: "bg-green-100 text-green-700", dot: "bg-green-500" },
-  { key: "orange", top: "border-t-orange-500", badge: "bg-orange-100 text-orange-700", dot: "bg-orange-500" },
-  { key: "red", top: "border-t-red-500", badge: "bg-red-100 text-red-700", dot: "bg-red-500" },
-  { key: "purple", top: "border-t-purple-500", badge: "bg-purple-100 text-purple-700", dot: "bg-purple-500" },
-  { key: "yellow", top: "border-t-yellow-500", badge: "bg-yellow-100 text-yellow-700", dot: "bg-yellow-500" },
-  { key: "teal", top: "border-t-teal-500", badge: "bg-teal-100 text-teal-700", dot: "bg-teal-500" },
-  { key: "pink", top: "border-t-pink-500", badge: "bg-pink-100 text-pink-700", dot: "bg-pink-500" },
-];
+// ─── Avatar ───────────────────────────────────────────────────────────────────
 
-function getColor(key: string) {
-  return COLOR_OPTIONS.find(c => c.key === key) ?? COLOR_OPTIONS[0];
-}
-
-// ─── Stars ────────────────────────────────────────────────────────────────────
-
-function RatingStars({ rating }: { rating: number }) {
+const AVATAR_COLORS = ["bg-blue-500","bg-purple-500","bg-emerald-500","bg-orange-500","bg-pink-500","bg-teal-500","bg-amber-500","bg-indigo-500"];
+function Avatar({ name, id, size = 36 }: { name: string; id: number; size?: number }) {
+  const initials = name.split(" ").map(w => w[0]).join("").slice(0,2).toUpperCase() || "?";
+  const bg = AVATAR_COLORS[id % AVATAR_COLORS.length];
   return (
-    <div className="flex items-center gap-0.5">
-      {[1, 2, 3, 4, 5].map(i => (
-        <Star
-          key={i}
-          className={`w-3 h-3 ${i <= Math.round(rating) ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground/30"}`}
-        />
-      ))}
-      <span className="text-xs text-muted-foreground ml-1">{rating.toFixed(1)}</span>
+    <div className={`${bg} rounded-full flex items-center justify-center text-white font-bold flex-shrink-0`}
+      style={{ width: size, height: size, fontSize: size * 0.35 }}>
+      {initials}
     </div>
   );
 }
 
-// ─── Master Card ─────────────────────────────────────────────────────────────
+// ─── Master Card ──────────────────────────────────────────────────────────────
 
-function MasterCard({
-  master, columns, onMove,
-}: {
-  master: VoronkaMaster;
-  columns: VoronkaColumn[];
-  onMove: (masterId: number, colId: number | null) => void;
-}) {
-  const [showMove, setShowMove] = useState(false);
-
-  const otherCols = columns.filter(c => c.id !== master.voronkaColumnId);
+function MasterCard({ master, columns, onMove }: { master: VoronkaMaster; columns: VoronkaColumn[]; onMove: (id: number, colId: number | null) => void }) {
+  const [open, setOpen] = useState(false);
+  const others = columns.filter(c => c.id !== master.voronkaColumnId);
+  const hasActiveOrders = master.activeOrders.length > 0;
 
   return (
-    <div className="bg-card border border-border rounded-xl p-3.5 shadow-sm hover:shadow-md transition-shadow">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-2 mb-2">
-        <div>
-          <p className="font-semibold text-sm text-foreground leading-tight">{master.alias}</p>
-          <p className="text-xs text-muted-foreground">{master.city} · {master.specialization}</p>
+    <div className="bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden">
+      {/* Card top bar */}
+      <div className="px-3.5 pt-3.5 pb-2.5">
+        <div className="flex items-start gap-3">
+          <Avatar name={master.alias} id={master.id} size={40} />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <p className="font-semibold text-[13px] text-gray-800 leading-tight">{master.alias}</p>
+              {master.isTestMaster && (
+                <span className="text-[10px] bg-amber-100 text-amber-700 rounded-full px-1.5 py-0.5 font-semibold">ТЕСТ</span>
+              )}
+              {master.telegramId && (
+                <span className="text-[10px] bg-blue-100 text-blue-600 rounded-full px-1.5 py-0.5 font-semibold flex items-center gap-0.5">
+                  <MessageSquare className="w-2.5 h-2.5" />TG
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-gray-400 mt-0.5">{master.city} · {master.specialization}</p>
+          </div>
         </div>
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          {master.isTestMaster && (
-            <span className="text-xs bg-amber-100 text-amber-700 rounded-full px-1.5 py-0.5 font-medium">Тест</span>
-          )}
-          {master.debt > 0 && (
-            <span className="text-xs bg-red-100 text-red-700 rounded-full px-1.5 py-0.5 font-medium flex items-center gap-0.5">
-              <AlertTriangle className="w-2.5 h-2.5" />
-              {master.debt.toLocaleString("ru")}₽
-            </span>
-          )}
+
+        {/* Stars + stats */}
+        <div className="flex items-center justify-between mt-2.5">
+          <div className="flex items-center gap-0.5">
+            {[1,2,3,4,5].map(i => (
+              <Star key={i} className={`w-3 h-3 ${i <= Math.round(master.rating) ? "fill-yellow-400 text-yellow-400" : "text-gray-200"}`} />
+            ))}
+            <span className="text-[11px] text-gray-500 ml-1">{master.rating.toFixed(1)}</span>
+          </div>
+          <div className="flex items-center gap-2 text-[11px] text-gray-400">
+            <span className="flex items-center gap-1"><Briefcase className="w-3 h-3" />{master.totalOrders}</span>
+            {master.debt > 0 && (
+              <span className="flex items-center gap-0.5 text-red-500 font-medium">
+                <AlertTriangle className="w-3 h-3" />{(master.debt/1000).toFixed(0)}k₽
+              </span>
+            )}
+          </div>
         </div>
-      </div>
-
-      {/* Rating */}
-      <RatingStars rating={master.rating} />
-
-      {/* Stats */}
-      <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
-        <span className="flex items-center gap-1"><Briefcase className="w-3 h-3" />{master.totalOrders} заказов</span>
-        {master.telegramId && (
-          <span className="text-blue-500">TG</span>
-        )}
       </div>
 
       {/* Active orders */}
-      {master.activeOrders.length > 0 && (
-        <div className="mt-2.5 space-y-1.5">
+      {hasActiveOrders && (
+        <div className="border-t border-gray-50 px-3.5 py-2 space-y-2 bg-blue-50/40">
           {master.activeOrders.map(o => (
-            <div key={o.orderId} className="bg-primary/5 border border-primary/20 rounded-lg p-2 text-xs">
-              <div className="flex items-center gap-1 font-medium text-foreground mb-1">
-                <Briefcase className="w-3 h-3 text-primary" />
-                <span>Заказ #{o.orderId} · {o.serviceType}</span>
+            <div key={o.orderId} className="text-[11px]">
+              <div className="flex items-center gap-1 font-semibold text-blue-700 mb-0.5">
+                <Zap className="w-3 h-3" />
+                <span>#{o.orderId} · {o.serviceType}</span>
               </div>
-              <div className="space-y-0.5 text-muted-foreground">
-                <div className="flex items-center gap-1">
-                  <MapPin className="w-3 h-3 text-orange-500" />
-                  <span>{o.city}, {o.district}</span>
+              <div className="flex items-center gap-1 text-gray-500">
+                <MapPin className="w-3 h-3 text-orange-400 flex-shrink-0" />
+                {o.city}, {o.district}
+              </div>
+              {o.clientName && (
+                <div className="flex items-center gap-1 text-gray-500">
+                  <User className="w-3 h-3 text-gray-400 flex-shrink-0" />{o.clientName}
                 </div>
-                {o.clientName && (
-                  <div className="flex items-center gap-1">
-                    <User className="w-3 h-3 text-blue-500" />
-                    <span>{o.clientName}</span>
-                  </div>
-                )}
-                {o.clientPhone && (
-                  <div className="flex items-center gap-1">
-                    <Phone className="w-3 h-3 text-green-500" />
-                    <a href={`tel:${o.clientPhone}`} className="text-green-600 font-medium hover:underline">
-                      {o.clientPhone}
-                    </a>
-                  </div>
-                )}
-              </div>
+              )}
+              {o.clientPhone && (
+                <a href={`tel:${o.clientPhone}`} className="flex items-center gap-1 text-emerald-600 font-semibold hover:underline">
+                  <Phone className="w-3 h-3 flex-shrink-0" />{o.clientPhone}
+                </a>
+              )}
             </div>
           ))}
         </div>
       )}
 
-      {/* Move button */}
-      <div className="mt-3 relative">
+      {/* Move dropdown */}
+      <div className="border-t border-gray-50 relative">
         <button
-          onClick={() => setShowMove(!showMove)}
-          className="w-full text-xs text-muted-foreground hover:text-foreground flex items-center justify-center gap-1 py-1 rounded-lg hover:bg-muted transition-colors border border-dashed border-border"
+          onClick={() => setOpen(v => !v)}
+          className="w-full flex items-center justify-center gap-1.5 py-2 text-[11px] text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors"
         >
-          <ArrowRight className="w-3 h-3" />
-          Переместить
+          <ArrowRight className="w-3 h-3" />Переместить
         </button>
-        {showMove && (
-          <div className="absolute bottom-full mb-1 left-0 right-0 bg-popover border border-border rounded-xl shadow-xl z-20 p-1">
-            {otherCols.map(col => (
-              <button
-                key={col.id}
-                onClick={() => { onMove(master.id, col.id); setShowMove(false); }}
-                className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-muted transition-colors flex items-center gap-2"
-              >
-                <span className={`w-2 h-2 rounded-full ${getColor(col.color).dot}`} />
-                {col.name}
-              </button>
-            ))}
-            <button
-              onClick={() => { onMove(master.id, null); setShowMove(false); }}
-              className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-muted transition-colors text-muted-foreground"
-            >
+        {open && (
+          <div className="absolute bottom-full left-0 right-0 bg-white border border-gray-100 rounded-xl shadow-xl z-30 overflow-hidden">
+            {others.map(col => {
+              const c = clr(col.color);
+              return (
+                <button key={col.id} onClick={() => { onMove(master.id, col.id); setOpen(false); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[12px] text-gray-700 hover:bg-gray-50 transition-colors">
+                  <span className={`w-2 h-2 rounded-full ${c.dot}`} />
+                  {col.name}
+                </button>
+              );
+            })}
+            <button onClick={() => { onMove(master.id, null); setOpen(false); }}
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[12px] text-gray-400 hover:bg-gray-50 transition-colors border-t border-gray-50">
               Без колонки
             </button>
           </div>
@@ -192,141 +150,129 @@ function MasterCard({
   );
 }
 
-// ─── Column Settings Modal ────────────────────────────────────────────────────
+// ─── Column ───────────────────────────────────────────────────────────────────
 
-function ColumnSettingsModal({
-  columns,
-  onClose,
-  onUpdate,
-  onDelete,
-  onCreate,
-  onReorder,
-}: {
+function KanbanColumn({ col, masters, columns, onMove }: { col: VoronkaColumn | null; masters: VoronkaMaster[]; columns: VoronkaColumn[]; onMove: (id: number, colId: number | null) => void }) {
+  const c = col ? clr(col.color) : { top: "border-t-gray-300", header: "from-gray-50 to-white", badge: "bg-gray-400", dot: "bg-gray-300", btn: "" };
+  const name = col?.name ?? "Без колонки";
+  const receivesOrders = col?.receivesOrders ?? false;
+
+  return (
+    <div className="flex-shrink-0 w-[280px] flex flex-col">
+      {/* Column header */}
+      <div className={`rounded-t-2xl bg-gradient-to-b ${c.header} border border-b-0 border-gray-100 px-4 py-3 flex items-center justify-between border-t-4 ${c.top}`}>
+        <div className="flex items-center gap-2">
+          <span className="font-semibold text-[13px] text-gray-700">{name}</span>
+          {receivesOrders && (
+            <span className="text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-full px-1.5 py-0.5 font-semibold flex items-center gap-0.5">
+              <Zap className="w-2.5 h-2.5" />Заказы
+            </span>
+          )}
+        </div>
+        <span className={`${c.badge} text-white text-[11px] font-bold rounded-full min-w-[22px] h-[22px] flex items-center justify-center px-1.5`}>
+          {masters.length}
+        </span>
+      </div>
+
+      {/* Cards */}
+      <div className="flex-1 bg-gray-50/60 border border-t-0 border-gray-100 rounded-b-2xl overflow-y-auto p-2.5 space-y-2.5" style={{ maxHeight: "calc(100vh - 195px)" }}>
+        {masters.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-10 text-gray-300">
+            <User className="w-8 h-8 mb-2" />
+            <p className="text-[12px]">Пусто</p>
+          </div>
+        ) : masters.map(m => (
+          <MasterCard key={m.id} master={m} columns={columns} onMove={onMove} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Column Settings ──────────────────────────────────────────────────────────
+
+function ColumnSettings({ columns, onClose, onUpdate, onDelete, onCreate, onReorder }: {
   columns: VoronkaColumn[];
   onClose: () => void;
   onUpdate: (id: number, data: Partial<VoronkaColumn>) => void;
   onDelete: (id: number) => void;
   onCreate: (name: string, receivesOrders: boolean, color: string) => void;
-  onReorder: (newOrder: number[]) => void;
+  onReorder: (order: number[]) => void;
 }) {
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [local, setLocal] = useState([...columns].sort((a,b) => a.position - b.position));
+  const [editId, setEditId] = useState<number|null>(null);
   const [editName, setEditName] = useState("");
   const [editReceives, setEditReceives] = useState(false);
   const [editColor, setEditColor] = useState("blue");
   const [newName, setNewName] = useState("");
   const [newReceives, setNewReceives] = useState(false);
   const [newColor, setNewColor] = useState("blue");
-  const [localCols, setLocalCols] = useState(columns);
 
-  const startEdit = (col: VoronkaColumn) => {
-    setEditingId(col.id);
-    setEditName(col.name);
-    setEditReceives(col.receivesOrders);
-    setEditColor(col.color);
-  };
-
+  const startEdit = (col: VoronkaColumn) => { setEditId(col.id); setEditName(col.name); setEditReceives(col.receivesOrders); setEditColor(col.color); };
   const saveEdit = () => {
-    if (!editingId) return;
-    onUpdate(editingId, { name: editName, receivesOrders: editReceives, color: editColor });
-    setLocalCols(prev => prev.map(c => c.id === editingId ? { ...c, name: editName, receivesOrders: editReceives, color: editColor } : c));
-    setEditingId(null);
+    if (!editId) return;
+    onUpdate(editId, { name: editName, receivesOrders: editReceives, color: editColor });
+    setLocal(p => p.map(c => c.id === editId ? { ...c, name: editName, receivesOrders: editReceives, color: editColor } : c));
+    setEditId(null);
   };
-
-  const moveCol = (idx: number, dir: -1 | 1) => {
-    const newArr = [...localCols];
-    const target = idx + dir;
-    if (target < 0 || target >= newArr.length) return;
-    [newArr[idx], newArr[target]] = [newArr[target], newArr[idx]];
-    setLocalCols(newArr);
-    onReorder(newArr.map(c => c.id));
+  const move = (idx: number, dir: -1|1) => {
+    const arr = [...local]; const t = idx+dir;
+    if (t<0||t>=arr.length) return;
+    [arr[idx],arr[t]]=[arr[t],arr[idx]];
+    setLocal(arr); onReorder(arr.map(c=>c.id));
   };
-
-  const handleCreate = () => {
+  const del = (id: number) => { onDelete(id); setLocal(p=>p.filter(c=>c.id!==id)); };
+  const create = () => {
     if (!newName.trim()) return;
     onCreate(newName.trim(), newReceives, newColor);
-    setNewName("");
-    setNewReceives(false);
-    setNewColor("blue");
+    setNewName(""); setNewReceives(false); setNewColor("blue");
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-      <div className="bg-card rounded-2xl shadow-2xl w-full max-w-lg border border-border flex flex-col max-h-[85vh]">
-        {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-border">
-          <h2 className="text-lg font-bold text-foreground">Настройка колонок</h2>
-          <button onClick={onClose} className="p-2 hover:bg-muted rounded-lg transition-colors">
-            <X className="w-4 h-4 text-muted-foreground" />
-          </button>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-gray-100 flex flex-col max-h-[88vh]">
+        <div className="flex items-center justify-between p-5 border-b border-gray-100">
+          <h2 className="text-base font-bold text-gray-800">Настройка колонок</h2>
+          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"><X className="w-4 h-4 text-gray-400" /></button>
         </div>
 
-        <div className="overflow-y-auto flex-1 p-5 space-y-3">
-          {/* Existing columns */}
-          {localCols.map((col, idx) => {
-            const c = getColor(col.color);
+        <div className="overflow-y-auto flex-1 p-4 space-y-2">
+          {local.map((col, idx) => {
+            const c = clr(col.color);
             return (
-              <div key={col.id} className={`border-l-4 ${c.top.replace("border-t-", "border-l-")} bg-muted/30 rounded-xl`}>
-                {editingId === col.id ? (
-                  <div className="p-3 space-y-3">
-                    <input
-                      value={editName}
-                      onChange={e => setEditName(e.target.value)}
-                      className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
-                      placeholder="Название колонки"
-                      autoFocus
-                    />
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {COLOR_OPTIONS.map(co => (
-                        <button
-                          key={co.key}
-                          onClick={() => setEditColor(co.key)}
-                          className={`w-6 h-6 rounded-full ${co.dot} border-2 transition-all ${editColor === co.key ? "border-foreground scale-110" : "border-transparent"}`}
-                        />
+              <div key={col.id} className={`rounded-xl border border-gray-100 overflow-hidden`}>
+                {editId === col.id ? (
+                  <div className="p-3 space-y-2.5 bg-gray-50">
+                    <input value={editName} onChange={e=>setEditName(e.target.value)} autoFocus
+                      className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 outline-none focus:ring-2 focus:ring-blue-100"
+                      placeholder="Название колонки" />
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {COLOR_OPTS.map(k=>(
+                        <button key={k} onClick={()=>setEditColor(k)}
+                          className={`w-5 h-5 rounded-full ${COLORS[k].dot} border-2 transition-all ${editColor===k?"border-gray-700 scale-110":"border-transparent"}`}/>
                       ))}
                     </div>
                     <label className="flex items-center gap-2 text-sm cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={editReceives}
-                        onChange={e => setEditReceives(e.target.checked)}
-                        className="w-4 h-4 accent-primary"
-                      />
-                      <span className="text-foreground">Принимает заказы</span>
+                      <input type="checkbox" checked={editReceives} onChange={e=>setEditReceives(e.target.checked)} className="w-4 h-4 accent-blue-500" />
+                      <span className="text-gray-700">Принимает заказы от бота</span>
                     </label>
                     <div className="flex gap-2">
-                      <button onClick={saveEdit} className="flex items-center gap-1.5 bg-primary text-primary-foreground px-3 py-1.5 rounded-lg text-sm hover:bg-primary/90 transition-colors">
-                        <Check className="w-3.5 h-3.5" /> Сохранить
-                      </button>
-                      <button onClick={() => setEditingId(null)} className="px-3 py-1.5 rounded-lg text-sm hover:bg-muted transition-colors text-muted-foreground">
-                        Отмена
-                      </button>
+                      <button onClick={saveEdit} className="flex items-center gap-1.5 bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-blue-600 transition-colors"><Check className="w-3 h-3"/>Сохранить</button>
+                      <button onClick={()=>setEditId(null)} className="px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:bg-gray-100 transition-colors">Отмена</button>
                     </div>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-3 p-3">
-                    <span className={`w-2.5 h-2.5 rounded-full ${c.dot} flex-shrink-0`} />
+                  <div className={`flex items-center gap-3 px-3 py-2.5 bg-gradient-to-r ${c.header}`}>
+                    <span className={`w-3 h-3 rounded-full ${c.dot} flex-shrink-0`}/>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-foreground">{col.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {col.receivesOrders ? "✓ Принимает заказы" : "✗ Не принимает заказы"}
-                      </p>
+                      <p className="text-sm font-semibold text-gray-700">{col.name}</p>
+                      <p className="text-[11px] text-gray-400">{col.receivesOrders ? "✓ Получает заказы" : "✗ Не получает заказы"}</p>
                     </div>
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      <button onClick={() => moveCol(idx, -1)} disabled={idx === 0} className="p-1 hover:bg-muted rounded-lg disabled:opacity-30 transition-colors">
-                        <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" />
-                      </button>
-                      <button onClick={() => moveCol(idx, 1)} disabled={idx === localCols.length - 1} className="p-1 hover:bg-muted rounded-lg disabled:opacity-30 transition-colors">
-                        <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
-                      </button>
-                      <button onClick={() => startEdit(col)} className="p-1 hover:bg-muted rounded-lg transition-colors">
-                        <Edit2 className="w-3.5 h-3.5 text-muted-foreground" />
-                      </button>
-                      <button
-                        onClick={() => { onDelete(col.id); setLocalCols(prev => prev.filter(c => c.id !== col.id)); }}
-                        className="p-1 hover:bg-red-50 rounded-lg transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5 text-red-500" />
-                      </button>
+                    <div className="flex items-center gap-0.5">
+                      <button onClick={()=>move(idx,-1)} disabled={idx===0} className="p-1 hover:bg-white rounded-lg disabled:opacity-30 transition-colors"><ChevronUp className="w-3.5 h-3.5 text-gray-400"/></button>
+                      <button onClick={()=>move(idx,1)} disabled={idx===local.length-1} className="p-1 hover:bg-white rounded-lg disabled:opacity-30 transition-colors"><ChevronDown className="w-3.5 h-3.5 text-gray-400"/></button>
+                      <button onClick={()=>startEdit(col)} className="p-1 hover:bg-white rounded-lg transition-colors"><Edit2 className="w-3.5 h-3.5 text-gray-400"/></button>
+                      <button onClick={()=>del(col.id)} className="p-1 hover:bg-red-50 rounded-lg transition-colors"><Trash2 className="w-3.5 h-3.5 text-red-400"/></button>
                     </div>
                   </div>
                 )}
@@ -334,40 +280,25 @@ function ColumnSettingsModal({
             );
           })}
 
-          {/* Create new column */}
-          <div className="border border-dashed border-border rounded-xl p-4 space-y-3">
-            <p className="text-sm font-semibold text-foreground">Добавить колонку</p>
-            <input
-              value={newName}
-              onChange={e => setNewName(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && handleCreate()}
-              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
-              placeholder="Название новой колонки"
-            />
-            <div className="flex items-center gap-2 flex-wrap">
-              {COLOR_OPTIONS.map(co => (
-                <button
-                  key={co.key}
-                  onClick={() => setNewColor(co.key)}
-                  className={`w-6 h-6 rounded-full ${co.dot} border-2 transition-all ${newColor === co.key ? "border-foreground scale-110" : "border-transparent"}`}
-                />
+          {/* New column */}
+          <div className="border border-dashed border-gray-200 rounded-xl p-3.5 space-y-2.5 mt-2">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Новая колонка</p>
+            <input value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&create()}
+              className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 outline-none focus:ring-2 focus:ring-blue-100"
+              placeholder="Название" />
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {COLOR_OPTS.map(k=>(
+                <button key={k} onClick={()=>setNewColor(k)}
+                  className={`w-5 h-5 rounded-full ${COLORS[k].dot} border-2 transition-all ${newColor===k?"border-gray-700 scale-110":"border-transparent"}`}/>
               ))}
             </div>
             <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                checked={newReceives}
-                onChange={e => setNewReceives(e.target.checked)}
-                className="w-4 h-4 accent-primary"
-              />
-              <span className="text-foreground">Принимает заказы</span>
+              <input type="checkbox" checked={newReceives} onChange={e=>setNewReceives(e.target.checked)} className="w-4 h-4 accent-blue-500" />
+              <span className="text-gray-700">Принимает заказы от бота</span>
             </label>
-            <button
-              onClick={handleCreate}
-              disabled={!newName.trim()}
-              className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm hover:bg-primary/90 disabled:opacity-50 transition-colors"
-            >
-              <Plus className="w-4 h-4" /> Создать колонку
+            <button onClick={create} disabled={!newName.trim()}
+              className="flex items-center gap-2 bg-blue-500 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-600 disabled:opacity-40 transition-colors">
+              <Plus className="w-4 h-4"/>Добавить
             </button>
           </div>
         </div>
@@ -385,173 +316,96 @@ export default function Voronka() {
   const [showSettings, setShowSettings] = useState(false);
 
   const fetchAll = useCallback(async () => {
-    const [colsRes, mastersRes] = await Promise.all([
-      fetch("/api/voronka/columns"),
-      fetch("/api/voronka/masters"),
-    ]);
-    if (colsRes.ok) setColumns(await colsRes.json());
-    if (mastersRes.ok) setMasters(await mastersRes.json());
+    const [cR, mR] = await Promise.all([fetch("/api/voronka/columns"), fetch("/api/voronka/masters")]);
+    if (cR.ok) setColumns(await cR.json());
+    if (mR.ok) setMasters(await mR.json());
     setLoading(false);
   }, []);
 
-  useEffect(() => {
-    fetchAll();
-    const interval = setInterval(fetchAll, 8000);
-    return () => clearInterval(interval);
-  }, [fetchAll]);
+  useEffect(() => { fetchAll(); const t = setInterval(fetchAll, 7000); return () => clearInterval(t); }, [fetchAll]);
 
   const moveMaster = async (masterId: number, colId: number | null) => {
-    setMasters(prev => prev.map(m => m.id === masterId ? { ...m, voronkaColumnId: colId } : m));
+    setMasters(p => p.map(m => m.id === masterId ? { ...m, voronkaColumnId: colId } : m));
     await fetch(`/api/voronka/masters/${masterId}/column`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ voronkaColumnId: colId }),
     });
   };
 
   const updateColumn = async (id: number, data: Partial<VoronkaColumn>) => {
-    const res = await fetch(`/api/voronka/columns/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-    if (res.ok) {
-      const updated = await res.json();
-      setColumns(prev => prev.map(c => c.id === id ? updated : c));
-    }
+    const res = await fetch(`/api/voronka/columns/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+    if (res.ok) { const u = await res.json(); setColumns(p => p.map(c => c.id === id ? u : c)); }
   };
 
   const deleteColumn = async (id: number) => {
     await fetch(`/api/voronka/columns/${id}`, { method: "DELETE" });
-    setColumns(prev => prev.filter(c => c.id !== id));
-    setMasters(prev => prev.map(m => m.voronkaColumnId === id ? { ...m, voronkaColumnId: null } : m));
+    setColumns(p => p.filter(c => c.id !== id));
+    setMasters(p => p.map(m => m.voronkaColumnId === id ? { ...m, voronkaColumnId: null } : m));
   };
 
   const createColumn = async (name: string, receivesOrders: boolean, color: string) => {
-    const res = await fetch("/api/voronka/columns", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, receivesOrders, color }),
-    });
-    if (res.ok) {
-      const col = await res.json();
-      setColumns(prev => [...prev, col]);
-    }
+    const res = await fetch("/api/voronka/columns", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, receivesOrders, color }) });
+    if (res.ok) { const col = await res.json(); setColumns(p => [...p, col]); }
   };
 
   const reorderColumns = async (order: number[]) => {
-    const res = await fetch("/api/voronka/columns/reorder", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ order }),
-    });
-    if (res.ok) {
-      const cols = await res.json();
-      setColumns(cols);
-    }
+    const res = await fetch("/api/voronka/columns/reorder", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ order }) });
+    if (res.ok) setColumns(await res.json());
   };
 
-  // Unassigned masters (no column)
+  const sorted = [...columns].sort((a, b) => a.position - b.position);
   const unassigned = masters.filter(m => !m.voronkaColumnId || !columns.find(c => c.id === m.voronkaColumnId));
+
+  // Summary stats
+  const totalDebt = masters.reduce((s, m) => s + m.debt, 0);
+  const activeCount = masters.filter(m => m.activeOrders.length > 0).length;
+  const tgCount = masters.filter(m => m.telegramId).length;
 
   return (
     <ProtectedRoute>
       <Layout>
         <div className="h-full flex flex-col">
           {/* Header */}
-          <div className="flex items-center justify-between mb-6 flex-shrink-0">
+          <div className="flex items-start justify-between mb-5 flex-shrink-0">
             <div>
-              <h1 className="text-2xl font-bold text-foreground">Воронка мастеров</h1>
-              <p className="text-sm text-muted-foreground mt-1">
-                {masters.length} мастеров · {columns.length} колонок
-              </p>
+              <h1 className="text-xl font-bold text-gray-800">Воронка мастеров</h1>
+              <div className="flex items-center gap-4 mt-1.5 text-xs text-gray-400">
+                <span>{masters.length} мастеров</span>
+                <span className="flex items-center gap-1 text-blue-500"><MessageSquare className="w-3 h-3"/>{tgCount} в Telegram</span>
+                {activeCount > 0 && <span className="flex items-center gap-1 text-emerald-500"><Zap className="w-3 h-3"/>{activeCount} на объекте</span>}
+                {totalDebt > 0 && <span className="flex items-center gap-1 text-red-400"><AlertTriangle className="w-3 h-3"/>{(totalDebt/1000).toFixed(0)}k₽ долг</span>}
+              </div>
             </div>
-            <button
-              onClick={() => setShowSettings(true)}
-              className="flex items-center gap-2 px-4 py-2.5 bg-muted hover:bg-muted/80 text-foreground rounded-xl text-sm font-medium transition-colors border border-border"
-            >
-              <Settings className="w-4 h-4" />
-              Настройки колонок
+            <button onClick={() => setShowSettings(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors shadow-sm">
+              <Settings className="w-4 h-4"/>Колонки
             </button>
           </div>
 
           {loading ? (
-            <div className="flex items-center justify-center flex-1 text-muted-foreground">
-              <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            <div className="flex items-center justify-center flex-1">
+              <div className="w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"/>
             </div>
           ) : (
-            <div className="flex gap-4 overflow-x-auto pb-4 flex-1 min-h-0">
-              {/* Sorted columns */}
-              {[...columns].sort((a, b) => a.position - b.position).map(col => {
-                const colMasters = masters.filter(m => m.voronkaColumnId === col.id);
-                const c = getColor(col.color);
-                return (
-                  <div key={col.id} className="flex-shrink-0 w-72 flex flex-col">
-                    <div className={`bg-card rounded-2xl border-t-4 ${c.top} border border-border shadow-sm flex flex-col`} style={{ maxHeight: "calc(100vh - 200px)" }}>
-                      {/* Column header */}
-                      <div className="p-4 border-b border-border flex items-center justify-between flex-shrink-0">
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-semibold text-sm text-foreground">{col.name}</h3>
-                          {col.receivesOrders && (
-                            <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">
-                              ✓ Заказы
-                            </span>
-                          )}
-                        </div>
-                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${c.badge}`}>
-                          {colMasters.length}
-                        </span>
-                      </div>
-                      {/* Masters list */}
-                      <div className="p-3 space-y-2 overflow-y-auto flex-1">
-                        {colMasters.length === 0 ? (
-                          <p className="text-xs text-muted-foreground text-center py-8 italic">Пусто</p>
-                        ) : (
-                          colMasters.map(m => (
-                            <MasterCard
-                              key={m.id}
-                              master={m}
-                              columns={columns}
-                              onMove={moveMaster}
-                            />
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-
-              {/* Unassigned */}
+            <div className="flex gap-3 overflow-x-auto pb-4 flex-1 min-h-0">
+              {sorted.map(col => (
+                <KanbanColumn key={col.id} col={col}
+                  masters={masters.filter(m => m.voronkaColumnId === col.id)}
+                  columns={columns} onMove={moveMaster} />
+              ))}
               {unassigned.length > 0 && (
-                <div className="flex-shrink-0 w-72 flex flex-col">
-                  <div className="bg-card rounded-2xl border-t-4 border-t-muted-foreground/30 border border-border shadow-sm flex flex-col" style={{ maxHeight: "calc(100vh - 200px)" }}>
-                    <div className="p-4 border-b border-border flex items-center justify-between flex-shrink-0">
-                      <h3 className="font-semibold text-sm text-muted-foreground">Без колонки</h3>
-                      <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
-                        {unassigned.length}
-                      </span>
-                    </div>
-                    <div className="p-3 space-y-2 overflow-y-auto flex-1">
-                      {unassigned.map(m => (
-                        <MasterCard key={m.id} master={m} columns={columns} onMove={moveMaster} />
-                      ))}
-                    </div>
-                  </div>
-                </div>
+                <KanbanColumn col={null} masters={unassigned} columns={columns} onMove={moveMaster} />
               )}
             </div>
           )}
         </div>
 
         {showSettings && (
-          <ColumnSettingsModal
-            columns={[...columns].sort((a, b) => a.position - b.position)}
+          <ColumnSettings
+            columns={sorted}
             onClose={() => { setShowSettings(false); fetchAll(); }}
-            onUpdate={updateColumn}
-            onDelete={deleteColumn}
-            onCreate={createColumn}
-            onReorder={reorderColumns}
+            onUpdate={updateColumn} onDelete={deleteColumn}
+            onCreate={createColumn} onReorder={reorderColumns}
           />
         )}
       </Layout>
