@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, mastersTable, telegramChatsTable, masterMessagesTable } from "@workspace/db";
+import { db, mastersTable, telegramChatsTable, masterMessagesTable, voronkaColumnsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { notifyMasterActivated } from "../telegram-notify.js";
 
@@ -22,9 +22,13 @@ router.post("/webhook", async (req, res) => {
     const masterId = parseInt(String(externalId), 10);
     if (isNaN(masterId)) return;
 
-    // Activate the master and clear the cached contract link
+    // Find "Свободен" column
+    const cols = await db.select().from(voronkaColumnsTable);
+    const freeCol = cols.find(c => c.name === "Свободен");
+
+    // Activate the master, move to "Свободен", clear cached contract link
     await db.update(mastersTable)
-      .set({ status: "active", contractLink: null })
+      .set({ status: "active", contractLink: null, voronkaColumnId: freeCol?.id ?? null })
       .where(eq(mastersTable.id, masterId));
 
     console.log(`[OkiDoki] Master ${masterId} activated after contract signing`);

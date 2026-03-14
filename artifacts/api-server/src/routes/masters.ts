@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, mastersTable, masterTasksTable, ordersTable, leadsTable, telegramChatsTable } from "@workspace/db";
+import { db, mastersTable, masterTasksTable, ordersTable, leadsTable, telegramChatsTable, voronkaColumnsTable } from "@workspace/db";
 import { eq, desc, inArray } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { notifyMasterActivated } from "../telegram-notify.js";
@@ -102,9 +102,13 @@ router.patch("/:id", requireRole("admin", "master_operator"), async (req, res) =
   const result = await db.update(mastersTable).set(updates).where(eq(mastersTable.id, id)).returning();
   if (!result[0]) return res.status(404).json({ error: "Master not found" });
 
-  // Clear cached contract link on manual activation
+  // On manual activation: clear contract link and move to "Свободен"
   if (status === "active" && oldStatus === "pending_contract") {
-    await db.update(mastersTable).set({ contractLink: null }).where(eq(mastersTable.id, id));
+    const cols = await db.select().from(voronkaColumnsTable);
+    const freeCol = cols.find(c => c.name === "Свободен");
+    await db.update(mastersTable)
+      .set({ contractLink: null, voronkaColumnId: freeCol?.id ?? null })
+      .where(eq(mastersTable.id, id));
   }
 
   // Notify master in Telegram when admin activates from pending_contract
