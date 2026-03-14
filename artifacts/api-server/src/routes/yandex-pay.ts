@@ -21,7 +21,8 @@ export async function createYandexPayOrder(
 ): Promise<string> {
   if (!YANDEX_PAY_API_KEY) throw new Error("YANDEX_PAY_API_KEY not set");
 
-  const orderId = `commission-${transactionId}`;
+  // Include timestamp so repeated button presses always create a new unique order
+  const orderId = `commission-${transactionId}-${Date.now()}`;
   const amount = amountRub.toFixed(2);
 
   const res = await fetch(`${YANDEX_PAY_BASE}/orders`, {
@@ -84,7 +85,7 @@ router.post("/webhook", async (req, res) => {
     const isPaid = ["CAPTURED", "PAID", "SUCCESS", "captured", "paid", "success"].includes(status);
     if (!isPaid) return;
 
-    const match = orderId.match(/^commission-(\d+)$/);
+    const match = orderId.match(/^commission-(\d+)(?:-\d+)?$/);
     if (!match) return;
     const transactionId = parseInt(match[1]);
 
