@@ -54,10 +54,13 @@ async function getAwaitingPaymentColumn() {
 }
 
 router.get("/", allOrderRoles, async (req, res) => {
-  const { status } = req.query;
+  const { status, masterId } = req.query;
   let orders;
-  if (status) {
-    orders = await db.select().from(ordersTable).where(eq(ordersTable.status, status as any));
+  const conditions: any[] = [];
+  if (status) conditions.push(eq(ordersTable.status, status as any));
+  if (masterId) conditions.push(eq(ordersTable.masterId, parseInt(masterId as string)));
+  if (conditions.length > 0) {
+    orders = await db.select().from(ordersTable).where(conditions.length === 1 ? conditions[0] : and(...conditions)).orderBy(ordersTable.createdAt);
   } else {
     orders = await db.select().from(ordersTable).orderBy(ordersTable.createdAt);
   }

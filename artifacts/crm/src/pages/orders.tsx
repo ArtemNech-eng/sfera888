@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { Layout } from "@/components/layout";
 import { useGetOrders, OrderStatus } from "@workspace/api-client-react";
 import { ProtectedRoute } from "@/hooks/use-auth";
@@ -6,7 +7,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { formatDate } from "@/lib/utils";
 import {
   Loader2, MapPin, Send, Users, CheckCircle2, Clock, X, UserCheck,
-  DollarSign, Check, Pencil, AlertCircle, RotateCcw,
+  DollarSign, Check, Pencil, AlertCircle, MessageSquare,
 } from "lucide-react";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 
@@ -42,10 +43,13 @@ function fmt(n: number) {
 }
 
 export default function Orders() {
+  const [, setLocation] = useLocation();
   const [openDispatchId, setOpenDispatchId] = useState<number | null>(null);
   const [editAmountId, setEditAmountId] = useState<number | null>(null);
   const [editAmountValue, setEditAmountValue] = useState("");
   const queryClient = useQueryClient();
+
+  const openMasterChat = (masterId: number) => setLocation(`/master-chat?masterId=${masterId}`);
 
   const { data: orders, isLoading } = useGetOrders({}, { query: { refetchInterval: 8000 } });
   const { data: dispatchData, isLoading: dispatchLoading } = useDispatch(openDispatchId);
@@ -171,24 +175,15 @@ export default function Orders() {
                         <span className="ml-2 text-xs text-muted-foreground">мастер {order.masterName}</span>
                       )}
                     </div>
-                    <div className="flex items-center gap-2">
+                    {order.masterId && (
                       <button
-                        onClick={() => approveCancellationMutation.mutate(order.id)}
-                        disabled={approveCancellationMutation.isPending}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-500 text-white hover:bg-red-600 rounded-lg font-medium text-xs transition-colors disabled:opacity-50"
+                        onClick={() => openMasterChat(order.masterId!)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-500 text-white hover:bg-red-600 rounded-lg font-medium text-xs transition-colors"
                       >
-                        {approveCancellationMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
-                        Подтвердить отмену
+                        <MessageSquare className="w-3 h-3" />
+                        Открыть чат
                       </button>
-                      <button
-                        onClick={() => rejectCancellationMutation.mutate(order.id)}
-                        disabled={rejectCancellationMutation.isPending}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg font-medium text-xs transition-colors disabled:opacity-50"
-                      >
-                        {rejectCancellationMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
-                        Отклонить
-                      </button>
-                    </div>
+                    )}
                   </div>
                   {(order as any).cancelReason && (
                     <div className="text-sm text-red-700 bg-red-50 rounded-lg px-3 py-2">
@@ -219,26 +214,15 @@ export default function Orders() {
                     <span className="text-amber-700 font-semibold">{fmt(Number((order as any).proposedAmount))}</span>
                     <span className="ml-2 text-xs text-muted-foreground">предложил мастер {order.masterName}</span>
                   </div>
-                  <div className="flex items-center gap-2">
+                  {order.masterId && (
                     <button
-                      onClick={() => acceptProposedMutation.mutate(order.id)}
-                      disabled={acceptProposedMutation.isPending}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-500 text-white hover:bg-green-600 rounded-lg font-medium text-xs transition-colors disabled:opacity-50"
+                      onClick={() => openMasterChat(order.masterId!)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 text-white hover:bg-amber-600 rounded-lg font-medium text-xs transition-colors"
                     >
-                      {acceptProposedMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-                      Принять
+                      <MessageSquare className="w-3 h-3" />
+                      Открыть чат
                     </button>
-                    <button
-                      onClick={() => {
-                        setEditAmountId(order.id);
-                        setEditAmountValue(String((order as any).proposedAmount));
-                      }}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg font-medium text-xs transition-colors"
-                    >
-                      <Pencil className="w-3 h-3" />
-                      Изменить
-                    </button>
-                  </div>
+                  )}
                 </div>
               ))}
             </div>

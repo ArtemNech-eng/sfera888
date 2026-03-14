@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useLocation } from "wouter";
 import { Layout } from "@/components/layout";
 import { ProtectedRoute } from "@/hooks/use-auth";
 import { useAuth } from "@/hooks/use-auth";
-import { Send, MessageSquare, RefreshCw, Check, CheckCheck, Paperclip, X, Image, Camera } from "lucide-react";
+import { Send, MessageSquare, RefreshCw, Check, CheckCheck, Paperclip, X, Camera, DollarSign, AlertCircle, RotateCcw, Pencil, Loader2 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 interface Thread {
   masterId: number;
@@ -32,6 +34,16 @@ interface Message {
 interface ConversationData {
   master: { id: number; alias: string; city: string; telegramId: string | null; avatarUrl: string | null };
   messages: Message[];
+}
+
+interface PendingOrder {
+  id: number;
+  serviceType: string;
+  city: string;
+  status: string;
+  proposedAmount: number | null;
+  orderAmount: number | null;
+  cancelReason: string | null;
 }
 
 // Inline avatar — falls back to coloured initials
@@ -65,17 +77,24 @@ function timeStamp(dateStr: string) {
   catch { return ""; }
 }
 
+function fmt(n: number) { return n.toLocaleString("ru-RU") + " ₽"; }
+
 export default function MasterChat() {
   const { user } = useAuth();
+  const [location] = useLocation();
+  const queryClient = useQueryClient();
   const [threads, setThreads] = useState<Thread[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [conv, setConv] = useState<ConversationData | null>(null);
+  const [pendingOrders, setPendingOrders] = useState<PendingOrder[]>([]);
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
+  const [editAmountId, setEditAmountId] = useState<number | null>(null);
+  const [editAmountValue, setEditAmountValue] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -112,6 +131,90 @@ export default function MasterChat() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [conv?.messages.length]);
+
+  // Auto-select master from URL ?masterId=X
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const idStr = params.get("masterId");
+    if (idStr) {
+      const id = parseInt(idStr);
+      if (!isNaN(id)) setSelectedId(id);
+    }
+  }, [location]);
+
+  // Load pending orders for selected master
+  const fetchPendingOrders = useCallback(async (masterId: number) => {
+    try {
+      const r = await fetch(`/api/orders?masterId=${masterId}`, { credentials: "include" });
+      if (r.ok) {
+        const all = await r.json();
+        const pending = all.filter((o: any) =>
+          (o.status === "cancellation_requested") ||
+          (o.status === "completed" && o.proposedAmount && !o.orderAmount)
+        );
+        setPendingOrders(pending);
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (selectedId) {
+      fetchPendingOrders(selectedId);
+      const t = setInterval(() => fetchPendingOrders(selectedId), 8000);
+      return () => clearInterval(t);
+    } else {
+      setPendingOrders([]);
+    }
+  }, [selectedId, fetchPendingOrders]);
+
+  // Mutations for order actions in chat
+  const approveCancellationMutation = useMutation({
+    mutationFn: async (orderId: number) => {
+      const r = await fetch(`/api/orders/${orderId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        credentials: "include", body: JSON.stringify({ approveCancellation: true }),
+      });
+      if (!r.ok) throw new Error("Ошибка");
+      return r.json();
+    },
+    onSuccess: () => selectedId && fetchPendingOrders(selectedId),
+  });
+
+  const rejectCancellationMutation = useMutation({
+    mutationFn: async (orderId: number) => {
+      const r = await fetch(`/api/orders/${orderId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        credentials: "include", body: JSON.stringify({ rejectCancellation: true }),
+      });
+      if (!r.ok) throw new Error("Ошибка");
+      return r.json();
+    },
+    onSuccess: () => selectedId && fetchPendingOrders(selectedId),
+  });
+
+  const acceptProposedMutation = useMutation({
+    mutationFn: async (orderId: number) => {
+      const r = await fetch(`/api/orders/${orderId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        credentials: "include", body: JSON.stringify({ acceptProposed: true }),
+      });
+      if (!r.ok) throw new Error("Ошибка");
+      return r.json();
+    },
+    onSuccess: () => selectedId && fetchPendingOrders(selectedId),
+  });
+
+  const setAmountMutation = useMutation({
+    mutationFn: async ({ orderId, amount }: { orderId: number; amount: number }) => {
+      const r = await fetch(`/api/orders/${orderId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        credentials: "include", body: JSON.stringify({ orderAmount: amount }),
+      });
+      if (!r.ok) throw new Error("Ошибка");
+      return r.json();
+    },
+    onSuccess: () => { selectedId && fetchPendingOrders(selectedId); setEditAmountId(null); setEditAmountValue(""); },
+  });
 
   const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -344,6 +447,101 @@ export default function MasterChat() {
                     )}
                     <div ref={bottomRef} />
                   </div>
+
+                  {/* Pending order action cards */}
+                  {pendingOrders.length > 0 && (
+                    <div className="border-t border-gray-100 px-4 py-3 space-y-2 flex-shrink-0">
+                      {pendingOrders.map(order => {
+                        const isCancelRequest = order.status === "cancellation_requested";
+                        const isProposed = order.status === "completed" && order.proposedAmount && !order.orderAmount;
+                        return (
+                          <div key={order.id} className={`rounded-xl border px-4 py-3 space-y-2 ${isCancelRequest ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200"}`}>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                {isCancelRequest
+                                  ? <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+                                  : <DollarSign className="w-4 h-4 text-amber-500 flex-shrink-0" />}
+                                <span className={`text-xs font-semibold ${isCancelRequest ? "text-red-700" : "text-amber-700"}`}>
+                                  {isCancelRequest ? `Запрос на отмену заказа #${order.id}` : `Предложена сумма по заказу #${order.id}`}
+                                </span>
+                                <span className="text-xs text-gray-400">{order.serviceType}</span>
+                              </div>
+                              {isProposed && (
+                                <span className="text-sm font-bold text-amber-700">{fmt(order.proposedAmount!)}</span>
+                              )}
+                            </div>
+                            {isCancelRequest && order.cancelReason && (
+                              <p className="text-xs text-red-600 bg-white rounded-lg px-3 py-1.5">
+                                <span className="font-medium">Причина: </span>{order.cancelReason}
+                              </p>
+                            )}
+                            {isCancelRequest && (
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => approveCancellationMutation.mutate(order.id)}
+                                  disabled={approveCancellationMutation.isPending}
+                                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-red-500 text-white hover:bg-red-600 rounded-lg font-medium text-xs transition-colors disabled:opacity-50"
+                                >
+                                  {approveCancellationMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
+                                  Подтвердить отмену
+                                </button>
+                                <button
+                                  onClick={() => rejectCancellationMutation.mutate(order.id)}
+                                  disabled={rejectCancellationMutation.isPending}
+                                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 rounded-lg font-medium text-xs transition-colors disabled:opacity-50"
+                                >
+                                  {rejectCancellationMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+                                  Отклонить
+                                </button>
+                              </div>
+                            )}
+                            {isProposed && (
+                              editAmountId === order.id ? (
+                                <div className="flex gap-2 items-center">
+                                  <input
+                                    type="number"
+                                    value={editAmountValue}
+                                    onChange={e => setEditAmountValue(e.target.value)}
+                                    className="flex-1 border border-amber-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-200"
+                                    placeholder="Введите сумму"
+                                    autoFocus
+                                  />
+                                  <button
+                                    onClick={() => setAmountMutation.mutate({ orderId: order.id, amount: Number(editAmountValue) })}
+                                    disabled={setAmountMutation.isPending || !editAmountValue}
+                                    className="px-3 py-1.5 bg-amber-500 text-white rounded-lg text-xs font-medium hover:bg-amber-600 disabled:opacity-50 transition-colors"
+                                  >
+                                    {setAmountMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : "Сохранить"}
+                                  </button>
+                                  <button onClick={() => { setEditAmountId(null); setEditAmountValue(""); }} className="px-3 py-1.5 bg-white border border-gray-200 text-gray-600 rounded-lg text-xs hover:bg-gray-50 transition-colors">
+                                    Отмена
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => acceptProposedMutation.mutate(order.id)}
+                                    disabled={acceptProposedMutation.isPending}
+                                    className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-green-500 text-white hover:bg-green-600 rounded-lg font-medium text-xs transition-colors disabled:opacity-50"
+                                  >
+                                    {acceptProposedMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                                    Принять сумму
+                                  </button>
+                                  <button
+                                    onClick={() => { setEditAmountId(order.id); setEditAmountValue(String(order.proposedAmount)); }}
+                                    className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 rounded-lg font-medium text-xs transition-colors"
+                                  >
+                                    <Pencil className="w-3 h-3" />
+                                    Изменить
+                                  </button>
+                                </div>
+                              )
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
 
                   {/* Photo preview bar */}
                   {photoPreview && (
