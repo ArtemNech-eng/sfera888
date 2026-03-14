@@ -86,11 +86,15 @@ const OKIDOKI_API_URL = "https://api.doki.online";
 
 async function createOkidokiContract(master: { id: number; alias: string; phone: string | null }): Promise<string | null> {
   const apiKey = process.env.OKIDOKI_API_KEY;
-  const templateId = process.env.OKIDOKI_TEMPLATE_ID;
-  if (!apiKey || !templateId) {
+  const templateIdRaw = process.env.OKIDOKI_TEMPLATE_ID;
+  if (!apiKey || !templateIdRaw) {
     console.warn("[OkiDoki] Missing OKIDOKI_API_KEY or OKIDOKI_TEMPLATE_ID");
     return null;
   }
+  // If the env var contains a full URL, extract just the ID (last path segment)
+  const templateId = templateIdRaw.startsWith("http")
+    ? templateIdRaw.split("/").filter(Boolean).pop()!
+    : templateIdRaw;
 
   const callbackUrl = process.env.REPLIT_DEV_DOMAIN
     ? `https://${process.env.REPLIT_DEV_DOMAIN}/api/okidoki/webhook`
@@ -124,9 +128,20 @@ async function createOkidokiContract(master: { id: number; alias: string; phone:
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    const data = await resp.json() as any;
-    console.log("[OkiDoki] contract created:", JSON.stringify(data));
-    return data?.link ?? null;
+    const rawText = await resp.text();
+    let data: any;
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      console.error("[OkiDoki] Non-JSON response:", rawText);
+      return null;
+    }
+    if (!resp.ok || !data?.link) {
+      console.error("[OkiDoki] API error:", JSON.stringify(data));
+      return null;
+    }
+    console.log("[OkiDoki] Contract created, link:", data.link);
+    return data.link;
   } catch (err) {
     console.error("[OkiDoki] Error creating contract:", err);
     return null;
