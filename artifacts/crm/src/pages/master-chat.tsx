@@ -34,6 +34,7 @@ interface Message {
 interface ConversationData {
   master: { id: number; alias: string; city: string; telegramId: string | null; avatarUrl: string | null };
   messages: Message[];
+  pendingTransactions: PendingTransaction[];
 }
 
 interface PendingOrder {
@@ -96,7 +97,6 @@ export default function MasterChat() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [conv, setConv] = useState<ConversationData | null>(null);
   const [pendingOrders, setPendingOrders] = useState<PendingOrder[]>([]);
-  const [pendingTransactions, setPendingTransactions] = useState<PendingTransaction[]>([]);
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -190,32 +190,18 @@ export default function MasterChat() {
     } catch {}
   }, []);
 
-  // Load pending commission transactions for selected master
-  const fetchPendingTransactions = useCallback(async (masterId: number) => {
-    try {
-      const r = await fetch(`/api/finance/transactions?masterId=${masterId}&status=pending`, { credentials: "include" });
-      if (r.ok) {
-        const data = await r.json();
-        setPendingTransactions(data);
-      }
-    } catch {}
-  }, []);
-
   useEffect(() => {
     if (selectedId) {
       fetchPendingOrders(selectedId);
       fetchRespondedOrders(selectedId);
-      fetchPendingTransactions(selectedId);
       const t1 = setInterval(() => fetchPendingOrders(selectedId), 8000);
       const t2 = setInterval(() => fetchRespondedOrders(selectedId), 7000);
-      const t3 = setInterval(() => fetchPendingTransactions(selectedId), 9000);
-      return () => { clearInterval(t1); clearInterval(t2); clearInterval(t3); };
+      return () => { clearInterval(t1); clearInterval(t2); };
     } else {
       setPendingOrders([]);
       setRespondedOrders([]);
-      setPendingTransactions([]);
     }
-  }, [selectedId, fetchPendingOrders, fetchRespondedOrders, fetchPendingTransactions]);
+  }, [selectedId, fetchPendingOrders, fetchRespondedOrders]);
 
   // Mutations for order actions in chat
   const approveCancellationMutation = useMutation({
@@ -254,8 +240,8 @@ export default function MasterChat() {
     onSuccess: () => {
       if (selectedId) {
         fetchPendingOrders(selectedId);
-        // Wait briefly for transaction to be created, then refresh
-        setTimeout(() => fetchPendingTransactions(selectedId), 600);
+        // Refresh conversation to pick up the newly created transaction
+        setTimeout(() => fetchConversation(selectedId), 700);
       }
     },
   });
@@ -271,12 +257,9 @@ export default function MasterChat() {
     },
     onSuccess: () => {
       if (selectedId) {
-        fetchPendingTransactions(selectedId);
-        // Refresh threads to update master's column display
-        fetch("/api/messages/threads", { credentials: "include" })
-          .then(r => r.ok ? r.json() : null)
-          .then(data => data && setThreads(data))
-          .catch(() => {});
+        // Refresh conversation — pendingTransactions will be empty now
+        fetchConversation(selectedId);
+        fetchThreads();
       }
     },
   });
@@ -574,9 +557,9 @@ export default function MasterChat() {
                   )}
 
                   {/* Commission payment receipt cards */}
-                  {pendingTransactions.length > 0 && (
+                  {(conv?.pendingTransactions ?? []).length > 0 && (
                     <div className="border-t border-gray-100 px-4 py-3 space-y-2 flex-shrink-0">
-                      {pendingTransactions.map(tx => (
+                      {(conv?.pendingTransactions ?? []).map(tx => (
                         <div key={tx.id} className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 space-y-3">
                           {/* Header */}
                           <div className="flex items-center gap-2">

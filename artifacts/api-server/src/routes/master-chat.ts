@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, masterMessagesTable, mastersTable, telegramChatsTable } from "@workspace/db";
+import { db, masterMessagesTable, mastersTable, telegramChatsTable, transactionsTable } from "@workspace/db";
 import { eq, desc, and, inArray } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
 import multer from "multer";
@@ -103,7 +103,7 @@ router.get("/stats/unread", requireRole("admin", "master_operator"), async (_req
 });
 
 // GET /api/master-chat/:masterId — full conversation
-router.get("/:masterId", requireRole("admin", "master_operator"), async (req, res) => {
+router.get("/:masterId", requireRole("admin", "master_operator", "lead_operator"), async (req, res) => {
   const masterId = parseInt(req.params.masterId);
   if (isNaN(masterId)) return res.status(400).json({ error: "Invalid masterId" });
 
@@ -124,9 +124,21 @@ router.get("/:masterId", requireRole("admin", "master_operator"), async (req, re
     avatarUrl = tgRows[0]?.avatarUrl ?? master.customAvatarUrl ?? null;
   }
 
+  // Include pending transactions so the chat can show the commission payment card
+  const pendingTx = await db.select().from(transactionsTable)
+    .where(and(eq(transactionsTable.masterId, masterId), eq(transactionsTable.paymentStatus, "pending")));
+
   res.json({
     master: { id: master.id, alias: master.alias, city: master.city, telegramId: master.telegramId, avatarUrl },
     messages,
+    pendingTransactions: pendingTx.map(t => ({
+      id: t.id,
+      orderId: t.orderId,
+      orderAmount: Number(t.orderAmount),
+      commission: Number(t.commission),
+      paymentStatus: t.paymentStatus,
+      createdAt: t.createdAt,
+    })),
   });
 });
 
