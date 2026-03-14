@@ -28,7 +28,8 @@ type BotState =
   | { step: "awaiting_city"; masterId: number }
   | { step: "selecting_specs"; masterId: number; selected: string[]; pickerMessageId?: number }
   | { step: "awaiting_message"; masterId: number }
-  | { step: "awaiting_phone"; masterId: number };
+  | { step: "awaiting_phone"; masterId: number }
+  | { step: "confirming_phone"; masterId: number; phone: string };
 
 const pendingState = new Map<string, BotState>();
 
@@ -312,16 +313,9 @@ async function askSpecs(chatId: string, masterId: number) {
 
 async function askPhone(chatId: string, masterId: number) {
   pendingState.set(chatId, { step: "awaiting_phone", masterId });
-  await tgRequest("sendMessage", {
-    chat_id: chatId,
-    text: `✅ Специальности сохранены!\n\n<b>Шаг 4 из 4</b> 📱\n\nПоделитесь номером телефона — операторы будут использовать его для связи с вами:`,
-    parse_mode: "HTML",
-    reply_markup: {
-      keyboard: [[{ text: "📱 Поделиться номером телефона", request_contact: true }]],
-      resize_keyboard: true,
-      one_time_keyboard: true,
-    },
-  });
+  await sendMessage(chatId,
+    `✅ Специальности сохранены!\n\n<b>Шаг 4 из 4</b> 📱\n\nВведите ваш номер телефона вручную.\nОператоры будут использовать его для связи с вами.\n\n<i>Пример: +79001234567</i>`
+  );
 }
 
 // ─── Handle /start ────────────────────────────────────────────────────────────
@@ -509,6 +503,47 @@ async function handleCallback(callbackQuery: any) {
     await editMessage(chatId, messageId,
       `✅ <b>${master.alias}</b> — главное меню`,
       mainMenuKeyboard()
+    );
+    return;
+  }
+
+  // ─── Phone confirmation callbacks ──────────────────────────────────────────
+
+  if (data === "confirm_phone") {
+    const state = pendingState.get(chatId);
+    if (!state || state.step !== "confirming_phone") {
+      await answerCallback(cbId, "⚠️ Ошибка, начните заново");
+      return;
+    }
+    await answerCallback(cbId, "✅ Номер сохранён!");
+    const phone = state.phone;
+    const masterId = state.masterId;
+    pendingState.delete(chatId);
+
+    await db.update(mastersTable).set({ phone }).where(eq(mastersTable.id, masterId));
+
+    // Fetch fresh master for the completion message
+    const freshRows = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
+    const fresh = freshRows[0];
+
+    await editMessage(chatId, messageId,
+      `🎉 <b>Регистрация завершена!</b>\n\n` +
+      `👤 Имя: <b>${fresh?.alias ?? master.alias}</b>\n` +
+      `🏙️ Город: <b>${fresh?.city ?? master.city}</b>\n` +
+      `📱 Телефон: <b>${phone}</b>\n\n` +
+      `Теперь вы можете принимать заказы. Удачной работы! 🚀`,
+      mainMenuKeyboard()
+    );
+    return;
+  }
+
+  if (data === "reenter_phone") {
+    const state = pendingState.get(chatId);
+    const masterId = state?.masterId ?? master.id;
+    pendingState.set(chatId, { step: "awaiting_phone", masterId });
+    await answerCallback(cbId);
+    await editMessage(chatId, messageId,
+      `📱 Введите номер телефона заново:\n\n<i>Пример: +79001234567</i>`
     );
     return;
   }
@@ -760,6 +795,35 @@ router.post("/webhook", async (req, res) => {
       const city = text.slice(0, 100).trim();
       await db.update(mastersTable).set({ city }).where(eq(mastersTable.id, state.masterId));
       await askSpecs(chatId, state.masterId);
+      return;
+    }
+
+    // ── Step 4: awaiting phone (manual text input) ────────────────────────────
+    if (state?.step === "awaiting_phone" && text) {
+      const rawPhone = text.trim().replace(/\s+/g, "");
+      // Basic validation: must have at least 10 digits
+      const digits = rawPhone.replace(/\D/g, "");
+      if (digits.length < 10) {
+        await sendMessage(chatId,
+          `⚠️ Похоже, это не номер телефона.\n\nВведите корректный номер, например: <b>+79001234567</b>`
+        );
+        return;
+      }
+      // Store in confirming_phone state
+      pendingState.set(chatId, { step: "confirming_phone", masterId: state.masterId, phone: rawPhone });
+      await sendMessage(chatId,
+        `📱 Вы ввели номер: <b>${rawPhone}</b>\n\nВсё верно?`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "✅ Да, верно", callback_data: "confirm_phone" },
+                { text: "✏️ Изменить", callback_data: "reenter_phone" },
+              ],
+            ],
+          },
+        }
+      );
       return;
     }
 
