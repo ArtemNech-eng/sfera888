@@ -5,7 +5,7 @@ import { requireRole } from "../middlewares/requireAuth.js";
 
 const router = Router();
 const adminOnly = requireRole("admin");
-const opsAndAdmin = requireRole("admin", "master_operator");
+const opsAndAdmin = requireRole("admin", "master_operator", "lead_operator");
 
 router.get("/transactions", opsAndAdmin, async (req, res) => {
   const { masterId, status, from, to } = req.query;
