@@ -44,11 +44,25 @@ function formatDate(d: Date | null | undefined): string {
 }
 
 function buildOrderCard(order: any, orderId: number): string {
+  let servicesBlock = "";
+  try {
+    const srvs = order.services ? JSON.parse(order.services) : null;
+    if (Array.isArray(srvs) && srvs.length > 0) {
+      servicesBlock = srvs.map((s: any, i: number) =>
+        `   ${i + 1}. <b>${s.type}</b> — ${s.area} м²${s.pricePerM2 ? ` × ${s.pricePerM2.toLocaleString("ru-RU")} ₽/м²` : ""}`
+      ).join("\n");
+      servicesBlock = `\n🔧 Услуги:\n${servicesBlock}\n`;
+    }
+  } catch {}
+
+  if (!servicesBlock) {
+    servicesBlock = `\n🔧 Услуга: <b>${order.serviceType}</b>\n📐 Объём: <b>${order.area} м²</b>\n`;
+  }
+
   return (
-    `📋 <b>Новая заявка #${orderId}</b>\n\n` +
-    `🔧 Услуга: <b>${order.serviceType}</b>\n` +
+    `📋 <b>Новая заявка #${orderId}</b>\n` +
+    servicesBlock +
     `📍 Район: <b>${order.city}${order.district ? ", " + order.district : ""}</b>\n` +
-    `📐 Объём: <b>${order.area} м²</b>\n` +
     `📅 Дата: <b>${formatDate(order.scheduledAt)}</b>` +
     (order.comment ? `\n💬 Комментарий: ${order.comment}` : "") +
     `\n\n<i>Нажмите кнопку, чтобы откликнуться. Телефон клиента будет передан после подтверждения оператором.</i>`

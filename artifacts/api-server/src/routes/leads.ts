@@ -7,6 +7,19 @@ const router = Router();
 
 const allLeadRoles = requireRole("admin", "lead_operator");
 
+// Parse services JSON safely
+function parseServices(raw: string | null | undefined): Array<{type: string; area: number; pricePerM2: number}> | null {
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
+// Build serviceType summary and total area from services array
+function buildServiceSummary(services: Array<{type: string; area: number; pricePerM2: number}>) {
+  const types = [...new Set(services.map(s => s.type))];
+  const totalArea = services.reduce((sum, s) => sum + s.area, 0);
+  return { serviceType: types.join(", "), area: totalArea };
+}
+
 router.get("/", allLeadRoles, async (req, res) => {
   const { status } = req.query;
   let rows;
@@ -21,14 +34,31 @@ router.get("/", allLeadRoles, async (req, res) => {
     scheduledAt: l.scheduledAt ?? null,
     comment: l.comment ?? null,
     source: l.source ?? null,
+    services: parseServices(l.services),
   })));
 });
 
 router.post("/", allLeadRoles, async (req, res) => {
-  const { clientName, clientPhone, city, district, serviceType, area, scheduledAt, comment, source } = req.body;
-  if (!clientName || !clientPhone || !city || !district || !serviceType || !area) {
+  const { clientName, clientPhone, city, district, services, serviceType: rawServiceType, area: rawArea, scheduledAt, comment, source } = req.body;
+  if (!clientName || !clientPhone || !city || !district) {
     return res.status(400).json({ error: "Required fields missing" });
   }
+
+  let serviceType: string;
+  let area: number;
+  let servicesJson: string | null = null;
+
+  if (Array.isArray(services) && services.length > 0) {
+    const summary = buildServiceSummary(services);
+    serviceType = summary.serviceType;
+    area = summary.area;
+    servicesJson = JSON.stringify(services);
+  } else {
+    if (!rawServiceType || !rawArea) return res.status(400).json({ error: "Required fields missing" });
+    serviceType = rawServiceType;
+    area = Number(rawArea);
+  }
+
   const result = await db.insert(leadsTable).values({
     clientName,
     clientPhone,
@@ -36,6 +66,7 @@ router.post("/", allLeadRoles, async (req, res) => {
     district,
     serviceType,
     area: String(area),
+    services: servicesJson,
     scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
     comment: comment ?? null,
     source: source ?? null,
@@ -48,6 +79,7 @@ router.post("/", allLeadRoles, async (req, res) => {
     scheduledAt: lead.scheduledAt ?? null,
     comment: lead.comment ?? null,
     source: lead.source ?? null,
+    services: parseServices(lead.services),
   });
 });
 
@@ -62,6 +94,7 @@ router.get("/:id", allLeadRoles, async (req, res) => {
     scheduledAt: l.scheduledAt ?? null,
     comment: l.comment ?? null,
     source: l.source ?? null,
+    services: parseServices(l.services),
   });
 });
 
@@ -89,6 +122,7 @@ router.patch("/:id", allLeadRoles, async (req, res) => {
     scheduledAt: l.scheduledAt ?? null,
     comment: l.comment ?? null,
     source: l.source ?? null,
+    services: parseServices(l.services),
   });
 });
 
@@ -106,6 +140,7 @@ router.post("/:id/send-to-buffer", allLeadRoles, async (req, res) => {
     district: lead.district,
     serviceType: lead.serviceType,
     area: lead.area,
+    services: lead.services ?? null,
     scheduledAt: lead.scheduledAt,
     comment: lead.comment,
     status: "waiting_master",
@@ -119,6 +154,7 @@ router.post("/:id/send-to-buffer", allLeadRoles, async (req, res) => {
     district: order.district,
     serviceType: order.serviceType,
     area: Number(order.area),
+    services: parseServices(order.services ?? null),
     scheduledAt: order.scheduledAt ?? null,
     comment: order.comment ?? null,
     status: order.status,

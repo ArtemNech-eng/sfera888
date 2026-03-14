@@ -20,6 +20,7 @@ export const ordersTable = pgTable("orders", {
   district: text("district").notNull(),
   serviceType: text("service_type").notNull(),
   area: numeric("area", { precision: 10, scale: 2 }).notNull(),
+  services: text("services"),
   scheduledAt: timestamp("scheduled_at"),
   comment: text("comment"),
   status: orderStatusEnum("status").notNull().default("waiting_master"),
