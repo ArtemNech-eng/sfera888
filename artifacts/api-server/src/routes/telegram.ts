@@ -274,8 +274,18 @@ async function sendSpecPicker(chatId: string, selected: string[], messageId?: nu
 
 async function editOrSend(chatId: string, messageId: number | undefined, text: string, extra?: object) {
   if (messageId) {
+    // Try editing as text message first
     const r: any = await editMessage(chatId, messageId, text, extra);
     if (r?.ok !== false) return r;
+
+    // If that failed the message might be a photo — try editing caption
+    const r2: any = await tgRequest("editMessageCaption", {
+      chat_id: chatId, message_id: messageId, caption: text, parse_mode: "HTML", ...extra,
+    });
+    if (r2?.ok !== false) return r2;
+
+    // Both failed — delete old message and send new one to avoid duplication
+    await tgRequest("deleteMessage", { chat_id: chatId, message_id: messageId }).catch(() => {});
   }
   return sendMessage(chatId, text, extra);
 }
