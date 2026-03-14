@@ -1,8 +1,36 @@
 import { Router } from "express";
-import { db, ordersTable, mastersTable, transactionsTable, voronkaColumnsTable } from "@workspace/db";
-import { eq, inArray } from "drizzle-orm";
+import { db, ordersTable, mastersTable, transactionsTable, voronkaColumnsTable, orderDispatchesTable, leadsTable } from "@workspace/db";
+import { eq, inArray, and, ne } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { calculateCommission, getCommissionSettings } from "../lib/commission.js";
+
+const TELEGRAM_API = `https://api.telegram.org/bot${process.env["TELEGRAM_BOT_TOKEN"]}`;
+
+async function sendTg(chatId: string, text: string) {
+  try {
+    await fetch(`${TELEGRAM_API}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
+    });
+  } catch {}
+}
+
+function buildOrderCard(order: any, orderId: number): string {
+  const formatDate = (d: Date | null | undefined) => {
+    if (!d) return "не указана";
+    return new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(d));
+  };
+  return (
+    `📋 <b>Новая заявка #${orderId}</b>\n\n` +
+    `🔧 Услуга: <b>${order.serviceType}</b>\n` +
+    `📍 Район: <b>${order.city}${order.district ? ", " + order.district : ""}</b>\n` +
+    `📐 Объём: <b>${order.area} м²</b>\n` +
+    `📅 Дата: <b>${formatDate(order.scheduledAt)}</b>` +
+    (order.comment ? `\n💬 Комментарий: ${order.comment}` : "") +
+    `\n\n<i>Нажмите кнопку, чтобы откликнуться.</i>`
+  );
+}
 
 const router = Router();
 const allOrderRoles = requireRole("admin", "master_operator");
@@ -109,10 +137,12 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
   if (approveCancellation) {
     updates.status = "cancelled";
   }
-  // Reject cancellation → restore in_progress, clear reason
+  // Reject cancellation → detach master, reset order for re-broadcast, clear reason
   if (rejectCancellation) {
-    updates.status = "in_progress";
+    updates.status = "waiting_master";
+    updates.masterId = null;
     updates.cancelReason = null;
+    updates.dispatchStatus = "none";
   }
 
   // "Accept proposed" — copy proposedAmount → orderAmount and auto-calc commission
@@ -163,12 +193,68 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
           await db.update(mastersTable).set({ voronkaColumnId: freeCol.id }).where(eq(mastersTable.id, masterId));
         }
       } else if (rejectCancellation) {
-        // Restore master to "На объекте"
-        const onSiteCol = await getOnSiteColumn();
-        if (onSiteCol) {
-          await db.update(mastersTable).set({ voronkaColumnId: onSiteCol.id }).where(eq(mastersTable.id, masterId));
-        }
+        // Master stays in current voronka column (operator must free them manually)
+        // Nothing to move — intentionally left empty
       }
+    }
+  }
+
+  // ── Re-broadcast after rejection ─────────────────────────────────────────
+  if (rejectCancellation && current.masterId) {
+    const rejectedMasterId = current.masterId;
+
+    // Notify the rejected master via Telegram
+    const rejectedMasterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, rejectedMasterId));
+    const rejectedMaster = rejectedMasterRows[0];
+    if (rejectedMaster?.telegramId) {
+      await sendTg(rejectedMaster.telegramId,
+        `⚠️ <b>Запрос на отмену заказа #${id} отклонён оператором.</b>\n\n` +
+        `Заказ передан другим мастерам. Ваш статус в воронке остаётся прежним — оператор переведёт вас в «Свободен» вручную.`
+      );
+    }
+
+    // Delete old dispatch records so we can re-broadcast
+    await db.delete(orderDispatchesTable).where(eq(orderDispatchesTable.orderId, id));
+
+    // Re-broadcast to eligible masters in the same city (excluding the one who tried to cancel)
+    const allMasters = await db.select().from(mastersTable)
+      .where(and(eq(mastersTable.status, "active"), eq(mastersTable.city, o.city)));
+    const withTg = allMasters.filter(m => m.telegramId && m.id !== rejectedMasterId);
+
+    const activeOrders = await db.select().from(ordersTable)
+      .where(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
+
+    const cardText = buildOrderCard(o, id);
+    const replyMarkup = {
+      inline_keyboard: [[{ text: "Откликнуться 🙋", callback_data: `respond_order_${id}` }]],
+    };
+
+    let sent = 0;
+    for (const m of withTg) {
+      if (!m.telegramId) continue;
+      const myActiveCount = activeOrders.filter(ao => ao.masterId === m.id).length;
+      const limit = m.isTestMaster ? 1 : 2;
+      if (myActiveCount >= limit) continue;
+      try {
+        const r = await fetch(`${TELEGRAM_API}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_id: m.telegramId, text: cardText, parse_mode: "HTML", reply_markup: replyMarkup }),
+        });
+        const j = await r.json() as any;
+        const msgId = j?.result?.message_id?.toString() ?? null;
+        await db.insert(orderDispatchesTable).values({
+          orderId: id, masterId: m.id, telegramChatId: m.telegramId,
+          telegramMessageId: msgId, status: "sent",
+        });
+        sent++;
+      } catch {}
+    }
+
+    if (sent > 0) {
+      await db.update(ordersTable)
+        .set({ dispatchStatus: "dispatching", updatedAt: new Date() })
+        .where(eq(ordersTable.id, id));
     }
   }
 
