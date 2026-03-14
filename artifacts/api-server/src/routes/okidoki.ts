@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db, mastersTable, telegramChatsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { sendTelegramMessage } from "../telegram-notify.js";
+import { notifyMasterActivated } from "../telegram-notify.js";
 
 const router = Router();
 
@@ -35,11 +35,7 @@ router.post("/webhook", async (req, res) => {
     if (master?.telegramId) {
       const tgRows = await db.select().from(telegramChatsTable).where(eq(telegramChatsTable.telegramChatId, master.telegramId));
       const chatId = tgRows[0]?.telegramChatId ?? master.telegramId;
-      await sendTelegramMessage(chatId,
-        `🎉 <b>Договор подписан! Аккаунт активирован.</b>\n\n` +
-        `Добро пожаловать, <b>${master.alias}</b>!\n\n` +
-        `Теперь вам доступны заказы. Нажмите /start чтобы перейти в меню.`
-      );
+      await notifyMasterActivated(chatId, master.alias);
     }
   } catch (err) {
     console.error("[OkiDoki] Webhook error:", err);

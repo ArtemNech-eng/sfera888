@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db, mastersTable, masterTasksTable, ordersTable, leadsTable, telegramChatsTable } from "@workspace/db";
 import { eq, desc, inArray } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
-import { sendTelegramMessage } from "../telegram-notify.js";
+import { notifyMasterActivated } from "../telegram-notify.js";
 import multer from "multer";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -107,11 +107,7 @@ router.patch("/:id", requireRole("admin", "master_operator"), async (req, res) =
   if (status === "active" && oldStatus === "pending_contract" && updated.telegramId) {
     const tgRows = await db.select().from(telegramChatsTable).where(eq(telegramChatsTable.telegramChatId, updated.telegramId));
     const chatId = tgRows[0]?.telegramChatId ?? updated.telegramId;
-    sendTelegramMessage(chatId,
-      `🎉 <b>Аккаунт активирован!</b>\n\n` +
-      `Добро пожаловать, <b>${updated.alias}</b>!\n\n` +
-      `Администратор подтвердил вашу заявку. Теперь вам доступны заказы.\n\nНажмите /start чтобы перейти в меню.`
-    ).catch(() => {});
+    notifyMasterActivated(chatId, updated.alias).catch(() => {});
   }
 
   res.json(formatMaster(result[0]));
