@@ -177,16 +177,27 @@ async function showAvailableOrders(chatId: string, master: any, messageId?: numb
     }
   }
 
-  // Check active order limit
+  // Check debt
+  const masterDebt = Number(master.debt);
+  const hasDebt = masterDebt > 0;
+
+  // Check active order limit (debt-aware)
   const activeOrders = await db.select().from(ordersTable)
     .where(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
   const myActiveCount = activeOrders.filter(o => o.masterId === master.id).length;
   const limit = master.isTestMaster ? 1 : 2;
 
   if (myActiveCount >= limit) {
-    const limitText = master.isTestMaster
-      ? "У вас уже есть активный заказ. В тестовый период нельзя брать более 1 заказа.\n\nПосле завершения первого заказа и оплаты комиссии лимит будет увеличен до 2."
-      : "У вас уже 2 активных заказа. Завершите один из них, чтобы взять новый.";
+    let limitText: string;
+    if (hasDebt) {
+      limitText = master.isTestMaster
+        ? `У вас долг по комиссии: <b>${masterDebt.toLocaleString("ru")} ₽</b>.\n\nВ тестовый период лимит — 1 заказ. Сначала погасите долг, чтобы продолжить работу.`
+        : `У вас долг по комиссии: <b>${masterDebt.toLocaleString("ru")} ₽</b>.\n\nПри наличии долга лимит — 2 заказа одновременно. Погасите задолженность для снятия ограничений.`;
+    } else {
+      limitText = master.isTestMaster
+        ? "У вас уже есть активный заказ. В тестовый период нельзя брать более 1 заказа.\n\nПосле завершения и оплаты комиссии лимит будет увеличен до 2."
+        : "У вас уже 2 активных заказа. Завершите один из них, чтобы взять новый.";
+    }
     await editOrSend(chatId, messageId, `⛔ <b>Лимит заказов</b>\n\n${limitText}`, { reply_markup: { inline_keyboard: [backBtn] } });
     return;
   }
@@ -561,14 +572,16 @@ async function handleCallback(callbackQuery: any) {
       }
     }
 
-    // Check order limit
+    // Check order limit (debt-aware)
     const activeOrders = await db.select().from(ordersTable)
       .where(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
     const myActiveCount = activeOrders.filter(o => o.masterId === master.id).length;
     const limit = master.isTestMaster ? 1 : 2;
+    const takeDebt = Number(master.debt);
 
     if (myActiveCount >= limit) {
-      await sendMessage(chatId, `⛔ Лимит: у вас уже ${myActiveCount} активных заказов (максимум ${limit})`);
+      const debtNote = takeDebt > 0 ? `\n\n💳 У вас долг по комиссии: <b>${takeDebt.toLocaleString("ru")} ₽</b>. Погасите задолженность для снятия ограничений.` : "";
+      await sendMessage(chatId, `⛔ <b>Лимит заказов</b>\n\nУ вас уже ${myActiveCount} из ${limit} активных заказов.${debtNote}`);
       return;
     }
 

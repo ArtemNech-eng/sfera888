@@ -165,19 +165,26 @@ router.post("/:id/assign-master", allOrderRoles, async (req, res) => {
     }
   }
 
-  // Check active order count limits
+  // Check active order count limits (debt-aware)
   const activeOrders = await db.select().from(ordersTable)
     .where(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
   const masterActiveCount = activeOrders.filter(o => o.masterId === masterId).length;
+  const masterDebt = Number(master.debt);
+  const hasDebt = masterDebt > 0;
 
-  if (master.isTestMaster && masterActiveCount >= 1) {
+  const limit = master.isTestMaster ? 1 : 2;
+  if (masterActiveCount >= limit) {
+    if (hasDebt) {
+      return res.status(400).json({
+        error: master.isTestMaster
+          ? `Мастер является должником (${masterDebt.toLocaleString("ru")} ₽). В тестовый период лимит — 1 заказ. Сначала необходимо погасить долг.`
+          : `Мастер является должником (${masterDebt.toLocaleString("ru")} ₽). Лимит — 2 заказа при наличии долга. Необходимо погасить задолженность для снятия ограничений.`
+      });
+    }
     return res.status(400).json({
-      error: "Тестовый период: мастер может иметь только 1 активный заказ. Дождитесь завершения и оплаты комиссии."
-    });
-  }
-  if (!master.isTestMaster && masterActiveCount >= 2) {
-    return res.status(400).json({
-      error: "Максимум 2 активных заказа на мастера"
+      error: master.isTestMaster
+        ? "Тестовый период: мастер может иметь только 1 активный заказ."
+        : "Максимум 2 активных заказа на мастера."
     });
   }
 

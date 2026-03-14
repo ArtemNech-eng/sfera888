@@ -5,7 +5,7 @@ import {
   Plus, Settings, X, ChevronUp, ChevronDown, Trash2,
   Star, Phone, MapPin, Briefcase, AlertTriangle, User,
   ArrowRight, Edit2, MessageSquare, Zap,
-  RefreshCw, ChevronRight, UserX,
+  RefreshCw, ChevronRight, UserX, Banknote, Check,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -201,6 +201,60 @@ function SuspendedColumn({ masters, onOpenDrawer }: {
                 <p className="text-[10px] text-gray-400 truncate">{m.city}</p>
               </div>
               {m.telegramId && <div className="w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0" />}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Debtor Column ────────────────────────────────────────────────────────────
+
+function DebtorColumn({ masters, onOpenDrawer }: {
+  masters: VoronkaMaster[];
+  onOpenDrawer: (m: VoronkaMaster) => void;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  const totalDebt = masters.reduce((s, m) => s + m.debt, 0);
+
+  return (
+    <div className="flex-shrink-0 w-[200px] flex flex-col rounded-xl border-2 border-dashed border-orange-200 bg-orange-50/50 overflow-hidden">
+      <div className="flex items-center gap-1.5 px-2.5 py-1.5 border-b border-orange-100 bg-orange-50">
+        <Banknote className="w-3.5 h-3.5 text-orange-500 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <span className="font-semibold text-orange-700 text-[12px]">Должники</span>
+          {totalDebt > 0 && (
+            <p className="text-[9px] text-orange-500 leading-none">{(totalDebt / 1000).toFixed(0)}k ₽ долг</p>
+          )}
+        </div>
+        <span className="text-[10px] font-bold bg-orange-200 text-orange-700 rounded-full px-1.5 py-0.5 flex-shrink-0">{masters.length}</span>
+        <button onClick={() => setCollapsed(c => !c)} className="p-0.5 rounded hover:bg-orange-100 transition-colors">
+          {collapsed ? <ChevronDown className="w-3 h-3 text-orange-400" /> : <ChevronUp className="w-3 h-3 text-orange-400" />}
+        </button>
+      </div>
+      {!collapsed && (
+        <div className="voronka-scroll flex-1 overflow-y-auto p-1.5 space-y-1.5 min-h-0">
+          {masters.map(m => (
+            <div key={m.id}
+              onClick={() => onOpenDrawer(m)}
+              className="bg-white border border-orange-100 rounded-lg px-2 py-1.5 cursor-pointer hover:shadow-md transition-all duration-150"
+            >
+              <div className="flex items-center gap-2">
+                <Avatar name={m.alias} id={m.id} avatarUrl={m.avatarUrl} size={26} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11px] font-semibold text-gray-700 truncate">{m.alias}</p>
+                  <p className="text-[10px] text-gray-400 truncate">{m.city}</p>
+                </div>
+                {m.telegramId && <div className="w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0" />}
+              </div>
+              <div className="flex items-center gap-1 mt-1 text-[10px] text-orange-600 font-semibold">
+                <AlertTriangle className="w-2.5 h-2.5 flex-shrink-0" />
+                {m.debt.toLocaleString("ru")} ₽
+                {m.activeOrders.length > 0 && (
+                  <span className="ml-auto text-gray-400 font-normal">{m.activeOrders.length} зак.</span>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -451,10 +505,12 @@ export default function Voronka() {
   };
 
   const sorted = [...columns].sort((a, b) => a.position - b.position);
-  // ALL suspended masters → separate SuspendedColumn (never appear in regular columns)
+  // Suspended → always in SuspendedColumn (highest priority, never in regular columns)
   const suspended = masters.filter(m => m.status === "suspended");
-  // Active masters without a column → "Без колонки" section
-  const unassigned = masters.filter(m => m.status !== "suspended" && (!m.voronkaColumnId || !columns.find(c => c.id === m.voronkaColumnId)));
+  // Debtors (not suspended) → always in DebtorColumn (never in regular columns)
+  const debtors = masters.filter(m => m.status !== "suspended" && m.debt > 0);
+  // Active non-debtor masters without a column → "Без колонки" section
+  const unassigned = masters.filter(m => m.status !== "suspended" && m.debt <= 0 && (!m.voronkaColumnId || !columns.find(c => c.id === m.voronkaColumnId)));
 
   const totalDebt = masters.reduce((s, m) => s + m.debt, 0);
   const activeCount = masters.filter(m => m.activeOrders.length > 0).length;
@@ -488,7 +544,7 @@ export default function Voronka() {
             <div className="voronka-scroll flex gap-3 overflow-x-auto pb-4 flex-1 min-h-0">
               {sorted.map(col => (
                 <KanbanColumn key={col.id} col={col}
-                  masters={masters.filter(m => m.status !== "suspended" && m.voronkaColumnId === col.id)}
+                  masters={masters.filter(m => m.status !== "suspended" && m.debt <= 0 && m.voronkaColumnId === col.id)}
                   columns={columns} onMove={moveMaster} onOpenDrawer={setDrawerMaster}
                   draggingId={draggingId}
                   onDragStartMaster={setDraggingId}
@@ -504,7 +560,11 @@ export default function Voronka() {
                   onDropMaster={(mid, colId) => { moveMaster(mid, colId); setDraggingId(null); }}
                 />
               )}
-              {/* ── ALL suspended masters ── */}
+              {/* ── Debtors (debt > 0, not suspended) ── */}
+              {debtors.length > 0 && (
+                <DebtorColumn masters={debtors} onOpenDrawer={setDrawerMaster} />
+              )}
+              {/* ── Suspended masters ── */}
               {suspended.length > 0 && (
                 <SuspendedColumn masters={suspended} onOpenDrawer={setDrawerMaster} />
               )}
