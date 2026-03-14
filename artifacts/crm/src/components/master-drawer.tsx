@@ -282,16 +282,16 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                       <button
                         onClick={activateManually}
                         disabled={activatingContract}
-                        className="w-full flex items-center justify-center gap-1 bg-emerald-500 hover:bg-emerald-600 text-white text-[11px] font-semibold rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-60"
+                        className="w-full flex items-center justify-center gap-1 bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-semibold rounded-md px-2 py-1 transition-colors disabled:opacity-60"
                       >
                         {activatingContract
-                          ? <Loader2 className="w-3 h-3 animate-spin" />
-                          : <CheckCircle2 className="w-3 h-3" />}
+                          ? <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                          : <CheckCircle2 className="w-2.5 h-2.5" />}
                         Активировать вручную
                       </button>
                       <button
                         onClick={() => setShowActivatePopover(false)}
-                        className="w-full text-center text-[10px] text-gray-400 hover:text-gray-600 mt-1 py-0.5"
+                        className="w-full text-center text-[9px] text-gray-400 hover:text-gray-600 mt-0.5 py-0.5"
                       >
                         Отмена
                       </button>
