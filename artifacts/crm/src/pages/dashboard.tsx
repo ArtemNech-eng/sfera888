@@ -1,10 +1,29 @@
 import { Layout } from "@/components/layout";
 import { useGetDashboard } from "@workspace/api-client-react";
-import { Loader2, TrendingUp, Users, DollarSign, Target, Activity, FileText } from "lucide-react";
+import { Loader2, TrendingUp, TrendingDown, Users, DollarSign, Target, Activity } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { ProtectedRoute } from "@/hooks/use-auth";
 
-function StatCard({ title, value, subtitle, icon: Icon, trend }: any) {
+function TrendBadge({ value }: { value: number | null | undefined }) {
+  if (value == null) return null;
+  const positive = value >= 0;
+  return (
+    <span className={`text-xs font-medium px-1.5 py-0.5 rounded-md flex items-center gap-0.5 ${
+      positive ? "text-emerald-700 bg-emerald-100" : "text-red-700 bg-red-100"
+    }`}>
+      {positive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+      {positive ? "+" : ""}{value}%
+    </span>
+  );
+}
+
+function StatCard({ title, value, subtitle, icon: Icon, trend }: {
+  title: string;
+  value: string;
+  subtitle: string;
+  icon: any;
+  trend?: number | null;
+}) {
   return (
     <div className="bg-card p-6 rounded-2xl border border-border/50 shadow-sm shadow-black/5 flex flex-col gap-4">
       <div className="flex items-center justify-between">
@@ -16,11 +35,7 @@ function StatCard({ title, value, subtitle, icon: Icon, trend }: any) {
       <div>
         <p className="text-3xl font-display font-bold text-foreground">{value}</p>
         <div className="flex items-center gap-2 mt-1">
-          {trend && (
-            <span className="text-xs font-medium text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded-md">
-              {trend}
-            </span>
-          )}
+          <TrendBadge value={trend} />
           <span className="text-xs text-muted-foreground">{subtitle}</span>
         </div>
       </div>
@@ -50,39 +65,36 @@ export default function Dashboard() {
             </div>
           ) : stats ? (
             <>
-              {/* Main Stats Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <StatCard 
-                  title="Доход за месяц" 
-                  value={formatCurrency(stats.incomeMonth)} 
-                  subtitle="Выручка компании"
+                <StatCard
+                  title="Доход за месяц"
+                  value={formatCurrency(stats.incomeMonth)}
+                  subtitle="к прошлому месяцу"
                   icon={DollarSign}
-                  trend="+12%"
+                  trend={(stats as any).incomeTrend ?? null}
                 />
-                <StatCard 
-                  title="Средний чек" 
-                  value={formatCurrency(stats.avgCheck)} 
-                  subtitle="За завершенный заказ"
+                <StatCard
+                  title="Средний чек"
+                  value={formatCurrency(stats.avgCheck)}
+                  subtitle="За завершённый заказ"
                   icon={Activity}
                 />
-                <StatCard 
-                  title="Конверсия в заказ" 
-                  value={`${stats.conversionRate}%`} 
-                  subtitle="Из заявок в работу"
+                <StatCard
+                  title="Конверсия в заказ"
+                  value={`${stats.conversionRate}%`}
+                  subtitle="к прошлому месяцу"
                   icon={Target}
-                  trend="+2.4%"
+                  trend={(stats as any).conversionTrend ?? null}
                 />
-                <StatCard 
-                  title="Задолженность мастеров" 
-                  value={formatCurrency(stats.totalDebt)} 
+                <StatCard
+                  title="Задолженность мастеров"
+                  value={formatCurrency(stats.totalDebt)}
                   subtitle="Ожидает оплаты"
                   icon={TrendingUp}
                 />
               </div>
 
-              {/* Secondary Grid */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Leads & Orders summary */}
                 <div className="lg:col-span-2 bg-card rounded-2xl border border-border/50 shadow-sm p-6">
                   <h3 className="font-display font-semibold text-lg mb-6">Воронка заявок</h3>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -105,13 +117,12 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                {/* Top Masters */}
                 <div className="bg-card rounded-2xl border border-border/50 shadow-sm p-6 flex flex-col">
                   <div className="flex items-center justify-between mb-6">
                     <h3 className="font-display font-semibold text-lg">Топ мастеров</h3>
                     <Users className="w-5 h-5 text-muted-foreground" />
                   </div>
-                  <div className="flex-1 space-y-4">
+                  <div className="flex-1 space-y-3">
                     {stats.topMasters.length > 0 ? stats.topMasters.map((master, i) => (
                       <div key={master.id} className="flex items-center justify-between p-3 rounded-xl bg-background border border-border/50 hover:border-primary/30 transition-colors">
                         <div className="flex items-center gap-3">

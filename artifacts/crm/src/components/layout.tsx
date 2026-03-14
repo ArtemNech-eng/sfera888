@@ -33,6 +33,7 @@ export function Layout({ children }: LayoutProps) {
 
   const { data: unreadData } = useQuery<{ count: number }>({
     queryKey: ["/api/master-chat/stats/unread"],
+    queryFn: () => fetch("/api/master-chat/stats/unread", { credentials: "include" }).then(r => r.json()),
     enabled: !!canSeeChat,
     refetchInterval: 10_000,
   });

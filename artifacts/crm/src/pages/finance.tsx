@@ -1,16 +1,21 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Layout } from "@/components/layout";
 import { useGetTransactions, useGetFinanceSummary, useUpdateTransaction, TransactionPaymentStatus } from "@workspace/api-client-react";
 import { ProtectedRoute } from "@/hooks/use-auth";
 import { StatusBadge } from "@/components/status-badge";
 import { formatDate, formatCurrency } from "@/lib/utils";
-import { Loader2, CheckCircle2, TrendingDown, TrendingUp, AlertCircle } from "lucide-react";
+import { Loader2, CheckCircle2, TrendingDown, TrendingUp, AlertCircle, Search, X } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+
+type StatusFilter = "all" | "pending" | "overdue" | "paid";
 
 export default function Finance() {
   const queryClient = useQueryClient();
   const { data: summary } = useGetFinanceSummary();
   const { data: transactions, isLoading } = useGetTransactions();
+
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
   const updateMutation = useUpdateTransaction({
     mutation: {
@@ -22,11 +27,30 @@ export default function Finance() {
   });
 
   const handleMarkPaid = (id: number) => {
-    updateMutation.mutate({ 
-      id, 
-      data: { paymentStatus: TransactionPaymentStatus.paid } 
-    });
+    updateMutation.mutate({ id, data: { paymentStatus: TransactionPaymentStatus.paid } });
   };
+
+  const filtered = useMemo(() => {
+    if (!transactions) return [];
+    let list = [...transactions];
+    if (statusFilter !== "all") list = list.filter(t => t.paymentStatus === statusFilter);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(t =>
+        t.masterAlias.toLowerCase().includes(q) ||
+        `tx-${t.id}`.includes(q) ||
+        String(t.orderId).includes(q)
+      );
+    }
+    return list;
+  }, [transactions, statusFilter, search]);
+
+  const STATUS_TABS: { key: StatusFilter; label: string }[] = [
+    { key: "all", label: "Все" },
+    { key: "pending", label: "Ожидают" },
+    { key: "overdue", label: "Просрочено" },
+    { key: "paid", label: "Оплачено" },
+  ];
 
   return (
     <ProtectedRoute allowedRoles={['admin']}>
@@ -41,15 +65,19 @@ export default function Finance() {
             <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl p-6 text-white shadow-lg shadow-emerald-500/20">
               <div className="flex justify-between items-start mb-4">
                 <p className="text-emerald-50 font-medium">Общий доход</p>
-                <div className="p-2 bg-white/20 rounded-xl backdrop-blur-sm"><TrendingUp className="w-5 h-5 text-white" /></div>
+                <div className="p-2 bg-white/20 rounded-xl backdrop-blur-sm">
+                  <TrendingUp className="w-5 h-5 text-white" />
+                </div>
               </div>
               <h2 className="text-3xl font-display font-bold">{formatCurrency(summary?.totalIncome || 0)}</h2>
             </div>
-            
+
             <div className="bg-gradient-to-br from-destructive to-red-600 rounded-2xl p-6 text-white shadow-lg shadow-red-500/20">
               <div className="flex justify-between items-start mb-4">
                 <p className="text-red-50 font-medium">Ожидает оплаты (Долг)</p>
-                <div className="p-2 bg-white/20 rounded-xl backdrop-blur-sm"><TrendingDown className="w-5 h-5 text-white" /></div>
+                <div className="p-2 bg-white/20 rounded-xl backdrop-blur-sm">
+                  <TrendingDown className="w-5 h-5 text-white" />
+                </div>
               </div>
               <h2 className="text-3xl font-display font-bold">{formatCurrency(summary?.totalDebt || 0)}</h2>
             </div>
@@ -58,15 +86,21 @@ export default function Finance() {
               <p className="text-muted-foreground font-medium mb-4">Статистика транзакций</p>
               <div className="space-y-3">
                 <div className="flex justify-between items-center text-sm">
-                  <span className="text-emerald-600 font-medium flex items-center gap-2"><CheckCircle2 className="w-4 h-4"/> Оплачено</span>
+                  <span className="text-emerald-600 font-medium flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4" /> Оплачено
+                  </span>
                   <span className="font-bold">{summary?.paidCount || 0}</span>
                 </div>
                 <div className="flex justify-between items-center text-sm">
-                  <span className="text-amber-600 font-medium flex items-center gap-2"><AlertCircle className="w-4 h-4"/> Ожидают</span>
+                  <span className="text-amber-600 font-medium flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4" /> Ожидают
+                  </span>
                   <span className="font-bold">{summary?.pendingCount || 0}</span>
                 </div>
                 <div className="flex justify-between items-center text-sm">
-                  <span className="text-red-600 font-medium flex items-center gap-2"><AlertCircle className="w-4 h-4"/> Просрочено</span>
+                  <span className="text-red-600 font-medium flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4" /> Просрочено
+                  </span>
                   <span className="font-bold">{summary?.overdueCount || 0}</span>
                 </div>
               </div>
@@ -74,9 +108,41 @@ export default function Finance() {
           </div>
 
           <div className="bg-card rounded-2xl border border-border/50 shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-border/50">
-              <h3 className="font-display font-semibold text-lg">Последние транзакции</h3>
+            <div className="p-4 border-b border-border/50 flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+              <h3 className="font-display font-semibold text-lg">Транзакции</h3>
+              <div className="flex gap-2 flex-wrap w-full sm:w-auto">
+                <div className="relative flex-1 sm:flex-none sm:w-56">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                  <input
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    placeholder="Мастер, TX-ID, заказ..."
+                    className="w-full pl-9 pr-8 py-2 text-sm bg-background border border-border/60 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                  {search && (
+                    <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+                <div className="flex rounded-xl border border-border/60 overflow-hidden bg-background text-sm">
+                  {STATUS_TABS.map(tab => (
+                    <button
+                      key={tab.key}
+                      onClick={() => setStatusFilter(tab.key)}
+                      className={`px-3 py-2 font-medium transition-colors ${
+                        statusFilter === tab.key
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
+
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
                 <thead className="bg-slate-50/50 text-muted-foreground font-medium border-b border-border/50">
@@ -96,7 +162,13 @@ export default function Finance() {
                         <Loader2 className="w-6 h-6 animate-spin text-primary mx-auto" />
                       </td>
                     </tr>
-                  ) : transactions?.map((tx) => (
+                  ) : filtered.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-12 text-center text-muted-foreground text-sm">
+                        {search || statusFilter !== "all" ? "Ничего не найдено" : "Нет транзакций"}
+                      </td>
+                    </tr>
+                  ) : filtered.map((tx) => (
                     <tr key={tx.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="px-6 py-4">
                         <span className="font-medium text-foreground">TX-{tx.id}</span>
@@ -124,6 +196,12 @@ export default function Finance() {
                 </tbody>
               </table>
             </div>
+
+            {!isLoading && filtered.length > 0 && (
+              <div className="px-6 py-3 border-t border-border/50 text-xs text-muted-foreground">
+                Показано {filtered.length} из {transactions?.length ?? 0} транзакций
+              </div>
+            )}
           </div>
         </div>
       </Layout>

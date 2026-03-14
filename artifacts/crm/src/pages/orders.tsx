@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useLocation } from "wouter";
 import { Layout } from "@/components/layout";
 import { useGetOrders, OrderStatus } from "@workspace/api-client-react";
@@ -7,7 +7,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { formatDate } from "@/lib/utils";
 import {
   Loader2, MapPin, Send, Users, CheckCircle2, Clock, X, UserCheck,
-  DollarSign, Check, Pencil, AlertCircle, MessageSquare, Trash2,
+  DollarSign, Check, Pencil, AlertCircle, MessageSquare, Trash2, Search,
 } from "lucide-react";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -48,6 +48,7 @@ export default function Orders() {
   const [openDispatchId, setOpenDispatchId] = useState<number | null>(null);
   const [editAmountId, setEditAmountId] = useState<number | null>(null);
   const [editAmountValue, setEditAmountValue] = useState("");
+  const [search, setSearch] = useState("");
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -173,6 +174,20 @@ export default function Orders() {
   const pendingAmountOrders = orders?.filter(o => (o as any).proposedAmount && !(o as any).orderAmount) ?? [];
   const cancellationOrders = orders?.filter(o => o.status === "cancellation_requested" as any) ?? [];
   const pendingResponseOrders = pendingDispatches ?? [];
+
+  const filteredOrders = useMemo(() => {
+    if (!orders) return [];
+    if (!search.trim()) return orders;
+    const q = search.toLowerCase();
+    return orders.filter(o =>
+      String(o.id).includes(q) ||
+      o.city?.toLowerCase().includes(q) ||
+      (o as any).district?.toLowerCase().includes(q) ||
+      o.serviceType?.toLowerCase().includes(q) ||
+      o.masterName?.toLowerCase().includes(q) ||
+      o.clientPhone?.toLowerCase().includes(q)
+    );
+  }, [orders, search]);
 
   return (
     <ProtectedRoute allowedRoles={['admin', 'master_operator']}>
@@ -307,6 +322,27 @@ export default function Orders() {
           )}
 
           <div className="bg-card rounded-2xl border border-border/50 shadow-sm overflow-hidden">
+            <div className="p-4 border-b border-border/50 flex items-center gap-3">
+              <div className="relative flex-1 max-w-xs">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                <input
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Поиск: ID, город, услуга, мастер..."
+                  className="w-full pl-9 pr-8 py-2 text-sm bg-background border border-border/60 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+                {search && (
+                  <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              {!isLoading && (
+                <span className="text-xs text-muted-foreground ml-auto">
+                  {filteredOrders.length} {filteredOrders.length === 1 ? "заказ" : "заказов"}
+                </span>
+              )}
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
                 <thead className="bg-slate-50/50 text-muted-foreground font-medium border-b border-border/50">
@@ -327,13 +363,13 @@ export default function Orders() {
                         <Loader2 className="w-6 h-6 animate-spin text-primary mx-auto" />
                       </td>
                     </tr>
-                  ) : orders?.length === 0 ? (
+                  ) : filteredOrders.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="px-6 py-12 text-center text-muted-foreground">
-                        Заказов в буфере нет
+                        {search ? "Ничего не найдено" : "Заказов в буфере нет"}
                       </td>
                     </tr>
-                  ) : orders?.map((order) => {
+                  ) : filteredOrders.map((order) => {
                     const ds = (order as any).dispatchStatus ?? "none";
                     const proposed = (order as any).proposedAmount ? Number((order as any).proposedAmount) : null;
                     const confirmed = (order as any).orderAmount ? Number((order as any).orderAmount) : null;
