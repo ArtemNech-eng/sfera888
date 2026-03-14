@@ -613,8 +613,9 @@ async function handleStart(from: any, chatId: string) {
     if (col[0]) colName = col[0].name;
   }
 
-  await sendMessage(
+  await sendBanner(
     chatId,
+    "welcome",
     `✅ <b>Добро пожаловать обратно, ${master.alias}!</b>\n\n` +
     `🏙️ Город: <b>${master.city}</b>\n` +
     `📍 Статус: <b>${colName}</b>\n` +
