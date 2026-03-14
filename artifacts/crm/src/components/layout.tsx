@@ -14,6 +14,7 @@ import {
   Menu,
   MessageCircle,
   MessagesSquare,
+  Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -48,6 +49,7 @@ export function Layout({ children }: LayoutProps) {
     { href: "/analytics", label: "Аналитика", icon: BarChart3, roles: ['admin'] },
     { href: "/settings", label: "Настройки", icon: Settings, roles: ['admin'] },
     { href: "/users", label: "Пользователи", icon: UserCog, roles: ['admin'] },
+    { href: "/trash", label: "Корзина", icon: Trash2, roles: ['admin'] },
   ];
 
   const filteredNav = navItems.filter(item => user && item.roles.includes(user.role));
