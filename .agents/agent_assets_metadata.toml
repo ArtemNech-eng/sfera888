@@ -5,7 +5,7 @@ generated = []
 id = "wqwBA_AQtVRvGnFns1FfF"
 uri = "file://artifacts/api-server/public/banners/welcome.png"
 type = "image"
-title = "Баннер: приветствие / регистрация"
+title = "Баннер: Добро пожаловать!"
 
 [[outputs]]
 id = "tZxV8mGgxTgCEggjiMZag"
@@ -17,4 +17,4 @@ title = "Баннер: Новый заказ"
 id = "aVIxXRbrmQZiADi4MWxC4"
 uri = "file://artifacts/api-server/public/banners/order_assigned.png"
 type = "image"
-title = "Баннер: заказ назначен мастеру"
+title = "Баннер: Заказ назначен!"
