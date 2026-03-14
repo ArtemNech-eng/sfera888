@@ -1172,9 +1172,11 @@ router.post("/webhook", async (req, res) => {
 
       await sendMessage(chatId,
         `✅ <b>Заказ #${orderId} завершён!</b>\n\n` +
-        `💰 Сумма <b>${amount.toLocaleString("ru-RU")} ₽</b> отправлена оператору на проверку.\n` +
-        `🔸 Комиссия (предварительно): <b>${autoCommission.toLocaleString("ru-RU")} ₽</b>\n\n` +
-        `После подтверждения оператором комиссия будет начислена.\n\nВаш новый статус: <b>${freeCol?.name ?? "Свободен"}</b>`,
+        `💰 Указанная сумма: <b>${amount.toLocaleString("ru-RU")} ₽</b>\n` +
+        `🔸 Предварительная комиссия: <b>${autoCommission.toLocaleString("ru-RU")} ₽</b>\n\n` +
+        `⏳ <b>Сумма отправлена на модерацию.</b>\n` +
+        `Оператор проверит и подтвердит её — после этого комиссия будет начислена.\n\n` +
+        `Ваш новый статус: <b>${freeCol?.name ?? "Свободен"}</b>`,
         mainMenuKeyboard()
       );
       return;
