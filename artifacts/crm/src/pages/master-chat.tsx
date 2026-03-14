@@ -11,6 +11,7 @@ interface Thread {
   alias: string;
   city: string;
   telegramId: string | null;
+  avatarUrl: string | null;
   lastMessage: string;
   lastAt: string;
   unread: number;
@@ -29,8 +30,29 @@ interface Message {
 }
 
 interface ConversationData {
-  master: { id: number; alias: string; city: string; telegramId: string | null };
+  master: { id: number; alias: string; city: string; telegramId: string | null; avatarUrl: string | null };
   messages: Message[];
+}
+
+// Inline avatar — falls back to coloured initials
+function ChatAvatar({ name, id, avatarUrl, size = 32 }: { name: string; id: number; avatarUrl?: string | null; size?: number }) {
+  const [failed, setFailed] = useState(false);
+  const PALLETE = ["#6366f1","#8b5cf6","#ec4899","#f43f5e","#f97316","#eab308","#22c55e","#14b8a6","#0ea5e9","#3b82f6"];
+  const bg = PALLETE[id % PALLETE.length];
+  const initials = name.split(" ").map(w => w[0] ?? "").join("").slice(0, 2).toUpperCase() || "?";
+  if (avatarUrl && !failed) {
+    return (
+      <img src={avatarUrl} alt={name} onError={() => setFailed(true)}
+        style={{ width: size, height: size }}
+        className="rounded-full object-cover flex-shrink-0" />
+    );
+  }
+  return (
+    <div style={{ width: size, height: size, background: bg, fontSize: size * 0.36 }}
+      className="rounded-full flex items-center justify-center text-white font-bold flex-shrink-0">
+      {initials}
+    </div>
+  );
 }
 
 function timeAgo(dateStr: string) {
@@ -170,24 +192,27 @@ export default function MasterChat() {
                   <button
                     key={t.masterId}
                     onClick={() => setSelectedId(t.masterId)}
-                    className={`w-full text-left px-4 py-3 border-b border-gray-50 hover:bg-gray-50 transition-colors ${
+                    className={`w-full text-left px-3 py-2.5 border-b border-gray-50 hover:bg-gray-50 transition-colors ${
                       selectedId === t.masterId ? "bg-blue-50 border-l-2 border-l-blue-500" : ""
                     }`}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-semibold text-sm text-gray-800 truncate">{t.alias}</span>
-                          {t.unread > 0 && (
-                            <span className="flex-shrink-0 bg-blue-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
-                              {t.unread > 9 ? "9+" : t.unread}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[11px] text-gray-400 mt-0.5">{t.city}</p>
-                        <p className="text-xs text-gray-500 mt-1 truncate">{t.lastMessage}</p>
+                    <div className="flex items-center gap-2.5">
+                      <div className="relative flex-shrink-0">
+                        <ChatAvatar name={t.alias} id={t.masterId} avatarUrl={t.avatarUrl} size={36} />
+                        {t.unread > 0 && (
+                          <span className="absolute -top-0.5 -right-0.5 bg-blue-500 text-white text-[9px] font-bold rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5">
+                            {t.unread > 9 ? "9+" : t.unread}
+                          </span>
+                        )}
                       </div>
-                      <span className="text-[10px] text-gray-300 flex-shrink-0 mt-0.5">{timeAgo(t.lastAt)}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className={`font-semibold text-sm truncate ${t.unread > 0 ? "text-gray-900" : "text-gray-700"}`}>{t.alias}</span>
+                          <span className="text-[10px] text-gray-300 flex-shrink-0">{timeAgo(t.lastAt)}</span>
+                        </div>
+                        <p className="text-[11px] text-gray-400 truncate">{t.city}</p>
+                        <p className={`text-xs mt-0.5 truncate ${t.unread > 0 ? "text-gray-700 font-medium" : "text-gray-400"}`}>{t.lastMessage}</p>
+                      </div>
                     </div>
                   </button>
                 ))}
@@ -206,71 +231,65 @@ export default function MasterChat() {
                 <>
                   {/* Conv header */}
                   {conv && (
-                    <div className="px-5 py-3.5 border-b border-gray-50 flex items-center gap-3 flex-shrink-0">
-                      <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs font-bold">
-                        {conv.master.alias.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()}
-                      </div>
+                    <div className="px-4 py-3 border-b border-gray-50 flex items-center gap-3 flex-shrink-0">
+                      <ChatAvatar name={conv.master.alias} id={conv.master.id} avatarUrl={conv.master.avatarUrl} size={38} />
                       <div>
                         <p className="font-semibold text-sm text-gray-800">{conv.master.alias}</p>
                         <p className="text-[11px] text-gray-400">
                           {conv.master.city}
-                          {conv.master.telegramId && <span className="ml-1 text-blue-400">· TG: {conv.master.telegramId}</span>}
+                          {conv.master.telegramId && <span className="ml-1 text-blue-400">· Telegram</span>}
                         </p>
                       </div>
                     </div>
                   )}
 
                   {/* Messages */}
-                  <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                    {conv?.messages.map(msg => (
-                      <div key={msg.id} className={`flex ${msg.fromMaster ? "justify-start" : "justify-end"}`}>
-                        <div className={`max-w-[70%] rounded-2xl px-4 py-2.5 ${
-                          msg.fromMaster
-                            ? "bg-gray-100 text-gray-800 rounded-tl-sm"
-                            : "bg-blue-500 text-white rounded-tr-sm"
-                        }`}>
-                          {/* Sender label */}
-                          <p className={`text-[10px] font-semibold mb-1 ${
-                            msg.fromMaster ? "text-gray-500" : "text-blue-100"
-                          }`}>
-                            {msg.senderName ?? (msg.fromMaster ? "Мастер" : "Оператор")}
-                          </p>
-
-                          {/* Photo */}
-                          {msg.photoUrl && (
-                            <a href={msg.photoUrl} target="_blank" rel="noopener noreferrer" className="block mb-2">
-                              <img
-                                src={msg.photoUrl}
-                                alt="фото"
-                                className="rounded-xl max-w-full max-h-52 object-cover cursor-zoom-in"
-                                onError={e => {
-                                  (e.target as HTMLImageElement).style.display = "none";
-                                  (e.target as HTMLImageElement).nextElementSibling?.classList.remove("hidden");
-                                }}
-                              />
-                              <div className="hidden flex items-center gap-1 text-xs opacity-70 mt-1">
-                                <Image className="w-3 h-3" /> Фото (открыть)
-                              </div>
-                            </a>
+                  <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
+                    {conv?.messages.map(msg => {
+                      const isMaster = msg.fromMaster;
+                      const senderLabel = msg.senderName ?? (isMaster ? conv.master.alias : "Оператор");
+                      return (
+                        <div key={msg.id} className={`flex items-end gap-2 ${isMaster ? "justify-start" : "justify-end"}`}>
+                          {/* Master avatar — left */}
+                          {isMaster && (
+                            <ChatAvatar name={conv.master.alias} id={conv.master.id} avatarUrl={conv.master.avatarUrl} size={28} />
                           )}
-
-                          {/* Text */}
-                          {msg.text && <p className="text-sm leading-relaxed">{msg.text}</p>}
-
-                          {/* Timestamp */}
-                          <div className={`flex items-center gap-1 mt-1 ${msg.fromMaster ? "justify-start" : "justify-end"}`}>
-                            <span className={`text-[10px] ${msg.fromMaster ? "text-gray-400" : "text-blue-100"}`}>
-                              {timeStamp(msg.createdAt)}
-                            </span>
-                            {!msg.fromMaster && (
-                              msg.isRead
+                          {/* Bubble */}
+                          <div className={`max-w-[70%] rounded-2xl px-3.5 py-2.5 ${
+                            isMaster
+                              ? "bg-gray-100 text-gray-800 rounded-bl-sm"
+                              : "bg-blue-500 text-white rounded-br-sm"
+                          }`}>
+                            <p className={`text-[10px] font-semibold mb-1 ${isMaster ? "text-gray-500" : "text-blue-100"}`}>
+                              {senderLabel}
+                            </p>
+                            {msg.photoUrl && (
+                              <a href={msg.photoUrl} target="_blank" rel="noopener noreferrer" className="block mb-2">
+                                <img
+                                  src={msg.photoUrl} alt="фото"
+                                  className="rounded-xl max-w-full max-h-52 object-cover cursor-zoom-in"
+                                  onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
+                                />
+                              </a>
+                            )}
+                            {msg.text && <p className="text-sm leading-relaxed">{msg.text}</p>}
+                            <div className={`flex items-center gap-1 mt-1 ${isMaster ? "justify-start" : "justify-end"}`}>
+                              <span className={`text-[10px] ${isMaster ? "text-gray-400" : "text-blue-100"}`}>
+                                {timeStamp(msg.createdAt)}
+                              </span>
+                              {!isMaster && (msg.isRead
                                 ? <CheckCheck className="w-3 h-3 text-blue-200" />
                                 : <Check className="w-3 h-3 text-blue-200" />
-                            )}
+                              )}
+                            </div>
                           </div>
+                          {/* Operator avatar — right */}
+                          {!isMaster && (
+                            <ChatAvatar name={senderLabel} id={0} size={28} />
+                          )}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                     {conv?.messages.length === 0 && (
                       <div className="text-center text-sm text-gray-300 mt-8">Нет сообщений</div>
                     )}

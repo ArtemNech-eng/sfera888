@@ -340,25 +340,42 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
               <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
                 {!chatLoaded && <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"/></div>}
                 {chatLoaded && chatMessages.length === 0 && <div className="text-center text-sm text-gray-300 mt-8">Нет сообщений</div>}
-                {chatMessages.map(msg => (
-                  <div key={msg.id} className={`flex ${msg.fromMaster ? "justify-start" : "justify-end"}`}>
-                    <div className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 ${msg.fromMaster ? "bg-gray-100 text-gray-800 rounded-tl-sm" : "bg-blue-500 text-white rounded-tr-sm"}`}>
-                      <p className={`text-[10px] font-semibold mb-1 ${msg.fromMaster ? "text-gray-500" : "text-blue-100"}`}>
-                        {msg.senderName ?? (msg.fromMaster ? "Мастер" : "Оператор")}
-                      </p>
-                      {msg.photoUrl && (
-                        <a href={msg.photoUrl} target="_blank" rel="noopener noreferrer" className="block mb-1.5">
-                          <img src={msg.photoUrl} alt="фото" className="rounded-xl max-w-full max-h-40 object-cover" />
-                        </a>
+                {chatMessages.map(msg => {
+                  const isMaster = msg.fromMaster;
+                  const senderLabel = msg.senderName ?? (isMaster ? master.alias : "Оператор");
+                  return (
+                    <div key={msg.id} className={`flex items-end gap-2 ${isMaster ? "justify-start" : "justify-end"}`}>
+                      {/* Master avatar — left side */}
+                      {isMaster && (
+                        <div className="flex-shrink-0 self-end">
+                          <Avatar name={master.alias} id={master.id} avatarUrl={master.avatarUrl} size={26} />
+                        </div>
                       )}
-                      {msg.text && <p className="text-xs leading-relaxed">{msg.text}</p>}
-                      <div className={`flex items-center gap-1 mt-1 ${msg.fromMaster ? "justify-start" : "justify-end"}`}>
-                        <span className={`text-[9px] ${msg.fromMaster ? "text-gray-400" : "text-blue-100"}`}>{ts(msg.createdAt)}</span>
-                        {!msg.fromMaster && (msg.isRead ? <CheckCheck className="w-2.5 h-2.5 text-blue-200" /> : <Check className="w-2.5 h-2.5 text-blue-200" />)}
+                      {/* Bubble */}
+                      <div className={`max-w-[78%] rounded-2xl px-3 py-2 ${isMaster ? "bg-gray-100 text-gray-800 rounded-bl-sm" : "bg-blue-500 text-white rounded-br-sm"}`}>
+                        <p className={`text-[10px] font-semibold mb-1 ${isMaster ? "text-gray-500" : "text-blue-100"}`}>
+                          {senderLabel}
+                        </p>
+                        {msg.photoUrl && (
+                          <a href={msg.photoUrl} target="_blank" rel="noopener noreferrer" className="block mb-1.5">
+                            <img src={msg.photoUrl} alt="фото" className="rounded-xl max-w-full max-h-40 object-cover" />
+                          </a>
+                        )}
+                        {msg.text && <p className="text-xs leading-relaxed">{msg.text}</p>}
+                        <div className={`flex items-center gap-1 mt-1 ${isMaster ? "justify-start" : "justify-end"}`}>
+                          <span className={`text-[9px] ${isMaster ? "text-gray-400" : "text-blue-100"}`}>{ts(msg.createdAt)}</span>
+                          {!isMaster && (msg.isRead ? <CheckCheck className="w-2.5 h-2.5 text-blue-200" /> : <Check className="w-2.5 h-2.5 text-blue-200" />)}
+                        </div>
                       </div>
+                      {/* Operator avatar — right side */}
+                      {!isMaster && (
+                        <div className="flex-shrink-0 self-end">
+                          <Avatar name={senderLabel} id={0} size={26} />
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
                 <div ref={chatBottomRef} />
               </div>
               {photoPreview && (

@@ -74,6 +74,7 @@ router.get("/", requireRole("admin", "master_operator"), async (_req, res) => {
       alias: master?.alias ?? "Неизвестный мастер",
       city: master?.city ?? "",
       telegramId: master?.telegramId ?? null,
+      avatarUrl: master?.avatarUrl ?? null,
       lastMessage: info.lastMessage,
       lastAt: info.lastAt,
       unread: info.unread,
@@ -104,7 +105,7 @@ router.get("/:masterId", requireRole("admin", "master_operator"), async (req, re
   if (!master) return res.status(404).json({ error: "Master not found" });
 
   res.json({
-    master: { id: master.id, alias: master.alias, city: master.city, telegramId: master.telegramId },
+    master: { id: master.id, alias: master.alias, city: master.city, telegramId: master.telegramId, avatarUrl: master.avatarUrl ?? null },
     messages,
   });
 });
