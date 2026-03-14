@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 interface LayoutProps {
   children: ReactNode;
@@ -27,10 +28,19 @@ export function Layout({ children }: LayoutProps) {
   const [location] = useLocation();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
+  const canSeeChat = user && ['admin', 'master_operator'].includes(user.role);
+
+  const { data: unreadData } = useQuery<{ count: number }>({
+    queryKey: ["/api/master-chat/stats/unread"],
+    enabled: !!canSeeChat,
+    refetchInterval: 30_000,
+  });
+  const unreadCount = unreadData?.count ?? 0;
+
   const navItems = [
     { href: "/", label: "Дашборд", icon: LayoutDashboard, roles: ['admin'] },
     { href: "/voronka", label: "Воронка Telegram", icon: MessageCircle, roles: ['admin', 'lead_operator', 'master_operator'] },
-    { href: "/master-chat", label: "Чат с мастерами", icon: MessagesSquare, roles: ['admin', 'master_operator'] },
+    { href: "/master-chat", label: "Чат с мастерами", icon: MessagesSquare, roles: ['admin', 'master_operator'], badge: unreadCount > 0 ? unreadCount : null },
     { href: "/leads", label: "Заявки", icon: Inbox, roles: ['admin', 'lead_operator'] },
     { href: "/orders", label: "Буфер заказов", icon: Briefcase, roles: ['admin', 'master_operator'] },
     { href: "/masters", label: "Мастера", icon: Users, roles: ['admin', 'master_operator'] },
@@ -66,8 +76,13 @@ export function Layout({ children }: LayoutProps) {
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
                 )}
               >
-                <item.icon className={cn("w-5 h-5", isActive ? "text-primary" : "text-sidebar-foreground/50")} />
-                {item.label}
+                <item.icon className={cn("w-5 h-5 shrink-0", isActive ? "text-primary" : "text-sidebar-foreground/50")} />
+                <span className="flex-1 truncate">{item.label}</span>
+                {'badge' in item && item.badge != null && (
+                  <span className="ml-auto min-w-[20px] h-5 px-1.5 flex items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[11px] font-bold leading-none">
+                    {item.badge > 99 ? '99+' : item.badge}
+                  </span>
+                )}
               </Link>
             );
           })}
@@ -99,8 +114,11 @@ export function Layout({ children }: LayoutProps) {
             <div className="h-8 w-8 bg-primary rounded-lg flex items-center justify-center text-primary-foreground font-display font-bold">R</div>
             <span className="font-display font-bold text-lg">RepairCRM</span>
           </div>
-          <button onClick={() => setIsMobileOpen(!isMobileOpen)} className="p-2">
+          <button onClick={() => setIsMobileOpen(!isMobileOpen)} className="p-2 relative">
             <Menu className="w-6 h-6" />
+            {unreadCount > 0 && (
+              <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-destructive rounded-full" />
+            )}
           </button>
         </header>
 
@@ -120,8 +138,13 @@ export function Layout({ children }: LayoutProps) {
                       isActive ? "bg-primary text-primary-foreground" : "bg-card text-foreground"
                     )}
                   >
-                    <item.icon className="w-5 h-5" />
-                    {item.label}
+                    <item.icon className="w-5 h-5 shrink-0" />
+                    <span className="flex-1">{item.label}</span>
+                    {'badge' in item && item.badge != null && (
+                      <span className="min-w-[22px] h-5 px-1.5 flex items-center justify-center rounded-full bg-destructive text-white text-[11px] font-bold">
+                        {item.badge > 99 ? '99+' : item.badge}
+                      </span>
+                    )}
                   </Link>
                 );
               })}
