@@ -758,6 +758,22 @@ async function handleCallback(callbackQuery: any) {
       return;
     }
 
+    // Check active order limit — master may have taken another order since broadcast
+    const activeOrders = await db.select().from(ordersTable)
+      .where(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
+    const myActiveCount = activeOrders.filter(o => o.masterId === master.id).length;
+    const limit = master.isTestMaster ? 1 : 2;
+    if (myActiveCount >= limit) {
+      await answerCallback(cbId, `⛔ У вас уже ${myActiveCount} из ${limit} активных заказов`);
+      const busyCard =
+        `📋 <b>Заявка #${orderId}</b>\n\n` +
+        `🔧 Услуга: ${order.serviceType}\n📍 Район: ${order.city}${order.district ? ", " + order.district : ""}\n\n` +
+        `⛔ <b>Вы достигли лимита активных заказов (${myActiveCount}/${limit}).</b>\n` +
+        `<i>После оплаты комиссии и завершения заказов вы сможете брать новые.</i>`;
+      await editMessage(chatId, messageId, busyCard, { reply_markup: { inline_keyboard: [] } });
+      return;
+    }
+
     // Mark responded
     await db.update(orderDispatchesTable).set({
       status: "responded",

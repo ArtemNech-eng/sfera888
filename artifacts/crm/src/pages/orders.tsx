@@ -195,7 +195,12 @@ export default function Orders() {
                       <p className="text-sm text-red-500">{(broadcastMutation.error as Error).message}</p>
                     )}
                     {broadcastMutation.isSuccess && (
-                      <p className="text-sm text-green-600">✅ Разослано {broadcastMutation.data?.sent} мастерам</p>
+                      <div className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl p-3 space-y-0.5">
+                        <p>✅ Разослано: <b>{broadcastMutation.data?.sent}</b> мастеров</p>
+                        {broadcastMutation.data?.skipped > 0 && (
+                          <p className="text-muted-foreground text-xs">⏭ Пропущено {broadcastMutation.data.skipped} — достигли лимита заказов или не оплатили комиссию</p>
+                        )}
+                      </div>
                     )}
                     <button
                       onClick={() => broadcastMutation.mutate(openDispatchId)}

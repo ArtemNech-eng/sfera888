@@ -95,12 +95,27 @@ router.post("/:orderId/broadcast", ops, async (req, res) => {
     return res.status(400).json({ error: "Already dispatched" });
   }
 
-  // Find eligible masters: active, with telegramId, matching city
+  // Find eligible masters: active, with telegramId
   const allMasters = await db.select().from(mastersTable).where(eq(mastersTable.status, "active"));
-  const eligible = allMasters.filter(m => m.telegramId);
+  const withTg = allMasters.filter(m => m.telegramId);
+
+  if (withTg.length === 0) {
+    return res.status(400).json({ error: "Нет доступных мастеров" });
+  }
+
+  // Load all active orders to check per-master limits
+  const activeOrders = await db.select().from(ordersTable)
+    .where(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
+
+  // Filter out masters who have reached their order limit
+  const eligible = withTg.filter(master => {
+    const myActiveCount = activeOrders.filter(o => o.masterId === master.id).length;
+    const limit = master.isTestMaster ? 1 : 2;
+    return myActiveCount < limit;
+  });
 
   if (eligible.length === 0) {
-    return res.status(400).json({ error: "Нет доступных мастеров" });
+    return res.status(400).json({ error: "Все мастера заняты или превысили лимит заказов" });
   }
 
   const cardText = buildOrderCard(order, orderId);
@@ -109,8 +124,15 @@ router.post("/:orderId/broadcast", ops, async (req, res) => {
   };
 
   let sent = 0;
-  for (const master of eligible) {
+  let skipped = 0;
+  for (const master of withTg) {
     if (!master.telegramId) continue;
+    const myActiveCount = activeOrders.filter(o => o.masterId === master.id).length;
+    const limit = master.isTestMaster ? 1 : 2;
+    if (myActiveCount >= limit) {
+      skipped++;
+      continue;
+    }
     const msgId = await sendTg(master.telegramId, cardText, replyMarkup);
     await db.insert(orderDispatchesTable).values({
       orderId,
@@ -124,7 +146,7 @@ router.post("/:orderId/broadcast", ops, async (req, res) => {
 
   await db.update(ordersTable).set({ dispatchStatus: "dispatching", updatedAt: new Date() }).where(eq(ordersTable.id, orderId));
 
-  res.json({ ok: true, sent });
+  res.json({ ok: true, sent, skipped });
 });
 
 // ─── POST /api/dispatch/:orderId/assign/:masterId ──────────────────────────────
