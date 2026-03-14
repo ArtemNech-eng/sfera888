@@ -333,12 +333,7 @@ async function askPhone(chatId: string, masterId: number) {
 async function askPhoto(chatId: string, masterId: number) {
   pendingState.set(chatId, { step: "awaiting_photo", masterId });
   await sendMessage(chatId,
-    `✅ Телефон сохранён!\n\n<b>Шаг 5 из 5</b> 🤳\n\nОтправьте ваше фото — оно будет отображаться в CRM системе рядом с вашим именем.\n\nЕсли не хотите добавлять фото — нажмите «Пропустить»:`,
-    {
-      reply_markup: {
-        inline_keyboard: [[{ text: "⏭ Пропустить", callback_data: "skip_photo" }]],
-      },
-    }
+    `✅ Телефон сохранён!\n\n<b>Шаг 5 из 5</b> 🤳\n\nОтправьте ваше фото — оно будет отображаться в CRM системе рядом с вашим именем.\n\n<i>Загрузите фото из галереи или сделайте снимок прямо сейчас.</i>`
   );
 }
 
@@ -558,18 +553,6 @@ async function handleCallback(callbackQuery: any) {
     await db.update(mastersTable).set({ phone }).where(eq(mastersTable.id, masterId));
     await editMessage(chatId, messageId, `📱 Телефон <b>${phone}</b> сохранён.`);
     await askPhoto(chatId, masterId);
-    return;
-  }
-
-  if (data === "skip_photo") {
-    const state = pendingState.get(chatId);
-    const masterId = state?.masterId ?? master.id;
-    pendingState.delete(chatId);
-    await answerCallback(cbId, "⏭ Фото пропущено");
-    // Fetch fresh master
-    const freshRows = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
-    const fresh = freshRows[0] ?? master;
-    await completeRegistration(chatId, { alias: fresh.alias, city: fresh.city, phone: fresh.phone ?? null });
     return;
   }
 
@@ -869,10 +852,9 @@ router.post("/webhook", async (req, res) => {
         return;
       }
 
-      // Text received instead of photo — prompt again or skip
+      // Text received instead of photo — prompt again
       await sendMessage(chatId,
-        `📸 Пожалуйста, отправьте фотографию (не файл, а именно фото).\n\nЕсли не хотите добавлять — нажмите «Пропустить»:`,
-        { reply_markup: { inline_keyboard: [[{ text: "⏭ Пропустить", callback_data: "skip_photo" }]] } }
+        `📸 Необходимо отправить фотографию.\n\nЗагрузите фото из галереи или сделайте снимок — без фото регистрация не завершится.`
       );
       return;
     }
