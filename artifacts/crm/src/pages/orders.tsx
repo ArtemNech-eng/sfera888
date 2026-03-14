@@ -225,28 +225,39 @@ export default function Orders() {
                   : `${pendingResponseOrders.length} заявки — есть отклики от мастеров`}
               </div>
               {pendingResponseOrders.map(item => (
-                <div key={item.orderId} className="flex items-center justify-between bg-white rounded-xl border border-blue-100 px-4 py-3">
-                  <div>
-                    <span className="font-medium text-foreground">#{item.orderId}</span>
-                    <span className="mx-2 text-muted-foreground">·</span>
-                    <span className="text-foreground">{item.serviceType}</span>
-                    <span className="mx-2 text-muted-foreground">·</span>
-                    <span className="text-muted-foreground text-xs">{item.city}{item.district ? `, ${item.district}` : ""}</span>
-                    <span className="ml-3 inline-flex items-center gap-1 text-xs font-medium text-blue-700 bg-blue-100 rounded-full px-2 py-0.5">
+                <div key={item.orderId} className="bg-white rounded-xl border border-blue-100 px-4 py-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
+                      <span className="font-medium text-foreground">#{item.orderId}</span>
+                      <span className="text-muted-foreground">·</span>
+                      <span className="text-foreground">{item.serviceType}</span>
+                      <span className="text-muted-foreground">·</span>
+                      <span className="text-muted-foreground text-xs">{item.city}{item.district ? `, ${item.district}` : ""}</span>
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 bg-blue-100 rounded-full px-2 py-0.5">
+                        <UserCheck className="w-3 h-3" />
+                        {item.respondentCount} {item.respondentCount === 1 ? "отклик" : item.respondentCount < 5 ? "отклика" : "откликов"}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setOpenDispatchId(item.orderId)}
+                      className="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-500 text-white hover:bg-blue-600 rounded-lg font-medium text-xs transition-colors"
+                    >
                       <UserCheck className="w-3 h-3" />
-                      {item.respondentCount} {item.respondentCount === 1 ? "отклик" : item.respondentCount < 5 ? "отклика" : "откликов"}
-                    </span>
-                    <span className="ml-2 text-xs text-muted-foreground">
-                      {item.respondents.map(r => r.masterName).join(", ")}
-                    </span>
+                      Назначить мастера
+                    </button>
                   </div>
-                  <button
-                    onClick={() => setOpenDispatchId(item.orderId)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-500 text-white hover:bg-blue-600 rounded-lg font-medium text-xs transition-colors"
-                  >
-                    <UserCheck className="w-3 h-3" />
-                    Назначить мастера
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    {item.respondents.map(r => (
+                      <button
+                        key={r.masterId}
+                        onClick={() => openMasterChat(r.masterId)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 rounded-lg text-xs font-medium transition-colors"
+                      >
+                        <MessageSquare className="w-3 h-3" />
+                        {r.masterName}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
