@@ -562,104 +562,98 @@ function MasterCard({ master, columns, onMove, onOpenDrawer }: {
 
   return (
     <div className="bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden">
-      {/* Card top bar */}
-      <div className="px-3.5 pt-3.5 pb-2.5">
-        <div className="flex items-start gap-3">
-          <button onClick={() => onOpenDrawer(master)} className="flex-shrink-0 hover:opacity-80 transition-opacity">
+      {/* Clickable card body */}
+      <div className="cursor-pointer" onClick={() => onOpenDrawer(master)}>
+        {/* Card top bar */}
+        <div className="px-3.5 pt-3.5 pb-2.5">
+          <div className="flex items-start gap-3">
             <Avatar name={master.alias} id={master.id} avatarUrl={master.avatarUrl} size={40} />
-          </button>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <button
-                onClick={() => onOpenDrawer(master)}
-                className="font-semibold text-[13px] text-gray-800 leading-tight hover:text-blue-600 transition-colors text-left"
-              >
-                {master.alias}
-              </button>
-              {master.isTestMaster && (
-                <span className="text-[10px] bg-amber-100 text-amber-700 rounded-full px-1.5 py-0.5 font-semibold">ТЕСТ</span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-semibold text-[13px] text-gray-800 leading-tight">{master.alias}</span>
+                {master.isTestMaster && (
+                  <span className="text-[10px] bg-amber-100 text-amber-700 rounded-full px-1.5 py-0.5 font-semibold">ТЕСТ</span>
+                )}
+                {master.telegramId && (
+                  <span className="text-[10px] bg-blue-100 text-blue-600 rounded-full px-1.5 py-0.5 font-semibold flex items-center gap-0.5">
+                    <MessageSquare className="w-2.5 h-2.5" />TG
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-gray-400 mt-0.5">{master.city}</p>
+              {(master.specializations?.length > 0 ? master.specializations : master.specialization ? [master.specialization] : []).length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {(master.specializations?.length > 0 ? master.specializations : [master.specialization]).slice(0,3).map(s => (
+                    <span key={s} className="text-[9px] bg-gray-100 text-gray-500 rounded px-1.5 py-0.5 font-medium leading-tight">{s}</span>
+                  ))}
+                  {master.specializations?.length > 3 && (
+                    <span className="text-[9px] bg-gray-100 text-gray-400 rounded px-1.5 py-0.5">+{master.specializations.length - 3}</span>
+                  )}
+                </div>
               )}
-              {master.telegramId && (
-                <span className="text-[10px] bg-blue-100 text-blue-600 rounded-full px-1.5 py-0.5 font-semibold flex items-center gap-0.5">
-                  <MessageSquare className="w-2.5 h-2.5" />TG
+              {master.tags?.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {master.tags.slice(0, 3).map(tag => (
+                    <span key={tag} className="text-[9px] bg-violet-50 text-violet-600 rounded px-1.5 py-0.5 font-medium leading-tight">#{tag}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+            <ChevronRight className="w-3.5 h-3.5 text-gray-300 flex-shrink-0 mt-1" />
+          </div>
+
+          {/* Stars + stats */}
+          <div className="flex items-center justify-between mt-2.5">
+            <div className="flex items-center gap-0.5">
+              {[1,2,3,4,5].map(i => (
+                <Star key={i} className={`w-3 h-3 ${i <= Math.round(master.rating) ? "fill-yellow-400 text-yellow-400" : "text-gray-200"}`} />
+              ))}
+              <span className="text-[11px] text-gray-500 ml-1">{master.rating.toFixed(1)}</span>
+            </div>
+            <div className="flex items-center gap-2 text-[11px] text-gray-400">
+              {master.phone && <span className="flex items-center gap-0.5 text-emerald-600"><Phone className="w-3 h-3" />{master.phone}</span>}
+              <span className="flex items-center gap-1"><Briefcase className="w-3 h-3" />{master.totalOrders}</span>
+              {master.debt > 0 && (
+                <span className="flex items-center gap-0.5 text-red-500 font-medium">
+                  <AlertTriangle className="w-3 h-3" />{(master.debt/1000).toFixed(0)}k₽
                 </span>
               )}
             </div>
-            <p className="text-[11px] text-gray-400 mt-0.5">{master.city}</p>
-            {(master.specializations?.length > 0 ? master.specializations : master.specialization ? [master.specialization] : []).length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-1">
-                {(master.specializations?.length > 0 ? master.specializations : [master.specialization]).slice(0,3).map(s => (
-                  <span key={s} className="text-[9px] bg-gray-100 text-gray-500 rounded px-1.5 py-0.5 font-medium leading-tight">{s}</span>
-                ))}
-                {master.specializations?.length > 3 && (
-                  <span className="text-[9px] bg-gray-100 text-gray-400 rounded px-1.5 py-0.5">+{master.specializations.length - 3}</span>
+          </div>
+        </div>
+
+        {/* Active orders */}
+        {hasActiveOrders && (
+          <div className="border-t border-gray-50 px-3.5 py-2 space-y-2 bg-blue-50/40">
+            {master.activeOrders.map(o => (
+              <div key={o.orderId} className="text-[11px]">
+                <div className="flex items-center gap-1 font-semibold text-blue-700 mb-0.5">
+                  <Zap className="w-3 h-3" />
+                  <span>#{o.orderId} · {o.serviceType}</span>
+                </div>
+                <div className="flex items-center gap-1 text-gray-500">
+                  <MapPin className="w-3 h-3 text-orange-400 flex-shrink-0" />
+                  {o.city}, {o.district}
+                </div>
+                {o.clientName && (
+                  <div className="flex items-center gap-1 text-gray-500">
+                    <User className="w-3 h-3 text-gray-400 flex-shrink-0" />{o.clientName}
+                  </div>
+                )}
+                {o.clientPhone && (
+                  <a href={`tel:${o.clientPhone}`} onClick={e => e.stopPropagation()}
+                    className="flex items-center gap-1 text-emerald-600 font-semibold hover:underline">
+                    <Phone className="w-3 h-3 flex-shrink-0" />{o.clientPhone}
+                  </a>
                 )}
               </div>
-            )}
-            {/* Tags */}
-            {master.tags?.length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-1">
-                {master.tags.slice(0, 3).map(tag => (
-                  <span key={tag} className="text-[9px] bg-violet-50 text-violet-600 rounded px-1.5 py-0.5 font-medium leading-tight">#{tag}</span>
-                ))}
-              </div>
-            )}
-          </div>
-          <button onClick={() => onOpenDrawer(master)} className="flex-shrink-0 p-1 hover:bg-gray-50 rounded-lg transition-colors">
-            <ChevronRight className="w-3.5 h-3.5 text-gray-300" />
-          </button>
-        </div>
-
-        {/* Stars + stats */}
-        <div className="flex items-center justify-between mt-2.5">
-          <div className="flex items-center gap-0.5">
-            {[1,2,3,4,5].map(i => (
-              <Star key={i} className={`w-3 h-3 ${i <= Math.round(master.rating) ? "fill-yellow-400 text-yellow-400" : "text-gray-200"}`} />
             ))}
-            <span className="text-[11px] text-gray-500 ml-1">{master.rating.toFixed(1)}</span>
           </div>
-          <div className="flex items-center gap-2 text-[11px] text-gray-400">
-            {master.phone && <span className="flex items-center gap-0.5 text-emerald-600"><Phone className="w-3 h-3" />{master.phone}</span>}
-            <span className="flex items-center gap-1"><Briefcase className="w-3 h-3" />{master.totalOrders}</span>
-            {master.debt > 0 && (
-              <span className="flex items-center gap-0.5 text-red-500 font-medium">
-                <AlertTriangle className="w-3 h-3" />{(master.debt/1000).toFixed(0)}k₽
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
+        )}
+      </div>{/* end clickable area */}
 
-      {/* Active orders */}
-      {hasActiveOrders && (
-        <div className="border-t border-gray-50 px-3.5 py-2 space-y-2 bg-blue-50/40">
-          {master.activeOrders.map(o => (
-            <div key={o.orderId} className="text-[11px]">
-              <div className="flex items-center gap-1 font-semibold text-blue-700 mb-0.5">
-                <Zap className="w-3 h-3" />
-                <span>#{o.orderId} · {o.serviceType}</span>
-              </div>
-              <div className="flex items-center gap-1 text-gray-500">
-                <MapPin className="w-3 h-3 text-orange-400 flex-shrink-0" />
-                {o.city}, {o.district}
-              </div>
-              {o.clientName && (
-                <div className="flex items-center gap-1 text-gray-500">
-                  <User className="w-3 h-3 text-gray-400 flex-shrink-0" />{o.clientName}
-                </div>
-              )}
-              {o.clientPhone && (
-                <a href={`tel:${o.clientPhone}`} className="flex items-center gap-1 text-emerald-600 font-semibold hover:underline">
-                  <Phone className="w-3 h-3 flex-shrink-0" />{o.clientPhone}
-                </a>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Move dropdown */}
-      <div className="border-t border-gray-50 relative">
+      {/* Move dropdown — stops propagation so it doesn't open drawer */}
+      <div className="border-t border-gray-50 relative" onClick={e => e.stopPropagation()}>
         <button
           onClick={() => setOpen(v => !v)}
           className="w-full flex items-center justify-center gap-1.5 py-2 text-[11px] text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors"
