@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db, ordersTable, mastersTable, transactionsTable, voronkaColumnsTable } from "@workspace/db";
 import { eq, inArray } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
-import { calculateCommission } from "../lib/auth.js";
+import { calculateCommission, getCommissionSettings } from "../lib/commission.js";
 
 const router = Router();
 const allOrderRoles = requireRole("admin", "master_operator");
@@ -95,7 +95,13 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
   const updates: any = { updatedAt: new Date() };
   if (status !== undefined) updates.status = status;
   if (orderAmount !== undefined) updates.orderAmount = orderAmount !== null ? String(orderAmount) : null;
-  if (commission !== undefined) updates.commission = commission !== null ? String(commission) : null;
+  if (commission !== undefined) {
+    updates.commission = commission !== null ? String(commission) : null;
+  } else if (orderAmount !== undefined && orderAmount !== null) {
+    // Auto-calculate commission from current settings when amount is set
+    const commSettings = await getCommissionSettings();
+    updates.commission = String(calculateCommission(Number(orderAmount), commSettings));
+  }
   if (clientRating !== undefined) updates.clientRating = clientRating;
 
   const result = await db.update(ordersTable).set(updates).where(eq(ordersTable.id, id)).returning();
