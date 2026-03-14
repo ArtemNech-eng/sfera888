@@ -33,13 +33,14 @@ router.get("/", allLeadRoles, async (req, res) => {
     area: Number(l.area),
     scheduledAt: l.scheduledAt ?? null,
     comment: l.comment ?? null,
+    photos: l.photos ? JSON.parse(l.photos) : null,
     source: l.source ?? null,
     services: parseServices(l.services),
   })));
 });
 
 router.post("/", allLeadRoles, async (req, res) => {
-  const { clientName, clientPhone, city, district, services, serviceType: rawServiceType, area: rawArea, scheduledAt, comment, source } = req.body;
+  const { clientName, clientPhone, city, district, services, serviceType: rawServiceType, area: rawArea, scheduledAt, comment, source, photos } = req.body;
   if (!clientName || !clientPhone || !city || !district) {
     return res.status(400).json({ error: "Required fields missing" });
   }
@@ -69,6 +70,7 @@ router.post("/", allLeadRoles, async (req, res) => {
     services: servicesJson,
     scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
     comment: comment ?? null,
+    photos: Array.isArray(photos) && photos.length > 0 ? JSON.stringify(photos) : null,
     source: source ?? null,
     status: "new",
   }).returning();

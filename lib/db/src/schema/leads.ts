@@ -21,6 +21,7 @@ export const leadsTable = pgTable("leads", {
   services: text("services"),
   scheduledAt: timestamp("scheduled_at"),
   comment: text("comment"),
+  photos: text("photos"),
   source: text("source"),
   status: leadStatusEnum("status").notNull().default("new"),
   createdAt: timestamp("created_at").notNull().defaultNow(),

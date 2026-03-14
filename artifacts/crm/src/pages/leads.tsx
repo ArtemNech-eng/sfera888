@@ -4,7 +4,8 @@ import { useGetLeads, useCreateLead, useSendLeadToBuffer, useGetCities, useGetSe
 import { ProtectedRoute } from "@/hooks/use-auth";
 import { StatusBadge } from "@/components/status-badge";
 import { formatDate } from "@/lib/utils";
-import { Loader2, Plus, Search, Filter, Play, Trash2, User, Phone, MapPin, ChevronDown, Sparkles } from "lucide-react";
+import { Loader2, Plus, Search, Filter, Play, Trash2, User, Phone, MapPin, ChevronDown, Sparkles, Images } from "lucide-react";
+import { PhotoUploader } from "@/components/photo-uploader";
 import { useQueryClient } from "@tanstack/react-query";
 
 interface ServiceRow {
@@ -55,10 +56,12 @@ export default function Leads() {
   const [serviceRows, setServiceRows] = useState<ServiceRow[]>([
     { type: "", area: "", pricePerM2: "" },
   ]);
+  const [photosPaths, setPhotosPaths] = useState<string[]>([]);
 
   const resetForm = () => {
     setFormData({ clientName: "", clientPhone: "", city: "", district: "", comment: "" });
     setServiceRows([{ type: "", area: "", pricePerM2: "" }]);
+    setPhotosPaths([]);
   };
 
   const addRow = () => setServiceRows(r => [...r, { type: "", area: "", pricePerM2: "" }]);
@@ -88,6 +91,7 @@ export default function Leads() {
         services: srvs as any,
         serviceType: srvs.map(s => s.type).join(", "),
         area: srvs.reduce((sum, s) => sum + s.area, 0),
+        photos: photosPaths.length > 0 ? photosPaths as any : undefined,
       }
     });
   };
@@ -148,6 +152,7 @@ export default function Leads() {
                     <th className="px-6 py-4">Клиент</th>
                     <th className="px-6 py-4">Локация</th>
                     <th className="px-6 py-4">Услуги</th>
+                    <th className="px-4 py-4">Фото</th>
                     <th className="px-6 py-4">Статус</th>
                     <th className="px-6 py-4 text-right">Действия</th>
                   </tr>
@@ -217,6 +222,30 @@ export default function Leads() {
                               <span className="text-xs text-slate-500">{lead.area} м²</span>
                             </div>
                           )}
+                        </td>
+                        {/* Photos thumbnails */}
+                        <td className="px-4 py-4">
+                          {(() => {
+                            const photos = (lead as any).photos as string[] | null;
+                            if (!photos || photos.length === 0) return <span className="text-xs text-gray-300">—</span>;
+                            return (
+                              <div className="flex items-center gap-1">
+                                {photos.slice(0, 3).map((p, i) => (
+                                  <img
+                                    key={i}
+                                    src={`/api/storage${p}`}
+                                    alt=""
+                                    className="w-9 h-9 rounded-lg object-cover border border-gray-200 shadow-sm"
+                                  />
+                                ))}
+                                {photos.length > 3 && (
+                                  <span className="w-9 h-9 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center text-xs font-semibold text-gray-500">
+                                    +{photos.length - 3}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td className="px-6 py-4">
                           <StatusBadge status={lead.status} type="lead" />
@@ -445,16 +474,32 @@ export default function Leads() {
                     </div>
                   </div>
 
-                  {/* Comment */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Комментарий</label>
-                    <textarea
-                      value={formData.comment}
-                      onChange={e => setFormData({...formData, comment: e.target.value})}
-                      rows={2}
-                      placeholder="Дополнительная информация по заявке..."
-                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 bg-gray-50/60 focus:border-primary focus:ring-2 focus:ring-primary/15 focus:bg-white outline-none resize-none text-sm transition-all"
-                    />
+                  {/* Comment + Photos */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Комментарий</label>
+                      <textarea
+                        value={formData.comment}
+                        onChange={e => setFormData({...formData, comment: e.target.value})}
+                        rows={4}
+                        placeholder="Дополнительная информация по заявке..."
+                        className="w-full px-4 py-3 rounded-2xl border border-gray-200 bg-gray-50/60 focus:border-primary focus:ring-2 focus:ring-primary/15 focus:bg-white outline-none resize-none text-sm transition-all h-full min-h-[100px]"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide flex items-center gap-1.5">
+                        <Images className="w-3.5 h-3.5" />
+                        Фотографии
+                        {photosPaths.length > 0 && (
+                          <span className="ml-auto text-primary font-bold">{photosPaths.length}</span>
+                        )}
+                      </label>
+                      <PhotoUploader
+                        value={photosPaths}
+                        onChange={setPhotosPaths}
+                        maxPhotos={8}
+                      />
+                    </div>
                   </div>
                 </div>
 

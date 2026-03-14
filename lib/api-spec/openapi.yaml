@@ -7,6 +7,8 @@ servers:
   - url: /api
     description: Base API path
 tags:
+  - name: Storage
+    description: Object storage upload and serving endpoints.
   - name: health
     description: Health operations
   - name: auth
