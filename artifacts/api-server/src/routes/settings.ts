@@ -17,8 +17,13 @@ router.get("/cities", requireAuth, async (req, res) => {
 router.post("/cities", adminOnly, async (req, res) => {
   const { name } = req.body;
   if (!name) return res.status(400).json({ error: "name required" });
-  const result = await db.insert(citiesTable).values({ name }).returning();
-  res.status(201).json(result[0]);
+  try {
+    const result = await db.insert(citiesTable).values({ name }).returning();
+    res.status(201).json(result[0]);
+  } catch (e: any) {
+    if (e.code === "23505") return res.status(409).json({ error: "Такой город уже существует" });
+    throw e;
+  }
 });
 
 router.delete("/cities/:id", adminOnly, async (req, res) => {
@@ -36,8 +41,13 @@ router.get("/services", requireAuth, async (req, res) => {
 router.post("/services", adminOnly, async (req, res) => {
   const { name } = req.body;
   if (!name) return res.status(400).json({ error: "name required" });
-  const result = await db.insert(serviceTypesTable).values({ name }).returning();
-  res.status(201).json(result[0]);
+  try {
+    const result = await db.insert(serviceTypesTable).values({ name }).returning();
+    res.status(201).json(result[0]);
+  } catch (e: any) {
+    if (e.code === "23505") return res.status(409).json({ error: "Такая услуга уже существует" });
+    throw e;
+  }
 });
 
 router.delete("/services/:id", adminOnly, async (req, res) => {

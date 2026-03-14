@@ -35,6 +35,8 @@ export default function Settings() {
 
   const [newCity, setNewCity] = useState("");
   const [newService, setNewService] = useState("");
+  const [cityError, setCityError] = useState("");
+  const [serviceError, setServiceError] = useState("");
 
   // Commission local state
   const [comm, setComm] = useState<CommissionSettings | null>(null);
@@ -44,10 +46,10 @@ export default function Settings() {
     if (commission && !comm) setComm(commission);
   }, [commission]);
 
-  const createCityMutation = useCreateCity({ onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/settings/cities"] }); setNewCity(""); }});
-  const deleteCityMutation = useDeleteCity({ onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/settings/cities"] })});
-  const createServiceMutation = useCreateService({ onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/settings/services"] }); setNewService(""); }});
-  const deleteServiceMutation = useDeleteService({ onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/settings/services"] })});
+  const createCityMutation = useCreateCity({ mutation: { onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/settings/cities"] }); setNewCity(""); setCityError(""); }, onError: (e: any) => setCityError(e?.message ?? "Ошибка")}});
+  const deleteCityMutation = useDeleteCity({ mutation: { onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/settings/cities"] })}});
+  const createServiceMutation = useCreateService({ mutation: { onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/settings/services"] }); setNewService(""); setServiceError(""); }, onError: (e: any) => setServiceError(e?.message ?? "Ошибка")}});
+  const deleteServiceMutation = useDeleteService({ mutation: { onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/settings/services"] })}});
 
   const saveCommMutation = useMutation({
     mutationFn: async (data: CommissionSettings) => {
@@ -105,17 +107,20 @@ export default function Settings() {
               </div>
               <div className="p-6 flex-1 overflow-y-auto">
                 <form
-                  onSubmit={e => { e.preventDefault(); if (newCity) createCityMutation.mutate({ data: { name: newCity } }); }}
-                  className="flex gap-2 mb-6"
+                  onSubmit={e => { e.preventDefault(); if (newCity.trim()) { setCityError(""); createCityMutation.mutate({ data: { name: newCity.trim() } }); } }}
+                  className="space-y-1.5 mb-6"
                 >
-                  <input
-                    value={newCity} onChange={e => setNewCity(e.target.value)}
-                    placeholder="Новый город..."
-                    className="flex-1 px-4 py-2.5 rounded-xl border border-border focus:border-primary focus:ring-1 focus:ring-primary outline-none"
-                  />
-                  <button disabled={createCityMutation.isPending || !newCity} className="px-4 bg-primary text-white rounded-xl hover:bg-primary/90 transition-colors disabled:opacity-50">
-                    <Plus className="w-5 h-5" />
-                  </button>
+                  <div className="flex gap-2">
+                    <input
+                      value={newCity} onChange={e => { setNewCity(e.target.value); setCityError(""); }}
+                      placeholder="Новый город..."
+                      className={`flex-1 px-4 py-2.5 rounded-xl border focus:ring-1 outline-none ${cityError ? "border-destructive focus:border-destructive focus:ring-destructive/20" : "border-border focus:border-primary focus:ring-primary"}`}
+                    />
+                    <button disabled={createCityMutation.isPending || !newCity.trim()} className="px-4 bg-primary text-white rounded-xl hover:bg-primary/90 transition-colors disabled:opacity-50">
+                      <Plus className="w-5 h-5" />
+                    </button>
+                  </div>
+                  {cityError && <p className="text-xs text-destructive">{cityError}</p>}
                 </form>
                 <div className="space-y-2">
                   {cities?.map(city => (
@@ -141,17 +146,20 @@ export default function Settings() {
               </div>
               <div className="p-6 flex-1 overflow-y-auto">
                 <form
-                  onSubmit={e => { e.preventDefault(); if (newService) createServiceMutation.mutate({ data: { name: newService } }); }}
-                  className="flex gap-2 mb-6"
+                  onSubmit={e => { e.preventDefault(); if (newService.trim()) { setServiceError(""); createServiceMutation.mutate({ data: { name: newService.trim() } }); } }}
+                  className="space-y-1.5 mb-6"
                 >
-                  <input
-                    value={newService} onChange={e => setNewService(e.target.value)}
-                    placeholder="Новая услуга..."
-                    className="flex-1 px-4 py-2.5 rounded-xl border border-border focus:border-primary focus:ring-1 focus:ring-primary outline-none"
-                  />
-                  <button disabled={createServiceMutation.isPending || !newService} className="px-4 bg-primary text-white rounded-xl hover:bg-primary/90 transition-colors disabled:opacity-50">
-                    <Plus className="w-5 h-5" />
-                  </button>
+                  <div className="flex gap-2">
+                    <input
+                      value={newService} onChange={e => { setNewService(e.target.value); setServiceError(""); }}
+                      placeholder="Новая услуга..."
+                      className={`flex-1 px-4 py-2.5 rounded-xl border focus:ring-1 outline-none ${serviceError ? "border-destructive focus:border-destructive focus:ring-destructive/20" : "border-border focus:border-primary focus:ring-primary"}`}
+                    />
+                    <button disabled={createServiceMutation.isPending || !newService.trim()} className="px-4 bg-primary text-white rounded-xl hover:bg-primary/90 transition-colors disabled:opacity-50">
+                      <Plus className="w-5 h-5" />
+                    </button>
+                  </div>
+                  {serviceError && <p className="text-xs text-destructive">{serviceError}</p>}
                 </form>
                 <div className="space-y-2">
                   {services?.map(service => (
