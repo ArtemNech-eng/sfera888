@@ -597,7 +597,7 @@ export default function MasterChat() {
                             <div className="border-t border-dashed border-gray-100 my-1" />
                             <div className="flex justify-between items-center text-xs">
                               <span className="text-gray-500">Реквизиты для перевода</span>
-                              <span className="font-mono font-semibold text-gray-800 select-all">89892860863</span>
+                              <span className="font-mono font-semibold text-gray-800 select-all">89892860863 · Альфа Банк · Игорь К.</span>
                             </div>
                           </div>
                           {/* Confirm button */}

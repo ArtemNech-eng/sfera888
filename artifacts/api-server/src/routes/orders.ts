@@ -197,7 +197,7 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
             `✅ <b>Сумма по заказу #${id} подтверждена</b>\n\n` +
             `💰 Стоимость работ: <b>${Number(o.orderAmount).toLocaleString("ru-RU")} ₽</b>\n` +
             `🔸 Комиссия: <b>${Number(o.commission).toLocaleString("ru-RU")} ₽</b>\n\n` +
-            `📲 Реквизиты для перевода: <code>89892860863</code>\n\n` +
+            `📲 Реквизиты для перевода:\n<code>89892860863</code> · Альфа Банк · Игорь К.\n\n` +
             `После оплаты комиссии вы сможете принимать новые заказы.`
           );
         }
