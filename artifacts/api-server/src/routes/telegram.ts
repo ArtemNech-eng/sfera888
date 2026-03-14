@@ -2,7 +2,7 @@ import { Router } from "express";
 import {
   db, telegramChatsTable, telegramMessagesTable, usersTable,
   mastersTable, ordersTable, voronkaColumnsTable, leadsTable,
-  masterMessagesTable, orderDispatchesTable,
+  masterMessagesTable, orderDispatchesTable, transactionsTable,
 } from "@workspace/db";
 import { eq, desc, inArray, and, ne } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
@@ -343,42 +343,76 @@ async function showAvailableOrders(chatId: string, master: any, messageId?: numb
 
 async function showMyOrders(chatId: string, master: any, messageId?: number) {
   const backBtn = [{ text: "« Меню", callback_data: "main_menu" }];
-  const myOrders = await db.select().from(ordersTable)
-    .where(and(
+
+  const [myOrders, unpaidTxs] = await Promise.all([
+    db.select().from(ordersTable).where(and(
       eq(ordersTable.masterId, master.id),
       inArray(ordersTable.status, ["master_assigned", "in_progress", "cancellation_requested"])
-    ));
+    )),
+    db.select().from(transactionsTable).where(and(
+      eq(transactionsTable.masterId, master.id),
+      eq(transactionsTable.paymentStatus, "pending")
+    )),
+  ]);
 
-  if (myOrders.length === 0) {
+  // Fetch completed orders referenced by pending transactions
+  let unpaidOrders: any[] = [];
+  if (unpaidTxs.length > 0) {
+    const unpaidOrderIds = unpaidTxs.map(t => t.orderId);
+    unpaidOrders = await db.select().from(ordersTable).where(inArray(ordersTable.id, unpaidOrderIds));
+  }
+
+  if (myOrders.length === 0 && unpaidOrders.length === 0) {
     await editOrSend(chatId, messageId, "📭 <b>У вас нет активных заказов.</b>\n\nВозьмите новый заказ через меню.", mainMenuKeyboard());
     return;
   }
 
-  const leadIds = [...new Set(myOrders.map(o => o.leadId))];
-  const leads = await db.select().from(leadsTable).where(inArray(leadsTable.id, leadIds));
+  const allLeadIds = [...new Set([...myOrders, ...unpaidOrders].map(o => o.leadId))];
+  const leads = await db.select().from(leadsTable).where(inArray(leadsTable.id, allLeadIds));
   const leadMap = new Map(leads.map(l => [l.id, l]));
+  const txByOrder = new Map(unpaidTxs.map(t => [t.orderId, t]));
 
-  let text = `📊 <b>Ваши активные заказы (${myOrders.length})</b>\n\n`;
+  let text = "";
   const buttons: any[][] = [];
 
-  for (const o of myOrders) {
-    const lead = leadMap.get(o.leadId);
-    const isCancelPending = o.status === "cancellation_requested";
-    text += `<b>Заказ #${o.id}: ${o.serviceType}</b>\n`;
-    text += `📍 ${o.city}, ${o.district}\n`;
-    if (lead?.clientName) text += `👤 Клиент: ${lead.clientName}\n`;
-    if (lead?.clientPhone) text += `📞 Телефон: ${lead.clientPhone}\n`;
-    if (isCancelPending) text += `⏳ <i>Запрос на отмену рассматривается оператором</i>\n`;
-    text += `\n`;
-    if (!isCancelPending) {
-      buttons.push([
-        { text: `✅ Завершить заказ #${o.id}`, callback_data: `complete_order_${o.id}` },
-        { text: `❌ Отменить #${o.id}`, callback_data: `cancel_order_${o.id}` },
-      ]);
+  if (myOrders.length > 0) {
+    text += `📊 <b>Активные заказы (${myOrders.length})</b>\n\n`;
+    for (const o of myOrders) {
+      const lead = leadMap.get(o.leadId);
+      const isCancelPending = o.status === "cancellation_requested";
+      text += `<b>Заказ #${o.id}: ${o.serviceType}</b>\n`;
+      text += `📍 ${o.city}, ${o.district}\n`;
+      if (lead?.clientName) text += `👤 Клиент: ${lead.clientName}\n`;
+      if (lead?.clientPhone) text += `📞 Телефон: ${lead.clientPhone}\n`;
+      if (isCancelPending) text += `⏳ <i>Запрос на отмену рассматривается оператором</i>\n`;
+      text += `\n`;
+      if (!isCancelPending) {
+        buttons.push([
+          { text: `✅ Завершить заказ #${o.id}`, callback_data: `complete_order_${o.id}` },
+          { text: `❌ Отменить #${o.id}`, callback_data: `cancel_order_${o.id}` },
+        ]);
+      }
     }
   }
 
-  await editOrSend(chatId, messageId, text, { reply_markup: { inline_keyboard: [...buttons, backBtn] } });
+  if (unpaidOrders.length > 0) {
+    if (text) text += `─────────────────\n`;
+    text += `💳 <b>Ожидают оплаты комиссии (${unpaidOrders.length})</b>\n\n`;
+    for (const o of unpaidOrders) {
+      const tx = txByOrder.get(o.id);
+      text += `<b>Заказ #${o.id}: ${o.serviceType}</b>\n`;
+      text += `📍 ${o.city}, ${o.district}\n`;
+      if (tx) {
+        text += `💰 Стоимость работ: <b>${Number(tx.orderAmount).toLocaleString("ru-RU")} ₽</b>\n`;
+        text += `🔸 Комиссия: <b>${Number(tx.commission).toLocaleString("ru-RU")} ₽</b>\n`;
+        text += `📲 Реквизиты: <code>89892860863</code> · Альфа Банк · Игорь К.\n`;
+      }
+      text += `\n`;
+    }
+    buttons.push([{ text: "📸 Отправить скриншот оплаты", callback_data: "send_payment_proof" }]);
+  }
+
+  await editOrSend(chatId, messageId, text.trimEnd(), { reply_markup: { inline_keyboard: [...buttons, backBtn] } });
 }
 
 // ─── Show master profile ──────────────────────────────────────────────────────
