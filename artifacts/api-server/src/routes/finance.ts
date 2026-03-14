@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, transactionsTable, mastersTable } from "@workspace/db";
+import { db, transactionsTable, mastersTable, voronkaColumnsTable } from "@workspace/db";
 import { eq, and, gte, lte, sum, count } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 
@@ -46,16 +46,40 @@ router.patch("/transactions/:id", adminOnly, async (req, res) => {
   if (!result[0]) return res.status(404).json({ error: "Transaction not found" });
   const t = result[0];
 
-  // update master debt and remove test period flag
+  // When paid: reduce debt, move master to "Свободен", notify via Telegram
   if (paymentStatus === "paid") {
     const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, t.masterId));
     const master = masterRows[0];
     if (master) {
       const newDebt = Math.max(0, Number(master.debt) - Number(t.commission));
+
+      // Find "Свободен" column (receivesOrders = true)
+      const cols = await db.select().from(voronkaColumnsTable).orderBy(voronkaColumnsTable.position);
+      const freeCol = cols.find(c => c.receivesOrders) ?? null;
+
       await db.update(mastersTable).set({
         debt: String(newDebt),
-        isTestMaster: false, // once commission paid, test period ends
+        isTestMaster: false,
+        ...(freeCol ? { voronkaColumnId: freeCol.id } : {}),
       }).where(eq(mastersTable.id, t.masterId));
+
+      // Telegram notification
+      if (master.telegramId) {
+        const TELEGRAM_API = `https://api.telegram.org/bot${process.env["TELEGRAM_BOT_TOKEN"]}`;
+        const msgText = newDebt > 0
+          ? `✅ <b>Оплата принята!</b>\n\n` +
+            `💳 Оплачено: <b>${Number(t.commission).toLocaleString("ru-RU")} ₽</b>\n` +
+            `⚠️ Остаток долга: <b>${newDebt.toLocaleString("ru-RU")} ₽</b>\n\n` +
+            `Погасите оставшийся долг, чтобы получить полный доступ к заказам.`
+          : `✅ <b>Оплата принята! Спасибо!</b>\n\n` +
+            `💳 Комиссия: <b>${Number(t.commission).toLocaleString("ru-RU")} ₽</b>\n\n` +
+            `🟢 Долг погашен. Вы снова можете принимать заказы!`;
+        await fetch(`${TELEGRAM_API}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_id: master.telegramId, text: msgText, parse_mode: "HTML" }),
+        }).catch(() => {});
+      }
     }
   }
 

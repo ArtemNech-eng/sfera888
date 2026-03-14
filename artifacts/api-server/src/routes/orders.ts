@@ -171,6 +171,39 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
   if (!result[0]) return res.status(404).json({ error: "Order not found" });
   const o = result[0];
 
+  // ── Create transaction when commission is confirmed (acceptProposed or orderAmount set) ──
+  const commissionConfirmed = (acceptProposed && current.proposedAmount) ||
+    (orderAmount !== undefined && orderAmount !== null);
+  if (commissionConfirmed && o.masterId && o.orderAmount && o.commission) {
+    // Only create if no transaction exists yet for this order
+    const existingTx = await db.select().from(transactionsTable).where(eq(transactionsTable.orderId, id));
+    if (existingTx.length === 0) {
+      await db.insert(transactionsTable).values({
+        orderId: id,
+        masterId: o.masterId,
+        orderAmount: o.orderAmount,
+        commission: o.commission,
+        paymentStatus: "pending",
+      });
+      // Add commission to master's debt
+      const mRows = await db.select().from(mastersTable).where(eq(mastersTable.id, o.masterId));
+      const m = mRows[0];
+      if (m) {
+        const newDebt = Number(m.debt) + Number(o.commission);
+        await db.update(mastersTable).set({ debt: String(newDebt) }).where(eq(mastersTable.id, o.masterId));
+        // Notify master in Telegram
+        if (m.telegramId) {
+          await sendTg(m.telegramId,
+            `✅ <b>Сумма по заказу #${id} подтверждена</b>\n\n` +
+            `💰 Стоимость работ: <b>${Number(o.orderAmount).toLocaleString("ru-RU")} ₽</b>\n` +
+            `🔸 Комиссия: <b>${Number(o.commission).toLocaleString("ru-RU")} ₽</b>\n\n` +
+            `Пожалуйста, оплатите комиссию оператору. После оплаты вы сможете принимать новые заказы.`
+          );
+        }
+      }
+    }
+  }
+
   // Auto-move master between voronka columns based on status change
   if (status !== undefined && current.masterId) {
     const masterId = current.masterId;
