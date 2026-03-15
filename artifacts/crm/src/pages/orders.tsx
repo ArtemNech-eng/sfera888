@@ -44,11 +44,14 @@ function fmt(n: number) {
 }
 
 export default function Orders() {
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const [openDispatchId, setOpenDispatchId] = useState<number | null>(null);
   const [editAmountId, setEditAmountId] = useState<number | null>(null);
   const [editAmountValue, setEditAmountValue] = useState("");
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("search") ?? "";
+  });
   const queryClient = useQueryClient();
   const { toast } = useToast();
 

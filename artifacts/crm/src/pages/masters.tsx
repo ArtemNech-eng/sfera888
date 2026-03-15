@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { useLocation } from "wouter";
 import { Layout } from "@/components/layout";
 import { ProtectedRoute, useAuth } from "@/hooks/use-auth";
 import {
@@ -62,9 +63,13 @@ function StatusPill({ master }: { master: Master }) {
 
 export default function Masters() {
   const { user } = useAuth();
+  const [, setLocation] = useLocation();
   const isAdmin = user?.role === "admin";
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("search") ?? "";
+  });
   const [cityFilter, setCityFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "free" | "onsite" | "suspended" | "pending_contract">("all");
   const [drawerMaster, setDrawerMaster] = useState<Master | null>(null);

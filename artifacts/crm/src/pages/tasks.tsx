@@ -2,10 +2,13 @@ import { useState, useMemo } from "react";
 import { Layout } from "@/components/layout";
 import { ProtectedRoute, useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import {
   Plus, CheckCircle2, Circle, Clock, Trash2,
   AlertTriangle, Zap, Bot, User, Calendar, Link2, Search, X,
   ClipboardList, List, ChevronLeft, ChevronRight, ArrowRight,
+  ChevronDown, ChevronUp, MessageSquare, ExternalLink, UserCircle,
+  FileText, Pencil,
 } from "lucide-react";
 import {
   format, isPast, isSameDay, startOfMonth, endOfMonth,
@@ -130,7 +133,7 @@ function CategoryTag({ category }: { category: TaskCategory }) {
   );
 }
 
-// ─── Task Card (redesigned) ────────────────────────────────────────────────────
+// ─── Task Card (expandable) ────────────────────────────────────────────────────
 
 function TaskCard({
   task,
@@ -143,24 +146,32 @@ function TaskCard({
   onDelete: (id: number) => void;
   compact?: boolean;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const [, setLocation]         = useLocation();
+
   const isDone    = task.status === "done";
   const isInProg  = task.status === "in_progress";
   const isOverdue = task.dueAt && !isDone && isPast(new Date(task.dueAt));
   const pcfg      = PRIORITY_CONFIG[task.priority];
 
+  const goToOrder  = () => setLocation(`/orders?search=${encodeURIComponent(task.orderLabel ?? String(task.relatedOrderId))}`);
+  const goToMaster = () => setLocation(`/masters?search=${encodeURIComponent(task.masterAlias ?? String(task.relatedMasterId))}`);
+  const goToChat   = () => setLocation(`/master-chat?masterId=${task.relatedMasterId}`);
+
   return (
     <div className={`
       group relative bg-card rounded-xl border border-l-4 shadow-sm
       transition-all duration-150 overflow-hidden
-      ${isDone    ? "opacity-55 border-border/30 border-l-border/30" : ""}
+      ${isDone     ? "opacity-55 border-border/30 border-l-border/30" : ""}
       ${isOverdue && !isDone ? "border-red-200 border-l-red-500 shadow-red-50" : ""}
       ${!isDone && !isOverdue ? `border-border/50 ${pcfg.border} hover:shadow-md` : ""}
       ${task.priority === "urgent" && !isDone ? pcfg.bg : ""}
     `}>
+      {/* ── Collapsed row ── */}
       <div className="flex items-stretch">
         {/* Status toggle */}
         <button
-          onClick={() => onStatusChange(task.id, isDone ? "open" : "done")}
+          onClick={e => { e.stopPropagation(); onStatusChange(task.id, isDone ? "open" : "done"); }}
           className="flex-shrink-0 w-12 flex items-center justify-center hover:bg-muted/40 transition-colors"
           title={isDone ? "Открыть снова" : "Отметить выполненным"}
         >
@@ -168,101 +179,175 @@ function TaskCard({
             ? <CheckCircle2 className="w-5 h-5 text-emerald-500" />
             : isInProg
             ? <Clock className="w-5 h-5 text-blue-500" />
-            : <Circle className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
-          }
+            : <Circle className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />}
         </button>
 
-        {/* Main content */}
-        <div className="flex-1 min-w-0 py-3 pr-3">
-          {/* Title row */}
-          <div className="flex items-start justify-between gap-2">
+        {/* Clickable body → expand */}
+        <button
+          onClick={() => setExpanded(v => !v)}
+          className="flex-1 min-w-0 py-3 text-left"
+        >
+          <div className="flex items-start justify-between gap-2 pr-3">
             <div className="flex-1 min-w-0">
               <p className={`font-semibold text-sm leading-snug ${isDone ? "line-through text-muted-foreground" : "text-foreground"}`}>
                 {task.title}
               </p>
-              {!compact && task.description && (
-                <p className="text-xs text-muted-foreground mt-1 leading-relaxed line-clamp-2">
-                  {task.description}
-                </p>
+              {!expanded && task.description && (
+                <p className="text-xs text-muted-foreground mt-0.5 truncate">{task.description}</p>
               )}
             </div>
-
-            {/* Action buttons — always visible */}
-            <div className="flex items-center gap-1 flex-shrink-0 ml-1">
-              {!isDone && !isInProg && (
-                <button
-                  onClick={() => onStatusChange(task.id, "in_progress")}
-                  title="Взять в работу"
-                  className="hidden group-hover:flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
-                >
-                  <ArrowRight className="w-3 h-3" /> В работе
-                </button>
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {isOverdue && !isDone && (
+                <span className="text-[10px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded">ПРОСРОЧЕНО</span>
               )}
-              {isInProg && (
-                <button
-                  onClick={() => onStatusChange(task.id, "open")}
-                  title="Убрать из работы"
-                  className="hidden group-hover:flex items-center gap-1 px-2 py-1 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
-                >
-                  <Circle className="w-3 h-3" /> Пауза
-                </button>
-              )}
-              <button
-                onClick={() => onDelete(task.id)}
-                title="Удалить"
-                className="p-1.5 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
+              {expanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
             </div>
           </div>
 
-          {/* AI reason */}
-          {!compact && task.aiReason && (
-            <div className="mt-2 flex items-start gap-1.5 bg-violet-50 border border-violet-100 rounded-lg px-2.5 py-1.5">
-              <Bot className="w-3.5 h-3.5 text-violet-500 mt-0.5 flex-shrink-0" />
-              <p className="text-xs text-violet-700 leading-snug">{task.aiReason}</p>
-            </div>
-          )}
-
           {/* Meta row */}
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 pr-3">
             <PriorityBadge priority={task.priority} />
             <CategoryTag category={task.category} />
-
             {task.type === "ai_auto" && (
               <span className="inline-flex items-center gap-1 text-xs text-violet-600 bg-violet-50 px-1.5 py-0.5 rounded-md font-medium">
                 <Bot className="w-3 h-3" /> ИИ
               </span>
             )}
-
-            {!compact && task.masterAlias && (
+            {task.masterAlias && (
               <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                 <User className="w-3 h-3" /> {task.masterAlias}
               </span>
             )}
-            {!compact && task.orderLabel && (
+            {task.orderLabel && (
               <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                <Link2 className="w-3 h-3" /> {task.orderLabel}
+                <FileText className="w-3 h-3" /> {task.orderLabel}
               </span>
             )}
-
             {task.dueAt && (
-              <span className={`inline-flex items-center gap-1 text-xs font-medium ml-auto ${
-                isOverdue ? "text-red-600" : isDone ? "text-muted-foreground" : "text-muted-foreground"
-              }`}>
+              <span className={`inline-flex items-center gap-1 text-xs font-medium ml-auto ${isOverdue ? "text-red-600" : "text-muted-foreground"}`}>
                 <Calendar className="w-3 h-3" />
-                {isOverdue ? "Просрочено · " : ""}
                 {format(new Date(task.dueAt), "d MMM, HH:mm", { locale: ru })}
               </span>
             )}
+          </div>
+        </button>
+      </div>
 
-            {task.assignedTo && !task.dueAt && (
-              <span className="ml-auto text-xs text-muted-foreground">→ {task.assignedTo}</span>
+      {/* ── Expanded panel ── */}
+      {expanded && (
+        <div className="border-t border-border/40 bg-muted/20 px-4 py-4 space-y-4">
+
+          {/* Description */}
+          {task.description && (
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Описание</p>
+              <p className="text-sm text-foreground leading-relaxed">{task.description}</p>
+            </div>
+          )}
+
+          {/* AI reason */}
+          {task.aiReason && (
+            <div className="flex items-start gap-2 bg-violet-50 border border-violet-100 rounded-xl px-3 py-2.5">
+              <Bot className="w-4 h-4 text-violet-500 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-xs font-semibold text-violet-700 mb-0.5">Причина (ИИ)</p>
+                <p className="text-xs text-violet-700 leading-snug">{task.aiReason}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Meta grid */}
+          <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
+            {task.assignedTo && (
+              <div>
+                <span className="text-muted-foreground">Назначено:</span>{" "}
+                <span className="font-medium">{task.assignedTo}</span>
+              </div>
+            )}
+            {task.createdBy && (
+              <div>
+                <span className="text-muted-foreground">Создал:</span>{" "}
+                <span className="font-medium">{task.createdBy}</span>
+              </div>
+            )}
+            <div>
+              <span className="text-muted-foreground">Создано:</span>{" "}
+              <span className="font-medium">{format(new Date(task.createdAt), "d MMM yyyy, HH:mm", { locale: ru })}</span>
+            </div>
+            {task.completedAt && (
+              <div>
+                <span className="text-muted-foreground">Выполнено:</span>{" "}
+                <span className="font-medium text-emerald-600">{format(new Date(task.completedAt), "d MMM yyyy, HH:mm", { locale: ru })}</span>
+              </div>
             )}
           </div>
+
+          {/* Navigation buttons */}
+          <div className="flex flex-wrap gap-2 pt-1">
+            {task.relatedOrderId && (
+              <button
+                onClick={goToOrder}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                Открыть заказ {task.orderLabel && `· ${task.orderLabel}`}
+              </button>
+            )}
+            {task.relatedMasterId && (
+              <button
+                onClick={goToMaster}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-card border border-border/60 text-foreground rounded-lg hover:bg-muted/60 transition-colors"
+              >
+                <UserCircle className="w-3.5 h-3.5" />
+                Профиль мастера {task.masterAlias && `· ${task.masterAlias}`}
+              </button>
+            )}
+            {task.relatedMasterId && (
+              <button
+                onClick={goToChat}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-card border border-border/60 text-foreground rounded-lg hover:bg-muted/60 transition-colors"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                Написать мастеру
+              </button>
+            )}
+
+            {/* Status actions */}
+            <div className="ml-auto flex items-center gap-2">
+              {!isDone && !isInProg && (
+                <button
+                  onClick={() => onStatusChange(task.id, "in_progress")}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                >
+                  <ArrowRight className="w-3.5 h-3.5" /> Взять в работу
+                </button>
+              )}
+              {isInProg && (
+                <button
+                  onClick={() => onStatusChange(task.id, "open")}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                >
+                  <Circle className="w-3.5 h-3.5" /> Пауза
+                </button>
+              )}
+              {!isDone && (
+                <button
+                  onClick={() => onStatusChange(task.id, "done")}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Выполнено
+                </button>
+              )}
+              <button
+                onClick={() => onDelete(task.id)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Удалить
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
