@@ -7,14 +7,16 @@ const router = Router();
 const opsAndAdmin = requireRole("admin", "master_operator", "lead_operator");
 
 router.get("/", opsAndAdmin, async (req, res) => {
-  const { status, category, priority, assignedTo } = req.query;
+  const { status, category, priority, assignedTo, relatedMasterId, relatedOrderId } = req.query;
 
   let tasks = await db.select().from(systemTasksTable).orderBy(desc(systemTasksTable.createdAt));
 
-  if (status) tasks = tasks.filter(t => t.status === status);
-  if (category) tasks = tasks.filter(t => t.category === category);
-  if (priority) tasks = tasks.filter(t => t.priority === priority);
-  if (assignedTo) tasks = tasks.filter(t => t.assignedTo === assignedTo);
+  if (status)          tasks = tasks.filter(t => t.status === status);
+  if (category)        tasks = tasks.filter(t => t.category === category);
+  if (priority)        tasks = tasks.filter(t => t.priority === priority);
+  if (assignedTo)      tasks = tasks.filter(t => t.assignedTo === assignedTo);
+  if (relatedMasterId) tasks = tasks.filter(t => t.relatedMasterId === parseInt(relatedMasterId as string));
+  if (relatedOrderId)  tasks = tasks.filter(t => t.relatedOrderId  === parseInt(relatedOrderId  as string));
 
   const masters = await db.select({ id: mastersTable.id, alias: mastersTable.alias }).from(mastersTable).where(isNull(mastersTable.deletedAt));
   const orders = await db.select({ id: ordersTable.id, serviceType: ordersTable.serviceType, city: ordersTable.city }).from(ordersTable).where(isNull(ordersTable.deletedAt));

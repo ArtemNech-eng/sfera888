@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Layout } from "@/components/layout";
 import { ProtectedRoute, useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -103,6 +103,35 @@ function useOperators() {
       return Array.isArray(data) ? data : [];
     },
     staleTime: 60_000,
+  });
+}
+
+interface MasterOption { id: number; alias: string; city: string; }
+interface OrderOption  { id: number; serviceType: string; city: string; }
+
+function useMastersList() {
+  return useQuery<MasterOption[]>({
+    queryKey: ["/api/masters-list"],
+    queryFn: async () => {
+      const r = await fetch("/api/masters", { credentials: "include" });
+      if (!r.ok) return [];
+      const data = await r.json();
+      return Array.isArray(data) ? data.map((m: any) => ({ id: m.id, alias: m.alias, city: m.city })) : [];
+    },
+    staleTime: 60_000,
+  });
+}
+
+function useOrdersList() {
+  return useQuery<OrderOption[]>({
+    queryKey: ["/api/orders-list"],
+    queryFn: async () => {
+      const r = await fetch("/api/orders", { credentials: "include" });
+      if (!r.ok) return [];
+      const data = await r.json();
+      return Array.isArray(data) ? data.map((o: any) => ({ id: o.id, serviceType: o.serviceType, city: o.city })) : [];
+    },
+    staleTime: 30_000,
   });
 }
 
@@ -593,6 +622,8 @@ const DEFAULT_FORM = {
   category:  "general" as TaskCategory,
   assignedTo: "",
   dueAt: "",
+  relatedMasterId: "",
+  relatedOrderId: "",
 };
 
 const ROLE_LABELS: Record<string, string> = {
@@ -601,26 +632,41 @@ const ROLE_LABELS: Record<string, string> = {
   master_operator:  "Оператор мастеров",
 };
 
-function CreateModal({ onClose, onSubmit, isPending, initialDueAt, operators = [] }: {
+function CreateModal({
+  onClose, onSubmit, isPending,
+  initialDueAt, initialOrderId, initialMasterId,
+  operators = [], masters = [], orders = [],
+}: {
   onClose: () => void;
   onSubmit: (data: any) => void;
   isPending: boolean;
   initialDueAt?: string;
+  initialOrderId?: number;
+  initialMasterId?: number;
   operators?: Operator[];
+  masters?: MasterOption[];
+  orders?: OrderOption[];
 }) {
-  const [form, setForm] = useState({ ...DEFAULT_FORM, dueAt: initialDueAt ?? "" });
+  const [form, setForm] = useState({
+    ...DEFAULT_FORM,
+    dueAt:           initialDueAt   ?? "",
+    relatedOrderId:  initialOrderId  ? String(initialOrderId)  : "",
+    relatedMasterId: initialMasterId ? String(initialMasterId) : "",
+  });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.title.trim()) return;
     onSubmit({
-      title:       form.title.trim(),
-      description: form.description.trim() || null,
-      priority:    form.priority,
-      category:    form.category,
-      assignedTo:  form.assignedTo.trim() || null,
-      dueAt:       form.dueAt || null,
-      type:        "manual",
+      title:           form.title.trim(),
+      description:     form.description.trim() || null,
+      priority:        form.priority,
+      category:        form.category,
+      assignedTo:      form.assignedTo || null,
+      dueAt:           form.dueAt || null,
+      relatedMasterId: form.relatedMasterId ? parseInt(form.relatedMasterId) : null,
+      relatedOrderId:  form.relatedOrderId  ? parseInt(form.relatedOrderId)  : null,
+      type:            "manual",
     });
   };
 
@@ -693,6 +739,41 @@ function CreateModal({ onClose, onSubmit, isPending, initialDueAt, operators = [
               </select>
             </div>
           </div>
+          {/* Link to master */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">
+                Мастер
+              </label>
+              <select
+                value={form.relatedMasterId}
+                onChange={e => setForm(v => ({ ...v, relatedMasterId: e.target.value }))}
+                className="w-full px-3 py-2.5 text-sm bg-background border border-border/60 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30"
+              >
+                <option value="">— Не связано —</option>
+                {masters.map(m => (
+                  <option key={m.id} value={m.id}>{m.alias} · {m.city}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">
+                Заказ
+              </label>
+              <select
+                value={form.relatedOrderId}
+                onChange={e => setForm(v => ({ ...v, relatedOrderId: e.target.value }))}
+                className="w-full px-3 py-2.5 text-sm bg-background border border-border/60 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30"
+              >
+                <option value="">— Не связано —</option>
+                {orders.map(o => (
+                  <option key={o.id} value={o.id}>#{o.id} {o.serviceType} · {o.city}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Due date + assignee */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">
@@ -751,14 +832,30 @@ export default function Tasks() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { toast }   = useToast();
+  const [location]  = useLocation();
   const { data: tasks, isLoading } = useTasks();
   const { data: operators = [] }   = useOperators();
+  const { data: masters = [] }     = useMastersList();
+  const { data: orders = [] }      = useOrdersList();
 
-  const [viewMode,    setViewMode]    = useState<"list" | "calendar">("list");
-  const [statusTab,   setStatusTab]   = useState<"all" | TaskStatus>("all");
-  const [search,      setSearch]      = useState("");
-  const [showCreate,  setShowCreate]  = useState(false);
-  const [createDueAt, setCreateDueAt] = useState<string | undefined>();
+  const [viewMode,       setViewMode]       = useState<"list" | "calendar">("list");
+  const [statusTab,      setStatusTab]      = useState<"all" | TaskStatus>("all");
+  const [search,         setSearch]         = useState("");
+  const [showCreate,     setShowCreate]     = useState(false);
+  const [createDueAt,    setCreateDueAt]    = useState<string | undefined>();
+  const [createOrderId,  setCreateOrderId]  = useState<number | undefined>();
+  const [createMasterId, setCreateMasterId] = useState<number | undefined>();
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.split("?")[1] ?? "");
+    const newOrder  = params.get("newOrder");
+    const newMaster = params.get("newMaster");
+    if (newOrder || newMaster) {
+      if (newOrder)  setCreateOrderId(parseInt(newOrder));
+      if (newMaster) setCreateMasterId(parseInt(newMaster));
+      setShowCreate(true);
+    }
+  }, [location]);
 
   const createMutation = useMutation({
     mutationFn: (data: any) =>
@@ -772,6 +869,8 @@ export default function Tasks() {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
       setShowCreate(false);
       setCreateDueAt(undefined);
+      setCreateOrderId(undefined);
+      setCreateMasterId(undefined);
       toast({ title: "Задача создана" });
     },
   });
@@ -837,6 +936,8 @@ export default function Tasks() {
     const mo   = pad(date.getMonth() + 1);
     const d    = pad(date.getDate());
     setCreateDueAt(`${y}-${mo}-${d}T09:00`);
+    setCreateOrderId(undefined);
+    setCreateMasterId(undefined);
     setShowCreate(true);
   };
 
@@ -874,7 +975,7 @@ export default function Tasks() {
                 </button>
               </div>
               <button
-                onClick={() => { setCreateDueAt(undefined); setShowCreate(true); }}
+                onClick={() => { setCreateDueAt(undefined); setCreateOrderId(undefined); setCreateMasterId(undefined); setShowCreate(true); }}
                 className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium text-sm hover:bg-primary/90 transition-colors shadow-sm shadow-primary/20"
               >
                 <Plus className="w-4 h-4" /> Создать
@@ -991,11 +1092,20 @@ export default function Tasks() {
 
         {showCreate && (
           <CreateModal
-            onClose={() => { setShowCreate(false); setCreateDueAt(undefined); }}
+            onClose={() => {
+              setShowCreate(false);
+              setCreateDueAt(undefined);
+              setCreateOrderId(undefined);
+              setCreateMasterId(undefined);
+            }}
             onSubmit={data => createMutation.mutate(data)}
             isPending={createMutation.isPending}
             initialDueAt={createDueAt}
+            initialOrderId={createOrderId}
+            initialMasterId={createMasterId}
             operators={operators}
+            masters={masters}
+            orders={orders}
           />
         )}
       </Layout>

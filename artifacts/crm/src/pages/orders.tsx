@@ -8,6 +8,7 @@ import { formatDate } from "@/lib/utils";
 import {
   Loader2, MapPin, Send, Users, CheckCircle2, Clock, X, UserCheck,
   DollarSign, Check, Pencil, AlertCircle, MessageSquare, Trash2, Search,
+  ClipboardList,
 } from "lucide-react";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -443,6 +444,13 @@ export default function Orders() {
                         </td>
                         <td className="px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => setLocation(`/tasks?newOrder=${order.id}`)}
+                              title="Создать задачу по заказу"
+                              className="w-7 h-7 flex items-center justify-center rounded-lg text-muted-foreground/30 hover:text-primary hover:bg-primary/10 transition-all"
+                            >
+                              <ClipboardList className="w-3.5 h-3.5" />
+                            </button>
                             <button
                               onClick={() => deleteOrderMutation.mutate(order.id)}
                               title="В корзину"

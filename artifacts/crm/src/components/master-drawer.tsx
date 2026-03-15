@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from "react";
+import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import {
   X, Phone, MapPin, MessageSquare, Star, Briefcase, AlertTriangle,
   User, Tag, Plus, CheckSquare, Square, Clock, Trash2, History,
   Send, Paperclip, Check, CheckCheck, Calendar, DollarSign, Loader2, CheckCircle2,
+  ClipboardList, ExternalLink,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -95,6 +97,7 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
   onMasterUpdate: (id: number, data: Partial<DrawerMaster>) => void;
 }) {
   const { user } = useAuth();
+  const [, setLocation] = useLocation();
   const [tab, setTab] = useState<DrawerTab>("profile");
 
   const [tagInput, setTagInput] = useState("");
@@ -105,6 +108,9 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
   const [taskText, setTaskText] = useState("");
   const [taskDue, setTaskDue] = useState("");
   const [addingTask, setAddingTask] = useState(false);
+
+  interface SystemTask { id: number; title: string; status: string; priority: string; dueAt: string | null; assignedTo: string | null; }
+  const [systemTasks, setSystemTasks] = useState<SystemTask[]>([]);
 
   const [orders, setOrders] = useState<HistoryOrder[]>([]);
   const [ordersLoaded, setOrdersLoaded] = useState(false);
@@ -131,7 +137,10 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
   }, [master.id]);
 
   useEffect(() => {
-    if (tab === "tasks") fetch(`/api/masters/${master.id}/tasks`).then(r => r.json()).then(setTasks);
+    if (tab === "tasks") {
+      fetch(`/api/masters/${master.id}/tasks`, { credentials: "include" }).then(r => r.json()).then(setTasks);
+      fetch(`/api/tasks?relatedMasterId=${master.id}`, { credentials: "include" }).then(r => r.json()).then(d => setSystemTasks(Array.isArray(d) ? d : []));
+    }
     if (tab === "orders" && !ordersLoaded) {
       fetch(`/api/masters/${master.id}/orders`).then(r => r.json()).then(d => { setOrders(d); setOrdersLoaded(true); });
     }
@@ -572,30 +581,75 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                   </button>
                 </div>
               </div>
-              {tasks.length === 0 && <div className="text-center text-sm text-gray-300 py-6">Нет задач</div>}
-              {tasks.map(task => (
-                <div key={task.id} className={`flex items-start gap-3 p-3.5 rounded-xl border transition-colors ${task.isCompleted ? "bg-gray-50 border-gray-100 opacity-60" : "bg-white border-gray-100 shadow-sm"}`}>
-                  <button onClick={() => toggleTask(task)} className="mt-0.5 flex-shrink-0">
-                    {task.isCompleted
-                      ? <CheckSquare className="w-4 h-4 text-emerald-500" />
-                      : <Square className="w-4 h-4 text-gray-300 hover:text-blue-500 transition-colors" />}
-                  </button>
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-xs leading-relaxed ${task.isCompleted ? "line-through text-gray-400" : "text-gray-700"}`}>{task.text}</p>
-                    <div className="flex items-center gap-3 mt-1 text-[10px] text-gray-300">
-                      {task.dueAt && (
-                        <span className={`flex items-center gap-0.5 ${new Date(task.dueAt) < new Date() && !task.isCompleted ? "text-red-400 font-medium" : ""}`}>
-                          <Clock className="w-3 h-3" />{dateShort(task.dueAt)}
-                        </span>
-                      )}
-                      {task.createdBy && <span>от {task.createdBy}</span>}
+              {/* Personal checklist (master_tasks) */}
+              <div>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Чеклист мастера</p>
+                {tasks.length === 0 && <div className="text-center text-sm text-gray-300 py-3">Нет задач</div>}
+                {tasks.map(task => (
+                  <div key={task.id} className={`flex items-start gap-3 p-3.5 rounded-xl border transition-colors mb-2 ${task.isCompleted ? "bg-gray-50 border-gray-100 opacity-60" : "bg-white border-gray-100 shadow-sm"}`}>
+                    <button onClick={() => toggleTask(task)} className="mt-0.5 flex-shrink-0">
+                      {task.isCompleted
+                        ? <CheckSquare className="w-4 h-4 text-emerald-500" />
+                        : <Square className="w-4 h-4 text-gray-300 hover:text-blue-500 transition-colors" />}
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-xs leading-relaxed ${task.isCompleted ? "line-through text-gray-400" : "text-gray-700"}`}>{task.text}</p>
+                      <div className="flex items-center gap-3 mt-1 text-[10px] text-gray-300">
+                        {task.dueAt && (
+                          <span className={`flex items-center gap-0.5 ${new Date(task.dueAt) < new Date() && !task.isCompleted ? "text-red-400 font-medium" : ""}`}>
+                            <Clock className="w-3 h-3" />{dateShort(task.dueAt)}
+                          </span>
+                        )}
+                        {task.createdBy && <span>от {task.createdBy}</span>}
+                      </div>
                     </div>
+                    <button onClick={() => deleteTask(task.id)} className="p-1 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0">
+                      <Trash2 className="w-3.5 h-3.5 text-gray-300 hover:text-red-400" />
+                    </button>
                   </div>
-                  <button onClick={() => deleteTask(task.id)} className="p-1 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0">
-                    <Trash2 className="w-3.5 h-3.5 text-gray-300 hover:text-red-400" />
+                ))}
+              </div>
+
+              {/* System tasks (system_tasks) */}
+              <div className="border-t border-gray-100 pt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide flex items-center gap-1">
+                    <ClipboardList className="w-3 h-3" /> Системные задачи
+                  </p>
+                  <button
+                    onClick={() => { onClose(); setLocation(`/tasks?newMaster=${master.id}`); }}
+                    className="text-[10px] text-blue-500 hover:text-blue-700 flex items-center gap-0.5 font-medium transition-colors"
+                  >
+                    <Plus className="w-3 h-3" /> Создать
                   </button>
                 </div>
-              ))}
+                {systemTasks.length === 0 && (
+                  <div className="text-center text-sm text-gray-300 py-3">Нет системных задач</div>
+                )}
+                {systemTasks.map(st => (
+                  <div
+                    key={st.id}
+                    onClick={() => { onClose(); setLocation(`/tasks`); }}
+                    className="flex items-start gap-2.5 p-3 rounded-xl border border-gray-100 bg-white shadow-sm mb-2 cursor-pointer hover:bg-blue-50/30 transition-colors"
+                  >
+                    <ClipboardList className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-xs font-medium ${st.status === "done" ? "line-through text-gray-400" : "text-gray-700"}`}>{st.title}</p>
+                      <div className="flex items-center gap-2 mt-0.5 text-[10px] text-gray-300">
+                        <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-semibold ${
+                          st.priority === "urgent" ? "bg-red-100 text-red-600" :
+                          st.priority === "high"   ? "bg-orange-100 text-orange-600" :
+                          st.priority === "medium" ? "bg-yellow-100 text-yellow-600" :
+                          "bg-gray-100 text-gray-500"
+                        }`}>{st.priority === "urgent" ? "Срочно" : st.priority === "high" ? "Высокий" : st.priority === "medium" ? "Средний" : "Низкий"}</span>
+                        {st.dueAt && <span className="flex items-center gap-0.5"><Clock className="w-3 h-3" />{dateShort(st.dueAt)}</span>}
+                        {st.assignedTo && <span>→ {st.assignedTo}</span>}
+                      </div>
+                    </div>
+                    <ExternalLink className="w-3 h-3 text-gray-300 flex-shrink-0 mt-0.5" />
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
