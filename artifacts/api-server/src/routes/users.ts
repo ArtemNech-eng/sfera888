@@ -6,6 +6,18 @@ import { requireRole } from "../middlewares/requireAuth.js";
 
 const router = Router();
 
+// Список операторов для выбора в задачах и других формах (доступно всем залогиненным)
+router.get("/operators", async (req, res) => {
+  if (!req.session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  const users = await db.select({
+    id:    usersTable.id,
+    login: usersTable.login,
+    name:  usersTable.name,
+    role:  usersTable.role,
+  }).from(usersTable);
+  res.json(users);
+});
+
 router.get("/", requireRole("admin"), async (req, res) => {
   const users = await db.select({
     id: usersTable.id,

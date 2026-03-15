@@ -73,7 +73,9 @@ const STATUS_TABS = [
 
 const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 
-// ─── Data hook ─────────────────────────────────────────────────────────────────
+// ─── Data hooks ────────────────────────────────────────────────────────────────
+
+interface Operator { id: number; login: string; name: string; role: string; }
 
 function useTasks() {
   return useQuery<Task[]>({
@@ -85,6 +87,19 @@ function useTasks() {
       return Array.isArray(data) ? data : [];
     },
     refetchInterval: 15_000,
+  });
+}
+
+function useOperators() {
+  return useQuery<Operator[]>({
+    queryKey: ["/api/users/operators"],
+    queryFn: async () => {
+      const r = await fetch("/api/users/operators", { credentials: "include" });
+      if (!r.ok) return [];
+      const data = await r.json();
+      return Array.isArray(data) ? data : [];
+    },
+    staleTime: 60_000,
   });
 }
 
@@ -495,11 +510,18 @@ const DEFAULT_FORM = {
   dueAt: "",
 };
 
-function CreateModal({ onClose, onSubmit, isPending, initialDueAt }: {
+const ROLE_LABELS: Record<string, string> = {
+  admin:            "Администратор",
+  lead_operator:    "Оператор лидов",
+  master_operator:  "Оператор мастеров",
+};
+
+function CreateModal({ onClose, onSubmit, isPending, initialDueAt, operators = [] }: {
   onClose: () => void;
   onSubmit: (data: any) => void;
   isPending: boolean;
   initialDueAt?: string;
+  operators?: Operator[];
 }) {
   const [form, setForm] = useState({ ...DEFAULT_FORM, dueAt: initialDueAt ?? "" });
 
@@ -602,12 +624,18 @@ function CreateModal({ onClose, onSubmit, isPending, initialDueAt }: {
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">
                 Назначить
               </label>
-              <input
+              <select
                 value={form.assignedTo}
                 onChange={e => setForm(v => ({ ...v, assignedTo: e.target.value }))}
-                placeholder="Логин оператора"
                 className="w-full px-3 py-2.5 text-sm bg-background border border-border/60 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
+              >
+                <option value="">— Не назначено —</option>
+                {operators.map(op => (
+                  <option key={op.id} value={op.login}>
+                    {op.name} ({ROLE_LABELS[op.role] ?? op.role})
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
           <div className="flex gap-3 pt-1">
@@ -639,6 +667,7 @@ export default function Tasks() {
   const queryClient = useQueryClient();
   const { toast }   = useToast();
   const { data: tasks, isLoading } = useTasks();
+  const { data: operators = [] }   = useOperators();
 
   const [viewMode,    setViewMode]    = useState<"list" | "calendar">("list");
   const [statusTab,   setStatusTab]   = useState<"all" | TaskStatus>("all");
@@ -881,6 +910,7 @@ export default function Tasks() {
             onSubmit={data => createMutation.mutate(data)}
             isPending={createMutation.isPending}
             initialDueAt={createDueAt}
+            operators={operators}
           />
         )}
       </Layout>
