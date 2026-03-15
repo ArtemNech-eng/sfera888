@@ -154,8 +154,8 @@ function TaskCard({
   const isOverdue = task.dueAt && !isDone && isPast(new Date(task.dueAt));
   const pcfg      = PRIORITY_CONFIG[task.priority];
 
-  const goToOrder  = () => setLocation(`/orders?search=${encodeURIComponent(task.orderLabel ?? String(task.relatedOrderId))}`);
-  const goToMaster = () => setLocation(`/masters?search=${encodeURIComponent(task.masterAlias ?? String(task.relatedMasterId))}`);
+  const goToOrder  = () => setLocation(`/orders?highlight=${task.relatedOrderId}`);
+  const goToMaster = () => setLocation(`/masters?openMaster=${task.relatedMasterId}`);
   const goToChat   = () => setLocation(`/master-chat?masterId=${task.relatedMasterId}`);
 
   return (

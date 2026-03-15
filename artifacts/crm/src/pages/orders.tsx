@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { Layout } from "@/components/layout";
 import { useGetOrders, OrderStatus } from "@workspace/api-client-react";
@@ -52,6 +52,14 @@ export default function Orders() {
     const params = new URLSearchParams(window.location.search);
     return params.get("search") ?? "";
   });
+  const highlightId = parseInt(new URLSearchParams(window.location.search).get("highlight") ?? "") || null;
+  const highlightRowRef = useRef<HTMLTableRowElement | null>(null);
+
+  useEffect(() => {
+    if (highlightRowRef.current) {
+      highlightRowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [highlightId]);
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -378,7 +386,17 @@ export default function Orders() {
                     const confirmed = (order as any).orderAmount ? Number((order as any).orderAmount) : null;
                     const pendingResp = pendingResponseOrders.find(p => p.orderId === order.id);
                     return (
-                      <tr key={order.id} className={`hover:bg-slate-50/50 transition-colors ${proposed && !confirmed ? "bg-amber-50/30" : pendingResp ? "bg-blue-50/30" : ""}`}>
+                      <tr
+                        key={order.id}
+                        ref={order.id === highlightId ? highlightRowRef : undefined}
+                        className={`hover:bg-slate-50/50 transition-colors ${
+                          order.id === highlightId
+                            ? "bg-primary/5 ring-2 ring-inset ring-primary/40"
+                            : proposed && !confirmed ? "bg-amber-50/30"
+                            : pendingResp ? "bg-blue-50/30"
+                            : ""
+                        }`}
+                      >
                         <td className="px-6 py-4">
                           <span className="font-medium text-foreground">#{order.id}</span>
                           <div className="text-xs text-muted-foreground mt-1">{formatDate(order.createdAt)}</div>

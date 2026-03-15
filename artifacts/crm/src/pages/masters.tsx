@@ -92,7 +92,17 @@ export default function Masters() {
   useEffect(() => {
     fetch("/api/voronka/masters")
       .then(r => r.ok ? r.json() : [])
-      .then(data => { setMasters(Array.isArray(data) ? data : []); setLoading(false); })
+      .then(data => {
+        const list: Master[] = Array.isArray(data) ? data : [];
+        setMasters(list);
+        setLoading(false);
+        // Auto-open drawer if ?openMaster=id is in URL
+        const openId = parseInt(new URLSearchParams(window.location.search).get("openMaster") ?? "");
+        if (openId) {
+          const found = list.find(m => m.id === openId);
+          if (found) setDrawerMaster(found);
+        }
+      })
       .catch(() => setLoading(false));
   }, []);
 
