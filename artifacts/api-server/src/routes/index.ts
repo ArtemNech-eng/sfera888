@@ -16,6 +16,7 @@ import dispatchRouter from "./dispatch.js";
 import storageRouter from "./storage.js";
 import yandexPayRouter from "./yandex-pay.js";
 import trashRouter, { runTrashCleanup } from "./trash.js";
+import tasksRouter from "./tasks.js";
 
 const router = Router();
 
@@ -36,6 +37,7 @@ router.use("/dispatch", dispatchRouter);
 router.use("/yandex-pay", yandexPayRouter);
 router.use("/", storageRouter);
 router.use("/trash", trashRouter);
+router.use("/tasks", tasksRouter);
 
 // Run trash cleanup on startup, then every hour
 runTrashCleanup().catch(console.error);

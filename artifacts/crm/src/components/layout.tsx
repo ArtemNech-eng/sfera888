@@ -15,6 +15,7 @@ import {
   MessageCircle,
   MessagesSquare,
   Trash2,
+  ClipboardList,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -39,6 +40,14 @@ export function Layout({ children }: LayoutProps) {
   });
   const unreadCount = unreadData?.count ?? 0;
 
+  const { data: taskStats } = useQuery<{ open: number; urgent: number }>({
+    queryKey: ["/api/tasks/stats"],
+    queryFn: () => fetch("/api/tasks/stats", { credentials: "include" }).then(r => r.json()),
+    enabled: !!user,
+    refetchInterval: 30_000,
+  });
+  const openTasksCount = taskStats?.open ?? 0;
+
   const navItems = [
     { href: "/", label: "Дашборд", icon: LayoutDashboard, roles: ['admin'] },
     { href: "/voronka", label: "Воронка Telegram", icon: MessageCircle, roles: ['admin', 'lead_operator', 'master_operator'] },
@@ -46,6 +55,7 @@ export function Layout({ children }: LayoutProps) {
     { href: "/leads", label: "Заявки", icon: Inbox, roles: ['admin', 'lead_operator'] },
     { href: "/orders", label: "Буфер заказов", icon: Briefcase, roles: ['admin', 'master_operator'] },
     { href: "/masters", label: "Мастера", icon: Users, roles: ['admin', 'master_operator'] },
+    { href: "/tasks", label: "Задачи", icon: ClipboardList, roles: ['admin', 'master_operator', 'lead_operator'], badge: openTasksCount > 0 ? openTasksCount : null },
     { href: "/finance", label: "Финансы", icon: Wallet, roles: ['admin'] },
     { href: "/analytics", label: "Аналитика", icon: BarChart3, roles: ['admin'] },
     { href: "/settings", label: "Настройки", icon: Settings, roles: ['admin'] },
