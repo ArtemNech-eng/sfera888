@@ -538,7 +538,13 @@ router.post("/auth/register", async (req, res) => {
 
   // Check login uniqueness
   const existing = await db.select().from(mastersTable).where(and(eq(mastersTable.pwaLogin, login), isNull(mastersTable.deletedAt)));
-  if (existing.length > 0) return res.status(400).json({ error: "Этот номер телефона уже зарегистрирован" });
+  if (existing.length > 0) {
+    const m = existing[0];
+    if (m.status === "pending_contract") {
+      return res.status(400).json({ error: "Этот номер уже зарегистрирован и ожидает подписания договора. Войдите с этим номером и паролем." });
+    }
+    return res.status(400).json({ error: "Этот номер телефона уже зарегистрирован. Войдите через вкладку «Вход»." });
+  }
 
   // Get "Новые" column (position 1)
   const cols = await db.select().from(voronkaColumnsTable).orderBy(voronkaColumnsTable.position);
