@@ -27,7 +27,6 @@ timeoutMs = 20000
 [userenv]
 
 [userenv.shared]
-TELEGRAM_BOT_TOKEN = "8785103903:AAF9qqgayLF5VWhF6h-dD5e0ce6OxpEs5tg"
 
 [nix]
 channel = "stable-25_05"
