@@ -66,7 +66,7 @@ export function Layout({ children }: LayoutProps) {
   const filteredNav = navItems.filter(item => user && item.roles.includes(user.role));
 
   return (
-    <div className="min-h-screen bg-background flex">
+    <div className="h-screen overflow-hidden bg-background flex">
       {/* Sidebar Desktop */}
       <aside className="hidden md:flex w-64 flex-col fixed inset-y-0 left-0 bg-sidebar border-r border-sidebar-border z-20">
         <div className="p-6 flex items-center gap-3 border-b border-sidebar-border">
@@ -120,7 +120,7 @@ export function Layout({ children }: LayoutProps) {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 md:pl-64 flex flex-col min-h-screen">
+      <main className="flex-1 md:pl-64 flex flex-col h-screen overflow-hidden">
         {/* Mobile Header */}
         <header className="md:hidden flex items-center justify-between p-4 bg-card border-b border-border z-20">
           <div className="flex items-center gap-2">
@@ -168,7 +168,7 @@ export function Layout({ children }: LayoutProps) {
           </div>
         )}
 
-        <div className="flex-1 p-4 md:p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
           {children}
         </div>
       </main>
