@@ -67,47 +67,49 @@
 }
 
 :root {
-  --background: 240 25% 97%;
-  --foreground: 240 40% 11%;
+  /* Soft lavender-white background — rendered via body gradient */
+  --background: 248 40% 97%;
+  --foreground: 245 40% 11%;
 
+  /* Cards are nearly white — glassmorphism applied below */
   --card: 0 0% 100%;
-  --card-foreground: 240 40% 11%;
-  --card-border: 240 20% 90%;
+  --card-foreground: 245 40% 11%;
+  --card-border: 248 30% 91%;
 
   --popover: 0 0% 100%;
-  --popover-foreground: 240 40% 11%;
-  --popover-border: 240 20% 90%;
+  --popover-foreground: 245 40% 11%;
+  --popover-border: 248 30% 91%;
 
-  --primary: 258 84% 56%;
+  --primary: 258 84% 58%;
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 240 20% 94%;
-  --secondary-foreground: 240 40% 20%;
+  --secondary: 248 28% 94%;
+  --secondary-foreground: 245 40% 20%;
 
-  --muted: 240 20% 94%;
-  --muted-foreground: 240 12% 48%;
+  --muted: 248 28% 95%;
+  --muted-foreground: 245 12% 50%;
 
   --accent: 258 60% 96%;
-  --accent-foreground: 258 84% 40%;
+  --accent-foreground: 258 84% 42%;
 
   --destructive: 0 80% 56%;
   --destructive-foreground: 0 0% 100%;
 
-  --border: 240 18% 88%;
-  --input: 240 18% 88%;
-  --ring: 258 84% 56%;
+  --border: 248 24% 89%;
+  --input: 248 24% 89%;
+  --ring: 258 84% 58%;
 
   /* Dark violet sidebar */
-  --sidebar: 238 40% 9%;
+  --sidebar: 238 42% 8%;
   --sidebar-foreground: 220 15% 88%;
-  --sidebar-border: 238 35% 14%;
-  --sidebar-primary: 258 80% 72%;
+  --sidebar-border: 238 35% 13%;
+  --sidebar-primary: 258 80% 74%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 238 35% 14%;
-  --sidebar-accent-foreground: 220 15% 78%;
-  --sidebar-ring: 258 80% 72%;
+  --sidebar-accent: 238 35% 13%;
+  --sidebar-accent-foreground: 220 15% 75%;
+  --sidebar-ring: 258 80% 74%;
 
-  --chart-1: 258 84% 56%;
+  --chart-1: 258 84% 58%;
   --chart-2: 160 65% 42%;
   --chart-3: 38 92% 52%;
   --chart-4: 320 65% 58%;
@@ -115,42 +117,91 @@
 
   --radius: 0.75rem;
 
-  --primary-border: hsl(258 84% 48%);
-  --secondary-border: hsl(240 20% 87%);
-  --muted-border: hsl(240 20% 87%);
+  --primary-border: hsl(258 84% 50%);
+  --secondary-border: hsl(248 28% 87%);
+  --muted-border: hsl(248 28% 87%);
   --accent-border: hsl(258 60% 90%);
   --destructive-border: hsl(0 80% 48%);
-  --sidebar-primary-border: hsl(258 80% 64%);
-  --sidebar-accent-border: hsl(238 35% 18%);
+  --sidebar-primary-border: hsl(258 80% 65%);
+  --sidebar-accent-border: hsl(238 35% 16%);
 }
 
 @layer base {
-  * {
-    @apply border-border;
-  }
+  * { @apply border-border; }
+
+  html { height: 100%; }
+
   body {
-    @apply bg-background text-foreground antialiased font-sans;
+    @apply text-foreground antialiased;
+    font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    selection-background-color: hsl(258 84% 56% / 0.2);
+    min-height: 100%;
+    /* Subtle gradient background */
+    background: linear-gradient(135deg,
+      hsl(248 50% 96%) 0%,
+      hsl(258 55% 97%) 35%,
+      hsl(240 40% 96%) 65%,
+      hsl(260 50% 97%) 100%);
+    background-attachment: fixed;
   }
+
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display);
     @apply tracking-tight font-semibold;
   }
 }
 
-.voronka-scroll::-webkit-scrollbar {
-  height: 6px;
-  width: 6px;
+/* ──────────────────────────────────────────
+   GLASSMORPHISM CARDS
+   Applied to all card-like containers
+   ────────────────────────────────────────── */
+@layer components {
+  /* Kanban / drag cards */
+  .kanban-card,
+  [data-slot="card"],
+  .card-glass {
+    background: rgba(255, 255, 255, 0.72) !important;
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.88) !important;
+    box-shadow: 0 4px 24px rgba(120, 80, 220, 0.07), 0 1px 4px rgba(0,0,0,0.05) !important;
+  }
 }
-.voronka-scroll::-webkit-scrollbar-track {
-  background: transparent;
+
+/* ──────────────────────────────────────────
+   GLOBAL GLASS OVERRIDE
+   Targets shadcn Card and similar wrappers
+   ────────────────────────────────────────── */
+.bg-card {
+  background: rgba(255, 255, 255, 0.72) !important;
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
 }
+
+/* Panels / containers that use bg-background inside sidebar layout */
+main .rounded-xl,
+main .rounded-lg,
+main [class*="rounded"] {
+  --tw-ring-shadow: 0 0 0 0px transparent;
+}
+
+/* Make tables and inner panels glassy too */
+.bg-white {
+  background: rgba(255, 255, 255, 0.78) !important;
+  backdrop-filter: blur(12px) saturate(160%);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+}
+
+/* ──────────────────────────────────────────
+   VORONKA / KANBAN COLUMN SCROLLBAR
+   ────────────────────────────────────────── */
+.voronka-scroll::-webkit-scrollbar { height: 6px; width: 6px; }
+.voronka-scroll::-webkit-scrollbar-track { background: transparent; }
 .voronka-scroll::-webkit-scrollbar-thumb {
-  background: rgba(124, 58, 237, 0.2);
+  background: rgba(124, 58, 237, 0.18);
   border-radius: 999px;
 }
 .voronka-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(124, 58, 237, 0.38);
+  background: rgba(124, 58, 237, 0.35);
 }

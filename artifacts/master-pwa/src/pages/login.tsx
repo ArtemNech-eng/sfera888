@@ -70,11 +70,13 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-dvh flex flex-col items-center justify-center px-5 py-10 bg-background relative overflow-hidden">
-      {/* Ambient glow */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[500px] h-[300px] rounded-full blur-[120px] opacity-20"
-           style={{ background: "radial-gradient(ellipse, #7C3AED 0%, #4F46E5 60%, transparent 100%)" }} />
-      <div className="absolute bottom-0 right-0 w-[300px] h-[300px] rounded-full blur-[100px] opacity-10"
-           style={{ background: "#6366F1" }} />
+      {/* Ambient glow — light violet orbs */}
+      <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-[600px] h-[400px] rounded-full blur-[140px] opacity-30"
+           style={{ background: "radial-gradient(ellipse, #c4b5fd 0%, #a78bfa 50%, transparent 100%)" }} />
+      <div className="absolute bottom-0 right-0 w-[260px] h-[260px] rounded-full blur-[100px] opacity-20"
+           style={{ background: "#818cf8" }} />
+      <div className="absolute bottom-1/3 left-0 w-[200px] h-[200px] rounded-full blur-[80px] opacity-15"
+           style={{ background: "#c084fc" }} />
 
       <div className="w-full max-w-sm space-y-7 relative z-10">
         <div className="text-center space-y-2">
