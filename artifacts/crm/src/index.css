@@ -194,28 +194,33 @@ main [class*="rounded"] {
 }
 
 /* ──────────────────────────────────────────
-   VORONKA / KANBAN COLUMN SCROLLBAR
+   GLOBAL SCROLLBARS — thin & nearly transparent
    ────────────────────────────────────────── */
-.voronka-scroll {
+* {
   scrollbar-width: thin;
   scrollbar-color: rgba(124, 58, 237, 0.10) transparent;
 }
-.voronka-scroll::-webkit-scrollbar {
+::-webkit-scrollbar {
   height: 3px;
   width: 3px;
 }
-.voronka-scroll::-webkit-scrollbar-track {
+::-webkit-scrollbar-track {
   background: transparent;
   border-radius: 999px;
 }
-.voronka-scroll::-webkit-scrollbar-thumb {
+::-webkit-scrollbar-thumb {
   background: rgba(124, 58, 237, 0.10);
   border-radius: 999px;
-  transition: background 0.25s ease;
 }
-.voronka-scroll:hover::-webkit-scrollbar-thumb {
+*:hover::-webkit-scrollbar-thumb {
   background: rgba(124, 58, 237, 0.22);
 }
-.voronka-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(124, 58, 237, 0.38);
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(124, 58, 237, 0.40);
+}
+
+/* Keep alias for backward compat */
+.voronka-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(124, 58, 237, 0.10) transparent;
 }
