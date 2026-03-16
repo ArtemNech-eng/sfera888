@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import {
   User, Phone, MapPin, Star, Briefcase,
   TrendingUp, ShieldCheck, LogOut, ExternalLink,
-  BadgeCheck,
+  BadgeCheck, Camera,
 } from "lucide-react";
 
 interface ProfileData {
@@ -44,6 +44,8 @@ export default function ProfilePage() {
   const [data, setData] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     api.profile()
@@ -58,6 +60,33 @@ export default function ProfilePage() {
       await logout();
     } catch {
       setLoggingOut(false);
+    }
+  };
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { toast.error("Выберите изображение"); return; }
+    if (file.size > 5 * 1024 * 1024) { toast.error("Файл не должен превышать 5 МБ"); return; }
+
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("avatar", file);
+      const res = await fetch("/api/master-pwa/profile/avatar", {
+        method: "POST",
+        credentials: "include",
+        body: fd,
+      });
+      if (!res.ok) throw new Error("Ошибка загрузки");
+      const { customAvatarUrl } = await res.json();
+      setData(d => d ? { ...d, customAvatarUrl } : d);
+      toast.success("Фото обновлено");
+    } catch {
+      toast.error("Не удалось загрузить фото");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
@@ -76,22 +105,44 @@ export default function ProfilePage() {
   return (
     <div className="px-4 pt-5 pb-4 space-y-5">
       <div className="flex items-center gap-4">
-        {data.customAvatarUrl ? (
-          <img
-            src={data.customAvatarUrl}
-            alt={data.alias}
-            className="w-16 h-16 rounded-full object-cover"
+        {/* Avatar with upload overlay */}
+        <div className="relative shrink-0">
+          {data.customAvatarUrl ? (
+            <img
+              src={data.customAvatarUrl}
+              alt={data.alias}
+              className="w-16 h-16 rounded-full object-cover"
+            />
+          ) : (
+            <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center text-white text-xl font-bold">
+              {initials}
+            </div>
+          )}
+
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-primary border-2 border-background flex items-center justify-center shadow-md active:opacity-80 disabled:opacity-50 transition-opacity"
+          >
+            {uploading
+              ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              : <Camera size={13} className="text-white" />}
+          </button>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleAvatarChange}
           />
-        ) : (
-          <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center text-white text-xl font-bold shrink-0">
-            {initials}
-          </div>
-        )}
+        </div>
+
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <h1 className="text-lg font-bold truncate">{data.alias}</h1>
             {data.isTestMaster && (
-              <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 font-medium shrink-0">
+              <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium shrink-0">
                 Тест
               </span>
             )}
@@ -102,7 +153,7 @@ export default function ProfilePage() {
           </div>
           <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
             <Briefcase size={13} />
-            <span>{data.specialization}</span>
+            <span className="truncate">{data.specialization}</span>
           </div>
         </div>
         <div className="flex items-center gap-1 text-amber-500 shrink-0">

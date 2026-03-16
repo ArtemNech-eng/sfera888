@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, voronkaColumnsTable, mastersTable, ordersTable, leadsTable, telegramChatsTable } from "@workspace/db";
-import { eq, inArray, and } from "drizzle-orm";
+import { eq, inArray, and, isNull } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
 
 const router = Router();
@@ -64,7 +64,9 @@ router.delete("/columns/:id", requireRole("admin"), async (req, res) => {
 
 // GET all masters for voronka with active orders info
 router.get("/masters", requireAuth, async (_req, res) => {
-  const masters = await db.select().from(mastersTable).orderBy(mastersTable.createdAt);
+  const masters = await db.select().from(mastersTable)
+    .where(isNull(mastersTable.deletedAt))
+    .orderBy(mastersTable.createdAt);
 
   // Get avatar URLs from telegram_chats for masters with telegramId
   const telegramIds = masters.filter(m => m.telegramId).map(m => m.telegramId!);
