@@ -176,13 +176,14 @@ function SuspendedColumn({ masters, onOpenDrawer }: {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
-    <div className="flex-shrink-0 w-[200px] flex flex-col rounded-xl border-2 border-dashed border-red-200 bg-red-50/50 overflow-hidden">
+    <div className="flex-shrink-0 w-[200px] flex flex-col rounded-2xl overflow-hidden"
+         style={{ background: "rgba(255,245,245,0.55)", backdropFilter: "blur(18px) saturate(180%)", WebkitBackdropFilter: "blur(18px) saturate(180%)", border: "1px solid rgba(255,200,200,0.55)", boxShadow: "0 4px 24px rgba(239,68,68,0.07), 0 1px 4px rgba(0,0,0,0.04)" }}>
       {/* Header */}
-      <div className="flex items-center gap-1.5 px-2.5 py-1.5 border-b border-red-100 bg-red-50">
+      <div className="flex items-center gap-1.5 px-2.5 py-2 border-b" style={{ borderColor: "rgba(255,180,180,0.4)", background: "rgba(255,230,230,0.35)" }}>
         <UserX className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
-        <span className="font-semibold text-red-700 text-[12px] flex-1">Отстранённые</span>
-        <span className="text-[10px] font-bold bg-red-200 text-red-700 rounded-full px-1.5 py-0.5">{masters.length}</span>
-        <button onClick={() => setCollapsed(c => !c)} className="p-0.5 rounded hover:bg-red-100 transition-colors">
+        <span className="font-semibold text-red-600 text-[12px] flex-1">Отстранённые</span>
+        <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5" style={{ background: "rgba(239,68,68,0.15)", color: "#dc2626" }}>{masters.length}</span>
+        <button onClick={() => setCollapsed(c => !c)} className="p-0.5 rounded hover:bg-red-100/50 transition-colors">
           {collapsed ? <ChevronDown className="w-3 h-3 text-red-400" /> : <ChevronUp className="w-3 h-3 text-red-400" />}
         </button>
       </div>
@@ -193,7 +194,10 @@ function SuspendedColumn({ masters, onOpenDrawer }: {
           {masters.map(m => (
             <div key={m.id}
               onClick={() => onOpenDrawer(m)}
-              className="bg-white border border-red-100 rounded-lg px-2 py-1.5 cursor-pointer hover:shadow-md transition-all duration-150 flex items-center gap-2"
+              className="rounded-xl px-2 py-1.5 cursor-pointer transition-all duration-150 flex items-center gap-2"
+              style={{ background: "rgba(255,255,255,0.65)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,220,220,0.6)", boxShadow: "0 2px 8px rgba(239,68,68,0.05)" }}
+              onMouseEnter={e => (e.currentTarget.style.boxShadow = "0 4px 16px rgba(239,68,68,0.12)")}
+              onMouseLeave={e => (e.currentTarget.style.boxShadow = "0 2px 8px rgba(239,68,68,0.05)")}
             >
               <Avatar name={m.alias} id={m.id} avatarUrl={m.avatarUrl} size={26} />
               <div className="flex-1 min-w-0">
@@ -219,17 +223,18 @@ function DebtorColumn({ masters, onOpenDrawer }: {
   const totalDebt = masters.reduce((s, m) => s + m.debt, 0);
 
   return (
-    <div className="flex-shrink-0 w-[200px] flex flex-col rounded-xl border-2 border-dashed border-orange-200 bg-orange-50/50 overflow-hidden">
-      <div className="flex items-center gap-1.5 px-2.5 py-1.5 border-b border-orange-100 bg-orange-50">
+    <div className="flex-shrink-0 w-[200px] flex flex-col rounded-2xl overflow-hidden"
+         style={{ background: "rgba(255,248,240,0.55)", backdropFilter: "blur(18px) saturate(180%)", WebkitBackdropFilter: "blur(18px) saturate(180%)", border: "1px solid rgba(255,210,160,0.55)", boxShadow: "0 4px 24px rgba(234,88,12,0.07), 0 1px 4px rgba(0,0,0,0.04)" }}>
+      <div className="flex items-center gap-1.5 px-2.5 py-2 border-b" style={{ borderColor: "rgba(255,190,120,0.4)", background: "rgba(255,237,210,0.35)" }}>
         <Banknote className="w-3.5 h-3.5 text-orange-500 flex-shrink-0" />
         <div className="flex-1 min-w-0">
-          <span className="font-semibold text-orange-700 text-[12px]">Должники</span>
+          <span className="font-semibold text-orange-600 text-[12px]">Должники</span>
           {totalDebt > 0 && (
-            <p className="text-[9px] text-orange-500 leading-none">{(totalDebt / 1000).toFixed(0)}k ₽ долг</p>
+            <p className="text-[9px] text-orange-500 leading-none">{(totalDebt / 1000).toFixed(0)}k ₽</p>
           )}
         </div>
-        <span className="text-[10px] font-bold bg-orange-200 text-orange-700 rounded-full px-1.5 py-0.5 flex-shrink-0">{masters.length}</span>
-        <button onClick={() => setCollapsed(c => !c)} className="p-0.5 rounded hover:bg-orange-100 transition-colors">
+        <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5 flex-shrink-0" style={{ background: "rgba(234,88,12,0.15)", color: "#c2410c" }}>{masters.length}</span>
+        <button onClick={() => setCollapsed(c => !c)} className="p-0.5 rounded hover:bg-orange-100/50 transition-colors">
           {collapsed ? <ChevronDown className="w-3 h-3 text-orange-400" /> : <ChevronUp className="w-3 h-3 text-orange-400" />}
         </button>
       </div>
@@ -238,7 +243,10 @@ function DebtorColumn({ masters, onOpenDrawer }: {
           {masters.map(m => (
             <div key={m.id}
               onClick={() => onOpenDrawer(m)}
-              className="bg-white border border-orange-100 rounded-lg px-2 py-1.5 cursor-pointer hover:shadow-md transition-all duration-150"
+              className="rounded-xl px-2 py-1.5 cursor-pointer transition-all duration-150"
+              style={{ background: "rgba(255,255,255,0.65)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,220,170,0.6)", boxShadow: "0 2px 8px rgba(234,88,12,0.05)" }}
+              onMouseEnter={e => (e.currentTarget.style.boxShadow = "0 4px 16px rgba(234,88,12,0.12)")}
+              onMouseLeave={e => (e.currentTarget.style.boxShadow = "0 2px 8px rgba(234,88,12,0.05)")}
             >
               <div className="flex items-center gap-2">
                 <Avatar name={m.alias} id={m.id} avatarUrl={m.avatarUrl} size={26} />
@@ -284,8 +292,10 @@ function KanbanColumn({ col, masters, columns, onMove, onOpenDrawer, draggingId,
   const isActiveDrop = dragOver && draggingId !== null;
 
   return (
-    <div className="flex-shrink-0 w-[220px] flex flex-col">
-      <div className={`rounded-t-xl bg-gradient-to-b ${c.header} border border-b-0 border-gray-100 px-3 py-2 flex items-center justify-between border-t-[3px] ${c.top}`}>
+    <div className="flex-shrink-0 w-[220px] flex flex-col rounded-2xl overflow-hidden"
+         style={{ background: "rgba(255,255,255,0.58)", backdropFilter: "blur(18px) saturate(180%)", WebkitBackdropFilter: "blur(18px) saturate(180%)", border: "1px solid rgba(255,255,255,0.80)", boxShadow: "0 4px 24px rgba(120,80,220,0.07), 0 1px 4px rgba(0,0,0,0.04)" }}>
+      <div className={`px-3 py-2 flex items-center justify-between border-b border-t-[3px] ${c.top}`}
+           style={{ borderBottomColor: "rgba(0,0,0,0.06)", background: "rgba(255,255,255,0.5)" }}>
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="font-semibold text-[12px] text-gray-700 truncate">{name}</span>
           {receivesOrders && (
@@ -300,8 +310,8 @@ function KanbanColumn({ col, masters, columns, onMove, onOpenDrawer, draggingId,
         onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={e => { e.preventDefault(); setDragOver(false); if (draggingId !== null) onDropMaster(draggingId, col?.id ?? null); }}
-        className={`voronka-scroll flex-1 border border-t-0 rounded-b-xl overflow-y-auto p-1.5 space-y-1.5 transition-colors duration-150 ${
-          isActiveDrop ? "bg-blue-50/70 border-blue-200" : "bg-gray-50/60 border-gray-100"
+        className={`voronka-scroll flex-1 overflow-y-auto p-1.5 space-y-1.5 transition-colors duration-150 ${
+          isActiveDrop ? "bg-blue-50/40" : ""
         }`}
         style={{ maxHeight: "calc(100vh - 185px)" }}
       >
