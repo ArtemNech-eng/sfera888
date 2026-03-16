@@ -168,13 +168,55 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
   if (!result[0]) return res.status(404).json({ error: "Order not found" });
   const o = result[0];
 
-  // ── Create transaction when commission is confirmed (acceptProposed or orderAmount set) ──
+  // ── Update/create transaction when commission is confirmed ──────────────────
   const commissionConfirmed = (acceptProposed && current.proposedAmount) ||
     (orderAmount !== undefined && orderAmount !== null);
   if (commissionConfirmed && o.masterId && o.orderAmount && o.commission) {
-    // Only create if no transaction exists yet for this order
-    const existingTx = await db.select().from(transactionsTable).where(eq(transactionsTable.orderId, id));
-    if (existingTx.length === 0) {
+    const existingTxRows = await db.select().from(transactionsTable).where(eq(transactionsTable.orderId, id));
+    const existingTx = existingTxRows[0];
+    const commissionValue = Number(o.commission);
+
+    if (existingTx) {
+      const wasPlaceholder = Number(existingTx.commission) === 0;
+      // Update the placeholder (or re-confirm the amount)
+      await db.update(transactionsTable).set({
+        orderAmount: o.orderAmount,
+        commission: o.commission,
+        paymentStatus: "pending",
+      }).where(eq(transactionsTable.id, existingTx.id));
+
+      if (wasPlaceholder) {
+        // Only add to debt once (when upgrading from placeholder to real value)
+        const mRows = await db.select().from(mastersTable).where(eq(mastersTable.id, o.masterId));
+        const m = mRows[0];
+        if (m) {
+          const newDebt = Number(m.debt) + commissionValue;
+          await db.update(mastersTable).set({ debt: String(newDebt) }).where(eq(mastersTable.id, o.masterId));
+          if (m.telegramId) {
+            await fetch(`${TELEGRAM_API}/sendMessage`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                chat_id: m.telegramId,
+                text:
+                  `✅ <b>Сумма по заказу #${id} подтверждена</b>\n\n` +
+                  `💰 Стоимость работ: <b>${Number(o.orderAmount).toLocaleString("ru-RU")} ₽</b>\n` +
+                  `🔸 Комиссия: <b>${commissionValue.toLocaleString("ru-RU")} ₽</b>\n\n` +
+                  `📲 Реквизиты для перевода:\n<code>89892860863</code> · Альфа Банк · Игорь К.\n\n` +
+                  `После оплаты комиссии отправьте скриншот чека кнопкой ниже.`,
+                parse_mode: "HTML",
+                reply_markup: {
+                  inline_keyboard: [[
+                    { text: "📸 Отправить скриншот оплаты", callback_data: "send_payment_proof" }
+                  ]],
+                },
+              }),
+            }).catch(() => {});
+          }
+        }
+      }
+    } else {
+      // No placeholder exists (legacy order) — create transaction as before
       await db.insert(transactionsTable).values({
         orderId: id,
         masterId: o.masterId,
@@ -182,13 +224,11 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
         commission: o.commission,
         paymentStatus: "pending",
       });
-      // Add commission to master's debt
       const mRows = await db.select().from(mastersTable).where(eq(mastersTable.id, o.masterId));
       const m = mRows[0];
       if (m) {
-        const newDebt = Number(m.debt) + Number(o.commission);
+        const newDebt = Number(m.debt) + commissionValue;
         await db.update(mastersTable).set({ debt: String(newDebt) }).where(eq(mastersTable.id, o.masterId));
-        // Notify master in Telegram
         if (m.telegramId) {
           await fetch(`${TELEGRAM_API}/sendMessage`, {
             method: "POST",
@@ -198,7 +238,7 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
               text:
                 `✅ <b>Сумма по заказу #${id} подтверждена</b>\n\n` +
                 `💰 Стоимость работ: <b>${Number(o.orderAmount).toLocaleString("ru-RU")} ₽</b>\n` +
-                `🔸 Комиссия: <b>${Number(o.commission).toLocaleString("ru-RU")} ₽</b>\n\n` +
+                `🔸 Комиссия: <b>${commissionValue.toLocaleString("ru-RU")} ₽</b>\n\n` +
                 `📲 Реквизиты для перевода:\n<code>89892860863</code> · Альфа Банк · Игорь К.\n\n` +
                 `После оплаты комиссии отправьте скриншот чека кнопкой ниже.`,
               parse_mode: "HTML",
@@ -211,6 +251,17 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
           }).catch(() => {});
         }
       }
+    }
+  }
+
+  // ── Delete placeholder transaction when order is cancelled ───────────────────
+  const isBeingCancelled = approveCancellation || rejectCancellation || updates.status === "cancelled";
+  if (isBeingCancelled && current.masterId) {
+    const txRows = await db.select().from(transactionsTable).where(eq(transactionsTable.orderId, id));
+    const tx = txRows[0];
+    if (tx && Number(tx.commission) === 0) {
+      // Placeholder — safe to delete, no debt was added
+      await db.delete(transactionsTable).where(eq(transactionsTable.id, tx.id));
     }
   }
 
@@ -389,6 +440,18 @@ router.post("/:id/assign-master", allOrderRoles, async (req, res) => {
     acceptedOrders: master.acceptedOrders + 1,
     voronkaColumnId: onSiteCol?.id ?? master.voronkaColumnId,
   }).where(eq(mastersTable.id, masterId));
+
+  // Create placeholder transaction — commission amount unknown yet, will be updated when order completes
+  const existingTx = await db.select().from(transactionsTable).where(eq(transactionsTable.orderId, id));
+  if (existingTx.length === 0) {
+    await db.insert(transactionsTable).values({
+      orderId: id,
+      masterId,
+      orderAmount: "0",
+      commission: "0",
+      paymentStatus: "pending",
+    });
+  }
 
   res.json({
     id: o.id,

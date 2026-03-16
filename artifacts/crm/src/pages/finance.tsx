@@ -168,20 +168,23 @@ export default function Finance() {
                         {search || statusFilter !== "all" ? "Ничего не найдено" : "Нет транзакций"}
                       </td>
                     </tr>
-                  ) : filtered.map((tx) => (
-                    <tr key={tx.id} className="hover:bg-slate-50/50 transition-colors">
+                  ) : filtered.map((tx) => {
+                    const isPlaceholder = tx.commission === 0 && tx.orderAmount === 0;
+                    return (
+                    <tr key={tx.id} className={`hover:bg-slate-50/50 transition-colors ${isPlaceholder ? "opacity-70" : ""}`}>
                       <td className="px-6 py-4">
                         <span className="font-medium text-foreground">TX-{tx.id}</span>
                         <div className="text-xs text-muted-foreground mt-1">{formatDate(tx.createdAt)}</div>
+                        {isPlaceholder && <div className="text-[10px] text-amber-500 font-medium mt-0.5">На объекте</div>}
                       </td>
                       <td className="px-6 py-4 font-medium">{tx.masterAlias}</td>
-                      <td className="px-6 py-4">{formatCurrency(tx.orderAmount)}</td>
-                      <td className="px-6 py-4 font-bold text-foreground">{formatCurrency(tx.commission)}</td>
+                      <td className="px-6 py-4">{isPlaceholder ? <span className="text-muted-foreground italic text-xs">Неизвестна</span> : formatCurrency(tx.orderAmount)}</td>
+                      <td className="px-6 py-4 font-bold text-foreground">{isPlaceholder ? <span className="text-muted-foreground italic text-xs">Неизвестна</span> : formatCurrency(tx.commission)}</td>
                       <td className="px-6 py-4">
                         <StatusBadge status={tx.paymentStatus} type="payment" />
                       </td>
                       <td className="px-6 py-4 text-right">
-                        {(tx.paymentStatus === TransactionPaymentStatus.pending || tx.paymentStatus === TransactionPaymentStatus.overdue) && (
+                        {!isPlaceholder && (tx.paymentStatus === TransactionPaymentStatus.pending || tx.paymentStatus === TransactionPaymentStatus.overdue) && (
                           <button
                             onClick={() => handleMarkPaid(tx.id)}
                             disabled={updateMutation.isPending}
@@ -192,7 +195,8 @@ export default function Finance() {
                         )}
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

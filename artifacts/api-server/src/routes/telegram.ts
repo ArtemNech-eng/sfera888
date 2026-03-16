@@ -332,7 +332,7 @@ async function showAvailableOrders(chatId: string, master: any, messageId?: numb
 async function showMyOrders(chatId: string, master: any, messageId?: number) {
   const backBtn = [{ text: "« Меню", callback_data: "main_menu" }];
 
-  const [myOrders, unpaidTxs] = await Promise.all([
+  const [myOrders, allPendingTxs] = await Promise.all([
     db.select().from(ordersTable).where(and(
       eq(ordersTable.masterId, master.id),
       inArray(ordersTable.status, ["master_assigned", "in_progress", "cancellation_requested"])
@@ -343,7 +343,16 @@ async function showMyOrders(chatId: string, master: any, messageId?: number) {
     )),
   ]);
 
-  // Fetch completed orders referenced by pending transactions
+  // Active order IDs — don't show these in "awaiting payment" section
+  const activeOrderIds = new Set(myOrders.map(o => o.id));
+  // Real unpaid txs = commission confirmed (>0) and order no longer active
+  const unpaidTxs = allPendingTxs.filter(t => Number(t.commission) > 0 && !activeOrderIds.has(t.orderId));
+  // Placeholder txs for active orders (commission unknown yet)
+  const placeholderByOrder = new Map(
+    allPendingTxs.filter(t => Number(t.commission) === 0).map(t => [t.orderId, t])
+  );
+
+  // Fetch completed orders referenced by real pending transactions
   let unpaidOrders: any[] = [];
   if (unpaidTxs.length > 0) {
     const unpaidOrderIds = unpaidTxs.map(t => t.orderId);
@@ -368,10 +377,12 @@ async function showMyOrders(chatId: string, master: any, messageId?: number) {
     for (const o of myOrders) {
       const lead = leadMap.get(o.leadId);
       const isCancelPending = o.status === "cancellation_requested";
+      const hasPlaceholder = placeholderByOrder.has(o.id);
       text += `<b>Заказ #${o.id}: ${o.serviceType}</b>\n`;
       text += `📍 ${o.city}, ${o.district}\n`;
       if (lead?.clientName) text += `👤 Клиент: ${lead.clientName}\n`;
       if (lead?.clientPhone) text += `📞 Телефон: ${lead.clientPhone}\n`;
+      if (hasPlaceholder) text += `🔸 <i>Комиссия: сумма будет известна после завершения</i>\n`;
       if (isCancelPending) text += `⏳ <i>Запрос на отмену рассматривается оператором</i>\n`;
       text += `\n`;
       if (!isCancelPending) {
@@ -408,10 +419,12 @@ async function showMyOrders(chatId: string, master: any, messageId?: number) {
 async function showUnpaidOrders(chatId: string, master: any, messageId?: number) {
   const backBtn = [{ text: "« Меню", callback_data: "main_menu" }];
 
-  const unpaidTxs = await db.select().from(transactionsTable).where(and(
+  const allPendingTxs = await db.select().from(transactionsTable).where(and(
     eq(transactionsTable.masterId, master.id),
     eq(transactionsTable.paymentStatus, "pending")
   ));
+  // Only show confirmed amounts (commission > 0); placeholders are shown in active orders
+  const unpaidTxs = allPendingTxs.filter(t => Number(t.commission) > 0);
 
   if (unpaidTxs.length === 0) {
     await editOrSend(chatId, messageId, "✅ <b>Нет неоплаченных заказов</b>\n\nВсе комиссии оплачены.", { reply_markup: { inline_keyboard: [backBtn] } });
