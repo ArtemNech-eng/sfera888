@@ -292,21 +292,33 @@ async function showAvailableOrders(chatId: string, master: any, messageId?: numb
     return;
   }
 
-  if (waitingOrders.length === 0) {
-    await editOrSend(chatId, messageId, "📭 <b>Нет доступных заказов</b>\n\nПока заказов нет. Вы получите уведомление, когда появится новый заказ.", { reply_markup: { inline_keyboard: [backBtn] } });
+  // Filter by master's specializations
+  const masterSpecs: string[] = (master.specializations ?? []).map((s: string) => s.toLowerCase().trim());
+  const matchingOrders = masterSpecs.length > 0
+    ? waitingOrders.filter((o: any) => {
+        const orderTypes = (o.serviceType ?? "").split(/,\s*/).map((t: string) => t.toLowerCase().trim());
+        return orderTypes.some((t: string) => masterSpecs.includes(t));
+      })
+    : waitingOrders;
+
+  if (matchingOrders.length === 0) {
+    const msg = waitingOrders.length > 0
+      ? "📭 <b>Нет подходящих заказов</b>\n\nЗаказы есть, но ни один не соответствует вашим специальностям.\n\nЧтобы видеть больше заказов — обновите специальности в профиле."
+      : "📭 <b>Нет доступных заказов</b>\n\nПока заказов нет. Вы получите уведомление, когда появится новый заказ.";
+    await editOrSend(chatId, messageId, msg, { reply_markup: { inline_keyboard: [backBtn] } });
     return;
   }
 
   // Fetch lead info in parallel with nothing else needed
-  const leadIds = [...new Set(waitingOrders.map((o: any) => o.leadId).filter(Boolean))];
+  const leadIds = [...new Set(matchingOrders.map((o: any) => o.leadId).filter(Boolean))];
   const leads = leadIds.length > 0
     ? await db.select().from(leadsTable).where(inArray(leadsTable.id, leadIds as number[]))
     : [];
   const leadMap = new Map(leads.map(l => [l.id, l]));
 
-  let text = `📋 <b>Доступные заказы (${waitingOrders.length})</b>\n\nВыберите заказ, который хотите взять:\n\n`;
+  let text = `📋 <b>Доступные заказы (${matchingOrders.length})</b>\n\nВыберите заказ, который хотите взять:\n\n`;
 
-  const buttons = waitingOrders.slice(0, 8).map((o, i) => {
+  const buttons = matchingOrders.slice(0, 8).map((o: any, i: number) => {
     const area = o.area ? `${Number(o.area)} м²` : "";
     text += `<b>${i + 1}. ${o.serviceType}</b>\n📍 ${o.city}, ${o.district}${area ? ` · ${area}` : ""}\n${o.comment ? `💬 ${o.comment}\n` : ""}\n`;
     return [{ text: `✅ Взять заказ #${o.id}: ${o.serviceType} (${o.city})`, callback_data: `take_order_${o.id}` }];
@@ -1072,6 +1084,17 @@ async function handleCallback(callbackQuery: any) {
       return;
     }
 
+    // Check specialty match
+    const takeSpecs: string[] = (master.specializations ?? []).map((s: string) => s.toLowerCase().trim());
+    if (takeSpecs.length > 0) {
+      const orderTypes = (order.serviceType ?? "").split(/,\s*/).map((t: string) => t.toLowerCase().trim());
+      const hasMatch = orderTypes.some((t: string) => takeSpecs.includes(t));
+      if (!hasMatch) {
+        await sendMessage(chatId, `⛔ <b>Не подходит по специальности</b>\n\nЗаказ требует: <b>${order.serviceType}</b>\nВаши специальности не совпадают.\n\nОбновите специальности в профиле, если вы умеете выполнять эту работу.`);
+        return;
+      }
+    }
+
     // Get lead
     const leadRows = await db.select().from(leadsTable).where(eq(leadsTable.id, order.leadId));
     const lead = leadRows[0];
@@ -1742,7 +1765,15 @@ router.post("/notify-new-order", requireRole("admin", "master_operator"), async 
     ? await db.select().from(mastersTable).where(inArray(mastersTable.voronkaColumnId, freeColIds))
     : [];
 
-  const mastersWithTelegram = masters.filter(m => m.telegramId);
+  const orderServiceTypes = (order.serviceType ?? "").split(/,\s*/).map((t: string) => t.toLowerCase().trim());
+
+  const mastersWithTelegram = masters.filter(m => {
+    if (!m.telegramId) return false;
+    const specs: string[] = (m.specializations ?? []).map((s: string) => s.toLowerCase().trim());
+    // If master has no specializations set, notify them anyway (legacy accounts)
+    if (specs.length === 0) return true;
+    return orderServiceTypes.some((t: string) => specs.includes(t));
+  });
   let notified = 0;
 
   for (const master of mastersWithTelegram) {
