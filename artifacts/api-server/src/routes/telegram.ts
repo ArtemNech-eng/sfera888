@@ -490,35 +490,72 @@ async function askAlias(chatId: string, masterId: number) {
   await sendBanner(chatId, "welcome",
     `👋 <b>Добро пожаловать в систему заказов!</b>\n\n` +
     `Пройдите короткую регистрацию — это займёт меньше минуты.\n\n` +
-    `<b>Шаг 1 из 5</b> 📝\n\nКак вас зовут? Введите имя или псевдоним, который будет виден операторам:`
+    `<b>Шаг 1 из 5</b> 📝\n\n` +
+    `Как вас зовут? Введите имя или псевдоним.\n` +
+    `<i>Например: Иван или Иван Краснодар</i>\n\n` +
+    `⬇️ <b>Напишите имя прямо сейчас:</b>`
   );
 }
 
-async function askCity(chatId: string, masterId: number) {
+async function askCity(chatId: string, masterId: number, isResume = false) {
   pendingState.set(chatId, { step: "awaiting_city", masterId });
+  const prefix = isResume
+    ? `👋 Продолжаем регистрацию!\n\n`
+    : `✅ Имя сохранено!\n\n`;
   await sendMessage(chatId,
-    `✅ Имя сохранено!\n\n<b>Шаг 2 из 5</b> 🏙️\n\nВ каком городе вы работаете? Напишите название города:`
+    `${prefix}<b>Шаг 2 из 5</b> 🏙️\n\nВ каком городе вы работаете?\n<i>Например: Краснодар</i>\n\n⬇️ <b>Напишите город:</b>`
   );
 }
 
-async function askSpecs(chatId: string, masterId: number) {
+async function askSpecs(chatId: string, masterId: number, isResume = false) {
   pendingState.set(chatId, { step: "selecting_specs", masterId, selected: [] });
-  await sendMessage(chatId, `✅ Город сохранён!\n\n<b>Шаг 3 из 5</b> 🔧`);
+  const prefix = isResume
+    ? `👋 Продолжаем регистрацию!\n\n`
+    : `✅ Город сохранён!\n\n`;
+  await sendMessage(chatId, `${prefix}<b>Шаг 3 из 5</b> 🔧\n\nВыберите ваши специальности.\n<i>Отметьте все виды работ, которые вы выполняете, затем нажмите «Подтвердить»:</i>`);
   await sendSpecPicker(chatId, []);
 }
 
-async function askPhone(chatId: string, masterId: number) {
+async function askPhone(chatId: string, masterId: number, isResume = false) {
   pendingState.set(chatId, { step: "awaiting_phone", masterId });
+  const prefix = isResume
+    ? `👋 Продолжаем регистрацию!\n\n`
+    : `✅ Специальности сохранены!\n\n`;
   await sendMessage(chatId,
-    `✅ Специальности сохранены!\n\n<b>Шаг 4 из 5</b> 📱\n\nВведите ваш номер телефона вручную.\nОператоры будут использовать его для связи с вами.\n\n<i>Пример: +79001234567</i>`
+    `${prefix}<b>Шаг 4 из 5</b> 📱\n\nВведите ваш номер телефона.\nОператоры используют его для связи с вами.\n\n<i>Пример: +79001234567</i>\n\n⬇️ <b>Напишите номер:</b>`
   );
 }
 
-async function askPhoto(chatId: string, masterId: number) {
+async function askPhoto(chatId: string, masterId: number, isResume = false) {
   pendingState.set(chatId, { step: "awaiting_photo", masterId });
+  const prefix = isResume
+    ? `👋 Продолжаем регистрацию!\n\n`
+    : `✅ Телефон сохранён!\n\n`;
   await sendMessage(chatId,
-    `✅ Телефон сохранён!\n\n<b>Шаг 5 из 5</b> 🤳\n\nОтправьте ваше фото — оно будет отображаться в CRM системе рядом с вашим именем.\n\n<i>Загрузите фото из галереи или сделайте снимок прямо сейчас.</i>`
+    `${prefix}<b>Шаг 5 из 5</b> 🤳\n\nОтправьте ваше фото профиля.\nОно будет отображаться в CRM рядом с вашим именем.\n\n` +
+    `<i>Как отправить фото:\n• Нажмите скрепку 📎 рядом с полем ввода\n• Выберите «Фото или видео» из галереи\n• Выберите фото и отправьте</i>\n\n` +
+    `⬇️ <b>Отправьте фото:</b>`
   );
+}
+
+// ─── Resume incomplete registration from correct step ─────────────────────────
+async function resumeRegistration(chatId: string, master: any) {
+  if (!master.city || master.city === "Не указан") {
+    await askCity(chatId, master.id, true);
+    return;
+  }
+  if (!master.specializations || master.specializations.length === 0) {
+    await askSpecs(chatId, master.id, true);
+    return;
+  }
+  if (!master.phone) {
+    await askPhone(chatId, master.id, true);
+    return;
+  }
+  if (master.status !== "pending_contract" && master.status !== "active") {
+    await askPhoto(chatId, master.id, true);
+    return;
+  }
 }
 
 async function completeRegistration(chatId: string, master: { id: number; alias: string; city: string; phone: string | null }) {
@@ -569,21 +606,13 @@ async function handleStart(from: any, chatId: string) {
   }
 
   // Returning master — check what's missing and resume from there
-  if (!master.city || master.city === "Не указан") {
-    await sendMessage(chatId, `👋 <b>Добро пожаловать, ${master.alias}!</b>\n\nДавайте завершим регистрацию.`);
-    await askCity(chatId, master.id);
-    return;
-  }
+  const isIncomplete = !master.city || master.city === "Не указан"
+    || !master.specializations || master.specializations.length === 0
+    || !master.phone
+    || (master.status !== "pending_contract" && master.status !== "active" && master.status !== "suspended");
 
-  if (!master.specializations || master.specializations.length === 0) {
-    await sendMessage(chatId, `👋 <b>Добро пожаловать, ${master.alias}!</b>\n\nПожалуйста, укажите ваши специальности:`);
-    await askSpecs(chatId, master.id);
-    return;
-  }
-
-  if (!master.phone) {
-    await sendMessage(chatId, `👋 <b>Добро пожаловать, ${master.alias}!</b>\n\nОстался последний шаг:`);
-    await askPhone(chatId, master.id);
+  if (isIncomplete) {
+    await resumeRegistration(chatId, master);
     return;
   }
 
@@ -1452,9 +1481,14 @@ router.post("/webhook", async (req, res) => {
         return;
       }
 
-      // Text received instead of photo — prompt again
+      // Text received instead of photo — prompt again with clear instructions
       await sendMessage(chatId,
-        `📸 Необходимо отправить фотографию.\n\nЗагрузите фото из галереи или сделайте снимок — без фото регистрация не завершится.`
+        `📸 <b>Нужно отправить фотографию, а не текст.</b>\n\n` +
+        `Как это сделать:\n` +
+        `1️⃣ Нажмите на скрепку 📎 рядом с полем ввода\n` +
+        `2️⃣ Выберите <b>«Фото или видео»</b>\n` +
+        `3️⃣ Выберите фото из галереи и нажмите «Отправить»\n\n` +
+        `<i>Без фото регистрация не завершится — этот шаг обязателен.</i>`
       );
       return;
     }
@@ -1694,6 +1728,18 @@ router.post("/webhook", async (req, res) => {
         );
       }
       return;
+    }
+
+    // If master has incomplete registration — resume it automatically
+    if (master) {
+      const regIncomplete = !master.city || master.city === "Не указан"
+        || !master.specializations || master.specializations.length === 0
+        || !master.phone
+        || (master.status !== "pending_contract" && master.status !== "active" && master.status !== "suspended");
+      if (regIncomplete) {
+        await resumeRegistration(chatId, master);
+        return;
+      }
     }
 
     // For non-command messages from registered masters:
