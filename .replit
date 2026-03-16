@@ -9,6 +9,8 @@ id = "artifacts/mockup-sandbox"
 [deployment]
 router = "application"
 deploymentTarget = "autoscale"
+build = ["bash", "-c", "pnpm --filter @workspace/crm run build && pnpm --filter @workspace/api-server run build"]
+run = ["node", "artifacts/api-server/dist/index.cjs"]
 
 [deployment.postBuild]
 args = ["sh", "-c", "CI=true pnpm prune --prod && pnpm store prune"]
@@ -25,8 +27,6 @@ path = "scripts/post-merge.sh"
 timeoutMs = 20000
 
 [userenv]
-
-[userenv.shared]
 
 [nix]
 channel = "stable-25_05"
