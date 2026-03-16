@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import BottomNav from "@/components/bottom-nav";
+import InstallBanner from "@/components/install-banner";
 import LoginPage from "@/pages/login";
 import HomePage from "@/pages/home";
 import OrdersPage from "@/pages/orders";
@@ -80,6 +81,7 @@ function App() {
           <AppRoutes />
         </WouterRouter>
         <Toaster position="top-center" richColors />
+        <InstallBanner />
       </AuthProvider>
     </QueryClientProvider>
   );
