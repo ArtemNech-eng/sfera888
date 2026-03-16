@@ -5,7 +5,7 @@ import {
   X, Phone, MapPin, MessageSquare, Star, Briefcase, AlertTriangle,
   User, Tag, Plus, CheckSquare, Square, Clock, Trash2, History,
   Send, Paperclip, Check, CheckCheck, Calendar, DollarSign, Loader2, CheckCircle2,
-  ClipboardList, ExternalLink,
+  ClipboardList, ExternalLink, ThumbsUp, ThumbsDown, Minus, Sparkles, MessageCircle,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -26,7 +26,8 @@ interface MasterTask { id: number; masterId: number; text: string; dueAt: string
 interface HistoryOrder { id: number; status: string; serviceType: string; district: string; city: string; clientName: string | null; clientPhone: string | null; scheduledAt: string | null; completedAt: string | null; createdAt: string; }
 interface ChatMessage { id: number; text: string; photoUrl: string | null; fromMaster: boolean; senderName: string | null; isRead: boolean; createdAt: string; }
 interface PendingTx { id: number; orderId: number; orderAmount: number; commission: number; }
-type DrawerTab = "profile" | "chat" | "orders" | "tasks";
+interface MasterReview { id: number; masterId: number; orderId: number | null; sentiment: string; text: string; createdBy: string | null; createdAt: string; }
+type DrawerTab = "profile" | "chat" | "orders" | "tasks" | "reviews";
 
 // ─── Avatar ───────────────────────────────────────────────────────────────────
 
@@ -118,6 +119,14 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatLoaded, setChatLoaded] = useState(false);
   const [pendingTxs, setPendingTxs] = useState<PendingTx[]>([]);
+
+  const [reviews, setReviews] = useState<MasterReview[]>([]);
+  const [reviewsLoaded, setReviewsLoaded] = useState(false);
+  const [reviewText, setReviewText] = useState("");
+  const [reviewSentiment, setReviewSentiment] = useState<"positive" | "negative" | "neutral">("positive");
+  const [addingReview, setAddingReview] = useState(false);
+  const [aiRecommendation, setAiRecommendation] = useState<string | null>(null);
+  const [loadingAi, setLoadingAi] = useState(false);
   const [confirmingTx, setConfirmingTx] = useState(false);
   const [showActivatePopover, setShowActivatePopover] = useState(false);
   const [activatingContract, setActivatingContract] = useState(false);
@@ -134,6 +143,8 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
     setTab("profile");
     setOrders([]); setOrdersLoaded(false);
     setChatMessages([]); setChatLoaded(false); setPendingTxs([]);
+    setReviews([]); setReviewsLoaded(false); setAiRecommendation(null);
+    setReviewText(""); setReviewSentiment("positive");
   }, [master.id]);
 
   useEffect(() => {
@@ -145,6 +156,10 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
       fetch(`/api/masters/${master.id}/orders`).then(r => r.json()).then(d => { setOrders(d); setOrdersLoaded(true); });
     }
     if (tab === "chat" && !chatLoaded) loadChat();
+    if (tab === "reviews" && !reviewsLoaded) {
+      fetch(`/api/master-reviews/${master.id}`, { credentials: "include" })
+        .then(r => r.json()).then(d => { setReviews(Array.isArray(d) ? d : []); setReviewsLoaded(true); });
+    }
   }, [tab]);
 
   useEffect(() => {
@@ -234,6 +249,43 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
     setTasks(p => p.filter(t => t.id !== id));
   };
 
+  const addReview = async () => {
+    if (!reviewText.trim()) return;
+    setAddingReview(true);
+    const r = await fetch("/api/master-reviews", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ masterId: master.id, sentiment: reviewSentiment, text: reviewText.trim() }),
+    });
+    if (r.ok) {
+      const rev = await r.json();
+      setReviews(p => [rev, ...p]);
+      setReviewText("");
+      setAiRecommendation(null);
+    }
+    setAddingReview(false);
+  };
+
+  const deleteReview = async (id: number) => {
+    await fetch(`/api/master-reviews/${id}`, { method: "DELETE", credentials: "include" });
+    setReviews(p => p.filter(r => r.id !== id));
+    setAiRecommendation(null);
+  };
+
+  const loadAiRecommendation = async () => {
+    setLoadingAi(true);
+    setAiRecommendation(null);
+    const r = await fetch(`/api/master-reviews/${master.id}/ai-recommendation`, { credentials: "include" });
+    if (r.ok) {
+      const data = await r.json();
+      setAiRecommendation(data.recommendation ?? "Нет данных.");
+    } else {
+      setAiRecommendation("Не удалось получить рекомендацию. Попробуйте позже.");
+    }
+    setLoadingAi(false);
+  };
+
   const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
     setPhotoFile(file);
@@ -256,10 +308,11 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
   };
 
   const TABS: { id: DrawerTab; label: string; icon: any }[] = [
-    { id: "profile", label: "Профиль", icon: User },
-    { id: "chat",    label: "Чат",     icon: MessageSquare },
-    { id: "orders",  label: "Заказы",  icon: History },
-    { id: "tasks",   label: "Задачи",  icon: CheckSquare },
+    { id: "profile", label: "Профиль",   icon: User },
+    { id: "chat",    label: "Чат",       icon: MessageSquare },
+    { id: "orders",  label: "Заказы",    icon: History },
+    { id: "tasks",   label: "Задачи",    icon: CheckSquare },
+    { id: "reviews", label: "Отзывы",   icon: MessageCircle },
   ];
 
   const colName = columns.find(c => c.id === master.voronkaColumnId)?.name ?? (master.voronkaColumnId ? "Колонка" : "Без колонки");
@@ -652,6 +705,102 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
               </div>
             </div>
           )}
+          {/* REVIEWS */}
+          {tab === "reviews" && (
+            <div className="p-4 space-y-4">
+
+              {/* Add review form */}
+              <div className="bg-gray-50 rounded-xl p-3.5 border border-gray-100 space-y-3">
+                <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Добавить комментарий</p>
+
+                {/* Sentiment selector */}
+                <div className="flex gap-2">
+                  {(["positive", "neutral", "negative"] as const).map(s => {
+                    const config = {
+                      positive: { icon: ThumbsUp,   label: "Позитив",  active: "bg-emerald-500 text-white", inactive: "border-gray-200 text-gray-400 hover:border-emerald-400" },
+                      neutral:  { icon: Minus,       label: "Нейтрально", active: "bg-gray-500 text-white",    inactive: "border-gray-200 text-gray-400 hover:border-gray-400" },
+                      negative: { icon: ThumbsDown,  label: "Негатив",  active: "bg-red-500 text-white",      inactive: "border-gray-200 text-gray-400 hover:border-red-400" },
+                    }[s];
+                    const Icon = config.icon;
+                    return (
+                      <button key={s} onClick={() => setReviewSentiment(s)}
+                        className={`flex-1 flex items-center justify-center gap-1 rounded-lg border py-1.5 text-[11px] font-semibold transition-colors ${reviewSentiment === s ? config.active : config.inactive}`}>
+                        <Icon className="w-3 h-3" />{config.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <textarea value={reviewText} onChange={e => setReviewText(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addReview(); } }}
+                  placeholder="Комментарий о мастере (поведение, качество работы, надёжность)..."
+                  rows={3}
+                  className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-100 bg-white resize-none" />
+                <button onClick={addReview} disabled={!reviewText.trim() || addingReview}
+                  className="w-full py-2 bg-blue-500 text-white rounded-lg text-xs font-semibold hover:bg-blue-600 disabled:opacity-40 transition-colors flex items-center justify-center gap-1.5">
+                  {addingReview ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                  Добавить комментарий
+                </button>
+              </div>
+
+              {/* AI Recommendation */}
+              <div className="bg-gradient-to-br from-violet-50 to-blue-50 rounded-xl border border-violet-100 p-3.5">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-[11px] font-semibold text-violet-700 uppercase tracking-wide flex items-center gap-1">
+                    <Sparkles className="w-3 h-3" /> ИИ-рекомендация
+                  </p>
+                  <button onClick={loadAiRecommendation} disabled={loadingAi}
+                    className="text-[10px] bg-violet-600 text-white rounded-lg px-2.5 py-1 hover:bg-violet-700 disabled:opacity-50 transition-colors flex items-center gap-1">
+                    {loadingAi ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Sparkles className="w-2.5 h-2.5" />}
+                    {loadingAi ? "Анализирую..." : "Получить"}
+                  </button>
+                </div>
+                {aiRecommendation
+                  ? <p className="text-xs text-violet-900 leading-relaxed">{aiRecommendation}</p>
+                  : <p className="text-[11px] text-violet-400">Нажмите «Получить», чтобы ИИ проанализировал комментарии и дал рекомендацию по мастеру.</p>
+                }
+              </div>
+
+              {/* Reviews list */}
+              <div>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">
+                  Комментарии ({reviews.length})
+                </p>
+                {!reviewsLoaded && <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"/></div>}
+                {reviewsLoaded && reviews.length === 0 && (
+                  <div className="text-center text-sm text-gray-300 py-8">Нет комментариев</div>
+                )}
+                {reviews.map(rev => {
+                  const sentimentConfig = {
+                    positive: { border: "border-l-emerald-400", bg: "bg-emerald-50",   icon: ThumbsUp,  iconColor: "text-emerald-500" },
+                    neutral:  { border: "border-l-gray-300",    bg: "bg-gray-50",      icon: Minus,     iconColor: "text-gray-400" },
+                    negative: { border: "border-l-red-400",     bg: "bg-red-50",       icon: ThumbsDown, iconColor: "text-red-500" },
+                  }[rev.sentiment as "positive" | "neutral" | "negative"] ?? { border: "border-l-gray-300", bg: "bg-gray-50", icon: Minus, iconColor: "text-gray-400" };
+                  const Icon = sentimentConfig.icon;
+                  return (
+                    <div key={rev.id} className={`mb-2 rounded-xl border border-l-4 p-3.5 ${sentimentConfig.border} ${sentimentConfig.bg}`}>
+                      <div className="flex items-start gap-2">
+                        <Icon className={`w-3.5 h-3.5 flex-shrink-0 mt-0.5 ${sentimentConfig.iconColor}`} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs text-gray-700 leading-relaxed">{rev.text}</p>
+                          <div className="flex items-center gap-2 mt-1.5 text-[10px] text-gray-400">
+                            {rev.createdBy && <span>{rev.createdBy}</span>}
+                            <span>{timeAgo(rev.createdAt)}</span>
+                          </div>
+                        </div>
+                        <button onClick={() => deleteReview(rev.id)}
+                          className="p-1 hover:bg-red-100 rounded-lg transition-colors flex-shrink-0">
+                          <Trash2 className="w-3 h-3 text-gray-300 hover:text-red-400" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+            </div>
+          )}
+
         </div>
       </div>
     </div>

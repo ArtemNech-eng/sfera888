@@ -18,6 +18,7 @@ import tgFileRouter from "./tg-file.js";
 import yandexPayRouter from "./yandex-pay.js";
 import trashRouter, { runTrashCleanup } from "./trash.js";
 import tasksRouter from "./tasks.js";
+import masterReviewsRouter from "./master-reviews.js";
 
 const router = Router();
 
@@ -40,6 +41,7 @@ router.use("/", storageRouter);
 router.use("/tg-file", tgFileRouter);
 router.use("/trash", trashRouter);
 router.use("/tasks", tasksRouter);
+router.use("/master-reviews", masterReviewsRouter);
 
 // Run trash cleanup on startup, then every hour
 runTrashCleanup().catch(console.error);
