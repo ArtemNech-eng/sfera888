@@ -45,12 +45,24 @@ async function getOnSiteColumn() {
 
 // ─── AUTH ─────────────────────────────────────────────────────────────────────
 
+function normalizeLoginInput(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  // If it looks like a phone number (10 or 11 digits)
+  if (digits.length === 10) return "7" + digits;
+  if (digits.length === 11 && digits[0] === "8") return "7" + digits.slice(1);
+  if (digits.length === 11 && digits[0] === "7") return digits;
+  // Otherwise treat as text login (return as-is)
+  return raw.trim();
+}
+
 router.post("/auth/login", async (req, res) => {
   const { login, password } = req.body;
   if (!login || !password) return res.status(400).json({ error: "Укажите логин и пароль" });
 
+  const normalizedLogin = normalizeLoginInput(login);
+
   const rows = await db.select().from(mastersTable)
-    .where(and(eq(mastersTable.pwaLogin, login), isNull(mastersTable.deletedAt)));
+    .where(and(eq(mastersTable.pwaLogin, normalizedLogin), isNull(mastersTable.deletedAt)));
   const master = rows[0];
 
   if (!master || !master.pwaPasswordHash) {
