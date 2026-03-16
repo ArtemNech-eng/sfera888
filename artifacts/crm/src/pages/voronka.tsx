@@ -23,15 +23,15 @@ interface ChatMessage { id: number; text: string; photoUrl: string | null; fromM
 
 // ─── Color map ────────────────────────────────────────────────────────────────
 
-const COLORS: Record<string, { top: string; header: string; badge: string; dot: string; btn: string }> = {
-  blue:   { top: "border-t-blue-400",   header: "from-blue-50 to-white",   badge: "bg-blue-500",   dot: "bg-blue-400",   btn: "bg-blue-50 text-blue-700 hover:bg-blue-100" },
-  green:  { top: "border-t-emerald-400",header: "from-emerald-50 to-white",badge: "bg-emerald-500",dot: "bg-emerald-400",btn: "bg-emerald-50 text-emerald-700 hover:bg-emerald-100" },
-  orange: { top: "border-t-orange-400", header: "from-orange-50 to-white", badge: "bg-orange-500", dot: "bg-orange-400", btn: "bg-orange-50 text-orange-700 hover:bg-orange-100" },
-  red:    { top: "border-t-red-400",    header: "from-red-50 to-white",    badge: "bg-red-500",    dot: "bg-red-400",    btn: "bg-red-50 text-red-700 hover:bg-red-100" },
-  purple: { top: "border-t-purple-400", header: "from-purple-50 to-white", badge: "bg-purple-500", dot: "bg-purple-400", btn: "bg-purple-50 text-purple-700 hover:bg-purple-100" },
-  yellow: { top: "border-t-yellow-400", header: "from-yellow-50 to-white", badge: "bg-yellow-500", dot: "bg-yellow-400", btn: "bg-yellow-50 text-yellow-700 hover:bg-yellow-100" },
-  teal:   { top: "border-t-teal-400",   header: "from-teal-50 to-white",   badge: "bg-teal-500",   dot: "bg-teal-400",   btn: "bg-teal-50 text-teal-700 hover:bg-teal-100" },
-  pink:   { top: "border-t-pink-400",   header: "from-pink-50 to-white",   badge: "bg-pink-500",   dot: "bg-pink-400",   btn: "bg-pink-50 text-pink-700 hover:bg-pink-100" },
+const COLORS: Record<string, { accent: string; badgeBg: string; badgeText: string; headerBg: string; dot: string; btn: string }> = {
+  blue:   { accent: "#60a5fa", badgeBg: "rgba(59,130,246,0.13)",  badgeText: "#1d4ed8", headerBg: "rgba(219,234,254,0.45)", dot: "bg-blue-400",    btn: "bg-blue-50 text-blue-700 hover:bg-blue-100" },
+  green:  { accent: "#34d399", badgeBg: "rgba(52,211,153,0.13)",  badgeText: "#065f46", headerBg: "rgba(209,250,229,0.45)", dot: "bg-emerald-400", btn: "bg-emerald-50 text-emerald-700 hover:bg-emerald-100" },
+  orange: { accent: "#fb923c", badgeBg: "rgba(251,146,60,0.13)",  badgeText: "#c2410c", headerBg: "rgba(255,237,213,0.45)", dot: "bg-orange-400",  btn: "bg-orange-50 text-orange-700 hover:bg-orange-100" },
+  red:    { accent: "#f87171", badgeBg: "rgba(248,113,113,0.13)", badgeText: "#b91c1c", headerBg: "rgba(254,226,226,0.45)", dot: "bg-red-400",     btn: "bg-red-50 text-red-700 hover:bg-red-100" },
+  purple: { accent: "#a78bfa", badgeBg: "rgba(167,139,250,0.13)", badgeText: "#5b21b6", headerBg: "rgba(237,233,254,0.45)", dot: "bg-purple-400",  btn: "bg-purple-50 text-purple-700 hover:bg-purple-100" },
+  yellow: { accent: "#fbbf24", badgeBg: "rgba(251,191,36,0.13)",  badgeText: "#92400e", headerBg: "rgba(254,243,199,0.45)", dot: "bg-yellow-400",  btn: "bg-yellow-50 text-yellow-700 hover:bg-yellow-100" },
+  teal:   { accent: "#2dd4bf", badgeBg: "rgba(45,212,191,0.13)",  badgeText: "#0f766e", headerBg: "rgba(204,251,241,0.45)", dot: "bg-teal-400",    btn: "bg-teal-50 text-teal-700 hover:bg-teal-100" },
+  pink:   { accent: "#f472b6", badgeBg: "rgba(244,114,182,0.13)", badgeText: "#9d174d", headerBg: "rgba(252,231,243,0.45)", dot: "bg-pink-400",    btn: "bg-pink-50 text-pink-700 hover:bg-pink-100" },
 };
 
 const COLOR_OPTS = Object.keys(COLORS);
@@ -62,22 +62,27 @@ function MasterCard({ master, columns, onMove, onOpenDrawer, onDragStart, onDrag
       draggable
       onDragStart={e => { e.dataTransfer.effectAllowed = "move"; onDragStart(master.id); }}
       onDragEnd={onDragEnd}
-      className={`bg-white border border-gray-100 rounded-xl shadow-sm transition-all duration-200 overflow-hidden ${
-        isDragging ? "opacity-40 scale-95 shadow-none cursor-grabbing" : "hover:shadow-md cursor-grab"
+      className={`rounded-xl overflow-hidden transition-all duration-200 ${
+        isDragging ? "opacity-40 scale-95 cursor-grabbing" : "cursor-grab"
       }`}
+      style={{
+        background: "rgba(255,255,255,0.82)",
+        border: "1px solid rgba(255,255,255,0.95)",
+        boxShadow: isDragging ? "none" : "0 2px 10px rgba(120,80,220,0.06), 0 1px 3px rgba(0,0,0,0.04)",
+      }}
     >
       {/* Clickable card body */}
       <div className="cursor-pointer" onClick={() => { if (!isDragging) onOpenDrawer(master); }}>
-        <div className="px-2.5 pt-2.5 pb-2">
+        <div className="px-3 pt-2.5 pb-2">
           <div className="flex items-center gap-2">
-            <Avatar name={master.alias} id={master.id} avatarUrl={master.avatarUrl} size={30} />
+            <Avatar name={master.alias} id={master.id} avatarUrl={master.avatarUrl} size={28} />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1 flex-wrap">
                 <span className="font-semibold text-[12px] text-gray-800 leading-tight truncate">{master.alias}</span>
                 {master.telegramId && <MessageSquare className="w-2.5 h-2.5 text-blue-400 flex-shrink-0" />}
-                {master.isTestMaster && <span className="text-[9px] bg-amber-100 text-amber-700 rounded px-1 font-semibold flex-shrink-0">ТЕСТ</span>}
+                {master.isTestMaster && <span className="text-[9px] bg-amber-100 text-amber-700 rounded-md px-1 font-semibold flex-shrink-0">ТЕСТ</span>}
               </div>
-              <p className="text-[10px] text-gray-400 truncate">{master.city}</p>
+              <p className="text-[10px] text-gray-400 truncate leading-tight">{master.city}</p>
             </div>
             <ChevronRight className="w-3 h-3 text-gray-300 flex-shrink-0" />
           </div>
@@ -86,10 +91,10 @@ function MasterCard({ master, columns, onMove, onOpenDrawer, onDragStart, onDrag
           {(master.specializations?.length > 0 || master.specialization) && (
             <div className="flex flex-wrap gap-0.5 mt-1.5">
               {(master.specializations?.length > 0 ? master.specializations : [master.specialization]).slice(0, 2).map(s => (
-                <span key={s} className="text-[9px] bg-gray-100 text-gray-500 rounded px-1 py-0.5 font-medium leading-tight truncate max-w-[80px]">{s}</span>
+                <span key={s} className="text-[9px] bg-gray-100/80 text-gray-500 rounded-md px-1.5 py-0.5 font-medium leading-tight truncate max-w-[90px]">{s}</span>
               ))}
               {(master.specializations?.length ?? 0) > 2 && (
-                <span className="text-[9px] bg-gray-100 text-gray-400 rounded px-1 py-0.5">+{master.specializations.length - 2}</span>
+                <span className="text-[9px] bg-gray-100/80 text-gray-400 rounded-md px-1.5 py-0.5">+{master.specializations.length - 2}</span>
               )}
             </div>
           )}
@@ -104,7 +109,7 @@ function MasterCard({ master, columns, onMove, onOpenDrawer, onDragStart, onDrag
             <div className="flex items-center gap-1.5 text-[10px] text-gray-400">
               <span className="flex items-center gap-0.5"><Briefcase className="w-2.5 h-2.5" />{master.totalOrders}</span>
               {master.debt > 0 && (
-                <span className="flex items-center gap-0.5 text-red-500 font-medium">
+                <span className="flex items-center gap-0.5 text-red-400 font-medium">
                   <AlertTriangle className="w-2.5 h-2.5" />{(master.debt/1000).toFixed(0)}k
                 </span>
               )}
@@ -114,15 +119,15 @@ function MasterCard({ master, columns, onMove, onOpenDrawer, onDragStart, onDrag
 
         {/* Active orders */}
         {hasActiveOrders && (
-          <div className="border-t border-gray-50 px-2.5 py-1.5 space-y-1 bg-blue-50/40">
+          <div className="px-3 py-1.5 space-y-1" style={{ borderTop: "1px solid rgba(0,0,0,0.04)", background: "rgba(239,246,255,0.5)" }}>
             {master.activeOrders.map(o => (
               <div key={o.orderId} className="flex items-center gap-1 text-[10px]">
-                <Zap className="w-2.5 h-2.5 text-blue-500 flex-shrink-0" />
-                <span className="font-semibold text-blue-700 flex-shrink-0">#{o.orderId}</span>
-                <span className="text-gray-500 truncate">{o.serviceType}</span>
+                <Zap className="w-2.5 h-2.5 text-blue-400 flex-shrink-0" />
+                <span className="font-semibold text-blue-600 flex-shrink-0">#{o.orderId}</span>
+                <span className="text-gray-400 truncate">{o.serviceType}</span>
                 {o.clientPhone && (
                   <a href={`tel:${o.clientPhone}`} onClick={e => e.stopPropagation()}
-                    className="ml-auto text-emerald-600 font-medium hover:underline flex-shrink-0 flex items-center gap-0.5">
+                    className="ml-auto text-emerald-500 font-medium hover:underline flex-shrink-0 flex items-center gap-0.5">
                     <Phone className="w-2.5 h-2.5" />
                   </a>
                 )}
@@ -130,33 +135,34 @@ function MasterCard({ master, columns, onMove, onOpenDrawer, onDragStart, onDrag
             ))}
           </div>
         )}
-      </div>{/* end clickable area */}
+      </div>
 
-      {/* Move dropdown — stops propagation so it doesn't open drawer */}
-      <div className="border-t border-gray-50 relative" onClick={e => e.stopPropagation()}>
+      {/* Move dropdown */}
+      <div className="relative" style={{ borderTop: "1px solid rgba(0,0,0,0.04)" }} onClick={e => e.stopPropagation()}>
         <button
           onClick={() => setOpen(v => !v)}
-          className="w-full flex items-center justify-center gap-1 py-1.5 text-[10px] text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors"
+          className="w-full flex items-center justify-center gap-1 py-1.5 text-[10px] text-gray-400 hover:text-gray-600 hover:bg-black/[0.03] transition-colors"
         >
           <ArrowRight className="w-2.5 h-2.5" />Переместить
         </button>
         {open && (
           <>
-            {/* Invisible full-screen overlay to close on click anywhere */}
             <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
-            <div className="absolute bottom-full left-0 right-0 bg-white border border-gray-100 rounded-xl shadow-xl z-30 overflow-hidden">
+            <div className="absolute bottom-full left-0 right-0 rounded-xl shadow-xl z-30 overflow-hidden"
+                 style={{ background: "rgba(255,255,255,0.95)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.9)", boxShadow: "0 8px 32px rgba(0,0,0,0.12)" }}>
               {others.map(col => {
                 const c = clr(col.color);
                 return (
                   <button key={col.id} onClick={() => { onMove(master.id, col.id); setOpen(false); }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[12px] text-gray-700 hover:bg-gray-50 transition-colors">
-                    <span className={`w-2 h-2 rounded-full ${c.dot}`} />
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[12px] text-gray-700 hover:bg-black/[0.03] transition-colors">
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: c.accent }} />
                     {col.name}
                   </button>
                 );
               })}
               <button onClick={() => { onMove(master.id, null); setOpen(false); }}
-                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[12px] text-gray-400 hover:bg-gray-50 transition-colors border-t border-gray-50">
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[12px] text-gray-400 hover:bg-black/[0.03] transition-colors"
+                style={{ borderTop: "1px solid rgba(0,0,0,0.05)" }}>
                 Без колонки
               </button>
             </div>
@@ -175,30 +181,28 @@ function SuspendedColumn({ masters, onOpenDrawer }: {
 }) {
   const [collapsed, setCollapsed] = useState(false);
 
+  const ACCENT = "#f87171";
   return (
-    <div className="flex-shrink-0 w-[200px] flex flex-col rounded-2xl overflow-hidden"
-         style={{ background: "rgba(255,245,245,0.55)", backdropFilter: "blur(18px) saturate(180%)", WebkitBackdropFilter: "blur(18px) saturate(180%)", border: "1px solid rgba(255,200,200,0.55)", boxShadow: "0 4px 24px rgba(239,68,68,0.07), 0 1px 4px rgba(0,0,0,0.04)" }}>
+    <div className="flex-shrink-0 w-[230px] flex flex-col rounded-2xl overflow-hidden"
+         style={{ background: "rgba(255,255,255,0.60)", backdropFilter: "blur(20px) saturate(180%)", WebkitBackdropFilter: "blur(20px) saturate(180%)", border: "1px solid rgba(255,255,255,0.82)", boxShadow: "0 4px 20px rgba(120,80,220,0.07), 0 1px 3px rgba(0,0,0,0.04)", borderTop: `2px solid ${ACCENT}` }}>
       {/* Header */}
-      <div className="flex items-center gap-1.5 px-2.5 py-2 border-b" style={{ borderColor: "rgba(255,180,180,0.4)", background: "rgba(255,230,230,0.35)" }}>
-        <UserX className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
-        <span className="font-semibold text-red-600 text-[12px] flex-1">Отстранённые</span>
-        <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5" style={{ background: "rgba(239,68,68,0.15)", color: "#dc2626" }}>{masters.length}</span>
-        <button onClick={() => setCollapsed(c => !c)} className="p-0.5 rounded hover:bg-red-100/50 transition-colors">
-          {collapsed ? <ChevronDown className="w-3 h-3 text-red-400" /> : <ChevronUp className="w-3 h-3 text-red-400" />}
+      <div className="flex items-center gap-2 px-3 py-2.5" style={{ background: "rgba(254,226,226,0.35)", borderBottom: "1px solid rgba(0,0,0,0.04)" }}>
+        <UserX className="w-3.5 h-3.5 flex-shrink-0" style={{ color: ACCENT }} />
+        <span className="font-semibold text-gray-700 text-[13px] flex-1 truncate">Отстранённые</span>
+        <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5 flex-shrink-0"
+              style={{ background: "rgba(248,113,113,0.14)", color: "#b91c1c" }}>{masters.length}</span>
+        <button onClick={() => setCollapsed(c => !c)} className="p-0.5 rounded-lg transition-colors hover:bg-black/[0.05]">
+          {collapsed ? <ChevronDown className="w-3.5 h-3.5 text-gray-400" /> : <ChevronUp className="w-3.5 h-3.5 text-gray-400" />}
         </button>
       </div>
 
       {/* Cards */}
       {!collapsed && (
-        <div className="voronka-scroll flex-1 overflow-y-auto p-1.5 space-y-1.5 min-h-0">
+        <div className="voronka-scroll flex-1 overflow-y-auto p-2 space-y-1.5 min-h-0">
           {masters.map(m => (
-            <div key={m.id}
-              onClick={() => onOpenDrawer(m)}
-              className="rounded-xl px-2 py-1.5 cursor-pointer transition-all duration-150 flex items-center gap-2"
-              style={{ background: "rgba(255,255,255,0.65)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,220,220,0.6)", boxShadow: "0 2px 8px rgba(239,68,68,0.05)" }}
-              onMouseEnter={e => (e.currentTarget.style.boxShadow = "0 4px 16px rgba(239,68,68,0.12)")}
-              onMouseLeave={e => (e.currentTarget.style.boxShadow = "0 2px 8px rgba(239,68,68,0.05)")}
-            >
+            <div key={m.id} onClick={() => onOpenDrawer(m)}
+              className="rounded-xl px-2.5 py-2 cursor-pointer transition-all duration-150 flex items-center gap-2"
+              style={{ background: "rgba(255,255,255,0.82)", border: "1px solid rgba(255,255,255,0.95)", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
               <Avatar name={m.alias} id={m.id} avatarUrl={m.avatarUrl} size={26} />
               <div className="flex-1 min-w-0">
                 <p className="text-[11px] font-semibold text-gray-700 truncate">{m.alias}</p>
@@ -222,32 +226,30 @@ function DebtorColumn({ masters, onOpenDrawer }: {
   const [collapsed, setCollapsed] = useState(false);
   const totalDebt = masters.reduce((s, m) => s + m.debt, 0);
 
+  const ACCENT = "#fb923c";
   return (
-    <div className="flex-shrink-0 w-[200px] flex flex-col rounded-2xl overflow-hidden"
-         style={{ background: "rgba(255,248,240,0.55)", backdropFilter: "blur(18px) saturate(180%)", WebkitBackdropFilter: "blur(18px) saturate(180%)", border: "1px solid rgba(255,210,160,0.55)", boxShadow: "0 4px 24px rgba(234,88,12,0.07), 0 1px 4px rgba(0,0,0,0.04)" }}>
-      <div className="flex items-center gap-1.5 px-2.5 py-2 border-b" style={{ borderColor: "rgba(255,190,120,0.4)", background: "rgba(255,237,210,0.35)" }}>
-        <Banknote className="w-3.5 h-3.5 text-orange-500 flex-shrink-0" />
+    <div className="flex-shrink-0 w-[230px] flex flex-col rounded-2xl overflow-hidden"
+         style={{ background: "rgba(255,255,255,0.60)", backdropFilter: "blur(20px) saturate(180%)", WebkitBackdropFilter: "blur(20px) saturate(180%)", border: "1px solid rgba(255,255,255,0.82)", boxShadow: "0 4px 20px rgba(120,80,220,0.07), 0 1px 3px rgba(0,0,0,0.04)", borderTop: `2px solid ${ACCENT}` }}>
+      <div className="flex items-center gap-2 px-3 py-2.5" style={{ background: "rgba(255,237,213,0.35)", borderBottom: "1px solid rgba(0,0,0,0.04)" }}>
+        <Banknote className="w-3.5 h-3.5 flex-shrink-0" style={{ color: ACCENT }} />
         <div className="flex-1 min-w-0">
-          <span className="font-semibold text-orange-600 text-[12px]">Должники</span>
+          <span className="font-semibold text-gray-700 text-[13px]">Должники</span>
           {totalDebt > 0 && (
-            <p className="text-[9px] text-orange-500 leading-none">{(totalDebt / 1000).toFixed(0)}k ₽</p>
+            <p className="text-[9px] text-orange-400 leading-none">{(totalDebt / 1000).toFixed(0)}k ₽</p>
           )}
         </div>
-        <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5 flex-shrink-0" style={{ background: "rgba(234,88,12,0.15)", color: "#c2410c" }}>{masters.length}</span>
-        <button onClick={() => setCollapsed(c => !c)} className="p-0.5 rounded hover:bg-orange-100/50 transition-colors">
-          {collapsed ? <ChevronDown className="w-3 h-3 text-orange-400" /> : <ChevronUp className="w-3 h-3 text-orange-400" />}
+        <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5 flex-shrink-0"
+              style={{ background: "rgba(251,146,60,0.14)", color: "#c2410c" }}>{masters.length}</span>
+        <button onClick={() => setCollapsed(c => !c)} className="p-0.5 rounded-lg transition-colors hover:bg-black/[0.05]">
+          {collapsed ? <ChevronDown className="w-3.5 h-3.5 text-gray-400" /> : <ChevronUp className="w-3.5 h-3.5 text-gray-400" />}
         </button>
       </div>
       {!collapsed && (
-        <div className="voronka-scroll flex-1 overflow-y-auto p-1.5 space-y-1.5 min-h-0">
+        <div className="voronka-scroll flex-1 overflow-y-auto p-2 space-y-1.5 min-h-0">
           {masters.map(m => (
-            <div key={m.id}
-              onClick={() => onOpenDrawer(m)}
-              className="rounded-xl px-2 py-1.5 cursor-pointer transition-all duration-150"
-              style={{ background: "rgba(255,255,255,0.65)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,220,170,0.6)", boxShadow: "0 2px 8px rgba(234,88,12,0.05)" }}
-              onMouseEnter={e => (e.currentTarget.style.boxShadow = "0 4px 16px rgba(234,88,12,0.12)")}
-              onMouseLeave={e => (e.currentTarget.style.boxShadow = "0 2px 8px rgba(234,88,12,0.05)")}
-            >
+            <div key={m.id} onClick={() => onOpenDrawer(m)}
+              className="rounded-xl px-2.5 py-2 cursor-pointer transition-all duration-150"
+              style={{ background: "rgba(255,255,255,0.82)", border: "1px solid rgba(255,255,255,0.95)", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
               <div className="flex items-center gap-2">
                 <Avatar name={m.alias} id={m.id} avatarUrl={m.avatarUrl} size={26} />
                 <div className="flex-1 min-w-0">
@@ -256,7 +258,7 @@ function DebtorColumn({ masters, onOpenDrawer }: {
                 </div>
                 {m.telegramId && <div className="w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0" />}
               </div>
-              <div className="flex items-center gap-1 mt-1 text-[10px] text-orange-600 font-semibold">
+              <div className="flex items-center gap-1 mt-1.5 text-[10px] font-semibold" style={{ color: ACCENT }}>
                 <AlertTriangle className="w-2.5 h-2.5 flex-shrink-0" />
                 {m.debt.toLocaleString("ru")} ₽
                 {m.activeOrders.length > 0 && (
@@ -291,18 +293,20 @@ function KanbanColumn({ col, masters, columns, onMove, onOpenDrawer, draggingId,
 
   const isActiveDrop = dragOver && draggingId !== null;
 
+  const accent = c.accent;
   return (
-    <div className="flex-shrink-0 w-[220px] flex flex-col rounded-2xl overflow-hidden"
-         style={{ background: "rgba(255,255,255,0.58)", backdropFilter: "blur(18px) saturate(180%)", WebkitBackdropFilter: "blur(18px) saturate(180%)", border: "1px solid rgba(255,255,255,0.80)", boxShadow: "0 4px 24px rgba(120,80,220,0.07), 0 1px 4px rgba(0,0,0,0.04)" }}>
-      <div className={`px-3 py-2 flex items-center justify-between border-b border-t-[3px] ${c.top}`}
-           style={{ borderBottomColor: "rgba(0,0,0,0.06)", background: "rgba(255,255,255,0.5)" }}>
-        <div className="flex items-center gap-1.5 min-w-0">
-          <span className="font-semibold text-[12px] text-gray-700 truncate">{name}</span>
+    <div className="flex-shrink-0 w-[230px] flex flex-col rounded-2xl overflow-hidden"
+         style={{ background: "rgba(255,255,255,0.60)", backdropFilter: "blur(20px) saturate(180%)", WebkitBackdropFilter: "blur(20px) saturate(180%)", border: "1px solid rgba(255,255,255,0.82)", boxShadow: "0 4px 20px rgba(120,80,220,0.07), 0 1px 3px rgba(0,0,0,0.04)", borderTop: `2px solid ${accent}` }}>
+      <div className="px-3 py-2.5 flex items-center justify-between"
+           style={{ background: c.headerBg, borderBottom: "1px solid rgba(0,0,0,0.04)" }}>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="font-semibold text-[13px] text-gray-700 truncate">{name}</span>
           {receivesOrders && (
             <Zap className="w-3 h-3 text-emerald-500 flex-shrink-0" title="Принимает заказы" />
           )}
         </div>
-        <span className={`${c.badge} text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 flex-shrink-0 ml-1`}>
+        <span className="text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 flex-shrink-0 ml-1"
+              style={{ background: c.badgeBg, color: c.badgeText }}>
           {masters.length}
         </span>
       </div>
@@ -310,10 +314,8 @@ function KanbanColumn({ col, masters, columns, onMove, onOpenDrawer, draggingId,
         onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={e => { e.preventDefault(); setDragOver(false); if (draggingId !== null) onDropMaster(draggingId, col?.id ?? null); }}
-        className={`voronka-scroll flex-1 overflow-y-auto p-1.5 space-y-1.5 transition-colors duration-150 ${
-          isActiveDrop ? "bg-blue-50/40" : ""
-        }`}
-        style={{ maxHeight: "calc(100vh - 185px)" }}
+        className="voronka-scroll flex-1 overflow-y-auto p-2 space-y-1.5 transition-colors duration-150"
+        style={{ maxHeight: "calc(100vh - 185px)", background: isActiveDrop ? "rgba(99,102,241,0.05)" : "transparent" }}
       >
         {masters.length === 0 && !isActiveDrop ? (
           <div className="flex flex-col items-center justify-center py-6 text-gray-300">
@@ -410,7 +412,7 @@ function ColumnSettings({ columns, onClose, onUpdate, onDelete, onCreate, onReor
                     </div>
                   </div>
                 ) : (
-                  <div className={`flex items-center gap-3 px-3 py-2.5 bg-gradient-to-r ${c.header}`}>
+                  <div className="flex items-center gap-3 px-3 py-2.5" style={{ background: c.headerBg }}>
                     <span className={`w-3 h-3 rounded-full ${c.dot} flex-shrink-0`}/>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-gray-700">{col.name}</p>
@@ -551,7 +553,7 @@ export default function Voronka() {
               <div className="w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"/>
             </div>
           ) : (
-            <div className="voronka-scroll flex gap-3 overflow-x-auto pb-4 flex-1 min-h-0">
+            <div className="voronka-scroll flex gap-4 overflow-x-auto pb-4 flex-1 min-h-0">
               {sorted.map(col => (
                 <KanbanColumn key={col.id} col={col}
                   masters={masters.filter(m => m.status !== "suspended" && m.debt <= 0 && m.voronkaColumnId === col.id)}
