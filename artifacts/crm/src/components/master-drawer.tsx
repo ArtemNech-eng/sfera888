@@ -6,6 +6,7 @@ import {
   User, Tag, Plus, CheckSquare, Square, Clock, Trash2, History,
   Send, Paperclip, Check, CheckCheck, Calendar, DollarSign, Loader2, CheckCircle2,
   ClipboardList, ExternalLink, ThumbsUp, ThumbsDown, Minus, Sparkles, MessageCircle,
+  Smartphone, KeyRound, Eye, EyeOff,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -20,6 +21,7 @@ export interface DrawerMaster {
   rating: number; totalOrders: number; acceptedOrders: number; debt: number;
   voronkaColumnId: number | null; isTestMaster: boolean;
   avatarUrl: string | null; activeOrders: any[]; createdAt: string;
+  pwaLogin: string | null;
 }
 
 interface MasterTask { id: number; masterId: number; text: string; dueAt: string | null; isCompleted: boolean; createdBy: string | null; createdAt: string; }
@@ -137,9 +139,38 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
+  const [pwaLogin, setPwaLogin] = useState(master.pwaLogin ?? "");
+  const [pwaPassword, setPwaPassword] = useState("");
+  const [showPwaPass, setShowPwaPass] = useState(false);
+  const [savingPwa, setSavingPwa] = useState(false);
+
+  const savePwaCredentials = async () => {
+    if (!pwaLogin.trim() || !pwaPassword.trim()) return;
+    setSavingPwa(true);
+    try {
+      const r = await fetch(`/api/master-pwa/admin/set-credentials/${master.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ login: pwaLogin.trim(), password: pwaPassword.trim() }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error ?? "Ошибка");
+      onMasterUpdate(master.id, { pwaLogin: pwaLogin.trim() });
+      setPwaPassword("");
+      alert("Доступ к МастерApp сохранён");
+    } catch (e: any) {
+      alert(e.message ?? "Ошибка");
+    } finally {
+      setSavingPwa(false);
+    }
+  };
+
   // Reset when master changes
   useEffect(() => {
     setTags(master.tags ?? []);
+    setPwaLogin(master.pwaLogin ?? "");
+    setPwaPassword("");
     setTab("profile");
     setOrders([]); setOrdersLoaded(false);
     setChatMessages([]); setChatLoaded(false); setPendingTxs([]);
@@ -455,6 +486,48 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                   <button onClick={() => addTag(tagInput)} disabled={!tagInput.trim() || savingTags}
                     className="px-3 py-1.5 bg-violet-500 text-white rounded-lg text-xs font-medium hover:bg-violet-600 disabled:opacity-40 transition-colors">
                     <Plus className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="border-t border-gray-100 pt-3">
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1">
+                  <Smartphone className="w-3 h-3" /> МастерApp (PWA доступ)
+                </p>
+                {master.pwaLogin && (
+                  <div className="flex items-center gap-2 mb-2">
+                    <KeyRound className="w-3.5 h-3.5 text-green-500" />
+                    <span className="text-xs text-green-700 font-medium">Логин: {master.pwaLogin}</span>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    placeholder="Логин"
+                    value={pwaLogin}
+                    onChange={e => setPwaLogin(e.target.value)}
+                    className="w-full text-xs border border-gray-200 rounded-lg px-3 py-1.5 outline-none focus:ring-2 focus:ring-blue-100 bg-gray-50"
+                  />
+                  <div className="relative">
+                    <input
+                      type={showPwaPass ? "text" : "password"}
+                      placeholder="Новый пароль"
+                      value={pwaPassword}
+                      onChange={e => setPwaPassword(e.target.value)}
+                      className="w-full text-xs border border-gray-200 rounded-lg px-3 py-1.5 pr-8 outline-none focus:ring-2 focus:ring-blue-100 bg-gray-50"
+                    />
+                    <button type="button" onClick={() => setShowPwaPass(v => !v)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                      {showPwaPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                  <button
+                    onClick={savePwaCredentials}
+                    disabled={!pwaLogin.trim() || !pwaPassword.trim() || savingPwa}
+                    className="w-full py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 disabled:opacity-40 transition-colors flex items-center justify-center gap-1"
+                  >
+                    {savingPwa ? <Loader2 className="w-3 h-3 animate-spin" /> : <Smartphone className="w-3 h-3" />}
+                    {master.pwaLogin ? "Обновить доступ" : "Выдать доступ"}
                   </button>
                 </div>
               </div>

@@ -24,7 +24,8 @@ CRM система для управления ремонтными заказа
 artifacts-monorepo/
 ├── artifacts/              # Deployable applications
 │   ├── api-server/         # Express API server
-│   └── crm/               # React CRM frontend (at /)
+│   ├── crm/               # React CRM frontend (at /)
+│   └── master-pwa/        # React PWA for masters (at /master-pwa/)
 ├── lib/                    # Shared libraries
 │   ├── api-spec/           # OpenAPI spec + Orval codegen config
 │   ├── api-client-react/   # Generated React Query hooks
@@ -105,6 +106,45 @@ artifacts-monorepo/
 - `GET /api/dispatch/:orderId` — Dispatch status and respondents list
 - `POST /api/dispatch/:orderId/broadcast` — Send order card to all active masters (without client phone)
 - `POST /api/dispatch/:orderId/assign/:masterId` — Assign order to responding master; notifies with phone; updates others' messages
+
+## Master PWA (`/master-pwa/`)
+
+React PWA for masters to manage their orders independently.
+
+### Auth
+- Masters log in with `pwa_login` / `pwa_password_hash` (separate from Telegram)
+- Session stored in same express-session as CRM (key: `masterId`)
+- CRM operators set PWA credentials via master drawer → "МастерApp (PWA доступ)" section
+
+### Pages
+- **Главная** — Dashboard with new/active orders; new order cards open accept/reject sheet
+- **Заказы** — Full order list with status stepper (accepted→on_way→on_site→work_done), photo upload (до/после/акт), complete modal
+- **Баланс** — Debt info + transaction history
+- **Профиль** — Master stats, tags, rating, logout
+
+### API Routes (`/api/master-pwa/...`)
+- `POST /auth/login` — Login with pwaLogin/pwaPassword
+- `GET /auth/me` — Check session
+- `POST /auth/logout` — Logout
+- `GET /home` — Home page data (available + active orders)
+- `GET /orders/available` — Dispatched orders awaiting response
+- `GET /orders/my?filter=active|completed` — My orders
+- `POST /orders/:id/accept` — Accept order (enforces limits, creates placeholder tx)
+- `POST /orders/:id/reject` — Reject dispatched order
+- `PATCH /orders/:id/status` — Update masterWorkStatus
+- `PATCH /orders/:id/photos` — Save photo URL (type: before|after|act)
+- `POST /orders/:id/complete` — Complete order with proposedAmount
+- `GET /balance` — Balance + transactions
+- `GET /profile` — Profile + stats
+- `POST /admin/set-credentials/:masterId` — Set PWA login/password (requires CRM session)
+
+### DB Fields Added
+- `masters.pwa_login` — Unique login for PWA auth
+- `masters.pwa_password_hash` — bcrypt hash
+- `orders.master_work_status` — enum: accepted|on_way|on_site|work_done|completed
+- `orders.photos_before[]` — Before-work photo URLs
+- `orders.photos_after[]` — After-work photo URLs
+- `orders.photo_act` — Act/document photo URL
 
 ## Commission Logic
 

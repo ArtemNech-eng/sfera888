@@ -1,0 +1,501 @@
+import { Router } from "express";
+import { db, mastersTable, ordersTable, orderDispatchesTable, transactionsTable, leadsTable, voronkaColumnsTable } from "@workspace/db";
+import { eq, and, inArray, isNull, ne } from "drizzle-orm";
+import { verifyPassword, hashPassword } from "../lib/auth.js";
+
+const router = Router();
+
+function requireMasterPwa(req: any, res: any, next: any) {
+  const masterId = (req.session as any).masterId;
+  if (!masterId) return res.status(401).json({ error: "Не авторизован" });
+  next();
+}
+
+async function getMasterById(id: number) {
+  const rows = await db.select().from(mastersTable).where(eq(mastersTable.id, id));
+  return rows[0] ?? null;
+}
+
+async function getOnSiteColumn() {
+  const cols = await db.select().from(voronkaColumnsTable).orderBy(voronkaColumnsTable.position);
+  const nonReceiving = cols.filter(c => !c.receivesOrders);
+  return nonReceiving.find(c => c.position > 1) ?? nonReceiving[0] ?? null;
+}
+
+// ─── AUTH ─────────────────────────────────────────────────────────────────────
+
+router.post("/auth/login", async (req, res) => {
+  const { login, password } = req.body;
+  if (!login || !password) return res.status(400).json({ error: "Укажите логин и пароль" });
+
+  const rows = await db.select().from(mastersTable)
+    .where(and(eq(mastersTable.pwaLogin, login), isNull(mastersTable.deletedAt)));
+  const master = rows[0];
+
+  if (!master || !master.pwaPasswordHash) {
+    return res.status(401).json({ error: "Неверный логин или пароль" });
+  }
+
+  const valid = await verifyPassword(password, master.pwaPasswordHash);
+  if (!valid) return res.status(401).json({ error: "Неверный логин или пароль" });
+
+  (req.session as any).masterId = master.id;
+
+  res.json({
+    id: master.id,
+    alias: master.alias,
+    city: master.city,
+    specialization: master.specialization,
+    rating: Number(master.rating),
+    debt: Number(master.debt),
+    phone: master.phone ?? null,
+    status: master.status,
+  });
+});
+
+router.post("/auth/logout", (req, res) => {
+  (req.session as any).masterId = null;
+  res.json({ success: true });
+});
+
+router.get("/auth/me", async (req, res) => {
+  const masterId = (req.session as any).masterId;
+  if (!masterId) return res.status(401).json({ error: "Не авторизован" });
+
+  const master = await getMasterById(masterId);
+  if (!master || master.deletedAt) return res.status(401).json({ error: "Мастер не найден" });
+
+  res.json({
+    id: master.id,
+    alias: master.alias,
+    city: master.city,
+    specialization: master.specialization,
+    specializations: master.specializations,
+    rating: Number(master.rating),
+    debt: Number(master.debt),
+    phone: master.phone ?? null,
+    status: master.status,
+    totalOrders: master.totalOrders,
+    acceptedOrders: master.acceptedOrders,
+    isTestMaster: master.isTestMaster,
+    customAvatarUrl: master.customAvatarUrl ?? null,
+    pwaLogin: master.pwaLogin ?? null,
+  });
+});
+
+// ─── HOME ─────────────────────────────────────────────────────────────────────
+
+router.get("/home", requireMasterPwa, async (req, res) => {
+  const masterId = (req.session as any).masterId;
+  const master = await getMasterById(masterId);
+  if (!master) return res.status(404).json({ error: "Мастер не найден" });
+
+  // Available orders (dispatched but not yet responded)
+  const dispatches = await db.select().from(orderDispatchesTable)
+    .where(and(eq(orderDispatchesTable.masterId, masterId), eq(orderDispatchesTable.status, "sent")));
+
+  let availableOrders: any[] = [];
+  if (dispatches.length > 0) {
+    const orderIds = dispatches.map(d => d.orderId);
+    const orders = await db.select().from(ordersTable)
+      .where(and(inArray(ordersTable.id, orderIds), eq(ordersTable.status, "waiting_master"), isNull(ordersTable.deletedAt)));
+    const dispatchByOrder = new Map(dispatches.map(d => [d.orderId, d]));
+    availableOrders = orders.map(o => ({
+      id: o.id,
+      city: o.city,
+      district: o.district,
+      serviceType: o.serviceType,
+      area: Number(o.area),
+      scheduledAt: o.scheduledAt ?? null,
+      comment: o.comment ?? null,
+      dispatchedAt: dispatchByOrder.get(o.id)?.createdAt ?? null,
+    }));
+  }
+
+  // Active orders (assigned to me)
+  const activeOrders = await db.select().from(ordersTable)
+    .where(and(
+      eq(ordersTable.masterId, masterId),
+      inArray(ordersTable.status, ["master_assigned", "in_progress", "cancellation_requested"]),
+      isNull(ordersTable.deletedAt)
+    ));
+
+  res.json({
+    master: {
+      id: master.id,
+      alias: master.alias,
+      city: master.city,
+      specialization: master.specialization,
+      rating: Number(master.rating),
+      debt: Number(master.debt),
+      isTestMaster: master.isTestMaster,
+    },
+    availableOrders,
+    activeOrders: activeOrders.map(o => ({
+      id: o.id,
+      city: o.city,
+      district: o.district,
+      serviceType: o.serviceType,
+      area: Number(o.area),
+      scheduledAt: o.scheduledAt ?? null,
+      status: o.status,
+      masterWorkStatus: o.masterWorkStatus ?? null,
+      proposedAmount: o.proposedAmount ? Number(o.proposedAmount) : null,
+    })),
+  });
+});
+
+// ─── ORDERS ───────────────────────────────────────────────────────────────────
+
+router.get("/orders/available", requireMasterPwa, async (req, res) => {
+  const masterId = (req.session as any).masterId;
+
+  const dispatches = await db.select().from(orderDispatchesTable)
+    .where(and(eq(orderDispatchesTable.masterId, masterId), eq(orderDispatchesTable.status, "sent")));
+
+  if (dispatches.length === 0) return res.json([]);
+
+  const orderIds = dispatches.map(d => d.orderId);
+  const orders = await db.select().from(ordersTable)
+    .where(and(inArray(ordersTable.id, orderIds), eq(ordersTable.status, "waiting_master"), isNull(ordersTable.deletedAt)));
+
+  const dispatchByOrder = new Map(dispatches.map(d => [d.orderId, d]));
+
+  res.json(orders.map(o => ({
+    id: o.id,
+    city: o.city,
+    district: o.district,
+    serviceType: o.serviceType,
+    area: Number(o.area),
+    scheduledAt: o.scheduledAt ?? null,
+    comment: o.comment ?? null,
+    dispatchedAt: dispatchByOrder.get(o.id)?.createdAt ?? null,
+  })));
+});
+
+router.get("/orders/my", requireMasterPwa, async (req, res) => {
+  const masterId = (req.session as any).masterId;
+  const { filter } = req.query;
+
+  let statusFilter: string[];
+  if (filter === "active") {
+    statusFilter = ["master_assigned", "in_progress", "cancellation_requested"];
+  } else if (filter === "completed") {
+    statusFilter = ["completed", "cancelled"];
+  } else {
+    statusFilter = ["master_assigned", "in_progress", "cancellation_requested", "completed", "cancelled"];
+  }
+
+  const orders = await db.select().from(ordersTable)
+    .where(and(
+      eq(ordersTable.masterId, masterId),
+      inArray(ordersTable.status, statusFilter as any),
+      isNull(ordersTable.deletedAt)
+    ));
+
+  // Get lead info for client data
+  const leadIds = [...new Set(orders.map(o => o.leadId))];
+  const leads = leadIds.length > 0
+    ? await db.select().from(leadsTable).where(inArray(leadsTable.id, leadIds))
+    : [];
+  const leadMap = new Map(leads.map(l => [l.id, l]));
+
+  res.json(orders.map(o => {
+    const lead = leadMap.get(o.leadId);
+    return {
+      id: o.id,
+      city: o.city,
+      district: o.district,
+      serviceType: o.serviceType,
+      area: Number(o.area),
+      scheduledAt: o.scheduledAt ?? null,
+      comment: o.comment ?? null,
+      status: o.status,
+      masterWorkStatus: o.masterWorkStatus ?? null,
+      proposedAmount: o.proposedAmount ? Number(o.proposedAmount) : null,
+      orderAmount: o.orderAmount ? Number(o.orderAmount) : null,
+      commission: o.commission ? Number(o.commission) : null,
+      photosBefore: o.photosBefore ?? [],
+      photosAfter: o.photosAfter ?? [],
+      photoAct: o.photoAct ?? null,
+      clientName: lead?.clientName ?? null,
+      clientPhone: lead?.clientPhone ?? null,
+      createdAt: o.createdAt,
+      updatedAt: o.updatedAt,
+    };
+  }));
+});
+
+// Accept order
+router.post("/orders/:id/accept", requireMasterPwa, async (req, res) => {
+  const masterId = (req.session as any).masterId;
+  const orderId = parseInt(req.params.id);
+
+  const master = await getMasterById(masterId);
+  if (!master) return res.status(404).json({ error: "Мастер не найден" });
+
+  // Check the dispatch exists
+  const dispatches = await db.select().from(orderDispatchesTable)
+    .where(and(eq(orderDispatchesTable.masterId, masterId), eq(orderDispatchesTable.orderId, orderId), eq(orderDispatchesTable.status, "sent")));
+  if (!dispatches[0]) return res.status(404).json({ error: "Заказ не найден или уже принят другим мастером" });
+
+  // Check order is still available
+  const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
+  const order = orderRows[0];
+  if (!order || order.status !== "waiting_master") {
+    return res.status(400).json({ error: "Заказ больше недоступен" });
+  }
+
+  // Check master column allows orders
+  if (master.voronkaColumnId) {
+    const colRows = await db.select().from(voronkaColumnsTable).where(eq(voronkaColumnsTable.id, master.voronkaColumnId));
+    if (colRows[0] && !colRows[0].receivesOrders) {
+      return res.status(400).json({ error: "Вы не можете принимать заказы в текущем статусе" });
+    }
+  }
+
+  // Check active order limits
+  const activeOrders = await db.select().from(ordersTable)
+    .where(and(eq(ordersTable.masterId, masterId), inArray(ordersTable.status, ["master_assigned", "in_progress"])));
+  const limit = master.isTestMaster ? 1 : 2;
+  if (activeOrders.length >= limit) {
+    return res.status(400).json({ error: `Превышен лимит активных заказов (${limit})` });
+  }
+
+  // Assign master to order
+  await db.update(ordersTable).set({
+    masterId,
+    status: "master_assigned",
+    masterWorkStatus: "accepted",
+    updatedAt: new Date(),
+  }).where(eq(ordersTable.id, orderId));
+
+  // Update this dispatch to assigned
+  await db.update(orderDispatchesTable).set({ status: "assigned", respondedAt: new Date() })
+    .where(eq(orderDispatchesTable.id, dispatches[0].id));
+
+  // Reject other dispatches for this order
+  await db.update(orderDispatchesTable).set({ status: "rejected" })
+    .where(and(eq(orderDispatchesTable.orderId, orderId), ne(orderDispatchesTable.id, dispatches[0].id)));
+
+  // Update master stats and move to "На объекте" column
+  const onSiteCol = await getOnSiteColumn();
+  await db.update(mastersTable).set({
+    totalOrders: master.totalOrders + 1,
+    acceptedOrders: master.acceptedOrders + 1,
+    voronkaColumnId: onSiteCol?.id ?? master.voronkaColumnId,
+  }).where(eq(mastersTable.id, masterId));
+
+  // Create placeholder transaction
+  const existingTx = await db.select().from(transactionsTable).where(eq(transactionsTable.orderId, orderId));
+  if (existingTx.length === 0) {
+    await db.insert(transactionsTable).values({
+      orderId,
+      masterId,
+      orderAmount: "0",
+      commission: "0",
+      paymentStatus: "pending",
+    });
+  }
+
+  res.json({ success: true });
+});
+
+// Reject order
+router.post("/orders/:id/reject", requireMasterPwa, async (req, res) => {
+  const masterId = (req.session as any).masterId;
+  const orderId = parseInt(req.params.id);
+
+  await db.update(orderDispatchesTable).set({ status: "rejected", respondedAt: new Date() })
+    .where(and(eq(orderDispatchesTable.masterId, masterId), eq(orderDispatchesTable.orderId, orderId)));
+
+  res.json({ success: true });
+});
+
+// Update master work status
+router.patch("/orders/:id/status", requireMasterPwa, async (req, res) => {
+  const masterId = (req.session as any).masterId;
+  const orderId = parseInt(req.params.id);
+  const { masterWorkStatus } = req.body;
+
+  if (!masterWorkStatus) return res.status(400).json({ error: "Статус обязателен" });
+
+  const orderRows = await db.select().from(ordersTable)
+    .where(and(eq(ordersTable.id, orderId), eq(ordersTable.masterId, masterId)));
+  if (!orderRows[0]) return res.status(404).json({ error: "Заказ не найден" });
+
+  const updates: any = { masterWorkStatus, updatedAt: new Date() };
+  if (masterWorkStatus === "on_site") updates.status = "in_progress";
+
+  await db.update(ordersTable).set(updates).where(eq(ordersTable.id, orderId));
+  res.json({ success: true, masterWorkStatus });
+});
+
+// Update photos
+router.patch("/orders/:id/photos", requireMasterPwa, async (req, res) => {
+  const masterId = (req.session as any).masterId;
+  const orderId = parseInt(req.params.id);
+  const { type, url } = req.body;
+
+  if (!type || !url) return res.status(400).json({ error: "type и url обязательны" });
+
+  const orderRows = await db.select().from(ordersTable)
+    .where(and(eq(ordersTable.id, orderId), eq(ordersTable.masterId, masterId)));
+  if (!orderRows[0]) return res.status(404).json({ error: "Заказ не найден" });
+
+  const order = orderRows[0];
+
+  if (type === "before") {
+    await db.update(ordersTable).set({ photosBefore: [...(order.photosBefore ?? []), url], updatedAt: new Date() })
+      .where(eq(ordersTable.id, orderId));
+  } else if (type === "after") {
+    await db.update(ordersTable).set({ photosAfter: [...(order.photosAfter ?? []), url], updatedAt: new Date() })
+      .where(eq(ordersTable.id, orderId));
+  } else if (type === "act") {
+    await db.update(ordersTable).set({ photoAct: url, updatedAt: new Date() })
+      .where(eq(ordersTable.id, orderId));
+  } else {
+    return res.status(400).json({ error: "Неверный тип: before | after | act" });
+  }
+
+  res.json({ success: true });
+});
+
+// Complete order
+router.post("/orders/:id/complete", requireMasterPwa, async (req, res) => {
+  const masterId = (req.session as any).masterId;
+  const orderId = parseInt(req.params.id);
+  const { proposedAmount } = req.body;
+
+  if (!proposedAmount || isNaN(Number(proposedAmount))) {
+    return res.status(400).json({ error: "Укажите сумму заказа" });
+  }
+
+  const orderRows = await db.select().from(ordersTable)
+    .where(and(eq(ordersTable.id, orderId), eq(ordersTable.masterId, masterId)));
+  if (!orderRows[0]) return res.status(404).json({ error: "Заказ не найден" });
+
+  await db.update(ordersTable).set({
+    proposedAmount: String(proposedAmount),
+    status: "completed",
+    masterWorkStatus: "completed",
+    updatedAt: new Date(),
+  }).where(eq(ordersTable.id, orderId));
+
+  res.json({ success: true });
+});
+
+// ─── BALANCE ──────────────────────────────────────────────────────────────────
+
+router.get("/balance", requireMasterPwa, async (req, res) => {
+  const masterId = (req.session as any).masterId;
+  const master = await getMasterById(masterId);
+  if (!master) return res.status(404).json({ error: "Мастер не найден" });
+
+  const txRows = await db.select().from(transactionsTable)
+    .where(eq(transactionsTable.masterId, masterId));
+
+  // Get orders for each transaction
+  const orderIds = txRows.map(t => t.orderId);
+  const orders = orderIds.length > 0
+    ? await db.select().from(ordersTable).where(inArray(ordersTable.id, orderIds))
+    : [];
+  const orderMap = new Map(orders.map(o => [o.id, o]));
+
+  const realTxs = txRows.filter(t => Number(t.commission) > 0);
+
+  const totalEarned = realTxs
+    .filter(t => t.paymentStatus === "paid")
+    .reduce((s, t) => s + Number(t.orderAmount), 0);
+  const totalPaidCommission = realTxs
+    .filter(t => t.paymentStatus === "paid")
+    .reduce((s, t) => s + Number(t.commission), 0);
+
+  res.json({
+    debt: Number(master.debt),
+    totalEarned,
+    totalPaidCommission,
+    transactions: realTxs.map(t => {
+      const order = orderMap.get(t.orderId);
+      return {
+        id: t.id,
+        orderId: t.orderId,
+        orderServiceType: order?.serviceType ?? null,
+        orderCity: order?.city ?? null,
+        orderAmount: Number(t.orderAmount),
+        commission: Number(t.commission),
+        paymentStatus: t.paymentStatus,
+        createdAt: t.createdAt,
+        paidAt: t.paidAt ?? null,
+      };
+    }),
+  });
+});
+
+// ─── PROFILE ──────────────────────────────────────────────────────────────────
+
+router.get("/profile", requireMasterPwa, async (req, res) => {
+  const masterId = (req.session as any).masterId;
+  const master = await getMasterById(masterId);
+  if (!master) return res.status(404).json({ error: "Мастер не найден" });
+
+  // Compute derived stats
+  const totalOrders = master.totalOrders;
+  const acceptedOrders = master.acceptedOrders;
+  const conversionRate = totalOrders > 0 ? Math.round((acceptedOrders / totalOrders) * 100) : 0;
+
+  const txRows = await db.select().from(transactionsTable)
+    .where(and(eq(transactionsTable.masterId, masterId)));
+  const realTxs = txRows.filter(t => Number(t.commission) > 0);
+  const paidOnTime = realTxs.filter(t => t.paymentStatus === "paid").length;
+  const paymentRate = realTxs.length > 0 ? Math.round((paidOnTime / realTxs.length) * 100) : 100;
+
+  res.json({
+    id: master.id,
+    alias: master.alias,
+    city: master.city,
+    specialization: master.specialization,
+    specializations: master.specializations,
+    phone: master.phone ?? null,
+    rating: Number(master.rating),
+    debt: Number(master.debt),
+    totalOrders: master.totalOrders,
+    acceptedOrders: master.acceptedOrders,
+    isTestMaster: master.isTestMaster,
+    customAvatarUrl: master.customAvatarUrl ?? null,
+    contractLink: master.contractLink ?? null,
+    tags: master.tags,
+    stats: {
+      conversionRate,
+      paymentRate,
+    },
+    createdAt: master.createdAt,
+  });
+});
+
+// ─── ADMIN: set master PWA credentials (from CRM) ────────────────────────────
+
+router.post("/admin/set-credentials/:masterId", async (req: any, res: any) => {
+  const userId = (req.session as any).userId;
+  if (!userId) return res.status(401).json({ error: "Не авторизован" });
+
+  const { login, password } = req.body;
+  if (!login || !password) return res.status(400).json({ error: "login и password обязательны" });
+
+  const targetId = parseInt(req.params.masterId);
+  const passwordHash = await hashPassword(password);
+
+  // Check login uniqueness
+  const existing = await db.select().from(mastersTable)
+    .where(and(eq(mastersTable.pwaLogin, login)));
+  if (existing.length > 0 && existing[0].id !== targetId) {
+    return res.status(400).json({ error: "Этот логин уже занят" });
+  }
+
+  await db.update(mastersTable).set({ pwaLogin: login, pwaPasswordHash: passwordHash })
+    .where(eq(mastersTable.id, targetId));
+
+  res.json({ success: true });
+});
+
+export default router;

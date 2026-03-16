@@ -23,6 +23,8 @@ export const mastersTable = pgTable("masters", {
   tags: text("tags").array().notNull().default([]),
   customAvatarUrl: text("custom_avatar_url"),
   contractLink: text("contract_link"),
+  pwaLogin: text("pwa_login"),
+  pwaPasswordHash: text("pwa_password_hash"),
   deletedAt: timestamp("deleted_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

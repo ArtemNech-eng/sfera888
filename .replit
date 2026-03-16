@@ -16,7 +16,7 @@ modules = ["nodejs-24", "postgresql-16"]
   args = ["sh", "-c", "CI=true pnpm prune --prod && pnpm store prune"]
 
   [workflows]
-  runButton = "Project"
+runButton = "Project"
 
   [agent]
   stack = "PNPM_WORKSPACE"
