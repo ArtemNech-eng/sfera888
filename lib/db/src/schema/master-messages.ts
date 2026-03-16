@@ -11,6 +11,7 @@ export const masterMessagesTable = pgTable("master_messages", {
   senderName: text("sender_name"),
   isRead: boolean("is_read").notNull().default(false),
   photoUrl: text("photo_url"),
+  telegramMessageId: integer("telegram_message_id"),
   editedAt: timestamp("edited_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

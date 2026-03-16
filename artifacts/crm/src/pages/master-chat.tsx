@@ -840,7 +840,8 @@ export default function MasterChat() {
                             <div className="flex flex-wrap gap-1">
                               {cat.emojis.map(e => (
                                 <button key={e} onClick={() => { setReply(r => r + e); setShowEmojiPicker(false); }}
-                                  className="w-8 h-8 flex items-center justify-center text-lg hover:bg-gray-100 rounded-lg transition-colors">
+                                  className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-lg transition-colors"
+                                  style={{ fontSize: 20, fontFamily: '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji","Twemoji Mozilla",sans-serif' }}>
                                   {e}
                                 </button>
                               ))}

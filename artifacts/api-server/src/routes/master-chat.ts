@@ -10,12 +10,24 @@ const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-async function sendTgMessage(chatId: string, text: string) {
-  await fetch(`${TELEGRAM_API}/sendMessage`, {
+async function sendTgMessage(chatId: string, text: string): Promise<number | null> {
+  const resp = await fetch(`${TELEGRAM_API}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
   });
+  if (!resp.ok) return null;
+  const data = await resp.json() as any;
+  return data?.result?.message_id ?? null;
+}
+
+async function editTgMessage(chatId: string, messageId: number, newText: string): Promise<boolean> {
+  const resp = await fetch(`${TELEGRAM_API}/editMessageText`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, message_id: messageId, text: newText, parse_mode: "HTML" }),
+  });
+  return resp.ok;
 }
 
 async function sendTgPhoto(chatId: string, photoBuffer: Buffer, filename: string, caption?: string): Promise<string | null> {
@@ -159,16 +171,17 @@ router.post("/:masterId/reply", requireRole("admin", "master_operator"), upload.
 
   const senderLabel = operatorName ?? "Оператор";
   let savedPhotoUrl: string | null = null;
+  let tgMessageId: number | null = null;
 
   if (photoFile) {
     const caption = text ? `💬 <b>${senderLabel}:</b> ${text}` : `💬 <b>${senderLabel}</b>`;
     savedPhotoUrl = await sendTgPhoto(master.telegramId, photoFile.buffer, photoFile.originalname, caption);
     if (!savedPhotoUrl) {
       // fallback — send as text at least
-      if (text) await sendTgMessage(master.telegramId, `💬 <b>${senderLabel}:</b>\n\n${text}`);
+      if (text) tgMessageId = await sendTgMessage(master.telegramId, `💬 <b>${senderLabel}:</b>\n\n${text}`);
     }
   } else if (text) {
-    await sendTgMessage(master.telegramId, `💬 <b>Ответ оператора</b>\n\n${text}`);
+    tgMessageId = await sendTgMessage(master.telegramId, `💬 <b>Ответ оператора</b>\n\n${text}`);
   }
 
   const [saved] = await db.insert(masterMessagesTable).values({
@@ -179,6 +192,7 @@ router.post("/:masterId/reply", requireRole("admin", "master_operator"), upload.
     senderName: senderLabel,
     isRead: true,
     photoUrl: savedPhotoUrl,
+    telegramMessageId: tgMessageId,
   }).returning();
 
   res.json(saved);
@@ -196,6 +210,12 @@ router.patch("/messages/:messageId", requireRole("admin", "master_operator"), as
   const msg = rows[0];
   if (!msg) return res.status(404).json({ error: "Message not found" });
   if (msg.fromMaster) return res.status(403).json({ error: "Cannot edit master messages" });
+
+  // Sync edit to Telegram if we have the message_id
+  if (msg.telegramMessageId && msg.telegramChatId) {
+    const tgText = `💬 <b>Ответ оператора</b>\n\n${text.trim()} <i>(изменено)</i>`;
+    await editTgMessage(msg.telegramChatId, msg.telegramMessageId, tgText).catch(() => {});
+  }
 
   const [updated] = await db.update(masterMessagesTable)
     .set({ text: text.trim(), editedAt: new Date() })
