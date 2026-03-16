@@ -184,6 +184,27 @@ router.post("/:masterId/reply", requireRole("admin", "master_operator"), upload.
   res.json(saved);
 });
 
+// PATCH /api/master-chat/messages/:messageId — edit operator message text
+router.patch("/messages/:messageId", requireRole("admin", "master_operator"), async (req, res) => {
+  const messageId = parseInt(req.params.messageId);
+  if (isNaN(messageId)) return res.status(400).json({ error: "Invalid messageId" });
+
+  const { text } = req.body;
+  if (!text?.trim()) return res.status(400).json({ error: "text required" });
+
+  const rows = await db.select().from(masterMessagesTable).where(eq(masterMessagesTable.id, messageId));
+  const msg = rows[0];
+  if (!msg) return res.status(404).json({ error: "Message not found" });
+  if (msg.fromMaster) return res.status(403).json({ error: "Cannot edit master messages" });
+
+  const [updated] = await db.update(masterMessagesTable)
+    .set({ text: text.trim(), editedAt: new Date() })
+    .where(eq(masterMessagesTable.id, messageId))
+    .returning();
+
+  res.json(updated);
+});
+
 // PATCH /api/master-chat/:masterId/read
 router.patch("/:masterId/read", requireRole("admin", "master_operator"), async (req, res) => {
   const masterId = parseInt(req.params.masterId);

@@ -3,7 +3,8 @@ import { useLocation } from "wouter";
 import { Layout } from "@/components/layout";
 import { ProtectedRoute } from "@/hooks/use-auth";
 import { useAuth } from "@/hooks/use-auth";
-import { Send, MessageSquare, RefreshCw, Check, CheckCheck, Paperclip, X, Camera, DollarSign, AlertCircle, RotateCcw, Pencil, Loader2, UserCheck, MapPin } from "lucide-react";
+import { Send, MessageSquare, RefreshCw, Check, CheckCheck, Paperclip, X, Camera, DollarSign, AlertCircle, RotateCcw, Pencil, Loader2, UserCheck, MapPin, Smile, ChevronRight, User2 } from "lucide-react";
+import { MasterDrawer, type DrawerMaster, type DrawerColumn } from "@/components/master-drawer";
 import { format, formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -28,6 +29,7 @@ interface Message {
   fromMaster: boolean;
   senderName: string | null;
   isRead: boolean;
+  editedAt: string | null;
   createdAt: string;
 }
 
@@ -105,6 +107,18 @@ export default function MasterChat() {
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [editAmountId, setEditAmountId] = useState<number | null>(null);
   const [editAmountValue, setEditAmountValue] = useState("");
+
+  // Master drawer overlay
+  const [drawerMaster, setDrawerMaster] = useState<DrawerMaster | null>(null);
+  const [drawerColumns, setDrawerColumns] = useState<DrawerColumn[]>([]);
+
+  // Emoji picker
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
+
+  // Message editing
+  const [editingMessageId, setEditingMessageId] = useState<number | null>(null);
+  const [editingText, setEditingText] = useState("");
 
   interface RespondedOrder {
     orderId: number;
@@ -202,6 +216,53 @@ export default function MasterChat() {
       setRespondedOrders([]);
     }
   }, [selectedId, fetchPendingOrders, fetchRespondedOrders]);
+
+  // Open master card overlay
+  const openMasterDrawer = async (masterId: number) => {
+    const [mRes, cRes] = await Promise.all([
+      fetch(`/api/masters/${masterId}`, { credentials: "include" }),
+      fetch("/api/voronka/columns", { credentials: "include" }),
+    ]);
+    if (mRes.ok) {
+      const m = await mRes.json();
+      setDrawerMaster({ ...m, activeOrders: [] });
+    }
+    if (cRes.ok) {
+      const cols = await cRes.json();
+      setDrawerColumns(Array.isArray(cols) ? cols : []);
+    }
+  };
+
+  // Edit operator message
+  const saveEditMessage = async () => {
+    if (!editingMessageId || !editingText.trim()) return;
+    const r = await fetch(`/api/master-chat/messages/${editingMessageId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ text: editingText.trim() }),
+    });
+    if (r.ok) {
+      const updated = await r.json();
+      setConv(prev => prev ? {
+        ...prev,
+        messages: prev.messages.map(m => m.id === updated.id ? { ...m, text: updated.text, editedAt: updated.editedAt } : m),
+      } : prev);
+    }
+    setEditingMessageId(null);
+    setEditingText("");
+  };
+
+  // Close emoji picker on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(e.target as Node)) {
+        setShowEmojiPicker(false);
+      }
+    };
+    if (showEmojiPicker) document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showEmojiPicker]);
 
   // Mutations for order actions in chat
   const approveCancellationMutation = useMutation({
@@ -444,13 +505,23 @@ export default function MasterChat() {
                             : <Camera className="w-4 h-4 text-white" />}
                         </span>
                       </button>
-                      <div>
+                      <div className="flex-1 min-w-0">
                         <p className="font-semibold text-sm text-gray-800">{conv.master.alias}</p>
                         <p className="text-[11px] text-gray-400">
                           {conv.master.city}
                           {conv.master.telegramId && <span className="ml-1 text-blue-400">· Telegram</span>}
                         </p>
                       </div>
+                      {/* Open master card button */}
+                      <button
+                        onClick={() => openMasterDrawer(conv.master.id)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors flex-shrink-0"
+                        title="Открыть карточку мастера"
+                      >
+                        <User2 className="w-3.5 h-3.5" />
+                        Карточка
+                        <ChevronRight className="w-3 h-3" />
+                      </button>
                     </div>
                   )}
 
@@ -471,11 +542,22 @@ export default function MasterChat() {
 
                       const isMaster = msg.fromMaster;
                       const senderLabel = msg.senderName ?? (isMaster ? conv.master.alias : "Оператор");
+                      const isEditing = editingMessageId === msg.id;
                       return (
-                        <div key={msg.id} className={`flex items-end gap-2 ${isMaster ? "justify-start" : "justify-end"}`}>
+                        <div key={msg.id} className={`flex items-end gap-2 group ${isMaster ? "justify-start" : "justify-end"}`}>
                           {/* Master avatar — left */}
                           {isMaster && (
                             <ChatAvatar name={conv.master.alias} id={conv.master.id} avatarUrl={conv.master.avatarUrl} size={28} />
+                          )}
+                          {/* Edit button for operator messages */}
+                          {!isMaster && !isEditing && (
+                            <button
+                              onClick={() => { setEditingMessageId(msg.id); setEditingText(msg.text); }}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-gray-100 rounded-lg flex-shrink-0 self-center"
+                              title="Редактировать"
+                            >
+                              <Pencil className="w-3 h-3 text-gray-400" />
+                            </button>
                           )}
                           {/* Bubble */}
                           <div className={`max-w-[70%] rounded-2xl px-3.5 py-2.5 ${
@@ -495,11 +577,42 @@ export default function MasterChat() {
                                 />
                               </a>
                             )}
-                            {msg.text && <p className="text-sm leading-relaxed">{msg.text}</p>}
+                            {/* Inline edit or text */}
+                            {isEditing ? (
+                              <div className="space-y-1.5 mt-1">
+                                <textarea
+                                  value={editingText}
+                                  onChange={e => setEditingText(e.target.value)}
+                                  onKeyDown={e => {
+                                    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveEditMessage(); }
+                                    if (e.key === "Escape") { setEditingMessageId(null); setEditingText(""); }
+                                  }}
+                                  autoFocus
+                                  rows={2}
+                                  className="w-full bg-white/20 text-white placeholder-blue-200 border border-blue-300 rounded-lg px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-white resize-none"
+                                  style={{ minWidth: 200 }}
+                                />
+                                <div className="flex gap-1.5">
+                                  <button onClick={saveEditMessage}
+                                    className="flex-1 py-1 bg-white text-blue-600 rounded-lg text-[10px] font-semibold hover:bg-blue-50 transition-colors">
+                                    Сохранить
+                                  </button>
+                                  <button onClick={() => { setEditingMessageId(null); setEditingText(""); }}
+                                    className="py-1 px-2 bg-white/20 text-white rounded-lg text-[10px] hover:bg-white/30 transition-colors">
+                                    Отмена
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              msg.text && <p className="text-sm leading-relaxed">{msg.text}</p>
+                            )}
                             <div className={`flex items-center gap-1 mt-1 ${isMaster ? "justify-start" : "justify-end"}`}>
                               <span className={`text-[10px] ${isMaster ? "text-gray-400" : "text-blue-100"}`}>
                                 {timeStamp(msg.createdAt)}
                               </span>
+                              {msg.editedAt && (
+                                <span className={`text-[9px] italic ${isMaster ? "text-gray-400" : "text-blue-200"}`}>изм.</span>
+                              )}
                               {!isMaster && (msg.isRead
                                 ? <CheckCheck className="w-3 h-3 text-blue-200" />
                                 : <Check className="w-3 h-3 text-blue-200" />
@@ -711,47 +824,92 @@ export default function MasterChat() {
                   )}
 
                   {/* Reply input */}
-                  <div className="px-4 py-3.5 border-t border-gray-50 flex items-end gap-2 flex-shrink-0">
-                    {/* Photo attach button */}
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={handlePhotoSelect}
-                    />
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-xl border border-gray-200 hover:bg-gray-50 text-gray-400 hover:text-gray-600 transition-colors"
-                      title="Прикрепить фото"
-                    >
-                      <Paperclip className="w-4 h-4" />
-                    </button>
+                  <div className="px-4 py-3.5 border-t border-gray-50 flex-shrink-0">
+                    {/* Emoji picker panel */}
+                    {showEmojiPicker && (
+                      <div ref={emojiPickerRef}
+                        className="mb-2 bg-white border border-gray-200 rounded-2xl shadow-xl p-3 max-h-52 overflow-y-auto">
+                        {[
+                          { label: "Часто используемые", emojis: ["😊","😂","🔥","👍","❤️","💪","✅","👌","🙏","🎉","😎","🤝","💯","⚡","🚀"] },
+                          { label: "Работа", emojis: ["🔧","🪛","🔩","🛠️","🏠","💧","⚡","🔌","🪟","🚪","🪣","🧰","📋","📞","💰"] },
+                          { label: "Эмоции", emojis: ["😀","😁","😅","🤔","😤","😬","🤦","🫡","🫠","😏","🥹","🫶","💪","🤜","✊"] },
+                          { label: "Символы", emojis: ["✅","❌","⚠️","ℹ️","🔔","📍","🗓️","💬","📩","✉️","📌","🔑","💡","⏰","📊"] },
+                        ].map(cat => (
+                          <div key={cat.label} className="mb-2">
+                            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">{cat.label}</p>
+                            <div className="flex flex-wrap gap-1">
+                              {cat.emojis.map(e => (
+                                <button key={e} onClick={() => { setReply(r => r + e); setShowEmojiPicker(false); }}
+                                  className="w-8 h-8 flex items-center justify-center text-lg hover:bg-gray-100 rounded-lg transition-colors">
+                                  {e}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex items-end gap-2">
+                      {/* Photo attach button */}
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handlePhotoSelect}
+                      />
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-xl border border-gray-200 hover:bg-gray-50 text-gray-400 hover:text-gray-600 transition-colors"
+                        title="Прикрепить фото"
+                      >
+                        <Paperclip className="w-4 h-4" />
+                      </button>
 
-                    <textarea
-                      value={reply}
-                      onChange={e => setReply(e.target.value)}
-                      onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendReply(); } }}
-                      placeholder="Напишите ответ мастеру..."
-                      rows={1}
-                      className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-800 outline-none focus:ring-2 focus:ring-blue-100 resize-none"
-                      style={{ minHeight: 42, maxHeight: 120 }}
-                    />
+                      {/* Emoji button */}
+                      <button
+                        onClick={() => setShowEmojiPicker(v => !v)}
+                        className={`flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-xl border transition-colors ${showEmojiPicker ? "border-blue-300 bg-blue-50 text-blue-500" : "border-gray-200 hover:bg-gray-50 text-gray-400 hover:text-gray-600"}`}
+                        title="Добавить эмодзи"
+                      >
+                        <Smile className="w-4 h-4" />
+                      </button>
 
-                    <button
-                      onClick={sendReply}
-                      disabled={(!reply.trim() && !photoFile) || sending || !conv?.master.telegramId}
-                      className="flex-shrink-0 w-10 h-10 bg-blue-500 text-white rounded-xl flex items-center justify-center hover:bg-blue-600 disabled:opacity-40 transition-colors"
-                      title={!conv?.master.telegramId ? "Мастер не подключён к боту" : "Отправить"}
-                    >
-                      <Send className="w-4 h-4" />
-                    </button>
+                      <textarea
+                        value={reply}
+                        onChange={e => setReply(e.target.value)}
+                        onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendReply(); } }}
+                        placeholder="Напишите ответ мастеру..."
+                        rows={1}
+                        className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-800 outline-none focus:ring-2 focus:ring-blue-100 resize-none"
+                        style={{ minHeight: 42, maxHeight: 120 }}
+                      />
+
+                      <button
+                        onClick={sendReply}
+                        disabled={(!reply.trim() && !photoFile) || sending || !conv?.master.telegramId}
+                        className="flex-shrink-0 w-10 h-10 bg-blue-500 text-white rounded-xl flex items-center justify-center hover:bg-blue-600 disabled:opacity-40 transition-colors"
+                        title={!conv?.master.telegramId ? "Мастер не подключён к боту" : "Отправить"}
+                      >
+                        <Send className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 </>
               )}
             </div>
           </div>
         </div>
+
+        {/* Master card overlay — opens on top of chat */}
+        {drawerMaster && (
+          <MasterDrawer
+            master={drawerMaster}
+            columns={drawerColumns}
+            onClose={() => setDrawerMaster(null)}
+            onMasterUpdate={(id, data) => setDrawerMaster(prev => prev ? { ...prev, ...data } : prev)}
+          />
+        )}
       </Layout>
     </ProtectedRoute>
   );
