@@ -14,6 +14,7 @@ import masterChatRouter from "./master-chat.js";
 import okidokiRouter from "./okidoki.js";
 import dispatchRouter from "./dispatch.js";
 import storageRouter from "./storage.js";
+import tgFileRouter from "./tg-file.js";
 import yandexPayRouter from "./yandex-pay.js";
 import trashRouter, { runTrashCleanup } from "./trash.js";
 import tasksRouter from "./tasks.js";
@@ -36,6 +37,7 @@ router.use("/okidoki", okidokiRouter);
 router.use("/dispatch", dispatchRouter);
 router.use("/yandex-pay", yandexPayRouter);
 router.use("/", storageRouter);
+router.use("/tg-file", tgFileRouter);
 router.use("/trash", trashRouter);
 router.use("/tasks", tasksRouter);
 

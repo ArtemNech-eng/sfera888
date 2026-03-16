@@ -1269,7 +1269,7 @@ router.post("/webhook", async (req, res) => {
       const fileResp = await fetch(`${TELEGRAM_API}/getFile?file_id=${fileId}`);
       const fileData = await fileResp.json() as any;
       const filePath = fileData?.result?.file_path;
-      const photoUrl = filePath ? `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}` : null;
+      const photoUrl = filePath ? `/api/tg-file/${filePath}` : null;
 
       if (!photoUrl) {
         await sendMessage(chatId, `⚠️ Не удалось загрузить фото. Попробуйте ещё раз.`);
@@ -1305,7 +1305,7 @@ router.post("/webhook", async (req, res) => {
         const fileResp = await fetch(`${TELEGRAM_API}/getFile?file_id=${fileId}`);
         const fileData = await fileResp.json() as any;
         const filePath = fileData?.result?.file_path;
-        const photoUrl = filePath ? `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}` : null;
+        const photoUrl = filePath ? `/api/tg-file/${filePath}` : null;
 
         if (photoUrl) {
           // Save to telegram_chats.avatar_url
@@ -1557,7 +1557,7 @@ router.post("/webhook", async (req, res) => {
           const fileResp = await fetch(`${TELEGRAM_API}/getFile?file_id=${fileId}`);
           const fileData = await fileResp.json() as any;
           const filePath = fileData?.result?.file_path;
-          if (filePath) photoUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
+          if (filePath) photoUrl = `/api/tg-file/${filePath}`;
         }
 
         await db.insert(masterMessagesTable).values({
@@ -1601,7 +1601,7 @@ router.post("/webhook", async (req, res) => {
           const fileResp = await fetch(`${TELEGRAM_API}/getFile?file_id=${fileId}`);
           const fileData = await fileResp.json() as any;
           const filePath = fileData?.result?.file_path;
-          if (filePath) photoUrl2 = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
+          if (filePath) photoUrl2 = `/api/tg-file/${filePath}`;
         }
 
         await db.insert(masterMessagesTable).values({
