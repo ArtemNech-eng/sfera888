@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
-import { Eye, EyeOff, Wrench } from "lucide-react";
+import { Eye, EyeOff, Zap } from "lucide-react";
 
 const CITIES = ["Москва", "Санкт-Петербург", "Новосибирск", "Екатеринбург", "Казань", "Нижний Новгород", "Челябинск", "Самара", "Краснодар", "Ростов-на-Дону", "Другой город"];
 const SPECS = ["Ремонт бытовой техники", "Холодильники", "Стиральные машины", "Плиты и духовки", "Кондиционеры", "Посудомоечные машины", "Телевизоры", "Другое"];
@@ -69,13 +69,21 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-dvh flex flex-col items-center justify-center px-5 py-10 bg-background">
-      <div className="w-full max-w-sm space-y-7">
+    <div className="min-h-dvh flex flex-col items-center justify-center px-5 py-10 bg-background relative overflow-hidden">
+      {/* Ambient glow */}
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[500px] h-[300px] rounded-full blur-[120px] opacity-20"
+           style={{ background: "radial-gradient(ellipse, #7C3AED 0%, #4F46E5 60%, transparent 100%)" }} />
+      <div className="absolute bottom-0 right-0 w-[300px] h-[300px] rounded-full blur-[100px] opacity-10"
+           style={{ background: "#6366F1" }} />
+
+      <div className="w-full max-w-sm space-y-7 relative z-10">
         <div className="text-center space-y-2">
-          <div className="flex items-center justify-center w-16 h-16 rounded-2xl bg-primary mx-auto mb-4">
-            <Wrench className="text-white" size={32} />
+          <div className="flex items-center justify-center w-16 h-16 rounded-2xl mx-auto mb-4"
+               style={{ background: "linear-gradient(135deg, #7C3AED 0%, #4F46E5 100%)", boxShadow: "0 8px 32px rgba(124,58,237,0.4)" }}>
+            <Zap className="text-white" size={30} fill="white" />
           </div>
-          <h1 className="text-2xl font-bold">МастерApp</h1>
+          <h1 className="text-2xl font-bold tracking-tight">МастерApp</h1>
+          <p className="text-sm text-muted-foreground">Платформа для мастеров</p>
         </div>
 
         {/* Tabs */}
