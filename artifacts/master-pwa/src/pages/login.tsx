@@ -220,7 +220,8 @@ export default function LoginPage() {
                 type="text"
                 autoComplete="name"
                 value={reg.alias}
-                onChange={e => { setReg(r => ({ ...r, alias: e.target.value })); setRegErrors(er => ({ ...er, alias: "" })); }}
+                onChange={e => setReg(r => ({ ...r, alias: e.target.value }))}
+                onBlur={() => { if (reg.alias.trim()) setRegErrors(er => ({ ...er, alias: "" })); }}
                 placeholder="Например: Иван М."
                 className={`${inputCls} ${regErrors.alias ? "border-red-400 ring-1 ring-red-400" : ""}`}
               />
@@ -233,7 +234,11 @@ export default function LoginPage() {
                 type="tel"
                 autoComplete="tel"
                 value={reg.phone}
-                onChange={e => { setReg(r => ({ ...r, phone: formatPhoneInput(e.target.value) })); setRegErrors(er => ({ ...er, phone: "" })); }}
+                onChange={e => setReg(r => ({ ...r, phone: formatPhoneInput(e.target.value) }))}
+                onBlur={() => {
+                  const n = normalizePhone(reg.phone);
+                  if (n.length >= 10) setRegErrors(er => ({ ...er, phone: "" }));
+                }}
                 placeholder="+7 (___) ___-__-__"
                 className={`${inputCls} ${regErrors.phone ? "border-red-400 ring-1 ring-red-400" : ""}`}
               />
@@ -244,7 +249,7 @@ export default function LoginPage() {
               <label className="text-sm font-medium text-foreground">Город *</label>
               <select
                 value={reg.city}
-                onChange={e => { setReg(r => ({ ...r, city: e.target.value })); setRegErrors(er => ({ ...er, city: "" })); }}
+                onChange={e => { setReg(r => ({ ...r, city: e.target.value })); if (e.target.value) setRegErrors(er => ({ ...er, city: "" })); }}
                 className={`${inputCls} appearance-none ${regErrors.city ? "border-red-400 ring-1 ring-red-400" : ""}`}
               >
                 <option value="">Выберите город</option>
@@ -262,7 +267,7 @@ export default function LoginPage() {
                     <button
                       key={spec}
                       type="button"
-                      onClick={() => { toggleSpec(spec); setRegErrors(er => ({ ...er, specs: "" })); }}
+                      onClick={() => { toggleSpec(spec); setRegErrors(er => ({ ...er, specs: "" })); /* Specs is a one-time action, safe to clear */ }}
                       className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-all ${
                         active
                           ? "bg-primary text-white border-primary shadow-sm"
@@ -284,7 +289,8 @@ export default function LoginPage() {
                   type={showRegPass ? "text" : "password"}
                   autoComplete="new-password"
                   value={reg.password}
-                  onChange={e => { setReg(r => ({ ...r, password: e.target.value })); setRegErrors(er => ({ ...er, password: "" })); }}
+                  onChange={e => setReg(r => ({ ...r, password: e.target.value }))}
+                  onBlur={() => { if (reg.password.length >= 6) setRegErrors(er => ({ ...er, password: "" })); }}
                   placeholder="Придумайте пароль"
                   className={`${inputCls} pr-12 ${regErrors.password ? "border-red-400 ring-1 ring-red-400" : ""}`}
                 />
