@@ -18,6 +18,8 @@ export const api = {
   auth: {
     login: (login: string, password: string) =>
       req<any>("POST", "/auth/login", { login, password }),
+    register: (data: { alias: string; phone?: string; city: string; specialization: string; login: string; password: string }) =>
+      req<any>("POST", "/auth/register", data),
     me: () => req<any>("GET", "/auth/me"),
     logout: () => req<any>("POST", "/auth/logout"),
   },
@@ -36,6 +38,11 @@ export const api = {
   },
   balance: () => req<any>("GET", "/balance"),
   profile: () => req<any>("GET", "/profile"),
+  chat: {
+    messages: () => req<any>("GET", "/chat"),
+    send: (text: string) => req<any>("POST", "/chat", { text }),
+    unread: () => req<any>("GET", "/chat/unread"),
+  },
   admin: {
     setCredentials: (masterId: number, login: string, password: string) =>
       fetch(`${BASE}/admin/set-credentials/${masterId}`, {

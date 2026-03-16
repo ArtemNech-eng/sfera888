@@ -3,18 +3,37 @@ import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import { Eye, EyeOff, Wrench } from "lucide-react";
 
+const CITIES = ["Москва", "Санкт-Петербург", "Новосибирск", "Екатеринбург", "Казань", "Нижний Новгород", "Челябинск", "Самара", "Краснодар", "Ростов-на-Дону", "Другой город"];
+const SPECS = ["Ремонт бытовой техники", "Холодильники", "Стиральные машины", "Плиты и духовки", "Кондиционеры", "Посудомоечные машины", "Телевизоры", "Другое"];
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <label className="text-sm font-medium text-foreground">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+const inputCls = "w-full h-12 px-4 rounded-xl border border-input bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring text-base";
+
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login, register } = useAuth();
+  const [tab, setTab] = useState<"login" | "register">("login");
+
+  // login form
   const [form, setForm] = useState({ login: "", password: "" });
   const [showPass, setShowPass] = useState(false);
+
+  // register form
+  const [reg, setReg] = useState({ alias: "", phone: "", city: "", specialization: "", login: "", password: "" });
+  const [showRegPass, setShowRegPass] = useState(false);
+
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.login || !form.password) {
-      toast.error("Введите логин и пароль");
-      return;
-    }
+    if (!form.login || !form.password) { toast.error("Введите логин и пароль"); return; }
     setLoading(true);
     try {
       await login(form.login, form.password);
@@ -25,68 +44,196 @@ export default function LoginPage() {
     }
   };
 
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reg.alias.trim()) { toast.error("Введите имя/псевдоним"); return; }
+    if (!reg.city) { toast.error("Выберите город"); return; }
+    if (!reg.specialization) { toast.error("Выберите специализацию"); return; }
+    if (!reg.login.trim()) { toast.error("Введите логин"); return; }
+    if (reg.password.length < 6) { toast.error("Пароль минимум 6 символов"); return; }
+    setLoading(true);
+    try {
+      await register({
+        alias: reg.alias.trim(),
+        phone: reg.phone.trim() || undefined,
+        city: reg.city,
+        specialization: reg.specialization,
+        login: reg.login.trim(),
+        password: reg.password,
+      });
+    } catch (err: any) {
+      toast.error(err.message ?? "Ошибка регистрации");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <div className="min-h-dvh flex flex-col items-center justify-center px-5 bg-background">
-      <div className="w-full max-w-sm space-y-8">
+    <div className="min-h-dvh flex flex-col items-center justify-center px-5 py-10 bg-background">
+      <div className="w-full max-w-sm space-y-7">
         <div className="text-center space-y-2">
           <div className="flex items-center justify-center w-16 h-16 rounded-2xl bg-primary mx-auto mb-4">
             <Wrench className="text-white" size={32} />
           </div>
           <h1 className="text-2xl font-bold">МастерApp</h1>
-          <p className="text-muted-foreground text-sm">Войдите в аккаунт</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground">Логин</label>
-            <input
-              type="text"
-              autoComplete="username"
-              value={form.login}
-              onChange={e => setForm(f => ({ ...f, login: e.target.value }))}
-              placeholder="Ваш логин"
-              className="w-full h-12 px-4 rounded-xl border border-input bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring text-base"
-            />
-          </div>
+        {/* Tabs */}
+        <div className="flex rounded-xl bg-muted p-1 gap-1">
+          {(["login", "register"] as const).map(t => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${
+                tab === t ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"
+              }`}
+            >
+              {t === "login" ? "Вход" : "Регистрация"}
+            </button>
+          ))}
+        </div>
 
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground">Пароль</label>
-            <div className="relative">
+        {tab === "login" ? (
+          <form onSubmit={handleLogin} className="space-y-4">
+            <Field label="Логин">
               <input
-                type={showPass ? "text" : "password"}
-                autoComplete="current-password"
-                value={form.password}
-                onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-                placeholder="Ваш пароль"
-                className="w-full h-12 px-4 pr-12 rounded-xl border border-input bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring text-base"
+                type="text"
+                autoComplete="username"
+                value={form.login}
+                onChange={e => setForm(f => ({ ...f, login: e.target.value }))}
+                placeholder="Ваш логин"
+                className={inputCls}
               />
-              <button
-                type="button"
-                onClick={() => setShowPass(v => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground p-1"
+            </Field>
+
+            <Field label="Пароль">
+              <div className="relative">
+                <input
+                  type={showPass ? "text" : "password"}
+                  autoComplete="current-password"
+                  value={form.password}
+                  onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+                  placeholder="Ваш пароль"
+                  className={`${inputCls} pr-12`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPass(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground p-1"
+                >
+                  {showPass ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+              </div>
+            </Field>
+
+            <button
+              type="submit"
+              disabled={loading}
+              style={{ minHeight: 52 }}
+              className="w-full bg-primary text-white font-semibold text-base rounded-xl disabled:opacity-50 transition-opacity active:opacity-80 flex items-center justify-center gap-2"
+            >
+              {loading
+                ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                : "Войти"}
+            </button>
+
+            <p className="text-center text-xs text-muted-foreground">
+              Обратитесь к менеджеру, если нет аккаунта
+            </p>
+          </form>
+        ) : (
+          <form onSubmit={handleRegister} className="space-y-4">
+            <Field label="Имя / псевдоним *">
+              <input
+                type="text"
+                autoComplete="name"
+                value={reg.alias}
+                onChange={e => setReg(r => ({ ...r, alias: e.target.value }))}
+                placeholder="Например: Иван М."
+                className={inputCls}
+              />
+            </Field>
+
+            <Field label="Телефон">
+              <input
+                type="tel"
+                autoComplete="tel"
+                value={reg.phone}
+                onChange={e => setReg(r => ({ ...r, phone: e.target.value }))}
+                placeholder="+7 (___) ___-__-__"
+                className={inputCls}
+              />
+            </Field>
+
+            <Field label="Город *">
+              <select
+                value={reg.city}
+                onChange={e => setReg(r => ({ ...r, city: e.target.value }))}
+                className={`${inputCls} appearance-none`}
               >
-                {showPass ? <EyeOff size={20} /> : <Eye size={20} />}
-              </button>
-            </div>
-          </div>
+                <option value="">Выберите город</option>
+                {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </Field>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full h-13 bg-primary text-white font-semibold text-base rounded-xl disabled:opacity-50 transition-opacity active:opacity-80 flex items-center justify-center gap-2"
-            style={{ minHeight: 52 }}
-          >
-            {loading ? (
-              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            ) : (
-              "Войти"
-            )}
-          </button>
-        </form>
+            <Field label="Специализация *">
+              <select
+                value={reg.specialization}
+                onChange={e => setReg(r => ({ ...r, specialization: e.target.value }))}
+                className={`${inputCls} appearance-none`}
+              >
+                <option value="">Выберите специализацию</option>
+                {SPECS.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </Field>
 
-        <p className="text-center text-xs text-muted-foreground">
-          Обратитесь к менеджеру для получения доступа
-        </p>
+            <Field label="Придумайте логин *">
+              <input
+                type="text"
+                autoComplete="username"
+                value={reg.login}
+                onChange={e => setReg(r => ({ ...r, login: e.target.value }))}
+                placeholder="Только латиница и цифры"
+                className={inputCls}
+              />
+            </Field>
+
+            <Field label="Пароль * (мин. 6 символов)">
+              <div className="relative">
+                <input
+                  type={showRegPass ? "text" : "password"}
+                  autoComplete="new-password"
+                  value={reg.password}
+                  onChange={e => setReg(r => ({ ...r, password: e.target.value }))}
+                  placeholder="Придумайте пароль"
+                  className={`${inputCls} pr-12`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowRegPass(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground p-1"
+                >
+                  {showRegPass ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+              </div>
+            </Field>
+
+            <button
+              type="submit"
+              disabled={loading}
+              style={{ minHeight: 52 }}
+              className="w-full bg-primary text-white font-semibold text-base rounded-xl disabled:opacity-50 transition-opacity active:opacity-80 flex items-center justify-center gap-2"
+            >
+              {loading
+                ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                : "Зарегистрироваться"}
+            </button>
+
+            <p className="text-center text-xs text-muted-foreground">
+              После регистрации менеджер свяжется с вами
+            </p>
+          </form>
+        )}
       </div>
     </div>
   );

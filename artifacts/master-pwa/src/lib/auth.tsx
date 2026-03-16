@@ -16,6 +16,7 @@ interface AuthCtx {
   master: Master | null;
   loading: boolean;
   login: (login: string, password: string) => Promise<void>;
+  register: (data: { alias: string; phone?: string; city: string; specialization: string; login: string; password: string }) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -44,13 +45,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setMaster(m);
   };
 
+  const register = async (data: Parameters<typeof api.auth.register>[0]) => {
+    const m = await api.auth.register(data);
+    setMaster(m);
+  };
+
   const logout = async () => {
     await api.auth.logout();
     setMaster(null);
   };
 
   return (
-    <AuthContext.Provider value={{ master, loading, login, logout, refresh }}>
+    <AuthContext.Provider value={{ master, loading, login, register, logout, refresh }}>
       {children}
     </AuthContext.Provider>
   );

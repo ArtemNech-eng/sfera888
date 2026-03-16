@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { db, mastersTable, ordersTable, orderDispatchesTable, transactionsTable, leadsTable, voronkaColumnsTable } from "@workspace/db";
-import { eq, and, inArray, isNull, ne } from "drizzle-orm";
+import { db, mastersTable, ordersTable, orderDispatchesTable, transactionsTable, leadsTable, voronkaColumnsTable, masterMessagesTable } from "@workspace/db";
+import { eq, and, inArray, isNull, ne, asc } from "drizzle-orm";
 import { verifyPassword, hashPassword } from "../lib/auth.js";
 
 const router = Router();
@@ -471,6 +471,130 @@ router.get("/profile", requireMasterPwa, async (req, res) => {
     },
     createdAt: master.createdAt,
   });
+});
+
+// ─── REGISTRATION ─────────────────────────────────────────────────────────────
+
+router.post("/auth/register", async (req, res) => {
+  const { alias, phone, city, specialization, login, password } = req.body;
+  if (!alias || !city || !specialization || !login || !password) {
+    return res.status(400).json({ error: "Заполните все обязательные поля" });
+  }
+  if (password.length < 6) return res.status(400).json({ error: "Пароль минимум 6 символов" });
+
+  // Check login uniqueness
+  const existing = await db.select().from(mastersTable).where(and(eq(mastersTable.pwaLogin, login), isNull(mastersTable.deletedAt)));
+  if (existing.length > 0) return res.status(400).json({ error: "Этот логин уже занят" });
+
+  // Get "Новые" column (position 1)
+  const cols = await db.select().from(voronkaColumnsTable).orderBy(voronkaColumnsTable.position);
+  const firstCol = cols[0] ?? null;
+
+  const passwordHash = await hashPassword(password);
+
+  const [master] = await db.insert(mastersTable).values({
+    alias,
+    phone: phone ?? null,
+    city,
+    specialization,
+    specializations: [specialization],
+    pwaLogin: login,
+    pwaPasswordHash: passwordHash,
+    voronkaColumnId: firstCol?.id ?? null,
+    status: "active",
+    telegramId: null,
+    isTestMaster: true,
+    rating: "3",
+    debt: "0",
+    totalOrders: 0,
+    acceptedOrders: 0,
+    tags: [],
+  }).returning();
+
+  (req.session as any).masterId = master.id;
+
+  res.json({
+    id: master.id,
+    alias: master.alias,
+    city: master.city,
+    specialization: master.specialization,
+    rating: Number(master.rating),
+    debt: Number(master.debt),
+    phone: master.phone ?? null,
+    status: master.status,
+  });
+});
+
+// ─── CHAT ─────────────────────────────────────────────────────────────────────
+
+router.get("/chat", requireMasterPwa, async (req, res) => {
+  const masterId = (req.session as any).masterId;
+
+  const messages = await db.select().from(masterMessagesTable)
+    .where(eq(masterMessagesTable.masterId, masterId))
+    .orderBy(asc(masterMessagesTable.createdAt));
+
+  // Mark operator messages as read
+  await db.update(masterMessagesTable)
+    .set({ isRead: true })
+    .where(and(
+      eq(masterMessagesTable.masterId, masterId),
+      eq(masterMessagesTable.fromMaster, false),
+      eq(masterMessagesTable.isRead, false)
+    ));
+
+  res.json(messages.map(m => ({
+    id: m.id,
+    text: m.text,
+    photoUrl: m.photoUrl ?? null,
+    fromMaster: m.fromMaster,
+    senderName: m.senderName ?? null,
+    isRead: m.isRead,
+    editedAt: m.editedAt ?? null,
+    createdAt: m.createdAt,
+  })));
+});
+
+router.post("/chat", requireMasterPwa, async (req, res) => {
+  const masterId = (req.session as any).masterId;
+  const { text } = req.body;
+  if (!text?.trim()) return res.status(400).json({ error: "Текст сообщения обязателен" });
+
+  const master = await getMasterById(masterId);
+  if (!master) return res.status(404).json({ error: "Мастер не найден" });
+
+  // Use telegramId if available, otherwise use masterId as placeholder
+  const chatId = master.telegramId ? master.telegramId : `pwa_${master.id}`;
+
+  const [msg] = await db.insert(masterMessagesTable).values({
+    masterId,
+    telegramChatId: chatId,
+    text: text.trim(),
+    fromMaster: true,
+    senderName: master.alias,
+    isRead: false,
+  }).returning();
+
+  res.json({
+    id: msg.id,
+    text: msg.text,
+    fromMaster: true,
+    senderName: msg.senderName,
+    isRead: false,
+    photoUrl: null,
+    createdAt: msg.createdAt,
+  });
+});
+
+router.get("/chat/unread", requireMasterPwa, async (req, res) => {
+  const masterId = (req.session as any).masterId;
+  const unread = await db.select().from(masterMessagesTable)
+    .where(and(
+      eq(masterMessagesTable.masterId, masterId),
+      eq(masterMessagesTable.fromMaster, false),
+      eq(masterMessagesTable.isRead, false)
+    ));
+  res.json({ count: unread.length });
 });
 
 // ─── ADMIN: set master PWA credentials (from CRM) ────────────────────────────

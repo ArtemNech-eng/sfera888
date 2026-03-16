@@ -8,6 +8,7 @@ import HomePage from "@/pages/home";
 import OrdersPage from "@/pages/orders";
 import BalancePage from "@/pages/balance";
 import ProfilePage from "@/pages/profile";
+import ChatPage from "@/pages/chat";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -46,6 +47,7 @@ function AppRoutes() {
             <Route path="/login" component={LoginPage} />
             <Route path="/" component={HomePage} />
             <Route path="/orders" component={OrdersPage} />
+            <Route path="/chat" component={ChatPage} />
             <Route path="/balance" component={BalancePage} />
             <Route path="/profile" component={ProfilePage} />
           </Switch>
