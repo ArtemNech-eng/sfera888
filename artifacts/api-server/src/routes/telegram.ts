@@ -35,7 +35,11 @@ type BotState =
   | { step: "awaiting_amount"; masterId: number; orderId: number }
   | { step: "awaiting_cancel_reason"; masterId: number; orderId: number }
   | { step: "awaiting_question"; masterId: number; orderId: number }
-  | { step: "awaiting_payment_proof"; masterId: number };
+  | { step: "awaiting_payment_proof"; masterId: number }
+  | { step: "edit_profile_photo"; masterId: number }
+  | { step: "edit_profile_alias"; masterId: number }
+  | { step: "edit_profile_city"; masterId: number }
+  | { step: "edit_profile_phone"; masterId: number };
 
 const pendingState = new Map<string, BotState>();
 
@@ -457,7 +461,10 @@ async function showProfile(chatId: string, master: any, messageId?: number) {
   await editOrSend(chatId, messageId, text, {
     reply_markup: {
       inline_keyboard: [
-        [{ text: "✏️ Изменить специальности", callback_data: "edit_specs" }],
+        [{ text: "🤳 Изменить фото", callback_data: "edit_photo" }],
+        [{ text: "✏️ Изменить имя", callback_data: "edit_alias" }, { text: "🏙️ Изменить город", callback_data: "edit_city" }],
+        [{ text: "📱 Изменить телефон", callback_data: "edit_phone" }],
+        [{ text: "🔧 Изменить специальности", callback_data: "edit_specs" }],
         [{ text: "« Меню", callback_data: "main_menu" }],
       ],
     },
@@ -808,6 +815,48 @@ async function handleCallback(callbackQuery: any) {
       `🔧 <b>Изменить специальности</b>\n\nОтметьте все виды работ, которые вы выполняете:`,
       buildSpecKeyboard(currentSpecs)
     );
+    return;
+  }
+
+  if (data === "edit_photo") {
+    pendingState.set(chatId, { step: "edit_profile_photo", masterId: master.id });
+    await editMessage(chatId, messageId,
+      `🤳 <b>Изменить фото профиля</b>\n\nОтправьте новое фото следующим сообщением.\nОно будет отображаться в CRM рядом с вашим именем.`,
+      { reply_markup: { inline_keyboard: [[{ text: "❌ Отмена", callback_data: "cancel_profile_edit" }]] } }
+    );
+    return;
+  }
+
+  if (data === "edit_alias") {
+    pendingState.set(chatId, { step: "edit_profile_alias", masterId: master.id });
+    await editMessage(chatId, messageId,
+      `✏️ <b>Изменить имя</b>\n\nТекущее имя: <b>${master.alias}</b>\n\nВведите новое имя или псевдоним:`,
+      { reply_markup: { inline_keyboard: [[{ text: "❌ Отмена", callback_data: "cancel_profile_edit" }]] } }
+    );
+    return;
+  }
+
+  if (data === "edit_city") {
+    pendingState.set(chatId, { step: "edit_profile_city", masterId: master.id });
+    await editMessage(chatId, messageId,
+      `🏙️ <b>Изменить город</b>\n\nТекущий город: <b>${master.city}</b>\n\nВведите новый город:`,
+      { reply_markup: { inline_keyboard: [[{ text: "❌ Отмена", callback_data: "cancel_profile_edit" }]] } }
+    );
+    return;
+  }
+
+  if (data === "edit_phone") {
+    pendingState.set(chatId, { step: "edit_profile_phone", masterId: master.id });
+    await editMessage(chatId, messageId,
+      `📱 <b>Изменить телефон</b>\n\nТекущий телефон: <b>${master.phone ?? "не указан"}</b>\n\nВведите новый номер телефона:\n<i>Пример: +79001234567</i>`,
+      { reply_markup: { inline_keyboard: [[{ text: "❌ Отмена", callback_data: "cancel_profile_edit" }]] } }
+    );
+    return;
+  }
+
+  if (data === "cancel_profile_edit") {
+    pendingState.delete(chatId);
+    await showProfile(chatId, master, messageId);
     return;
   }
 
@@ -1237,6 +1286,59 @@ router.post("/webhook", async (req, res) => {
     // Check pending state
     const state = pendingState.get(chatId);
 
+    // ── Profile edit: photo ───────────────────────────────────────────────────
+    if (state?.step === "edit_profile_photo") {
+      const photoArr = (update.message as any)?.photo as { file_id: string }[] | undefined;
+      if (!photoArr || photoArr.length === 0) {
+        await sendMessage(chatId, `📸 Нужно отправить именно фотографию. Попробуйте ещё раз или нажмите «Отмена».`,
+          { reply_markup: { inline_keyboard: [[{ text: "❌ Отмена", callback_data: "cancel_profile_edit" }]] } });
+        return;
+      }
+      const fileId = photoArr[photoArr.length - 1].file_id;
+      const newAvatarUrl = `/api/tg-file/${fileId}`;
+      await db.update(mastersTable).set({ customAvatarUrl: newAvatarUrl }).where(eq(mastersTable.id, state.masterId));
+      const tgEx = await db.select().from(telegramChatsTable).where(eq(telegramChatsTable.telegramChatId, chatId));
+      if (tgEx[0]) await db.update(telegramChatsTable).set({ avatarUrl: newAvatarUrl }).where(eq(telegramChatsTable.telegramChatId, chatId));
+      pendingState.delete(chatId);
+      const freshMaster = (await db.select().from(mastersTable).where(eq(mastersTable.id, state.masterId)))[0];
+      await sendMessage(chatId, `✅ Фото профиля обновлено!`);
+      await showProfile(chatId, freshMaster);
+      return;
+    }
+
+    // ── Profile edit: alias ───────────────────────────────────────────────────
+    if (state?.step === "edit_profile_alias" && text) {
+      const alias = text.slice(0, 80).trim();
+      await db.update(mastersTable).set({ alias }).where(eq(mastersTable.id, state.masterId));
+      pendingState.delete(chatId);
+      const freshMaster = (await db.select().from(mastersTable).where(eq(mastersTable.id, state.masterId)))[0];
+      await sendMessage(chatId, `✅ Имя изменено на <b>${alias}</b>`);
+      await showProfile(chatId, freshMaster);
+      return;
+    }
+
+    // ── Profile edit: city ────────────────────────────────────────────────────
+    if (state?.step === "edit_profile_city" && text) {
+      const city = text.slice(0, 100).trim();
+      await db.update(mastersTable).set({ city }).where(eq(mastersTable.id, state.masterId));
+      pendingState.delete(chatId);
+      const freshMaster = (await db.select().from(mastersTable).where(eq(mastersTable.id, state.masterId)))[0];
+      await sendMessage(chatId, `✅ Город изменён на <b>${city}</b>`);
+      await showProfile(chatId, freshMaster);
+      return;
+    }
+
+    // ── Profile edit: phone ───────────────────────────────────────────────────
+    if (state?.step === "edit_profile_phone" && text) {
+      const phone = text.trim();
+      await db.update(mastersTable).set({ phone }).where(eq(mastersTable.id, state.masterId));
+      pendingState.delete(chatId);
+      const freshMaster = (await db.select().from(mastersTable).where(eq(mastersTable.id, state.masterId)))[0];
+      await sendMessage(chatId, `✅ Телефон изменён на <b>${phone}</b>`);
+      await showProfile(chatId, freshMaster);
+      return;
+    }
+
     // ── Step 1: awaiting alias ────────────────────────────────────────────────
     if (state?.step === "awaiting_alias" && text) {
       const alias = text.slice(0, 80).trim();
@@ -1608,24 +1710,6 @@ router.post("/webhook", async (req, res) => {
           `✅ <b>Сообщение отправлено оператору!</b>\n\n${previewText2}\n\nОтвет придёт сюда же.`,
           mainMenuKeyboard()
         );
-      } else if (hasPhoto2 && !text) {
-        // No conversation, but master sent a photo with no text — treat as avatar update
-        const newFileId = photoArr2[photoArr2.length - 1].file_id;
-        if (newFileId) {
-          const newAvatarUrl = `/api/tg-file/${newFileId}`;
-          await db.update(mastersTable)
-            .set({ customAvatarUrl: newAvatarUrl })
-            .where(eq(mastersTable.id, masterFallback.id));
-          // Also update telegram_chats
-          const tgExisting2 = await db.select().from(telegramChatsTable)
-            .where(eq(telegramChatsTable.telegramChatId, chatId));
-          if (tgExisting2[0]) {
-            await db.update(telegramChatsTable)
-              .set({ avatarUrl: newAvatarUrl })
-              .where(eq(telegramChatsTable.telegramChatId, chatId));
-          }
-          await sendMessage(chatId, `✅ Фото обновлено! Теперь оно отображается в CRM.`, mainMenuKeyboard());
-        }
       } else {
         // No conversation — show menu hint
         await sendMessage(chatId, "Используйте кнопки меню ниже 👇", mainMenuKeyboard());
