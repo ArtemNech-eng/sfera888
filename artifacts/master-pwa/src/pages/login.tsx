@@ -1,10 +1,33 @@
 import { useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
-import { Eye, EyeOff, Zap } from "lucide-react";
+import { Eye, EyeOff, HardHat } from "lucide-react";
 
-const CITIES = ["Москва", "Санкт-Петербург", "Новосибирск", "Екатеринбург", "Казань", "Нижний Новгород", "Челябинск", "Самара", "Краснодар", "Ростов-на-Дону", "Другой город"];
-const SPECS = ["Ремонт бытовой техники", "Холодильники", "Стиральные машины", "Плиты и духовки", "Кондиционеры", "Посудомоечные машины", "Телевизоры", "Другое"];
+const CITIES = [
+  "Москва", "Санкт-Петербург", "Новосибирск", "Екатеринбург",
+  "Казань", "Нижний Новгород", "Челябинск", "Самара",
+  "Краснодар", "Ростов-на-Дону", "Другой город",
+];
+
+const SPECS = [
+  "Укладка плитки",
+  "Поклейка обоев",
+  "Покраска стен",
+  "Монтаж ламината",
+  "Штукатурка стен",
+  "Электромонтаж",
+  "Сантехника",
+  "Натяжные потолки",
+  "Комплексный ремонт",
+];
+
+function normalizePhone(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 10) return "7" + digits;
+  if (digits.length === 11 && digits[0] === "8") return "7" + digits.slice(1);
+  if (digits.length === 11 && digits[0] === "7") return digits;
+  return digits;
+}
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -21,14 +44,17 @@ export default function LoginPage() {
   const { login, register } = useAuth();
   const [tab, setTab] = useState<"login" | "register">("login");
 
-  // login form
   const [form, setForm] = useState({ login: "", password: "" });
   const [showPass, setShowPass] = useState(false);
 
-  // register form
-  const [reg, setReg] = useState({ alias: "", phone: "", city: "", specialization: "", login: "", password: "" });
+  const [reg, setReg] = useState({
+    alias: "",
+    phone: "",
+    city: "",
+    specs: [] as string[],
+    password: "",
+  });
   const [showRegPass, setShowRegPass] = useState(false);
-
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -47,18 +73,23 @@ export default function LoginPage() {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!reg.alias.trim()) { toast.error("Введите имя/псевдоним"); return; }
+    const phoneNorm = normalizePhone(reg.phone);
+    if (phoneNorm.length < 10 || phoneNorm.length > 11) {
+      toast.error("Введите корректный номер телефона");
+      return;
+    }
     if (!reg.city) { toast.error("Выберите город"); return; }
-    if (!reg.specialization) { toast.error("Выберите специализацию"); return; }
-    if (!reg.login.trim()) { toast.error("Введите логин"); return; }
+    if (reg.specs.length === 0) { toast.error("Выберите хотя бы одну специальность"); return; }
     if (reg.password.length < 6) { toast.error("Пароль минимум 6 символов"); return; }
     setLoading(true);
     try {
       await register({
         alias: reg.alias.trim(),
-        phone: reg.phone.trim() || undefined,
+        phone: "+" + phoneNorm,
         city: reg.city,
-        specialization: reg.specialization,
-        login: reg.login.trim(),
+        specialization: reg.specs.join(", "),
+        specializations: reg.specs,
+        login: phoneNorm,
         password: reg.password,
       });
     } catch (err: any) {
@@ -68,9 +99,18 @@ export default function LoginPage() {
     }
   };
 
+  const toggleSpec = (spec: string) => {
+    setReg(r => ({
+      ...r,
+      specs: r.specs.includes(spec)
+        ? r.specs.filter(s => s !== spec)
+        : [...r.specs, spec],
+    }));
+  };
+
   return (
     <div className="min-h-dvh flex flex-col items-center justify-center px-5 py-10 bg-background relative overflow-hidden">
-      {/* Ambient glow — light violet orbs */}
+      {/* Ambient glow */}
       <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-[600px] h-[400px] rounded-full blur-[140px] opacity-30"
            style={{ background: "radial-gradient(ellipse, #c4b5fd 0%, #a78bfa 50%, transparent 100%)" }} />
       <div className="absolute bottom-0 right-0 w-[260px] h-[260px] rounded-full blur-[100px] opacity-20"
@@ -79,13 +119,14 @@ export default function LoginPage() {
            style={{ background: "#c084fc" }} />
 
       <div className="w-full max-w-sm space-y-7 relative z-10">
+        {/* Logo + title */}
         <div className="text-center space-y-2">
           <div className="flex items-center justify-center w-16 h-16 rounded-2xl mx-auto mb-4"
-               style={{ background: "linear-gradient(135deg, #7C3AED 0%, #4F46E5 100%)", boxShadow: "0 8px 32px rgba(124,58,237,0.4)" }}>
-            <Zap className="text-white" size={30} fill="white" />
+               style={{ background: "linear-gradient(135deg, #7C3AED 0%, #4338CA 100%)", boxShadow: "0 8px 32px rgba(124,58,237,0.4)" }}>
+            <HardHat className="text-white" size={30} />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight">МастерApp</h1>
-          <p className="text-sm text-muted-foreground">Платформа для мастеров</p>
+          <h1 className="text-2xl font-bold tracking-tight">Честный мастер</h1>
+          <p className="text-sm text-muted-foreground">Приложение для мастеров</p>
         </div>
 
         {/* Tabs */}
@@ -105,13 +146,13 @@ export default function LoginPage() {
 
         {tab === "login" ? (
           <form onSubmit={handleLogin} className="space-y-4">
-            <Field label="Логин">
+            <Field label="Номер телефона / логин">
               <input
                 type="text"
                 autoComplete="username"
                 value={form.login}
                 onChange={e => setForm(f => ({ ...f, login: e.target.value }))}
-                placeholder="Ваш логин"
+                placeholder="+7 или логин"
                 className={inputCls}
               />
             </Field>
@@ -164,7 +205,7 @@ export default function LoginPage() {
               />
             </Field>
 
-            <Field label="Телефон">
+            <Field label="Номер телефона * (используется как логин)">
               <input
                 type="tel"
                 autoComplete="tel"
@@ -186,26 +227,26 @@ export default function LoginPage() {
               </select>
             </Field>
 
-            <Field label="Специализация *">
-              <select
-                value={reg.specialization}
-                onChange={e => setReg(r => ({ ...r, specialization: e.target.value }))}
-                className={`${inputCls} appearance-none`}
-              >
-                <option value="">Выберите специализацию</option>
-                {SPECS.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </Field>
-
-            <Field label="Придумайте логин *">
-              <input
-                type="text"
-                autoComplete="username"
-                value={reg.login}
-                onChange={e => setReg(r => ({ ...r, login: e.target.value }))}
-                placeholder="Только латиница и цифры"
-                className={inputCls}
-              />
+            <Field label="Специальности * (можно несколько)">
+              <div className="flex flex-wrap gap-2 pt-0.5">
+                {SPECS.map(spec => {
+                  const active = reg.specs.includes(spec);
+                  return (
+                    <button
+                      key={spec}
+                      type="button"
+                      onClick={() => toggleSpec(spec)}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-all ${
+                        active
+                          ? "bg-primary text-white border-primary shadow-sm"
+                          : "bg-card text-muted-foreground border-input hover:border-primary/50 hover:text-foreground"
+                      }`}
+                    >
+                      {spec}
+                    </button>
+                  );
+                })}
+              </div>
             </Field>
 
             <Field label="Пароль * (мин. 6 символов)">

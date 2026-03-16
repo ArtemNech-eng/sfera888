@@ -476,15 +476,22 @@ router.get("/profile", requireMasterPwa, async (req, res) => {
 // ─── REGISTRATION ─────────────────────────────────────────────────────────────
 
 router.post("/auth/register", async (req, res) => {
-  const { alias, phone, city, specialization, login, password } = req.body;
-  if (!alias || !city || !specialization || !login || !password) {
+  const { alias, phone, city, specialization, specializations: specsArr, login, password } = req.body;
+  if (!alias || !city || !login || !password) {
     return res.status(400).json({ error: "Заполните все обязательные поля" });
   }
+  const specs: string[] = Array.isArray(specsArr) && specsArr.length > 0
+    ? specsArr
+    : specialization ? [specialization] : [];
+  if (specs.length === 0) {
+    return res.status(400).json({ error: "Выберите хотя бы одну специальность" });
+  }
+  const specText = specialization || specs.join(", ");
   if (password.length < 6) return res.status(400).json({ error: "Пароль минимум 6 символов" });
 
   // Check login uniqueness
   const existing = await db.select().from(mastersTable).where(and(eq(mastersTable.pwaLogin, login), isNull(mastersTable.deletedAt)));
-  if (existing.length > 0) return res.status(400).json({ error: "Этот логин уже занят" });
+  if (existing.length > 0) return res.status(400).json({ error: "Этот номер телефона уже зарегистрирован" });
 
   // Get "Новые" column (position 1)
   const cols = await db.select().from(voronkaColumnsTable).orderBy(voronkaColumnsTable.position);
@@ -496,8 +503,8 @@ router.post("/auth/register", async (req, res) => {
     alias,
     phone: phone ?? null,
     city,
-    specialization,
-    specializations: [specialization],
+    specialization: specText,
+    specializations: specs,
     pwaLogin: login,
     pwaPasswordHash: passwordHash,
     voronkaColumnId: firstCol?.id ?? null,

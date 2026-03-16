@@ -1,6 +1,6 @@
 {
-  "name": "МастерApp",
-  "short_name": "МастерApp",
+  "name": "Честный мастер",
+  "short_name": "Честный мастер",
   "description": "Приложение для мастеров ремонтной компании",
   "start_url": "/master-pwa/",
   "scope": "/master-pwa/",
