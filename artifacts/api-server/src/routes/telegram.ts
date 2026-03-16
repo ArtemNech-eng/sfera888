@@ -1608,6 +1608,24 @@ router.post("/webhook", async (req, res) => {
           `✅ <b>Сообщение отправлено оператору!</b>\n\n${previewText2}\n\nОтвет придёт сюда же.`,
           mainMenuKeyboard()
         );
+      } else if (hasPhoto2 && !text) {
+        // No conversation, but master sent a photo with no text — treat as avatar update
+        const newFileId = photoArr2[photoArr2.length - 1].file_id;
+        if (newFileId) {
+          const newAvatarUrl = `/api/tg-file/${newFileId}`;
+          await db.update(mastersTable)
+            .set({ customAvatarUrl: newAvatarUrl })
+            .where(eq(mastersTable.id, masterFallback.id));
+          // Also update telegram_chats
+          const tgExisting2 = await db.select().from(telegramChatsTable)
+            .where(eq(telegramChatsTable.telegramChatId, chatId));
+          if (tgExisting2[0]) {
+            await db.update(telegramChatsTable)
+              .set({ avatarUrl: newAvatarUrl })
+              .where(eq(telegramChatsTable.telegramChatId, chatId));
+          }
+          await sendMessage(chatId, `✅ Фото обновлено! Теперь оно отображается в CRM.`, mainMenuKeyboard());
+        }
       } else {
         // No conversation — show menu hint
         await sendMessage(chatId, "Используйте кнопки меню ниже 👇", mainMenuKeyboard());
