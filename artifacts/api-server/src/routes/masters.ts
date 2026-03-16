@@ -47,6 +47,8 @@ function formatMaster(m: any) {
     voronkaColumnId: m.voronkaColumnId ?? null,
     isTestMaster: m.isTestMaster,
     customAvatarUrl: m.customAvatarUrl ?? null,
+    contractLink: m.contractLink ?? null,
+    pwaLogin: m.pwaLogin ?? null,
     createdAt: m.createdAt,
   };
 }

@@ -21,7 +21,7 @@ export interface DrawerMaster {
   rating: number; totalOrders: number; acceptedOrders: number; debt: number;
   voronkaColumnId: number | null; isTestMaster: boolean;
   avatarUrl: string | null; activeOrders: any[]; createdAt: string;
-  pwaLogin: string | null;
+  pwaLogin: string | null; contractLink: string | null;
 }
 
 interface MasterTask { id: number; masterId: number; text: string; dueAt: string | null; isCompleted: boolean; createdBy: string | null; createdAt: string; }
@@ -371,7 +371,17 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                     Ожидает договора ▾
                   </button>
                   {showActivatePopover && (
-                    <div className="absolute left-0 top-6 z-50 bg-white border border-gray-200 rounded-xl shadow-xl p-2.5 w-44">
+                    <div className="absolute left-0 top-6 z-50 bg-white border border-gray-200 rounded-xl shadow-xl p-2.5 w-52 space-y-1.5">
+                      {master.contractLink && (
+                        <a
+                          href={master.contractLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-full flex items-center justify-center gap-1 bg-blue-50 hover:bg-blue-100 text-blue-700 text-[10px] font-semibold rounded-md px-2 py-1 transition-colors"
+                        >
+                          Открыть договор
+                        </a>
+                      )}
                       <button
                         onClick={activateManually}
                         disabled={activatingContract}
@@ -384,7 +394,7 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                       </button>
                       <button
                         onClick={() => setShowActivatePopover(false)}
-                        className="w-full text-center text-[9px] text-gray-400 hover:text-gray-600 mt-0.5 py-0.5"
+                        className="w-full text-center text-[9px] text-gray-400 hover:text-gray-600 py-0.5"
                       >
                         Отмена
                       </button>

@@ -15,7 +15,7 @@ import { Avatar, MasterDrawer } from "@/components/master-drawer";
 
 interface VoronkaColumn { id: number; name: string; position: number; receivesOrders: boolean; color: string; }
 interface ActiveOrder { orderId: number; district: string; city: string; serviceType: string; status: string; clientPhone: string | null; clientName: string | null; scheduledAt: string | null; }
-interface VoronkaMaster { id: number; alias: string; city: string; specialization: string; specializations: string[]; tags: string[]; telegramId: string | null; phone: string | null; status: string; rating: number; totalOrders: number; acceptedOrders: number; debt: number; voronkaColumnId: number | null; isTestMaster: boolean; avatarUrl: string | null; activeOrders: ActiveOrder[]; createdAt: string; }
+interface VoronkaMaster { id: number; alias: string; city: string; specialization: string; specializations: string[]; tags: string[]; telegramId: string | null; phone: string | null; status: string; rating: number; totalOrders: number; acceptedOrders: number; debt: number; voronkaColumnId: number | null; isTestMaster: boolean; avatarUrl: string | null; activeOrders: ActiveOrder[]; contractLink: string | null; createdAt: string; }
 
 interface MasterTask { id: number; masterId: number; text: string; dueAt: string | null; isCompleted: boolean; createdBy: string | null; createdAt: string; }
 interface HistoryOrder { id: number; status: string; serviceType: string; district: string; city: string; clientName: string | null; clientPhone: string | null; scheduledAt: string | null; completedAt: string | null; createdAt: string; }

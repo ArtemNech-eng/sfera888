@@ -9,6 +9,7 @@ import OrdersPage from "@/pages/orders";
 import BalancePage from "@/pages/balance";
 import ProfilePage from "@/pages/profile";
 import ChatPage from "@/pages/chat";
+import PendingContractPage from "@/pages/pending-contract";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -26,10 +27,21 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     );
   }
 
+  // Not logged in → go to login
   if (!master && location !== "/login") {
     return <Redirect to="/login" />;
   }
+  // Logged in + on login page → redirect
   if (master && location === "/login") {
+    const target = master.status === "pending_contract" ? "/pending-contract" : "/";
+    return <Redirect to={target} />;
+  }
+  // Logged in but pending contract → only allow /pending-contract
+  if (master && master.status === "pending_contract" && location !== "/pending-contract") {
+    return <Redirect to="/pending-contract" />;
+  }
+  // Active master on pending-contract page → redirect home
+  if (master && master.status !== "pending_contract" && location === "/pending-contract") {
     return <Redirect to="/" />;
   }
 
@@ -38,13 +50,15 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
 function AppRoutes() {
   const { master } = useAuth();
+  const isPending = master?.status === "pending_contract";
 
   return (
     <div className="flex flex-col min-h-dvh">
-      <main className={`flex-1 overflow-auto ${master ? "pb-20" : ""}`}>
+      <main className={`flex-1 overflow-auto ${master && !isPending ? "pb-20" : ""}`}>
         <AuthGuard>
           <Switch>
             <Route path="/login" component={LoginPage} />
+            <Route path="/pending-contract" component={PendingContractPage} />
             <Route path="/" component={HomePage} />
             <Route path="/orders" component={OrdersPage} />
             <Route path="/chat" component={ChatPage} />
@@ -53,7 +67,7 @@ function AppRoutes() {
           </Switch>
         </AuthGuard>
       </main>
-      {master && <BottomNav />}
+      {master && !isPending && <BottomNav />}
     </div>
   );
 }

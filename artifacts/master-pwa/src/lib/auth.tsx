@@ -10,13 +10,14 @@ interface Master {
   debt: number;
   phone: string | null;
   status: string;
+  customAvatarUrl?: string | null;
 }
 
 interface AuthCtx {
   master: Master | null;
   loading: boolean;
   login: (login: string, password: string) => Promise<void>;
-  register: (data: { alias: string; phone?: string; city: string; specialization: string; login: string; password: string }) => Promise<void>;
+  register: (data: { alias: string; phone?: string; city: string; specialization: string; specializations?: string[]; login: string; password: string }) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 }
