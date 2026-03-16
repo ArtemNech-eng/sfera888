@@ -6,38 +6,10 @@ import { rm, readFile } from "fs/promises";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// server deps to bundle to reduce openat(2) syscalls
-// which helps cold start times without risking some
-// packages that are not bundle compatible
-const allowlist = [
-  "@google/generative-ai",
-  "axios",
-  "bcryptjs",
-  "connect-pg-simple",
-  "cookie-parser",
-  "cors",
-  "date-fns",
-  "drizzle-orm",
-  "drizzle-zod",
-  "express",
-  "express-rate-limit",
-  "express-session",
-  "jsonwebtoken",
-  "memorystore",
-  "multer",
-  "nanoid",
-  "nodemailer",
-  "openai",
-  "passport",
-  "passport-local",
-  "pg",
-  "stripe",
-  "uuid",
-  "ws",
-  "xlsx",
-  "zod",
-  "zod-validation-error",
-];
+// Packages that cannot be bundled (e.g. native modules, packages with
+// dynamic require patterns that esbuild can't resolve at build time).
+// Everything in `dependencies` is bundled unless listed here.
+const bundleBlocklist: string[] = [];
 
 async function buildAll() {
   const distDir = path.resolve(__dirname, "dist");
@@ -46,15 +18,19 @@ async function buildAll() {
   console.log("building server...");
   const pkgPath = path.resolve(__dirname, "package.json");
   const pkg = JSON.parse(await readFile(pkgPath, "utf-8"));
-  const allDeps = [
-    ...Object.keys(pkg.dependencies || {}),
-    ...Object.keys(pkg.devDependencies || {}),
-  ];
-  const externals = allDeps.filter(
+
+  // Bundle all regular dependencies except workspace packages and blocklisted ones.
+  // Externalize devDependencies (types, build tools) — they are not needed at runtime.
+  const runtimeDeps = Object.keys(pkg.dependencies || {}).filter(
     (dep) =>
-      !allowlist.includes(dep) &&
-      !(pkg.dependencies?.[dep]?.startsWith("workspace:")),
+      !pkg.dependencies[dep].startsWith("workspace:") &&
+      !bundleBlocklist.includes(dep),
   );
+  const devDeps = Object.keys(pkg.devDependencies || {});
+  const externals = devDeps.filter((dep) => !runtimeDeps.includes(dep));
+
+  console.log("bundling:", runtimeDeps.join(", "));
+  console.log("external:", externals.join(", "));
 
   await esbuild({
     entryPoints: [path.resolve(__dirname, "src/index.ts")],

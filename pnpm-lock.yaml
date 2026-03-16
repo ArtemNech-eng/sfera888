@@ -169,9 +169,6 @@ importers:
       '@google-cloud/storage':
         specifier: ^7.19.0
         version: 7.19.0
-      '@types/multer':
-        specifier: ^2.1.0
-        version: 2.1.0
       '@workspace/api-zod':
         specifier: workspace:*
         version: link:../../lib/api-zod
@@ -193,6 +190,9 @@ importers:
       express:
         specifier: ^5
         version: 5.2.1
+      express-session:
+        specifier: ^1.19.0
+        version: 1.19.0
       google-auth-library:
         specifier: ^10.6.1
         version: 10.6.1
@@ -218,15 +218,15 @@ importers:
       '@types/express-session':
         specifier: ^1.18.2
         version: 1.18.2
+      '@types/multer':
+        specifier: ^2.1.0
+        version: 2.1.0
       '@types/node':
         specifier: 'catalog:'
         version: 25.3.5
       esbuild:
         specifier: 0.27.3
         version: 0.27.3
-      express-session:
-        specifier: ^1.19.0
-        version: 1.19.0
       tsx:
         specifier: 'catalog:'
         version: 4.21.0
