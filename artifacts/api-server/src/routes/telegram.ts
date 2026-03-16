@@ -1266,10 +1266,7 @@ router.post("/webhook", async (req, res) => {
       }
 
       const fileId = photoArr[photoArr.length - 1].file_id;
-      const fileResp = await fetch(`${TELEGRAM_API}/getFile?file_id=${fileId}`);
-      const fileData = await fileResp.json() as any;
-      const filePath = fileData?.result?.file_path;
-      const photoUrl = filePath ? `/api/tg-file/${filePath}` : null;
+      const photoUrl = fileId ? `/api/tg-file/${fileId}` : null;
 
       if (!photoUrl) {
         await sendMessage(chatId, `⚠️ Не удалось загрузить фото. Попробуйте ещё раз.`);
@@ -1302,10 +1299,7 @@ router.post("/webhook", async (req, res) => {
       if (hasPhoto) {
         // Download the largest photo and save URL
         const fileId = photoArr[photoArr.length - 1].file_id;
-        const fileResp = await fetch(`${TELEGRAM_API}/getFile?file_id=${fileId}`);
-        const fileData = await fileResp.json() as any;
-        const filePath = fileData?.result?.file_path;
-        const photoUrl = filePath ? `/api/tg-file/${filePath}` : null;
+        const photoUrl = fileId ? `/api/tg-file/${fileId}` : null;
 
         if (photoUrl) {
           // Save to telegram_chats.avatar_url
@@ -1554,10 +1548,7 @@ router.post("/webhook", async (req, res) => {
         let photoUrl: string | null = null;
         if (hasPhoto) {
           const fileId = photoArr[photoArr.length - 1].file_id;
-          const fileResp = await fetch(`${TELEGRAM_API}/getFile?file_id=${fileId}`);
-          const fileData = await fileResp.json() as any;
-          const filePath = fileData?.result?.file_path;
-          if (filePath) photoUrl = `/api/tg-file/${filePath}`;
+          if (fileId) photoUrl = `/api/tg-file/${fileId}`;
         }
 
         await db.insert(masterMessagesTable).values({
@@ -1598,10 +1589,7 @@ router.post("/webhook", async (req, res) => {
         let photoUrl2: string | null = null;
         if (hasPhoto2) {
           const fileId = photoArr2[photoArr2.length - 1].file_id;
-          const fileResp = await fetch(`${TELEGRAM_API}/getFile?file_id=${fileId}`);
-          const fileData = await fileResp.json() as any;
-          const filePath = fileData?.result?.file_path;
-          if (filePath) photoUrl2 = `/api/tg-file/${filePath}`;
+          if (fileId) photoUrl2 = `/api/tg-file/${fileId}`;
         }
 
         await db.insert(masterMessagesTable).values({
