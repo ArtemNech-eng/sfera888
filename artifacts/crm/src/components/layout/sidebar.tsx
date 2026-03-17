@@ -13,7 +13,7 @@ import {
   LogOut,
   Wrench,
   Trash2,
-  MessageCircle,
+  Smartphone,
   MessagesSquare,
   ClipboardList,
 } from "lucide-react";
@@ -29,7 +29,7 @@ export function Sidebar() {
 
   const navItems = [
     { href: "/",            label: "Дашборд",         icon: LayoutDashboard, permKey: "dashboard" },
-    { href: "/voronka",     label: "Воронка Telegram", icon: MessageCircle,   permKey: "voronka" },
+    { href: "/voronka",     label: "Воронка мастеров", icon: Smartphone,      permKey: "voronka" },
     { href: "/master-chat", label: "Чат с мастерами",  icon: MessagesSquare,  permKey: "master-chat" },
     { href: "/leads",       label: "Заявки",           icon: Inbox,           permKey: "leads" },
     { href: "/orders",      label: "Буфер заказов",    icon: Briefcase,       permKey: "orders" },

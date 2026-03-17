@@ -20,6 +20,7 @@ interface Thread {
   alias: string;
   city: string;
   telegramId: string | null;
+  pwaLogin: string | null;
   avatarUrl: string | null;
   lastMessage: string;
   lastAt: string;
@@ -40,7 +41,7 @@ interface Message {
 }
 
 interface ConversationData {
-  master: { id: number; alias: string; city: string; telegramId: string | null; avatarUrl: string | null };
+  master: { id: number; alias: string; city: string; telegramId: string | null; pwaLogin: string | null; avatarUrl: string | null };
   messages: Message[];
   pendingTransactions: PendingTransaction[];
 }
@@ -438,7 +439,7 @@ export default function MasterChat() {
                   </span>
                 )}
               </h1>
-              <p className="text-xs text-gray-400 mt-0.5">Сообщения от мастеров через Telegram бот</p>
+              <p className="text-xs text-gray-400 mt-0.5">Сообщения от мастеров через приложение</p>
             </div>
             <button onClick={fetchThreads} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
               <RefreshCw className="w-4 h-4 text-gray-400" />
@@ -459,7 +460,7 @@ export default function MasterChat() {
                   <div className="flex flex-col items-center justify-center py-12 text-center px-4">
                     <MessageSquare className="w-10 h-10 text-gray-200 mb-3" />
                     <p className="text-sm text-gray-400">Пока нет сообщений</p>
-                    <p className="text-xs text-gray-300 mt-1">Мастера пишут через бот</p>
+                    <p className="text-xs text-gray-300 mt-1">Мастера пишут через приложение</p>
                   </div>
                 )}
                 {threads.map(t => (
@@ -531,7 +532,7 @@ export default function MasterChat() {
                         <p className="font-semibold text-sm text-gray-800">{conv.master.alias}</p>
                         <p className="text-[11px] text-gray-400">
                           {conv.master.city}
-                          {conv.master.telegramId && <span className="ml-1 text-blue-400">· Telegram</span>}
+                          {conv.master.pwaLogin && <span className="ml-1 text-emerald-500">· Приложение</span>}
                         </p>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
@@ -954,9 +955,9 @@ export default function MasterChat() {
 
                       <button
                         onClick={sendReply}
-                        disabled={(!reply.trim() && !photoFile) || sending || !conv?.master.telegramId}
+                        disabled={(!reply.trim() && !photoFile) || sending || (!conv?.master.pwaLogin && !conv?.master.telegramId)}
                         className="flex-shrink-0 w-10 h-10 bg-blue-500 text-white rounded-xl flex items-center justify-center hover:bg-blue-600 disabled:opacity-40 transition-colors"
-                        title={!conv?.master.telegramId ? "Мастер не подключён к боту" : "Отправить"}
+                        title={(!conv?.master.pwaLogin && !conv?.master.telegramId) ? "Мастер не подключён к приложению" : "Отправить"}
                       >
                         <Send className="w-4 h-4" />
                       </button>

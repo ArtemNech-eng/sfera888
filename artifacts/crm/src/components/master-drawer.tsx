@@ -514,9 +514,9 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                 <Row icon={<MapPin className="w-4 h-4 text-gray-400" />} label="Город">
                   <span className="text-gray-700 text-sm">{master.city}</span>
                 </Row>
-                <Row icon={<MessageSquare className="w-4 h-4 text-gray-400" />} label="Telegram">
-                  {master.telegramId
-                    ? <span className="text-blue-500 text-sm font-medium">@{master.telegramId}</span>
+                <Row icon={<Smartphone className="w-4 h-4 text-gray-400" />} label="Приложение">
+                  {master.pwaLogin
+                    ? <span className="text-emerald-600 text-sm font-medium flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>Подключён</span>
                     : <span className="text-gray-300 text-sm">Не подключён</span>}
                 </Row>
                 <Row icon={<Star className="w-4 h-4 text-yellow-400" />} label="Рейтинг">
@@ -784,12 +784,12 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                 </button>
                 <textarea value={reply} onChange={e => setReply(e.target.value)}
                   onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendReply(); } }}
-                  placeholder={master.telegramId ? "Ответить мастеру..." : "Мастер не в Telegram"}
-                  disabled={!master.telegramId} rows={1}
+                  placeholder={master.pwaLogin ? "Ответить мастеру..." : "Мастер не в приложении"}
+                  disabled={!master.pwaLogin && !master.telegramId} rows={1}
                   className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-800 outline-none focus:ring-2 focus:ring-blue-100 resize-none disabled:opacity-50"
                   style={{ minHeight: 36, maxHeight: 100 }} />
                 <button onClick={sendReply}
-                  disabled={(!reply.trim() && !photoFile) || sending || !master.telegramId}
+                  disabled={(!reply.trim() && !photoFile) || sending || (!master.pwaLogin && !master.telegramId)}
                   className="w-8 h-8 bg-blue-500 text-white rounded-xl flex items-center justify-center hover:bg-blue-600 disabled:opacity-40 transition-colors flex-shrink-0">
                   <Send className="w-3.5 h-3.5" />
                 </button>

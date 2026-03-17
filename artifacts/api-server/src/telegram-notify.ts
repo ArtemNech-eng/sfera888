@@ -1,7 +1,9 @@
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+// Set TELEGRAM_ENABLED=true to re-enable Telegram notifications
+const TELEGRAM_ENABLED = process.env.TELEGRAM_ENABLED === "true";
 
 export async function sendTelegramMessage(chatId: string | number, text: string, extra?: object): Promise<void> {
-  if (!BOT_TOKEN) return;
+  if (!BOT_TOKEN || !TELEGRAM_ENABLED) return;
   try {
     await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       method: "POST",

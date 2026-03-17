@@ -4,7 +4,7 @@ import { Layout } from "@/components/layout";
 import { ProtectedRoute, useAuth } from "@/hooks/use-auth";
 import {
   Loader2, Plus, Star, Phone, MessageSquare, Briefcase,
-  AlertTriangle, MapPin, Search, X, Users, Zap, UserX, Filter, FileSignature, Trash2,
+  AlertTriangle, MapPin, Search, X, Users, Zap, UserX, Filter, FileSignature, Trash2, Smartphone,
 } from "lucide-react";
 import { Avatar, MasterDrawer } from "@/components/master-drawer";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
@@ -351,9 +351,9 @@ function MasterRow({ master, onOpenDrawer, onDelete }: { master: Master; onOpenD
           {master.isTestMaster && (
             <span className="text-[10px] bg-amber-100 text-amber-700 rounded-full px-1.5 py-0.5 font-semibold">ТЕСТ</span>
           )}
-          {master.telegramId && (
-            <span className="text-[10px] bg-blue-50 text-blue-500 rounded-full px-1.5 py-0.5 font-semibold flex items-center gap-0.5">
-              <MessageSquare className="w-2.5 h-2.5" />TG
+          {master.pwaLogin && (
+            <span className="text-[10px] bg-emerald-50 text-emerald-600 rounded-full px-1.5 py-0.5 font-semibold flex items-center gap-0.5">
+              <Smartphone className="w-2.5 h-2.5" />APP
             </span>
           )}
         </div>

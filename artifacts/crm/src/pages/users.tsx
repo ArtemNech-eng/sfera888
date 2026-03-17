@@ -14,7 +14,7 @@ const roleMap: Record<string, { label: string; class: string }> = {
 
 const SECTIONS = [
   { key: "dashboard",    label: "Дашборд" },
-  { key: "voronka",      label: "Воронка Telegram" },
+  { key: "voronka",      label: "Воронка мастеров" },
   { key: "master-chat",  label: "Чат с мастерами" },
   { key: "leads",        label: "Заявки" },
   { key: "orders",       label: "Буфер заказов" },

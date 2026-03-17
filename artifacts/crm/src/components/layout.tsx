@@ -12,7 +12,7 @@ import {
   UserCog,
   LogOut,
   Menu,
-  MessageCircle,
+  Smartphone,
   MessagesSquare,
   Trash2,
   ClipboardList,
@@ -73,7 +73,7 @@ export function Layout({ children }: LayoutProps) {
 
   const navItems = [
     { href: "/",            label: "Дашборд",          icon: LayoutDashboard, permKey: "dashboard" },
-    { href: "/voronka",     label: "Воронка Telegram",  icon: MessageCircle,   permKey: "voronka" },
+    { href: "/voronka",     label: "Воронка мастеров",  icon: Smartphone,      permKey: "voronka" },
     { href: "/master-chat", label: "Чат с мастерами",   icon: MessagesSquare,  permKey: "master-chat", badge: unreadCount > 0 ? unreadCount : null },
     { href: "/leads",       label: "Заявки",            icon: Inbox,           permKey: "leads" },
     { href: "/orders",      label: "Буфер заказов",     icon: Briefcase,       permKey: "orders" },

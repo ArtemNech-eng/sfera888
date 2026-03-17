@@ -1238,8 +1238,13 @@ async function handleCallback(callbackQuery: any) {
 
 // ─── Webhook ──────────────────────────────────────────────────────────────────
 
+const TELEGRAM_ENABLED = process.env.TELEGRAM_ENABLED === "true";
+
 router.post("/webhook", async (req, res) => {
   res.sendStatus(200); // always respond immediately
+
+  // Telegram is soft-disabled; set TELEGRAM_ENABLED=true in env to re-enable
+  if (!TELEGRAM_ENABLED) return;
 
   const update = req.body;
 

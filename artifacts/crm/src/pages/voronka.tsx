@@ -4,7 +4,7 @@ import { ProtectedRoute } from "@/hooks/use-auth";
 import {
   Plus, Settings, X, ChevronUp, ChevronDown, Trash2,
   Star, Phone, MapPin, Briefcase, AlertTriangle, User,
-  ArrowRight, Edit2, MessageSquare, Zap,
+  ArrowRight, Edit2, MessageSquare, Zap, Smartphone,
   RefreshCw, ChevronRight, UserX, Banknote, Check,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
@@ -15,7 +15,7 @@ import { Avatar, MasterDrawer } from "@/components/master-drawer";
 
 interface VoronkaColumn { id: number; name: string; position: number; receivesOrders: boolean; color: string; }
 interface ActiveOrder { orderId: number; district: string; city: string; serviceType: string; status: string; clientPhone: string | null; clientName: string | null; scheduledAt: string | null; }
-interface VoronkaMaster { id: number; alias: string; city: string; specialization: string; specializations: string[]; tags: string[]; telegramId: string | null; phone: string | null; status: string; rating: number; totalOrders: number; acceptedOrders: number; debt: number; voronkaColumnId: number | null; isTestMaster: boolean; avatarUrl: string | null; activeOrders: ActiveOrder[]; contractLink: string | null; createdAt: string; }
+interface VoronkaMaster { id: number; alias: string; city: string; specialization: string; specializations: string[]; tags: string[]; telegramId: string | null; pwaLogin: string | null; phone: string | null; status: string; rating: number; totalOrders: number; acceptedOrders: number; debt: number; voronkaColumnId: number | null; isTestMaster: boolean; avatarUrl: string | null; activeOrders: ActiveOrder[]; contractLink: string | null; createdAt: string; }
 
 interface MasterTask { id: number; masterId: number; text: string; dueAt: string | null; isCompleted: boolean; createdBy: string | null; createdAt: string; }
 interface HistoryOrder { id: number; status: string; serviceType: string; district: string; city: string; clientName: string | null; clientPhone: string | null; scheduledAt: string | null; completedAt: string | null; createdAt: string; }
@@ -81,7 +81,7 @@ function MasterCard({ master, columns, onMove, onOpenDrawer, onDragStart, onDrag
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1 flex-wrap">
                 <span className="font-semibold text-[12px] text-gray-800 leading-tight truncate">{master.alias}</span>
-                {master.telegramId && <MessageSquare className="w-2.5 h-2.5 text-blue-400 flex-shrink-0" />}
+                {master.pwaLogin && <Smartphone className="w-2.5 h-2.5 text-emerald-500 flex-shrink-0" />}
                 {master.isTestMaster && <span className="text-[9px] bg-amber-100 text-amber-700 rounded-md px-1 font-semibold flex-shrink-0">ТЕСТ</span>}
               </div>
               <p className="text-[10px] text-gray-400 truncate leading-tight">{master.city}</p>
@@ -210,7 +210,7 @@ function SuspendedColumn({ masters, onOpenDrawer }: {
                 <p className="text-[11px] font-semibold text-gray-700 truncate">{m.alias}</p>
                 <p className="text-[10px] text-gray-400 truncate">{m.city}</p>
               </div>
-              {m.telegramId && <div className="w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0" />}
+              {m.pwaLogin && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" />}
             </div>
           ))}
         </div>
@@ -258,7 +258,7 @@ function DebtorColumn({ masters, onOpenDrawer }: {
                   <p className="text-[11px] font-semibold text-gray-700 truncate">{m.alias}</p>
                   <p className="text-[10px] text-gray-400 truncate">{m.city}</p>
                 </div>
-                {m.telegramId && <div className="w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0" />}
+                {m.pwaLogin && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" />}
               </div>
               <div className="flex items-center gap-1 mt-1.5 text-[10px] font-semibold" style={{ color: ACCENT }}>
                 <AlertTriangle className="w-2.5 h-2.5 flex-shrink-0" />
@@ -549,7 +549,7 @@ export default function Voronka() {
 
   const totalDebt = masters.reduce((s, m) => s + m.debt, 0);
   const activeCount = masters.filter(m => m.activeOrders.length > 0).length;
-  const tgCount = masters.filter(m => m.telegramId).length;
+  const tgCount = masters.filter(m => m.pwaLogin).length;
 
   return (
     <ProtectedRoute allowedRoles={["admin", "master_operator", "lead_operator"]} permissionKey="voronka">
@@ -560,7 +560,7 @@ export default function Voronka() {
               <h1 className="text-xl font-bold text-gray-800">Воронка мастеров</h1>
               <div className="flex items-center gap-4 mt-1.5 text-xs text-gray-400">
                 <span>{masters.length} мастеров</span>
-                <span className="flex items-center gap-1 text-blue-500"><MessageSquare className="w-3 h-3"/>{tgCount} в Telegram</span>
+                <span className="flex items-center gap-1 text-emerald-500"><Smartphone className="w-3 h-3"/>{tgCount} в приложении</span>
                 {activeCount > 0 && <span className="flex items-center gap-1 text-emerald-500"><Zap className="w-3 h-3"/>{activeCount} на объекте</span>}
                 {totalDebt > 0 && <span className="flex items-center gap-1 text-red-400"><AlertTriangle className="w-3 h-3"/>{(totalDebt/1000).toFixed(0)}k₽ долг</span>}
               </div>

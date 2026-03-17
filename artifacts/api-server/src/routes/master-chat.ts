@@ -8,6 +8,8 @@ import multer from "multer";
 const router = Router();
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
+// Set TELEGRAM_ENABLED=true in env to re-enable Telegram sending from CRM chat
+const TELEGRAM_ENABLED = process.env.TELEGRAM_ENABLED === "true";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -98,6 +100,7 @@ router.get("/", requireRole("admin", "master_operator"), async (_req, res) => {
       alias: master?.alias ?? "Неизвестный мастер",
       city: master?.city ?? "",
       telegramId: master?.telegramId ?? null,
+      pwaLogin: master?.pwaLogin ?? null,
       avatarUrl,
       lastMessage: info.lastMessage,
       lastAt: info.lastAt,
@@ -144,7 +147,7 @@ router.get("/:masterId", requireRole("admin", "master_operator", "lead_operator"
   console.log(`[master-chat] masterId=${masterId} pendingTx count=${pendingTx.length}`, pendingTx.map(t => t.id));
 
   res.json({
-    master: { id: master.id, alias: master.alias, city: master.city, telegramId: master.telegramId, avatarUrl },
+    master: { id: master.id, alias: master.alias, city: master.city, telegramId: master.telegramId, pwaLogin: master.pwaLogin ?? null, avatarUrl },
     messages,
     pendingTransactions: pendingTx.map(t => ({
       id: t.id,
@@ -174,8 +177,8 @@ router.post("/:masterId/reply", requireRole("admin", "master_operator"), upload.
   let tgMessageId: number | null = null;
   const chatId = master.telegramId ?? `pwa_${master.id}`;
 
-  // Send to Telegram only if master has telegram
-  if (master.telegramId) {
+  // Send to Telegram only if master has telegram AND Telegram is enabled
+  if (master.telegramId && TELEGRAM_ENABLED) {
     if (photoFile) {
       const caption = text ? `💬 <b>${senderLabel}:</b> ${text}` : `💬 <b>${senderLabel}</b>`;
       savedPhotoUrl = await sendTgPhoto(master.telegramId, photoFile.buffer, photoFile.originalname, caption);
