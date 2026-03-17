@@ -83,6 +83,9 @@ router.get("/", allOrderRoles, async (req, res) => {
     commission: o.commission ? Number(o.commission) : null,
     clientRating: o.clientRating ?? null,
     cancelReason: o.cancelReason ?? null,
+    photosBefore: (o as any).photosBefore ?? [],
+    photosAfter: (o as any).photosAfter ?? [],
+    photoAct: (o as any).photoAct ?? null,
     createdAt: o.createdAt,
     updatedAt: o.updatedAt,
   })));

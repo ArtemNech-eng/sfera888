@@ -741,6 +741,45 @@ export default function Orders() {
                   </div>
                 )}
 
+                {/* Work photos section */}
+                {(((openOrder as any).photosBefore?.length > 0) || ((openOrder as any).photosAfter?.length > 0) || (openOrder as any).photoAct) && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Фото работ</p>
+                    {(openOrder as any).photosBefore?.length > 0 && (
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">До</p>
+                        <div className="flex flex-wrap gap-2">
+                          {(openOrder as any).photosBefore.map((url: string, i: number) => (
+                            <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                              <img src={url} alt={`До ${i+1}`} className="w-16 h-16 object-cover rounded-lg border border-border hover:opacity-80 transition-opacity" />
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {(openOrder as any).photosAfter?.length > 0 && (
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">После</p>
+                        <div className="flex flex-wrap gap-2">
+                          {(openOrder as any).photosAfter.map((url: string, i: number) => (
+                            <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                              <img src={url} alt={`После ${i+1}`} className="w-16 h-16 object-cover rounded-lg border border-border hover:opacity-80 transition-opacity" />
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {(openOrder as any).photoAct && (
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Акт</p>
+                        <a href={(openOrder as any).photoAct} target="_blank" rel="noopener noreferrer">
+                          <img src={(openOrder as any).photoAct} alt="Акт" className="w-16 h-16 object-cover rounded-lg border border-border hover:opacity-80 transition-opacity" />
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="pt-2 flex justify-end">
                   <button onClick={() => setOpenDispatchId(null)} className="px-4 py-2 rounded-xl font-medium text-muted-foreground hover:bg-slate-100 text-sm">
                     Закрыть

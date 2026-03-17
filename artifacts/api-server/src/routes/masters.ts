@@ -87,7 +87,7 @@ router.get("/:id", allMasterRoles, async (req, res) => {
 // PATCH /api/masters/:id
 router.patch("/:id", requireRole("admin", "master_operator"), async (req, res) => {
   const id = parseInt(req.params.id);
-  const { alias, city, specialization, specializations, telegramId, phone, status, isTestMaster, tags } = req.body;
+  const { alias, city, specialization, specializations, telegramId, phone, status, isTestMaster, tags, rating } = req.body;
 
   // Get old status before update for notifications
   const oldRows = await db.select().from(mastersTable).where(eq(mastersTable.id, id));
@@ -103,6 +103,7 @@ router.patch("/:id", requireRole("admin", "master_operator"), async (req, res) =
   if (status !== undefined) updates.status = status;
   if (isTestMaster !== undefined) updates.isTestMaster = isTestMaster;
   if (tags !== undefined) updates.tags = tags;
+  if (rating !== undefined) updates.rating = String(rating);
 
   const result = await db.update(mastersTable).set(updates).where(eq(mastersTable.id, id)).returning();
   if (!result[0]) return res.status(404).json({ error: "Master not found" });

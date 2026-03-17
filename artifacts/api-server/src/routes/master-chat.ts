@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db, masterMessagesTable, mastersTable, telegramChatsTable, transactionsTable } from "@workspace/db";
 import { eq, desc, and, inArray } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
+import { sendPushToMaster } from "../lib/push.js";
 import multer from "multer";
 
 const router = Router();
@@ -167,26 +168,28 @@ router.post("/:masterId/reply", requireRole("admin", "master_operator"), upload.
   const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
   const master = masterRows[0];
   if (!master) return res.status(404).json({ error: "Master not found" });
-  if (!master.telegramId) return res.status(400).json({ error: "Master has no Telegram account" });
 
   const senderLabel = operatorName ?? "Оператор";
   let savedPhotoUrl: string | null = null;
   let tgMessageId: number | null = null;
+  const chatId = master.telegramId ?? `pwa_${master.id}`;
 
-  if (photoFile) {
-    const caption = text ? `💬 <b>${senderLabel}:</b> ${text}` : `💬 <b>${senderLabel}</b>`;
-    savedPhotoUrl = await sendTgPhoto(master.telegramId, photoFile.buffer, photoFile.originalname, caption);
-    if (!savedPhotoUrl) {
-      // fallback — send as text at least
-      if (text) tgMessageId = await sendTgMessage(master.telegramId, `💬 <b>${senderLabel}:</b>\n\n${text}`);
+  // Send to Telegram only if master has telegram
+  if (master.telegramId) {
+    if (photoFile) {
+      const caption = text ? `💬 <b>${senderLabel}:</b> ${text}` : `💬 <b>${senderLabel}</b>`;
+      savedPhotoUrl = await sendTgPhoto(master.telegramId, photoFile.buffer, photoFile.originalname, caption);
+      if (!savedPhotoUrl && text) {
+        tgMessageId = await sendTgMessage(master.telegramId, `💬 <b>${senderLabel}:</b>\n\n${text}`);
+      }
+    } else if (text) {
+      tgMessageId = await sendTgMessage(master.telegramId, `💬 <b>Ответ оператора</b>\n\n${text}`);
     }
-  } else if (text) {
-    tgMessageId = await sendTgMessage(master.telegramId, `💬 <b>Ответ оператора</b>\n\n${text}`);
   }
 
   const [saved] = await db.insert(masterMessagesTable).values({
     masterId,
-    telegramChatId: master.telegramId,
+    telegramChatId: chatId,
     text: text ?? "",
     fromMaster: false,
     senderName: senderLabel,
@@ -194,6 +197,16 @@ router.post("/:masterId/reply", requireRole("admin", "master_operator"), upload.
     photoUrl: savedPhotoUrl,
     telegramMessageId: tgMessageId,
   }).returning();
+
+  // Push notification to master's PWA
+  const pushBody = text
+    ? (text.length > 80 ? text.slice(0, 77) + "…" : text)
+    : "Новое фото от оператора";
+  sendPushToMaster(masterId, {
+    title: `💬 ${senderLabel}`,
+    body: pushBody,
+    url: "/chat",
+  }).catch(() => {});
 
   res.json(saved);
 });

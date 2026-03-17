@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db, transactionsTable, mastersTable, voronkaColumnsTable } from "@workspace/db";
 import { eq, and, gte, lte, sum, count } from "drizzle-orm";
 import { requirePermission } from "../middlewares/requireAuth.js";
+import { sendPushToMaster } from "../lib/push.js";
 
 const router = Router();
 const adminOnly = requirePermission("finance");
@@ -63,6 +64,16 @@ router.patch("/transactions/:id", opsAndAdmin, async (req, res) => {
         isTestMaster: false,
         ...(freeCol ? { voronkaColumnId: freeCol.id } : {}),
       }).where(eq(mastersTable.id, t.masterId));
+
+      // Push notification (PWA)
+      const pushMsg = newDebt > 0
+        ? `Оплачено ${Number(t.commission).toLocaleString("ru-RU")} ₽. Остаток долга: ${newDebt.toLocaleString("ru-RU")} ₽`
+        : `Оплачено ${Number(t.commission).toLocaleString("ru-RU")} ₽. Долг погашен, заказы снова доступны!`;
+      sendPushToMaster(t.masterId, {
+        title: "✅ Оплата принята",
+        body: pushMsg,
+        url: "/balance",
+      }).catch(() => {});
 
       // Telegram notification
       if (master.telegramId) {

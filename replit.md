@@ -146,6 +146,21 @@ React PWA for masters to manage their orders independently.
 - `orders.photos_after[]` — After-work photo URLs
 - `orders.photo_act` — Act/document photo URL
 
+## CRM/PWA Integration Features
+
+### Push Notifications
+- **Chat → PWA**: When admin/operator replies in CRM chat, master gets push notification (no Telegram required — works for PWA-only masters too)
+- **Payment → PWA**: When admin marks transaction as "paid", master gets push notification with paid amount and remaining debt
+- **Admin browser notifications**: CRM layout polls unread chat count every 10s; when count rises, browser notification fires (requests permission automatically)
+
+### Work Photos in CRM
+- `GET /api/orders` now returns `photosBefore[]`, `photosAfter[]`, `photoAct` from DB
+- CRM dispatch panel shows photo thumbnails (До / После / Акт) when order has photos (clickable, open in new tab)
+
+### Editable Master Rating
+- `PATCH /api/masters/:id` accepts `rating` field
+- CRM master drawer shows interactive star rating — hover to preview, click to save
+
 ## Commission Logic
 
 - ≤50,000₽ → fixed 5,000₽

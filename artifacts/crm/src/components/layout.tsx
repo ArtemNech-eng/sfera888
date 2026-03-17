@@ -18,7 +18,7 @@ import {
   ClipboardList,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 interface LayoutProps {
@@ -40,6 +40,28 @@ export function Layout({ children }: LayoutProps) {
     refetchInterval: 10_000,
   });
   const unreadCount = unreadData?.count ?? 0;
+
+  // Browser notifications for new unread messages
+  const prevUnread = useRef<number | null>(null);
+  useEffect(() => {
+    if (!canSeeChat) return;
+    if (prevUnread.current === null) {
+      prevUnread.current = unreadCount;
+      return;
+    }
+    if (unreadCount > prevUnread.current) {
+      const diff = unreadCount - prevUnread.current;
+      if (Notification.permission === "granted") {
+        new Notification("💬 Новые сообщения от мастеров", {
+          body: `${diff} непрочитанных сообщений`,
+          icon: "/favicon.ico",
+        });
+      } else if (Notification.permission === "default") {
+        Notification.requestPermission();
+      }
+    }
+    prevUnread.current = unreadCount;
+  }, [unreadCount, canSeeChat]);
 
   const { data: taskStats } = useQuery<{ open: number; urgent: number }>({
     queryKey: ["/api/tasks/stats"],

@@ -97,6 +97,50 @@ function OrderStatusBadge({ status }: { status: string }) {
   );
 }
 
+function RatingEditor({ masterId, rating, onSaved }: { masterId: number; rating: number; onSaved: (r: number) => void }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  const current = Math.round(rating);
+
+  const save = async (val: number) => {
+    if (val === current) return;
+    setSaving(true);
+    try {
+      const r = await fetch(`/api/masters/${masterId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ rating: val }),
+      });
+      if (r.ok) onSaved(val);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="flex">
+        {[1,2,3,4,5].map(i => (
+          <button
+            key={i}
+            title={`Поставить ${i}`}
+            disabled={saving}
+            onMouseEnter={() => setHover(i)}
+            onMouseLeave={() => setHover(null)}
+            onClick={() => save(i)}
+            className="p-0.5 transition-transform hover:scale-125 disabled:opacity-50"
+          >
+            <Star className={`w-3.5 h-3.5 ${i <= (hover ?? current) ? "fill-yellow-400 text-yellow-400" : "text-gray-200"}`} />
+          </button>
+        ))}
+      </div>
+      <span className="text-sm text-gray-600 font-medium">{rating.toFixed(1)}</span>
+      {saving && <span className="text-xs text-muted-foreground">...</span>}
+    </div>
+  );
+}
+
 // ─── Master Drawer ────────────────────────────────────────────────────────────
 
 export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: {
@@ -470,14 +514,7 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                     : <span className="text-gray-300 text-sm">Не подключён</span>}
                 </Row>
                 <Row icon={<Star className="w-4 h-4 text-yellow-400" />} label="Рейтинг">
-                  <div className="flex items-center gap-1.5">
-                    <div className="flex">
-                      {[1,2,3,4,5].map(i => (
-                        <Star key={i} className={`w-3.5 h-3.5 ${i <= Math.round(master.rating) ? "fill-yellow-400 text-yellow-400" : "text-gray-200"}`} />
-                      ))}
-                    </div>
-                    <span className="text-sm text-gray-600 font-medium">{master.rating.toFixed(1)}</span>
-                  </div>
+                  <RatingEditor masterId={master.id} rating={master.rating} onSaved={(r) => onMasterUpdate(master.id, { rating: r })} />
                 </Row>
                 <Row icon={<Briefcase className="w-4 h-4 text-gray-400" />} label="Заказы">
                   <span className="text-gray-700 text-sm">{master.totalOrders} всего · {master.acceptedOrders} принято</span>
