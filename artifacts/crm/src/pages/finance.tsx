@@ -1,13 +1,27 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { Layout } from "@/components/layout";
 import { useGetTransactions, useGetFinanceSummary, useUpdateTransaction, TransactionPaymentStatus } from "@workspace/api-client-react";
 import { ProtectedRoute } from "@/hooks/use-auth";
 import { StatusBadge } from "@/components/status-badge";
 import { formatDate, formatCurrency } from "@/lib/utils";
-import { Loader2, CheckCircle2, TrendingDown, TrendingUp, AlertCircle, Search, X, RefreshCw, ShieldAlert } from "lucide-react";
+import { Loader2, CheckCircle2, TrendingDown, TrendingUp, AlertCircle, Search, X, RefreshCw, ShieldAlert, MessageSquare, ThumbsUp, ThumbsDown, Minus } from "lucide-react";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 type StatusFilter = "all" | "pending" | "overdue" | "paid";
+type Sentiment = "positive" | "negative" | "neutral";
+
+interface PendingReviewInfo {
+  masterId: number;
+  masterAlias: string;
+  orderId: number | null;
+}
+
+const SENTIMENTS: { value: Sentiment; label: string; icon: React.ReactNode; activeClass: string }[] = [
+  { value: "positive", label: "Позитивный", icon: <ThumbsUp className="w-4 h-4" />, activeClass: "bg-emerald-500 text-white border-emerald-500" },
+  { value: "neutral",  label: "Нейтральный", icon: <Minus className="w-4 h-4" />,    activeClass: "bg-amber-500 text-white border-amber-500" },
+  { value: "negative", label: "Негативный", icon: <ThumbsDown className="w-4 h-4" />, activeClass: "bg-red-500 text-white border-red-500" },
+];
 
 export default function Finance() {
   const queryClient = useQueryClient();
@@ -32,17 +46,57 @@ export default function Finance() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
+  // ── Review modal state ──────────────────────────────────────────────────────
+  const pendingTxRef = useRef<PendingReviewInfo | null>(null);
+  const [pendingReviewInfo, setPendingReviewInfo] = useState<PendingReviewInfo | null>(null);
+  const [reviewText, setReviewText] = useState("");
+  const [reviewSentiment, setReviewSentiment] = useState<Sentiment>("positive");
+  const [savingReview, setSavingReview] = useState(false);
+
   const updateMutation = useUpdateTransaction({
     mutation: {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ["/api/finance/transactions"] });
         queryClient.invalidateQueries({ queryKey: ["/api/finance/summary"] });
+        if (pendingTxRef.current) {
+          setPendingReviewInfo(pendingTxRef.current);
+          setReviewText("");
+          setReviewSentiment("positive");
+          pendingTxRef.current = null;
+        }
       }
     }
   });
 
-  const handleMarkPaid = (id: number) => {
-    updateMutation.mutate({ id, data: { paymentStatus: TransactionPaymentStatus.paid } });
+  const handleMarkPaid = (tx: { id: number; masterId: number; masterAlias: string; orderId: number | null }) => {
+    pendingTxRef.current = { masterId: tx.masterId, masterAlias: tx.masterAlias, orderId: tx.orderId };
+    updateMutation.mutate({ id: tx.id, data: { paymentStatus: TransactionPaymentStatus.paid } });
+  };
+
+  const submitReview = async () => {
+    if (!pendingReviewInfo || !reviewText.trim()) return;
+    setSavingReview(true);
+    try {
+      const r = await fetch("/api/master-reviews", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          masterId: pendingReviewInfo.masterId,
+          orderId: pendingReviewInfo.orderId,
+          sentiment: reviewSentiment,
+          text: reviewText.trim(),
+        }),
+      });
+      if (r.ok) {
+        toast.success("Отзыв сохранён");
+        setPendingReviewInfo(null);
+      } else {
+        toast.error("Не удалось сохранить отзыв");
+      }
+    } finally {
+      setSavingReview(false);
+    }
   };
 
   const filtered = useMemo(() => {
@@ -241,7 +295,7 @@ export default function Finance() {
                       <td className="px-6 py-4 text-right">
                         {!isPlaceholder && (tx.paymentStatus === TransactionPaymentStatus.pending || tx.paymentStatus === TransactionPaymentStatus.overdue) && (
                           <button
-                            onClick={() => handleMarkPaid(tx.id)}
+                            onClick={() => handleMarkPaid({ id: tx.id, masterId: tx.masterId, masterAlias: tx.masterAlias, orderId: tx.orderId })}
                             disabled={updateMutation.isPending}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-100 text-emerald-700 hover:bg-emerald-600 hover:text-white rounded-lg font-medium text-xs transition-colors"
                           >
@@ -263,6 +317,79 @@ export default function Finance() {
             )}
           </div>
         </div>
+
+        {/* ── Review prompt modal ─────────────────────────────────────────────── */}
+        {pendingReviewInfo && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+              {/* Header */}
+              <div className="bg-gradient-to-r from-blue-500 to-indigo-600 px-6 py-5 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
+                  <MessageSquare className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <p className="font-semibold text-white">Оставить отзыв о мастере</p>
+                  <p className="text-blue-100 text-sm mt-0.5">{pendingReviewInfo.masterAlias}</p>
+                </div>
+              </div>
+
+              <div className="p-6 space-y-5">
+                {/* Sentiment selector */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">Общее впечатление</label>
+                  <div className="flex gap-2">
+                    {SENTIMENTS.map(s => (
+                      <button
+                        key={s.value}
+                        type="button"
+                        onClick={() => setReviewSentiment(s.value)}
+                        className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border text-sm font-medium transition-all ${
+                          reviewSentiment === s.value
+                            ? s.activeClass
+                            : "bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100"
+                        }`}
+                      >
+                        {s.icon}
+                        <span className="hidden sm:inline">{s.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Review text */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">Комментарий</label>
+                  <textarea
+                    value={reviewText}
+                    onChange={e => setReviewText(e.target.value)}
+                    placeholder="Качество работы, соблюдение сроков, общение с клиентом..."
+                    rows={4}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 resize-none"
+                    autoFocus
+                  />
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-3 pt-1">
+                  <button
+                    onClick={() => setPendingReviewInfo(null)}
+                    className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+                  >
+                    Пропустить
+                  </button>
+                  <button
+                    onClick={submitReview}
+                    disabled={savingReview || !reviewText.trim()}
+                    className="flex-1 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {savingReview ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                    Сохранить отзыв
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </Layout>
     </ProtectedRoute>
   );
