@@ -44,7 +44,7 @@ function dateShort(d: string | null) { if (!d) return "—"; try { return format
 
 // ─── Master Card ──────────────────────────────────────────────────────────────
 
-function MasterCard({ master, columns, onMove, onOpenDrawer, onDragStart, onDragEnd, isDragging }: {
+function MasterCard({ master, columns, onMove, onOpenDrawer, onDragStart, onDragEnd, isDragging, anyDragging }: {
   master: VoronkaMaster;
   columns: VoronkaColumn[];
   onMove: (id: number, colId: number | null) => void;
@@ -52,6 +52,7 @@ function MasterCard({ master, columns, onMove, onOpenDrawer, onDragStart, onDrag
   onDragStart: (id: number) => void;
   onDragEnd: () => void;
   isDragging: boolean;
+  anyDragging: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const others = columns.filter(c => c.id !== master.voronkaColumnId);
@@ -69,6 +70,7 @@ function MasterCard({ master, columns, onMove, onOpenDrawer, onDragStart, onDrag
         background: "rgba(255,255,255,0.82)",
         border: "1px solid rgba(255,255,255,0.95)",
         boxShadow: isDragging ? "none" : "0 2px 10px rgba(120,80,220,0.06), 0 1px 3px rgba(0,0,0,0.04)",
+        pointerEvents: anyDragging && !isDragging ? "none" : "auto",
       }}
     >
       {/* Clickable card body */}
@@ -287,18 +289,41 @@ function KanbanColumn({ col, masters, columns, onMove, onOpenDrawer, draggingId,
   onDropMaster: (masterId: number, colId: number | null) => void;
 }) {
   const [dragOver, setDragOver] = useState(false);
-  const c = col ? clr(col.color) : { top: "border-t-gray-300", header: "from-gray-50 to-white", badge: "bg-gray-400", dot: "bg-gray-300", btn: "" };
+  const c = col ? clr(col.color) : { top: "border-t-gray-300", header: "from-gray-50 to-white", badge: "bg-gray-400", dot: "bg-gray-300", btn: "", accent: "#94a3b8", badgeBg: "rgba(148,163,184,0.13)", badgeText: "#475569", headerBg: "rgba(248,250,252,0.45)" };
   const name = col?.name ?? "Без колонки";
   const receivesOrders = col?.receivesOrders ?? false;
 
   const isActiveDrop = dragOver && draggingId !== null;
-
   const accent = c.accent;
+
+  // Fix: handle drag on the OUTER column div so hovering over child cards doesn't break drop
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (!dragOver) setDragOver(true);
+  };
+  // Fix: only clear dragOver when leaving the entire column, not child elements
+  const handleDragLeave = (e: React.DragEvent) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setDragOver(false);
+    }
+  };
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    if (draggingId !== null) onDropMaster(draggingId, col?.id ?? null);
+  };
+
   return (
-    <div className="flex-shrink-0 w-[230px] flex flex-col rounded-2xl overflow-hidden"
-         style={{ background: "rgba(255,255,255,0.60)", backdropFilter: "blur(20px) saturate(180%)", WebkitBackdropFilter: "blur(20px) saturate(180%)", border: "1px solid rgba(255,255,255,0.82)", boxShadow: "0 4px 20px rgba(120,80,220,0.07), 0 1px 3px rgba(0,0,0,0.04)", borderTop: `2px solid ${accent}` }}>
+    <div
+      className="flex-shrink-0 w-[230px] flex flex-col rounded-2xl overflow-hidden"
+      style={{ background: "rgba(255,255,255,0.60)", backdropFilter: "blur(20px) saturate(180%)", WebkitBackdropFilter: "blur(20px) saturate(180%)", border: isActiveDrop ? `1px solid ${accent}` : "1px solid rgba(255,255,255,0.82)", boxShadow: isActiveDrop ? `0 0 0 2px ${accent}33, 0 4px 20px rgba(120,80,220,0.10)` : "0 4px 20px rgba(120,80,220,0.07), 0 1px 3px rgba(0,0,0,0.04)", borderTop: `2px solid ${accent}`, transition: "border 0.15s, box-shadow 0.15s" }}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       <div className="px-3 py-2.5 flex items-center justify-between"
-           style={{ background: c.headerBg, borderBottom: "1px solid rgba(0,0,0,0.04)" }}>
+           style={{ background: isActiveDrop ? `${accent}15` : c.headerBg, borderBottom: "1px solid rgba(0,0,0,0.04)", transition: "background 0.15s" }}>
         <div className="flex items-center gap-2 min-w-0">
           <span className="font-semibold text-[13px] text-gray-700 truncate">{name}</span>
           {receivesOrders && (
@@ -311,21 +336,15 @@ function KanbanColumn({ col, masters, columns, onMove, onOpenDrawer, draggingId,
         </span>
       </div>
       <div
-        onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOver(true); }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={e => { e.preventDefault(); setDragOver(false); if (draggingId !== null) onDropMaster(draggingId, col?.id ?? null); }}
-        className="voronka-scroll flex-1 overflow-y-auto p-2 space-y-1.5 transition-colors duration-150"
-        style={{ maxHeight: "calc(100vh - 185px)", background: isActiveDrop ? "rgba(99,102,241,0.05)" : "transparent" }}
+        className="voronka-scroll flex-1 overflow-y-auto p-2 space-y-1.5"
+        style={{ maxHeight: "calc(100vh - 185px)", background: isActiveDrop ? `${accent}08` : "transparent", transition: "background 0.15s" }}
       >
-        {masters.length === 0 && !isActiveDrop ? (
-          <div className="flex flex-col items-center justify-center py-6 text-gray-300">
-            <User className="w-5 h-5 mb-1" />
-            <p className="text-[11px]">Пусто</p>
-          </div>
-        ) : masters.length === 0 && isActiveDrop ? (
-          <div className="flex flex-col items-center justify-center py-6 text-blue-300">
-            <div className="w-8 h-8 rounded-xl border-2 border-dashed border-blue-300 mb-1" />
-            <p className="text-[11px]">Сюда</p>
+        {masters.length === 0 ? (
+          <div className={`flex flex-col items-center justify-center py-6 transition-colors duration-150 ${isActiveDrop ? "text-indigo-300" : "text-gray-300"}`}>
+            {isActiveDrop
+              ? <><div className="w-8 h-8 rounded-xl border-2 border-dashed border-indigo-300 mb-1" /><p className="text-[11px]">Сюда</p></>
+              : <><User className="w-5 h-5 mb-1" /><p className="text-[11px]">Пусто</p></>
+            }
           </div>
         ) : masters.map(m => (
           <MasterCard
@@ -333,6 +352,7 @@ function KanbanColumn({ col, masters, columns, onMove, onOpenDrawer, draggingId,
             onDragStart={onDragStartMaster}
             onDragEnd={onDragEndMaster}
             isDragging={m.id === draggingId}
+            anyDragging={draggingId !== null}
           />
         ))}
       </div>
@@ -466,7 +486,10 @@ export default function Voronka() {
   const [draggingId, setDraggingId] = useState<number | null>(null);
 
   const fetchAll = useCallback(async () => {
-    const [cR, mR] = await Promise.all([fetch("/api/voronka/columns"), fetch("/api/voronka/masters")]);
+    const [cR, mR] = await Promise.all([
+      fetch("/api/voronka/columns", { credentials: "include" }),
+      fetch("/api/voronka/masters", { credentials: "include" }),
+    ]);
     if (cR.ok) setColumns(await cR.json());
     if (mR.ok) setMasters(await mR.json());
     setLoading(false);
@@ -485,7 +508,7 @@ export default function Voronka() {
   const moveMaster = async (masterId: number, colId: number | null) => {
     setMasters(p => p.map(m => m.id === masterId ? { ...m, voronkaColumnId: colId } : m));
     await fetch(`/api/voronka/masters/${masterId}/column`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
+      method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ voronkaColumnId: colId }),
     });
   };
@@ -496,23 +519,23 @@ export default function Voronka() {
   };
 
   const updateColumn = async (id: number, data: Partial<VoronkaColumn>) => {
-    const res = await fetch(`/api/voronka/columns/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+    const res = await fetch(`/api/voronka/columns/${id}`, { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
     if (res.ok) { const u = await res.json(); setColumns(p => p.map(c => c.id === id ? u : c)); }
   };
 
   const deleteColumn = async (id: number) => {
-    await fetch(`/api/voronka/columns/${id}`, { method: "DELETE" });
+    await fetch(`/api/voronka/columns/${id}`, { method: "DELETE", credentials: "include" });
     setColumns(p => p.filter(c => c.id !== id));
     setMasters(p => p.map(m => m.voronkaColumnId === id ? { ...m, voronkaColumnId: null } : m));
   };
 
   const createColumn = async (name: string, receivesOrders: boolean, color: string) => {
-    const res = await fetch("/api/voronka/columns", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, receivesOrders, color }) });
+    const res = await fetch("/api/voronka/columns", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, receivesOrders, color }) });
     if (res.ok) { const col = await res.json(); setColumns(p => [...p, col]); }
   };
 
   const reorderColumns = async (order: number[]) => {
-    const res = await fetch("/api/voronka/columns/reorder", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ order }) });
+    const res = await fetch("/api/voronka/columns/reorder", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ order }) });
     if (res.ok) setColumns(await res.json());
   };
 
