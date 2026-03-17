@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, numeric, integer, boolean, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, timestamp, numeric, integer, boolean, pgEnum, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -25,6 +25,9 @@ export const mastersTable = pgTable("masters", {
   contractLink: text("contract_link"),
   pwaLogin: text("pwa_login"),
   pwaPasswordHash: text("pwa_password_hash"),
+  workingHours: jsonb("working_hours"),
+  preferredDistricts: text("preferred_districts").array().notNull().default([]),
+  minArea: integer("min_area").notNull().default(0),
   deletedAt: timestamp("deleted_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

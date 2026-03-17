@@ -8,7 +8,7 @@ import {
   Bell, CheckCircle2, XCircle, AlertTriangle, Star,
   MapPin, Calendar, MessageSquare, Clock,
   ChevronRight, X, Images, Wrench, Zap, PauseCircle,
-  PlayCircle,
+  PlayCircle, Navigation, Users, Heart, ChevronDown,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -28,18 +28,15 @@ interface OrderCard {
   comment: string | null;
   photos: string[];
   dispatchedAt: string | null;
+  competitorCount: number;
+  isRepeatClient: boolean;
 }
 
 interface PendingCard extends OrderCard { respondedAt: string | null; }
 
 interface ActiveOrder {
-  id: number;
-  city: string;
-  district: string | null;
-  serviceType: string;
-  area: number;
-  status: string;
-  masterWorkStatus: string | null;
+  id: number; city: string; district: string | null;
+  serviceType: string; area: number; status: string; masterWorkStatus: string | null;
 }
 
 // ─── Notification sound + vibration ──────────────────────────────────────────
@@ -51,158 +48,98 @@ function playNewOrderAlert() {
     [523, 659, 784].forEach((freq, i) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.frequency.value = freq;
-      osc.type = "sine";
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.value = freq; osc.type = "sine";
       const start = t + i * 0.13;
       gain.gain.setValueAtTime(0, start);
       gain.gain.linearRampToValueAtTime(0.35, start + 0.05);
       gain.gain.exponentialRampToValueAtTime(0.01, start + 0.35);
-      osc.start(start);
-      osc.stop(start + 0.35);
+      osc.start(start); osc.stop(start + 0.35);
     });
   } catch {}
   try { navigator.vibrate?.([300, 100, 200, 100, 300]); } catch {}
 }
 
-// ─── Timer helpers ────────────────────────────────────────────────────────────
+// ─── Timer ────────────────────────────────────────────────────────────────────
 
-function elapsedMinutes(dateStr: string | null): number {
-  if (!dateStr) return 0;
-  return Math.floor((Date.now() - new Date(dateStr).getTime()) / 60_000);
+function elapsedMinutes(d: string | null) {
+  if (!d) return 0;
+  return Math.floor((Date.now() - new Date(d).getTime()) / 60_000);
 }
 
 function DispatchTimer({ dispatchedAt }: { dispatchedAt: string | null }) {
   const mins = elapsedMinutes(dispatchedAt);
-  if (mins < 2) {
-    return (
-      <span className="flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-        <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-        Только что
-      </span>
-    );
-  }
-  if (mins < 60) {
-    return (
-      <span className="flex items-center gap-1 text-xs text-muted-foreground">
-        <Clock size={11} />
-        {mins} мин назад
-      </span>
-    );
-  }
-  const hrs = Math.floor(mins / 60);
-  const rem = mins % 60;
-  const label = rem > 0 ? `${hrs}ч ${rem}м` : `${hrs}ч`;
-  if (hrs >= 2) {
-    return (
-      <span className="flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-400">
-        <Zap size={11} />
-        {label} — истекает
-      </span>
-    );
-  }
-  return (
-    <span className="flex items-center gap-1 text-xs text-muted-foreground">
-      <Clock size={11} />
-      {label} назад
+  if (mins < 2) return (
+    <span className="flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" />Только что
     </span>
   );
+  if (mins < 60) return (
+    <span className="flex items-center gap-1 text-xs text-muted-foreground"><Clock size={11} />{mins} мин назад</span>
+  );
+  const hrs = Math.floor(mins / 60), rem = mins % 60;
+  const label = rem > 0 ? `${hrs}ч ${rem}м` : `${hrs}ч`;
+  if (hrs >= 2) return (
+    <span className="flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-400">
+      <Zap size={11} />{label} — истекает
+    </span>
+  );
+  return <span className="flex items-center gap-1 text-xs text-muted-foreground"><Clock size={11} />{label} назад</span>;
 }
 
-// ─── Swipeable card wrapper ───────────────────────────────────────────────────
+// ─── Swipeable card ───────────────────────────────────────────────────────────
 
-const SWIPE_THRESHOLD = 80;
+const SWIPE_T = 80;
 
-function SwipeableCard({
-  onSwipeRight,
-  onSwipeLeft,
-  children,
-}: {
-  onSwipeRight: () => void;
-  onSwipeLeft: () => void;
-  children: React.ReactNode;
+function SwipeableCard({ onSwipeRight, onSwipeLeft, children }: {
+  onSwipeRight: () => void; onSwipeLeft: () => void; children: React.ReactNode;
 }) {
   const startX = useRef<number | null>(null);
   const startY = useRef<number | null>(null);
-  const isHorizontal = useRef(false);
+  const isH = useRef(false);
   const didSwipe = useRef(false);
-  const [deltaX, setDeltaX] = useState(0);
+  const [dx, setDx] = useState(0);
 
   const onTouchStart = (e: React.TouchEvent) => {
     startX.current = e.touches[0].clientX;
     startY.current = e.touches[0].clientY;
-    isHorizontal.current = false;
-    didSwipe.current = false;
+    isH.current = false; didSwipe.current = false;
   };
-
   const onTouchMove = (e: React.TouchEvent) => {
     if (startX.current === null || startY.current === null) return;
-    const dx = e.touches[0].clientX - startX.current;
-    const dy = e.touches[0].clientY - startY.current;
-    if (!isHorizontal.current) {
-      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
-      if (Math.abs(dx) > Math.abs(dy)) {
-        isHorizontal.current = true;
-      } else {
-        startX.current = null;
-        return;
-      }
+    const ddx = e.touches[0].clientX - startX.current;
+    const ddy = e.touches[0].clientY - startY.current;
+    if (!isH.current) {
+      if (Math.abs(ddx) < 8 && Math.abs(ddy) < 8) return;
+      if (Math.abs(ddx) > Math.abs(ddy)) isH.current = true;
+      else { startX.current = null; return; }
     }
-    if (isHorizontal.current) {
+    if (isH.current) {
       e.preventDefault();
-      const clamped = Math.max(-SWIPE_THRESHOLD * 1.6, Math.min(SWIPE_THRESHOLD * 1.6, dx));
-      setDeltaX(clamped);
+      setDx(Math.max(-SWIPE_T * 1.6, Math.min(SWIPE_T * 1.6, ddx)));
     }
   };
-
   const onTouchEnd = () => {
-    if (isHorizontal.current) {
-      if (deltaX > SWIPE_THRESHOLD) {
-        didSwipe.current = true;
-        onSwipeRight();
-      } else if (deltaX < -SWIPE_THRESHOLD) {
-        didSwipe.current = true;
-        onSwipeLeft();
-      }
+    if (isH.current) {
+      if (dx > SWIPE_T) { didSwipe.current = true; onSwipeRight(); }
+      else if (dx < -SWIPE_T) { didSwipe.current = true; onSwipeLeft(); }
     }
-    setDeltaX(0);
-    startX.current = null;
-    isHorizontal.current = false;
+    setDx(0); startX.current = null; isH.current = false;
   };
-
-  const absX = Math.abs(deltaX);
-  const progress = Math.min(absX / SWIPE_THRESHOLD, 1);
+  const prog = Math.min(Math.abs(dx) / SWIPE_T, 1);
 
   return (
-    <div
-      className="relative overflow-hidden rounded-2xl"
-      onTouchStart={onTouchStart}
-      onTouchMove={onTouchMove}
-      onTouchEnd={onTouchEnd}
-    >
-      {/* Right hint (swipe right → respond) */}
-      <div
-        className="absolute inset-0 flex items-center justify-start pl-5 bg-emerald-500 rounded-2xl transition-opacity"
-        style={{ opacity: deltaX > 8 ? progress : 0 }}
-      >
-        <div className="flex items-center gap-2 text-white font-bold text-sm">
-          <CheckCircle2 size={20} /> Откликнуться
-        </div>
+    <div className="relative overflow-hidden rounded-2xl"
+      onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
+      <div className="absolute inset-0 flex items-center justify-start pl-5 bg-emerald-500 rounded-2xl"
+        style={{ opacity: dx > 8 ? prog : 0 }}>
+        <div className="flex items-center gap-2 text-white font-bold text-sm"><CheckCircle2 size={20} /> Откликнуться</div>
       </div>
-      {/* Left hint (swipe left → reject) */}
-      <div
-        className="absolute inset-0 flex items-center justify-end pr-5 bg-red-500 rounded-2xl transition-opacity"
-        style={{ opacity: deltaX < -8 ? progress : 0 }}
-      >
-        <div className="flex items-center gap-2 text-white font-bold text-sm">
-          Отказать <XCircle size={20} />
-        </div>
+      <div className="absolute inset-0 flex items-center justify-end pr-5 bg-red-500 rounded-2xl"
+        style={{ opacity: dx < -8 ? prog : 0 }}>
+        <div className="flex items-center gap-2 text-white font-bold text-sm">Отказать <XCircle size={20} /></div>
       </div>
-      {/* Card content */}
-      <div
-        style={{ transform: `translateX(${deltaX}px)`, transition: deltaX === 0 ? "transform 0.2s ease" : "none" }}
-      >
+      <div style={{ transform: `translateX(${dx}px)`, transition: dx === 0 ? "transform 0.2s ease" : "none" }}>
         {children}
       </div>
     </div>
@@ -267,32 +204,134 @@ function parseServices(raw: string | null): ServiceLine[] | null {
   return null;
 }
 
+// ─── Navigation Buttons ───────────────────────────────────────────────────────
+
+function NavigationButtons({ city, district }: { city: string; district: string | null }) {
+  const query = encodeURIComponent(`${city}${district ? ` ${district}` : ""}`);
+  return (
+    <div className="mt-4">
+      <p className="text-xs text-muted-foreground mb-2">Маршрут до объекта</p>
+      <div className="flex gap-2">
+        <a href={`https://2gis.ru/search/${query}`} target="_blank" rel="noopener noreferrer"
+          className="flex-1 flex items-center justify-center gap-1.5 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 text-xs font-semibold">
+          <Navigation size={13} /> 2ГИС
+        </a>
+        <a href={`https://yandex.ru/maps/?text=${query}&rtt=auto`} target="_blank" rel="noopener noreferrer"
+          className="flex-1 flex items-center justify-center gap-1.5 h-10 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 text-xs font-semibold">
+          <Navigation size={13} /> Яндекс
+        </a>
+        <a href={`https://www.google.com/maps/search/?api=1&query=${query}`} target="_blank" rel="noopener noreferrer"
+          className="flex-1 flex items-center justify-center gap-1.5 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-400 text-xs font-semibold">
+          <Navigation size={13} /> Google
+        </a>
+      </div>
+    </div>
+  );
+}
+
+// ─── Rejection Reason Sheet ───────────────────────────────────────────────────
+
+const REJECT_REASONS = [
+  "Слишком далеко",
+  "Неудобные даты",
+  "Не моя специализация",
+  "Уже занят",
+  "Слишком маленький объём",
+  "Другая причина",
+];
+
+function RejectReasonSheet({ onConfirm, onCancel }: {
+  onConfirm: (reason: string) => void;
+  onCancel: () => void;
+}) {
+  const [selected, setSelected] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end bg-black/40" onClick={onCancel}>
+      <div className="w-full bg-background rounded-t-2xl pt-4 pb-8 px-4 space-y-3" onClick={e => e.stopPropagation()}>
+        <div className="w-10 h-1 bg-border rounded-full mx-auto mb-2" />
+        <h3 className="font-bold text-base">Почему отказываете?</h3>
+        <p className="text-xs text-muted-foreground">Это помогает нам подбирать более подходящие заявки</p>
+        <div className="space-y-2 mt-2">
+          {REJECT_REASONS.map(r => (
+            <button key={r} onClick={() => setSelected(r)}
+              className={`w-full text-left px-4 py-3 rounded-xl border text-sm transition-all ${
+                selected === r
+                  ? "border-primary bg-primary/10 text-primary font-medium"
+                  : "border-border bg-card text-foreground"
+              }`}>
+              {r}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-3 pt-2">
+          <button onClick={onCancel}
+            className="flex-1 h-12 rounded-xl border border-border text-muted-foreground text-sm font-medium">
+            Отмена
+          </button>
+          <button
+            disabled={!selected || loading}
+            onClick={async () => {
+              if (!selected) return;
+              setLoading(true);
+              onConfirm(selected);
+            }}
+            className="flex-1 h-12 rounded-xl bg-red-500 text-white text-sm font-bold disabled:opacity-50">
+            {loading ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto" /> : "Отказать"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Order Detail Sheet ───────────────────────────────────────────────────────
 
 function OrderDetailSheet({ order, onRespond, onReject, onClose }: {
   order: OrderCard; onRespond: () => void; onReject: () => void; onClose: () => void;
 }) {
   const [state, setState] = useState<"idle" | "loading" | "success" | "rejecting">("idle");
+  const [showRejectSheet, setShowRejectSheet] = useState(false);
+  const [showPriceNote, setShowPriceNote] = useState(false);
+  const [priceNote, setPriceNote] = useState("");
   const services = parseServices(order.services);
 
   const handleRespond = async () => {
     setState("loading");
-    try { await api.orders.respond(order.id); setState("success"); }
-    catch (e: any) { toast.error(e.message ?? "Ошибка"); setState("idle"); }
+    try {
+      await api.orders.respond(order.id, priceNote.trim() || undefined);
+      setState("success");
+    } catch (e: any) {
+      toast.error(e.message ?? "Ошибка");
+      setState("idle");
+    }
   };
 
-  const handleReject = async () => {
+  const handleRejectConfirm = async (reason: string) => {
     setState("rejecting");
-    try { await api.orders.reject(order.id); toast.success("Заявка отклонена"); onReject(); }
-    catch (e: any) { toast.error(e.message ?? "Ошибка"); setState("idle"); }
+    setShowRejectSheet(false);
+    try {
+      await api.orders.reject(order.id, reason);
+      toast.success("Заявка отклонена");
+      onReject();
+    } catch (e: any) {
+      toast.error(e.message ?? "Ошибка");
+      setState("idle");
+    }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card shrink-0">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="font-bold">Заявка #{order.id}</span>
           <DispatchTimer dispatchedAt={order.dispatchedAt} />
+          {order.isRepeatClient && (
+            <span className="flex items-center gap-1 text-xs font-semibold text-pink-600 dark:text-pink-400 bg-pink-50 dark:bg-pink-900/20 px-2 py-0.5 rounded-full">
+              <Heart size={10} fill="currentColor" /> Ваш клиент
+            </span>
+          )}
         </div>
         <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-muted">
           <X size={20} />
@@ -305,13 +344,16 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose }: {
             <div className="w-20 h-20 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
               <CheckCircle2 size={44} className="text-green-500" />
             </div>
-            <div className="space-y-2">
-              <h2 className="text-xl font-bold">Отклик отправлен!</h2>
-              <p className="text-sm text-muted-foreground">Ожидайте решения менеджера.</p>
-              <p className="text-xs text-muted-foreground">После подтверждения вы получите контакт клиента.</p>
-            </div>
+            <h2 className="text-xl font-bold">Отклик отправлен!</h2>
+            <p className="text-sm text-muted-foreground">Ожидайте решения менеджера.</p>
+            {priceNote && (
+              <div className="bg-muted/60 rounded-xl px-4 py-3 max-w-xs">
+                <p className="text-xs text-muted-foreground">Ваше предложение передано:</p>
+                <p className="text-sm font-medium mt-1">{priceNote}</p>
+              </div>
+            )}
             <button onClick={onRespond}
-              className="mt-4 w-full max-w-xs h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm">
+              className="mt-2 w-full max-w-xs h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm">
               Готово
             </button>
           </div>
@@ -319,12 +361,31 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose }: {
           <>
             {order.photos.length > 0
               ? <PhotoGallery photos={order.photos} />
-              : (
-                <div className="flex items-center justify-center h-24 bg-muted/40 text-muted-foreground gap-2">
+              : <div className="flex items-center justify-center h-24 bg-muted/40 text-muted-foreground gap-2">
                   <Images size={18} /><span className="text-sm">Фото не прикреплено</span>
                 </div>
-              )}
+            }
             <div className="px-4 pt-2 pb-4">
+              {/* Competition + repeat client info */}
+              <div className="flex items-center gap-3 py-2.5 border-b border-border mb-1">
+                {order.competitorCount > 0 ? (
+                  <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400 font-medium">
+                    <Users size={13} />
+                    Уже откликнулись: {order.competitorCount} {order.competitorCount === 1 ? "мастер" : "мастера"}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                    <CheckCircle2 size={13} /> Первый отклик — у вас преимущество!
+                  </div>
+                )}
+                {order.isRepeatClient && (
+                  <div className="flex items-center gap-1 text-xs text-pink-600 dark:text-pink-400 font-medium ml-auto">
+                    <Heart size={11} fill="currentColor" /> Ваш клиент
+                  </div>
+                )}
+              </div>
+
+              {/* Services */}
               <div className="py-3 border-b border-border">
                 <p className="text-xs text-muted-foreground mb-2">Услуга / объём</p>
                 {services ? (
@@ -343,12 +404,39 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose }: {
                   </div>
                 )}
               </div>
+
               <Row icon={<MapPin size={16} />} label="Адрес" value={`${order.city}${order.district ? `, ${order.district}` : ""}`} />
               <Row icon={<Calendar size={16} />} label="Дата выезда" value={formatDate(order.scheduledAt)} />
               {order.comment && <Row icon={<MessageSquare size={16} />} label="Комментарий" value={order.comment} />}
+
+              {/* Navigation */}
+              <NavigationButtons city={order.city} district={order.district} />
+
+              {/* Price note (optional) */}
+              <div className="mt-4">
+                <button
+                  onClick={() => setShowPriceNote(p => !p)}
+                  className="flex items-center gap-2 text-xs text-primary font-medium"
+                >
+                  <ChevronDown size={14} className={`transition-transform ${showPriceNote ? "rotate-180" : ""}`} />
+                  {showPriceNote ? "Скрыть предложение" : "Добавить ценовое предложение (необязательно)"}
+                </button>
+                {showPriceNote && (
+                  <div className="mt-2">
+                    <textarea
+                      value={priceNote}
+                      onChange={e => setPriceNote(e.target.value)}
+                      placeholder="Например: готов выехать за 1 500 ₽/м², могу начать 20 марта"
+                      rows={3}
+                      className="w-full px-3 py-2.5 rounded-xl border border-border bg-muted/40 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                  </div>
+                )}
+              </div>
+
               <div className="mt-4 bg-muted/60 rounded-xl px-4 py-3">
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  Телефон клиента будет передан после того, как менеджер выберет вас для этого заказа.
+                  Телефон клиента будет передан после того, как менеджер выберет вас.
                 </p>
               </div>
             </div>
@@ -363,9 +451,9 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose }: {
             {state === "loading"
               ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
               : <CheckCircle2 size={22} />}
-            Откликнуться
+            Откликнуться{priceNote.trim() ? " с предложением" : ""}
           </button>
-          <button onClick={handleReject} disabled={state !== "idle"}
+          <button onClick={() => setShowRejectSheet(true)} disabled={state !== "idle"}
             className="w-full h-11 rounded-xl text-destructive font-medium text-sm flex items-center justify-center gap-1.5 disabled:opacity-50">
             {state === "rejecting"
               ? <div className="w-4 h-4 border-2 border-destructive border-t-transparent rounded-full animate-spin" />
@@ -373,6 +461,13 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose }: {
             Отказать от заявки
           </button>
         </div>
+      )}
+
+      {showRejectSheet && (
+        <RejectReasonSheet
+          onConfirm={handleRejectConfirm}
+          onCancel={() => setShowRejectSheet(false)}
+        />
       )}
     </div>
   );
@@ -386,9 +481,7 @@ function RespondedSheet({ order, onClose }: { order: PendingCard; onClose: () =>
     <div className="fixed inset-0 z-50 flex flex-col bg-background">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card shrink-0">
         <span className="font-bold">Заявка #{order.id}</span>
-        <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-muted">
-          <X size={20} />
-        </button>
+        <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-muted"><X size={20} /></button>
       </div>
       <div className="flex-1 overflow-y-auto">
         {order.photos.length > 0 && <PhotoGallery photos={order.photos} />}
@@ -414,6 +507,7 @@ function RespondedSheet({ order, onClose }: { order: PendingCard; onClose: () =>
           <Row icon={<MapPin size={16} />} label="Адрес" value={`${order.city}${order.district ? `, ${order.district}` : ""}`} />
           <Row icon={<Calendar size={16} />} label="Дата выезда" value={formatDate(order.scheduledAt)} />
           {order.comment && <Row icon={<MessageSquare size={16} />} label="Комментарий" value={order.comment} />}
+          <NavigationButtons city={order.city} district={order.district} />
           <div className="mt-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl px-4 py-4 space-y-1">
             <div className="flex items-center gap-2">
               <CheckCircle2 size={18} className="text-green-500 shrink-0" />
@@ -429,9 +523,7 @@ function RespondedSheet({ order, onClose }: { order: PendingCard; onClose: () =>
         </div>
       </div>
       <div className="shrink-0 bg-card border-t border-border px-4 py-4">
-        <button onClick={onClose} className="w-full h-12 rounded-xl border border-border text-muted-foreground font-medium text-sm">
-          Закрыть
-        </button>
+        <button onClick={onClose} className="w-full h-12 rounded-xl border border-border text-muted-foreground font-medium text-sm">Закрыть</button>
       </div>
     </div>
   );
@@ -441,7 +533,6 @@ function RespondedSheet({ order, onClose }: { order: PendingCard; onClose: () =>
 
 function AvailabilityToggle({ isAvailable, onChange }: { isAvailable: boolean; onChange: (v: boolean) => void }) {
   const [loading, setLoading] = useState(false);
-
   const toggle = async () => {
     setLoading(true);
     try {
@@ -450,45 +541,33 @@ function AvailabilityToggle({ isAvailable, onChange }: { isAvailable: boolean; o
       toast.success(isAvailable ? "Вы недоступны — заявки не будут приходить" : "Вы снова принимаете заявки");
     } catch (e: any) {
       toast.error(e.message ?? "Ошибка");
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
-
   return (
-    <button
-      onClick={toggle}
-      disabled={loading}
-      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+    <button onClick={toggle} disabled={loading}
+      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all disabled:opacity-60 ${
         isAvailable
           ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
           : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-      } disabled:opacity-60`}
-    >
+      }`}>
       {loading
         ? <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-        : isAvailable
-          ? <PlayCircle size={14} />
-          : <PauseCircle size={14} />}
+        : isAvailable ? <PlayCircle size={14} /> : <PauseCircle size={14} />}
       {isAvailable ? "Принимаю заявки" : "Недоступен"}
     </button>
   );
 }
 
-// ─── Swipe hint (shown once) ──────────────────────────────────────────────────
+// ─── Swipe hint ───────────────────────────────────────────────────────────────
 
-const SWIPE_HINT_KEY = "swipe_hint_shown";
+const SWIPE_HINT_KEY = "swipe_hint_shown_v2";
 
 function SwipeHint({ onDismiss }: { onDismiss: () => void }) {
   return (
     <div className="flex items-center gap-3 bg-muted/80 border border-border rounded-xl px-3 py-2.5 text-xs text-muted-foreground">
-      <div className="flex items-center gap-1 shrink-0">
-        <span className="text-emerald-500 font-bold">→</span> Откликнуться
-        <span className="mx-2 opacity-40">|</span>
-        <span className="text-red-500 font-bold">←</span> Отказать
-      </div>
+      <span className="shrink-0"><span className="text-emerald-500 font-bold">→</span> Откликнуться &nbsp; <span className="text-red-500 font-bold">←</span> Отказать</span>
       <span className="flex-1 text-center opacity-60">Свайп для быстрого ответа</span>
-      <button onClick={onDismiss} className="shrink-0"><X size={14} /></button>
+      <button onClick={onDismiss}><X size={14} /></button>
     </div>
   );
 }
@@ -515,22 +594,14 @@ export default function HomePage() {
       const d = await api.home();
       setData(d);
       setIsAvailable(d.master?.isAvailable ?? true);
-
-      // Detect new orders → sound + vibration
       const currentIds = new Set<number>((d.availableOrders ?? []).map((o: OrderCard) => o.id));
       if (!firstLoad.current) {
         const newOnes = [...currentIds].filter(id => !prevOrderIds.current.has(id));
-        if (newOnes.length > 0) {
-          playNewOrderAlert();
-        }
+        if (newOnes.length > 0) playNewOrderAlert();
       }
       firstLoad.current = false;
       prevOrderIds.current = currentIds;
-    } catch {
-      // silent on background refresh
-    } finally {
-      setLoading(false);
-    }
+    } catch {} finally { setLoading(false); }
   }, []);
 
   useEffect(() => {
@@ -539,29 +610,16 @@ export default function HomePage() {
     return () => clearInterval(interval);
   }, [load]);
 
-  const dismissSwipeHint = () => {
-    localStorage.setItem(SWIPE_HINT_KEY, "1");
-    setShowSwipeHint(false);
-  };
+  const dismissSwipeHint = () => { localStorage.setItem(SWIPE_HINT_KEY, "1"); setShowSwipeHint(false); };
 
   const handleSwipeRespond = async (order: OrderCard) => {
-    try {
-      await api.orders.respond(order.id);
-      toast.success(`Отклик на заявку #${order.id} отправлен!`);
-      load();
-    } catch (e: any) {
-      toast.error(e.message ?? "Ошибка");
-    }
+    try { await api.orders.respond(order.id); toast.success(`Отклик на заявку #${order.id} отправлен!`); load(); }
+    catch (e: any) { toast.error(e.message ?? "Ошибка"); }
   };
 
   const handleSwipeReject = async (order: OrderCard) => {
-    try {
-      await api.orders.reject(order.id);
-      toast.success("Заявка отклонена");
-      load();
-    } catch (e: any) {
-      toast.error(e.message ?? "Ошибка");
-    }
+    try { await api.orders.reject(order.id); toast.success("Заявка отклонена"); load(); }
+    catch (e: any) { toast.error(e.message ?? "Ошибка"); }
   };
 
   if (loading) {
@@ -608,7 +666,7 @@ export default function HomePage() {
           <PauseCircle size={18} className="text-red-500 shrink-0" />
           <div>
             <p className="text-sm font-semibold text-red-700 dark:text-red-400">Вы недоступны</p>
-            <p className="text-xs text-red-600 dark:text-red-500">Новые заявки не поступают. Включите приём заявок выше.</p>
+            <p className="text-xs text-red-600 dark:text-red-500">Новые заявки не поступают. Включите приём выше.</p>
           </div>
         </div>
       )}
@@ -619,9 +677,7 @@ export default function HomePage() {
           <AlertTriangle size={18} className="text-red-500 shrink-0" />
           <div>
             <p className="text-sm font-semibold text-red-700 dark:text-red-400">Задолженность</p>
-            <p className="text-xs text-red-600 dark:text-red-500">
-              {(master.debt ?? 0).toLocaleString("ru-RU")} ₽ — свяжитесь с менеджером
-            </p>
+            <p className="text-xs text-red-600 dark:text-red-500">{(master.debt ?? 0).toLocaleString("ru-RU")} ₽ — свяжитесь с менеджером</p>
           </div>
         </div>
       )}
@@ -629,33 +685,31 @@ export default function HomePage() {
       {/* New orders */}
       {available.length > 0 && (
         <section className="space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Bell size={15} className="text-primary" />
-              <h2 className="font-semibold text-sm">Новые заявки ({available.length})</h2>
-            </div>
+          <div className="flex items-center gap-2">
+            <Bell size={15} className="text-primary" />
+            <h2 className="font-semibold text-sm">Новые заявки ({available.length})</h2>
           </div>
-
-          {/* Swipe hint */}
           {showSwipeHint && <SwipeHint onDismiss={dismissSwipeHint} />}
-
           {available.map(order => (
-            <SwipeableCard
-              key={order.id}
+            <SwipeableCard key={order.id}
               onSwipeRight={() => handleSwipeRespond(order)}
-              onSwipeLeft={() => handleSwipeReject(order)}
-            >
-              <button
-                onClick={() => setSelectedAvail(order)}
-                className="w-full bg-primary/10 dark:bg-primary/15 border border-primary/30 rounded-2xl overflow-hidden text-left"
-              >
+              onSwipeLeft={() => handleSwipeReject(order)}>
+              <button onClick={() => setSelectedAvail(order)}
+                className="w-full bg-primary/10 dark:bg-primary/15 border border-primary/30 rounded-2xl overflow-hidden text-left">
                 {order.photos.length > 0 && (
                   <img src={order.photos[0]} alt="фото" className="w-full object-cover" style={{ height: 130 }} />
                 )}
                 <div className="p-4 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-sm text-primary">Заявка #{order.id}</span>
                     <div className="flex items-center gap-2">
+                      <span className="font-bold text-sm text-primary">Заявка #{order.id}</span>
+                      {order.isRepeatClient && (
+                        <span className="flex items-center gap-0.5 text-xs text-pink-500 font-semibold">
+                          <Heart size={10} fill="currentColor" /> Ваш клиент
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5">
                       <DispatchTimer dispatchedAt={order.dispatchedAt} />
                       <ChevronRight size={14} className="text-primary opacity-60" />
                     </div>
@@ -675,10 +729,14 @@ export default function HomePage() {
                         {formatDate(order.scheduledAt)}
                       </div>
                     )}
-                    {order.photos.length > 1 && (
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Images size={12} className="shrink-0" />
-                        {order.photos.length} фото
+                    {/* Competitor badge */}
+                    {order.competitorCount > 0 ? (
+                      <div className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 font-medium">
+                        <Users size={11} /> {order.competitorCount} {order.competitorCount === 1 ? "мастер откликнулся" : "мастера откликнулись"}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                        <CheckCircle2 size={11} /> Первый отклик
                       </div>
                     )}
                   </div>
@@ -697,11 +755,8 @@ export default function HomePage() {
             <h2 className="font-semibold text-sm">Ожидаю решения ({pending.length})</h2>
           </div>
           {pending.map(order => (
-            <button
-              key={order.id}
-              onClick={() => setSelectedPending(order)}
-              className="w-full bg-amber-50 dark:bg-amber-900/15 border border-amber-200 dark:border-amber-800/40 rounded-2xl overflow-hidden text-left"
-            >
+            <button key={order.id} onClick={() => setSelectedPending(order)}
+              className="w-full bg-amber-50 dark:bg-amber-900/15 border border-amber-200 dark:border-amber-800/40 rounded-2xl overflow-hidden text-left">
               {order.photos.length > 0 && (
                 <img src={order.photos[0]} alt="фото" className="w-full object-cover" style={{ height: 90 }} />
               )}
@@ -733,11 +788,8 @@ export default function HomePage() {
           <div className="text-center py-10 text-muted-foreground text-sm">Нет активных заказов</div>
         ) : (
           active.map(order => (
-            <button
-              key={order.id}
-              onClick={() => setLocation("/orders")}
-              className="w-full bg-card border border-border rounded-2xl p-4 text-left space-y-2"
-            >
+            <button key={order.id} onClick={() => setLocation("/orders")}
+              className="w-full bg-card border border-border rounded-2xl p-4 text-left space-y-2">
               <div className="flex items-center justify-between">
                 <span className="font-semibold text-sm">{order.city}{order.district ? `, ${order.district}` : ""}</span>
                 <span className="text-xs text-muted-foreground">#{order.id}</span>

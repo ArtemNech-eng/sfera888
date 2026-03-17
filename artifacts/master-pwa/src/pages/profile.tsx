@@ -6,7 +6,10 @@ import {
   User, Phone, MapPin, Star, Briefcase,
   TrendingUp, ShieldCheck, LogOut, ExternalLink,
   BadgeCheck, Camera, Pencil, Check, X, Loader2,
+  BarChart2, Clock, Filter, ChevronDown, Plus,
 } from "lucide-react";
+
+interface WorkingHours { start: string; end: string; days: number[]; }
 
 interface ProfileData {
   id: number;
@@ -23,6 +26,9 @@ interface ProfileData {
   customAvatarUrl: string | null;
   contractLink: string | null;
   tags: string[];
+  workingHours: WorkingHours | null;
+  preferredDistricts: string[];
+  minArea: number;
   stats: {
     conversionRate: number;
     paymentRate: number;
@@ -191,6 +197,297 @@ function EditProfileModal({
   );
 }
 
+// ─── Analytics Section ────────────────────────────────────────────────────────
+
+function AnalyticsSection() {
+  const [open, setOpen] = useState(false);
+  const [data, setData] = useState<any | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try { setData(await api.analytics()); }
+    catch { toast.error("Ошибка загрузки аналитики"); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { if (open && !data) load(); }, [open]);
+
+  return (
+    <div className="bg-card border border-border rounded-2xl overflow-hidden">
+      <button onClick={() => setOpen(p => !p)}
+        className="w-full flex items-center justify-between px-4 py-3.5">
+        <div className="flex items-center gap-2 font-semibold text-sm">
+          <BarChart2 size={16} className="text-primary" /> Моя аналитика
+        </div>
+        <ChevronDown size={16} className={`text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 border-t border-border space-y-3 pt-3">
+          {loading ? (
+            <div className="flex items-center justify-center h-24">
+              <div className="w-6 h-6 border-3 border-primary border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : data ? (
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-muted/50 rounded-xl p-3 space-y-0.5">
+                  <p className="text-xs text-muted-foreground">Получено заявок</p>
+                  <p className="text-xl font-bold">{data.totalDispatched}</p>
+                </div>
+                <div className="bg-muted/50 rounded-xl p-3 space-y-0.5">
+                  <p className="text-xs text-muted-foreground">Откликнулся</p>
+                  <p className="text-xl font-bold">{data.totalResponded}</p>
+                </div>
+                <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-xl p-3 space-y-0.5">
+                  <p className="text-xs text-muted-foreground">Выбрали вас</p>
+                  <p className="text-xl font-bold text-emerald-700 dark:text-emerald-400">{data.totalAssigned}</p>
+                </div>
+                <div className="bg-primary/5 rounded-xl p-3 space-y-0.5">
+                  <p className="text-xs text-muted-foreground">Конверсия</p>
+                  <p className="text-xl font-bold text-primary">{data.winRate}%</p>
+                </div>
+              </div>
+
+              <div className="bg-muted/40 rounded-xl p-3 space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground">За последние 30 дней</p>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Заявок получено:</span>
+                  <span className="font-semibold">{data.last30Days.dispatched}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Откликнулся:</span>
+                  <span className="font-semibold">{data.last30Days.responded}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Назначен:</span>
+                  <span className="font-semibold text-emerald-600">{data.last30Days.assigned}</span>
+                </div>
+              </div>
+
+              {data.avgOrderAmount > 0 && (
+                <div className="flex items-center justify-between bg-amber-50 dark:bg-amber-900/20 rounded-xl px-4 py-3">
+                  <span className="text-sm text-muted-foreground">Средний заказ</span>
+                  <span className="font-bold text-amber-700 dark:text-amber-400">
+                    {data.avgOrderAmount.toLocaleString("ru-RU")} ₽
+                  </span>
+                </div>
+              )}
+
+              {Object.keys(data.rejectionReasons).length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-xs font-semibold text-muted-foreground">Частые причины отказа</p>
+                  {Object.entries(data.rejectionReasons as Record<string, number>)
+                    .sort(([, a], [, b]) => b - a)
+                    .slice(0, 3)
+                    .map(([reason, count]) => (
+                      <div key={reason} className="flex items-center justify-between text-xs">
+                        <span className="text-muted-foreground">{reason}</span>
+                        <span className="font-medium">{count}×</span>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Order Filters Section ────────────────────────────────────────────────────
+
+function OrderFiltersSection({ data, onSave }: { data: ProfileData; onSave: (u: Partial<ProfileData>) => void }) {
+  const [open, setOpen] = useState(false);
+  const [minArea, setMinArea] = useState(String(data.minArea ?? 0));
+  const [districts, setDistricts] = useState<string[]>(data.preferredDistricts ?? []);
+  const [newDistrict, setNewDistrict] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const addDistrict = () => {
+    const d = newDistrict.trim();
+    if (d && !districts.includes(d)) setDistricts(p => [...p, d]);
+    setNewDistrict("");
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.updateProfile({ minArea: parseInt(minArea) || 0, preferredDistricts: districts });
+      onSave({ minArea: parseInt(minArea) || 0, preferredDistricts: districts });
+      toast.success("Фильтры сохранены");
+    } catch (e: any) { toast.error(e.message ?? "Ошибка"); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="bg-card border border-border rounded-2xl overflow-hidden">
+      <button onClick={() => setOpen(p => !p)}
+        className="w-full flex items-center justify-between px-4 py-3.5">
+        <div className="flex items-center gap-2 font-semibold text-sm">
+          <Filter size={15} className="text-primary" /> Фильтры заявок
+          {(districts.length > 0 || parseInt(minArea) > 0) && (
+            <span className="text-xs text-primary font-normal">
+              ({[districts.length > 0 ? `${districts.length} район` : "", parseInt(minArea) > 0 ? `от ${minArea} м²` : ""].filter(Boolean).join(", ")})
+            </span>
+          )}
+        </div>
+        <ChevronDown size={16} className={`text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 border-t border-border pt-3 space-y-4">
+          <p className="text-xs text-muted-foreground">Заявки не соответствующие фильтрам не будут показаны в списке.</p>
+
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-foreground">Минимальная площадь (м²)</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                value={minArea}
+                onChange={e => setMinArea(e.target.value)}
+                placeholder="0 = без ограничений"
+                className="flex-1 h-10 px-3 rounded-xl border border-border bg-muted/40 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-foreground">Предпочтительные районы</label>
+            {districts.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {districts.map(d => (
+                  <span key={d} className="flex items-center gap-1 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium">
+                    {d}
+                    <button onClick={() => setDistricts(p => p.filter(x => x !== d))}><X size={11} /></button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <input
+                value={newDistrict}
+                onChange={e => setNewDistrict(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && addDistrict()}
+                placeholder="Название района..."
+                className="flex-1 h-10 px-3 rounded-xl border border-border bg-muted/40 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+              <button onClick={addDistrict}
+                className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                <Plus size={16} />
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">Оставьте пустым чтобы получать заявки из всех районов</p>
+          </div>
+
+          <button onClick={save} disabled={saving}
+            className="w-full h-11 rounded-xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-60">
+            {saving ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto" /> : "Сохранить фильтры"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Working Hours Section ────────────────────────────────────────────────────
+
+const DAY_LABELS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+
+function WorkingHoursSection({ data, onSave }: { data: ProfileData; onSave: (u: Partial<ProfileData>) => void }) {
+  const [open, setOpen] = useState(false);
+  const wh = data.workingHours;
+  const [enabled, setEnabled] = useState(!!wh);
+  const [start, setStart] = useState(wh?.start ?? "09:00");
+  const [end, setEnd] = useState(wh?.end ?? "20:00");
+  const [days, setDays] = useState<number[]>(wh?.days ?? [1, 2, 3, 4, 5]);
+  const [saving, setSaving] = useState(false);
+
+  const toggleDay = (d: number) => setDays(p => p.includes(d) ? p.filter(x => x !== d) : [...p, d].sort());
+
+  const save = async () => {
+    setSaving(true);
+    const payload = enabled ? { start, end, days } : null;
+    try {
+      await api.updateProfile({ workingHours: payload });
+      onSave({ workingHours: payload });
+      toast.success(enabled ? "Рабочие часы сохранены" : "Расписание отключено");
+    } catch (e: any) { toast.error(e.message ?? "Ошибка"); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="bg-card border border-border rounded-2xl overflow-hidden">
+      <button onClick={() => setOpen(p => !p)}
+        className="w-full flex items-center justify-between px-4 py-3.5">
+        <div className="flex items-center gap-2 font-semibold text-sm">
+          <Clock size={15} className="text-primary" /> Рабочие часы
+          {wh && <span className="text-xs text-primary font-normal">({wh.start}–{wh.end})</span>}
+          {!wh && <span className="text-xs text-muted-foreground font-normal">(не настроено)</span>}
+        </div>
+        <ChevronDown size={16} className={`text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 border-t border-border pt-3 space-y-4">
+          <p className="text-xs text-muted-foreground">Заявки вне рабочих часов будут скрыты из вашего списка.</p>
+
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">Включить расписание</span>
+            <button onClick={() => setEnabled(p => !p)}
+              className={`w-12 h-6 rounded-full transition-colors ${enabled ? "bg-primary" : "bg-muted"}`}>
+              <div className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${enabled ? "translate-x-6" : "translate-x-0.5"}`} />
+            </button>
+          </div>
+
+          {enabled && (
+            <>
+              <div className="flex items-center gap-3">
+                <div className="flex-1 space-y-1">
+                  <label className="text-xs text-muted-foreground">Начало</label>
+                  <input type="time" value={start} onChange={e => setStart(e.target.value)}
+                    className="w-full h-10 px-3 rounded-xl border border-border bg-muted/40 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                </div>
+                <div className="flex-1 space-y-1">
+                  <label className="text-xs text-muted-foreground">Конец</label>
+                  <input type="time" value={end} onChange={e => setEnd(e.target.value)}
+                    className="w-full h-10 px-3 rounded-xl border border-border bg-muted/40 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs text-muted-foreground">Рабочие дни</label>
+                <div className="flex gap-2">
+                  {DAY_LABELS.map((label, i) => {
+                    const dayNum = i + 1;
+                    return (
+                      <button key={dayNum} onClick={() => toggleDay(dayNum)}
+                        className={`flex-1 h-9 rounded-xl text-xs font-semibold transition-all ${
+                          days.includes(dayNum)
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted text-muted-foreground"
+                        }`}>
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          )}
+
+          <button onClick={save} disabled={saving}
+            className="w-full h-11 rounded-xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-60">
+            {saving ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto" /> : "Сохранить"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ProfilePage() {
   const { logout } = useAuth();
   const [data, setData] = useState<ProfileData | null>(null);
@@ -350,6 +647,15 @@ export default function ProfilePage() {
         <StatCard label="Конверсия" value={`${data.stats.conversionRate}%`} icon={<TrendingUp size={13} />} />
         <StatCard label="Оплат в срок" value={`${data.stats.paymentRate}%`} icon={<ShieldCheck size={13} />} />
       </div>
+
+      {/* Analytics */}
+      <AnalyticsSection />
+
+      {/* Order filters */}
+      <OrderFiltersSection data={data} onSave={updated => setData(d => d ? { ...d, ...updated } : d)} />
+
+      {/* Working hours */}
+      <WorkingHoursSection data={data} onSave={updated => setData(d => d ? { ...d, ...updated } : d)} />
 
       {data.contractLink && (
         <a

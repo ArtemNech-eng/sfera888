@@ -18,6 +18,8 @@ export const orderDispatchesTable = pgTable("order_dispatches", {
   status: dispatchStatusEnum("status").notNull().default("sent"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   respondedAt: timestamp("responded_at"),
+  rejectionReason: text("rejection_reason"),
+  responseNote: text("response_note"),
 });
 
 export type OrderDispatch = typeof orderDispatchesTable.$inferSelect;

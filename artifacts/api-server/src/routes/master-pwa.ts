@@ -134,29 +134,70 @@ router.get("/home", requireMasterPwa, async (req, res) => {
     return raw.split(",").map(s => s.trim()).filter(Boolean);
   }
 
+  // Smart filter settings from master profile
+  const minArea = master.minArea ?? 0;
+  const preferredDistricts: string[] = (master.preferredDistricts as string[]) ?? [];
+
   // Available orders — "sent" dispatches, order still waiting
   let availableOrders: any[] = [];
   if (sentDispatches.length > 0) {
     const orderIds = sentDispatches.map(d => d.orderId);
-    const orders = await db.select().from(ordersTable)
+    let orders = await db.select().from(ordersTable)
       .where(and(inArray(ordersTable.id, orderIds), eq(ordersTable.status, "waiting_master"), isNull(ordersTable.deletedAt)));
-    // Fetch lead photos
+
+    // Apply smart filters
+    if (minArea > 0) orders = orders.filter(o => Number(o.area) >= minArea);
+    if (preferredDistricts.length > 0) {
+      orders = orders.filter(o => !o.district || preferredDistricts.some(d => o.district?.toLowerCase().includes(d.toLowerCase())));
+    }
+
+    // Fetch lead photos + client phones
     const leadIds = [...new Set(orders.map(o => o.leadId))];
     const leads = leadIds.length > 0 ? await db.select().from(leadsTable).where(inArray(leadsTable.id, leadIds)) : [];
     const leadMap = new Map(leads.map(l => [l.id, l]));
     const dispatchByOrder = new Map(sentDispatches.map(d => [d.orderId, d]));
-    availableOrders = orders.map(o => ({
-      id: o.id,
-      city: o.city,
-      district: o.district,
-      serviceType: o.serviceType,
-      services: o.services ?? null,
-      area: Number(o.area),
-      scheduledAt: o.scheduledAt ?? null,
-      comment: o.comment ?? null,
-      photos: parsePhotos(leadMap.get(o.leadId)?.photos),
-      dispatchedAt: dispatchByOrder.get(o.id)?.createdAt ?? null,
-    }));
+
+    // Competitor count — how many other masters already responded to each order
+    const competitorDispatches = orders.length > 0
+      ? await db.select().from(orderDispatchesTable)
+          .where(and(
+            inArray(orderDispatchesTable.orderId, orders.map(o => o.id)),
+            inArray(orderDispatchesTable.status, ["responded", "assigned"]),
+            ne(orderDispatchesTable.masterId, masterId),
+          ))
+      : [];
+    const competitorsByOrder = new Map<number, number>();
+    for (const d of competitorDispatches) {
+      competitorsByOrder.set(d.orderId, (competitorsByOrder.get(d.orderId) ?? 0) + 1);
+    }
+
+    // Repeat client — check if this master has completed an order from the same client phone before
+    const masterCompletedOrders = await db.select({ leadId: ordersTable.leadId }).from(ordersTable)
+      .where(and(eq(ordersTable.masterId, masterId), eq(ordersTable.status, "completed")));
+    const completedLeadIds = masterCompletedOrders.map(o => o.leadId);
+    const completedLeads = completedLeadIds.length > 0
+      ? await db.select({ clientPhone: leadsTable.clientPhone }).from(leadsTable).where(inArray(leadsTable.id, completedLeadIds))
+      : [];
+    const knownPhones = new Set(completedLeads.map(l => l.clientPhone));
+
+    availableOrders = orders.map(o => {
+      const lead = leadMap.get(o.leadId);
+      const clientPhone = lead?.clientPhone ?? null;
+      return {
+        id: o.id,
+        city: o.city,
+        district: o.district,
+        serviceType: o.serviceType,
+        services: o.services ?? null,
+        area: Number(o.area),
+        scheduledAt: o.scheduledAt ?? null,
+        comment: o.comment ?? null,
+        photos: parsePhotos(lead?.photos),
+        dispatchedAt: dispatchByOrder.get(o.id)?.createdAt ?? null,
+        competitorCount: competitorsByOrder.get(o.id) ?? 0,
+        isRepeatClient: clientPhone ? knownPhones.has(clientPhone) : false,
+      };
+    });
   }
 
   // Pending orders — master responded, waiting for operator to assign
@@ -413,16 +454,23 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
     });
   }
 
+  const { responseNote } = req.body ?? {};
+
   await db.update(orderDispatchesTable)
-    .set({ status: "responded", respondedAt: new Date() })
+    .set({
+      status: "responded",
+      respondedAt: new Date(),
+      responseNote: responseNote ? String(responseNote).trim().slice(0, 500) : null,
+    })
     .where(eq(orderDispatchesTable.id, dispatches[0].id));
 
   // Notify operator — create a chat message so it appears in CRM master chat
   const chatId = master.telegramId ?? `pwa_${master.id}`;
+  const noteText = responseNote ? `\n💬 ${String(responseNote).trim()}` : "";
   await db.insert(masterMessagesTable).values({
     masterId,
     telegramChatId: chatId,
-    text: `🙋 Откликнулся на заявку #${orderId} (${order.serviceType}, ${order.city}${order.district ? ", " + order.district : ""})`,
+    text: `🙋 Откликнулся на заявку #${orderId} (${order.serviceType}, ${order.city}${order.district ? ", " + order.district : ""})${noteText}`,
     fromMaster: true,
     senderName: master.alias,
     isRead: false,
@@ -435,8 +483,13 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
 router.post("/orders/:id/reject", requireMasterPwa, async (req, res) => {
   const masterId = (req.session as any).masterId;
   const orderId = parseInt(req.params.id);
+  const { reason } = req.body ?? {};
 
-  await db.update(orderDispatchesTable).set({ status: "rejected", respondedAt: new Date() })
+  await db.update(orderDispatchesTable).set({
+    status: "rejected",
+    respondedAt: new Date(),
+    rejectionReason: reason ? String(reason).trim().slice(0, 200) : null,
+  })
     .where(and(
       eq(orderDispatchesTable.masterId, masterId),
       eq(orderDispatchesTable.orderId, orderId),
@@ -620,9 +673,9 @@ router.post("/balance/payment-proof", requireMasterPwa, async (req, res) => {
 // Update profile
 router.patch("/profile", requireMasterPwa, async (req, res) => {
   const masterId = (req.session as any).masterId;
-  const { alias, city, phone, specializations } = req.body;
+  const { alias, city, phone, specializations, workingHours, preferredDistricts, minArea } = req.body;
 
-  const updates: any = { updatedAt: new Date() };
+  const updates: any = {};
   if (alias?.trim()) updates.alias = alias.trim();
   if (city?.trim()) updates.city = city.trim();
   if (phone !== undefined) updates.phone = phone?.trim() || null;
@@ -630,6 +683,9 @@ router.patch("/profile", requireMasterPwa, async (req, res) => {
     updates.specializations = specializations;
     updates.specialization = specializations.join(", ");
   }
+  if (workingHours !== undefined) updates.workingHours = workingHours;
+  if (Array.isArray(preferredDistricts)) updates.preferredDistricts = preferredDistricts;
+  if (minArea !== undefined) updates.minArea = Math.max(0, parseInt(String(minArea)) || 0);
 
   await db.update(mastersTable).set(updates).where(eq(mastersTable.id, masterId));
   res.json({ success: true });
@@ -668,6 +724,9 @@ router.get("/profile", requireMasterPwa, async (req, res) => {
     customAvatarUrl: master.customAvatarUrl ?? null,
     contractLink: master.contractLink ?? null,
     tags: master.tags,
+    workingHours: master.workingHours ?? null,
+    preferredDistricts: master.preferredDistricts ?? [],
+    minArea: master.minArea ?? 0,
     stats: {
       conversionRate,
       paymentRate,
@@ -863,6 +922,63 @@ router.delete("/push/unsubscribe", requireMasterPwa, async (req: any, res: any) 
   if (!endpoint) return res.status(400).json({ error: "Missing endpoint" });
   await db.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.endpoint, endpoint));
   res.json({ ok: true });
+});
+
+// ─── GET /analytics ──────────────────────────────────────────────────────────
+
+router.get("/analytics", requireMasterPwa, async (req: any, res: any) => {
+  const masterId = (req.session as any).masterId;
+
+  // All dispatches for this master
+  const allDispatches = await db.select().from(orderDispatchesTable)
+    .where(eq(orderDispatchesTable.masterId, masterId));
+
+  const totalDispatched = allDispatches.length;
+  const totalResponded = allDispatches.filter(d => ["responded", "assigned"].includes(d.status)).length;
+  const totalAssigned = allDispatches.filter(d => d.status === "assigned").length;
+  const totalRejectedByMaster = allDispatches.filter(d => d.status === "rejected").length;
+
+  // Rejection reasons breakdown
+  const rejectionReasons: Record<string, number> = {};
+  for (const d of allDispatches.filter(d => d.status === "rejected" && d.rejectionReason)) {
+    const r = d.rejectionReason!;
+    rejectionReasons[r] = (rejectionReasons[r] ?? 0) + 1;
+  }
+
+  // Response rate: responded / total dispatched
+  const responseRate = totalDispatched > 0 ? Math.round((totalResponded / totalDispatched) * 100) : 0;
+  // Win rate: assigned / responded
+  const winRate = totalResponded > 0 ? Math.round((totalAssigned / totalResponded) * 100) : 0;
+
+  // Completed orders & earnings
+  const completedOrders = await db.select().from(ordersTable)
+    .where(and(eq(ordersTable.masterId, masterId), eq(ordersTable.status, "completed")));
+  const totalEarnings = completedOrders.reduce((sum, o) => sum + (o.orderAmount ? Number(o.orderAmount) : 0), 0);
+  const avgOrderAmount = completedOrders.length > 0 ? Math.round(totalEarnings / completedOrders.length) : 0;
+
+  // Last 30 days activity
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const recentDispatches = allDispatches.filter(d => d.createdAt && new Date(d.createdAt) > thirtyDaysAgo);
+  const recentResponded = recentDispatches.filter(d => ["responded", "assigned"].includes(d.status)).length;
+  const recentAssigned = recentDispatches.filter(d => d.status === "assigned").length;
+
+  res.json({
+    totalDispatched,
+    totalResponded,
+    totalAssigned,
+    totalRejectedByMaster,
+    responseRate,
+    winRate,
+    totalCompletedOrders: completedOrders.length,
+    totalEarnings,
+    avgOrderAmount,
+    last30Days: {
+      dispatched: recentDispatches.length,
+      responded: recentResponded,
+      assigned: recentAssigned,
+    },
+    rejectionReasons,
+  });
 });
 
 // ─── GET /dispatches/history ─────────────────────────────────────────────────
