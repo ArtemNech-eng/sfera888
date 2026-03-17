@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, masterReviewsTable, mastersTable, ordersTable } from "@workspace/db";
-import { eq, desc, isNull } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
 import OpenAI from "openai";
 
@@ -11,6 +11,34 @@ const openai = new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
 });
+
+// ─── Rating recalculation ─────────────────────────────────────────────────────
+
+const SENTIMENT_SCORE: Record<string, number> = {
+  positive: 5,
+  neutral: 3,
+  negative: 1,
+};
+
+async function recalculateMasterRating(masterId: number) {
+  const reviews = await db
+    .select({ sentiment: masterReviewsTable.sentiment })
+    .from(masterReviewsTable)
+    .where(eq(masterReviewsTable.masterId, masterId));
+
+  let newRating: number;
+  if (reviews.length === 0) {
+    newRating = 3.0;
+  } else {
+    const total = reviews.reduce((sum, r) => sum + (SENTIMENT_SCORE[r.sentiment] ?? 3), 0);
+    newRating = total / reviews.length;
+  }
+
+  await db
+    .update(mastersTable)
+    .set({ rating: newRating.toFixed(2) })
+    .where(eq(mastersTable.id, masterId));
+}
 
 // ─── GET /api/master-reviews/:masterId ────────────────────────────────────────
 
@@ -48,6 +76,9 @@ router.post("/", opsAndAdmin, async (req: any, res) => {
     createdBy,
   }).returning();
 
+  // Recalculate rating after adding review
+  await recalculateMasterRating(masterId);
+
   res.json(review);
 });
 
@@ -57,7 +88,19 @@ router.delete("/:id", opsAndAdmin, async (req, res) => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
+  // Fetch masterId before deleting so we can recalculate
+  const [existing] = await db
+    .select({ masterId: masterReviewsTable.masterId })
+    .from(masterReviewsTable)
+    .where(eq(masterReviewsTable.id, id));
+
   await db.delete(masterReviewsTable).where(eq(masterReviewsTable.id, id));
+
+  // Recalculate rating after removing review
+  if (existing) {
+    await recalculateMasterRating(existing.masterId);
+  }
+
   res.json({ success: true });
 });
 
@@ -67,7 +110,6 @@ router.get("/:masterId/ai-recommendation", opsAndAdmin, async (req, res) => {
   const masterId = parseInt(req.params.masterId);
   if (isNaN(masterId)) return res.status(400).json({ error: "Invalid masterId" });
 
-  // Fetch master info and reviews
   const [masterRows, reviews, activeOrders] = await Promise.all([
     db.select().from(mastersTable).where(eq(mastersTable.id, masterId)),
     db.select().from(masterReviewsTable)
