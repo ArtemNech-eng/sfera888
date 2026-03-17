@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback, memo } from "react";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import { Eye, EyeOff, HardHat } from "lucide-react";
@@ -43,6 +43,8 @@ function formatPhoneInput(raw: string): string {
   return out;
 }
 
+const inputCls = "w-full h-12 px-4 rounded-xl border border-input bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring text-base";
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
@@ -52,22 +54,61 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-const inputCls = "w-full h-12 px-4 rounded-xl border border-input bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring text-base";
+// ── Memoized single spec chip ──────────────────────────────────────────────
+const SpecChip = memo(function SpecChip({
+  spec, active, onToggle,
+}: { spec: string; active: boolean; onToggle: (s: string) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onToggle(spec)}
+      className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-all ${
+        active
+          ? "bg-primary text-white border-primary shadow-sm"
+          : "bg-card text-muted-foreground border-input hover:border-primary/50 hover:text-foreground"
+      }`}
+    >
+      {spec}
+    </button>
+  );
+});
 
+// ── Memoized specs grid – only re-renders when specs array changes ──────────
+const SpecsGrid = memo(function SpecsGrid({
+  selected, onToggle, error,
+}: { selected: string[]; onToggle: (s: string) => void; error?: string }) {
+  return (
+    <div className="space-y-1.5">
+      <label className="text-sm font-medium text-foreground">
+        Специальности * <span className="text-muted-foreground font-normal">(можно несколько)</span>
+      </label>
+      <div className="flex flex-wrap gap-2 pt-0.5">
+        {SPECS.map(spec => (
+          <SpecChip
+            key={spec}
+            spec={spec}
+            active={selected.includes(spec)}
+            onToggle={onToggle}
+          />
+        ))}
+      </div>
+      {error && <p className="text-xs text-red-500 font-medium">{error}</p>}
+    </div>
+  );
+});
+
+// ── Main page ──────────────────────────────────────────────────────────────
 export default function LoginPage() {
   const { login, register } = useAuth();
   const [tab, setTab] = useState<"login" | "register">("login");
 
+  // Login form
   const [form, setForm] = useState({ login: "", password: "" });
   const [showPass, setShowPass] = useState(false);
 
-  const [reg, setReg] = useState({
-    alias: "",
-    phone: "",
-    city: "",
-    specs: [] as string[],
-    password: "",
-  });
+  // Register form — specs separated to avoid full re-render on each toggle
+  const [reg, setReg] = useState({ alias: "", phone: "", city: "", password: "" });
+  const [specs, setSpecs] = useState<string[]>([]);
   const [showRegPass, setShowRegPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [regErrors, setRegErrors] = useState<Record<string, string>>({});
@@ -92,7 +133,7 @@ export default function LoginPage() {
     const phoneNorm = normalizePhone(reg.phone);
     if (phoneNorm.length < 10 || phoneNorm.length > 11) errs.phone = "Введите корректный номер телефона";
     if (!reg.city) errs.city = "Выберите город";
-    if (reg.specs.length === 0) errs.specs = "Выберите хотя бы одну специальность";
+    if (specs.length === 0) errs.specs = "Выберите хотя бы одну специальность";
     if (reg.password.length < 6) errs.password = "Минимум 6 символов";
     setRegErrors(errs);
     if (Object.keys(errs).length > 0) return;
@@ -102,8 +143,8 @@ export default function LoginPage() {
         alias: reg.alias.trim(),
         phone: "+" + phoneNorm,
         city: reg.city,
-        specialization: reg.specs.join(", "),
-        specializations: reg.specs,
+        specialization: specs.join(", "),
+        specializations: specs,
         login: phoneNorm,
         password: reg.password,
       });
@@ -114,14 +155,13 @@ export default function LoginPage() {
     }
   };
 
-  const toggleSpec = (spec: string) => {
-    setReg(r => ({
-      ...r,
-      specs: r.specs.includes(spec)
-        ? r.specs.filter(s => s !== spec)
-        : [...r.specs, spec],
-    }));
-  };
+  // Stable callback — SpecChip won't re-render because of this reference
+  const toggleSpec = useCallback((spec: string) => {
+    setSpecs(prev =>
+      prev.includes(spec) ? prev.filter(s => s !== spec) : [...prev, spec]
+    );
+    setRegErrors(er => er.specs ? { ...er, specs: "" } : er);
+  }, []);
 
   return (
     <div className="min-h-dvh flex flex-col items-center justify-center px-5 py-10 bg-background relative overflow-hidden">
@@ -168,7 +208,6 @@ export default function LoginPage() {
                 value={form.login}
                 onChange={e => {
                   const v = e.target.value;
-                  // Auto-format if it looks like a phone (starts with digit, +, or space)
                   const isPhone = /^[\d+8]/.test(v);
                   setForm(f => ({ ...f, login: isPhone ? formatPhoneInput(v) : v }));
                 }}
@@ -229,7 +268,9 @@ export default function LoginPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">Номер телефона * <span className="text-muted-foreground font-normal">(используется как логин)</span></label>
+              <label className="text-sm font-medium text-foreground">
+                Номер телефона * <span className="text-muted-foreground font-normal">(используется как логин)</span>
+              </label>
               <input
                 type="tel"
                 autoComplete="tel"
@@ -249,7 +290,10 @@ export default function LoginPage() {
               <label className="text-sm font-medium text-foreground">Город *</label>
               <select
                 value={reg.city}
-                onChange={e => { setReg(r => ({ ...r, city: e.target.value })); if (e.target.value) setRegErrors(er => ({ ...er, city: "" })); }}
+                onChange={e => {
+                  setReg(r => ({ ...r, city: e.target.value }));
+                  if (e.target.value) setRegErrors(er => ({ ...er, city: "" }));
+                }}
                 className={`${inputCls} appearance-none ${regErrors.city ? "border-red-400 ring-1 ring-red-400" : ""}`}
               >
                 <option value="">Выберите город</option>
@@ -258,32 +302,17 @@ export default function LoginPage() {
               {regErrors.city && <p className="text-xs text-red-500 font-medium">{regErrors.city}</p>}
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">Специальности * <span className="text-muted-foreground font-normal">(можно несколько)</span></label>
-              <div className="flex flex-wrap gap-2 pt-0.5">
-                {SPECS.map(spec => {
-                  const active = reg.specs.includes(spec);
-                  return (
-                    <button
-                      key={spec}
-                      type="button"
-                      onClick={() => { toggleSpec(spec); setRegErrors(er => ({ ...er, specs: "" })); /* Specs is a one-time action, safe to clear */ }}
-                      className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-all ${
-                        active
-                          ? "bg-primary text-white border-primary shadow-sm"
-                          : "bg-card text-muted-foreground border-input hover:border-primary/50 hover:text-foreground"
-                      }`}
-                    >
-                      {spec}
-                    </button>
-                  );
-                })}
-              </div>
-              {regErrors.specs && <p className="text-xs text-red-500 font-medium">{regErrors.specs}</p>}
-            </div>
+            {/* Memoized specs — only this section re-renders on toggle */}
+            <SpecsGrid
+              selected={specs}
+              onToggle={toggleSpec}
+              error={regErrors.specs}
+            />
 
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">Пароль * <span className="text-muted-foreground font-normal">(мин. 6 символов)</span></label>
+              <label className="text-sm font-medium text-foreground">
+                Пароль * <span className="text-muted-foreground font-normal">(мин. 6 символов)</span>
+              </label>
               <div className="relative">
                 <input
                   type={showRegPass ? "text" : "password"}
