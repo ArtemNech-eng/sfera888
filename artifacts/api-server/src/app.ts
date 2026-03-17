@@ -70,9 +70,9 @@ if (fs.existsSync(pwaDistPath)) {
   });
 }
 
-// Root redirect: / → Master PWA (PWA is the default app for the custom domain)
+// Root redirect: / → CRM login
 app.get("/", (_req, res) => {
-  res.redirect(301, "/master-pwa/");
+  res.redirect(301, "/login");
 });
 
 export default app;
