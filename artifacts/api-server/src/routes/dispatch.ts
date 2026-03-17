@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db, ordersTable, mastersTable, orderDispatchesTable, leadsTable, masterMessagesTable, voronkaColumnsTable } from "@workspace/db";
 import { eq, and, ne, inArray } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
+import { sendPushToMaster } from "../lib/push.js";
 
 const router = Router();
 const TELEGRAM_API = `https://api.telegram.org/bot${process.env["TELEGRAM_BOT_TOKEN"]}`;
@@ -217,7 +218,16 @@ router.post("/:orderId/broadcast", ops, async (req, res) => {
         ? await sendTgPhoto(master.telegramId, BANNER_NEW_ORDER, cardText, replyMarkup)
         : await sendTg(master.telegramId, cardText, replyMarkup);
     }
-    // For PWA-only masters: just create the dispatch record — the app polls /orders/available
+
+    if (master.pwaLogin) {
+      // Send Web Push notification for PWA masters
+      await sendPushToMaster(master.id, {
+        type: "new_order",
+        title: "Новый заказ",
+        body: `${order.city}${order.district ? ", " + order.district : ""} · ${order.serviceType} · ${order.area} м²`,
+        orderId,
+      }).catch(() => {});
+    }
 
     await db.insert(orderDispatchesTable).values({
       orderId,
@@ -293,6 +303,17 @@ router.post("/:orderId/assign/:masterId", ops, async (req, res) => {
     BANNER_ASSIGNED
       ? await sendTgPhoto(master.telegramId, BANNER_ASSIGNED, assignedMsg)
       : await sendTg(master.telegramId, assignedMsg);
+  }
+
+  // Push notification to assigned master
+  if (master.pwaLogin) {
+    await sendPushToMaster(master.id, {
+      type: "order_assigned",
+      title: "✅ Заявка назначена вам!",
+      body: `${order.serviceType} · ${order.city}${order.district ? ", " + order.district : ""}` +
+        (lead ? ` · ${lead.clientPhone}` : ""),
+      orderId,
+    }).catch(() => {});
   }
 
   // Always log to CRM chat (visible in PWA chat tab as well)

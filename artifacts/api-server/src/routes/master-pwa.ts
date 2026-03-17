@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, mastersTable, ordersTable, orderDispatchesTable, transactionsTable, leadsTable, voronkaColumnsTable, masterMessagesTable } from "@workspace/db";
+import { db, mastersTable, ordersTable, orderDispatchesTable, transactionsTable, leadsTable, voronkaColumnsTable, masterMessagesTable, pushSubscriptionsTable } from "@workspace/db";
 import { eq, and, inArray, isNull, ne, asc } from "drizzle-orm";
 import { verifyPassword, hashPassword } from "../lib/auth.js";
 import multer from "multer";
@@ -656,6 +656,43 @@ router.get("/chat/unread", requireMasterPwa, async (req, res) => {
       eq(masterMessagesTable.isRead, false)
     ));
   res.json({ count: unread.length });
+});
+
+// ─── GET /api/master-pwa/push/vapid-public-key ───────────────────────────────
+
+router.get("/push/vapid-public-key", (_req, res) => {
+  const key = process.env.VAPID_PUBLIC_KEY;
+  if (!key) return res.status(503).json({ error: "Push not configured" });
+  res.json({ key });
+});
+
+// ─── POST /api/master-pwa/push/subscribe ─────────────────────────────────────
+
+router.post("/push/subscribe", requireMasterPwa, async (req: any, res: any) => {
+  const masterId = (req.session as any).masterId as number;
+  const { endpoint, keys } = req.body ?? {};
+  if (!endpoint || !keys?.p256dh || !keys?.auth) {
+    return res.status(400).json({ error: "Invalid subscription object" });
+  }
+  await db.insert(pushSubscriptionsTable).values({
+    masterId,
+    endpoint,
+    p256dh: keys.p256dh,
+    auth: keys.auth,
+  }).onConflictDoUpdate({
+    target: pushSubscriptionsTable.endpoint,
+    set: { masterId, p256dh: keys.p256dh, auth: keys.auth },
+  });
+  res.json({ ok: true });
+});
+
+// ─── DELETE /api/master-pwa/push/unsubscribe ─────────────────────────────────
+
+router.delete("/push/unsubscribe", requireMasterPwa, async (req: any, res: any) => {
+  const { endpoint } = req.body ?? {};
+  if (!endpoint) return res.status(400).json({ error: "Missing endpoint" });
+  await db.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.endpoint, endpoint));
+  res.json({ ok: true });
 });
 
 // ─── ADMIN: set master PWA credentials (from CRM) ────────────────────────────

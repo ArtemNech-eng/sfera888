@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import { usePushNotifications } from "@/lib/usePushNotifications";
 import {
   Bell, CheckCircle2, XCircle, MapPin, Calendar, Ruler,
   ChevronRight, AlertTriangle, Star,
@@ -164,6 +165,8 @@ export default function HomePage() {
   const [data, setData] = useState<HomeData | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<AvailableOrder | null>(null);
+
+  usePushNotifications(!!master);
 
   const load = async () => {
     try {

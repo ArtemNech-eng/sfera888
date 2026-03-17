@@ -1,5 +1,5 @@
-const SHELL_CACHE = "master-pwa-shell-v2";
-const ASSET_CACHE = "master-pwa-assets-v2";
+const SHELL_CACHE = "master-pwa-shell-v3";
+const ASSET_CACHE = "master-pwa-assets-v3";
 const SHELL_URL = "/master-pwa/index.html";
 
 // Pre-cache the app shell on install
@@ -67,4 +67,43 @@ self.addEventListener("fetch", e => {
 
   // Everything else → network only
   e.respondWith(fetch(e.request));
+});
+
+// ─── Push notifications ───────────────────────────────────────────────────────
+
+self.addEventListener("push", e => {
+  if (!e.data) return;
+
+  let data = {};
+  try { data = e.data.json(); } catch { return; }
+
+  const title = data.title ?? "Честный мастер";
+  const body = data.body ?? "";
+  const tag = data.type ?? "default";
+  const icon = "/master-pwa/icon-192.png";
+  const badge = "/master-pwa/icon-192.png";
+
+  const options = {
+    body,
+    icon,
+    badge,
+    tag,
+    renotify: true,
+    requireInteraction: data.type === "new_order",
+    data: { orderId: data.orderId, type: data.type },
+  };
+
+  e.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", e => {
+  e.notification.close();
+  const url = "/master-pwa/";
+  e.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then(list => {
+      const existing = list.find(c => c.url.includes("/master-pwa/"));
+      if (existing) return existing.focus();
+      return clients.openWindow(url);
+    })
+  );
 });

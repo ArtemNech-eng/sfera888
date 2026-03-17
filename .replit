@@ -31,6 +31,11 @@ expertMode = true
 [userenv.production]
 ADMIN_PASSWORD = "admin2024"
 
+[userenv.shared]
+VAPID_PUBLIC_KEY = "BEsTKPbpLdg3SuDxyu9m3xFFr6MUHpBROPKhWgfddaf4D2gp0GbiH0pv1Nv4WBXO_Yk9O4jKgxyxm0VJidHtd9Q"
+VAPID_PRIVATE_KEY = "PlPmqNhWM4ioOIikpRw3WXAgQWuHFbbqlZL_GTyvQdk"
+VAPID_EMAIL = "mailto:admin@chestniy-master.ru"
+
   [nix]
   channel = "stable-25_05"
   
