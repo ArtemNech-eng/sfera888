@@ -296,6 +296,7 @@ router.post("/orders/:id/accept", requireMasterPwa, async (req, res) => {
   await db.update(ordersTable).set({
     masterId,
     status: "master_assigned",
+    dispatchStatus: "assigned",
     masterWorkStatus: "accepted",
     updatedAt: new Date(),
   }).where(eq(ordersTable.id, orderId));

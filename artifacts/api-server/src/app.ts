@@ -1,6 +1,8 @@
 import express, { type Express } from "express";
 import cors from "cors";
 import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
+import pg from "pg";
 import cookieParser from "cookie-parser";
 import router from "./routes/index.js";
 import path from "path";
@@ -17,14 +19,25 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+const PgSession = connectPgSimple(session);
+
+const pgPool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL,
+});
+
 app.use(session({
+  store: new PgSession({
+    pool: pgPool,
+    createTableIfMissing: true,
+    tableName: "user_sessions",
+  }),
   secret: process.env.SESSION_SECRET || "crm-secret-key-2024",
   resave: false,
   saveUninitialized: false,
   cookie: {
     httpOnly: true,
     secure: false,
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
   },
 }));
 
