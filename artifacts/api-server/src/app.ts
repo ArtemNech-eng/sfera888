@@ -70,4 +70,9 @@ if (fs.existsSync(pwaDistPath)) {
   });
 }
 
+// Root redirect: / → Master PWA (PWA is the default app for the custom domain)
+app.get("/", (_req, res) => {
+  res.redirect(301, "/master-pwa/");
+});
+
 export default app;
