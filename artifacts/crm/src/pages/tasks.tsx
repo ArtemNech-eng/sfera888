@@ -945,7 +945,7 @@ export default function Tasks() {
   const handleDelete        = (id: number) => deleteMutation.mutate(id);
 
   return (
-    <ProtectedRoute allowedRoles={["admin", "master_operator", "lead_operator"]}>
+    <ProtectedRoute allowedRoles={["admin", "master_operator", "lead_operator"]} permissionKey="tasks">
       <Layout>
         <div className="space-y-6">
 

@@ -75,7 +75,7 @@ export default function Analytics() {
     : 0;
 
   return (
-    <ProtectedRoute allowedRoles={["admin", "master_operator"]}>
+    <ProtectedRoute allowedRoles={["admin", "master_operator", "lead_operator"]} permissionKey="analytics">
       <Layout>
         <div className="space-y-8">
           <div>

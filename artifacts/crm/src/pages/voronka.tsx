@@ -552,7 +552,7 @@ export default function Voronka() {
   const tgCount = masters.filter(m => m.telegramId).length;
 
   return (
-    <ProtectedRoute>
+    <ProtectedRoute allowedRoles={["admin", "master_operator", "lead_operator"]} permissionKey="voronka">
       <Layout>
         <div className="h-full flex flex-col">
           <div className="flex items-start justify-between mb-5 flex-shrink-0">

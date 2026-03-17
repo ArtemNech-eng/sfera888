@@ -164,7 +164,7 @@ export default function Masters() {
   const hasFilters = search || cityFilter !== "all" || statusFilter !== "all";
 
   return (
-    <ProtectedRoute allowedRoles={["admin", "master_operator"]}>
+    <ProtectedRoute allowedRoles={["admin", "master_operator", "lead_operator"]} permissionKey="masters">
       <Layout>
         <div className="h-full flex flex-col gap-4">
 

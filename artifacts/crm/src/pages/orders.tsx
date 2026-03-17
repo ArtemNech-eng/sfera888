@@ -224,7 +224,7 @@ export default function Orders() {
   }, [orders, search]);
 
   return (
-    <ProtectedRoute allowedRoles={['admin', 'master_operator']}>
+    <ProtectedRoute allowedRoles={['admin', 'master_operator', 'lead_operator']} permissionKey="orders">
       <Layout>
         <div className="space-y-6">
           <div>

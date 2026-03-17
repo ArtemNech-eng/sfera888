@@ -12,7 +12,10 @@ import {
   UserCog,
   LogOut,
   Wrench,
-  Trash2
+  Trash2,
+  MessageCircle,
+  MessagesSquare,
+  ClipboardList,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -22,64 +25,28 @@ export function Sidebar() {
 
   if (!user) return null;
 
+  const userPerms: string[] = (user as any).permissions ?? [];
+
   const navItems = [
-    { 
-      href: "/", 
-      label: "Дашборд", 
-      icon: LayoutDashboard, 
-      roles: ["admin", "master_operator"] 
-    },
-    { 
-      href: "/leads", 
-      label: "Заявки", 
-      icon: Inbox, 
-      roles: ["admin", "lead_operator"] 
-    },
-    { 
-      href: "/orders", 
-      label: "Буфер заказов", 
-      icon: Briefcase, 
-      roles: ["admin", "master_operator"] 
-    },
-    { 
-      href: "/masters", 
-      label: "Мастера", 
-      icon: Users, 
-      roles: ["admin", "master_operator"] 
-    },
-    { 
-      href: "/finance", 
-      label: "Финансы", 
-      icon: Wallet, 
-      roles: ["admin", "master_operator"] 
-    },
-    { 
-      href: "/analytics", 
-      label: "Аналитика", 
-      icon: BarChart3, 
-      roles: ["admin", "master_operator"] 
-    },
-    { 
-      href: "/settings", 
-      label: "Настройки", 
-      icon: Settings, 
-      roles: ["admin"] 
-    },
-    { 
-      href: "/users", 
-      label: "Пользователи", 
-      icon: UserCog, 
-      roles: ["admin"] 
-    },
-    { 
-      href: "/trash", 
-      label: "Корзина", 
-      icon: Trash2, 
-      roles: ["admin", "master_operator"] 
-    },
+    { href: "/",            label: "Дашборд",         icon: LayoutDashboard, permKey: "dashboard" },
+    { href: "/voronka",     label: "Воронка Telegram", icon: MessageCircle,   permKey: "voronka" },
+    { href: "/master-chat", label: "Чат с мастерами",  icon: MessagesSquare,  permKey: "master-chat" },
+    { href: "/leads",       label: "Заявки",           icon: Inbox,           permKey: "leads" },
+    { href: "/orders",      label: "Буфер заказов",    icon: Briefcase,       permKey: "orders" },
+    { href: "/masters",     label: "Мастера",          icon: Users,           permKey: "masters" },
+    { href: "/tasks",       label: "Задачи",           icon: ClipboardList,   permKey: "tasks" },
+    { href: "/finance",     label: "Финансы",          icon: Wallet,          permKey: "finance" },
+    { href: "/analytics",   label: "Аналитика",        icon: BarChart3,       permKey: "analytics" },
+    { href: "/trash",       label: "Корзина",          icon: Trash2,          permKey: "trash" },
+    { href: "/settings",    label: "Настройки",        icon: Settings,        permKey: null as null },
+    { href: "/users",       label: "Пользователи",     icon: UserCog,         permKey: null as null },
   ];
 
-  const visibleItems = navItems.filter(item => item.roles.includes(user.role));
+  const visibleItems = navItems.filter(item => {
+    if (user.role === "admin") return true;
+    if (item.permKey === null) return false;
+    return userPerms.includes(item.permKey);
+  });
 
   return (
     <div className="flex flex-col w-64 bg-sidebar text-sidebar-foreground border-r border-sidebar-border min-h-screen">

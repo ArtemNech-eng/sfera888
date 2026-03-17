@@ -31,6 +31,7 @@ router.post("/login", async (req, res) => {
       login: user.login,
       name: user.name,
       role: user.role,
+      permissions: user.permissions ?? [],
       createdAt: user.createdAt,
     },
   });
@@ -59,6 +60,7 @@ router.get("/me", async (req, res) => {
     login: user.login,
     name: user.name,
     role: user.role,
+    permissions: user.permissions ?? [],
     createdAt: user.createdAt,
   });
 });

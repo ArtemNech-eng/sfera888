@@ -1,10 +1,10 @@
 import { Router } from "express";
 import { db, leadsTable, ordersTable, mastersTable, transactionsTable } from "@workspace/db";
-import { requireRole } from "../middlewares/requireAuth.js";
+import { requirePermission } from "../middlewares/requireAuth.js";
 import { isNull } from "drizzle-orm";
 
 const router = Router();
-const adminOnly = requireRole("admin", "master_operator");
+const adminOnly = requirePermission("analytics");
 
 router.get("/dashboard", adminOnly, async (req, res) => {
   const now = new Date();

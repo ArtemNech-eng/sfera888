@@ -401,7 +401,7 @@ export default function MasterChat() {
   const totalUnread = threads.reduce((s, t) => s + t.unread, 0);
 
   return (
-    <ProtectedRoute>
+    <ProtectedRoute allowedRoles={["admin", "master_operator", "lead_operator"]} permissionKey="master-chat">
       <Layout>
         <div className="h-full flex flex-col">
           {/* Header */}

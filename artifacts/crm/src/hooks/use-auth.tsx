@@ -2,7 +2,28 @@ import { createContext, useContext, ReactNode, useEffect } from "react";
 import { useGetCurrentUser, User, useLogout } from "@workspace/api-client-react";
 import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import { Loader2, ShieldOff } from "lucide-react";
+
+export const PERM_TO_ROUTE: Record<string, string> = {
+  dashboard:    "/",
+  voronka:      "/voronka",
+  "master-chat": "/master-chat",
+  leads:        "/leads",
+  orders:       "/orders",
+  masters:      "/masters",
+  tasks:        "/tasks",
+  finance:      "/finance",
+  analytics:    "/analytics",
+  trash:        "/trash",
+};
+
+function getFirstPermRoute(user: any): string {
+  const perms: string[] = user?.permissions ?? [];
+  for (const p of perms) {
+    if (PERM_TO_ROUTE[p]) return PERM_TO_ROUTE[p];
+  }
+  return "/no-access";
+}
 
 interface AuthContextType {
   user: User | null;
@@ -53,25 +74,34 @@ export function useAuth() {
 
 export function ProtectedRoute({ 
   children, 
-  allowedRoles 
+  allowedRoles,
+  permissionKey,
 }: { 
   children: ReactNode; 
-  allowedRoles?: string[] 
+  allowedRoles?: string[];
+  permissionKey?: string;
 }) {
   const { user, isLoading } = useAuth();
   const [_, setLocation] = useLocation();
 
+  const hasAccess = (): boolean => {
+    if (!user) return false;
+    if (user.role === "admin") return true;
+    if (allowedRoles && !allowedRoles.includes(user.role)) return false;
+    if (permissionKey) {
+      const perms: string[] = (user as any).permissions ?? [];
+      return perms.includes(permissionKey);
+    }
+    return true;
+  };
+
   useEffect(() => {
     if (!isLoading && !user) {
       setLocation("/login");
-    } else if (!isLoading && user && allowedRoles && !allowedRoles.includes(user.role)) {
-      // Redirect to appropriate default page based on role
-      if (user.role === 'admin') setLocation("/");
-      else if (user.role === 'lead_operator') setLocation("/leads");
-      else if (user.role === 'master_operator') setLocation("/orders");
-      else setLocation("/");
+    } else if (!isLoading && user && allowedRoles && !allowedRoles.includes(user.role) && user.role !== "admin") {
+      setLocation(getFirstPermRoute(user));
     }
-  }, [user, isLoading, allowedRoles, setLocation]);
+  }, [user, isLoading]);
 
   if (isLoading) {
     return (
@@ -81,8 +111,18 @@ export function ProtectedRoute({
     );
   }
 
-  if (!user || (allowedRoles && !allowedRoles.includes(user.role))) {
-    return null; // Will redirect in useEffect
+  if (!user) return null;
+
+  if (!hasAccess()) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center space-y-3">
+          <ShieldOff className="w-12 h-12 text-muted-foreground mx-auto" />
+          <h2 className="text-xl font-display font-bold text-foreground">Нет доступа</h2>
+          <p className="text-muted-foreground text-sm">У вас нет прав для просмотра этого раздела.<br/>Обратитесь к администратору.</p>
+        </div>
+      </div>
+    );
   }
 
   return <>{children}</>;

@@ -30,7 +30,8 @@ export function Layout({ children }: LayoutProps) {
   const [location] = useLocation();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
-  const canSeeChat = user && ['admin', 'master_operator'].includes(user.role);
+  const userPerms: string[] = (user as any)?.permissions ?? [];
+  const canSeeChat = user?.role === 'admin' || userPerms.includes('master-chat');
 
   const { data: unreadData } = useQuery<{ count: number }>({
     queryKey: ["/api/master-chat/stats/unread"],
@@ -49,21 +50,26 @@ export function Layout({ children }: LayoutProps) {
   const openTasksCount = taskStats?.open ?? 0;
 
   const navItems = [
-    { href: "/", label: "Дашборд", icon: LayoutDashboard, roles: ['admin', 'master_operator'] },
-    { href: "/voronka", label: "Воронка Telegram", icon: MessageCircle, roles: ['admin', 'lead_operator', 'master_operator'] },
-    { href: "/master-chat", label: "Чат с мастерами", icon: MessagesSquare, roles: ['admin', 'master_operator'], badge: unreadCount > 0 ? unreadCount : null },
-    { href: "/leads", label: "Заявки", icon: Inbox, roles: ['admin', 'lead_operator'] },
-    { href: "/orders", label: "Буфер заказов", icon: Briefcase, roles: ['admin', 'master_operator'] },
-    { href: "/masters", label: "Мастера", icon: Users, roles: ['admin', 'master_operator'] },
-    { href: "/tasks", label: "Задачи", icon: ClipboardList, roles: ['admin', 'master_operator', 'lead_operator'], badge: openTasksCount > 0 ? openTasksCount : null },
-    { href: "/finance", label: "Финансы", icon: Wallet, roles: ['admin', 'master_operator'] },
-    { href: "/analytics", label: "Аналитика", icon: BarChart3, roles: ['admin', 'master_operator'] },
-    { href: "/settings", label: "Настройки", icon: Settings, roles: ['admin'] },
-    { href: "/users", label: "Пользователи", icon: UserCog, roles: ['admin'] },
-    { href: "/trash", label: "Корзина", icon: Trash2, roles: ['admin', 'master_operator'] },
+    { href: "/",            label: "Дашборд",          icon: LayoutDashboard, permKey: "dashboard" },
+    { href: "/voronka",     label: "Воронка Telegram",  icon: MessageCircle,   permKey: "voronka" },
+    { href: "/master-chat", label: "Чат с мастерами",   icon: MessagesSquare,  permKey: "master-chat", badge: unreadCount > 0 ? unreadCount : null },
+    { href: "/leads",       label: "Заявки",            icon: Inbox,           permKey: "leads" },
+    { href: "/orders",      label: "Буфер заказов",     icon: Briefcase,       permKey: "orders" },
+    { href: "/masters",     label: "Мастера",           icon: Users,           permKey: "masters" },
+    { href: "/tasks",       label: "Задачи",            icon: ClipboardList,   permKey: "tasks",     badge: openTasksCount > 0 ? openTasksCount : null },
+    { href: "/finance",     label: "Финансы",           icon: Wallet,          permKey: "finance" },
+    { href: "/analytics",   label: "Аналитика",         icon: BarChart3,       permKey: "analytics" },
+    { href: "/trash",       label: "Корзина",           icon: Trash2,          permKey: "trash" },
+    { href: "/settings",    label: "Настройки",         icon: Settings,        permKey: null as null },
+    { href: "/users",       label: "Пользователи",      icon: UserCog,         permKey: null as null },
   ];
 
-  const filteredNav = navItems.filter(item => user && item.roles.includes(user.role));
+  const filteredNav = navItems.filter(item => {
+    if (!user) return false;
+    if (user.role === "admin") return true;
+    if (item.permKey === null) return false;
+    return userPerms.includes(item.permKey);
+  });
 
   return (
     <div className="h-screen overflow-hidden bg-background flex">

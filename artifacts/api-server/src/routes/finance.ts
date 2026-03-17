@@ -1,11 +1,11 @@
 import { Router } from "express";
 import { db, transactionsTable, mastersTable, voronkaColumnsTable } from "@workspace/db";
 import { eq, and, gte, lte, sum, count } from "drizzle-orm";
-import { requireRole } from "../middlewares/requireAuth.js";
+import { requirePermission } from "../middlewares/requireAuth.js";
 
 const router = Router();
-const adminOnly = requireRole("admin");
-const opsAndAdmin = requireRole("admin", "master_operator", "lead_operator");
+const adminOnly = requirePermission("finance");
+const opsAndAdmin = requirePermission("finance");
 
 router.get("/transactions", opsAndAdmin, async (req, res) => {
   const { masterId, status, from, to } = req.query;

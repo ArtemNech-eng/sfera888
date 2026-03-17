@@ -109,7 +109,7 @@ export default function Leads() {
   const fmt = (n: number) => n.toLocaleString("ru-RU") + " ₽";
 
   return (
-    <ProtectedRoute allowedRoles={['admin', 'lead_operator']}>
+    <ProtectedRoute allowedRoles={['admin', 'lead_operator', 'master_operator']} permissionKey="leads">
       <Layout>
         <div className="space-y-6">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">

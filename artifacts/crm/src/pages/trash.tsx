@@ -155,7 +155,7 @@ export default function TrashPage() {
   const total = (data?.masters?.length ?? 0) + (data?.orders?.length ?? 0) + (data?.leads?.length ?? 0);
 
   return (
-    <ProtectedRoute allowedRoles={["admin", "master_operator"]}>
+    <ProtectedRoute allowedRoles={["admin", "master_operator", "lead_operator"]} permissionKey="trash">
       <Layout>
         <div className="p-6 max-w-3xl mx-auto">
           <div className="flex items-center gap-3 mb-6">

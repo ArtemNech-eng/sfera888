@@ -1,8 +1,17 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useLogin } from "@workspace/api-client-react";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth, PERM_TO_ROUTE } from "@/hooks/use-auth";
 import { Loader2, Lock, User } from "lucide-react";
+
+function getRedirectPath(user: any): string {
+  if (user.role === "admin") return "/";
+  const perms: string[] = user.permissions ?? [];
+  for (const p of perms) {
+    if (PERM_TO_ROUTE[p]) return PERM_TO_ROUTE[p];
+  }
+  return "/no-access";
+}
 
 export default function Login() {
   const [login, setLogin] = useState("");
@@ -14,11 +23,7 @@ export default function Login() {
   const loginMutation = useLogin({
     mutation: {
       onSuccess: (data) => {
-        const role = data.user.role;
-        if (role === 'admin') setLocation("/");
-        else if (role === 'lead_operator') setLocation("/leads");
-        else if (role === 'master_operator') setLocation("/orders");
-        else setLocation("/");
+        setLocation(getRedirectPath(data.user));
       },
       onError: () => {
         setError("Неверный логин или пароль");
@@ -26,11 +31,8 @@ export default function Login() {
     }
   });
 
-  // Redirect if already logged in
   if (!isLoading && user) {
-    if (user.role === 'admin') setLocation("/");
-    else if (user.role === 'lead_operator') setLocation("/leads");
-    else if (user.role === 'master_operator') setLocation("/orders");
+    setLocation(getRedirectPath(user));
     return null;
   }
 

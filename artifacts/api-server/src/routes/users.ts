@@ -6,7 +6,6 @@ import { requireRole } from "../middlewares/requireAuth.js";
 
 const router = Router();
 
-// Список операторов для выбора в задачах и других формах (доступно всем залогиненным)
 router.get("/operators", async (req, res) => {
   if (!req.session?.userId) return res.status(401).json({ error: "Unauthorized" });
   const users = await db.select({
@@ -20,30 +19,42 @@ router.get("/operators", async (req, res) => {
 
 router.get("/", requireRole("admin"), async (req, res) => {
   const users = await db.select({
-    id: usersTable.id,
-    login: usersTable.login,
-    name: usersTable.name,
-    role: usersTable.role,
-    createdAt: usersTable.createdAt,
+    id:          usersTable.id,
+    login:       usersTable.login,
+    name:        usersTable.name,
+    role:        usersTable.role,
+    permissions: usersTable.permissions,
+    createdAt:   usersTable.createdAt,
   }).from(usersTable);
   res.json(users);
 });
 
 router.post("/", requireRole("admin"), async (req, res) => {
-  const { login, password, name, role } = req.body;
+  const { login, password, name, role, permissions } = req.body;
   if (!login || !password || !name || !role) {
     return res.status(400).json({ error: "All fields required" });
   }
   const passwordHash = await hashPassword(password);
-  const result = await db.insert(usersTable).values({ login, passwordHash, name, role }).returning();
+  const perms: string[] = Array.isArray(permissions) ? permissions : [];
+  const result = await db.insert(usersTable).values({ login, passwordHash, name, role, permissions: perms }).returning();
   const user = result[0];
   return res.status(201).json({
-    id: user.id,
-    login: user.login,
-    name: user.name,
-    role: user.role,
-    createdAt: user.createdAt,
+    id:          user.id,
+    login:       user.login,
+    name:        user.name,
+    role:        user.role,
+    permissions: user.permissions ?? [],
+    createdAt:   user.createdAt,
   });
+});
+
+router.patch("/:id/permissions", requireRole("admin"), async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+  const { permissions } = req.body;
+  if (!Array.isArray(permissions)) return res.status(400).json({ error: "permissions must be array" });
+  await db.update(usersTable).set({ permissions }).where(eq(usersTable.id, id));
+  res.json({ success: true });
 });
 
 router.delete("/:id", requireRole("admin"), async (req, res) => {
@@ -52,7 +63,6 @@ router.delete("/:id", requireRole("admin"), async (req, res) => {
   res.json({ success: true, message: "User deleted" });
 });
 
-// PATCH /api/users/:id/password — change user password (admin or self)
 router.patch("/:id/password", async (req, res) => {
   const sessionUserId = (req.session as any).userId;
   if (!sessionUserId) return res.status(401).json({ error: "Unauthorized" });
@@ -60,7 +70,6 @@ router.patch("/:id/password", async (req, res) => {
   const targetId = parseInt(req.params.id);
   if (isNaN(targetId)) return res.status(400).json({ error: "Invalid id" });
 
-  // Allow admin to change any password, or user to change their own
   const [sessionUser] = await db.select().from(usersTable).where(eq(usersTable.id, sessionUserId));
   if (!sessionUser) return res.status(401).json({ error: "Unauthorized" });
 

@@ -53,7 +53,7 @@ export default function Finance() {
   ];
 
   return (
-    <ProtectedRoute allowedRoles={['admin', 'master_operator']}>
+    <ProtectedRoute allowedRoles={['admin', 'master_operator', 'lead_operator']} permissionKey="finance">
       <Layout>
         <div className="space-y-6">
           <div>
