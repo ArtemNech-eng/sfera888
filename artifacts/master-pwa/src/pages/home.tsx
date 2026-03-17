@@ -204,6 +204,27 @@ function parseServices(raw: string | null): ServiceLine[] | null {
   return null;
 }
 
+// ─── Yandex Map Embed ─────────────────────────────────────────────────────────
+
+function YandexMapEmbed({ city, district }: { city: string; district: string | null }) {
+  const query = encodeURIComponent(`${city}${district ? ` ${district}` : ""}`);
+  const src = `https://yandex.ru/maps/?text=${query}&z=14&output=embed`;
+  return (
+    <div className="mt-3 rounded-2xl overflow-hidden border border-border" style={{ height: 200 }}>
+      <iframe
+        src={src}
+        width="100%"
+        height="200"
+        frameBorder="0"
+        loading="lazy"
+        title="Карта объекта"
+        className="block"
+        style={{ border: 0 }}
+      />
+    </div>
+  );
+}
+
 // ─── Navigation Buttons ───────────────────────────────────────────────────────
 
 function NavigationButtons({ city, district }: { city: string; district: string | null }) {
@@ -406,6 +427,7 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose }: {
               </div>
 
               <Row icon={<MapPin size={16} />} label="Адрес" value={`${order.city}${order.district ? `, ${order.district}` : ""}`} />
+              <YandexMapEmbed city={order.city} district={order.district} />
               <Row icon={<Calendar size={16} />} label="Дата выезда" value={formatDate(order.scheduledAt)} />
               {order.comment && <Row icon={<MessageSquare size={16} />} label="Комментарий" value={order.comment} />}
 
@@ -505,6 +527,7 @@ function RespondedSheet({ order, onClose }: { order: PendingCard; onClose: () =>
             )}
           </div>
           <Row icon={<MapPin size={16} />} label="Адрес" value={`${order.city}${order.district ? `, ${order.district}` : ""}`} />
+          <YandexMapEmbed city={order.city} district={order.district} />
           <Row icon={<Calendar size={16} />} label="Дата выезда" value={formatDate(order.scheduledAt)} />
           {order.comment && <Row icon={<MessageSquare size={16} />} label="Комментарий" value={order.comment} />}
           <NavigationButtons city={order.city} district={order.district} />
