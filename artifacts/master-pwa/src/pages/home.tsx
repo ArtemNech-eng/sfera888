@@ -209,7 +209,8 @@ function parseServices(raw: string | null): ServiceLine[] | null {
 function YandexMapEmbed({ city, district }: { city: string; district: string | null }) {
   const address = `${city}${district ? ` ${district}` : ""}`;
   const query = encodeURIComponent(address);
-  const staticSrc = `https://static-maps.yandex.ru/1.x/?geocode=${query}&z=14&size=600,200&l=map&lang=ru_RU`;
+  const apiKey = import.meta.env.VITE_YANDEX_MAPS_KEY ?? "";
+  const staticSrc = `https://static-maps.yandex.ru/1.x/?apikey=${apiKey}&geocode=${query}&z=14&size=600,200&l=map&lang=ru_RU`;
   const mapsUrl = `https://yandex.ru/maps/?text=${query}`;
   const [imgError, setImgError] = useState(false);
 
