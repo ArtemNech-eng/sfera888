@@ -182,18 +182,19 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
 
     if (existingTx) {
       const wasPlaceholder = Number(existingTx.commission) === 0;
-      // Update the placeholder (or re-confirm the amount)
+      const prevCommission = Number(existingTx.commission);
+      // Update the transaction (placeholder → real, or re-adjust amount)
       await db.update(transactionsTable).set({
         orderAmount: o.orderAmount,
         commission: o.commission,
         paymentStatus: "pending",
       }).where(eq(transactionsTable.id, existingTx.id));
 
-      if (wasPlaceholder) {
-        // Only add to debt once (when upgrading from placeholder to real value)
-        const mRows = await db.select().from(mastersTable).where(eq(mastersTable.id, o.masterId));
-        const m = mRows[0];
-        if (m) {
+      const mRows = await db.select().from(mastersTable).where(eq(mastersTable.id, o.masterId));
+      const m = mRows[0];
+      if (m) {
+        if (wasPlaceholder) {
+          // First confirmation: add full commission to debt and notify master
           const newDebt = Number(m.debt) + commissionValue;
           await db.update(mastersTable).set({ debt: String(newDebt) }).where(eq(mastersTable.id, o.masterId));
           if (m.telegramId) {
@@ -217,6 +218,11 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
               }),
             }).catch(() => {});
           }
+        } else if (commissionValue !== prevCommission) {
+          // Commission adjusted after already set: apply delta to debt
+          const delta = commissionValue - prevCommission;
+          const newDebt = Math.max(0, Number(m.debt) + delta);
+          await db.update(mastersTable).set({ debt: String(newDebt) }).where(eq(mastersTable.id, o.masterId));
         }
       }
     } else {

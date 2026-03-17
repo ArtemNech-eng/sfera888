@@ -1,7 +1,7 @@
 import { Router } from "express";
 import fs from "fs";
 import path from "path";
-import { db, mastersTable, ordersTable, leadsTable } from "@workspace/db";
+import { db, mastersTable, ordersTable, leadsTable, orderDispatchesTable, transactionsTable, masterReviewsTable } from "@workspace/db";
 import { isNull, isNotNull, lt, and, eq } from "drizzle-orm";
 import { requirePermission } from "../middlewares/requireAuth.js";
 import { AVATAR_DIR } from "../config.js";
@@ -23,6 +23,31 @@ function deleteAvatarFile(customAvatarUrl: string | null) {
   if (!filename) return;
   const filePath = path.join(AVATAR_DIR, filename);
   try { fs.unlinkSync(filePath); } catch {}
+}
+
+async function deleteOrderCascade(orderId: number) {
+  // 1. Clean up order_dispatches (FK: order_id → orders.id, no cascade)
+  await db.delete(orderDispatchesTable).where(eq(orderDispatchesTable.orderId, orderId));
+
+  // 2. Handle transactions: if commission > 0 and not paid → refund debt, then delete
+  const txRows = await db.select().from(transactionsTable).where(eq(transactionsTable.orderId, orderId));
+  for (const tx of txRows) {
+    if (Number(tx.commission) > 0 && tx.paymentStatus !== "paid") {
+      const mRows = await db.select().from(mastersTable).where(eq(mastersTable.id, tx.masterId));
+      const m = mRows[0];
+      if (m) {
+        const refundedDebt = Math.max(0, Number(m.debt) - Number(tx.commission));
+        await db.update(mastersTable).set({ debt: String(refundedDebt) }).where(eq(mastersTable.id, tx.masterId));
+      }
+    }
+  }
+  await db.delete(transactionsTable).where(eq(transactionsTable.orderId, orderId));
+
+  // 3. Null out reviews that reference this order (nullable FK, no cascade)
+  await db.update(masterReviewsTable).set({ orderId: null }).where(eq(masterReviewsTable.orderId, orderId));
+
+  // 4. Delete the order itself
+  await db.delete(ordersTable).where(and(eq(ordersTable.id, orderId), isNotNull(ordersTable.deletedAt)));
 }
 
 // ─── GET /api/trash ──────────────────────────────────────────────────────────
@@ -90,7 +115,7 @@ router.delete("/:type/:id", adminOnly, async (req, res) => {
     if (master) deleteAvatarFile(master.customAvatarUrl ?? null);
     await db.delete(mastersTable).where(and(eq(mastersTable.id, numId), isNotNull(mastersTable.deletedAt)));
   } else if (type === "order") {
-    await db.delete(ordersTable).where(and(eq(ordersTable.id, numId), isNotNull(ordersTable.deletedAt)));
+    await deleteOrderCascade(numId);
   } else if (type === "lead") {
     await db.delete(leadsTable).where(and(eq(leadsTable.id, numId), isNotNull(leadsTable.deletedAt)));
   } else {
@@ -111,9 +136,14 @@ export async function runTrashCleanup() {
     deleteAvatarFile(m.customAvatarUrl ?? null);
   }
 
+  const expiredOrders = await db.select().from(ordersTable)
+    .where(and(isNotNull(ordersTable.deletedAt), lt(ordersTable.deletedAt, cutoff)));
+  for (const o of expiredOrders) {
+    await deleteOrderCascade(o.id);
+  }
+
   await Promise.all([
     db.delete(mastersTable).where(and(isNotNull(mastersTable.deletedAt), lt(mastersTable.deletedAt, cutoff))),
-    db.delete(ordersTable).where(and(isNotNull(ordersTable.deletedAt), lt(ordersTable.deletedAt, cutoff))),
     db.delete(leadsTable).where(and(isNotNull(leadsTable.deletedAt), lt(leadsTable.deletedAt, cutoff))),
   ]);
   console.log(`[trash cleanup] purged items older than ${TRASH_TTL_DAYS} days`);

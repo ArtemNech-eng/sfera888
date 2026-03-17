@@ -247,4 +247,16 @@ router.patch("/:masterId/read", requireRole("admin", "master_operator"), async (
   res.json({ success: true });
 });
 
+// DELETE /api/master-chat/:masterId — clear all messages in this conversation
+router.delete("/:masterId", requireRole("admin"), async (req, res) => {
+  const masterId = parseInt(req.params.masterId);
+  if (isNaN(masterId)) return res.status(400).json({ error: "Invalid masterId" });
+
+  const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
+  if (!masterRows[0]) return res.status(404).json({ error: "Master not found" });
+
+  await db.delete(masterMessagesTable).where(eq(masterMessagesTable.masterId, masterId));
+  res.json({ success: true });
+});
+
 export default router;

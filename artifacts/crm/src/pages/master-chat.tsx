@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { Layout } from "@/components/layout";
 import { ProtectedRoute } from "@/hooks/use-auth";
 import { useAuth } from "@/hooks/use-auth";
-import { Send, MessageSquare, RefreshCw, Check, CheckCheck, Paperclip, X, Camera, DollarSign, AlertCircle, RotateCcw, Pencil, Loader2, UserCheck, MapPin, Smile, ChevronRight, User2 } from "lucide-react";
+import { Send, MessageSquare, RefreshCw, Check, CheckCheck, Paperclip, X, Camera, DollarSign, AlertCircle, RotateCcw, Pencil, Loader2, UserCheck, MapPin, Smile, ChevronRight, User2, Trash2 } from "lucide-react";
 import { MasterDrawer, type DrawerMaster, type DrawerColumn } from "@/components/master-drawer";
 import { format, formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -113,6 +113,8 @@ export default function MasterChat() {
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [editAmountId, setEditAmountId] = useState<number | null>(null);
   const [editAmountValue, setEditAmountValue] = useState("");
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deletingDialog, setDeletingDialog] = useState(false);
 
   // Master drawer overlay
   const [drawerMaster, setDrawerMaster] = useState<DrawerMaster | null>(null);
@@ -366,6 +368,20 @@ export default function MasterChat() {
 
   const clearPhoto = () => { setPhotoFile(null); setPhotoPreview(null); };
 
+  const handleDeleteDialog = async () => {
+    if (!selectedId) return;
+    setDeletingDialog(true);
+    try {
+      await fetch(`/api/master-chat/${selectedId}`, { method: "DELETE", credentials: "include" });
+      setConv(null);
+      setSelectedId(null);
+      setShowDeleteDialog(false);
+      await fetchThreads();
+    } finally {
+      setDeletingDialog(false);
+    }
+  };
+
   const sendReply = async () => {
     if ((!reply.trim() && !photoFile) || !selectedId || sending) return;
     setSending(true);
@@ -518,16 +534,60 @@ export default function MasterChat() {
                           {conv.master.telegramId && <span className="ml-1 text-blue-400">· Telegram</span>}
                         </p>
                       </div>
-                      {/* Open master card button */}
-                      <button
-                        onClick={() => openMasterDrawer(conv.master.id)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors flex-shrink-0"
-                        title="Открыть карточку мастера"
-                      >
-                        <User2 className="w-3.5 h-3.5" />
-                        Карточка
-                        <ChevronRight className="w-3 h-3" />
-                      </button>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {/* Open master card button */}
+                        <button
+                          onClick={() => openMasterDrawer(conv.master.id)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors"
+                          title="Открыть карточку мастера"
+                        >
+                          <User2 className="w-3.5 h-3.5" />
+                          Карточка
+                          <ChevronRight className="w-3 h-3" />
+                        </button>
+                        {/* Delete dialog button (admin only) */}
+                        {user?.role === "admin" && (
+                          <button
+                            onClick={() => setShowDeleteDialog(true)}
+                            className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors"
+                            title="Удалить диалог"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Delete dialog confirmation modal */}
+                  {showDeleteDialog && conv && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+                      <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
+                        <div className="flex items-center gap-3 mb-4">
+                          <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                            <Trash2 className="w-5 h-5 text-red-500" />
+                          </div>
+                          <div>
+                            <p className="font-semibold text-gray-800">Удалить диалог?</p>
+                            <p className="text-xs text-gray-500 mt-0.5">Все сообщения с {conv.master.alias} будут удалены навсегда</p>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setShowDeleteDialog(false)}
+                            className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+                          >
+                            Отмена
+                          </button>
+                          <button
+                            onClick={handleDeleteDialog}
+                            disabled={deletingDialog}
+                            className="flex-1 px-4 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-medium transition-colors disabled:opacity-50"
+                          >
+                            {deletingDialog ? "Удаление..." : "Удалить"}
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   )}
 
