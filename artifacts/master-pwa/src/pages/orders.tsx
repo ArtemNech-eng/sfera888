@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, uploadPhoto } from "@/lib/api";
+import { api, uploadPhoto, resolvePhotoUrl } from "@/lib/api";
 import { toast } from "sonner";
 import {
   ChevronDown, ChevronUp, MapPin, Phone, Ruler, Calendar,
@@ -227,16 +227,19 @@ function PhotoGrid({ urls, label }: { urls: string[]; label: string }) {
     <div className="space-y-1">
       <p className="text-xs font-medium text-muted-foreground">{label}</p>
       <div className="flex gap-2 overflow-x-auto pb-1">
-        {urls.map((url, i) => (
-          <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="shrink-0">
-            <img
-              src={url}
-              alt={`${label} ${i + 1}`}
-              className="w-16 h-16 rounded-lg object-cover border border-border"
-              onError={e => (e.currentTarget.style.display = "none")}
-            />
-          </a>
-        ))}
+        {urls.map((url, i) => {
+          const src = resolvePhotoUrl(url);
+          return (
+            <a key={i} href={src} target="_blank" rel="noopener noreferrer" className="shrink-0">
+              <img
+                src={src}
+                alt={`${label} ${i + 1}`}
+                className="w-16 h-16 rounded-lg object-cover border border-border"
+                onError={e => (e.currentTarget.style.display = "none")}
+              />
+            </a>
+          );
+        })}
       </div>
     </div>
   );

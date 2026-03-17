@@ -13,6 +13,12 @@ import {
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
+function resolvePhotoUrl(url: string): string {
+  if (!url) return url;
+  if (url.startsWith("/objects/")) return `/api/storage${url}`;
+  return url;
+}
+
 interface DispatchEntry {
   id: number;
   masterId: number;
@@ -749,11 +755,14 @@ export default function Orders() {
                       <div>
                         <p className="text-xs text-muted-foreground mb-1">До</p>
                         <div className="flex flex-wrap gap-2">
-                          {(openOrder as any).photosBefore.map((url: string, i: number) => (
-                            <a key={i} href={url} target="_blank" rel="noopener noreferrer">
-                              <img src={url} alt={`До ${i+1}`} className="w-16 h-16 object-cover rounded-lg border border-border hover:opacity-80 transition-opacity" />
-                            </a>
-                          ))}
+                          {(openOrder as any).photosBefore.map((url: string, i: number) => {
+                            const src = resolvePhotoUrl(url);
+                            return (
+                              <a key={i} href={src} target="_blank" rel="noopener noreferrer">
+                                <img src={src} alt={`До ${i+1}`} className="w-16 h-16 object-cover rounded-lg border border-border hover:opacity-80 transition-opacity" />
+                              </a>
+                            );
+                          })}
                         </div>
                       </div>
                     )}
@@ -761,19 +770,22 @@ export default function Orders() {
                       <div>
                         <p className="text-xs text-muted-foreground mb-1">После</p>
                         <div className="flex flex-wrap gap-2">
-                          {(openOrder as any).photosAfter.map((url: string, i: number) => (
-                            <a key={i} href={url} target="_blank" rel="noopener noreferrer">
-                              <img src={url} alt={`После ${i+1}`} className="w-16 h-16 object-cover rounded-lg border border-border hover:opacity-80 transition-opacity" />
-                            </a>
-                          ))}
+                          {(openOrder as any).photosAfter.map((url: string, i: number) => {
+                            const src = resolvePhotoUrl(url);
+                            return (
+                              <a key={i} href={src} target="_blank" rel="noopener noreferrer">
+                                <img src={src} alt={`После ${i+1}`} className="w-16 h-16 object-cover rounded-lg border border-border hover:opacity-80 transition-opacity" />
+                              </a>
+                            );
+                          })}
                         </div>
                       </div>
                     )}
                     {(openOrder as any).photoAct && (
                       <div>
                         <p className="text-xs text-muted-foreground mb-1">Акт</p>
-                        <a href={(openOrder as any).photoAct} target="_blank" rel="noopener noreferrer">
-                          <img src={(openOrder as any).photoAct} alt="Акт" className="w-16 h-16 object-cover rounded-lg border border-border hover:opacity-80 transition-opacity" />
+                        <a href={resolvePhotoUrl((openOrder as any).photoAct)} target="_blank" rel="noopener noreferrer">
+                          <img src={resolvePhotoUrl((openOrder as any).photoAct)} alt="Акт" className="w-16 h-16 object-cover rounded-lg border border-border hover:opacity-80 transition-opacity" />
                         </a>
                       </div>
                     )}

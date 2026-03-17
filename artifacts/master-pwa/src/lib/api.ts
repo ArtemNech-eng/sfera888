@@ -72,5 +72,11 @@ export async function uploadPhoto(file: File): Promise<string> {
   if (!urlRes.ok) throw new Error("Ошибка получения URL загрузки");
   const { uploadURL, objectPath } = await urlRes.json();
   await fetch(uploadURL, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
-  return objectPath;
+  return `/api/storage${objectPath}`;
+}
+
+export function resolvePhotoUrl(url: string): string {
+  if (!url) return url;
+  if (url.startsWith("/objects/")) return `/api/storage${url}`;
+  return url;
 }

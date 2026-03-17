@@ -9,6 +9,12 @@ import { format, formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
+function resolvePhotoUrl(url: string): string {
+  if (!url) return url;
+  if (url.startsWith("/objects/")) return `/api/storage${url}`;
+  return url;
+}
+
 interface Thread {
   masterId: number;
   alias: string;
@@ -569,9 +575,9 @@ export default function MasterChat() {
                               {senderLabel}
                             </p>
                             {msg.photoUrl && (
-                              <a href={msg.photoUrl} target="_blank" rel="noopener noreferrer" className="block mb-2">
+                              <a href={resolvePhotoUrl(msg.photoUrl)} target="_blank" rel="noopener noreferrer" className="block mb-2">
                                 <img
-                                  src={msg.photoUrl} alt="фото"
+                                  src={resolvePhotoUrl(msg.photoUrl)} alt="фото"
                                   className="rounded-xl max-w-full max-h-52 object-cover cursor-zoom-in"
                                   onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
                                 />

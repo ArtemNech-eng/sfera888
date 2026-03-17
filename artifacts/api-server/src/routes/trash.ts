@@ -1,7 +1,10 @@
 import { Router } from "express";
+import fs from "fs";
+import path from "path";
 import { db, mastersTable, ordersTable, leadsTable } from "@workspace/db";
 import { isNull, isNotNull, lt, and, eq } from "drizzle-orm";
 import { requirePermission } from "../middlewares/requireAuth.js";
+import { AVATAR_DIR } from "../config.js";
 
 const router = Router();
 const adminOnly = requirePermission("trash");
@@ -12,6 +15,14 @@ const TRASH_TTL_MS = TRASH_TTL_DAYS * 24 * 60 * 60 * 1000;
 function daysLeft(deletedAt: Date): number {
   const expiry = new Date(deletedAt.getTime() + TRASH_TTL_MS);
   return Math.max(0, Math.ceil((expiry.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
+}
+
+function deleteAvatarFile(customAvatarUrl: string | null) {
+  if (!customAvatarUrl?.includes("/uploads/avatars/")) return;
+  const filename = customAvatarUrl.split("/uploads/avatars/")[1];
+  if (!filename) return;
+  const filePath = path.join(AVATAR_DIR, filename);
+  try { fs.unlinkSync(filePath); } catch {}
 }
 
 // ─── GET /api/trash ──────────────────────────────────────────────────────────
@@ -74,6 +85,9 @@ router.delete("/:type/:id", adminOnly, async (req, res) => {
   const numId = parseInt(id);
 
   if (type === "master") {
+    const [master] = await db.select().from(mastersTable)
+      .where(and(eq(mastersTable.id, numId), isNotNull(mastersTable.deletedAt)));
+    if (master) deleteAvatarFile(master.customAvatarUrl ?? null);
     await db.delete(mastersTable).where(and(eq(mastersTable.id, numId), isNotNull(mastersTable.deletedAt)));
   } else if (type === "order") {
     await db.delete(ordersTable).where(and(eq(ordersTable.id, numId), isNotNull(ordersTable.deletedAt)));
@@ -90,6 +104,13 @@ router.delete("/:type/:id", adminOnly, async (req, res) => {
 
 export async function runTrashCleanup() {
   const cutoff = new Date(Date.now() - TRASH_TTL_MS);
+
+  const expiredMasters = await db.select().from(mastersTable)
+    .where(and(isNotNull(mastersTable.deletedAt), lt(mastersTable.deletedAt, cutoff)));
+  for (const m of expiredMasters) {
+    deleteAvatarFile(m.customAvatarUrl ?? null);
+  }
+
   await Promise.all([
     db.delete(mastersTable).where(and(isNotNull(mastersTable.deletedAt), lt(mastersTable.deletedAt, cutoff))),
     db.delete(ordersTable).where(and(isNotNull(ordersTable.deletedAt), lt(ordersTable.deletedAt, cutoff))),

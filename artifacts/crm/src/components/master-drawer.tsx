@@ -11,6 +11,12 @@ import {
 import { format, formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
 
+function resolvePhotoUrl(url: string): string {
+  if (!url) return url;
+  if (url.startsWith("/objects/")) return `/api/storage${url}`;
+  return url;
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface DrawerColumn { id: number; name: string; }
@@ -704,8 +710,8 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                           {senderLabel}
                         </p>
                         {msg.photoUrl && (
-                          <a href={msg.photoUrl} target="_blank" rel="noopener noreferrer" className="block mb-1.5">
-                            <img src={msg.photoUrl} alt="фото" className="rounded-xl max-w-full max-h-40 object-cover" />
+                          <a href={resolvePhotoUrl(msg.photoUrl)} target="_blank" rel="noopener noreferrer" className="block mb-1.5">
+                            <img src={resolvePhotoUrl(msg.photoUrl)} alt="фото" className="rounded-xl max-w-full max-h-40 object-cover" />
                           </a>
                         )}
                         {msg.text && <p className="text-xs leading-relaxed">{msg.text}</p>}
