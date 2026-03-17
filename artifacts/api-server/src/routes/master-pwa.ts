@@ -4,23 +4,26 @@ import { eq, and, inArray, isNull, ne, asc, desc } from "drizzle-orm";
 import { verifyPassword, hashPassword } from "../lib/auth.js";
 import { getMasterEligibility, getOverdueMasterIds } from "../lib/orderEligibility.js";
 import multer from "multer";
-import fs from "fs";
-import { AVATAR_DIR } from "../config.js";
+import { objectStorageClient } from "../lib/objectStorage.js";
 
-fs.mkdirSync(AVATAR_DIR, { recursive: true });
-
-const avatarStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, AVATAR_DIR),
-  filename: (_req, _file, cb) => cb(null, `pwa-master-${Date.now()}.jpg`),
-});
 const avatarUpload = multer({
-  storage: avatarStorage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (file.mimetype.startsWith("image/")) cb(null, true);
     else cb(new Error("Only images allowed"));
   },
 });
+
+async function uploadPwaAvatarToGCS(masterId: number, buffer: Buffer, mimetype: string): Promise<string> {
+  const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+  if (!bucketId) throw new Error("Object storage not configured");
+  const ts = Date.now();
+  const filename = `pwa-master-${masterId}-${ts}.jpg`;
+  const bucket = objectStorageClient.bucket(bucketId);
+  await bucket.file(`avatars/${filename}`).save(buffer, { contentType: mimetype, resumable: false });
+  return `/api/masters/avatar/${filename}`;
+}
 
 const router = Router();
 
@@ -740,13 +743,17 @@ router.get("/profile", requireMasterPwa, async (req, res) => {
 router.post("/profile/avatar", requireMasterPwa, avatarUpload.single("avatar"), async (req, res) => {
   const masterId = (req.session as any).masterId;
   if (!req.file) return res.status(400).json({ error: "Файл не получен" });
-  const avatarUrl = `/api/uploads/avatars/${req.file.filename}`;
-  const [updated] = await db.update(mastersTable)
-    .set({ customAvatarUrl: avatarUrl })
-    .where(eq(mastersTable.id, masterId))
-    .returning();
-  if (!updated) return res.status(404).json({ error: "Мастер не найден" });
-  res.json({ customAvatarUrl: avatarUrl });
+  try {
+    const avatarUrl = await uploadPwaAvatarToGCS(masterId, req.file.buffer, req.file.mimetype);
+    const [updated] = await db.update(mastersTable)
+      .set({ customAvatarUrl: avatarUrl })
+      .where(eq(mastersTable.id, masterId))
+      .returning();
+    if (!updated) return res.status(404).json({ error: "Мастер не найден" });
+    res.json({ customAvatarUrl: avatarUrl });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message ?? "Upload failed" });
+  }
 });
 
 // ─── REGISTRATION ─────────────────────────────────────────────────────────────
