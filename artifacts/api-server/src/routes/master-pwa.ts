@@ -120,16 +120,20 @@ router.get("/home", requireMasterPwa, async (req, res) => {
   const master = await getMasterById(masterId);
   if (!master) return res.status(404).json({ error: "Мастер не найден" });
 
-  // Available orders (dispatched but not yet responded)
-  const dispatches = await db.select().from(orderDispatchesTable)
-    .where(and(eq(orderDispatchesTable.masterId, masterId), eq(orderDispatchesTable.status, "sent")));
+  // All dispatches for this master (sent + responded)
+  const allDispatches = await db.select().from(orderDispatchesTable)
+    .where(and(eq(orderDispatchesTable.masterId, masterId), inArray(orderDispatchesTable.status, ["sent", "responded"])));
 
+  const sentDispatches = allDispatches.filter(d => d.status === "sent");
+  const respondedDispatches = allDispatches.filter(d => d.status === "responded");
+
+  // Available orders — "sent" dispatches, order still waiting
   let availableOrders: any[] = [];
-  if (dispatches.length > 0) {
-    const orderIds = dispatches.map(d => d.orderId);
+  if (sentDispatches.length > 0) {
+    const orderIds = sentDispatches.map(d => d.orderId);
     const orders = await db.select().from(ordersTable)
       .where(and(inArray(ordersTable.id, orderIds), eq(ordersTable.status, "waiting_master"), isNull(ordersTable.deletedAt)));
-    const dispatchByOrder = new Map(dispatches.map(d => [d.orderId, d]));
+    const dispatchByOrder = new Map(sentDispatches.map(d => [d.orderId, d]));
     availableOrders = orders.map(o => ({
       id: o.id,
       city: o.city,
@@ -139,6 +143,24 @@ router.get("/home", requireMasterPwa, async (req, res) => {
       scheduledAt: o.scheduledAt ?? null,
       comment: o.comment ?? null,
       dispatchedAt: dispatchByOrder.get(o.id)?.createdAt ?? null,
+    }));
+  }
+
+  // Pending orders — master responded, waiting for operator to assign
+  let pendingOrders: any[] = [];
+  if (respondedDispatches.length > 0) {
+    const orderIds = respondedDispatches.map(d => d.orderId);
+    const orders = await db.select().from(ordersTable)
+      .where(and(inArray(ordersTable.id, orderIds), eq(ordersTable.status, "waiting_master"), isNull(ordersTable.deletedAt)));
+    const dispatchByOrder = new Map(respondedDispatches.map(d => [d.orderId, d]));
+    pendingOrders = orders.map(o => ({
+      id: o.id,
+      city: o.city,
+      district: o.district,
+      serviceType: o.serviceType,
+      area: Number(o.area),
+      scheduledAt: o.scheduledAt ?? null,
+      respondedAt: dispatchByOrder.get(o.id)?.respondedAt ?? null,
     }));
   }
 
@@ -161,6 +183,7 @@ router.get("/home", requireMasterPwa, async (req, res) => {
       isTestMaster: master.isTestMaster,
     },
     availableOrders,
+    pendingOrders,
     activeOrders: activeOrders.map(o => ({
       id: o.id,
       city: o.city,
@@ -332,13 +355,39 @@ router.post("/orders/:id/accept", requireMasterPwa, async (req, res) => {
   res.json({ success: true });
 });
 
+// Respond to order (express interest — operator will assign)
+router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
+  const masterId = (req.session as any).masterId;
+  const orderId = parseInt(req.params.id);
+
+  const dispatches = await db.select().from(orderDispatchesTable)
+    .where(and(eq(orderDispatchesTable.masterId, masterId), eq(orderDispatchesTable.orderId, orderId), eq(orderDispatchesTable.status, "sent")));
+  if (!dispatches[0]) return res.status(404).json({ error: "Заявка не найдена или вы уже откликнулись" });
+
+  const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
+  const order = orderRows[0];
+  if (!order || order.status !== "waiting_master") {
+    return res.status(400).json({ error: "Заявка больше недоступна" });
+  }
+
+  await db.update(orderDispatchesTable)
+    .set({ status: "responded", respondedAt: new Date() })
+    .where(eq(orderDispatchesTable.id, dispatches[0].id));
+
+  res.json({ success: true });
+});
+
 // Reject order
 router.post("/orders/:id/reject", requireMasterPwa, async (req, res) => {
   const masterId = (req.session as any).masterId;
   const orderId = parseInt(req.params.id);
 
   await db.update(orderDispatchesTable).set({ status: "rejected", respondedAt: new Date() })
-    .where(and(eq(orderDispatchesTable.masterId, masterId), eq(orderDispatchesTable.orderId, orderId)));
+    .where(and(
+      eq(orderDispatchesTable.masterId, masterId),
+      eq(orderDispatchesTable.orderId, orderId),
+      inArray(orderDispatchesTable.status, ["sent", "responded"]),
+    ));
 
   res.json({ success: true });
 });

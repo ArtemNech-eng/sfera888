@@ -27,6 +27,7 @@ export const api = {
   orders: {
     available: () => req<any>("GET", "/orders/available"),
     my: (filter?: string) => req<any>("GET", `/orders/my${filter ? `?filter=${filter}` : ""}`),
+    respond: (id: number) => req<any>("POST", `/orders/${id}/respond`),
     accept: (id: number) => req<any>("POST", `/orders/${id}/accept`),
     reject: (id: number) => req<any>("POST", `/orders/${id}/reject`),
     cancel: (id: number, reason: string) => req<any>("POST", `/orders/${id}/cancel`, { reason }),
