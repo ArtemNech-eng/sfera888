@@ -32,8 +32,8 @@ router.delete("/cities/:id", adminOnly, async (req, res) => {
   res.json({ success: true, message: "City deleted" });
 });
 
-// Services
-router.get("/services", requireAuth, async (req, res) => {
+// Services — public read (used by master PWA for specialization picker)
+router.get("/services", async (req, res) => {
   const services = await db.select().from(serviceTypesTable).orderBy(serviceTypesTable.name);
   res.json(services);
 });

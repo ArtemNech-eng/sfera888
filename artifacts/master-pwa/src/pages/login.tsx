@@ -1,4 +1,4 @@
-import { useState, useCallback, memo } from "react";
+import { useState, useCallback, memo, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import { Eye, EyeOff, HardHat } from "lucide-react";
@@ -7,18 +7,6 @@ const CITIES = [
   "Москва", "Санкт-Петербург", "Новосибирск", "Екатеринбург",
   "Казань", "Нижний Новгород", "Челябинск", "Самара",
   "Краснодар", "Ростов-на-Дону", "Другой город",
-];
-
-const SPECS = [
-  "Укладка плитки",
-  "Поклейка обоев",
-  "Покраска стен",
-  "Монтаж ламината",
-  "Штукатурка стен",
-  "Электромонтаж",
-  "Сантехника",
-  "Натяжные потолки",
-  "Комплексный ремонт",
 ];
 
 function normalizePhone(raw: string): string {
@@ -75,15 +63,17 @@ const SpecChip = memo(function SpecChip({
 
 // ── Memoized specs grid – only re-renders when specs array changes ──────────
 const SpecsGrid = memo(function SpecsGrid({
-  selected, onToggle, error,
-}: { selected: string[]; onToggle: (s: string) => void; error?: string }) {
+  specs, selected, onToggle, error,
+}: { specs: string[]; selected: string[]; onToggle: (s: string) => void; error?: string }) {
   return (
     <div className="space-y-1.5">
       <label className="text-sm font-medium text-foreground">
         Специальности * <span className="text-muted-foreground font-normal">(можно несколько)</span>
       </label>
       <div className="flex flex-wrap gap-2 pt-0.5">
-        {SPECS.map(spec => (
+        {specs.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Загрузка услуг...</p>
+        ) : specs.map(spec => (
           <SpecChip
             key={spec}
             spec={spec}
@@ -109,9 +99,17 @@ export default function LoginPage() {
   // Register form — specs separated to avoid full re-render on each toggle
   const [reg, setReg] = useState({ alias: "", phone: "", city: "", password: "" });
   const [specs, setSpecs] = useState<string[]>([]);
+  const [availableSpecs, setAvailableSpecs] = useState<string[]>([]);
   const [showRegPass, setShowRegPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [regErrors, setRegErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    fetch("/api/settings/services")
+      .then(r => r.ok ? r.json() : [])
+      .then((data: { id: number; name: string }[]) => setAvailableSpecs(data.map(s => s.name)))
+      .catch(() => {});
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -304,6 +302,7 @@ export default function LoginPage() {
 
             {/* Memoized specs — only this section re-renders on toggle */}
             <SpecsGrid
+              specs={availableSpecs}
               selected={specs}
               onToggle={toggleSpec}
               error={regErrors.specs}

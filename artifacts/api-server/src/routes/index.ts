@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { db, serviceTypesTable } from "@workspace/db";
 import healthRouter from "./health.js";
 import authRouter from "./auth.js";
 import usersRouter from "./users.js";
@@ -44,6 +45,22 @@ router.use("/trash", trashRouter);
 router.use("/tasks", tasksRouter);
 router.use("/master-reviews", masterReviewsRouter);
 router.use("/master-pwa", masterPwaRouter);
+
+// Seed popular repair services on startup (INSERT ... ON CONFLICT DO NOTHING)
+async function seedServices() {
+  const popular = [
+    "Укладка плитки", "Поклейка обоев", "Покраска стен", "Монтаж ламината",
+    "Штукатурка стен", "Электромонтаж", "Сантехника", "Натяжные потолки",
+    "Комплексный ремонт", "Шпаклёвка стен и потолков", "Монтаж гипсокартона",
+    "Демонтажные работы", "Монтаж межкомнатных дверей", "Монтаж напольных покрытий",
+    "Монтаж тёплого пола", "Звукоизоляция", "Отделка балкона и лоджии",
+    "Монтаж кухни", "Черновая отделка", "Чистовая отделка",
+  ];
+  for (const name of popular) {
+    await db.insert(serviceTypesTable).values({ name }).onConflictDoNothing().catch(() => {});
+  }
+}
+seedServices().catch(console.error);
 
 // Run trash cleanup on startup, then every hour
 runTrashCleanup().catch(console.error);

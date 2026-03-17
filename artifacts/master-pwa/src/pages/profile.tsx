@@ -36,17 +36,6 @@ interface ProfileData {
   createdAt: string;
 }
 
-const ALL_SPECIALIZATIONS = [
-  "Укладка плитки",
-  "Поклейка обоев",
-  "Покраска стен",
-  "Монтаж ламината",
-  "Штукатурка стен",
-  "Электромонтаж",
-  "Сантехника",
-  "Натяжные потолки",
-  "Комплексный ремонт",
-];
 
 function StatCard({ label, value, icon }: { label: string; value: string | number; icon: React.ReactNode }) {
   return (
@@ -70,7 +59,15 @@ function EditProfileModal({
   const [city, setCity] = useState(data.city);
   const [phone, setPhone] = useState(data.phone ?? "");
   const [selectedSpecs, setSelectedSpecs] = useState<string[]>(data.specializations ?? []);
+  const [availableSpecs, setAvailableSpecs] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/settings/services")
+      .then(r => r.ok ? r.json() : [])
+      .then((d: { id: number; name: string }[]) => setAvailableSpecs(d.map(s => s.name)))
+      .catch(() => {});
+  }, []);
 
   const toggleSpec = (s: string) => {
     setSelectedSpecs(prev =>
@@ -152,7 +149,8 @@ function EditProfileModal({
           <div className="space-y-2">
             <label className="text-xs font-medium text-muted-foreground">Специализации</label>
             <div className="flex flex-wrap gap-2">
-              {ALL_SPECIALIZATIONS.map(s => {
+              {availableSpecs.length === 0 && <p className="text-xs text-muted-foreground">Загрузка...</p>}
+              {availableSpecs.map(s => {
                 const selected = selectedSpecs.includes(s);
                 return (
                   <button
