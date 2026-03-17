@@ -232,8 +232,8 @@ router.post("/:orderId/broadcast", ops, async (req, res) => {
     await db.insert(orderDispatchesTable).values({
       orderId,
       masterId: master.id,
-      telegramChatId: master.telegramId ?? null,
-      telegramMessageId: msgId ?? null,
+      telegramChatId: master.telegramId || null,
+      telegramMessageId: msgId || null,
       status: "sent",
     });
     sent++;

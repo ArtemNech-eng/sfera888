@@ -80,7 +80,12 @@ export default function Orders() {
   const broadcastMutation = useMutation({
     mutationFn: async (orderId: number) => {
       const r = await fetch(`/api/dispatch/${orderId}/broadcast`, { method: "POST", credentials: "include" });
-      if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Ошибка"); }
+      if (!r.ok) {
+        const text = await r.text();
+        let msg = "Ошибка сервера";
+        try { msg = JSON.parse(text).error ?? msg; } catch {}
+        throw new Error(msg);
+      }
       return r.json();
     },
     onSuccess: () => {
@@ -92,7 +97,12 @@ export default function Orders() {
   const assignMutation = useMutation({
     mutationFn: async ({ orderId, masterId }: { orderId: number; masterId: number }) => {
       const r = await fetch(`/api/dispatch/${orderId}/assign/${masterId}`, { method: "POST", credentials: "include" });
-      if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Ошибка"); }
+      if (!r.ok) {
+        const text = await r.text();
+        let msg = "Ошибка сервера";
+        try { msg = JSON.parse(text).error ?? msg; } catch {}
+        throw new Error(msg);
+      }
       return r.json();
     },
     onSuccess: () => {
