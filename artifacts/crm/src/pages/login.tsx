@@ -5,7 +5,7 @@ import { useAuth, PERM_TO_ROUTE } from "@/hooks/use-auth";
 import { Loader2, Lock, User } from "lucide-react";
 
 function getRedirectPath(user: any): string {
-  if (user.role === "admin") return "/";
+  if (user.role === "admin") return "/dashboard";
   const perms: string[] = user.permissions ?? [];
   for (const p of perms) {
     if (PERM_TO_ROUTE[p]) return PERM_TO_ROUTE[p];
