@@ -158,4 +158,73 @@ router.get("/overdue-masters", requirePermission("finance"), async (req, res) =>
   res.json(Array.from(byMaster.values()).sort((a, b) => b.totalOverdue - a.totalOverdue));
 });
 
+// GET /api/finance/master-stats?from=ISO&to=ISO
+// Returns per-master revenue aggregation for the given date range.
+// "from" and "to" are inclusive ISO datetime strings (optional).
+router.get("/master-stats", opsAndAdmin, async (req, res) => {
+  const { from, to } = req.query;
+
+  const allTx = await db.select().from(transactionsTable);
+  const masters = await db.select().from(mastersTable);
+  const masterMap = new Map(masters.map(m => [m.id, m]));
+
+  const fromDate = from ? new Date(from as string) : null;
+  const toDate   = to   ? new Date(to   as string) : null;
+
+  const filtered = allTx.filter(t => {
+    const ts = t.createdAt;
+    if (fromDate && ts < fromDate) return false;
+    if (toDate   && ts > toDate)   return false;
+    return true;
+  });
+
+  type Agg = {
+    masterId: number;
+    alias: string;
+    city: string;
+    phone: string | null;
+    orderCount: number;
+    totalOrderAmount: number;
+    totalCommission: number;
+    paidCommission: number;
+    pendingCommission: number;
+    overdueCommission: number;
+    paidCount: number;
+    pendingCount: number;
+    overdueCount: number;
+  };
+
+  const map = new Map<number, Agg>();
+  for (const t of filtered) {
+    const m = masterMap.get(t.masterId);
+    if (!map.has(t.masterId)) {
+      map.set(t.masterId, {
+        masterId:         t.masterId,
+        alias:            m?.alias ?? "Неизвестен",
+        city:             m?.city  ?? "—",
+        phone:            m?.phone ?? null,
+        orderCount:       0,
+        totalOrderAmount: 0,
+        totalCommission:  0,
+        paidCommission:   0,
+        pendingCommission:0,
+        overdueCommission:0,
+        paidCount:        0,
+        pendingCount:     0,
+        overdueCount:     0,
+      });
+    }
+    const a = map.get(t.masterId)!;
+    a.orderCount++;
+    a.totalOrderAmount += Number(t.orderAmount);
+    a.totalCommission  += Number(t.commission);
+    if (t.paymentStatus === "paid")    { a.paidCommission    += Number(t.commission); a.paidCount++;    }
+    if (t.paymentStatus === "pending") { a.pendingCommission += Number(t.commission); a.pendingCount++; }
+    if (t.paymentStatus === "overdue") { a.overdueCommission += Number(t.commission); a.overdueCount++; }
+  }
+
+  const result = Array.from(map.values()).sort((a, b) => b.paidCommission - a.paidCommission);
+  res.json(result);
+});
+
 export default router;
