@@ -199,6 +199,25 @@ router.post("/:orderId/broadcast", ops, async (req, res) => {
     return res.status(400).json({ error: "Все мастера заняты или превысили лимит заказов" });
   }
 
+  // Filter by specialization: if master has specializations set, only send order
+  // if the order's serviceType matches one of them (case-insensitive, partial match).
+  // Masters with no specializations set receive all order types.
+  const orderType = order.serviceType.toLowerCase().trim();
+  const specialtyEligible = eligible.filter(master => {
+    const specs = master.specializations ?? [];
+    if (specs.length === 0) return true; // no filter — receives all
+    return specs.some(s => {
+      const sp = s.toLowerCase().trim();
+      return sp === orderType || orderType.includes(sp) || sp.includes(orderType);
+    });
+  });
+
+  if (specialtyEligible.length === 0) {
+    return res.status(400).json({
+      error: `Нет доступных мастеров с нужной специализацией «${order.serviceType}» в городе «${order.city}»`,
+    });
+  }
+
   const cardText = buildOrderCard(order, orderId);
   const replyMarkup = {
     inline_keyboard: [
@@ -208,14 +227,8 @@ router.post("/:orderId/broadcast", ops, async (req, res) => {
   };
 
   let sent = 0;
-  let skipped = 0;
-  for (const master of reachable) {
-    const myActiveCount = activeOrders.filter(o => o.masterId === master.id).length;
-    const eligibility = getMasterEligibility(master, myActiveCount, overdueMasterIds);
-    if (!eligibility.canAccept) {
-      skipped++;
-      continue;
-    }
+  let skipped = reachable.length - specialtyEligible.length;
+  for (const master of specialtyEligible) {
 
     let msgId: string | null = null;
     if (master.telegramId) {
