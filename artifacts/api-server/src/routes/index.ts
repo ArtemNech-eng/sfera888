@@ -44,7 +44,6 @@ router.use("/trash", trashRouter);
 router.use("/tasks", tasksRouter);
 router.use("/master-reviews", masterReviewsRouter);
 router.use("/master-pwa", masterPwaRouter);
-router.use("/migrate", migrateRouter);
 
 // Run trash cleanup on startup, then every hour
 runTrashCleanup().catch(console.error);
