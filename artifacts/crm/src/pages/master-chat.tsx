@@ -464,14 +464,14 @@ export default function MasterChat() {
                   </div>
                 )}
                 {threads.map(t => (
-                  <button
+                  <div
                     key={t.masterId}
-                    onClick={() => setSelectedId(t.masterId)}
-                    className={`w-full text-left px-3 py-2.5 border-b border-gray-50 hover:bg-gray-50 transition-colors ${
+                    className={`group relative border-b border-gray-50 hover:bg-gray-50 transition-colors cursor-pointer ${
                       selectedId === t.masterId ? "bg-blue-50 border-l-2 border-l-blue-500" : ""
                     }`}
+                    onClick={() => setSelectedId(t.masterId)}
                   >
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-2.5 px-3 py-2.5">
                       <div className="relative flex-shrink-0">
                         <ChatAvatar name={t.alias} id={t.masterId} avatarUrl={t.avatarUrl} size={36} />
                         {t.unread > 0 && (
@@ -483,13 +483,22 @@ export default function MasterChat() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-1">
                           <span className={`font-semibold text-sm truncate ${t.unread > 0 ? "text-gray-900" : "text-gray-700"}`}>{t.alias}</span>
-                          <span className="text-[10px] text-gray-300 flex-shrink-0">{timeAgo(t.lastAt)}</span>
+                          <span className="text-[10px] text-gray-300 flex-shrink-0 group-hover:hidden">{timeAgo(t.lastAt)}</span>
+                          {user?.role === "admin" && (
+                            <button
+                              onClick={e => { e.stopPropagation(); setSelectedId(t.masterId); setShowDeleteDialog(true); }}
+                              className="hidden group-hover:flex items-center justify-center w-6 h-6 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors flex-shrink-0"
+                              title="Удалить диалог"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                         <p className="text-[11px] text-gray-400 truncate">{t.city}</p>
                         <p className={`text-xs mt-0.5 truncate ${t.unread > 0 ? "text-gray-700 font-medium" : "text-gray-400"}`}>{t.lastMessage}</p>
                       </div>
                     </div>
-                  </button>
+                  </div>
                 ))}
               </div>
             </div>
@@ -561,7 +570,7 @@ export default function MasterChat() {
                   )}
 
                   {/* Delete dialog confirmation modal */}
-                  {showDeleteDialog && conv && (
+                  {showDeleteDialog && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
                       <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
                         <div className="flex items-center gap-3 mb-4">
@@ -570,7 +579,7 @@ export default function MasterChat() {
                           </div>
                           <div>
                             <p className="font-semibold text-gray-800">Удалить диалог?</p>
-                            <p className="text-xs text-gray-500 mt-0.5">Все сообщения с {conv.master.alias} будут удалены навсегда</p>
+                            <p className="text-xs text-gray-500 mt-0.5">Все сообщения с {conv?.master.alias ?? threads.find(t => t.masterId === selectedId)?.alias ?? "мастером"} будут удалены навсегда</p>
                           </div>
                         </div>
                         <div className="flex gap-2">
