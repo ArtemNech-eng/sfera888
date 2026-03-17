@@ -139,6 +139,7 @@ router.get("/home", requireMasterPwa, async (req, res) => {
       city: o.city,
       district: o.district,
       serviceType: o.serviceType,
+      services: o.services ?? null,
       area: Number(o.area),
       scheduledAt: o.scheduledAt ?? null,
       comment: o.comment ?? null,
@@ -158,8 +159,10 @@ router.get("/home", requireMasterPwa, async (req, res) => {
       city: o.city,
       district: o.district,
       serviceType: o.serviceType,
+      services: o.services ?? null,
       area: Number(o.area),
       scheduledAt: o.scheduledAt ?? null,
+      comment: o.comment ?? null,
       respondedAt: dispatchByOrder.get(o.id)?.respondedAt ?? null,
     }));
   }
@@ -372,6 +375,19 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
 
   const master = await getMasterById(masterId);
   if (!master) return res.status(404).json({ error: "Мастер не найден" });
+
+  // Same active order limit check as Telegram bot
+  const activeOrders = await db.select().from(ordersTable)
+    .where(and(
+      eq(ordersTable.masterId, masterId),
+      inArray(ordersTable.status, ["master_assigned", "in_progress"]),
+    ));
+  const limit = master.isTestMaster ? 1 : 2;
+  if (activeOrders.length >= limit) {
+    return res.status(400).json({
+      error: `У вас уже ${activeOrders.length} из ${limit} активных заказов. Завершите текущие заказы, чтобы откликаться на новые.`,
+    });
+  }
 
   await db.update(orderDispatchesTable)
     .set({ status: "responded", respondedAt: new Date() })
