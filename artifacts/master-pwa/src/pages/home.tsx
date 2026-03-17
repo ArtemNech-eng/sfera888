@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { usePushNotifications } from "@/lib/usePushNotifications";
 import {
   Bell, CheckCircle2, XCircle, MapPin, Calendar, Ruler,
-  ChevronRight, AlertTriangle, Star,
+  ChevronRight, AlertTriangle, Star, Clock,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -20,6 +20,16 @@ interface AvailableOrder {
   scheduledAt: string | null;
   comment: string | null;
   dispatchedAt: string | null;
+}
+
+interface PendingOrder {
+  id: number;
+  city: string;
+  district: string | null;
+  serviceType: string;
+  area: number;
+  scheduledAt: string | null;
+  respondedAt: string | null;
 }
 
 interface ActiveOrder {
@@ -37,7 +47,7 @@ interface ActiveOrder {
 interface HomeData {
   master: any;
   availableOrders: AvailableOrder[];
-  pendingOrders: any[];
+  pendingOrders: PendingOrder[];
   activeOrders: ActiveOrder[];
 }
 
@@ -56,30 +66,30 @@ const workStatusLabels: Record<string, string> = {
   completed: "Завершён",
 };
 
-function AcceptModal({
+function RespondModal({
   order,
-  onAccept,
+  onRespond,
   onReject,
   onClose,
 }: {
   order: AvailableOrder;
-  onAccept: () => void;
+  onRespond: () => void;
   onReject: () => void;
   onClose: () => void;
 }) {
-  const [accepting, setAccepting] = useState(false);
+  const [responding, setResponding] = useState(false);
   const [rejecting, setRejecting] = useState(false);
 
-  const handleAccept = async () => {
-    setAccepting(true);
+  const handleRespond = async () => {
+    setResponding(true);
     try {
-      await api.orders.accept(order.id);
-      toast.success("Заказ принят! Он появился в активных.");
-      onAccept();
+      await api.orders.respond(order.id);
+      toast.success("Отклик отправлен! Ожидайте решения менеджера.");
+      onRespond();
     } catch (err: any) {
       toast.error(err.message ?? "Ошибка");
     } finally {
-      setAccepting(false);
+      setResponding(false);
     }
   };
 
@@ -133,10 +143,14 @@ function AcceptModal({
           )}
         </div>
 
+        <p className="text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
+          После отклика менеджер выберет мастера и свяжется с вами
+        </p>
+
         <div className="grid grid-cols-2 gap-3 pt-1">
           <button
             onClick={handleReject}
-            disabled={rejecting || accepting}
+            disabled={rejecting || responding}
             className="flex items-center justify-center gap-2 h-12 rounded-xl border border-destructive text-destructive font-semibold text-sm active:opacity-80 disabled:opacity-50"
           >
             {rejecting
@@ -145,14 +159,14 @@ function AcceptModal({
             Отказать
           </button>
           <button
-            onClick={handleAccept}
-            disabled={accepting || rejecting}
+            onClick={handleRespond}
+            disabled={responding || rejecting}
             className="flex items-center justify-center gap-2 h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm active:opacity-80 disabled:opacity-50"
           >
-            {accepting
+            {responding
               ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
               : <CheckCircle2 size={18} />}
-            Принять
+            Откликнуться
           </button>
         </div>
       </div>
@@ -195,6 +209,7 @@ export default function HomePage() {
   }
 
   const available = data?.availableOrders ?? [];
+  const pending = data?.pendingOrders ?? [];
   const active = data?.activeOrders ?? [];
 
   return (
@@ -241,7 +256,7 @@ export default function HomePage() {
                   {order.city}{order.district ? `, ${order.district}` : ""}
                 </span>
                 <span className="text-xs text-primary font-medium flex items-center gap-1">
-                  Принять <ChevronRight size={14} />
+                  Откликнуться <ChevronRight size={14} />
                 </span>
               </div>
               <div className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -258,6 +273,43 @@ export default function HomePage() {
                 )}
               </div>
             </button>
+          ))}
+        </section>
+      )}
+
+      {pending.length > 0 && (
+        <section className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Clock size={16} className="text-amber-500" />
+            <h2 className="font-semibold text-sm text-foreground">
+              Ожидаю решения ({pending.length})
+            </h2>
+          </div>
+          {pending.map(order => (
+            <div
+              key={order.id}
+              className="w-full bg-amber-50 dark:bg-amber-900/15 border border-amber-200 dark:border-amber-800/40 rounded-xl p-3.5 space-y-1.5"
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-sm text-amber-800 dark:text-amber-300">
+                  {order.city}{order.district ? `, ${order.district}` : ""}
+                </span>
+                <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+                  Отклик отправлен
+                </span>
+              </div>
+              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                <span>{order.serviceType}</span>
+                <span>·</span>
+                <span>{order.area} м²</span>
+                {order.respondedAt && (
+                  <>
+                    <span>·</span>
+                    <span>{formatDistanceToNow(new Date(order.respondedAt), { addSuffix: true, locale: ru })}</span>
+                  </>
+                )}
+              </div>
+            </div>
           ))}
         </section>
       )}
@@ -295,9 +347,9 @@ export default function HomePage() {
       </section>
 
       {selectedOrder && (
-        <AcceptModal
+        <RespondModal
           order={selectedOrder}
-          onAccept={() => { setSelectedOrder(null); load(); }}
+          onRespond={() => { setSelectedOrder(null); load(); }}
           onReject={() => { setSelectedOrder(null); load(); }}
           onClose={() => setSelectedOrder(null)}
         />
