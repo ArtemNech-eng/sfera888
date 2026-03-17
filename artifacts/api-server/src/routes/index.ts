@@ -20,7 +20,6 @@ import trashRouter, { runTrashCleanup } from "./trash.js";
 import tasksRouter from "./tasks.js";
 import masterReviewsRouter from "./master-reviews.js";
 import masterPwaRouter from "./master-pwa.js";
-import migrateRouter from "./migrate.js";
 
 const router = Router();
 

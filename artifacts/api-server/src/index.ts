@@ -1,6 +1,6 @@
 import app from "./app";
-import { db, usersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { db, usersTable, voronkaColumnsTable } from "@workspace/db";
+import { eq, inArray } from "drizzle-orm";
 import { hashPassword } from "./lib/auth.js";
 
 const rawPort = process.env["PORT"];
@@ -18,14 +18,12 @@ if (Number.isNaN(port) || port <= 0) {
 }
 
 // If ADMIN_PASSWORD env var is set, reset the admin user's password on startup.
-// Use this to regain access or set initial credentials in a new environment.
 async function maybeResetAdminPassword() {
   const newPassword = process.env["ADMIN_PASSWORD"];
   if (!newPassword) return;
 
   const [admin] = await db.select().from(usersTable).where(eq(usersTable.login, "admin"));
   if (!admin) {
-    // Create admin user if not exists
     const passwordHash = await hashPassword(newPassword);
     await db.insert(usersTable).values({
       login: "admin",
@@ -41,7 +39,39 @@ async function maybeResetAdminPassword() {
   }
 }
 
+// Seed default voronka columns if they don't exist yet.
+// Safe to run on every startup — checks before inserting.
+async function seedVoronkaColumns() {
+  const DEFAULT_COLUMNS = [
+    { name: "Новые",           position: 1, receivesOrders: false, color: "blue"   },
+    { name: "Свободен",        position: 2, receivesOrders: true,  color: "green"  },
+    { name: "На объекте",      position: 3, receivesOrders: false, color: "orange" },
+    { name: "Ожидает оплаты",  position: 4, receivesOrders: false, color: "red"    },
+  ];
+
+  const existing = await db.select().from(voronkaColumnsTable);
+  const existingNames = existing.map(c => c.name);
+
+  // Rename "Свободные" → "Свободен" if present (typo fix from initial setup)
+  const svobodnyeCol = existing.find(c => c.name === "Свободные");
+  if (svobodnyeCol) {
+    await db.update(voronkaColumnsTable)
+      .set({ name: "Свободен", receivesOrders: true, position: 2 })
+      .where(eq(voronkaColumnsTable.id, svobodnyeCol.id));
+    console.log("[startup] Renamed 'Свободные' → 'Свободен'");
+    existingNames[existingNames.indexOf("Свободные")] = "Свободен";
+  }
+
+  for (const col of DEFAULT_COLUMNS) {
+    if (!existingNames.includes(col.name)) {
+      await db.insert(voronkaColumnsTable).values(col);
+      console.log(`[startup] Created voronka column: '${col.name}'`);
+    }
+  }
+}
+
 maybeResetAdminPassword().catch(console.error);
+seedVoronkaColumns().catch(console.error);
 
 app.listen(port, () => {
   console.log(`Server listening on port ${port}`);
