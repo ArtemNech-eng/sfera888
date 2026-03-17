@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
-import { api } from "@/lib/api";
+import { api, resolvePhotoUrl } from "@/lib/api";
 import { toast } from "sonner";
 import { usePushNotifications } from "@/lib/usePushNotifications";
 import {
@@ -153,7 +153,7 @@ function PhotoGallery({ photos }: { photos: string[] }) {
   if (!photos.length) return null;
   return (
     <div className="relative bg-black">
-      <img src={photos[active]} alt={`Фото ${active + 1}`} className="w-full object-cover" style={{ maxHeight: 260 }} />
+      <img src={resolvePhotoUrl(photos[active])} alt={`Фото ${active + 1}`} className="w-full object-cover" style={{ maxHeight: 260 }} />
       {photos.length > 1 && (
         <>
           <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-1.5">
@@ -204,23 +204,39 @@ function parseServices(raw: string | null): ServiceLine[] | null {
   return null;
 }
 
-// ─── Yandex Map Embed ─────────────────────────────────────────────────────────
+// ─── Map Preview (static image linking to Yandex Maps) ───────────────────────
 
 function YandexMapEmbed({ city, district }: { city: string; district: string | null }) {
-  const query = encodeURIComponent(`${city}${district ? ` ${district}` : ""}`);
-  const src = `https://yandex.ru/maps/?text=${query}&z=14&output=embed`;
+  const address = `${city}${district ? ` ${district}` : ""}`;
+  const query = encodeURIComponent(address);
+  const staticSrc = `https://static-maps.yandex.ru/1.x/?geocode=${query}&z=14&size=600,200&l=map&lang=ru_RU`;
+  const mapsUrl = `https://yandex.ru/maps/?text=${query}`;
+  const [imgError, setImgError] = useState(false);
+
   return (
-    <div className="mt-3 rounded-2xl overflow-hidden border border-border" style={{ height: 200 }}>
-      <iframe
-        src={src}
-        width="100%"
-        height="200"
-        frameBorder="0"
-        loading="lazy"
-        title="Карта объекта"
-        className="block"
-        style={{ border: 0 }}
-      />
+    <div className="mt-3 rounded-2xl overflow-hidden border border-border">
+      {!imgError ? (
+        <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="block relative">
+          <img
+            src={staticSrc}
+            alt="Карта"
+            className="w-full object-cover block"
+            style={{ height: 180 }}
+            onError={() => setImgError(true)}
+          />
+          <div className="absolute inset-0 flex items-end justify-center pb-3 pointer-events-none">
+            <span className="bg-black/50 text-white text-xs rounded-full px-3 py-1">
+              Открыть в Яндекс Картах ↗
+            </span>
+          </div>
+        </a>
+      ) : (
+        <a href={mapsUrl} target="_blank" rel="noopener noreferrer"
+          className="flex items-center justify-center gap-2 h-16 bg-muted text-muted-foreground text-sm hover:bg-accent transition-colors">
+          <MapPin size={15} />
+          {address} — открыть карту ↗
+        </a>
+      )}
     </div>
   );
 }
@@ -720,7 +736,7 @@ export default function HomePage() {
               <button onClick={() => setSelectedAvail(order)}
                 className="w-full bg-primary/10 dark:bg-primary/15 border border-primary/30 rounded-2xl overflow-hidden text-left">
                 {order.photos.length > 0 && (
-                  <img src={order.photos[0]} alt="фото" className="w-full object-cover" style={{ height: 130 }} />
+                  <img src={resolvePhotoUrl(order.photos[0])} alt="фото" className="w-full object-cover" style={{ height: 130 }} />
                 )}
                 <div className="p-4 space-y-2">
                   <div className="flex items-center justify-between">
@@ -781,7 +797,7 @@ export default function HomePage() {
             <button key={order.id} onClick={() => setSelectedPending(order)}
               className="w-full bg-amber-50 dark:bg-amber-900/15 border border-amber-200 dark:border-amber-800/40 rounded-2xl overflow-hidden text-left">
               {order.photos.length > 0 && (
-                <img src={order.photos[0]} alt="фото" className="w-full object-cover" style={{ height: 90 }} />
+                <img src={resolvePhotoUrl(order.photos[0])} alt="фото" className="w-full object-cover" style={{ height: 90 }} />
               )}
               <div className="p-4 space-y-1.5">
                 <div className="flex items-center justify-between">
