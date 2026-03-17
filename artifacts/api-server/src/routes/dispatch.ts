@@ -168,13 +168,13 @@ router.post("/:orderId/broadcast", ops, async (req, res) => {
     return res.status(400).json({ error: "Already dispatched" });
   }
 
-  // Find eligible masters: active, with telegramId, in the same city as the order
+  // Find eligible masters: active, with telegramId OR pwaLogin, in the same city as the order
   const allMasters = await db.select().from(mastersTable)
     .where(and(eq(mastersTable.status, "active"), eq(mastersTable.city, order.city)));
-  const withTg = allMasters.filter(m => m.telegramId);
+  const reachable = allMasters.filter(m => m.telegramId || m.pwaLogin);
 
-  if (withTg.length === 0) {
-    return res.status(400).json({ error: `Нет активных мастеров с Telegram в городе «${order.city}»` });
+  if (reachable.length === 0) {
+    return res.status(400).json({ error: `Нет активных мастеров в городе «${order.city}» (ни в Telegram, ни в приложении)` });
   }
 
   // Load all active orders to check per-master limits
@@ -182,7 +182,7 @@ router.post("/:orderId/broadcast", ops, async (req, res) => {
     .where(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
 
   // Filter out masters who have reached their order limit
-  const eligible = withTg.filter(master => {
+  const eligible = reachable.filter(master => {
     const myActiveCount = activeOrders.filter(o => o.masterId === master.id).length;
     const limit = master.isTestMaster ? 1 : 2;
     return myActiveCount < limit;
@@ -202,21 +202,27 @@ router.post("/:orderId/broadcast", ops, async (req, res) => {
 
   let sent = 0;
   let skipped = 0;
-  for (const master of withTg) {
-    if (!master.telegramId) continue;
+  for (const master of reachable) {
     const myActiveCount = activeOrders.filter(o => o.masterId === master.id).length;
     const limit = master.isTestMaster ? 1 : 2;
     if (myActiveCount >= limit) {
       skipped++;
       continue;
     }
-    const msgId = BANNER_NEW_ORDER
-      ? await sendTgPhoto(master.telegramId, BANNER_NEW_ORDER, cardText, replyMarkup)
-      : await sendTg(master.telegramId, cardText, replyMarkup);
+
+    let msgId: string | null = null;
+    if (master.telegramId) {
+      // Send Telegram notification for masters with Telegram
+      msgId = BANNER_NEW_ORDER
+        ? await sendTgPhoto(master.telegramId, BANNER_NEW_ORDER, cardText, replyMarkup)
+        : await sendTg(master.telegramId, cardText, replyMarkup);
+    }
+    // For PWA-only masters: just create the dispatch record — the app polls /orders/available
+
     await db.insert(orderDispatchesTable).values({
       orderId,
       masterId: master.id,
-      telegramChatId: master.telegramId,
+      telegramChatId: master.telegramId ?? null,
       telegramMessageId: msgId ?? null,
       status: "sent",
     });
@@ -274,30 +280,30 @@ router.post("/:orderId/assign/:masterId", ops, async (req, res) => {
   }).where(eq(mastersTable.id, masterId));
 
   // Notify assigned master with full info including phone
-  if (master.telegramId) {
-    const assignedMsg =
-      `✅ <b>Заявка #${orderId} назначена вам!</b>\n\n` +
-      `🔧 Услуга: <b>${order.serviceType}</b>\n` +
-      `📍 Район: <b>${order.city}${order.district ? ", " + order.district : ""}</b>\n` +
-      `📐 Объём: <b>${order.area} м²</b>\n` +
-      `📅 Дата: <b>${formatDate(order.scheduledAt)}</b>` +
-      (order.comment ? `\n💬 Комментарий: ${order.comment}` : "") +
-      (lead ? `\n\n📞 Клиент: <b>${lead.clientName}</b>\nТелефон: <b>${lead.clientPhone}</b>` : "");
+  const assignedMsg =
+    `✅ <b>Заявка #${orderId} назначена вам!</b>\n\n` +
+    `🔧 Услуга: <b>${order.serviceType}</b>\n` +
+    `📍 Район: <b>${order.city}${order.district ? ", " + order.district : ""}</b>\n` +
+    `📐 Объём: <b>${order.area} м²</b>\n` +
+    `📅 Дата: <b>${formatDate(order.scheduledAt)}</b>` +
+    (order.comment ? `\n💬 Комментарий: ${order.comment}` : "") +
+    (lead ? `\n\n📞 Клиент: <b>${lead.clientName}</b>\nТелефон: <b>${lead.clientPhone}</b>` : "");
 
+  if (master.telegramId) {
     BANNER_ASSIGNED
       ? await sendTgPhoto(master.telegramId, BANNER_ASSIGNED, assignedMsg)
       : await sendTg(master.telegramId, assignedMsg);
-
-    // Log to CRM chat
-    await db.insert(masterMessagesTable).values({
-      masterId: master.id,
-      telegramChatId: master.telegramId,
-      text: `✅ Назначен на заявку #${orderId}`,
-      fromMaster: false,
-      senderName: "system",
-      isRead: true,
-    }).catch(() => {});
   }
+
+  // Always log to CRM chat (visible in PWA chat tab as well)
+  await db.insert(masterMessagesTable).values({
+    masterId: master.id,
+    telegramChatId: master.telegramId ?? `pwa_${master.id}`,
+    text: `✅ Назначен на заявку #${orderId}`,
+    fromMaster: false,
+    senderName: "system",
+    isRead: false,
+  }).catch(() => {});
 
   // Update all other dispatched messages → "Заказ взят"
   const others = await db.select().from(orderDispatchesTable)
