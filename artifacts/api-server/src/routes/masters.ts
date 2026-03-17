@@ -4,26 +4,42 @@ import { eq, desc, inArray, isNull } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { notifyMasterActivated } from "../telegram-notify.js";
 import multer from "multer";
-import path from "path";
-import { fileURLToPath } from "url";
-import fs from "fs";
+import { objectStorageClient, ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const UPLOAD_DIR = path.join(__dirname, "../../../public/uploads/avatars");
-fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+const objectStorage = new ObjectStorageService();
 
-const avatarStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
-  filename: (req, _file, cb) => cb(null, `master-${req.params.id}-${Date.now()}.jpg`),
-});
 const avatarUpload = multer({
-  storage: avatarStorage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (file.mimetype.startsWith("image/")) cb(null, true);
     else cb(new Error("Only images allowed"));
   },
 });
+
+const GCS_AVATAR_PREFIX = "avatars/";
+
+async function uploadAvatarToGCS(masterId: number, buffer: Buffer, mimetype: string): Promise<string> {
+  const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+  if (!bucketId) throw new Error("Object storage not configured");
+  const ts = Date.now();
+  const filename = `master-${masterId}-${ts}.jpg`;
+  const gcsName = `${GCS_AVATAR_PREFIX}${filename}`;
+  const bucket = objectStorageClient.bucket(bucketId);
+  await bucket.file(gcsName).save(buffer, { contentType: mimetype, resumable: false });
+  return `/api/masters/avatar/${filename}`;
+}
+
+async function deleteAvatarFromGCS(avatarUrl: string) {
+  try {
+    const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+    if (!bucketId) return;
+    if (!avatarUrl.includes("/api/masters/avatar/")) return;
+    const filename = avatarUrl.split("/api/masters/avatar/")[1];
+    const bucket = objectStorageClient.bucket(bucketId);
+    await bucket.file(`${GCS_AVATAR_PREFIX}${filename}`).delete({ ignoreNotFound: true });
+  } catch {}
+}
 
 const router = Router();
 const allMasterRoles = requireRole("admin", "master_operator");
@@ -229,22 +245,41 @@ router.delete("/:id/tasks/:taskId", allMasterRoles, async (req, res) => {
   res.json({ success: true });
 });
 
-// POST /api/masters/:id/avatar — upload custom avatar photo
+// GET /api/masters/avatar/:filename — serve avatar from GCS
+router.get("/avatar/:filename", async (req, res) => {
+  try {
+    const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+    if (!bucketId) return res.status(500).json({ error: "Storage not configured" });
+    const bucket = objectStorageClient.bucket(bucketId);
+    const file = bucket.file(`${GCS_AVATAR_PREFIX}${req.params.filename}`);
+    const [exists] = await file.exists();
+    if (!exists) return res.status(404).json({ error: "Not found" });
+    const [metadata] = await file.getMetadata();
+    res.setHeader("Content-Type", (metadata.contentType as string) || "image/jpeg");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    file.createReadStream().pipe(res);
+  } catch (err) {
+    res.status(500).json({ error: "Storage error" });
+  }
+});
+
+// POST /api/masters/:id/avatar — upload custom avatar photo to GCS
 router.post("/:id/avatar", allMasterRoles, avatarUpload.single("avatar"), async (req, res) => {
   const masterId = parseInt(req.params.id);
   if (isNaN(masterId)) return res.status(400).json({ error: "Invalid id" });
   if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
-  // Build public URL — served at /api/uploads/avatars/<filename> (Replit routes /api/* to this server)
-  const avatarUrl = `/api/uploads/avatars/${req.file.filename}`;
-
-  const [updated] = await db.update(mastersTable)
-    .set({ customAvatarUrl: avatarUrl })
-    .where(eq(mastersTable.id, masterId))
-    .returning();
-
-  if (!updated) return res.status(404).json({ error: "Master not found" });
-  res.json({ customAvatarUrl: avatarUrl });
+  try {
+    const avatarUrl = await uploadAvatarToGCS(masterId, req.file.buffer, req.file.mimetype);
+    const [updated] = await db.update(mastersTable)
+      .set({ customAvatarUrl: avatarUrl })
+      .where(eq(mastersTable.id, masterId))
+      .returning();
+    if (!updated) return res.status(404).json({ error: "Master not found" });
+    res.json({ customAvatarUrl: avatarUrl });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message ?? "Upload failed" });
+  }
 });
 
 // POST /api/masters/:id/reset-pwa — clear pwaLogin + pwaPasswordHash
@@ -262,7 +297,7 @@ router.post("/:id/reset-pwa", allMasterRoles, async (req, res) => {
   res.json({ success: true });
 });
 
-// DELETE /api/masters/:id/avatar — remove custom avatar
+// DELETE /api/masters/:id/avatar — remove custom avatar from GCS
 router.delete("/:id/avatar", allMasterRoles, async (req, res) => {
   const masterId = parseInt(req.params.id);
   if (isNaN(masterId)) return res.status(400).json({ error: "Invalid id" });
@@ -270,11 +305,8 @@ router.delete("/:id/avatar", allMasterRoles, async (req, res) => {
   const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
   if (!master) return res.status(404).json({ error: "Master not found" });
 
-  // Delete file from disk if it's a local upload
-  if (master.customAvatarUrl?.includes("/uploads/avatars/")) {
-    const filename = master.customAvatarUrl.split("/uploads/avatars/")[1];
-    const filePath = path.join(UPLOAD_DIR, filename);
-    try { fs.unlinkSync(filePath); } catch {}
+  if (master.customAvatarUrl) {
+    await deleteAvatarFromGCS(master.customAvatarUrl);
   }
 
   await db.update(mastersTable).set({ customAvatarUrl: null }).where(eq(mastersTable.id, masterId));

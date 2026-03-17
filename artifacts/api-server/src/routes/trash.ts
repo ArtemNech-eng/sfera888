@@ -1,10 +1,8 @@
 import { Router } from "express";
-import fs from "fs";
-import path from "path";
 import { db, mastersTable, ordersTable, leadsTable, orderDispatchesTable, transactionsTable, masterReviewsTable } from "@workspace/db";
 import { isNull, isNotNull, lt, and, eq } from "drizzle-orm";
 import { requirePermission } from "../middlewares/requireAuth.js";
-import { AVATAR_DIR } from "../config.js";
+import { objectStorageClient } from "../lib/objectStorage.js";
 
 const router = Router();
 const adminOnly = requirePermission("trash");
@@ -17,12 +15,17 @@ function daysLeft(deletedAt: Date): number {
   return Math.max(0, Math.ceil((expiry.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
 }
 
-function deleteAvatarFile(customAvatarUrl: string | null) {
-  if (!customAvatarUrl?.includes("/uploads/avatars/")) return;
-  const filename = customAvatarUrl.split("/uploads/avatars/")[1];
-  if (!filename) return;
-  const filePath = path.join(AVATAR_DIR, filename);
-  try { fs.unlinkSync(filePath); } catch {}
+async function deleteAvatarFile(customAvatarUrl: string | null) {
+  if (!customAvatarUrl) return;
+  if (customAvatarUrl.includes("/api/masters/avatar/")) {
+    try {
+      const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+      if (!bucketId) return;
+      const filename = customAvatarUrl.split("/api/masters/avatar/")[1];
+      if (!filename) return;
+      await objectStorageClient.bucket(bucketId).file(`avatars/${filename}`).delete({ ignoreNotFound: true });
+    } catch {}
+  }
 }
 
 async function deleteOrderCascade(orderId: number) {
@@ -112,7 +115,7 @@ router.delete("/:type/:id", adminOnly, async (req, res) => {
   if (type === "master") {
     const [master] = await db.select().from(mastersTable)
       .where(and(eq(mastersTable.id, numId), isNotNull(mastersTable.deletedAt)));
-    if (master) deleteAvatarFile(master.customAvatarUrl ?? null);
+    if (master) await deleteAvatarFile(master.customAvatarUrl ?? null);
     await db.delete(mastersTable).where(and(eq(mastersTable.id, numId), isNotNull(mastersTable.deletedAt)));
   } else if (type === "order") {
     await deleteOrderCascade(numId);
@@ -133,7 +136,7 @@ export async function runTrashCleanup() {
   const expiredMasters = await db.select().from(mastersTable)
     .where(and(isNotNull(mastersTable.deletedAt), lt(mastersTable.deletedAt, cutoff)));
   for (const m of expiredMasters) {
-    deleteAvatarFile(m.customAvatarUrl ?? null);
+    await deleteAvatarFile(m.customAvatarUrl ?? null);
   }
 
   const expiredOrders = await db.select().from(ordersTable)

@@ -109,7 +109,6 @@ function RatingEditor({ masterId, rating, onSaved }: { masterId: number; rating:
   const current = Math.round(rating);
 
   const save = async (val: number) => {
-    if (val === current) return;
     setSaving(true);
     try {
       const r = await fetch(`/api/masters/${masterId}`, {

@@ -5,7 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, ShieldOff } from "lucide-react";
 
 export const PERM_TO_ROUTE: Record<string, string> = {
-  dashboard:    "/",
+  dashboard:    "/dashboard",
   voronka:      "/voronka",
   "master-chat": "/master-chat",
   leads:        "/leads",

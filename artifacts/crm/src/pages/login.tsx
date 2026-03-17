@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useLogin } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuth, PERM_TO_ROUTE } from "@/hooks/use-auth";
 import { Loader2, Lock, User } from "lucide-react";
 
@@ -19,10 +20,12 @@ export default function Login() {
   const [error, setError] = useState("");
   const [_, setLocation] = useLocation();
   const { user, isLoading } = useAuth();
+  const queryClient = useQueryClient();
   
   const loginMutation = useLogin({
     mutation: {
-      onSuccess: (data) => {
+      onSuccess: async (data) => {
+        await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
         setLocation(getRedirectPath(data.user));
       },
       onError: () => {
