@@ -53,7 +53,7 @@ export default function Finance() {
   ];
 
   return (
-    <ProtectedRoute allowedRoles={['admin']}>
+    <ProtectedRoute allowedRoles={['admin', 'master_operator']}>
       <Layout>
         <div className="space-y-6">
           <div>

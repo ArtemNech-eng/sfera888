@@ -4,7 +4,7 @@ import { requireRole } from "../middlewares/requireAuth.js";
 import { isNull } from "drizzle-orm";
 
 const router = Router();
-const adminOnly = requireRole("admin");
+const adminOnly = requireRole("admin", "master_operator");
 
 router.get("/dashboard", adminOnly, async (req, res) => {
   const now = new Date();

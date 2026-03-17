@@ -100,7 +100,7 @@ router.patch("/transactions/:id", opsAndAdmin, async (req, res) => {
   });
 });
 
-router.get("/summary", adminOnly, async (req, res) => {
+router.get("/summary", opsAndAdmin, async (req, res) => {
   const transactions = await db.select().from(transactionsTable);
   const totalIncome = transactions.filter(t => t.paymentStatus === "paid").reduce((s, t) => s + Number(t.commission), 0);
   const totalDebt = transactions.filter(t => t.paymentStatus !== "paid").reduce((s, t) => s + Number(t.commission), 0);

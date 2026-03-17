@@ -4,7 +4,7 @@ import { isNull, isNotNull, lt, and, eq } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 
 const router = Router();
-const adminOnly = requireRole("admin");
+const adminOnly = requireRole("admin", "master_operator");
 
 const TRASH_TTL_DAYS = 30;
 const TRASH_TTL_MS = TRASH_TTL_DAYS * 24 * 60 * 60 * 1000;

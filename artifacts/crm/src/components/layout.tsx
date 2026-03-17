@@ -49,18 +49,18 @@ export function Layout({ children }: LayoutProps) {
   const openTasksCount = taskStats?.open ?? 0;
 
   const navItems = [
-    { href: "/", label: "Дашборд", icon: LayoutDashboard, roles: ['admin'] },
+    { href: "/", label: "Дашборд", icon: LayoutDashboard, roles: ['admin', 'master_operator'] },
     { href: "/voronka", label: "Воронка Telegram", icon: MessageCircle, roles: ['admin', 'lead_operator', 'master_operator'] },
     { href: "/master-chat", label: "Чат с мастерами", icon: MessagesSquare, roles: ['admin', 'master_operator'], badge: unreadCount > 0 ? unreadCount : null },
     { href: "/leads", label: "Заявки", icon: Inbox, roles: ['admin', 'lead_operator'] },
     { href: "/orders", label: "Буфер заказов", icon: Briefcase, roles: ['admin', 'master_operator'] },
     { href: "/masters", label: "Мастера", icon: Users, roles: ['admin', 'master_operator'] },
     { href: "/tasks", label: "Задачи", icon: ClipboardList, roles: ['admin', 'master_operator', 'lead_operator'], badge: openTasksCount > 0 ? openTasksCount : null },
-    { href: "/finance", label: "Финансы", icon: Wallet, roles: ['admin'] },
-    { href: "/analytics", label: "Аналитика", icon: BarChart3, roles: ['admin'] },
+    { href: "/finance", label: "Финансы", icon: Wallet, roles: ['admin', 'master_operator'] },
+    { href: "/analytics", label: "Аналитика", icon: BarChart3, roles: ['admin', 'master_operator'] },
     { href: "/settings", label: "Настройки", icon: Settings, roles: ['admin'] },
     { href: "/users", label: "Пользователи", icon: UserCog, roles: ['admin'] },
-    { href: "/trash", label: "Корзина", icon: Trash2, roles: ['admin'] },
+    { href: "/trash", label: "Корзина", icon: Trash2, roles: ['admin', 'master_operator'] },
   ];
 
   const filteredNav = navItems.filter(item => user && item.roles.includes(user.role));

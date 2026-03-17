@@ -47,7 +47,7 @@ export default function Dashboard() {
   const { data: stats, isLoading, error } = useGetDashboard();
 
   return (
-    <ProtectedRoute allowedRoles={['admin']}>
+    <ProtectedRoute allowedRoles={['admin', 'master_operator']}>
       <Layout>
         <div className="space-y-8">
           <div>

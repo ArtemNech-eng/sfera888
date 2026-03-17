@@ -27,7 +27,7 @@ export function Sidebar() {
       href: "/", 
       label: "Дашборд", 
       icon: LayoutDashboard, 
-      roles: ["admin"] 
+      roles: ["admin", "master_operator"] 
     },
     { 
       href: "/leads", 
@@ -51,13 +51,13 @@ export function Sidebar() {
       href: "/finance", 
       label: "Финансы", 
       icon: Wallet, 
-      roles: ["admin"] 
+      roles: ["admin", "master_operator"] 
     },
     { 
       href: "/analytics", 
       label: "Аналитика", 
       icon: BarChart3, 
-      roles: ["admin"] 
+      roles: ["admin", "master_operator"] 
     },
     { 
       href: "/settings", 
@@ -75,7 +75,7 @@ export function Sidebar() {
       href: "/trash", 
       label: "Корзина", 
       icon: Trash2, 
-      roles: ["admin"] 
+      roles: ["admin", "master_operator"] 
     },
   ];
 
