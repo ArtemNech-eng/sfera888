@@ -18,3 +18,9 @@ id = "aVIxXRbrmQZiADi4MWxC4"
 uri = "file://artifacts/api-server/public/banners/order_assigned.png"
 type = "image"
 title = "Баннер: Заказ назначен!"
+
+[[outputs]]
+id = "fGEOWMWOgunG9LEg3Ifij"
+uri = "file://master-guide.pdf"
+type = "pdf"
+title = "Инструкция мастера — Честный мастер"
