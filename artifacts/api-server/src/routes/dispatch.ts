@@ -150,8 +150,11 @@ router.get("/:orderId", ops, async (req, res) => {
       id: d.id,
       masterId: d.masterId,
       masterName: masterMap.get(d.masterId)?.alias ?? "?",
+      masterCity: masterMap.get(d.masterId)?.city ?? null,
       status: d.status,
       respondedAt: d.respondedAt ?? null,
+      rejectionReason: (d as any).rejectionReason ?? null,
+      responseNote: (d as any).responseNote ?? null,
     })),
   });
 });

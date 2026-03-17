@@ -49,6 +49,9 @@ function formatMaster(m: any) {
     customAvatarUrl: m.customAvatarUrl ?? null,
     contractLink: m.contractLink ?? null,
     pwaLogin: m.pwaLogin ?? null,
+    workingHours: m.workingHours ?? null,
+    preferredDistricts: m.preferredDistricts ?? [],
+    minArea: m.minArea ?? 0,
     createdAt: m.createdAt,
   };
 }

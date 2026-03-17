@@ -124,6 +124,9 @@ router.get("/masters", requireAuth, async (_req, res) => {
     avatarUrl: (m.telegramId ? (avatarMap.get(m.telegramId) ?? null) : null) ?? m.customAvatarUrl ?? null,
     activeOrders: masterActiveOrders.get(m.id) ?? [],
     contractLink: m.contractLink ?? null,
+    workingHours: m.workingHours ?? null,
+    preferredDistricts: m.preferredDistricts ?? [],
+    minArea: m.minArea ?? 0,
     createdAt: m.createdAt,
   })));
 });

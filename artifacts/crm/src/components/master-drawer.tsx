@@ -14,6 +14,9 @@ import { ru } from "date-fns/locale";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface DrawerColumn { id: number; name: string; }
+interface WorkingHours { start: string; end: string; days: number[]; }
+const DAY_LABELS_SHORT = ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"];
+
 export interface DrawerMaster {
   id: number; alias: string; city: string;
   specialization: string; specializations: string[]; tags: string[];
@@ -22,6 +25,9 @@ export interface DrawerMaster {
   voronkaColumnId: number | null; isTestMaster: boolean;
   avatarUrl: string | null; activeOrders: any[]; createdAt: string;
   pwaLogin: string | null; contractLink: string | null;
+  workingHours?: WorkingHours | null;
+  preferredDistricts?: string[];
+  minArea?: number;
 }
 
 interface MasterTask { id: number; masterId: number; text: string; dueAt: string | null; isCompleted: boolean; createdBy: string | null; createdAt: string; }
@@ -520,6 +526,53 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                   </button>
                 </div>
               </div>
+
+              {/* App Preferences — shown only if master has configured them */}
+              {((master.workingHours) || (master.preferredDistricts && master.preferredDistricts.length > 0) || (master.minArea && master.minArea > 0)) && (
+                <div className="border-t border-gray-100 pt-3 space-y-3">
+                  <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide flex items-center gap-1">
+                    <Clock className="w-3 h-3" /> Настройки в приложении
+                  </p>
+
+                  {master.workingHours && (
+                    <div className="bg-blue-50 rounded-xl px-3 py-2.5 space-y-1.5">
+                      <p className="text-[10px] font-semibold text-blue-700 uppercase">Рабочие часы</p>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-gray-800">{master.workingHours.start} — {master.workingHours.end}</span>
+                      </div>
+                      <div className="flex gap-1">
+                        {DAY_LABELS_SHORT.map((label, i) => {
+                          const day = i + 1;
+                          const active = master.workingHours!.days.includes(day);
+                          return (
+                            <span key={day} className={`text-[9px] font-bold rounded px-1 py-0.5 ${active ? "bg-blue-500 text-white" : "bg-gray-200 text-gray-400"}`}>
+                              {label}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {master.preferredDistricts && master.preferredDistricts.length > 0 && (
+                    <div>
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase mb-1.5">Предпочтительные районы</p>
+                      <div className="flex flex-wrap gap-1">
+                        {master.preferredDistricts.map(d => (
+                          <span key={d} className="text-[10px] bg-emerald-50 text-emerald-700 rounded-md px-2 py-0.5 font-medium">{d}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {master.minArea && master.minArea > 0 ? (
+                    <div className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+                      <span className="text-xs text-gray-500">Мин. площадь заявки</span>
+                      <span className="text-sm font-bold text-gray-800">от {master.minArea} м²</span>
+                    </div>
+                  ) : null}
+                </div>
+              )}
 
               <div className="border-t border-gray-100 pt-3">
                 <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1">

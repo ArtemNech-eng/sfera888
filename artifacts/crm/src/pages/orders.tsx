@@ -13,9 +13,19 @@ import {
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
+interface DispatchEntry {
+  id: number;
+  masterId: number;
+  masterName: string;
+  masterCity: string | null;
+  status: string;
+  respondedAt: string | null;
+  rejectionReason: string | null;
+  responseNote: string | null;
+}
 interface DispatchInfo {
   dispatchStatus: string;
-  dispatches: { id: number; masterId: number; masterName: string; status: string; respondedAt: string | null }[];
+  dispatches: DispatchEntry[];
 }
 
 function useDispatch(orderId: number | null) {
@@ -192,6 +202,8 @@ export default function Orders() {
 
   const openOrder = openDispatchId ? orders?.find(o => o.id === openDispatchId) : null;
   const respondents = dispatchData?.dispatches.filter(d => d.status === "responded") ?? [];
+  const rejectedDispatches = dispatchData?.dispatches.filter(d => d.status === "rejected") ?? [];
+  const pendingDispatched = dispatchData?.dispatches.filter(d => d.status === "dispatched") ?? [];
 
   const pendingAmountOrders = orders?.filter(o => (o as any).proposedAmount && !(o as any).orderAmount) ?? [];
   const cancellationOrders = orders?.filter(o => o.status === "cancellation_requested" as any) ?? [];
@@ -599,43 +611,94 @@ export default function Orders() {
                 )}
 
                 {((openOrder as any).dispatchStatus ?? "none") !== "none" && (
-                  <div className="space-y-3">
+                  <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <p className="text-sm font-medium text-foreground">
-                        Откликнулись ({respondents.length})
+                        Статус рассылки
                       </p>
                       {dispatchLoading && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
                     </div>
 
-                    {respondents.length === 0 ? (
-                      <div className="text-center py-6 text-sm text-muted-foreground">
-                        <Clock className="w-8 h-8 mx-auto mb-2 text-muted-foreground/40" />
-                        Ожидаем откликов от мастеров...
-                      </div>
-                    ) : (
+                    {/* Responded masters */}
+                    {respondents.length > 0 && (
                       <div className="space-y-2">
+                        <p className="text-xs font-semibold text-green-700 uppercase tracking-wide flex items-center gap-1">
+                          <Check className="w-3 h-3" /> Откликнулись ({respondents.length})
+                        </p>
                         {respondents.map(d => (
-                          <div key={d.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
-                            <div>
-                              <p className="text-sm font-medium text-foreground">{d.masterName}</p>
-                              {d.respondedAt && (
-                                <p className="text-xs text-muted-foreground mt-0.5">
-                                  {new Date(d.respondedAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
-                                </p>
+                          <div key={d.id} className="p-3 bg-green-50 border border-green-100 rounded-xl space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="text-sm font-semibold text-foreground">{d.masterName}</p>
+                                {d.respondedAt && (
+                                  <p className="text-xs text-muted-foreground">
+                                    {new Date(d.respondedAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
+                                  </p>
+                                )}
+                              </div>
+                              {(openOrder as any).dispatchStatus !== "assigned" && (
+                                <button
+                                  onClick={() => assignMutation.mutate({ orderId: openDispatchId, masterId: d.masterId })}
+                                  disabled={assignMutation.isPending}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-500 text-white hover:bg-green-600 rounded-lg font-medium text-xs transition-colors disabled:opacity-50"
+                                >
+                                  {assignMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserCheck className="w-3 h-3" />}
+                                  Назначить
+                                </button>
                               )}
                             </div>
-                            {(openOrder as any).dispatchStatus !== "assigned" && (
-                              <button
-                                onClick={() => assignMutation.mutate({ orderId: openDispatchId, masterId: d.masterId })}
-                                disabled={assignMutation.isPending}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-500 text-white hover:bg-green-600 rounded-lg font-medium text-xs transition-colors disabled:opacity-50"
-                              >
-                                {assignMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserCheck className="w-3 h-3" />}
-                                Назначить
-                              </button>
+                            {d.responseNote && (
+                              <div className="bg-white border border-green-200 rounded-lg px-3 py-2">
+                                <p className="text-[10px] text-green-700 font-semibold uppercase mb-1">Предложение мастера</p>
+                                <p className="text-xs text-gray-700">{d.responseNote}</p>
+                              </div>
+                            )}
+                            <button
+                              onClick={() => openMasterChat(d.masterId)}
+                              className="flex items-center gap-1 text-[10px] text-blue-500 hover:underline"
+                            >
+                              <MessageSquare className="w-3 h-3" /> Написать в чат
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Rejected masters */}
+                    {rejectedDispatches.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold text-red-600 uppercase tracking-wide flex items-center gap-1">
+                          <X className="w-3 h-3" /> Отказались ({rejectedDispatches.length})
+                        </p>
+                        {rejectedDispatches.map(d => (
+                          <div key={d.id} className="p-3 bg-red-50 border border-red-100 rounded-xl">
+                            <p className="text-sm font-medium text-foreground">{d.masterName}</p>
+                            {d.rejectionReason && (
+                              <p className="text-xs text-red-600 mt-1">Причина: {d.rejectionReason}</p>
                             )}
                           </div>
                         ))}
+                      </div>
+                    )}
+
+                    {/* Pending masters */}
+                    {pendingDispatched.length > 0 && (
+                      <div className="space-y-1">
+                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide flex items-center gap-1">
+                          <Clock className="w-3 h-3" /> Ожидают ответа ({pendingDispatched.length})
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {pendingDispatched.map(d => (
+                            <span key={d.id} className="text-xs bg-gray-100 text-gray-600 rounded-lg px-2 py-0.5">{d.masterName}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {respondents.length === 0 && rejectedDispatches.length === 0 && (
+                      <div className="text-center py-6 text-sm text-muted-foreground">
+                        <Clock className="w-8 h-8 mx-auto mb-2 text-muted-foreground/40" />
+                        Ожидаем откликов от мастеров...
                       </div>
                     )}
 
