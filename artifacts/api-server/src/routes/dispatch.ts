@@ -160,6 +160,85 @@ router.get("/:orderId", ops, async (req, res) => {
   });
 });
 
+// ─── POST /api/dispatch/test-order ────────────────────────────────────────────
+// Creates a real order and sends it ONLY to a specific (test) master
+
+router.post("/test-order", ops, async (req, res) => {
+  const { masterId, serviceType, area, city, district, scheduledAt, comment } = req.body;
+
+  if (!masterId || !serviceType || !area || !city) {
+    return res.status(400).json({ error: "masterId, serviceType, area и city обязательны" });
+  }
+
+  const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, parseInt(masterId)));
+  const master = masterRows[0];
+  if (!master) return res.status(404).json({ error: "Мастер не найден" });
+  if (!master.telegramId && !master.pwaLogin) {
+    return res.status(400).json({ error: "У мастера нет ни Telegram, ни PWA — невозможно отправить заказ" });
+  }
+
+  // Create a placeholder lead for the test order
+  const [lead] = await db.insert(leadsTable).values({
+    clientName: "Тестовый клиент",
+    clientPhone: "+70000000000",
+    city: city.trim(),
+    district: district?.trim() || "Тест",
+    serviceType: serviceType.trim(),
+    area: String(area),
+    comment: comment?.trim() || null,
+    scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
+    source: "test",
+    status: "sent_to_work",
+  }).returning();
+
+  // Create the order linked to that lead
+  const [order] = await db.insert(ordersTable).values({
+    leadId: lead.id,
+    city: lead.city,
+    district: lead.district,
+    serviceType: lead.serviceType,
+    area: lead.area,
+    comment: lead.comment,
+    scheduledAt: lead.scheduledAt,
+    status: "waiting_master",
+    dispatchStatus: "dispatching",
+  }).returning();
+
+  const cardText = buildOrderCard(order, order.id);
+  const replyMarkup = {
+    inline_keyboard: [
+      [{ text: "Откликнуться 🙋", callback_data: `respond_order_${order.id}` }],
+      [{ text: "💬 Задать вопрос оператору", callback_data: `ask_question_${order.id}` }],
+    ],
+  };
+
+  // Send only to the specific master
+  let msgId: string | null = null;
+  if (master.telegramId) {
+    msgId = BANNER_NEW_ORDER
+      ? await sendTgPhoto(master.telegramId, BANNER_NEW_ORDER, cardText, replyMarkup)
+      : await sendTg(master.telegramId, cardText, replyMarkup);
+  }
+  if (master.pwaLogin) {
+    await sendPushToMaster(master.id, {
+      type: "new_order",
+      title: "Новый заказ (тест)",
+      body: `${order.city}${order.district ? ", " + order.district : ""} · ${order.serviceType} · ${order.area} м²`,
+      orderId: order.id,
+    }).catch(() => {});
+  }
+
+  await db.insert(orderDispatchesTable).values({
+    orderId: order.id,
+    masterId: master.id,
+    telegramChatId: master.telegramId || `pwa_${master.id}`,
+    telegramMessageId: msgId || null,
+    status: "sent",
+  });
+
+  res.json({ ok: true, orderId: order.id });
+});
+
 // ─── POST /api/dispatch/:orderId/broadcast ─────────────────────────────────────
 
 router.post("/:orderId/broadcast", ops, async (req, res) => {

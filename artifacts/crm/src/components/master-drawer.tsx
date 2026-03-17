@@ -6,7 +6,7 @@ import {
   User, Tag, Plus, CheckSquare, Square, Clock, Trash2, History,
   Send, Paperclip, Check, CheckCheck, Calendar, DollarSign, Loader2, CheckCircle2,
   ClipboardList, ExternalLink, ThumbsUp, ThumbsDown, Minus, Sparkles, MessageCircle,
-  Smartphone, KeyRound, Eye, EyeOff,
+  Smartphone, KeyRound, Eye, EyeOff, FlaskConical,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -200,6 +200,55 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
   const [showPwaPass, setShowPwaPass] = useState(false);
   const [savingPwa, setSavingPwa] = useState(false);
   const [resettingPwa, setResettingPwa] = useState(false);
+
+  // ── Test order modal ──────────────────────────────────────────────────────
+  const [showTestOrderModal, setShowTestOrderModal] = useState(false);
+  const [testOrderForm, setTestOrderForm] = useState({
+    serviceType: master.specializations[0] ?? "",
+    area: "",
+    district: "",
+    scheduledAt: "",
+    comment: "",
+  });
+  const [availableServices, setAvailableServices] = useState<string[]>([]);
+  const [sendingTestOrder, setSendingTestOrder] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/settings/services")
+      .then(r => r.ok ? r.json() : [])
+      .then((d: { id: number; name: string }[]) => setAvailableServices(d.map(s => s.name)))
+      .catch(() => {});
+  }, []);
+
+  const submitTestOrder = async () => {
+    if (!testOrderForm.serviceType || !testOrderForm.area) return;
+    setSendingTestOrder(true);
+    try {
+      const r = await fetch("/api/dispatch/test-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          masterId: master.id,
+          serviceType: testOrderForm.serviceType,
+          area: parseFloat(testOrderForm.area),
+          city: master.city,
+          district: testOrderForm.district || undefined,
+          scheduledAt: testOrderForm.scheduledAt || undefined,
+          comment: testOrderForm.comment || undefined,
+        }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error ?? "Ошибка");
+      setShowTestOrderModal(false);
+      setTestOrderForm({ serviceType: master.specializations[0] ?? "", area: "", district: "", scheduledAt: "", comment: "" });
+      alert(`Тестовый заказ #${data.orderId} отправлен мастеру ${master.alias}`);
+    } catch (e: any) {
+      alert(e.message ?? "Ошибка отправки");
+    } finally {
+      setSendingTestOrder(false);
+    }
+  };
 
   const resetPwaAccess = async () => {
     if (!confirm(`Сбросить PWA-доступ для ${master.alias}? Мастер сможет заново зарегистрироваться через приложение.`)) return;
@@ -426,6 +475,7 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
   const colName = columns.find(c => c.id === master.voronkaColumnId)?.name ?? (master.voronkaColumnId ? "Колонка" : "Без колонки");
 
   return (
+    <>
     <div className="fixed inset-0 z-50 flex" onClick={onClose}>
       <div className="flex-1 bg-black/30 backdrop-blur-[2px]" />
       <div className="w-[420px] bg-white flex flex-col shadow-2xl border-l border-gray-100 h-full overflow-hidden"
@@ -668,6 +718,22 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                   )}
                 </div>
               </div>
+
+              {/* Test order button — shown only for test masters */}
+              {master.isTestMaster && (
+                <div className="border-t border-amber-100 pt-3">
+                  <p className="text-[11px] font-semibold text-amber-500 uppercase tracking-wide mb-2 flex items-center gap-1">
+                    <FlaskConical className="w-3 h-3" /> Тестирование
+                  </p>
+                  <button
+                    onClick={() => setShowTestOrderModal(true)}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-semibold transition-colors shadow-sm shadow-amber-200"
+                  >
+                    <FlaskConical className="w-3.5 h-3.5" />
+                    Отправить тестовый заказ
+                  </button>
+                </div>
+              )}
 
               <div className="text-[11px] text-gray-300 pt-2 border-t border-gray-50">
                 Зарегистрирован: {dateShort(master.createdAt)}
@@ -1014,5 +1080,124 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
         </div>
       </div>
     </div>
+
+    {/* ── Test Order Modal ─────────────────────────────────────────────────── */}
+    {showTestOrderModal && (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-amber-400 to-amber-500 px-5 py-4 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-full bg-white/25 flex items-center justify-center">
+                <FlaskConical className="w-4 h-4 text-white" />
+              </div>
+              <div>
+                <p className="font-semibold text-white text-sm">Тестовый заказ</p>
+                <p className="text-amber-100 text-[11px]">{master.alias} · {master.city}</p>
+              </div>
+            </div>
+            <button onClick={() => setShowTestOrderModal(false)} className="text-white/70 hover:text-white transition-colors">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="p-5 space-y-3.5">
+            {/* Service type */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Тип услуги *</label>
+              {availableServices.length > 0 ? (
+                <select
+                  value={testOrderForm.serviceType}
+                  onChange={e => setTestOrderForm(f => ({ ...f, serviceType: e.target.value }))}
+                  className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-amber-200 bg-gray-50"
+                >
+                  <option value="">Выберите услугу...</option>
+                  {availableServices.map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={testOrderForm.serviceType}
+                  onChange={e => setTestOrderForm(f => ({ ...f, serviceType: e.target.value }))}
+                  placeholder="Укладка плитки"
+                  className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-amber-200 bg-gray-50"
+                />
+              )}
+            </div>
+
+            {/* Area */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Площадь (м²) *</label>
+              <input
+                type="number"
+                min="1"
+                value={testOrderForm.area}
+                onChange={e => setTestOrderForm(f => ({ ...f, area: e.target.value }))}
+                placeholder="50"
+                className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-amber-200 bg-gray-50"
+              />
+            </div>
+
+            {/* District */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Район</label>
+              <input
+                type="text"
+                value={testOrderForm.district}
+                onChange={e => setTestOrderForm(f => ({ ...f, district: e.target.value }))}
+                placeholder="Центральный"
+                className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-amber-200 bg-gray-50"
+              />
+            </div>
+
+            {/* Scheduled at */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Дата и время</label>
+              <input
+                type="datetime-local"
+                value={testOrderForm.scheduledAt}
+                onChange={e => setTestOrderForm(f => ({ ...f, scheduledAt: e.target.value }))}
+                className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-amber-200 bg-gray-50"
+              />
+            </div>
+
+            {/* Comment */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Комментарий</label>
+              <textarea
+                value={testOrderForm.comment}
+                onChange={e => setTestOrderForm(f => ({ ...f, comment: e.target.value }))}
+                placeholder="Дополнительные требования..."
+                rows={2}
+                className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-amber-200 bg-gray-50 resize-none"
+              />
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setShowTestOrderModal(false)}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={submitTestOrder}
+                disabled={sendingTestOrder || !testOrderForm.serviceType || !testOrderForm.area}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {sendingTestOrder
+                  ? <Loader2 className="w-4 h-4 animate-spin" />
+                  : <Send className="w-4 h-4" />}
+                Отправить
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
