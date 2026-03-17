@@ -144,11 +144,23 @@ router.get("/:masterId", requireRole("admin", "master_operator", "lead_operator"
   const pendingTx = await db.select().from(transactionsTable)
     .where(and(eq(transactionsTable.masterId, masterId), eq(transactionsTable.paymentStatus, "pending")));
 
-  console.log(`[master-chat] masterId=${masterId} pendingTx count=${pendingTx.length}`, pendingTx.map(t => t.id));
+  // Detect payment proof screenshot: a message from master that has a photo
+  // and text matching the payment proof pattern sent by the bot.
+  // We look for the LATEST such proof so the operator sees the most recent one.
+  const paymentProofMsg = [...messages]
+    .reverse()
+    .find(m => m.fromMaster && m.photoUrl && m.text?.includes("Скриншот оплаты"));
+
+  const hasPaymentProof = !!paymentProofMsg;
+  const paymentProofUrl = paymentProofMsg?.photoUrl ?? null;
+
+  console.log(`[master-chat] masterId=${masterId} pendingTx count=${pendingTx.length} hasPaymentProof=${hasPaymentProof}`);
 
   res.json({
     master: { id: master.id, alias: master.alias, city: master.city, telegramId: master.telegramId, pwaLogin: master.pwaLogin ?? null, avatarUrl },
     messages,
+    hasPaymentProof,
+    paymentProofUrl,
     pendingTransactions: pendingTx.map(t => ({
       id: t.id,
       orderId: t.orderId,

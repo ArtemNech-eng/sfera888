@@ -44,6 +44,8 @@ interface ConversationData {
   master: { id: number; alias: string; city: string; telegramId: string | null; pwaLogin: string | null; avatarUrl: string | null };
   messages: Message[];
   pendingTransactions: PendingTransaction[];
+  hasPaymentProof: boolean;
+  paymentProofUrl: string | null;
 }
 
 interface PendingOrder {
@@ -777,17 +779,37 @@ export default function MasterChat() {
                               <span className="font-mono font-semibold text-gray-800 select-all">89892860863 · Альфа Банк · Игорь К.</span>
                             </div>
                           </div>
-                          {/* Confirm button */}
-                          <button
-                            onClick={() => confirmPaymentMutation.mutate(tx.id)}
-                            disabled={confirmPaymentMutation.isPending}
-                            className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-violet-600 text-white hover:bg-violet-700 rounded-lg font-medium text-xs transition-colors disabled:opacity-50"
-                          >
-                            {confirmPaymentMutation.isPending
-                              ? <Loader2 className="w-3 h-3 animate-spin" />
-                              : <Check className="w-3 h-3" />}
-                            Подтвердить оплату
-                          </button>
+
+                          {/* Payment proof screenshot */}
+                          {conv?.hasPaymentProof && conv.paymentProofUrl ? (
+                            <div className="space-y-2">
+                              <p className="text-[10px] font-semibold text-emerald-600 uppercase tracking-wide flex items-center gap-1">
+                                <Check className="w-3 h-3" /> Скриншот оплаты получен
+                              </p>
+                              <a href={conv.paymentProofUrl} target="_blank" rel="noopener noreferrer" className="block">
+                                <img
+                                  src={conv.paymentProofUrl}
+                                  alt="Скриншот оплаты"
+                                  className="w-full rounded-lg border border-emerald-200 object-cover max-h-40 hover:opacity-90 transition-opacity cursor-zoom-in"
+                                />
+                              </a>
+                              <button
+                                onClick={() => confirmPaymentMutation.mutate(tx.id)}
+                                disabled={confirmPaymentMutation.isPending}
+                                className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-violet-600 text-white hover:bg-violet-700 rounded-lg font-medium text-xs transition-colors disabled:opacity-50"
+                              >
+                                {confirmPaymentMutation.isPending
+                                  ? <Loader2 className="w-3 h-3 animate-spin" />
+                                  : <Check className="w-3 h-3" />}
+                                Подтвердить оплату
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-100 rounded-lg">
+                              <Loader2 className="w-3 h-3 text-amber-400 flex-shrink-0" />
+                              <p className="text-[11px] text-amber-700">Ожидаем скриншот оплаты от мастера</p>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>

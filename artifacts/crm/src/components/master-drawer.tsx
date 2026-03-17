@@ -178,6 +178,14 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
   const [chatLoaded, setChatLoaded] = useState(false);
   const [pendingTxs, setPendingTxs] = useState<PendingTx[]>([]);
 
+  // Derived: has the master sent a payment proof screenshot?
+  const paymentProofMsg = [...chatMessages].reverse().find(
+    m => m.fromMaster && m.photoUrl && m.text?.includes("Скриншот оплаты")
+  );
+  const hasPaymentProof = !!paymentProofMsg;
+  const paymentProofUrl = paymentProofMsg?.photoUrl ?? null;
+
+
   const [reviews, setReviews] = useState<MasterReview[]>([]);
   const [reviewsLoaded, setReviewsLoaded] = useState(false);
   const [reviewText, setReviewText] = useState("");
@@ -820,14 +828,33 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                       <span className="font-mono font-semibold text-gray-800 select-all text-[11px]">89892860863 · Альфа Банк · Игорь К.</span>
                     </div>
                   </div>
-                  <button
-                    onClick={() => confirmPayment(tx.id)}
-                    disabled={confirmingTx}
-                    className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-violet-600 text-white hover:bg-violet-700 rounded-lg font-medium text-xs transition-colors disabled:opacity-50"
-                  >
-                    {confirmingTx ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-                    Подтвердить оплату
-                  </button>
+                  {hasPaymentProof && paymentProofUrl ? (
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-semibold text-emerald-600 uppercase tracking-wide flex items-center gap-1">
+                        <Check className="w-3 h-3" /> Скриншот оплаты получен
+                      </p>
+                      <a href={paymentProofUrl} target="_blank" rel="noopener noreferrer" className="block">
+                        <img
+                          src={paymentProofUrl}
+                          alt="Скриншот оплаты"
+                          className="w-full rounded-lg border border-emerald-200 object-cover max-h-36 hover:opacity-90 transition-opacity cursor-zoom-in"
+                        />
+                      </a>
+                      <button
+                        onClick={() => confirmPayment(tx.id)}
+                        disabled={confirmingTx}
+                        className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-violet-600 text-white hover:bg-violet-700 rounded-lg font-medium text-xs transition-colors disabled:opacity-50"
+                      >
+                        {confirmingTx ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                        Подтвердить оплату
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-100 rounded-lg">
+                      <Loader2 className="w-3 h-3 text-amber-400 flex-shrink-0" />
+                      <p className="text-[11px] text-amber-700">Ожидаем скриншот оплаты от мастера</p>
+                    </div>
+                  )}
                 </div>
               ))}
 
