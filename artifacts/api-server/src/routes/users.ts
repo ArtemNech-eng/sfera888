@@ -52,4 +52,30 @@ router.delete("/:id", requireRole("admin"), async (req, res) => {
   res.json({ success: true, message: "User deleted" });
 });
 
+// PATCH /api/users/:id/password — change user password (admin or self)
+router.patch("/:id/password", async (req, res) => {
+  const sessionUserId = (req.session as any).userId;
+  if (!sessionUserId) return res.status(401).json({ error: "Unauthorized" });
+
+  const targetId = parseInt(req.params.id);
+  if (isNaN(targetId)) return res.status(400).json({ error: "Invalid id" });
+
+  // Allow admin to change any password, or user to change their own
+  const [sessionUser] = await db.select().from(usersTable).where(eq(usersTable.id, sessionUserId));
+  if (!sessionUser) return res.status(401).json({ error: "Unauthorized" });
+
+  if (sessionUser.role !== "admin" && sessionUser.id !== targetId) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const { password } = req.body;
+  if (!password || password.length < 6) {
+    return res.status(400).json({ error: "Пароль должен содержать минимум 6 символов" });
+  }
+
+  const passwordHash = await hashPassword(password);
+  await db.update(usersTable).set({ passwordHash }).where(eq(usersTable.id, targetId));
+  res.json({ success: true });
+});
+
 export default router;

@@ -28,6 +28,9 @@ expertMode = true
 
   [userenv]
 
+[userenv.production]
+ADMIN_PASSWORD = "admin2024"
+
   [nix]
   channel = "stable-25_05"
   
