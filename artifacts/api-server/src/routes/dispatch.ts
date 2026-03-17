@@ -3,6 +3,7 @@ import { db, ordersTable, mastersTable, orderDispatchesTable, leadsTable, master
 import { eq, and, ne, inArray } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { sendPushToMaster } from "../lib/push.js";
+import { getOverdueMasterIds, getMasterEligibility } from "../lib/orderEligibility.js";
 
 const router = Router();
 const TELEGRAM_API = `https://api.telegram.org/bot${process.env["TELEGRAM_BOT_TOKEN"]}`;
@@ -185,11 +186,13 @@ router.post("/:orderId/broadcast", ops, async (req, res) => {
   const activeOrders = await db.select().from(ordersTable)
     .where(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
 
-  // Filter out masters who have reached their order limit
+  // Load overdue master IDs for eligibility check
+  const overdueMasterIds = await getOverdueMasterIds();
+
+  // Filter out masters who have reached their order limit or have blocking debt
   const eligible = reachable.filter(master => {
     const myActiveCount = activeOrders.filter(o => o.masterId === master.id).length;
-    const limit = master.isTestMaster ? 1 : 2;
-    return myActiveCount < limit;
+    return getMasterEligibility(master, myActiveCount, overdueMasterIds).canAccept;
   });
 
   if (eligible.length === 0) {
@@ -208,8 +211,8 @@ router.post("/:orderId/broadcast", ops, async (req, res) => {
   let skipped = 0;
   for (const master of reachable) {
     const myActiveCount = activeOrders.filter(o => o.masterId === master.id).length;
-    const limit = master.isTestMaster ? 1 : 2;
-    if (myActiveCount >= limit) {
+    const eligibility = getMasterEligibility(master, myActiveCount, overdueMasterIds);
+    if (!eligibility.canAccept) {
       skipped++;
       continue;
     }

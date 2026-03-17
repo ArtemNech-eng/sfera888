@@ -2,6 +2,7 @@ import app from "./app";
 import { db, usersTable, voronkaColumnsTable } from "@workspace/db";
 import { eq, inArray } from "drizzle-orm";
 import { hashPassword } from "./lib/auth.js";
+import { checkOverdueTransactions } from "./lib/orderEligibility.js";
 
 const rawPort = process.env["PORT"];
 
@@ -72,6 +73,9 @@ async function seedVoronkaColumns() {
 
 maybeResetAdminPassword().catch(console.error);
 seedVoronkaColumns().catch(console.error);
+// Mark overdue commissions on startup and then every 6 hours
+checkOverdueTransactions().catch(console.error);
+setInterval(() => checkOverdueTransactions().catch(console.error), 6 * 60 * 60 * 1000);
 
 app.listen(port, () => {
   console.log(`Server listening on port ${port}`);

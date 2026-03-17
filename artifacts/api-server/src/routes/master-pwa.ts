@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db, mastersTable, ordersTable, orderDispatchesTable, transactionsTable, leadsTable, voronkaColumnsTable, masterMessagesTable, pushSubscriptionsTable } from "@workspace/db";
 import { eq, and, inArray, isNull, ne, asc, desc } from "drizzle-orm";
 import { verifyPassword, hashPassword } from "../lib/auth.js";
+import { getMasterEligibility, getOverdueMasterIds } from "../lib/orderEligibility.js";
 import multer from "multer";
 import fs from "fs";
 import { AVATAR_DIR } from "../config.js";
@@ -375,12 +376,14 @@ router.post("/orders/:id/accept", requireMasterPwa, async (req, res) => {
     }
   }
 
-  // Check active order limits
-  const activeOrders = await db.select().from(ordersTable)
-    .where(and(eq(ordersTable.masterId, masterId), inArray(ordersTable.status, ["master_assigned", "in_progress"])));
-  const limit = master.isTestMaster ? 1 : 2;
-  if (activeOrders.length >= limit) {
-    return res.status(400).json({ error: `Превышен лимит активных заказов (${limit})` });
+  // Check order eligibility (limit + debt + overdue)
+  const allActiveForAccept = await db.select().from(ordersTable)
+    .where(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
+  const myActiveForAccept = allActiveForAccept.filter(o => o.masterId === masterId).length;
+  const overdueIdsForAccept = await getOverdueMasterIds();
+  const acceptEligibility = getMasterEligibility(master, myActiveForAccept, overdueIdsForAccept);
+  if (!acceptEligibility.canAccept) {
+    return res.status(400).json({ error: acceptEligibility.reason });
   }
 
   // Assign master to order
@@ -441,17 +444,14 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
   const master = await getMasterById(masterId);
   if (!master) return res.status(404).json({ error: "Мастер не найден" });
 
-  // Same active order limit check as Telegram bot
-  const activeOrders = await db.select().from(ordersTable)
-    .where(and(
-      eq(ordersTable.masterId, masterId),
-      inArray(ordersTable.status, ["master_assigned", "in_progress"]),
-    ));
-  const limit = master.isTestMaster ? 1 : 2;
-  if (activeOrders.length >= limit) {
-    return res.status(400).json({
-      error: `У вас уже ${activeOrders.length} из ${limit} активных заказов. Завершите текущие заказы, чтобы откликаться на новые.`,
-    });
+  // Check order eligibility (limit + debt + overdue)
+  const allActive = await db.select().from(ordersTable)
+    .where(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
+  const myActiveCount = allActive.filter(o => o.masterId === masterId).length;
+  const overdueMasterIds = await getOverdueMasterIds();
+  const eligibility = getMasterEligibility(master, myActiveCount, overdueMasterIds);
+  if (!eligibility.canAccept) {
+    return res.status(400).json({ error: eligibility.reason });
   }
 
   const { responseNote } = req.body ?? {};

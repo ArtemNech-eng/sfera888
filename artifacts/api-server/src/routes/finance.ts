@@ -3,6 +3,7 @@ import { db, transactionsTable, mastersTable, voronkaColumnsTable } from "@works
 import { eq, and, gte, lte, sum, count } from "drizzle-orm";
 import { requirePermission } from "../middlewares/requireAuth.js";
 import { sendPushToMaster } from "../lib/push.js";
+import { checkOverdueTransactions } from "../lib/orderEligibility.js";
 
 const router = Router();
 const adminOnly = requirePermission("finance");
@@ -120,6 +121,41 @@ router.get("/summary", opsAndAdmin, async (req, res) => {
   const overdueCount = transactions.filter(t => t.paymentStatus === "overdue").length;
 
   res.json({ totalIncome, totalDebt, paidCount, pendingCount, overdueCount });
+});
+
+// POST /api/finance/check-overdue — manually trigger overdue detection
+router.post("/check-overdue", requirePermission("finance"), async (req, res) => {
+  const daysParam = parseInt((req.query.days as string) ?? "7");
+  const days = isNaN(daysParam) || daysParam < 1 ? 7 : daysParam;
+  const marked = await checkOverdueTransactions(days);
+  res.json({ marked, message: `Отмечено просрочено: ${marked}` });
+});
+
+// GET /api/finance/overdue-masters — list masters with overdue transactions
+router.get("/overdue-masters", requirePermission("finance"), async (req, res) => {
+  const overdue = await db.select().from(transactionsTable)
+    .where(eq(transactionsTable.paymentStatus, "overdue"));
+
+  const masters = await db.select().from(mastersTable);
+  const masterMap = new Map(masters.map(m => [m.id, m]));
+
+  const byMaster = new Map<number, { masterId: number; alias: string; totalOverdue: number; count: number }>();
+  for (const t of overdue) {
+    const existing = byMaster.get(t.masterId);
+    if (existing) {
+      existing.totalOverdue += Number(t.commission);
+      existing.count++;
+    } else {
+      byMaster.set(t.masterId, {
+        masterId: t.masterId,
+        alias: masterMap.get(t.masterId)?.alias ?? "Неизвестен",
+        totalOverdue: Number(t.commission),
+        count: 1,
+      });
+    }
+  }
+
+  res.json(Array.from(byMaster.values()).sort((a, b) => b.totalOverdue - a.totalOverdue));
 });
 
 export default router;

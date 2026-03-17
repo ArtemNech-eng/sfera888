@@ -1,6 +1,7 @@
 import { Layout } from "@/components/layout";
 import { useGetDashboard } from "@workspace/api-client-react";
-import { Loader2, TrendingUp, TrendingDown, Users, DollarSign, Target, Activity } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Loader2, TrendingUp, TrendingDown, Users, DollarSign, Target, Activity, ShieldAlert } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { ProtectedRoute } from "@/hooks/use-auth";
 
@@ -45,6 +46,11 @@ function StatCard({ title, value, subtitle, icon: Icon, trend }: {
 
 export default function Dashboard() {
   const { data: stats, isLoading, error } = useGetDashboard();
+  const { data: overdueMasters } = useQuery<{ masterId: number; alias: string; totalOverdue: number; count: number }[]>({
+    queryKey: ["/api/finance/overdue-masters"],
+    queryFn: () => fetch("/api/finance/overdue-masters", { credentials: "include" }).then(r => r.json()),
+    refetchInterval: 60_000,
+  });
 
   return (
     <ProtectedRoute allowedRoles={['admin', 'master_operator', 'lead_operator']} permissionKey="dashboard">
@@ -93,6 +99,28 @@ export default function Dashboard() {
                   icon={TrendingUp}
                 />
               </div>
+
+              {/* Overdue masters warning */}
+              {overdueMasters && overdueMasters.length > 0 && (
+                <div className="bg-red-50 border border-red-200 rounded-2xl px-5 py-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-red-100 rounded-xl">
+                      <ShieldAlert className="w-5 h-5 text-red-600" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-red-900">
+                        {overdueMasters.length === 1 ? "1 мастер" : `${overdueMasters.length} мастера`} с просроченной комиссией
+                      </p>
+                      <p className="text-sm text-red-700">
+                        Итого: {overdueMasters.reduce((s, m) => s + m.totalOverdue, 0).toLocaleString("ru")} ₽ — приём заказов заблокирован
+                      </p>
+                    </div>
+                  </div>
+                  <a href="/finance" className="text-sm font-medium text-red-700 bg-red-100 border border-red-200 rounded-xl px-3 py-1.5 hover:bg-red-200 transition-colors">
+                    Открыть финансы →
+                  </a>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 bg-card rounded-2xl border border-border/50 shadow-sm p-6">

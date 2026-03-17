@@ -3,6 +3,7 @@ import { db, ordersTable, mastersTable, transactionsTable, voronkaColumnsTable, 
 import { eq, inArray, and, ne, isNull } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { calculateCommission, getCommissionSettings } from "../lib/commission.js";
+import { getMasterEligibility, getOverdueMasterIds } from "../lib/orderEligibility.js";
 
 const TELEGRAM_API = `https://api.telegram.org/bot${process.env["TELEGRAM_BOT_TOKEN"]}`;
 
@@ -332,12 +333,12 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
       ],
     };
 
+    const overdueMasterIdsForRebroadcast = await getOverdueMasterIds();
     let sent = 0;
     for (const m of withTg) {
       if (!m.telegramId) continue;
       const myActiveCount = activeOrders.filter(ao => ao.masterId === m.id).length;
-      const limit = m.isTestMaster ? 1 : 2;
-      if (myActiveCount >= limit) continue;
+      if (!getMasterEligibility(m, myActiveCount, overdueMasterIdsForRebroadcast).canAccept) continue;
       try {
         const r = await fetch(`${TELEGRAM_API}/sendMessage`, {
           method: "POST",
@@ -404,27 +405,14 @@ router.post("/:id/assign-master", allOrderRoles, async (req, res) => {
     }
   }
 
-  // Check active order count limits (debt-aware)
+  // Check order eligibility (limit + debt + overdue)
   const activeOrders = await db.select().from(ordersTable)
     .where(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
   const masterActiveCount = activeOrders.filter(o => o.masterId === masterId).length;
-  const masterDebt = Number(master.debt);
-  const hasDebt = masterDebt > 0;
-
-  const limit = master.isTestMaster ? 1 : 2;
-  if (masterActiveCount >= limit) {
-    if (hasDebt) {
-      return res.status(400).json({
-        error: master.isTestMaster
-          ? `Мастер является должником (${masterDebt.toLocaleString("ru")} ₽). В тестовый период лимит — 1 заказ. Сначала необходимо погасить долг.`
-          : `Мастер является должником (${masterDebt.toLocaleString("ru")} ₽). Лимит — 2 заказа при наличии долга. Необходимо погасить задолженность для снятия ограничений.`
-      });
-    }
-    return res.status(400).json({
-      error: master.isTestMaster
-        ? "Тестовый период: мастер может иметь только 1 активный заказ."
-        : "Максимум 2 активных заказа на мастера."
-    });
+  const overdueMasterIds = await getOverdueMasterIds();
+  const eligibility = getMasterEligibility(master, masterActiveCount, overdueMasterIds);
+  if (!eligibility.canAccept) {
+    return res.status(400).json({ error: eligibility.reason });
   }
 
   const result = await db.update(ordersTable).set({

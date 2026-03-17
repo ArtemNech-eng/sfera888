@@ -4,8 +4,8 @@ import { useGetTransactions, useGetFinanceSummary, useUpdateTransaction, Transac
 import { ProtectedRoute } from "@/hooks/use-auth";
 import { StatusBadge } from "@/components/status-badge";
 import { formatDate, formatCurrency } from "@/lib/utils";
-import { Loader2, CheckCircle2, TrendingDown, TrendingUp, AlertCircle, Search, X } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { Loader2, CheckCircle2, TrendingDown, TrendingUp, AlertCircle, Search, X, RefreshCw, ShieldAlert } from "lucide-react";
+import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 
 type StatusFilter = "all" | "pending" | "overdue" | "paid";
 
@@ -13,6 +13,21 @@ export default function Finance() {
   const queryClient = useQueryClient();
   const { data: summary } = useGetFinanceSummary();
   const { data: transactions, isLoading } = useGetTransactions();
+
+  const { data: overdueMasters } = useQuery<{ masterId: number; alias: string; totalOverdue: number; count: number }[]>({
+    queryKey: ["/api/finance/overdue-masters"],
+    queryFn: () => fetch("/api/finance/overdue-masters", { credentials: "include" }).then(r => r.json()),
+    refetchInterval: 60_000,
+  });
+
+  const overdueCheckMutation = useMutation({
+    mutationFn: () => fetch("/api/finance/check-overdue", { method: "POST", credentials: "include" }).then(r => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/finance/overdue-masters"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/finance/summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/finance/transactions"] });
+    },
+  });
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -107,9 +122,49 @@ export default function Finance() {
             </div>
           </div>
 
+          {/* Overdue masters warning block */}
+          {overdueMasters && overdueMasters.length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-2xl p-5">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <ShieldAlert className="w-5 h-5 text-red-600" />
+                  <h3 className="font-semibold text-red-800">Мастера с просроченной комиссией ({overdueMasters.length})</h3>
+                </div>
+                <span className="text-xs text-red-600 bg-red-100 border border-red-200 rounded-full px-2 py-0.5 font-medium">заблокированы от приёма заказов</span>
+              </div>
+              <div className="space-y-1.5">
+                {overdueMasters.map(m => (
+                  <div key={m.masterId} className="flex items-center justify-between bg-white rounded-xl border border-red-100 px-4 py-2.5">
+                    <span className="font-medium text-foreground">{m.alias}</span>
+                    <div className="flex items-center gap-3 text-sm">
+                      <span className="text-muted-foreground">{m.count} транз.</span>
+                      <span className="text-red-700 font-bold">{m.totalOverdue.toLocaleString("ru")} ₽</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="bg-card rounded-2xl border border-border/50 shadow-sm overflow-hidden">
             <div className="p-4 border-b border-border/50 flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
-              <h3 className="font-display font-semibold text-lg">Транзакции</h3>
+              <div className="flex items-center gap-3">
+                <h3 className="font-display font-semibold text-lg">Транзакции</h3>
+                <button
+                  onClick={() => overdueCheckMutation.mutate()}
+                  disabled={overdueCheckMutation.isPending}
+                  title="Отметить просроченные (старше 7 дней)"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border border-border bg-background hover:bg-slate-50 text-muted-foreground hover:text-foreground transition-all disabled:opacity-50"
+                >
+                  {overdueCheckMutation.isPending
+                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    : <RefreshCw className="w-3.5 h-3.5" />}
+                  Проверить просрочку
+                </button>
+                {overdueCheckMutation.isSuccess && (
+                  <span className="text-xs text-emerald-600">Отмечено: {(overdueCheckMutation.data as any)?.marked ?? 0}</span>
+                )}
+              </div>
               <div className="flex gap-2 flex-wrap w-full sm:w-auto">
                 <div className="relative flex-1 sm:flex-none sm:w-56">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
