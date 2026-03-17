@@ -462,6 +462,75 @@ router.get("/balance", requireMasterPwa, async (req, res) => {
   });
 });
 
+// Cancel order (request cancellation)
+router.post("/orders/:id/cancel", requireMasterPwa, async (req, res) => {
+  const masterId = (req.session as any).masterId;
+  const orderId = parseInt(req.params.id);
+  const { reason } = req.body;
+
+  if (!reason?.trim()) return res.status(400).json({ error: "Укажите причину отмены" });
+
+  const orderRows = await db.select().from(ordersTable)
+    .where(and(eq(ordersTable.id, orderId), eq(ordersTable.masterId, masterId)));
+  if (!orderRows[0]) return res.status(404).json({ error: "Заказ не найден" });
+
+  const order = orderRows[0];
+  if (!["master_assigned", "in_progress"].includes(order.status)) {
+    return res.status(400).json({ error: "Нельзя отменить заказ в текущем статусе" });
+  }
+
+  await db.update(ordersTable).set({
+    status: "cancellation_requested",
+    cancelReason: reason.trim(),
+    updatedAt: new Date(),
+  }).where(eq(ordersTable.id, orderId));
+
+  res.json({ success: true });
+});
+
+// Submit payment proof (sent as chat message with photo)
+router.post("/balance/payment-proof", requireMasterPwa, async (req, res) => {
+  const masterId = (req.session as any).masterId;
+  const { photoUrl } = req.body;
+
+  if (!photoUrl) return res.status(400).json({ error: "Фото обязательно" });
+
+  const master = await getMasterById(masterId);
+  if (!master) return res.status(404).json({ error: "Мастер не найден" });
+
+  const chatId = master.telegramId ?? `pwa_${master.id}`;
+
+  await db.insert(masterMessagesTable).values({
+    masterId,
+    telegramChatId: chatId,
+    text: `📸 Скриншот оплаты комиссии`,
+    photoUrl,
+    fromMaster: true,
+    senderName: master.alias,
+    isRead: false,
+  });
+
+  res.json({ success: true });
+});
+
+// Update profile
+router.patch("/profile", requireMasterPwa, async (req, res) => {
+  const masterId = (req.session as any).masterId;
+  const { alias, city, phone, specializations } = req.body;
+
+  const updates: any = { updatedAt: new Date() };
+  if (alias?.trim()) updates.alias = alias.trim();
+  if (city?.trim()) updates.city = city.trim();
+  if (phone !== undefined) updates.phone = phone?.trim() || null;
+  if (Array.isArray(specializations) && specializations.length > 0) {
+    updates.specializations = specializations;
+    updates.specialization = specializations.join(", ");
+  }
+
+  await db.update(mastersTable).set(updates).where(eq(mastersTable.id, masterId));
+  res.json({ success: true });
+});
+
 // ─── PROFILE ──────────────────────────────────────────────────────────────────
 
 router.get("/profile", requireMasterPwa, async (req, res) => {

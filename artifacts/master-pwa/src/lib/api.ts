@@ -29,6 +29,7 @@ export const api = {
     my: (filter?: string) => req<any>("GET", `/orders/my${filter ? `?filter=${filter}` : ""}`),
     accept: (id: number) => req<any>("POST", `/orders/${id}/accept`),
     reject: (id: number) => req<any>("POST", `/orders/${id}/reject`),
+    cancel: (id: number, reason: string) => req<any>("POST", `/orders/${id}/cancel`, { reason }),
     updateStatus: (id: number, masterWorkStatus: string) =>
       req<any>("PATCH", `/orders/${id}/status`, { masterWorkStatus }),
     addPhoto: (id: number, type: string, url: string) =>
@@ -37,7 +38,11 @@ export const api = {
       req<any>("POST", `/orders/${id}/complete`, { proposedAmount }),
   },
   balance: () => req<any>("GET", "/balance"),
+  paymentProof: (photoUrl: string) =>
+    req<any>("POST", "/balance/payment-proof", { photoUrl }),
   profile: () => req<any>("GET", "/profile"),
+  updateProfile: (data: { alias?: string; city?: string; phone?: string; specializations?: string[] }) =>
+    req<any>("PATCH", "/profile", data),
   chat: {
     messages: () => req<any>("GET", "/chat"),
     send: (text: string) => req<any>("POST", "/chat", { text }),

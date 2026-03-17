@@ -1,7 +1,10 @@
-import { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { useEffect, useRef, useState } from "react";
+import { api, uploadPhoto } from "@/lib/api";
 import { toast } from "sonner";
-import { Wallet, TrendingUp, AlertTriangle, CheckCircle2, Clock } from "lucide-react";
+import {
+  Wallet, TrendingUp, AlertTriangle, CheckCircle2, Clock,
+  Copy, Camera, Loader2, ChevronDown, ChevronUp,
+} from "lucide-react";
 
 interface Transaction {
   id: number;
@@ -22,12 +25,109 @@ interface BalanceData {
   transactions: Transaction[];
 }
 
+const BANK_NUMBER = "89892860863";
+const BANK_NAME = "Альфа Банк · Игорь К.";
+
 const statusLabel: Record<string, { label: string; color: string }> = {
   paid: { label: "Оплачено", color: "text-green-600 dark:text-green-400" },
   pending: { label: "Ожидает", color: "text-amber-600 dark:text-amber-400" },
   debt: { label: "Долг", color: "text-red-600 dark:text-red-400" },
   cancelled: { label: "Отменён", color: "text-muted-foreground" },
 };
+
+function PaymentSection({ debt }: { debt: number }) {
+  const [showDetails, setShowDetails] = useState(debt > 0);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const copyNumber = async () => {
+    try {
+      await navigator.clipboard.writeText(BANK_NUMBER);
+      toast.success("Номер скопирован");
+    } catch {
+      toast.error("Не удалось скопировать");
+    }
+  };
+
+  const handleProofUpload = async (file: File) => {
+    setUploading(true);
+    try {
+      const photoUrl = await uploadPhoto(file);
+      await api.paymentProof(photoUrl);
+      toast.success("Скриншот отправлен менеджеру");
+    } catch (err: any) {
+      toast.error(err.message ?? "Ошибка отправки");
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  return (
+    <div className="bg-card border border-border rounded-xl overflow-hidden">
+      <button
+        className="w-full flex items-center justify-between px-4 py-3.5 active:opacity-80"
+        onClick={() => setShowDetails(v => !v)}
+      >
+        <span className="font-semibold text-sm">Оплата комиссии</span>
+        {showDetails
+          ? <ChevronUp size={16} className="text-muted-foreground" />
+          : <ChevronDown size={16} className="text-muted-foreground" />}
+      </button>
+
+      {showDetails && (
+        <div className="border-t border-border px-4 pb-4 pt-3 space-y-4">
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground font-medium">Реквизиты для перевода</p>
+            <div className="bg-muted rounded-xl p-3 space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs text-muted-foreground">{BANK_NAME}</p>
+                  <p className="font-mono font-bold text-base tracking-wide">{BANK_NUMBER}</p>
+                </div>
+                <button
+                  onClick={copyNumber}
+                  className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary/10 text-primary text-xs font-medium active:opacity-80"
+                >
+                  <Copy size={14} />
+                  Копировать
+                </button>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              После оплаты отправьте скриншот менеджеру — он подтвердит платёж.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground font-medium">Подтверждение оплаты</p>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={e => {
+                const f = e.target.files?.[0];
+                if (f) handleProofUpload(f);
+                if (fileRef.current) fileRef.current.value = "";
+              }}
+            />
+            <button
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              className="w-full flex items-center justify-center gap-2 h-11 rounded-xl border border-primary/50 text-primary text-sm font-medium active:opacity-80 disabled:opacity-50 bg-primary/5"
+            >
+              {uploading
+                ? <Loader2 size={16} className="animate-spin" />
+                : <Camera size={16} />}
+              {uploading ? "Отправляем..." : "Отправить скриншот оплаты"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function BalancePage() {
   const [data, setData] = useState<BalanceData | null>(null);
@@ -83,6 +183,8 @@ export default function BalancePage() {
           <p className="text-xl font-bold">{data.totalPaidCommission.toLocaleString("ru-RU")} ₽</p>
         </div>
       </div>
+
+      <PaymentSection debt={data.debt} />
 
       <section className="space-y-2">
         <h2 className="font-semibold text-sm">История транзакций</h2>

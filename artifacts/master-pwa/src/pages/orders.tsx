@@ -3,7 +3,7 @@ import { api, uploadPhoto } from "@/lib/api";
 import { toast } from "sonner";
 import {
   ChevronDown, ChevronUp, MapPin, Phone, Ruler, Calendar,
-  Camera, CheckCircle2, Image, FileText, Loader2, X,
+  Camera, CheckCircle2, Image, FileText, Loader2, X, XCircle,
 } from "lucide-react";
 
 interface Order {
@@ -25,6 +25,7 @@ interface Order {
   clientName: string | null;
   clientPhone: string | null;
   createdAt: string;
+  cancelReason?: string | null;
 }
 
 const workStatusSteps = [
@@ -37,7 +38,7 @@ const workStatusSteps = [
 const statusLabel: Record<string, string> = {
   master_assigned: "Назначен",
   in_progress: "В работе",
-  cancellation_requested: "Отмена",
+  cancellation_requested: "Отмена запрошена",
   completed: "Завершён",
   cancelled: "Отменён",
 };
@@ -149,6 +150,77 @@ function CompleteModal({
   );
 }
 
+function CancelModal({
+  orderId,
+  onDone,
+  onClose,
+}: {
+  orderId: number;
+  onDone: () => void;
+  onClose: () => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reason.trim()) { toast.error("Укажите причину отмены"); return; }
+    setLoading(true);
+    try {
+      await api.orders.cancel(orderId, reason.trim());
+      toast.success("Запрос на отмену отправлен менеджеру");
+      onDone();
+    } catch (err: any) {
+      toast.error(err.message ?? "Ошибка");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="w-full max-w-sm bg-card rounded-2xl p-5 space-y-4" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center">
+          <h3 className="font-bold text-lg text-destructive">Отмена заказа #{orderId}</h3>
+          <button onClick={onClose} className="text-muted-foreground"><X size={20} /></button>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Укажите причину — менеджер рассмотрит запрос и подтвердит отмену.
+        </p>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <textarea
+            value={reason}
+            onChange={e => setReason(e.target.value)}
+            placeholder="Причина отмены..."
+            rows={3}
+            className="w-full px-4 py-3 rounded-xl border border-input bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+            autoFocus
+          />
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 h-11 rounded-xl border border-border text-muted-foreground text-sm font-medium active:opacity-80"
+            >
+              Отмена
+            </button>
+            <button
+              type="submit"
+              disabled={loading || !reason.trim()}
+              className="flex-1 h-11 bg-destructive text-white font-semibold rounded-xl active:opacity-80 disabled:opacity-50 flex items-center justify-center gap-2 text-sm"
+            >
+              {loading
+                ? <Loader2 size={16} className="animate-spin" />
+                : <XCircle size={16} />}
+              Отправить
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function PhotoGrid({ urls, label }: { urls: string[]; label: string }) {
   if (urls.length === 0) return null;
   return (
@@ -175,7 +247,9 @@ function OrderCard({ order, onRefresh }: { order: Order; onRefresh: () => void }
   const [loadingStatus, setLoadingStatus] = useState<string | null>(null);
   const [loadingPhoto, setLoadingPhoto] = useState<string | null>(null);
   const [showComplete, setShowComplete] = useState(false);
+  const [showCancel, setShowCancel] = useState(false);
   const isActive = ["master_assigned", "in_progress"].includes(order.status);
+  const isCancelRequested = order.status === "cancellation_requested";
   const currentStepIdx = workStatusSteps.findIndex(s => s.key === order.masterWorkStatus);
 
   const handleStatusStep = async (key: string) => {
@@ -223,6 +297,8 @@ function OrderCard({ order, onRefresh }: { order: Order; onRefresh: () => void }
                   ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
                   : order.status === "cancelled"
                   ? "bg-gray-100 dark:bg-gray-800 text-gray-500"
+                  : isCancelRequested
+                  ? "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"
                   : "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400"
               }`}>
                 {statusLabel[order.status] ?? order.status}
@@ -231,7 +307,7 @@ function OrderCard({ order, onRefresh }: { order: Order; onRefresh: () => void }
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Ruler size={12} />
               <span>{order.serviceType} · {order.area} м²</span>
-              {order.masterWorkStatus && (
+              {order.masterWorkStatus && !isCancelRequested && (
                 <>
                   <span>·</span>
                   <span className="font-medium text-foreground">
@@ -272,6 +348,13 @@ function OrderCard({ order, onRefresh }: { order: Order; onRefresh: () => void }
                 <p className="text-muted-foreground italic text-xs bg-muted rounded-lg p-2">{order.comment}</p>
               )}
             </div>
+
+            {isCancelRequested && order.cancelReason && (
+              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3 text-sm">
+                <p className="font-medium text-amber-700 dark:text-amber-400 mb-0.5">Причина отмены</p>
+                <p className="text-amber-600 dark:text-amber-500 text-xs">{order.cancelReason}</p>
+              </div>
+            )}
 
             {(order.orderAmount || order.commission || order.proposedAmount) && (
               <div className="bg-muted rounded-xl p-3 space-y-1 text-sm">
@@ -369,6 +452,14 @@ function OrderCard({ order, onRefresh }: { order: Order; onRefresh: () => void }
                     Завершить заказ
                   </button>
                 )}
+
+                <button
+                  onClick={() => setShowCancel(true)}
+                  className="w-full h-10 rounded-xl border border-destructive/50 text-destructive text-sm font-medium flex items-center justify-center gap-2 active:opacity-80"
+                >
+                  <XCircle size={16} />
+                  Запросить отмену
+                </button>
               </div>
             )}
           </div>
@@ -380,6 +471,13 @@ function OrderCard({ order, onRefresh }: { order: Order; onRefresh: () => void }
           orderId={order.id}
           onDone={() => { setShowComplete(false); onRefresh(); }}
           onClose={() => setShowComplete(false)}
+        />
+      )}
+      {showCancel && (
+        <CancelModal
+          orderId={order.id}
+          onDone={() => { setShowCancel(false); onRefresh(); }}
+          onClose={() => setShowCancel(false)}
         />
       )}
     </>
