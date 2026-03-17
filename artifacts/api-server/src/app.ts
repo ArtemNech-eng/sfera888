@@ -6,6 +6,7 @@ import router from "./routes/index.js";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
+import { UPLOAD_BASE } from "./config.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -28,7 +29,7 @@ app.use(session({
 }));
 
 // Serve uploaded avatars as static files (path must start with /api since Replit routes /api/* here)
-app.use("/api/uploads", express.static(path.join(__dirname, "../../public/uploads")));
+app.use("/api/uploads", express.static(UPLOAD_BASE));
 // Serve banner images
 app.use("/api/banners", express.static(path.join(__dirname, "../public/banners")));
 

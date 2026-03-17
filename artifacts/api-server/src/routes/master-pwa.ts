@@ -3,12 +3,9 @@ import { db, mastersTable, ordersTable, orderDispatchesTable, transactionsTable,
 import { eq, and, inArray, isNull, ne, asc } from "drizzle-orm";
 import { verifyPassword, hashPassword } from "../lib/auth.js";
 import multer from "multer";
-import path from "path";
-import { fileURLToPath } from "url";
 import fs from "fs";
+import { AVATAR_DIR } from "../config.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const AVATAR_DIR = path.join(__dirname, "../../../public/uploads/avatars");
 fs.mkdirSync(AVATAR_DIR, { recursive: true });
 
 const avatarStorage = multer.diskStorage({
