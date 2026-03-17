@@ -371,13 +371,18 @@ export default function MasterChat() {
 
   const handleDeleteDialog = async () => {
     if (!selectedId) return;
+    const deletedId = selectedId;
     setDeletingDialog(true);
     try {
-      await fetch(`/api/master-chat/${selectedId}`, { method: "DELETE", credentials: "include" });
+      const r = await fetch(`/api/master-chat/${deletedId}`, { method: "DELETE", credentials: "include" });
+      if (!r.ok) return;
+      // Immediately remove thread card from sidebar (optimistic update)
+      setThreads(prev => prev.filter(t => t.masterId !== deletedId));
       setConv(null);
       setSelectedId(null);
       setShowDeleteDialog(false);
-      await fetchThreads();
+      // Refresh in background to sync with server
+      fetchThreads();
     } finally {
       setDeletingDialog(false);
     }
