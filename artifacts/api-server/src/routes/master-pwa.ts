@@ -127,12 +127,23 @@ router.get("/home", requireMasterPwa, async (req, res) => {
   const sentDispatches = allDispatches.filter(d => d.status === "sent");
   const respondedDispatches = allDispatches.filter(d => d.status === "responded");
 
+  // Helper — parse photos field from lead (JSON array or comma-separated)
+  function parsePhotos(raw: string | null | undefined): string[] {
+    if (!raw) return [];
+    try { const arr = JSON.parse(raw); if (Array.isArray(arr)) return arr.filter(Boolean); } catch {}
+    return raw.split(",").map(s => s.trim()).filter(Boolean);
+  }
+
   // Available orders — "sent" dispatches, order still waiting
   let availableOrders: any[] = [];
   if (sentDispatches.length > 0) {
     const orderIds = sentDispatches.map(d => d.orderId);
     const orders = await db.select().from(ordersTable)
       .where(and(inArray(ordersTable.id, orderIds), eq(ordersTable.status, "waiting_master"), isNull(ordersTable.deletedAt)));
+    // Fetch lead photos
+    const leadIds = [...new Set(orders.map(o => o.leadId))];
+    const leads = leadIds.length > 0 ? await db.select().from(leadsTable).where(inArray(leadsTable.id, leadIds)) : [];
+    const leadMap = new Map(leads.map(l => [l.id, l]));
     const dispatchByOrder = new Map(sentDispatches.map(d => [d.orderId, d]));
     availableOrders = orders.map(o => ({
       id: o.id,
@@ -143,6 +154,7 @@ router.get("/home", requireMasterPwa, async (req, res) => {
       area: Number(o.area),
       scheduledAt: o.scheduledAt ?? null,
       comment: o.comment ?? null,
+      photos: parsePhotos(leadMap.get(o.leadId)?.photos),
       dispatchedAt: dispatchByOrder.get(o.id)?.createdAt ?? null,
     }));
   }
@@ -153,6 +165,9 @@ router.get("/home", requireMasterPwa, async (req, res) => {
     const orderIds = respondedDispatches.map(d => d.orderId);
     const orders = await db.select().from(ordersTable)
       .where(and(inArray(ordersTable.id, orderIds), eq(ordersTable.status, "waiting_master"), isNull(ordersTable.deletedAt)));
+    const leadIds = [...new Set(orders.map(o => o.leadId))];
+    const leads = leadIds.length > 0 ? await db.select().from(leadsTable).where(inArray(leadsTable.id, leadIds)) : [];
+    const leadMap = new Map(leads.map(l => [l.id, l]));
     const dispatchByOrder = new Map(respondedDispatches.map(d => [d.orderId, d]));
     pendingOrders = orders.map(o => ({
       id: o.id,
@@ -163,6 +178,7 @@ router.get("/home", requireMasterPwa, async (req, res) => {
       area: Number(o.area),
       scheduledAt: o.scheduledAt ?? null,
       comment: o.comment ?? null,
+      photos: parsePhotos(leadMap.get(o.leadId)?.photos),
       respondedAt: dispatchByOrder.get(o.id)?.respondedAt ?? null,
     }));
   }
