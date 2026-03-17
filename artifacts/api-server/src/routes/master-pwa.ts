@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, mastersTable, ordersTable, orderDispatchesTable, transactionsTable, leadsTable, voronkaColumnsTable, masterMessagesTable, pushSubscriptionsTable } from "@workspace/db";
-import { eq, and, inArray, isNull, ne, asc } from "drizzle-orm";
+import { eq, and, inArray, isNull, ne, asc, desc } from "drizzle-orm";
 import { verifyPassword, hashPassword } from "../lib/auth.js";
 import multer from "multer";
 import fs from "fs";
@@ -191,6 +191,13 @@ router.get("/home", requireMasterPwa, async (req, res) => {
       isNull(ordersTable.deletedAt)
     ));
 
+  // Availability — based on voronka column receivesOrders flag
+  let isAvailable = true;
+  if (master.voronkaColumnId) {
+    const colRows = await db.select().from(voronkaColumnsTable).where(eq(voronkaColumnsTable.id, master.voronkaColumnId));
+    if (colRows[0]) isAvailable = colRows[0].receivesOrders ?? false;
+  }
+
   res.json({
     master: {
       id: master.id,
@@ -200,6 +207,7 @@ router.get("/home", requireMasterPwa, async (req, res) => {
       rating: Number(master.rating),
       debt: Number(master.debt),
       isTestMaster: master.isTestMaster,
+      isAvailable,
     },
     availableOrders,
     pendingOrders,
@@ -855,6 +863,69 @@ router.delete("/push/unsubscribe", requireMasterPwa, async (req: any, res: any) 
   if (!endpoint) return res.status(400).json({ error: "Missing endpoint" });
   await db.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.endpoint, endpoint));
   res.json({ ok: true });
+});
+
+// ─── GET /dispatches/history ─────────────────────────────────────────────────
+
+router.get("/dispatches/history", requireMasterPwa, async (req: any, res: any) => {
+  const masterId = (req.session as any).masterId;
+
+  const dispatches = await db.select().from(orderDispatchesTable)
+    .where(and(
+      eq(orderDispatchesTable.masterId, masterId),
+      ne(orderDispatchesTable.status, "sent"),
+    ))
+    .orderBy(desc(orderDispatchesTable.createdAt))
+    .limit(60);
+
+  if (dispatches.length === 0) return res.json([]);
+
+  const orderIds = [...new Set(dispatches.map(d => d.orderId))];
+  const orders = await db.select().from(ordersTable).where(inArray(ordersTable.id, orderIds));
+  const orderMap = new Map(orders.map(o => [o.id, o]));
+
+  res.json(dispatches.map(d => {
+    const o = orderMap.get(d.orderId);
+    return {
+      dispatchId: d.id,
+      orderId: d.orderId,
+      status: d.status,
+      respondedAt: d.respondedAt ?? null,
+      dispatchedAt: d.createdAt ?? null,
+      city: o?.city ?? "—",
+      district: o?.district ?? null,
+      serviceType: o?.serviceType ?? "—",
+      area: o ? Number(o.area) : 0,
+      orderStatus: o?.status ?? "—",
+    };
+  }));
+});
+
+// ─── PATCH /availability ──────────────────────────────────────────────────────
+
+router.patch("/availability", requireMasterPwa, async (req: any, res: any) => {
+  const masterId = (req.session as any).masterId;
+  const { available } = req.body ?? {};
+  if (typeof available !== "boolean") return res.status(400).json({ error: "available (boolean) required" });
+
+  const master = await getMasterById(masterId);
+  if (!master) return res.status(404).json({ error: "Мастер не найден" });
+
+  const cols = await db.select().from(voronkaColumnsTable).orderBy(voronkaColumnsTable.position);
+
+  let targetCol;
+  if (available) {
+    targetCol = cols.find(c => c.receivesOrders);
+  } else {
+    // First non-receiving column at position > 1 (not the "Новые" onboarding column)
+    targetCol = cols.find(c => !c.receivesOrders && c.position > 1);
+    if (!targetCol) targetCol = cols.find(c => !c.receivesOrders);
+  }
+
+  if (!targetCol) return res.status(400).json({ error: "Подходящая колонка воронки не найдена" });
+
+  await db.update(mastersTable).set({ voronkaColumnId: targetCol.id }).where(eq(mastersTable.id, masterId));
+  res.json({ ok: true, isAvailable: targetCol.receivesOrders ?? false });
 });
 
 // ─── ADMIN: set master PWA credentials (from CRM) ────────────────────────────

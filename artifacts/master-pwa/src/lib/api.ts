@@ -38,6 +38,8 @@ export const api = {
     complete: (id: number, proposedAmount: number) =>
       req<any>("POST", `/orders/${id}/complete`, { proposedAmount }),
   },
+  setAvailability: (available: boolean) => req<any>("PATCH", "/availability", { available }),
+  dispatchHistory: () => req<any>("GET", "/dispatches/history"),
   balance: () => req<any>("GET", "/balance"),
   paymentProof: (photoUrl: string) =>
     req<any>("POST", "/balance/payment-proof", { photoUrl }),

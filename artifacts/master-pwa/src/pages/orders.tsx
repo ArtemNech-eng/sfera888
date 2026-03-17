@@ -484,12 +484,103 @@ function OrderCard({ order, onRefresh }: { order: Order; onRefresh: () => void }
   );
 }
 
+// ─── Dispatch History ─────────────────────────────────────────────────────────
+
+interface DispatchRecord {
+  dispatchId: number;
+  orderId: number;
+  status: string;
+  respondedAt: string | null;
+  dispatchedAt: string | null;
+  city: string;
+  district: string | null;
+  serviceType: string;
+  area: number;
+  orderStatus: string;
+}
+
+const dispatchStatusConfig: Record<string, { label: string; color: string }> = {
+  responded: { label: "Ожидает назначения", color: "text-amber-600 dark:text-amber-400" },
+  assigned: { label: "Вас выбрали", color: "text-emerald-600 dark:text-emerald-400" },
+  rejected: { label: "Не выбрали", color: "text-muted-foreground" },
+  rejected_by_master: { label: "Вы отказали", color: "text-red-500" },
+};
+
+const orderStatusConfig: Record<string, string> = {
+  completed: "Завершён",
+  cancelled: "Отменён",
+  waiting_master: "Ожидает мастера",
+  master_assigned: "Назначен",
+  in_progress: "В работе",
+};
+
+function DispatchHistoryList() {
+  const [history, setHistory] = useState<DispatchRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.dispatchHistory()
+      .then(setHistory)
+      .catch(() => toast.error("Ошибка загрузки истории"))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-48">
+        <div className="w-7 h-7 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (history.length === 0) {
+    return (
+      <div className="text-center py-16 text-muted-foreground text-sm">
+        История откликов пуста
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {history.map(d => {
+        const statusCfg = dispatchStatusConfig[d.status] ?? { label: d.status, color: "text-muted-foreground" };
+        const finalStatus = orderStatusConfig[d.orderStatus] ?? d.orderStatus;
+        return (
+          <div key={d.dispatchId} className="bg-card border border-border rounded-2xl p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-sm">Заявка #{d.orderId}</span>
+              <span className={`text-xs font-semibold ${statusCfg.color}`}>{statusCfg.label}</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-sm text-foreground">
+              <span>{d.serviceType}</span>
+              <span className="text-muted-foreground">·</span>
+              <span className="text-muted-foreground">{d.area} м²</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <MapPin size={11} className="shrink-0" />
+              {d.city}{d.district ? `, ${d.district}` : ""}
+            </div>
+            <div className="flex items-center justify-between text-xs text-muted-foreground pt-1 border-t border-border">
+              <span>Итог: {finalStatus}</span>
+              {d.dispatchedAt && (
+                <span>{new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short" }).format(new Date(d.dispatchedAt))}</span>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
-  const [filter, setFilter] = useState<"active" | "completed">("active");
+  const [filter, setFilter] = useState<"active" | "completed" | "history">("active");
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
+    if (filter === "history") return;
     setLoading(true);
     try {
       const data = await api.orders.my(filter);
@@ -508,20 +599,22 @@ export default function OrdersPage() {
       <h1 className="text-xl font-bold">Мои заказы</h1>
 
       <div className="flex rounded-xl bg-muted p-1 gap-1">
-        {(["active", "completed"] as const).map(f => (
+        {(["active", "completed", "history"] as const).map(f => (
           <button
             key={f}
             onClick={() => setFilter(f)}
-            className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${
+            className={`flex-1 py-2 text-xs font-medium rounded-lg transition-all ${
               filter === f ? "bg-card shadow-sm text-foreground" : "text-muted-foreground"
             }`}
           >
-            {f === "active" ? "Активные" : "Завершённые"}
+            {f === "active" ? "Активные" : f === "completed" ? "Завершённые" : "История"}
           </button>
         ))}
       </div>
 
-      {loading ? (
+      {filter === "history" ? (
+        <DispatchHistoryList />
+      ) : loading ? (
         <div className="flex items-center justify-center h-48">
           <div className="w-7 h-7 border-4 border-primary border-t-transparent rounded-full animate-spin" />
         </div>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
@@ -6,17 +6,16 @@ import { toast } from "sonner";
 import { usePushNotifications } from "@/lib/usePushNotifications";
 import {
   Bell, CheckCircle2, XCircle, AlertTriangle, Star,
-  MapPin, Calendar, Ruler, MessageSquare, Clock,
-  ChevronRight, X, Images, Wrench,
+  MapPin, Calendar, MessageSquare, Clock,
+  ChevronRight, X, Images, Wrench, Zap, PauseCircle,
+  PlayCircle,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
 
-interface ServiceLine {
-  type: string;
-  area: number;
-  pricePerM2?: number;
-}
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface ServiceLine { type: string; area: number; pricePerM2?: number; }
 
 interface OrderCard {
   id: number;
@@ -31,9 +30,7 @@ interface OrderCard {
   dispatchedAt: string | null;
 }
 
-interface PendingCard extends OrderCard {
-  respondedAt: string | null;
-}
+interface PendingCard extends OrderCard { respondedAt: string | null; }
 
 interface ActiveOrder {
   id: number;
@@ -45,80 +42,196 @@ interface ActiveOrder {
   masterWorkStatus: string | null;
 }
 
-interface HomeData {
-  master: any;
-  availableOrders: OrderCard[];
-  pendingOrders: PendingCard[];
-  activeOrders: ActiveOrder[];
-}
+// ─── Notification sound + vibration ──────────────────────────────────────────
 
-const workStatusLabels: Record<string, string> = {
-  accepted: "Принят",
-  on_way: "Еду на объект",
-  on_site: "На объекте",
-  work_done: "Работа выполнена",
-  completed: "Завершён",
-};
-const orderStatusLabels: Record<string, string> = {
-  master_assigned: "Назначен",
-  in_progress: "В работе",
-  cancellation_requested: "Отмена запрошена",
-};
-
-function formatDate(d: string | null): string {
-  if (!d) return "не указана";
-  return new Intl.DateTimeFormat("ru-RU", {
-    day: "numeric", month: "long", year: "numeric",
-    hour: "2-digit", minute: "2-digit",
-  }).format(new Date(d));
-}
-
-function parseServices(raw: string | null): ServiceLine[] | null {
-  if (!raw) return null;
+function playNewOrderAlert() {
   try {
-    const arr = JSON.parse(raw);
-    if (Array.isArray(arr) && arr.length > 0) return arr;
+    const ctx = new AudioContext();
+    const t = ctx.currentTime;
+    [523, 659, 784].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = freq;
+      osc.type = "sine";
+      const start = t + i * 0.13;
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.35, start + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.01, start + 0.35);
+      osc.start(start);
+      osc.stop(start + 0.35);
+    });
   } catch {}
-  return null;
+  try { navigator.vibrate?.([300, 100, 200, 100, 300]); } catch {}
+}
+
+// ─── Timer helpers ────────────────────────────────────────────────────────────
+
+function elapsedMinutes(dateStr: string | null): number {
+  if (!dateStr) return 0;
+  return Math.floor((Date.now() - new Date(dateStr).getTime()) / 60_000);
+}
+
+function DispatchTimer({ dispatchedAt }: { dispatchedAt: string | null }) {
+  const mins = elapsedMinutes(dispatchedAt);
+  if (mins < 2) {
+    return (
+      <span className="flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+        Только что
+      </span>
+    );
+  }
+  if (mins < 60) {
+    return (
+      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+        <Clock size={11} />
+        {mins} мин назад
+      </span>
+    );
+  }
+  const hrs = Math.floor(mins / 60);
+  const rem = mins % 60;
+  const label = rem > 0 ? `${hrs}ч ${rem}м` : `${hrs}ч`;
+  if (hrs >= 2) {
+    return (
+      <span className="flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-400">
+        <Zap size={11} />
+        {label} — истекает
+      </span>
+    );
+  }
+  return (
+    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+      <Clock size={11} />
+      {label} назад
+    </span>
+  );
+}
+
+// ─── Swipeable card wrapper ───────────────────────────────────────────────────
+
+const SWIPE_THRESHOLD = 80;
+
+function SwipeableCard({
+  onSwipeRight,
+  onSwipeLeft,
+  children,
+}: {
+  onSwipeRight: () => void;
+  onSwipeLeft: () => void;
+  children: React.ReactNode;
+}) {
+  const startX = useRef<number | null>(null);
+  const startY = useRef<number | null>(null);
+  const isHorizontal = useRef(false);
+  const didSwipe = useRef(false);
+  const [deltaX, setDeltaX] = useState(0);
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    startX.current = e.touches[0].clientX;
+    startY.current = e.touches[0].clientY;
+    isHorizontal.current = false;
+    didSwipe.current = false;
+  };
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    if (startX.current === null || startY.current === null) return;
+    const dx = e.touches[0].clientX - startX.current;
+    const dy = e.touches[0].clientY - startY.current;
+    if (!isHorizontal.current) {
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      if (Math.abs(dx) > Math.abs(dy)) {
+        isHorizontal.current = true;
+      } else {
+        startX.current = null;
+        return;
+      }
+    }
+    if (isHorizontal.current) {
+      e.preventDefault();
+      const clamped = Math.max(-SWIPE_THRESHOLD * 1.6, Math.min(SWIPE_THRESHOLD * 1.6, dx));
+      setDeltaX(clamped);
+    }
+  };
+
+  const onTouchEnd = () => {
+    if (isHorizontal.current) {
+      if (deltaX > SWIPE_THRESHOLD) {
+        didSwipe.current = true;
+        onSwipeRight();
+      } else if (deltaX < -SWIPE_THRESHOLD) {
+        didSwipe.current = true;
+        onSwipeLeft();
+      }
+    }
+    setDeltaX(0);
+    startX.current = null;
+    isHorizontal.current = false;
+  };
+
+  const absX = Math.abs(deltaX);
+  const progress = Math.min(absX / SWIPE_THRESHOLD, 1);
+
+  return (
+    <div
+      className="relative overflow-hidden rounded-2xl"
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+    >
+      {/* Right hint (swipe right → respond) */}
+      <div
+        className="absolute inset-0 flex items-center justify-start pl-5 bg-emerald-500 rounded-2xl transition-opacity"
+        style={{ opacity: deltaX > 8 ? progress : 0 }}
+      >
+        <div className="flex items-center gap-2 text-white font-bold text-sm">
+          <CheckCircle2 size={20} /> Откликнуться
+        </div>
+      </div>
+      {/* Left hint (swipe left → reject) */}
+      <div
+        className="absolute inset-0 flex items-center justify-end pr-5 bg-red-500 rounded-2xl transition-opacity"
+        style={{ opacity: deltaX < -8 ? progress : 0 }}
+      >
+        <div className="flex items-center gap-2 text-white font-bold text-sm">
+          Отказать <XCircle size={20} />
+        </div>
+      </div>
+      {/* Card content */}
+      <div
+        style={{ transform: `translateX(${deltaX}px)`, transition: deltaX === 0 ? "transform 0.2s ease" : "none" }}
+      >
+        {children}
+      </div>
+    </div>
+  );
 }
 
 // ─── Photo Gallery ────────────────────────────────────────────────────────────
+
 function PhotoGallery({ photos }: { photos: string[] }) {
   const [active, setActive] = useState(0);
   if (!photos.length) return null;
-
   return (
     <div className="relative bg-black">
-      <img
-        src={photos[active]}
-        alt={`Фото ${active + 1}`}
-        className="w-full object-cover"
-        style={{ maxHeight: 260 }}
-      />
+      <img src={photos[active]} alt={`Фото ${active + 1}`} className="w-full object-cover" style={{ maxHeight: 260 }} />
       {photos.length > 1 && (
         <>
-          {/* Dot indicators */}
           <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-1.5">
             {photos.map((_, i) => (
-              <button
-                key={i}
-                onClick={() => setActive(i)}
-                className={`w-2 h-2 rounded-full transition-all ${i === active ? "bg-white scale-110" : "bg-white/50"}`}
-              />
+              <button key={i} onClick={() => setActive(i)}
+                className={`w-2 h-2 rounded-full ${i === active ? "bg-white scale-110" : "bg-white/50"}`} />
             ))}
           </div>
-          {/* Arrow buttons */}
           {active > 0 && (
-            <button
-              onClick={() => setActive(p => p - 1)}
-              className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 flex items-center justify-center text-white"
-            >‹</button>
+            <button onClick={() => setActive(p => p - 1)}
+              className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 text-white text-lg">‹</button>
           )}
           {active < photos.length - 1 && (
-            <button
-              onClick={() => setActive(p => p + 1)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 flex items-center justify-center text-white"
-            >›</button>
+            <button onClick={() => setActive(p => p + 1)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 text-white text-lg">›</button>
           )}
           <div className="absolute top-2 right-2 bg-black/50 text-white text-xs rounded-full px-2 py-0.5">
             {active + 1}/{photos.length}
@@ -129,137 +242,110 @@ function PhotoGallery({ photos }: { photos: string[] }) {
   );
 }
 
-// ─── Order Detail Row ─────────────────────────────────────────────────────────
+// ─── Detail Row ───────────────────────────────────────────────────────────────
+
 function Row({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
     <div className="flex items-start gap-3 py-3 border-b border-border last:border-0">
       <div className="text-muted-foreground mt-0.5 shrink-0">{icon}</div>
       <div className="min-w-0">
-        <p className="text-xs text-muted-foreground leading-none mb-1">{label}</p>
-        <p className="text-sm font-medium text-foreground">{value}</p>
+        <p className="text-xs text-muted-foreground mb-1">{label}</p>
+        <p className="text-sm font-medium">{value}</p>
       </div>
     </div>
   );
 }
 
-// ─── Order Detail Bottom Sheet ────────────────────────────────────────────────
-function OrderDetailSheet({
-  order,
-  onRespond,
-  onReject,
-  onClose,
-}: {
-  order: OrderCard;
-  onRespond: () => void;
-  onReject: () => void;
-  onClose: () => void;
+function formatDate(d: string | null) {
+  if (!d) return "не указана";
+  return new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(d));
+}
+
+function parseServices(raw: string | null): ServiceLine[] | null {
+  if (!raw) return null;
+  try { const a = JSON.parse(raw); if (Array.isArray(a) && a.length) return a; } catch {}
+  return null;
+}
+
+// ─── Order Detail Sheet ───────────────────────────────────────────────────────
+
+function OrderDetailSheet({ order, onRespond, onReject, onClose }: {
+  order: OrderCard; onRespond: () => void; onReject: () => void; onClose: () => void;
 }) {
   const [state, setState] = useState<"idle" | "loading" | "success" | "rejecting">("idle");
+  const services = parseServices(order.services);
 
   const handleRespond = async () => {
     setState("loading");
-    try {
-      await api.orders.respond(order.id);
-      setState("success");
-    } catch (err: any) {
-      toast.error(err.message ?? "Ошибка");
-      setState("idle");
-    }
+    try { await api.orders.respond(order.id); setState("success"); }
+    catch (e: any) { toast.error(e.message ?? "Ошибка"); setState("idle"); }
   };
 
   const handleReject = async () => {
     setState("rejecting");
-    try {
-      await api.orders.reject(order.id);
-      toast.success("Заявка отклонена");
-      onReject();
-    } catch (err: any) {
-      toast.error(err.message ?? "Ошибка");
-      setState("idle");
-    }
+    try { await api.orders.reject(order.id); toast.success("Заявка отклонена"); onReject(); }
+    catch (e: any) { toast.error(e.message ?? "Ошибка"); setState("idle"); }
   };
-
-  const handleSuccessClose = () => {
-    onRespond();
-  };
-
-  const services = parseServices(order.services);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background">
-      {/* Top bar */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card shrink-0">
-        <span className="font-bold text-base">Заявка #{order.id}</span>
+        <div className="flex items-center gap-2">
+          <span className="font-bold">Заявка #{order.id}</span>
+          <DispatchTimer dispatchedAt={order.dispatchedAt} />
+        </div>
         <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-muted">
           <X size={20} />
         </button>
       </div>
 
-      {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto">
-
-        {/* SUCCESS STATE */}
         {state === "success" ? (
           <div className="flex flex-col items-center justify-center min-h-[70vh] px-6 text-center space-y-4">
             <div className="w-20 h-20 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
               <CheckCircle2 size={44} className="text-green-500" />
             </div>
             <div className="space-y-2">
-              <h2 className="text-xl font-bold text-foreground">Отклик отправлен!</h2>
+              <h2 className="text-xl font-bold">Отклик отправлен!</h2>
               <p className="text-sm text-muted-foreground">Ожидайте решения менеджера.</p>
               <p className="text-xs text-muted-foreground">После подтверждения вы получите контакт клиента.</p>
             </div>
-            <button
-              onClick={handleSuccessClose}
-              className="mt-4 w-full max-w-xs h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm"
-            >
+            <button onClick={onRespond}
+              className="mt-4 w-full max-w-xs h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm">
               Готово
             </button>
           </div>
         ) : (
           <>
-            {/* Photos */}
-            {order.photos.length > 0 ? (
-              <PhotoGallery photos={order.photos} />
-            ) : (
-              <div className="flex items-center justify-center h-28 bg-muted/40 text-muted-foreground gap-2">
-                <Images size={20} />
-                <span className="text-sm">Фото не прикреплено</span>
-              </div>
-            )}
-
-            {/* Details */}
+            {order.photos.length > 0
+              ? <PhotoGallery photos={order.photos} />
+              : (
+                <div className="flex items-center justify-center h-24 bg-muted/40 text-muted-foreground gap-2">
+                  <Images size={18} /><span className="text-sm">Фото не прикреплено</span>
+                </div>
+              )}
             <div className="px-4 pt-2 pb-4">
-              {/* Services block */}
               <div className="py-3 border-b border-border">
                 <p className="text-xs text-muted-foreground mb-2">Услуга / объём</p>
                 {services ? (
                   <div className="space-y-1.5">
                     {services.map((s, i) => (
-                      <div key={i} className="flex items-start gap-2">
-                        <Wrench size={15} className="text-primary mt-0.5 shrink-0" />
-                        <span className="text-sm font-medium">
-                          {s.type} — {s.area} м²
-                          {s.pricePerM2 ? ` · ${s.pricePerM2.toLocaleString("ru-RU")} ₽/м²` : ""}
-                        </span>
+                      <div key={i} className="flex items-center gap-2">
+                        <Wrench size={14} className="text-primary shrink-0" />
+                        <span className="text-sm font-medium">{s.type} — {s.area} м²{s.pricePerM2 ? ` · ${s.pricePerM2.toLocaleString("ru-RU")} ₽/м²` : ""}</span>
                       </div>
                     ))}
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
-                    <Wrench size={15} className="text-primary shrink-0" />
+                    <Wrench size={14} className="text-primary shrink-0" />
                     <span className="text-sm font-medium">{order.serviceType} — {order.area} м²</span>
                   </div>
                 )}
               </div>
-
               <Row icon={<MapPin size={16} />} label="Адрес" value={`${order.city}${order.district ? `, ${order.district}` : ""}`} />
               <Row icon={<Calendar size={16} />} label="Дата выезда" value={formatDate(order.scheduledAt)} />
-              {order.comment && (
-                <Row icon={<MessageSquare size={16} />} label="Комментарий" value={order.comment} />
-              )}
-
-              {/* Info note */}
+              {order.comment && <Row icon={<MessageSquare size={16} />} label="Комментарий" value={order.comment} />}
               <div className="mt-4 bg-muted/60 rounded-xl px-4 py-3">
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   Телефон клиента будет передан после того, как менеджер выберет вас для этого заказа.
@@ -270,24 +356,17 @@ function OrderDetailSheet({
         )}
       </div>
 
-      {/* Bottom action bar — only shown in idle/loading */}
       {state !== "success" && (
         <div className="shrink-0 bg-card border-t border-border px-4 py-4 space-y-2">
-          <button
-            onClick={handleRespond}
-            disabled={state === "loading" || state === "rejecting"}
-            className="w-full h-14 rounded-2xl bg-primary text-primary-foreground font-bold text-base flex items-center justify-center gap-2 active:opacity-90 disabled:opacity-60 transition-opacity"
-          >
+          <button onClick={handleRespond} disabled={state !== "idle"}
+            className="w-full h-14 rounded-2xl bg-primary text-primary-foreground font-bold text-base flex items-center justify-center gap-2 disabled:opacity-60">
             {state === "loading"
               ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
               : <CheckCircle2 size={22} />}
             Откликнуться
           </button>
-          <button
-            onClick={handleReject}
-            disabled={state === "loading" || state === "rejecting"}
-            className="w-full h-11 rounded-xl text-destructive font-medium text-sm flex items-center justify-center gap-1.5 active:opacity-80 disabled:opacity-50"
-          >
+          <button onClick={handleReject} disabled={state !== "idle"}
+            className="w-full h-11 rounded-xl text-destructive font-medium text-sm flex items-center justify-center gap-1.5 disabled:opacity-50">
             {state === "rejecting"
               ? <div className="w-4 h-4 border-2 border-destructive border-t-transparent rounded-full animate-spin" />
               : <XCircle size={16} />}
@@ -300,56 +379,47 @@ function OrderDetailSheet({
 }
 
 // ─── Responded Sheet ──────────────────────────────────────────────────────────
+
 function RespondedSheet({ order, onClose }: { order: PendingCard; onClose: () => void }) {
   const services = parseServices(order.services);
-
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card shrink-0">
-        <span className="font-bold text-base">Заявка #{order.id}</span>
+        <span className="font-bold">Заявка #{order.id}</span>
         <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-muted">
           <X size={20} />
         </button>
       </div>
-
       <div className="flex-1 overflow-y-auto">
         {order.photos.length > 0 && <PhotoGallery photos={order.photos} />}
-
         <div className="px-4 pt-2 pb-4">
-          {/* Services */}
           <div className="py-3 border-b border-border">
             <p className="text-xs text-muted-foreground mb-2">Услуга / объём</p>
             {services ? (
               <div className="space-y-1.5">
                 {services.map((s, i) => (
-                  <div key={i} className="flex items-start gap-2">
-                    <Wrench size={15} className="text-primary mt-0.5 shrink-0" />
+                  <div key={i} className="flex items-center gap-2">
+                    <Wrench size={14} className="text-primary shrink-0" />
                     <span className="text-sm font-medium">{s.type} — {s.area} м²</span>
                   </div>
                 ))}
               </div>
             ) : (
               <div className="flex items-center gap-2">
-                <Wrench size={15} className="text-primary shrink-0" />
+                <Wrench size={14} className="text-primary shrink-0" />
                 <span className="text-sm font-medium">{order.serviceType} — {order.area} м²</span>
               </div>
             )}
           </div>
-
           <Row icon={<MapPin size={16} />} label="Адрес" value={`${order.city}${order.district ? `, ${order.district}` : ""}`} />
           <Row icon={<Calendar size={16} />} label="Дата выезда" value={formatDate(order.scheduledAt)} />
-          {order.comment && (
-            <Row icon={<MessageSquare size={16} />} label="Комментарий" value={order.comment} />
-          )}
-
-          {/* Responded status */}
-          <div className="mt-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl px-4 py-4 space-y-1.5">
+          {order.comment && <Row icon={<MessageSquare size={16} />} label="Комментарий" value={order.comment} />}
+          <div className="mt-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl px-4 py-4 space-y-1">
             <div className="flex items-center gap-2">
-              <CheckCircle2 size={20} className="text-green-500 shrink-0" />
-              <p className="font-semibold text-sm text-green-700 dark:text-green-400">Вы откликнулись на эту заявку</p>
+              <CheckCircle2 size={18} className="text-green-500 shrink-0" />
+              <p className="font-semibold text-sm text-green-700 dark:text-green-400">Вы откликнулись</p>
             </div>
-            <p className="text-xs text-green-600 dark:text-green-500 pl-7">Ожидайте подтверждения оператора.</p>
-            <p className="text-xs text-muted-foreground pl-7">После подтверждения вы получите контакт клиента.</p>
+            <p className="text-xs text-green-600 dark:text-green-500 pl-7">Ожидайте подтверждения оператора</p>
             {order.respondedAt && (
               <p className="text-xs text-muted-foreground pl-7">
                 {formatDistanceToNow(new Date(order.respondedAt), { addSuffix: true, locale: ru })}
@@ -358,12 +428,8 @@ function RespondedSheet({ order, onClose }: { order: PendingCard; onClose: () =>
           </div>
         </div>
       </div>
-
       <div className="shrink-0 bg-card border-t border-border px-4 py-4">
-        <button
-          onClick={onClose}
-          className="w-full h-12 rounded-xl border border-border text-muted-foreground font-medium text-sm"
-        >
+        <button onClick={onClose} className="w-full h-12 rounded-xl border border-border text-muted-foreground font-medium text-sm">
           Закрыть
         </button>
       </div>
@@ -371,33 +437,132 @@ function RespondedSheet({ order, onClose }: { order: PendingCard; onClose: () =>
   );
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
-export default function HomePage() {
-  const { master } = useAuth();
-  const [, setLocation] = useLocation();
-  const [data, setData] = useState<HomeData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [selectedAvail, setSelectedAvail] = useState<OrderCard | null>(null);
-  const [selectedPending, setSelectedPending] = useState<PendingCard | null>(null);
+// ─── Availability Toggle ──────────────────────────────────────────────────────
 
-  usePushNotifications(!!master);
+function AvailabilityToggle({ isAvailable, onChange }: { isAvailable: boolean; onChange: (v: boolean) => void }) {
+  const [loading, setLoading] = useState(false);
 
-  const load = async () => {
+  const toggle = async () => {
+    setLoading(true);
     try {
-      const d = await api.home();
-      setData(d);
-    } catch {
-      toast.error("Ошибка загрузки");
+      await api.setAvailability(!isAvailable);
+      onChange(!isAvailable);
+      toast.success(isAvailable ? "Вы недоступны — заявки не будут приходить" : "Вы снова принимаете заявки");
+    } catch (e: any) {
+      toast.error(e.message ?? "Ошибка");
     } finally {
       setLoading(false);
     }
   };
 
+  return (
+    <button
+      onClick={toggle}
+      disabled={loading}
+      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+        isAvailable
+          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+          : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+      } disabled:opacity-60`}
+    >
+      {loading
+        ? <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+        : isAvailable
+          ? <PlayCircle size={14} />
+          : <PauseCircle size={14} />}
+      {isAvailable ? "Принимаю заявки" : "Недоступен"}
+    </button>
+  );
+}
+
+// ─── Swipe hint (shown once) ──────────────────────────────────────────────────
+
+const SWIPE_HINT_KEY = "swipe_hint_shown";
+
+function SwipeHint({ onDismiss }: { onDismiss: () => void }) {
+  return (
+    <div className="flex items-center gap-3 bg-muted/80 border border-border rounded-xl px-3 py-2.5 text-xs text-muted-foreground">
+      <div className="flex items-center gap-1 shrink-0">
+        <span className="text-emerald-500 font-bold">→</span> Откликнуться
+        <span className="mx-2 opacity-40">|</span>
+        <span className="text-red-500 font-bold">←</span> Отказать
+      </div>
+      <span className="flex-1 text-center opacity-60">Свайп для быстрого ответа</span>
+      <button onClick={onDismiss} className="shrink-0"><X size={14} /></button>
+    </div>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
+
+export default function HomePage() {
+  const { master } = useAuth();
+  const [, setLocation] = useLocation();
+  const [data, setData] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [selectedAvail, setSelectedAvail] = useState<OrderCard | null>(null);
+  const [selectedPending, setSelectedPending] = useState<PendingCard | null>(null);
+  const [isAvailable, setIsAvailable] = useState(true);
+  const [showSwipeHint, setShowSwipeHint] = useState(() => !localStorage.getItem(SWIPE_HINT_KEY));
+
+  const prevOrderIds = useRef<Set<number>>(new Set());
+  const firstLoad = useRef(true);
+
+  usePushNotifications(!!master);
+
+  const load = useCallback(async () => {
+    try {
+      const d = await api.home();
+      setData(d);
+      setIsAvailable(d.master?.isAvailable ?? true);
+
+      // Detect new orders → sound + vibration
+      const currentIds = new Set<number>((d.availableOrders ?? []).map((o: OrderCard) => o.id));
+      if (!firstLoad.current) {
+        const newOnes = [...currentIds].filter(id => !prevOrderIds.current.has(id));
+        if (newOnes.length > 0) {
+          playNewOrderAlert();
+        }
+      }
+      firstLoad.current = false;
+      prevOrderIds.current = currentIds;
+    } catch {
+      // silent on background refresh
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     load();
     const interval = setInterval(load, 10_000);
     return () => clearInterval(interval);
-  }, []);
+  }, [load]);
+
+  const dismissSwipeHint = () => {
+    localStorage.setItem(SWIPE_HINT_KEY, "1");
+    setShowSwipeHint(false);
+  };
+
+  const handleSwipeRespond = async (order: OrderCard) => {
+    try {
+      await api.orders.respond(order.id);
+      toast.success(`Отклик на заявку #${order.id} отправлен!`);
+      load();
+    } catch (e: any) {
+      toast.error(e.message ?? "Ошибка");
+    }
+  };
+
+  const handleSwipeReject = async (order: OrderCard) => {
+    try {
+      await api.orders.reject(order.id);
+      toast.success("Заявка отклонена");
+      load();
+    } catch (e: any) {
+      toast.error(e.message ?? "Ошибка");
+    }
+  };
 
   if (loading) {
     return (
@@ -407,9 +572,17 @@ export default function HomePage() {
     );
   }
 
-  const available = data?.availableOrders ?? [];
-  const pending = data?.pendingOrders ?? [];
-  const active = data?.activeOrders ?? [];
+  const available: OrderCard[] = data?.availableOrders ?? [];
+  const pending: PendingCard[] = data?.pendingOrders ?? [];
+  const active: ActiveOrder[] = data?.activeOrders ?? [];
+
+  const workStatusLabels: Record<string, string> = {
+    accepted: "Принят", on_way: "Еду на объект", on_site: "На объекте",
+    work_done: "Работа выполнена", completed: "Завершён",
+  };
+  const orderStatusLabels: Record<string, string> = {
+    master_assigned: "Назначен", in_progress: "В работе", cancellation_requested: "Отмена",
+  };
 
   return (
     <div className="px-4 pt-5 pb-4 space-y-5">
@@ -420,16 +593,30 @@ export default function HomePage() {
           <h1 className="text-xl font-bold">{master?.alias}</h1>
           <p className="text-sm text-muted-foreground">{master?.city}</p>
         </div>
-        <div className="flex items-center gap-1 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-3 py-1.5 rounded-xl">
-          <Star size={14} fill="currentColor" />
-          <span className="font-semibold text-sm">{master?.rating?.toFixed(1)}</span>
+        <div className="flex items-center gap-2">
+          <AvailabilityToggle isAvailable={isAvailable} onChange={setIsAvailable} />
+          <div className="flex items-center gap-1 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-2.5 py-1.5 rounded-xl">
+            <Star size={13} fill="currentColor" />
+            <span className="font-semibold text-sm">{master?.rating?.toFixed(1)}</span>
+          </div>
         </div>
       </div>
+
+      {/* Unavailable warning */}
+      {!isAvailable && (
+        <div className="flex items-center gap-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3">
+          <PauseCircle size={18} className="text-red-500 shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-red-700 dark:text-red-400">Вы недоступны</p>
+            <p className="text-xs text-red-600 dark:text-red-500">Новые заявки не поступают. Включите приём заявок выше.</p>
+          </div>
+        </div>
+      )}
 
       {/* Debt warning */}
       {master && (master.debt ?? 0) > 0 && (
         <div className="flex items-center gap-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3">
-          <AlertTriangle size={20} className="text-red-500 shrink-0" />
+          <AlertTriangle size={18} className="text-red-500 shrink-0" />
           <div>
             <p className="text-sm font-semibold text-red-700 dark:text-red-400">Задолженность</p>
             <p className="text-xs text-red-600 dark:text-red-500">
@@ -442,56 +629,62 @@ export default function HomePage() {
       {/* New orders */}
       {available.length > 0 && (
         <section className="space-y-2">
-          <div className="flex items-center gap-2">
-            <Bell size={16} className="text-primary" />
-            <h2 className="font-semibold text-sm">Новые заявки ({available.length})</h2>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Bell size={15} className="text-primary" />
+              <h2 className="font-semibold text-sm">Новые заявки ({available.length})</h2>
+            </div>
           </div>
+
+          {/* Swipe hint */}
+          {showSwipeHint && <SwipeHint onDismiss={dismissSwipeHint} />}
+
           {available.map(order => (
-            <button
+            <SwipeableCard
               key={order.id}
-              onClick={() => setSelectedAvail(order)}
-              className="w-full bg-primary/10 dark:bg-primary/15 border border-primary/30 rounded-2xl overflow-hidden text-left active:opacity-80"
+              onSwipeRight={() => handleSwipeRespond(order)}
+              onSwipeLeft={() => handleSwipeReject(order)}
             >
-              {/* Thumbnail */}
-              {order.photos.length > 0 && (
-                <img
-                  src={order.photos[0]}
-                  alt="фото"
-                  className="w-full object-cover"
-                  style={{ height: 140 }}
-                />
-              )}
-              <div className="p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-sm text-primary">Заявка #{order.id}</span>
-                  <span className="text-xs text-primary font-medium flex items-center gap-0.5">
-                    Открыть <ChevronRight size={14} />
-                  </span>
-                </div>
-                <div className="space-y-1">
-                  <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-                    <Wrench size={14} className="text-primary shrink-0" />
-                    {order.serviceType} · {order.area} м²
+              <button
+                onClick={() => setSelectedAvail(order)}
+                className="w-full bg-primary/10 dark:bg-primary/15 border border-primary/30 rounded-2xl overflow-hidden text-left"
+              >
+                {order.photos.length > 0 && (
+                  <img src={order.photos[0]} alt="фото" className="w-full object-cover" style={{ height: 130 }} />
+                )}
+                <div className="p-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-sm text-primary">Заявка #{order.id}</span>
+                    <div className="flex items-center gap-2">
+                      <DispatchTimer dispatchedAt={order.dispatchedAt} />
+                      <ChevronRight size={14} className="text-primary opacity-60" />
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <MapPin size={12} className="shrink-0" />
-                    {order.city}{order.district ? `, ${order.district}` : ""}
-                  </div>
-                  {order.scheduledAt && (
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1.5 text-sm font-medium">
+                      <Wrench size={13} className="text-primary shrink-0" />
+                      {order.serviceType} · {order.area} м²
+                    </div>
                     <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <Calendar size={12} className="shrink-0" />
-                      {formatDate(order.scheduledAt)}
+                      <MapPin size={12} className="shrink-0" />
+                      {order.city}{order.district ? `, ${order.district}` : ""}
                     </div>
-                  )}
-                  {order.photos.length > 1 && (
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Images size={12} className="shrink-0" />
-                      {order.photos.length} фото
-                    </div>
-                  )}
+                    {order.scheduledAt && (
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Calendar size={12} className="shrink-0" />
+                        {formatDate(order.scheduledAt)}
+                      </div>
+                    )}
+                    {order.photos.length > 1 && (
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Images size={12} className="shrink-0" />
+                        {order.photos.length} фото
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            </button>
+              </button>
+            </SwipeableCard>
           ))}
         </section>
       )}
@@ -500,17 +693,17 @@ export default function HomePage() {
       {pending.length > 0 && (
         <section className="space-y-2">
           <div className="flex items-center gap-2">
-            <Clock size={16} className="text-amber-500" />
+            <Clock size={15} className="text-amber-500" />
             <h2 className="font-semibold text-sm">Ожидаю решения ({pending.length})</h2>
           </div>
           {pending.map(order => (
             <button
               key={order.id}
               onClick={() => setSelectedPending(order)}
-              className="w-full bg-amber-50 dark:bg-amber-900/15 border border-amber-200 dark:border-amber-800/40 rounded-2xl overflow-hidden text-left active:opacity-80"
+              className="w-full bg-amber-50 dark:bg-amber-900/15 border border-amber-200 dark:border-amber-800/40 rounded-2xl overflow-hidden text-left"
             >
               {order.photos.length > 0 && (
-                <img src={order.photos[0]} alt="фото" className="w-full object-cover" style={{ height: 100 }} />
+                <img src={order.photos[0]} alt="фото" className="w-full object-cover" style={{ height: 90 }} />
               )}
               <div className="p-4 space-y-1.5">
                 <div className="flex items-center justify-between">
@@ -519,8 +712,8 @@ export default function HomePage() {
                     <CheckCircle2 size={12} /> Отклик отправлен
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-                  <Wrench size={14} className="text-amber-500 shrink-0" />
+                <div className="flex items-center gap-1.5 text-sm font-medium">
+                  <Wrench size={13} className="text-amber-500 shrink-0" />
                   {order.serviceType} · {order.area} м²
                 </div>
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -535,7 +728,7 @@ export default function HomePage() {
 
       {/* Active orders */}
       <section className="space-y-2">
-        <h2 className="font-semibold text-sm text-foreground">Активные заказы</h2>
+        <h2 className="font-semibold text-sm">Активные заказы</h2>
         {active.length === 0 ? (
           <div className="text-center py-10 text-muted-foreground text-sm">Нет активных заказов</div>
         ) : (
@@ -543,7 +736,7 @@ export default function HomePage() {
             <button
               key={order.id}
               onClick={() => setLocation("/orders")}
-              className="w-full bg-card border border-border rounded-2xl p-4 text-left space-y-2 active:opacity-80"
+              className="w-full bg-card border border-border rounded-2xl p-4 text-left space-y-2"
             >
               <div className="flex items-center justify-between">
                 <span className="font-semibold text-sm">{order.city}{order.district ? `, ${order.district}` : ""}</span>
@@ -551,7 +744,6 @@ export default function HomePage() {
               </div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Ruler size={12} />
                   {order.serviceType} · {order.area} м²
                 </div>
                 <span className="text-xs font-semibold text-primary">
@@ -565,7 +757,7 @@ export default function HomePage() {
         )}
       </section>
 
-      {/* Full-screen modals */}
+      {/* Full-screen sheets */}
       {selectedAvail && (
         <OrderDetailSheet
           order={selectedAvail}
@@ -575,10 +767,7 @@ export default function HomePage() {
         />
       )}
       {selectedPending && (
-        <RespondedSheet
-          order={selectedPending}
-          onClose={() => setSelectedPending(null)}
-        />
+        <RespondedSheet order={selectedPending} onClose={() => setSelectedPending(null)} />
       )}
     </div>
   );
