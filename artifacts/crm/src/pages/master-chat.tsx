@@ -661,7 +661,7 @@ export default function MasterChat() {
                               {assignMutation.isPending
                                 ? <Loader2 className="w-3 h-3 animate-spin" />
                                 : <UserCheck className="w-3 h-3" />}
-                              Назначить
+                              Принять
                             </button>
                           </div>
                         </div>

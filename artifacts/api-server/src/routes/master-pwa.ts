@@ -370,9 +370,23 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
     return res.status(400).json({ error: "Заявка больше недоступна" });
   }
 
+  const master = await getMasterById(masterId);
+  if (!master) return res.status(404).json({ error: "Мастер не найден" });
+
   await db.update(orderDispatchesTable)
     .set({ status: "responded", respondedAt: new Date() })
     .where(eq(orderDispatchesTable.id, dispatches[0].id));
+
+  // Notify operator — create a chat message so it appears in CRM master chat
+  const chatId = master.telegramId ?? `pwa_${master.id}`;
+  await db.insert(masterMessagesTable).values({
+    masterId,
+    telegramChatId: chatId,
+    text: `🙋 Откликнулся на заявку #${orderId} (${order.serviceType}, ${order.city}${order.district ? ", " + order.district : ""})`,
+    fromMaster: true,
+    senderName: master.alias,
+    isRead: false,
+  });
 
   res.json({ success: true });
 });
