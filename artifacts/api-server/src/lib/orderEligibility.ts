@@ -12,7 +12,7 @@ export interface EligibilityResult {
  * Only marks transactions with real commission > 0 (ignores placeholders).
  * Returns the number of transactions marked overdue.
  */
-export async function checkOverdueTransactions(daysThreshold = 7): Promise<number> {
+export async function checkOverdueTransactions(daysThreshold = 2): Promise<number> {
   const cutoff = new Date(Date.now() - daysThreshold * 24 * 60 * 60 * 1000);
 
   const pending = await db
