@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { usePushNotifications } from "@/lib/usePushNotifications";
 import {
   Bell, CheckCircle2, XCircle, MapPin, Calendar, Ruler,
-  ChevronRight, AlertTriangle, Star, Clock,
+  ChevronRight, AlertTriangle, Star,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -20,16 +20,6 @@ interface AvailableOrder {
   scheduledAt: string | null;
   comment: string | null;
   dispatchedAt: string | null;
-}
-
-interface PendingOrder {
-  id: number;
-  city: string;
-  district: string | null;
-  serviceType: string;
-  area: number;
-  scheduledAt: string | null;
-  respondedAt: string | null;
 }
 
 interface ActiveOrder {
@@ -47,7 +37,7 @@ interface ActiveOrder {
 interface HomeData {
   master: any;
   availableOrders: AvailableOrder[];
-  pendingOrders: PendingOrder[];
+  pendingOrders: any[];
   activeOrders: ActiveOrder[];
 }
 
@@ -66,30 +56,30 @@ const workStatusLabels: Record<string, string> = {
   completed: "Завершён",
 };
 
-function RespondModal({
+function AcceptModal({
   order,
-  onRespond,
+  onAccept,
   onReject,
   onClose,
 }: {
   order: AvailableOrder;
-  onRespond: () => void;
+  onAccept: () => void;
   onReject: () => void;
   onClose: () => void;
 }) {
-  const [responding, setResponding] = useState(false);
+  const [accepting, setAccepting] = useState(false);
   const [rejecting, setRejecting] = useState(false);
 
-  const handleRespond = async () => {
-    setResponding(true);
+  const handleAccept = async () => {
+    setAccepting(true);
     try {
-      await api.orders.respond(order.id);
-      toast.success("Отклик отправлен! Ожидайте решения менеджера.");
-      onRespond();
+      await api.orders.accept(order.id);
+      toast.success("Заказ принят! Он появился в активных.");
+      onAccept();
     } catch (err: any) {
       toast.error(err.message ?? "Ошибка");
     } finally {
-      setResponding(false);
+      setAccepting(false);
     }
   };
 
@@ -143,14 +133,10 @@ function RespondModal({
           )}
         </div>
 
-        <p className="text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
-          После отклика менеджер выберет мастера и свяжется с вами
-        </p>
-
         <div className="grid grid-cols-2 gap-3 pt-1">
           <button
             onClick={handleReject}
-            disabled={rejecting || responding}
+            disabled={rejecting || accepting}
             className="flex items-center justify-center gap-2 h-12 rounded-xl border border-destructive text-destructive font-semibold text-sm active:opacity-80 disabled:opacity-50"
           >
             {rejecting
@@ -159,14 +145,14 @@ function RespondModal({
             Отказать
           </button>
           <button
-            onClick={handleRespond}
-            disabled={responding || rejecting}
+            onClick={handleAccept}
+            disabled={accepting || rejecting}
             className="flex items-center justify-center gap-2 h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm active:opacity-80 disabled:opacity-50"
           >
-            {responding
+            {accepting
               ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
               : <CheckCircle2 size={18} />}
-            Откликнуться
+            Принять
           </button>
         </div>
       </div>
@@ -209,7 +195,6 @@ export default function HomePage() {
   }
 
   const available = data?.availableOrders ?? [];
-  const pending = data?.pendingOrders ?? [];
   const active = data?.activeOrders ?? [];
 
   return (
@@ -237,7 +222,6 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* New orders — available to respond */}
       {available.length > 0 && (
         <section className="space-y-2">
           <div className="flex items-center gap-2">
@@ -257,7 +241,7 @@ export default function HomePage() {
                   {order.city}{order.district ? `, ${order.district}` : ""}
                 </span>
                 <span className="text-xs text-primary font-medium flex items-center gap-1">
-                  Откликнуться <ChevronRight size={14} />
+                  Принять <ChevronRight size={14} />
                 </span>
               </div>
               <div className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -278,45 +262,6 @@ export default function HomePage() {
         </section>
       )}
 
-      {/* Pending — master responded, waiting for operator */}
-      {pending.length > 0 && (
-        <section className="space-y-2">
-          <div className="flex items-center gap-2">
-            <Clock size={16} className="text-amber-500" />
-            <h2 className="font-semibold text-sm text-foreground">
-              Ожидаю решения ({pending.length})
-            </h2>
-          </div>
-          {pending.map(order => (
-            <div
-              key={order.id}
-              className="w-full bg-amber-50 dark:bg-amber-900/15 border border-amber-200 dark:border-amber-800/40 rounded-xl p-3.5 space-y-1.5"
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-sm text-amber-800 dark:text-amber-300">
-                  {order.city}{order.district ? `, ${order.district}` : ""}
-                </span>
-                <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
-                  Отклик отправлен
-                </span>
-              </div>
-              <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                <span>{order.serviceType}</span>
-                <span>·</span>
-                <span>{order.area} м²</span>
-                {order.respondedAt && (
-                  <>
-                    <span>·</span>
-                    <span>{formatDistanceToNow(new Date(order.respondedAt), { addSuffix: true, locale: ru })}</span>
-                  </>
-                )}
-              </div>
-            </div>
-          ))}
-        </section>
-      )}
-
-      {/* Active orders */}
       <section className="space-y-2">
         <h2 className="font-semibold text-sm text-foreground">Активные заказы</h2>
         {active.length === 0 ? (
@@ -350,9 +295,9 @@ export default function HomePage() {
       </section>
 
       {selectedOrder && (
-        <RespondModal
+        <AcceptModal
           order={selectedOrder}
-          onRespond={() => { setSelectedOrder(null); load(); }}
+          onAccept={() => { setSelectedOrder(null); load(); }}
           onReject={() => { setSelectedOrder(null); load(); }}
           onClose={() => setSelectedOrder(null)}
         />

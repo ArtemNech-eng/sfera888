@@ -1,5 +1,5 @@
-const SHELL_CACHE = "master-pwa-shell-v4";
-const ASSET_CACHE = "master-pwa-assets-v4";
+const SHELL_CACHE = "master-pwa-shell-v5";
+const ASSET_CACHE = "master-pwa-assets-v5";
 const SHELL_URL = "/master-pwa/index.html";
 
 // Pre-cache the app shell on install
