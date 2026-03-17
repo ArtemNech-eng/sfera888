@@ -5,6 +5,7 @@ import cookieParser from "cookie-parser";
 import router from "./routes/index.js";
 import path from "path";
 import { fileURLToPath } from "url";
+import fs from "fs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -32,5 +33,27 @@ app.use("/api/uploads", express.static(path.join(__dirname, "../../public/upload
 app.use("/api/banners", express.static(path.join(__dirname, "../public/banners")));
 
 app.use("/api", router);
+
+// ── Serve CRM and master-pwa as static files (production deployment) ─────────
+// In development these are served by their own Vite dev servers via path routing.
+// In production (deployed VM) the api-server is the only process, so it serves
+// the pre-built static files for both frontends.
+
+const crmDistPath = path.join(__dirname, "../../crm/dist/public");
+const pwaDistPath = path.join(__dirname, "../../master-pwa/dist/public");
+
+if (fs.existsSync(crmDistPath)) {
+  app.use("/crm", express.static(crmDistPath));
+  app.use("/crm", (_req, res) => {
+    res.sendFile(path.join(crmDistPath, "index.html"));
+  });
+}
+
+if (fs.existsSync(pwaDistPath)) {
+  app.use("/master-pwa", express.static(pwaDistPath));
+  app.use("/master-pwa", (_req, res) => {
+    res.sendFile(path.join(pwaDistPath, "index.html"));
+  });
+}
 
 export default app;

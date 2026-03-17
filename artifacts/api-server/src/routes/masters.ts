@@ -243,6 +243,21 @@ router.post("/:id/avatar", allMasterRoles, avatarUpload.single("avatar"), async 
   res.json({ customAvatarUrl: avatarUrl });
 });
 
+// POST /api/masters/:id/reset-pwa — clear pwaLogin + pwaPasswordHash
+router.post("/:id/reset-pwa", allMasterRoles, async (req, res) => {
+  const masterId = parseInt(req.params.id);
+  if (isNaN(masterId)) return res.status(400).json({ error: "Invalid id" });
+
+  const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
+  if (!master) return res.status(404).json({ error: "Master not found" });
+
+  await db.update(mastersTable)
+    .set({ pwaLogin: null, pwaPasswordHash: null })
+    .where(eq(mastersTable.id, masterId));
+
+  res.json({ success: true });
+});
+
 // DELETE /api/masters/:id/avatar — remove custom avatar
 router.delete("/:id/avatar", allMasterRoles, async (req, res) => {
   const masterId = parseInt(req.params.id);

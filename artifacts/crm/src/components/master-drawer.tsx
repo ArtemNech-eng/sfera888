@@ -143,6 +143,27 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
   const [pwaPassword, setPwaPassword] = useState("");
   const [showPwaPass, setShowPwaPass] = useState(false);
   const [savingPwa, setSavingPwa] = useState(false);
+  const [resettingPwa, setResettingPwa] = useState(false);
+
+  const resetPwaAccess = async () => {
+    if (!confirm(`Сбросить PWA-доступ для ${master.alias}? Мастер сможет заново зарегистрироваться через приложение.`)) return;
+    setResettingPwa(true);
+    try {
+      const r = await fetch(`/api/masters/${master.id}/reset-pwa`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error ?? "Ошибка");
+      onMasterUpdate(master.id, { pwaLogin: null });
+      setPwaLogin("");
+      setPwaPassword("");
+    } catch (e: any) {
+      alert(e.message ?? "Ошибка сброса");
+    } finally {
+      setResettingPwa(false);
+    }
+  };
 
   const savePwaCredentials = async () => {
     if (!pwaLogin.trim() || !pwaPassword.trim()) return;
@@ -539,6 +560,16 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                     {savingPwa ? <Loader2 className="w-3 h-3 animate-spin" /> : <Smartphone className="w-3 h-3" />}
                     {master.pwaLogin ? "Обновить доступ" : "Выдать доступ"}
                   </button>
+                  {master.pwaLogin && (
+                    <button
+                      onClick={resetPwaAccess}
+                      disabled={resettingPwa}
+                      className="w-full py-1.5 border border-red-200 text-red-500 rounded-lg text-xs font-medium hover:bg-red-50 disabled:opacity-40 transition-colors flex items-center justify-center gap-1"
+                    >
+                      {resettingPwa ? <Loader2 className="w-3 h-3 animate-spin" /> : <KeyRound className="w-3 h-3" />}
+                      Сбросить PWA-доступ
+                    </button>
+                  )}
                 </div>
               </div>
 
