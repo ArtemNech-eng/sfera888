@@ -139,6 +139,7 @@ router.get("/masters", requireAuth, async (_req, res) => {
     contractPassportDate: m.contractPassportDate ?? null,
     contractPassportIssuer: m.contractPassportIssuer ?? null,
     contractAddress: m.contractAddress ?? null,
+    pwaLogin: m.pwaLogin ?? null,
     lastSeenAt: m.lastSeenAt ?? null,
   })));
 });
