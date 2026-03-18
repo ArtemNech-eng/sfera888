@@ -202,12 +202,12 @@ function buildContractText(data: PassportData, phone: string, masterId: number):
 
 const inputCls = "w-full h-11 px-4 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring";
 
-const STEPS: Step[] = ["data", "read", "passport", "confirm", "done"];
-const STEP_LABELS = ["Данные", "Договор", "Паспорт", "Подписание", "Готово"];
+const STEPS: Step[] = ["read", "data", "passport", "confirm", "done"];
+const STEP_LABELS = ["Договор", "Данные", "Паспорт", "Подписание", "Готово"];
 
 export default function PendingContractPage() {
   const { master, logout, refresh } = useAuth();
-  const [step, setStep] = useState<Step>("data");
+  const [step, setStep] = useState<Step>("read");
   const [contractExpanded, setContractExpanded] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [passportFile, setPassportFile] = useState<File | null>(null);
@@ -430,10 +430,13 @@ export default function PendingContractPage() {
             </div>
 
             <button
-              onClick={() => { if (validateData()) setStep("read"); }}
+              onClick={() => { if (validateData()) setStep("passport"); }}
               className="w-full h-12 bg-primary text-white font-semibold rounded-xl active:opacity-80"
             >
-              Далее — читать договор
+              Далее — загрузить паспорт
+            </button>
+            <button onClick={() => setStep("read")} className="w-full text-center text-xs text-muted-foreground py-1">
+              ← Назад к договору
             </button>
           </div>
         )}
@@ -462,18 +465,15 @@ export default function PendingContractPage() {
             {!contractExpanded && (
               <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 flex items-start gap-2">
                 <AlertCircle size={14} className="text-blue-500 shrink-0 mt-0.5" />
-                <p className="text-xs text-blue-700">Раскройте договор выше чтобы прочитать его перед подписанием. Ваши данные уже вставлены.</p>
+                <p className="text-xs text-blue-700">Раскройте договор выше, ознакомьтесь с условиями. На следующем шаге введёте свои паспортные данные.</p>
               </div>
             )}
 
             <button
-              onClick={() => setStep("passport")}
+              onClick={() => setStep("data")}
               className="w-full h-12 bg-primary text-white font-semibold rounded-xl active:opacity-80"
             >
               Ознакомлен, продолжить
-            </button>
-            <button onClick={() => setStep("data")} className="w-full text-center text-xs text-muted-foreground py-1">
-              ← Изменить данные
             </button>
           </div>
         )}
@@ -524,8 +524,8 @@ export default function PendingContractPage() {
               className="w-full h-12 bg-primary text-white font-semibold rounded-xl active:opacity-80 disabled:opacity-40">
               Далее
             </button>
-            <button onClick={() => setStep("read")} className="w-full text-center text-xs text-muted-foreground py-1">
-              ← Назад к договору
+            <button onClick={() => setStep("data")} className="w-full text-center text-xs text-muted-foreground py-1">
+              ← Назад
             </button>
           </div>
         )}
