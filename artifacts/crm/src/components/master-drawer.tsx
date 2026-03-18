@@ -205,6 +205,7 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
   const [confirmingTx, setConfirmingTx] = useState(false);
   const [showActivatePopover, setShowActivatePopover] = useState(false);
   const [activatingContract, setActivatingContract] = useState(false);
+  const [markingExternal, setMarkingExternal] = useState(false);
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
@@ -384,6 +385,30 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
     }
   };
 
+  const markContractExternal = async (source: "okidoki" | "paper") => {
+    setMarkingExternal(true);
+    try {
+      const r = await fetch(`/api/masters/${master.id}/mark-contract-external`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ source }),
+      });
+      if (r.ok) {
+        const updated = await r.json();
+        onMasterUpdate(master.id, {
+          status: "active",
+          contractSignedAt: updated.contractSignedAt,
+          passportVerified: updated.passportVerified,
+          passportVerifyNote: updated.passportVerifyNote,
+        });
+        setShowActivatePopover(false);
+      }
+    } finally {
+      setMarkingExternal(false);
+    }
+  };
+
   const addTag = async (tag: string) => {
     const t = tag.trim();
     if (!t || tags.includes(t)) return;
@@ -515,7 +540,7 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                     Ожидает договора ▾
                   </button>
                   {showActivatePopover && (
-                    <div className="absolute left-0 top-6 z-50 bg-white border border-gray-200 rounded-xl shadow-xl p-2.5 w-52 space-y-1.5">
+                    <div className="absolute left-0 top-6 z-50 bg-white border border-gray-200 rounded-xl shadow-xl p-2.5 w-56 space-y-1.5">
                       {master.contractLink && (
                         <a
                           href={master.contractLink}
@@ -526,16 +551,39 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                           Открыть договор
                         </a>
                       )}
+                      <p className="text-[9px] text-gray-400 uppercase tracking-wide px-0.5 pt-0.5">Договор подписан вне системы:</p>
                       <button
-                        onClick={activateManually}
-                        disabled={activatingContract}
-                        className="w-full flex items-center justify-center gap-1 bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-semibold rounded-md px-2 py-1 transition-colors disabled:opacity-60"
+                        onClick={() => markContractExternal("okidoki")}
+                        disabled={markingExternal}
+                        className="w-full flex items-center justify-center gap-1 bg-violet-500 hover:bg-violet-600 text-white text-[10px] font-semibold rounded-md px-2 py-1.5 transition-colors disabled:opacity-60"
                       >
-                        {activatingContract
+                        {markingExternal
                           ? <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                          : <CheckCircle2 className="w-2.5 h-2.5" />}
-                        Активировать вручную
+                          : <FileSignature className="w-2.5 h-2.5" />}
+                        Через ОкиДоки
                       </button>
+                      <button
+                        onClick={() => markContractExternal("paper")}
+                        disabled={markingExternal}
+                        className="w-full flex items-center justify-center gap-1 bg-gray-100 hover:bg-gray-200 text-gray-700 text-[10px] font-semibold rounded-md px-2 py-1.5 transition-colors disabled:opacity-60"
+                      >
+                        {markingExternal
+                          ? <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                          : <FileSignature className="w-2.5 h-2.5" />}
+                        На бумаге
+                      </button>
+                      <div className="border-t border-gray-100 pt-1">
+                        <button
+                          onClick={activateManually}
+                          disabled={activatingContract}
+                          className="w-full flex items-center justify-center gap-1 bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-semibold rounded-md px-2 py-1 transition-colors disabled:opacity-60"
+                        >
+                          {activatingContract
+                            ? <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                            : <CheckCircle2 className="w-2.5 h-2.5" />}
+                          Активировать (без договора)
+                        </button>
+                      </div>
                       <button
                         onClick={() => setShowActivatePopover(false)}
                         className="w-full text-center text-[9px] text-gray-400 hover:text-gray-600 py-0.5"

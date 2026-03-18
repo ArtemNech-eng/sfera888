@@ -154,6 +154,46 @@ router.patch("/:id", requireRole("admin", "master_operator"), async (req, res) =
   res.json(formatMaster(result[0]));
 });
 
+// POST /api/masters/:id/mark-contract-external
+// Marks the master's contract as signed outside the system (e.g. via OkiDoki).
+// Sets contractSignedAt, passportVerified=true, note, activates master, moves to "Свободен".
+router.post("/:id/mark-contract-external", requireRole("admin"), async (req, res) => {
+  const id = parseInt(req.params.id);
+  const { source } = req.body; // e.g. "okidoki" or "paper"
+  const noteMap: Record<string, string> = {
+    okidoki: "Подписан через сервис ОкиДоки",
+    paper: "Подписан на бумаге",
+  };
+  const note = noteMap[source] ?? "Подписан вне системы";
+
+  const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, id));
+  if (!master) return res.status(404).json({ error: "Мастер не найден" });
+
+  const cols = await db.select().from(voronkaColumnsTable);
+  const freeCol = cols.find(c => c.name === "Свободен");
+
+  await db.update(mastersTable)
+    .set({
+      contractSignedAt: new Date(),
+      passportVerified: true,
+      passportVerifyNote: note,
+      contractLink: null,
+      status: "active",
+      voronkaColumnId: freeCol?.id ?? master.voronkaColumnId,
+    })
+    .where(eq(mastersTable.id, id));
+
+  // Notify master in Telegram if applicable
+  if (master.status === "pending_contract" && master.telegramId) {
+    const tgRows = await db.select().from(telegramChatsTable).where(eq(telegramChatsTable.telegramChatId, master.telegramId));
+    const chatId = tgRows[0]?.telegramChatId ?? master.telegramId;
+    notifyMasterActivated(chatId, master.alias).catch(() => {});
+  }
+
+  const [updated] = await db.select().from(mastersTable).where(eq(mastersTable.id, id));
+  res.json(formatMaster(updated));
+});
+
 // DELETE /api/masters/:id — soft delete (move to trash)
 router.delete("/:id", requireRole("admin"), async (req, res) => {
   const id = parseInt(req.params.id);
