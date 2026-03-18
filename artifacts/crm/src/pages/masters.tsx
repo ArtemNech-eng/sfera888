@@ -6,7 +6,7 @@ import {
   Loader2, Plus, Star, Phone, MessageSquare, Briefcase,
   AlertTriangle, MapPin, Search, X, Users, Zap, UserX, Filter, FileSignature, Trash2, Smartphone,
 } from "lucide-react";
-import { Avatar, MasterDrawer } from "@/components/master-drawer";
+import { Avatar, MasterDrawer, OnlineBadge } from "@/components/master-drawer";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { useCreateMaster, useGetCities } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
@@ -41,6 +41,8 @@ interface Master {
   avatarUrl: string | null;
   activeOrders: ActiveOrder[];
   createdAt: string;
+  pwaLogin?: string | null;
+  lastSeenAt?: string | null;
 }
 
 
@@ -363,6 +365,7 @@ function MasterRow({ master, onOpenDrawer, onDelete }: { master: Master; onOpenD
           {specs.length > 0 && (
             <span className="truncate max-w-[200px]">{specs.slice(0, 2).join(", ")}{specs.length > 2 ? ` +${specs.length - 2}` : ""}</span>
           )}
+          {master.pwaLogin && <OnlineBadge lastSeenAt={master.lastSeenAt} />}
         </div>
       </div>
 

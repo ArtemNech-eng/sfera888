@@ -17,6 +17,27 @@ function resolvePhotoUrl(url: string): string {
   return url;
 }
 
+// ─── Online status ─────────────────────────────────────────────────────────────
+function getOnlineStatus(lastSeenAt?: string | null): { online: boolean; label: string } {
+  if (!lastSeenAt) return { online: false, label: "Не заходил" };
+  const diff = Date.now() - new Date(lastSeenAt).getTime();
+  if (diff < 5 * 60_000) return { online: true, label: "Онлайн" };
+  return {
+    online: false,
+    label: "Был " + formatDistanceToNow(new Date(lastSeenAt), { locale: ru, addSuffix: true }),
+  };
+}
+
+export function OnlineBadge({ lastSeenAt, className = "" }: { lastSeenAt?: string | null; className?: string }) {
+  const { online, label } = getOnlineStatus(lastSeenAt);
+  return (
+    <span className={`inline-flex items-center gap-1 text-[10px] font-medium ${online ? "text-emerald-600" : "text-gray-400"} ${className}`}>
+      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${online ? "bg-emerald-500" : "bg-gray-300"}`} />
+      {label}
+    </span>
+  );
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface DrawerColumn { id: number; name: string; }
@@ -44,6 +65,7 @@ export interface DrawerMaster {
   contractPassportDate?: string | null;
   contractPassportIssuer?: string | null;
   contractAddress?: string | null;
+  lastSeenAt?: string | null;
 }
 
 interface MasterTask { id: number; masterId: number; text: string; dueAt: string | null; isCompleted: boolean; createdBy: string | null; createdAt: string; }
@@ -595,7 +617,10 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                 </div>
               )}
             </div>
-            <p className="text-xs text-gray-400 mt-0.5">{colName} · {master.city}</p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <p className="text-xs text-gray-400">{colName} · {master.city}</p>
+              {master.pwaLogin && <OnlineBadge lastSeenAt={master.lastSeenAt} />}
+            </div>
           </div>
           <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0">
             <X className="w-4 h-4 text-gray-400" />

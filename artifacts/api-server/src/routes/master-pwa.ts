@@ -27,9 +27,24 @@ async function uploadPwaAvatarToGCS(masterId: number, buffer: Buffer, mimetype: 
 
 const router = Router();
 
+// Throttle last_seen_at updates: at most once per 60 seconds per master
+const lastSeenThrottle = new Map<number, number>();
+
 function requireMasterPwa(req: any, res: any, next: any) {
-  const masterId = (req.session as any).masterId;
+  const masterId = (req.session as any).masterId as number | undefined;
   if (!masterId) return res.status(401).json({ error: "Не авторизован" });
+
+  // Fire-and-forget: update last_seen_at at most once per minute
+  const now = Date.now();
+  const last = lastSeenThrottle.get(masterId) ?? 0;
+  if (now - last > 60_000) {
+    lastSeenThrottle.set(masterId, now);
+    db.update(mastersTable)
+      .set({ lastSeenAt: new Date() })
+      .where(eq(mastersTable.id, masterId))
+      .catch(() => {});
+  }
+
   next();
 }
 

@@ -32,7 +32,8 @@ async function runMigrations() {
       ADD COLUMN IF NOT EXISTS contract_passport_number TEXT,
       ADD COLUMN IF NOT EXISTS contract_passport_date TEXT,
       ADD COLUMN IF NOT EXISTS contract_passport_issuer TEXT,
-      ADD COLUMN IF NOT EXISTS contract_address TEXT
+      ADD COLUMN IF NOT EXISTS contract_address TEXT,
+      ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP
   `);
   console.log("[startup] Migrations applied");
 }

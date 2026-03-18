@@ -79,6 +79,7 @@ function formatMaster(m: any) {
     contractPassportDate: m.contractPassportDate ?? null,
     contractPassportIssuer: m.contractPassportIssuer ?? null,
     contractAddress: m.contractAddress ?? null,
+    lastSeenAt: m.lastSeenAt ?? null,
   };
 }
 
