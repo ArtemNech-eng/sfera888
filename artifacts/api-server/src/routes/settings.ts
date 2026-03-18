@@ -8,8 +8,8 @@ import { getCommissionSettings, saveCommissionSettings } from "../lib/commission
 const router = Router();
 const adminOnly = requireRole("admin");
 
-// Cities
-router.get("/cities", requireAuth, async (req, res) => {
+// Cities — public read (used by master PWA for city picker on registration)
+router.get("/cities", async (_req, res) => {
   const cities = await db.select().from(citiesTable).orderBy(citiesTable.name);
   res.json(cities);
 });

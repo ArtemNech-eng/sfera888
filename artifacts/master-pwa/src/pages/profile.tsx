@@ -60,12 +60,17 @@ function EditProfileModal({
   const [phone, setPhone] = useState(data.phone ?? "");
   const [selectedSpecs, setSelectedSpecs] = useState<string[]>(data.specializations ?? []);
   const [availableSpecs, setAvailableSpecs] = useState<string[]>([]);
+  const [availableCities, setAvailableCities] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     fetch("/api/settings/services")
       .then(r => r.ok ? r.json() : [])
       .then((d: { id: number; name: string }[]) => setAvailableSpecs(d.map(s => s.name)))
+      .catch(() => {});
+    fetch("/api/settings/cities")
+      .then(r => r.ok ? r.json() : [])
+      .then((d: { id: number; name: string }[]) => setAvailableCities(d.map(c => c.name)))
       .catch(() => {});
   }, []);
 
@@ -127,12 +132,21 @@ function EditProfileModal({
 
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">Город</label>
-            <input
+            <select
               value={city}
               onChange={e => setCity(e.target.value)}
-              className="w-full h-11 px-4 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-              placeholder="Москва"
-            />
+              className="w-full h-11 px-4 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring appearance-none"
+            >
+              {city && !availableCities.includes(city) && (
+                <option value={city}>{city}</option>
+              )}
+              <option value="">
+                {availableCities.length === 0 ? "Загрузка городов..." : "Выберите город"}
+              </option>
+              {availableCities.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
           </div>
 
           <div className="space-y-1.5">

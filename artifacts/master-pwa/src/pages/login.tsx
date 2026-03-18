@@ -3,11 +3,6 @@ import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import { Eye, EyeOff, HardHat } from "lucide-react";
 
-const CITIES = [
-  "Москва", "Санкт-Петербург", "Новосибирск", "Екатеринбург",
-  "Казань", "Нижний Новгород", "Челябинск", "Самара",
-  "Краснодар", "Ростов-на-Дону", "Другой город",
-];
 
 function normalizePhone(raw: string): string {
   const digits = raw.replace(/\D/g, "");
@@ -100,6 +95,7 @@ export default function LoginPage() {
   const [reg, setReg] = useState({ alias: "", phone: "", city: "", password: "" });
   const [specs, setSpecs] = useState<string[]>([]);
   const [availableSpecs, setAvailableSpecs] = useState<string[]>([]);
+  const [availableCities, setAvailableCities] = useState<string[]>([]);
   const [showRegPass, setShowRegPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [regErrors, setRegErrors] = useState<Record<string, string>>({});
@@ -108,6 +104,10 @@ export default function LoginPage() {
     fetch("/api/settings/services")
       .then(r => r.ok ? r.json() : [])
       .then((data: { id: number; name: string }[]) => setAvailableSpecs(data.map(s => s.name)))
+      .catch(() => {});
+    fetch("/api/settings/cities")
+      .then(r => r.ok ? r.json() : [])
+      .then((data: { id: number; name: string }[]) => setAvailableCities(data.map(c => c.name)))
       .catch(() => {});
   }, []);
 
@@ -294,8 +294,10 @@ export default function LoginPage() {
                 }}
                 className={`${inputCls} appearance-none ${regErrors.city ? "border-red-400 ring-1 ring-red-400" : ""}`}
               >
-                <option value="">Выберите город</option>
-                {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
+                <option value="">
+                  {availableCities.length === 0 ? "Загрузка городов..." : "Выберите город"}
+                </option>
+                {availableCities.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
               {regErrors.city && <p className="text-xs text-red-500 font-medium">{regErrors.city}</p>}
             </div>
