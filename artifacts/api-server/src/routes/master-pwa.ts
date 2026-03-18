@@ -55,8 +55,14 @@ async function getMasterById(id: number) {
 
 async function getOnSiteColumn() {
   const cols = await db.select().from(voronkaColumnsTable).orderBy(voronkaColumnsTable.position);
-  const nonReceiving = cols.filter(c => !c.receivesOrders);
-  return nonReceiving.find(c => c.position > 1) ?? nonReceiving[0] ?? null;
+  // Find by name "На объекте" for precision; fallback to second non-receiving column
+  return cols.find(c => c.name === "На объекте") ?? cols.filter(c => !c.receivesOrders)[1] ?? cols.find(c => !c.receivesOrders) ?? null;
+}
+
+async function getBusyColumn() {
+  const cols = await db.select().from(voronkaColumnsTable).orderBy(voronkaColumnsTable.position);
+  // Find dedicated "Занят" column; fallback to first non-receiving column after position 1
+  return cols.find(c => c.name === "Занят") ?? cols.find(c => !c.receivesOrders && c.position > 1) ?? cols.find(c => !c.receivesOrders) ?? null;
 }
 
 // ─── AUTH ─────────────────────────────────────────────────────────────────────
@@ -1073,9 +1079,7 @@ router.patch("/availability", requireMasterPwa, async (req: any, res: any) => {
   if (available) {
     targetCol = cols.find(c => c.receivesOrders);
   } else {
-    // First non-receiving column at position > 1 (not the "Новые" onboarding column)
-    targetCol = cols.find(c => !c.receivesOrders && c.position > 1);
-    if (!targetCol) targetCol = cols.find(c => !c.receivesOrders);
+    targetCol = await getBusyColumn();
   }
 
   if (!targetCol) return res.status(400).json({ error: "Подходящая колонка воронки не найдена" });

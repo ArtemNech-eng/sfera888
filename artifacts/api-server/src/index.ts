@@ -67,8 +67,9 @@ async function seedVoronkaColumns() {
   const DEFAULT_COLUMNS = [
     { name: "Новые",           position: 1, receivesOrders: false, color: "blue"   },
     { name: "Свободен",        position: 2, receivesOrders: true,  color: "green"  },
-    { name: "На объекте",      position: 3, receivesOrders: false, color: "orange" },
-    { name: "Ожидает оплаты",  position: 4, receivesOrders: false, color: "red"    },
+    { name: "Занят",           position: 3, receivesOrders: false, color: "yellow" },
+    { name: "На объекте",      position: 4, receivesOrders: false, color: "orange" },
+    { name: "Ожидает оплаты",  position: 5, receivesOrders: false, color: "red"    },
   ];
 
   const existing = await db.select().from(voronkaColumnsTable);
@@ -88,6 +89,22 @@ async function seedVoronkaColumns() {
     if (!existingNames.includes(col.name)) {
       await db.insert(voronkaColumnsTable).values(col);
       console.log(`[startup] Created voronka column: '${col.name}'`);
+    }
+  }
+
+  // After ensuring "Занят" exists, fix positions of subsequent columns
+  const afterInsert = await db.select().from(voronkaColumnsTable);
+  const naObyekteCol = afterInsert.find(c => c.name === "На объекте");
+  const ozhidaetCol = afterInsert.find(c => c.name === "Ожидает оплаты");
+  const zanyatCol = afterInsert.find(c => c.name === "Занят");
+  if (zanyatCol) {
+    if (naObyekteCol && naObyekteCol.position !== 4) {
+      await db.update(voronkaColumnsTable).set({ position: 4 }).where(eq(voronkaColumnsTable.id, naObyekteCol.id));
+      console.log("[startup] Updated 'На объекте' position → 4");
+    }
+    if (ozhidaetCol && ozhidaetCol.position !== 5) {
+      await db.update(voronkaColumnsTable).set({ position: 5 }).where(eq(voronkaColumnsTable.id, ozhidaetCol.id));
+      console.log("[startup] Updated 'Ожидает оплаты' position → 5");
     }
   }
 }
