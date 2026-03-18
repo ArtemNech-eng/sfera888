@@ -70,9 +70,9 @@ if (fs.existsSync(pwaDistPath)) {
   });
 }
 
-// Root redirect: / → CRM login
+// Root redirect: / → CRM
 app.get("/", (_req, res) => {
-  res.redirect(301, "/login");
+  res.redirect(301, "/crm/");
 });
 
 export default app;
