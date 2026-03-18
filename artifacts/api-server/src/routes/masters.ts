@@ -72,6 +72,7 @@ function formatMaster(m: any) {
     contractSignedAt: m.contractSignedAt ?? null,
     contractSignIp: m.contractSignIp ?? null,
     passportPhotoUrl: m.passportPhotoUrl ?? null,
+    passportRegPhotoUrl: m.passportRegPhotoUrl ?? null,
     passportVerified: m.passportVerified ?? false,
     passportVerifyNote: m.passportVerifyNote ?? null,
     contractFullName: m.contractFullName ?? null,

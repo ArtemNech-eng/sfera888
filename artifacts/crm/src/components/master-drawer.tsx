@@ -58,6 +58,7 @@ export interface DrawerMaster {
   contractSignedAt?: string | null;
   contractSignIp?: string | null;
   passportPhotoUrl?: string | null;
+  passportRegPhotoUrl?: string | null;
   passportVerified?: boolean;
   passportVerifyNote?: string | null;
   contractFullName?: string | null;
@@ -868,16 +869,28 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                         <span className="text-[11px] text-gray-300">IP: {master.contractSignIp}</span>
                       )}
                     </div>
-                    {master.passportPhotoUrl && (
-                      <a
-                        href={master.passportPhotoUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 text-[11px] text-blue-600 hover:text-blue-800 font-medium transition-colors"
-                      >
-                        <Eye className="w-3 h-3" /> Просмотреть паспорт
-                      </a>
-                    )}
+                    <div className="flex flex-wrap gap-3">
+                      {master.passportPhotoUrl && (
+                        <a
+                          href={master.passportPhotoUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 text-[11px] text-blue-600 hover:text-blue-800 font-medium transition-colors"
+                        >
+                          <Eye className="w-3 h-3" /> Разворот с фото
+                        </a>
+                      )}
+                      {master.passportRegPhotoUrl && (
+                        <a
+                          href={master.passportRegPhotoUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 text-[11px] text-blue-600 hover:text-blue-800 font-medium transition-colors"
+                        >
+                          <Eye className="w-3 h-3" /> Страница прописки
+                        </a>
+                      )}
+                    </div>
                   </div>
                 ) : (
                   <div className="space-y-2">

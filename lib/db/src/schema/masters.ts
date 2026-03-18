@@ -33,6 +33,7 @@ export const mastersTable = pgTable("masters", {
   contractSignedAt: timestamp("contract_signed_at"),
   contractSignIp: text("contract_sign_ip"),
   passportPhotoUrl: text("passport_photo_url"),
+  passportRegPhotoUrl: text("passport_reg_photo_url"),
   passportVerified: boolean("passport_verified").notNull().default(false),
   passportVerifyNote: text("passport_verify_note"),
   contractFullName: text("contract_full_name"),

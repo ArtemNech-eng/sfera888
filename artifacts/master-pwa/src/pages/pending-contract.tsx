@@ -212,6 +212,8 @@ export default function PendingContractPage() {
   const [agreed, setAgreed] = useState(false);
   const [passportFile, setPassportFile] = useState<File | null>(null);
   const [passportPreview, setPassportPreview] = useState<string | null>(null);
+  const [passportRegFile, setPassportRegFile] = useState<File | null>(null);
+  const [passportRegPreview, setPassportRegPreview] = useState<string | null>(null);
   const [signing, setSigning] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(master?.customAvatarUrl ?? null);
@@ -222,6 +224,7 @@ export default function PendingContractPage() {
   const [dataErrors, setDataErrors] = useState<Partial<PassportData>>({});
 
   const passportInputRef = useRef<HTMLInputElement>(null);
+  const passportRegInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
   const contractDone = !!(master as any)?.contractSignedAt;
@@ -244,20 +247,35 @@ export default function PendingContractPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith("image/")) { toast.error("Только изображения"); return; }
-    if (file.size > 10 * 1024 * 1024) { toast.error("Файл не более 10 МБ"); return; }
+    if (file.size > 15 * 1024 * 1024) { toast.error("Файл не более 15 МБ"); return; }
     setPassportFile(file);
     const reader = new FileReader();
     reader.onload = ev => setPassportPreview(ev.target?.result as string);
     reader.readAsDataURL(file);
+    if (e.target) e.target.value = "";
+  };
+
+  const handlePassportRegSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { toast.error("Только изображения"); return; }
+    if (file.size > 15 * 1024 * 1024) { toast.error("Файл не более 15 МБ"); return; }
+    setPassportRegFile(file);
+    const reader = new FileReader();
+    reader.onload = ev => setPassportRegPreview(ev.target?.result as string);
+    reader.readAsDataURL(file);
+    if (e.target) e.target.value = "";
   };
 
   const handleSign = async () => {
-    if (!passportFile) { toast.error("Прикрепите фото паспорта"); return; }
+    if (!passportFile) { toast.error("Прикрепите фото разворота паспорта (страницы с фото)"); return; }
+    if (!passportRegFile) { toast.error("Прикрепите фото страницы прописки"); return; }
     if (!agreed) { toast.error("Подтвердите согласие с условиями"); return; }
     setSigning(true);
     try {
       const fd = new FormData();
       fd.append("passport", passportFile);
+      fd.append("passportReg", passportRegFile);
       fd.append("fullName", data.fullName.trim());
       fd.append("passportNumber", data.passportNumber.trim());
       fd.append("passportDate", data.passportDate.trim());
@@ -272,7 +290,7 @@ export default function PendingContractPage() {
       const json = await res.json();
       if (!res.ok) {
         if (res.status === 422) {
-          toast.error(`Паспорт не принят: ${json.note ?? json.error}`, { duration: 7000 });
+          toast.error(`Паспорт не принят: ${json.note ?? json.error}`, { duration: 8000 });
         } else {
           toast.error(json.error ?? "Ошибка при подписании");
         }
@@ -478,23 +496,25 @@ export default function PendingContractPage() {
           </div>
         )}
 
-        {/* STEP 3 — passport photo */}
+        {/* STEP 3 — passport photos */}
         {step === "passport" && (
           <div className="space-y-4">
+
+            {/* Main spread — photo page */}
             <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
               <div className="flex items-start gap-2">
                 <ShieldCheck size={18} className="text-primary shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-sm font-semibold">Фото паспорта РФ</p>
+                  <p className="text-sm font-semibold">Разворот с фотографией <span className="text-primary">*</span></p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Сфотографируйте разворот с фото и личными данными. Убедитесь, что фото чёткое и паспорт не закрыт рукой — ИИ проверит документ автоматически.
+                    Страницы 2–3: слева ваше фото и подпись, справа — серия, номер, ФИО, дата рождения, дата выдачи. Фото должно быть чётким.
                   </p>
                 </div>
               </div>
 
               {passportPreview ? (
                 <div className="relative rounded-xl overflow-hidden aspect-video bg-muted">
-                  <img src={passportPreview} alt="Паспорт" className="w-full h-full object-cover" />
+                  <img src={passportPreview} alt="Разворот паспорта" className="w-full h-full object-cover" />
                   <button onClick={() => { setPassportFile(null); setPassportPreview(null); }}
                     className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2.5 py-1 rounded-full">
                     Изменить
@@ -502,25 +522,58 @@ export default function PendingContractPage() {
                 </div>
               ) : (
                 <button onClick={() => passportInputRef.current?.click()}
-                  className="w-full border-2 border-dashed border-primary/40 rounded-xl py-8 flex flex-col items-center gap-2 active:opacity-80 bg-primary/5">
-                  <Upload size={24} className="text-primary" />
-                  <span className="text-sm font-medium text-primary">Выбрать фото</span>
-                  <span className="text-xs text-muted-foreground">JPG, PNG — до 10 МБ</span>
+                  className="w-full border-2 border-dashed border-primary/40 rounded-xl py-7 flex flex-col items-center gap-2 active:opacity-80 bg-primary/5">
+                  <Upload size={22} className="text-primary" />
+                  <span className="text-sm font-medium text-primary">Загрузить разворот</span>
+                  <span className="text-xs text-muted-foreground">JPG, PNG — до 15 МБ</span>
                 </button>
               )}
               <input ref={passportInputRef} type="file" accept="image/*" capture="environment"
                 className="hidden" onChange={handlePassportSelect} />
             </div>
 
+            {/* Registration page — прописка */}
+            <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
+              <div className="flex items-start gap-2">
+                <ShieldCheck size={18} className="text-primary shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold">Страница прописки <span className="text-primary">*</span></p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Страница 5 со штампом регистрации по месту жительства. Адрес и дата регистрации должны быть читаемы.
+                  </p>
+                </div>
+              </div>
+
+              {passportRegPreview ? (
+                <div className="relative rounded-xl overflow-hidden aspect-video bg-muted">
+                  <img src={passportRegPreview} alt="Страница прописки" className="w-full h-full object-cover" />
+                  <button onClick={() => { setPassportRegFile(null); setPassportRegPreview(null); }}
+                    className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2.5 py-1 rounded-full">
+                    Изменить
+                  </button>
+                </div>
+              ) : (
+                <button onClick={() => passportRegInputRef.current?.click()}
+                  className="w-full border-2 border-dashed border-primary/40 rounded-xl py-7 flex flex-col items-center gap-2 active:opacity-80 bg-primary/5">
+                  <Upload size={22} className="text-primary" />
+                  <span className="text-sm font-medium text-primary">Загрузить прописку</span>
+                  <span className="text-xs text-muted-foreground">JPG, PNG — до 15 МБ</span>
+                </button>
+              )}
+              <input ref={passportRegInputRef} type="file" accept="image/*" capture="environment"
+                className="hidden" onChange={handlePassportRegSelect} />
+            </div>
+
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 flex items-start gap-2">
               <AlertCircle size={14} className="text-amber-600 shrink-0 mt-0.5" />
               <p className="text-xs text-amber-700 leading-relaxed">
-                Данные паспорта хранятся в зашифрованном виде и используются только для оформления договора.
+                Фото проверяет ИИ автоматически. Данные хранятся в зашифрованном виде и используются только для оформления договора.
               </p>
             </div>
 
-            <button onClick={() => passportFile ? setStep("confirm") : passportInputRef.current?.click()}
-              disabled={!passportFile}
+            <button
+              onClick={() => (passportFile && passportRegFile) ? setStep("confirm") : toast.error("Загрузите оба фото паспорта")}
+              disabled={!passportFile || !passportRegFile}
               className="w-full h-12 bg-primary text-white font-semibold rounded-xl active:opacity-80 disabled:opacity-40">
               Далее
             </button>
@@ -533,14 +586,28 @@ export default function PendingContractPage() {
         {/* STEP 4 — confirm + sign */}
         {step === "confirm" && (
           <div className="space-y-4">
-            {passportPreview && (
+            {/* Both passport photos */}
+            {(passportPreview || passportRegPreview) && (
               <div className="rounded-2xl border border-emerald-200 bg-emerald-50 overflow-hidden">
                 <div className="px-4 py-2.5 flex items-center gap-2 border-b border-emerald-200">
                   <CheckCircle size={14} className="text-emerald-600" />
-                  <p className="text-xs font-semibold text-emerald-800">Фото паспорта прикреплено</p>
+                  <p className="text-xs font-semibold text-emerald-800">Фото паспорта прикреплены</p>
                 </div>
-                <div className="aspect-video">
-                  <img src={passportPreview} alt="Паспорт" className="w-full h-full object-cover" />
+                <div className="grid grid-cols-2 divide-x divide-emerald-200">
+                  {passportPreview && (
+                    <div className="aspect-video">
+                      <img src={passportPreview} alt="Разворот" className="w-full h-full object-cover" />
+                    </div>
+                  )}
+                  {passportRegPreview && (
+                    <div className="aspect-video">
+                      <img src={passportRegPreview} alt="Прописка" className="w-full h-full object-cover" />
+                    </div>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 divide-x divide-emerald-200 bg-emerald-100/50">
+                  <p className="text-[10px] text-emerald-700 text-center py-1">Разворот с фото</p>
+                  <p className="text-[10px] text-emerald-700 text-center py-1">Страница прописки</p>
                 </div>
               </div>
             )}
