@@ -74,6 +74,11 @@ function formatMaster(m: any) {
     passportPhotoUrl: m.passportPhotoUrl ?? null,
     passportVerified: m.passportVerified ?? false,
     passportVerifyNote: m.passportVerifyNote ?? null,
+    contractFullName: m.contractFullName ?? null,
+    contractPassportNumber: m.contractPassportNumber ?? null,
+    contractPassportDate: m.contractPassportDate ?? null,
+    contractPassportIssuer: m.contractPassportIssuer ?? null,
+    contractAddress: m.contractAddress ?? null,
   };
 }
 

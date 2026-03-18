@@ -39,6 +39,11 @@ export interface DrawerMaster {
   passportPhotoUrl?: string | null;
   passportVerified?: boolean;
   passportVerifyNote?: string | null;
+  contractFullName?: string | null;
+  contractPassportNumber?: string | null;
+  contractPassportDate?: string | null;
+  contractPassportIssuer?: string | null;
+  contractAddress?: string | null;
 }
 
 interface MasterTask { id: number; masterId: number; text: string; dueAt: string | null; isCompleted: boolean; createdBy: string | null; createdAt: string; }
@@ -764,6 +769,23 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                     </div>
                     {master.passportVerifyNote && (
                       <p className="text-[11px] text-gray-400 leading-relaxed">{master.passportVerifyNote}</p>
+                    )}
+                    {/* Passport details filled by master */}
+                    {(master.contractFullName || master.contractPassportNumber) && (
+                      <div className="rounded-lg bg-white border border-gray-100 px-3 py-2 space-y-1">
+                        {master.contractFullName && (
+                          <p className="text-[11px]"><span className="text-gray-400">ФИО:</span> <span className="text-gray-700 font-medium">{master.contractFullName}</span></p>
+                        )}
+                        {master.contractPassportNumber && (
+                          <p className="text-[11px]"><span className="text-gray-400">Паспорт:</span> <span className="text-gray-700">{master.contractPassportNumber}</span></p>
+                        )}
+                        {master.contractPassportDate && (
+                          <p className="text-[11px]"><span className="text-gray-400">Выдан:</span> <span className="text-gray-700">{master.contractPassportDate}{master.contractPassportIssuer ? `, ${master.contractPassportIssuer}` : ""}</span></p>
+                        )}
+                        {master.contractAddress && (
+                          <p className="text-[11px]"><span className="text-gray-400">Адрес:</span> <span className="text-gray-700">{master.contractAddress}</span></p>
+                        )}
+                      </div>
                     )}
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-[11px] text-gray-400">

@@ -2,122 +2,242 @@ import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import {
-  FileSignature, LogOut, Camera, CheckCircle, Clock,
-  Upload, Eye, EyeOff, ShieldCheck, AlertCircle, ChevronDown, ChevronUp
+  FileSignature, LogOut, Camera, CheckCircle, Upload, ShieldCheck,
+  ShieldAlert, AlertCircle, ChevronDown, ChevronUp, UserRound
 } from "lucide-react";
 
-const CONTRACT_TEXT = `ДОГОВОР-ОФЕРТА
-об оказании услуг по привлечению клиентов
+type Step = "data" | "read" | "passport" | "confirm" | "done";
 
-г. Москва
+interface PassportData {
+  fullName: string;
+  passportNumber: string;
+  passportDate: string;
+  passportIssuer: string;
+  address: string;
+}
 
-ИП Козлов Игорь Александрович (далее — «Платформа»), действующий на основании свидетельства о государственной регистрации, предлагает любому физическому лицу, осуществляющему деятельность в качестве самозанятого (далее — «Исполнитель»), заключить настоящий договор-оферту (далее — «Договор») на следующих условиях.
+function buildContractText(data: PassportData, phone: string, masterId: number): string {
+  const now = new Date();
+  const months = ["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
+  const dateStr = `${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()} г.`;
+  const contractNum = String(masterId).padStart(3, "0");
+
+  return `ДОГОВОР № ${contractNum}  г. Краснодар  ${dateStr}
+о порядке передачи заказов и вознаграждении агента
+
+ИП Коваленко Игорь Геннадьевич, действующий на основании государственной регистрации (далее — «Агент»), с одной стороны, и гражданин(ка) ${data.fullName || "______________________"}, ${data.passportNumber || "___ ___ ___________"}, ${data.passportDate || "_______________"} ${data.passportIssuer || "______________________________"}, проживающий(ая) по адресу: ${data.address || "______________________________"}, ${phone || "_______________"}, (далее — «Мастер»), с другой стороны, совместно — «Стороны», заключили настоящий договор о нижеследующем:
 
 1. ПРЕДМЕТ ДОГОВОРА
 
-1.1. Платформа обязуется оказывать Исполнителю услуги по привлечению клиентов (заявок) на выполнение ремонтно-строительных и отделочных работ через систему «Честный Мастер».
+1.1. Агент передаёт Мастеру заказы по выполнению работ и/или оказанию услуг бытового и ремонтного характера (включая, но не ограничиваясь: оклейкой обоев, покраской, шпаклёвкой, электромонтажными работами, сантехническими работами, сборкой мебели и иными аналогичными услугами), а Мастер обязуется связаться с Клиентом, договориться об условиях, выполнить Заказ качественно и в срок, а также перечислить Агенту вознаграждение в порядке и на условиях, предусмотренных настоящим договором.
 
-1.2. Исполнитель принимает и оплачивает заявки в соответствии с условиями настоящего Договора.
+1.2. Агент действует как посредник (агент) при привлечении заказов, Мастер — исполнитель. Мастер самостоятельно договаривается с Клиентом о цене, сроках и объёме работ.
 
-2. УСЛОВИЯ СОТРУДНИЧЕСТВА
+1.3. Агент использует автоматизированную систему распределения заказов на основе рейтинга Мастера. Порядок работы системы описан в Регламенте сотрудничества (Приложение к настоящему договору).
 
-2.1. Платформа передаёт Исполнителю информацию о клиентских заявках через мобильное приложение «Честный Мастер» и Telegram-бот.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-2.2. Исполнитель самостоятельно принимает решение о принятии или отклонении каждой заявки.
+2. ПОРЯДОК ОПЛАТЫ И ВОЗНАГРАЖДЕНИЕ
 
-2.3. Исполнитель выполняет работы лично, от своего имени, как самозанятый, и несёт полную ответственность за качество выполненных работ перед конечным клиентом.
+2.1. Вознаграждение Агента определяется в зависимости от суммы Заказа:
 
-3. КОМИССИОННОЕ ВОЗНАГРАЖДЕНИЕ
+а) Заказ стоимостью до 50 000 (пятидесяти тысяч) рублей включительно — фиксированное вознаграждение 5 000 (пять тысяч) рублей за каждый подтверждённый заказ.
 
-3.1. За каждую выполненную заявку Исполнитель уплачивает Платформе комиссионное вознаграждение в следующем размере:
-   • При стоимости работ до 50 000 ₽ — фиксированная комиссия 5 000 ₽;
-   • При стоимости работ от 50 000 до 100 000 ₽ — 15% от суммы;
-   • При стоимости работ свыше 100 000 ₽ — 20% от суммы.
+б) Заказ стоимостью свыше 50 000 (пятидесяти тысяч) рублей — вознаграждение составляет 15% (пятнадцать процентов) от суммы, уплаченной Клиентом за выполненный Заказ.
 
-3.2. Комиссия оплачивается в течение 3 (трёх) рабочих дней после завершения и оплаты заказа клиентом.
+в) Заказ стоимостью свыше 100 000 (ста тысяч) рублей — вознаграждение обсуждается индивидуально и фиксируется в письменной форме (в том числе в мессенджере) до начала выполнения работ.
 
-3.3. Реквизиты для оплаты комиссии: номер карты 89892860863, Альфа Банк, Игорь К.
+2.2. Минимальная сумма Заказа, передаваемого Мастеру — 15 000 (пятнадцать тысяч) рублей.
 
-4. ПРАВА И ОБЯЗАННОСТИ СТОРОН
+2.3. Оплата Заказа осуществляется Клиентом напрямую Мастеру (наличные или перевод).
 
-4.1. Платформа обязана:
-   — предоставлять Исполнителю доступ к заявкам клиентов;
-   — своевременно сообщать об изменении условий сотрудничества;
-   — хранить персональные данные Исполнителя в соответствии с законодательством РФ.
+2.4. Порядок перечисления вознаграждения Агенту:
 
-4.2. Исполнитель обязан:
-   — соблюдать профессиональную этику при общении с клиентами;
-   — выполнять принятые заявки качественно и в установленные сроки;
-   — своевременно уплачивать комиссионное вознаграждение;
-   — уведомлять Платформу о невозможности выполнения принятой заявки;
-   — поддерживать актуальность своих данных в системе.
+а) Для заказов до 50 000 рублей: Мастер перечисляет Агенту 5 000 рублей в день выхода на объект, после получения аванса от Клиента.
 
-4.3. Исполнитель не вправе:
-   — переуступать принятые заявки третьим лицам без согласования с Платформой;
-   — самостоятельно привлекать клиентов Платформы в обход системы.
+б) Для заказов свыше 50 000 рублей: Мастер перечисляет Агенту 5 000 рублей в день выхода на объект, после получения аванса от Клиента. Остаток вознаграждения до 15% от итоговой суммы Заказа перечисляется в течение 1 (одного) рабочего дня после оплаты и подписания акта выполненных работ Клиентом.
 
-5. КОНФИДЕНЦИАЛЬНОСТЬ
+в) Для заказов свыше 100 000 рублей: порядок перечисления согласовывается индивидуально.
 
-5.1. Стороны обязуются не разглашать конфиденциальную информацию, полученную в ходе сотрудничества, третьим лицам без письменного согласия другой стороны.
+2.5. Агент не взимает вознаграждение наперёд. Мастер оплачивает вознаграждение только за подтверждённый заказ, на который Мастер вышел на объект.
 
-6. ОТВЕТСТВЕННОСТЬ СТОРОН
+2.6. В случае неполного или несвоевременного перечисления вознаграждения применяются штрафные санкции, предусмотренные в п. 4.1.
 
-6.1. Платформа не несёт ответственности за действия клиентов и конечный результат взаимодействия Исполнителя с клиентом.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-6.2. Исполнитель несёт полную ответственность за качество выполненных работ, соблюдение норм безопасности и законодательства РФ.
+3. ПОДТВЕРЖДЕНИЕ ВЫПОЛНЕНИЯ РАБОТ
 
-6.3. При систематическом нарушении условий Договора Платформа вправе приостановить или прекратить доступ Исполнителя к системе.
+3.1. Обязательные доказательства выполнения Заказа:
+— заполненный и подписанный Клиентом акт выполненных работ (может быть электронным с фото клиента и подписью в чате);
+— фото состояния объекта «до» и «после» выполнения работ (не менее 2 фото «до» и 3 фото «после»), присланные в чат/мессенджер Агенту в течение 24 часов после завершения работ.
 
-7. СРОК ДЕЙСТВИЯ И РАСТОРЖЕНИЕ
+3.2. Без предоставления Агенту акта и фотоотчёта Мастер не получает новых заказов.
 
-7.1. Договор вступает в силу с момента акцепта (принятия условий) Исполнителем и действует бессрочно.
+3.3. Мастер предоставляет Клиенту гарантию на выполненные работы сроком 6 месяцев с даты подписания акта. В течение гарантийного срока Мастер обязуется бесплатно устранить дефекты, возникшие по вине Мастера, в течение 5 (пяти) рабочих дней с момента обращения.
 
-7.2. Каждая из сторон вправе расторгнуть Договор, уведомив другую сторону за 7 (семь) календарных дней.
+3.4. Гарантия не распространяется на: механические повреждения; затопление третьими лицами; естественный износ материалов.
 
-7.3. Расторжение Договора не освобождает Исполнителя от обязанности оплатить уже начисленную комиссию.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-8. АКЦЕПТ ОФЕРТЫ
+4. ОТВЕТСТВЕННОСТЬ И ШТРАФЫ
 
-8.1. Акцептом настоящей оферты является:
-   — загрузка фотографии паспорта гражданина РФ;
-   — подтверждение ознакомления с условиями договора в интерфейсе приложения.
+4.1. В случае несвоевременного перечисления Мастером вознаграждения Агента применяется штраф в размере 1% от суммы задолженности за каждый день просрочки, но не более 100% задолженности.
 
-8.2. С момента акцепта Договор считается заключённым и имеет полную юридическую силу.
+4.2. Мастер несёт ответственность за качество работ перед Клиентом и Агентом в соответствии с условиями заказа и действующим законодательством.
 
-9. РЕКВИЗИТЫ ПЛАТФОРМЫ
+4.3. В случае неоднократных нарушений (не менее двух за период 6 месяцев) Агент вправе прекратить сотрудничество с Мастером без предварительного уведомления.
 
-ИП Козлов Игорь Александрович
-Телефон: +7 (989) 286-08-63
-Платёжные реквизиты: 89892860863 · Альфа Банк · Игорь К.`;
+4.4. Формальный отказ от принятого заказа без уведомления Агента — штраф 10% от суммы сметы или удержание этой суммы из последующих выплат.
 
-type Step = "read" | "passport" | "confirm" | "done";
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+5. ПЕРЕДАЧА ПЕРСОНАЛЬНЫХ ДАННЫХ
+
+5.1. Мастер обязуется предоставить Агенту копию паспорта (главная страница и страница с пропиской) и контактные данные при первой регистрации.
+
+5.2. Мастер даёт согласие Агенту на обработку персональных данных в объёме, необходимом для исполнения настоящего договора.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+6. УРЕГУЛИРОВАНИЕ СПОРОВ
+
+6.1. Все споры и разногласия, возникающие из настоящего договора, решаются путём переговоров и направления письменной претензии одной Стороны другой с предоставлением срока для ответа 10 календарных дней.
+
+6.2. В случае недостижения соглашения спор передаётся на рассмотрение в суд по месту нахождения Агента — город Краснодар.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+7. ФОРС-МАЖОР
+
+7.1. Стороны освобождаются от ответственности за частичное или полное неисполнение обязательств по настоящему договору, если это явилось следствием обстоятельств непреодолимой силы, подтверждённых надлежащими документами.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+8. СРОК ДЕЙСТВИЯ И РАСТОРЖЕНИЕ
+
+8.1. Настоящий договор вступает в силу с момента его акцепта Мастером (подпись / скрин с согласием в мессенджере / электронная подпись) и действует до полного исполнения обязательств Сторон.
+
+8.2. Любая из Сторон вправе расторгнуть договор, уведомив другую Сторону в письменной форме за 7 календарных дней.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+9. ПРОЧИЕ УСЛОВИЯ
+
+9.1. Мастер обязуется не привлекать Клиентов, переданных Агентом, напрямую в обход Агента и не выполнять работу для таких Клиентов в течение 12 (двенадцати) месяцев после последнего контакта без письменного согласия Агента.
+
+9.2. Документы, подтверждающие выполнение работ (акты, фото, переписка) являются неотъемлемой частью данного договора.
+
+9.3. Мастер обязуется не употреблять алкогольные напитки и иные одурманивающие вещества на объекте Клиента. Нарушение данного пункта является основанием для немедленного прекращения сотрудничества.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+РЕГЛАМЕНТ СОТРУДНИЧЕСТВА
+(Приложение к Договору)
+
+1. РОЛИ
+
+1.1. Агент — привлекает клиентов, передаёт заказы Мастеру, контролирует исполнение через систему рейтингов.
+1.2. Мастер — получает контакт Клиента от Агента, самостоятельно связывается с Клиентом, договаривается о цене, сроках и объёме работ, выполняет работы.
+1.3. Клиент — заказывает и оплачивает работы.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+2. ПОРЯДОК ПЕРЕДАЧИ И ВЫПОЛНЕНИЯ ЗАКАЗА
+
+2.1. Агент передаёт Мастеру контактные данные Клиента (имя, телефон, адрес, вид работ).
+2.2. Мастер обязан позвонить Клиенту в течение 1 (одного) часа с момента получения заказа.
+2.3. Если Мастер не может взять заказ — он обязан сообщить Агенту немедленно для передачи заказа другому Мастеру.
+2.4. Мастер самостоятельно: проводит осмотр/замер объекта; называет Клиенту цену; договаривается о дате и сроках; выполняет работы; получает оплату от Клиента.
+2.5. Цены Мастера должны соответствовать рыночным. Систематическое завышение цен, приводящее к отказу Клиентов, снижает рейтинг Мастера в системе.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+3. СИСТЕМА РАСПРЕДЕЛЕНИЯ ЗАКАЗОВ
+
+3.1. Агент использует автоматизированную систему распределения заказов, учитывающую рейтинг каждого Мастера.
+3.2. Система отслеживает: количество переданных заявок и процент закрытия; пунктуальность; соответствие цен рыночным; качество работ (отзывы Клиентов); готовность брать заказы любого объёма.
+3.3. Мастер с высоким рейтингом получает приоритет при распределении заказов, включая крупные объекты.
+3.4. Рейтинг Мастера снижается в случаях: отказа от заказов без уведомления; систематического отказа от мелких заказов; неприбытия на замер без предупреждения; завышения цен выше рыночных; жалоб Клиентов на качество.
+3.5. При критическом снижении рейтинга Агент вправе приостановить передачу заказов Мастеру до исправления ситуации.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+4. ОТЧЁТНОСТЬ
+
+4.1. После каждого выполненного заказа Мастер обязан предоставить Агенту одним сообщением в мессенджере: заполненный акт выполненных работ с подписью Клиента; фото объекта «до» начала работ (не менее 2 шт.); фото объекта «после» завершения работ (не менее 3 шт.); итоговую сумму заказа.
+4.2. Без предоставления отчётности новые заказы Мастеру не передаются.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+5. ОПЛАТА ВОЗНАГРАЖДЕНИЯ
+
+5.1. Клиент оплачивает работы напрямую Мастеру.
+5.2. Порядок перечисления вознаграждения Агенту:
+а) Заказ до 50 000₽: Мастер перечисляет Агенту 5 000₽ в день выхода на объект, после получения аванса от Клиента.
+б) Заказ от 50 000₽: Мастер перечисляет Агенту 5 000₽ в день выхода на объект. Остаток до 15% от итоговой суммы — в течение 2 рабочих дней после подписания акта.
+в) Заказ от 100 000₽: Порядок согласовывается индивидуально.
+5.3. Агент не взимает вознаграждение наперёд. Оплата только за подтверждённый заказ, на который Мастер вышел.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+6. ДОПОЛНИТЕЛЬНЫЕ РАБОТЫ
+
+6.1. Дополнительные работы и изменения объёма Мастер согласовывает непосредственно с Клиентом.
+6.2. Стоимость дополнительных работ включается в итоговую сумму заказа, на основании которой рассчитывается вознаграждение Агента.
+6.3. Мастер обязан сообщить Агенту итоговую сумму заказа (с учётом дополнительных работ) в акте выполненных работ.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+7. ОБЯЗАННОСТИ МАСТЕРА НА ОБЪЕКТЕ
+
+7.1. Мастер обязан: приезжать вовремя; при опоздании — предупредить Клиента не менее чем за 2 часа; работать аккуратно и по технологии; застелить полы, закрыть мебель; убрать за собой после завершения работ; не курить в помещении Клиента; не употреблять алкоголь на объекте.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+8. ПРЕКРАЩЕНИЕ СОТРУДНИЧЕСТВА
+
+8.1. При желании прекратить сотрудничество Мастер завершает текущие заказы и рассчитывается с Агентом полностью.
+8.2. Невыполнение данного пункта — основание для приостановки выплат и обращения в суд.`;
+}
+
+const inputCls = "w-full h-11 px-4 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring";
+
+const STEPS: Step[] = ["data", "read", "passport", "confirm", "done"];
+const STEP_LABELS = ["Данные", "Договор", "Паспорт", "Подписание", "Готово"];
 
 export default function PendingContractPage() {
   const { master, logout, refresh } = useAuth();
-  const [step, setStep] = useState<Step>("read");
+  const [step, setStep] = useState<Step>("data");
   const [contractExpanded, setContractExpanded] = useState(false);
-  const [scrolledToBottom, setScrolledToBottom] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [passportFile, setPassportFile] = useState<File | null>(null);
   const [passportPreview, setPassportPreview] = useState<string | null>(null);
   const [signing, setSigning] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(master?.customAvatarUrl ?? null);
-  const contractRef = useRef<HTMLDivElement>(null);
+  const [data, setData] = useState<PassportData>({
+    fullName: "", passportNumber: "", passportDate: "",
+    passportIssuer: "", address: "",
+  });
+  const [dataErrors, setDataErrors] = useState<Partial<PassportData>>({});
+
   const passportInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
-  const contractDone = master?.contractSignedAt !== null && master?.contractSignedAt !== undefined;
+  const contractDone = !!(master as any)?.contractSignedAt;
+  useEffect(() => { if (contractDone) setStep("done"); }, [contractDone]);
 
-  useEffect(() => {
-    if (contractDone) setStep("done");
-  }, [contractDone]);
+  const contractText = buildContractText(data, master?.phone ?? "", master?.id ?? 0);
 
-  const handleContractScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const el = e.currentTarget;
-    if (el.scrollHeight - el.scrollTop <= el.clientHeight + 40) {
-      setScrolledToBottom(true);
-    }
+  const validateData = () => {
+    const errs: Partial<PassportData> = {};
+    if (!data.fullName.trim()) errs.fullName = "Обязательно";
+    if (!data.passportNumber.trim()) errs.passportNumber = "Обязательно";
+    if (!data.passportDate.trim()) errs.passportDate = "Обязательно";
+    if (!data.passportIssuer.trim()) errs.passportIssuer = "Обязательно";
+    if (!data.address.trim()) errs.address = "Обязательно";
+    setDataErrors(errs);
+    return Object.keys(errs).length === 0;
   };
 
   const handlePassportSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -138,17 +258,23 @@ export default function PendingContractPage() {
     try {
       const fd = new FormData();
       fd.append("passport", passportFile);
+      fd.append("fullName", data.fullName.trim());
+      fd.append("passportNumber", data.passportNumber.trim());
+      fd.append("passportDate", data.passportDate.trim());
+      fd.append("passportIssuer", data.passportIssuer.trim());
+      fd.append("address", data.address.trim());
+
       const res = await fetch("/api/contract/sign", {
         method: "POST",
         credentials: "include",
         body: fd,
       });
-      const data = await res.json();
+      const json = await res.json();
       if (!res.ok) {
         if (res.status === 422) {
-          toast.error(`Паспорт не принят: ${data.note ?? data.error}`, { duration: 6000 });
+          toast.error(`Паспорт не принят: ${json.note ?? json.error}`, { duration: 7000 });
         } else {
-          toast.error(data.error ?? "Ошибка при подписании");
+          toast.error(json.error ?? "Ошибка при подписании");
         }
         return;
       }
@@ -165,17 +291,12 @@ export default function PendingContractPage() {
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith("image/")) { toast.error("Выберите изображение"); return; }
     if (file.size > 5 * 1024 * 1024) { toast.error("Файл не более 5 МБ"); return; }
     setUploading(true);
     try {
       const fd = new FormData();
       fd.append("avatar", file);
-      const res = await fetch("/api/master-pwa/profile/avatar", {
-        method: "POST",
-        credentials: "include",
-        body: fd,
-      });
+      const res = await fetch("/api/master-pwa/profile/avatar", { method: "POST", credentials: "include", body: fd });
       if (!res.ok) throw new Error();
       const { customAvatarUrl } = await res.json();
       setAvatarUrl(customAvatarUrl);
@@ -189,6 +310,7 @@ export default function PendingContractPage() {
   };
 
   const initials = master?.alias?.slice(0, 2)?.toUpperCase() ?? "МС";
+  const stepIndex = STEPS.indexOf(step);
 
   return (
     <div className="min-h-dvh flex flex-col items-center px-4 py-8 bg-background relative overflow-hidden">
@@ -200,18 +322,11 @@ export default function PendingContractPage() {
         {/* Avatar + name */}
         <div className="flex flex-col items-center gap-2.5 pt-2">
           <div className="relative">
-            {avatarUrl ? (
-              <img src={avatarUrl} alt={master?.alias} className="w-16 h-16 rounded-full object-cover shadow-md" />
-            ) : (
-              <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center text-white text-xl font-bold shadow-md">
-                {initials}
-              </div>
-            )}
-            <button
-              onClick={() => avatarInputRef.current?.click()}
-              disabled={uploading}
-              className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-primary border-2 border-background flex items-center justify-center shadow active:opacity-80 disabled:opacity-50"
-            >
+            {avatarUrl
+              ? <img src={avatarUrl} alt={master?.alias} className="w-16 h-16 rounded-full object-cover shadow-md" />
+              : <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center text-white text-xl font-bold shadow-md">{initials}</div>}
+            <button onClick={() => avatarInputRef.current?.click()} disabled={uploading}
+              className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-primary border-2 border-background flex items-center justify-center shadow active:opacity-80 disabled:opacity-50">
               {uploading
                 ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 : <Camera size={12} className="text-white" />}
@@ -224,36 +339,106 @@ export default function PendingContractPage() {
           </div>
         </div>
 
-        {/* Progress steps */}
-        <div className="flex items-center gap-0">
-          {(["read", "passport", "confirm", "done"] as Step[]).map((s, i, arr) => {
-            const stepIndex = arr.indexOf(step);
+        {/* Progress */}
+        <div className="flex items-start">
+          {STEPS.map((s, i) => {
             const isDone = i < stepIndex || step === "done";
             const isActive = s === step && step !== "done";
-            const labels = ["Договор", "Паспорт", "Подписание", "Готово"];
             return (
               <div key={s} className="flex items-center flex-1">
                 <div className="flex flex-col items-center gap-1 flex-1">
                   <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
-                    isDone ? "bg-emerald-500 text-white" :
-                    isActive ? "bg-primary text-white" :
-                    "bg-muted border border-border text-muted-foreground"
+                    isDone ? "bg-emerald-500 text-white" : isActive ? "bg-primary text-white" : "bg-muted border border-border text-muted-foreground"
                   }`}>
                     {isDone ? <CheckCircle size={14} /> : i + 1}
                   </div>
-                  <span className={`text-[10px] font-medium ${isActive ? "text-primary" : isDone ? "text-emerald-600" : "text-muted-foreground"}`}>
-                    {labels[i]}
+                  <span className={`text-[10px] font-medium text-center ${isActive ? "text-primary" : isDone ? "text-emerald-600" : "text-muted-foreground"}`}>
+                    {STEP_LABELS[i]}
                   </span>
                 </div>
-                {i < arr.length - 1 && (
-                  <div className={`h-0.5 w-6 -mt-4 ${i < stepIndex ? "bg-emerald-400" : "bg-border"}`} />
-                )}
+                {i < STEPS.length - 1 && <div className={`h-0.5 w-4 -mt-4 ${i < stepIndex ? "bg-emerald-400" : "bg-border"}`} />}
               </div>
             );
           })}
         </div>
 
-        {/* STEP 1 — read contract */}
+        {/* STEP 1 — passport data */}
+        {step === "data" && (
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-border bg-card p-4 space-y-4">
+              <div className="flex items-center gap-2">
+                <UserRound size={16} className="text-primary" />
+                <p className="text-sm font-semibold">Личные данные для договора</p>
+              </div>
+
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">ФИО полностью *</label>
+                  <input
+                    value={data.fullName}
+                    onChange={e => { setData(d => ({ ...d, fullName: e.target.value })); setDataErrors(er => ({ ...er, fullName: "" })); }}
+                    className={`${inputCls} ${dataErrors.fullName ? "border-red-400 ring-1 ring-red-400" : ""}`}
+                    placeholder="Иванов Иван Иванович"
+                  />
+                  {dataErrors.fullName && <p className="text-xs text-red-500">{dataErrors.fullName}</p>}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">Серия и номер паспорта *</label>
+                  <input
+                    value={data.passportNumber}
+                    onChange={e => { setData(d => ({ ...d, passportNumber: e.target.value })); setDataErrors(er => ({ ...er, passportNumber: "" })); }}
+                    className={`${inputCls} ${dataErrors.passportNumber ? "border-red-400 ring-1 ring-red-400" : ""}`}
+                    placeholder="4521 123456"
+                  />
+                  {dataErrors.passportNumber && <p className="text-xs text-red-500">{dataErrors.passportNumber}</p>}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">Дата выдачи паспорта *</label>
+                  <input
+                    value={data.passportDate}
+                    onChange={e => { setData(d => ({ ...d, passportDate: e.target.value })); setDataErrors(er => ({ ...er, passportDate: "" })); }}
+                    className={`${inputCls} ${dataErrors.passportDate ? "border-red-400 ring-1 ring-red-400" : ""}`}
+                    placeholder="15.06.2015"
+                  />
+                  {dataErrors.passportDate && <p className="text-xs text-red-500">{dataErrors.passportDate}</p>}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">Кем выдан *</label>
+                  <input
+                    value={data.passportIssuer}
+                    onChange={e => { setData(d => ({ ...d, passportIssuer: e.target.value })); setDataErrors(er => ({ ...er, passportIssuer: "" })); }}
+                    className={`${inputCls} ${dataErrors.passportIssuer ? "border-red-400 ring-1 ring-red-400" : ""}`}
+                    placeholder="УМВД России по г. Краснодар"
+                  />
+                  {dataErrors.passportIssuer && <p className="text-xs text-red-500">{dataErrors.passportIssuer}</p>}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">Адрес проживания *</label>
+                  <input
+                    value={data.address}
+                    onChange={e => { setData(d => ({ ...d, address: e.target.value })); setDataErrors(er => ({ ...er, address: "" })); }}
+                    className={`${inputCls} ${dataErrors.address ? "border-red-400 ring-1 ring-red-400" : ""}`}
+                    placeholder="г. Краснодар, ул. Ленина, д. 1, кв. 10"
+                  />
+                  {dataErrors.address && <p className="text-xs text-red-500">{dataErrors.address}</p>}
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={() => { if (validateData()) setStep("read"); }}
+              className="w-full h-12 bg-primary text-white font-semibold rounded-xl active:opacity-80"
+            >
+              Далее — читать договор
+            </button>
+          </div>
+        )}
+
+        {/* STEP 2 — read filled contract */}
         {step === "read" && (
           <div className="space-y-4">
             <div className="rounded-2xl border border-border bg-card overflow-hidden">
@@ -263,41 +448,37 @@ export default function PendingContractPage() {
               >
                 <span className="flex items-center gap-2">
                   <FileSignature size={16} className="text-primary" />
-                  Договор-оферта
+                  Договор № {String(master?.id ?? 0).padStart(3, "0")}
                 </span>
                 {contractExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
               </button>
               {contractExpanded && (
-                <div
-                  ref={contractRef}
-                  onScroll={handleContractScroll}
-                  className="px-4 pb-4 max-h-64 overflow-y-auto text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap border-t border-border pt-3"
-                >
-                  {CONTRACT_TEXT}
+                <div className="px-4 pb-4 max-h-72 overflow-y-auto text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap border-t border-border pt-3">
+                  {contractText}
                 </div>
               )}
             </div>
 
             {!contractExpanded && (
-              <p className="text-xs text-muted-foreground text-center">
-                Раскройте договор и прочитайте перед подписанием
-              </p>
+              <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 flex items-start gap-2">
+                <AlertCircle size={14} className="text-blue-500 shrink-0 mt-0.5" />
+                <p className="text-xs text-blue-700">Раскройте договор выше чтобы прочитать его перед подписанием. Ваши данные уже вставлены.</p>
+              </div>
             )}
 
             <button
-              onClick={() => {
-                setScrolledToBottom(true);
-                setStep("passport");
-              }}
-              className="w-full h-12 bg-primary text-white font-semibold rounded-xl active:opacity-80 transition-opacity flex items-center justify-center gap-2"
+              onClick={() => setStep("passport")}
+              className="w-full h-12 bg-primary text-white font-semibold rounded-xl active:opacity-80"
             >
-              <CheckCircle size={16} />
               Ознакомлен, продолжить
+            </button>
+            <button onClick={() => setStep("data")} className="w-full text-center text-xs text-muted-foreground py-1">
+              ← Изменить данные
             </button>
           </div>
         )}
 
-        {/* STEP 2 — passport photo */}
+        {/* STEP 3 — passport photo */}
         {step === "passport" && (
           <div className="space-y-4">
             <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
@@ -306,7 +487,7 @@ export default function PendingContractPage() {
                 <div>
                   <p className="text-sm font-semibold">Фото паспорта РФ</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Сфотографируйте разворот с фото и личными данными. Фото проверяется ИИ автоматически — убедитесь, что оно чёткое и не закрыто рукой.
+                    Сфотографируйте разворот с фото и личными данными. Убедитесь, что фото чёткое и паспорт не закрыт рукой — ИИ проверит документ автоматически.
                   </p>
                 </div>
               </div>
@@ -314,45 +495,33 @@ export default function PendingContractPage() {
               {passportPreview ? (
                 <div className="relative rounded-xl overflow-hidden aspect-video bg-muted">
                   <img src={passportPreview} alt="Паспорт" className="w-full h-full object-cover" />
-                  <button
-                    onClick={() => { setPassportFile(null); setPassportPreview(null); }}
-                    className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2.5 py-1 rounded-full"
-                  >
+                  <button onClick={() => { setPassportFile(null); setPassportPreview(null); }}
+                    className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2.5 py-1 rounded-full">
                     Изменить
                   </button>
                 </div>
               ) : (
-                <button
-                  onClick={() => passportInputRef.current?.click()}
-                  className="w-full border-2 border-dashed border-primary/40 rounded-xl py-8 flex flex-col items-center gap-2 active:opacity-80 bg-primary/5"
-                >
+                <button onClick={() => passportInputRef.current?.click()}
+                  className="w-full border-2 border-dashed border-primary/40 rounded-xl py-8 flex flex-col items-center gap-2 active:opacity-80 bg-primary/5">
                   <Upload size={24} className="text-primary" />
                   <span className="text-sm font-medium text-primary">Выбрать фото</span>
                   <span className="text-xs text-muted-foreground">JPG, PNG — до 10 МБ</span>
                 </button>
               )}
-              <input
-                ref={passportInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={handlePassportSelect}
-              />
+              <input ref={passportInputRef} type="file" accept="image/*" capture="environment"
+                className="hidden" onChange={handlePassportSelect} />
             </div>
 
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 flex items-start gap-2">
               <AlertCircle size={14} className="text-amber-600 shrink-0 mt-0.5" />
               <p className="text-xs text-amber-700 leading-relaxed">
-                Данные паспорта используются исключительно для оформления договора и хранятся в зашифрованном виде.
+                Данные паспорта хранятся в зашифрованном виде и используются только для оформления договора.
               </p>
             </div>
 
-            <button
-              onClick={() => passportFile ? setStep("confirm") : passportInputRef.current?.click()}
+            <button onClick={() => passportFile ? setStep("confirm") : passportInputRef.current?.click()}
               disabled={!passportFile}
-              className="w-full h-12 bg-primary text-white font-semibold rounded-xl active:opacity-80 disabled:opacity-40 transition-opacity flex items-center justify-center gap-2"
-            >
+              className="w-full h-12 bg-primary text-white font-semibold rounded-xl active:opacity-80 disabled:opacity-40">
               Далее
             </button>
             <button onClick={() => setStep("read")} className="w-full text-center text-xs text-muted-foreground py-1">
@@ -361,50 +530,45 @@ export default function PendingContractPage() {
           </div>
         )}
 
-        {/* STEP 3 — confirm + sign */}
+        {/* STEP 4 — confirm + sign */}
         {step === "confirm" && (
           <div className="space-y-4">
             {passportPreview && (
               <div className="rounded-2xl border border-emerald-200 bg-emerald-50 overflow-hidden">
                 <div className="px-4 py-2.5 flex items-center gap-2 border-b border-emerald-200">
                   <CheckCircle size={14} className="text-emerald-600" />
-                  <p className="text-xs font-semibold text-emerald-800">Фото прикреплено</p>
+                  <p className="text-xs font-semibold text-emerald-800">Фото паспорта прикреплено</p>
                 </div>
-                <div className="aspect-video relative">
+                <div className="aspect-video">
                   <img src={passportPreview} alt="Паспорт" className="w-full h-full object-cover" />
                 </div>
               </div>
             )}
 
+            <div className="rounded-xl border border-border bg-card p-3 space-y-1.5">
+              <p className="text-[11px] font-semibold text-muted-foreground">Данные в договоре:</p>
+              <p className="text-xs"><span className="text-muted-foreground">ФИО:</span> {data.fullName}</p>
+              <p className="text-xs"><span className="text-muted-foreground">Паспорт:</span> {data.passportNumber}, выдан {data.passportDate}</p>
+              <p className="text-xs"><span className="text-muted-foreground">Кем выдан:</span> {data.passportIssuer}</p>
+              <p className="text-xs"><span className="text-muted-foreground">Адрес:</span> {data.address}</p>
+            </div>
+
             <label className="flex items-start gap-3 cursor-pointer select-none rounded-xl border border-border bg-card p-3">
-              <div
-                onClick={() => setAgreed(v => !v)}
-                className={`mt-0.5 w-5 h-5 rounded flex items-center justify-center border-2 shrink-0 transition-colors ${
-                  agreed ? "bg-primary border-primary" : "border-border"
-                }`}
-              >
+              <div onClick={() => setAgreed(v => !v)}
+                className={`mt-0.5 w-5 h-5 rounded flex items-center justify-center border-2 shrink-0 transition-colors ${agreed ? "bg-primary border-primary" : "border-border"}`}>
                 {agreed && <CheckCircle size={12} className="text-white" />}
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Я ознакомился с условиями договора-оферты, принимаю их в полном объёме и подтверждаю, что прикреплённый документ — мой паспорт гражданина РФ.
+                Я ознакомился с условиями договора-оферты, принимаю их в полном объёме и подтверждаю, что прикреплённый документ является моим паспортом гражданина РФ, а указанные данные верны.
               </p>
             </label>
 
-            <button
-              onClick={handleSign}
-              disabled={!agreed || signing}
-              className="w-full h-12 bg-primary text-white font-bold rounded-xl active:opacity-80 disabled:opacity-40 transition-opacity flex items-center justify-center gap-2"
-            >
+            <button onClick={handleSign} disabled={!agreed || signing}
+              className="w-full h-12 bg-primary text-white font-bold rounded-xl active:opacity-80 disabled:opacity-40 flex items-center justify-center gap-2">
               {signing ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Проверяем паспорт...
-                </>
+                <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Проверяем паспорт...</>
               ) : (
-                <>
-                  <FileSignature size={16} />
-                  Подписать договор
-                </>
+                <><FileSignature size={16} />Подписать договор</>
               )}
             </button>
             <button onClick={() => setStep("passport")} className="w-full text-center text-xs text-muted-foreground py-1">
@@ -413,7 +577,7 @@ export default function PendingContractPage() {
           </div>
         )}
 
-        {/* STEP 4 — done */}
+        {/* STEP 5 — done */}
         {step === "done" && (
           <div className="space-y-4 text-center">
             <div className="flex flex-col items-center gap-3 py-4">
@@ -421,24 +585,16 @@ export default function PendingContractPage() {
                 <CheckCircle size={32} className="text-emerald-500" />
               </div>
               <h3 className="font-bold text-lg text-emerald-700">Договор подписан!</h3>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                Ваш аккаунт активирован. Теперь вы можете принимать заявки.
-              </p>
+              <p className="text-sm text-muted-foreground leading-relaxed">Ваш аккаунт активирован. Теперь вы можете принимать заявки.</p>
             </div>
-            <button
-              onClick={refresh}
-              className="w-full h-12 bg-primary text-white font-semibold rounded-xl active:opacity-80"
-            >
+            <button onClick={refresh} className="w-full h-12 bg-primary text-white font-semibold rounded-xl active:opacity-80">
               Перейти в приложение
             </button>
           </div>
         )}
 
         {step !== "done" && (
-          <button
-            onClick={logout}
-            className="w-full text-center text-xs text-muted-foreground flex items-center justify-center gap-1.5 py-1"
-          >
+          <button onClick={logout} className="w-full text-center text-xs text-muted-foreground flex items-center justify-center gap-1.5 py-1">
             <LogOut size={12} />
             Выйти
           </button>

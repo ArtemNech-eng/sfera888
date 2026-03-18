@@ -97,6 +97,13 @@ router.post("/sign", requireMasterPwa, passportUpload.single("passport"), async 
 
   if (!req.file) return res.status(400).json({ error: "Фото паспорта обязательно" });
 
+  const { fullName, passportNumber, passportDate, passportIssuer, address } = req.body;
+  if (!fullName?.trim()) return res.status(400).json({ error: "ФИО обязательно" });
+  if (!passportNumber?.trim()) return res.status(400).json({ error: "Серия и номер паспорта обязательны" });
+  if (!passportDate?.trim()) return res.status(400).json({ error: "Дата выдачи паспорта обязательна" });
+  if (!passportIssuer?.trim()) return res.status(400).json({ error: "Кем выдан паспорт — обязательно" });
+  if (!address?.trim()) return res.status(400).json({ error: "Адрес проживания обязателен" });
+
   const master = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId)).then(r => r[0]);
   if (!master) return res.status(404).json({ error: "Мастер не найден" });
   if (master.contractSignedAt) return res.status(400).json({ error: "Договор уже подписан" });
@@ -123,6 +130,11 @@ router.post("/sign", requireMasterPwa, passportUpload.single("passport"), async 
       passportPhotoUrl: passportUrl,
       passportVerified: verification.valid,
       passportVerifyNote: verification.note,
+      contractFullName: fullName.trim(),
+      contractPassportNumber: passportNumber.trim(),
+      contractPassportDate: passportDate.trim(),
+      contractPassportIssuer: passportIssuer.trim(),
+      contractAddress: address.trim(),
       status: verification.valid ? "active" : "pending_contract",
       contractLink: null,
     })

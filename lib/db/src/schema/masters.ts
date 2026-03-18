@@ -35,6 +35,11 @@ export const mastersTable = pgTable("masters", {
   passportPhotoUrl: text("passport_photo_url"),
   passportVerified: boolean("passport_verified").notNull().default(false),
   passportVerifyNote: text("passport_verify_note"),
+  contractFullName: text("contract_full_name"),
+  contractPassportNumber: text("contract_passport_number"),
+  contractPassportDate: text("contract_passport_date"),
+  contractPassportIssuer: text("contract_passport_issuer"),
+  contractAddress: text("contract_address"),
 });
 
 export const insertMasterSchema = createInsertSchema(mastersTable).omit({ id: true, createdAt: true });
