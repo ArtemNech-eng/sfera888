@@ -855,9 +855,30 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                     )}
                   </div>
                 ) : (
-                  <span className="text-xs text-gray-400 flex items-center gap-1.5">
-                    <Clock className="w-3 h-3" /> Договор не подписан
-                  </span>
+                  <div className="space-y-2">
+                    <span className="text-xs text-gray-400 flex items-center gap-1.5">
+                      <Clock className="w-3 h-3" /> Договор не подписан
+                    </span>
+                    <p className="text-[11px] text-gray-400">Если договор уже подписан вне системы — отметьте здесь:</p>
+                    <div className="flex gap-1.5 flex-wrap">
+                      <button
+                        onClick={() => markContractExternal("okidoki")}
+                        disabled={markingExternal}
+                        className="flex items-center gap-1 bg-violet-100 hover:bg-violet-200 text-violet-700 text-[11px] font-semibold rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-60"
+                      >
+                        {markingExternal ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileSignature className="w-3 h-3" />}
+                        Подписан через ОкиДоки
+                      </button>
+                      <button
+                        onClick={() => markContractExternal("paper")}
+                        disabled={markingExternal}
+                        className="flex items-center gap-1 bg-gray-100 hover:bg-gray-200 text-gray-600 text-[11px] font-semibold rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-60"
+                      >
+                        {markingExternal ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileSignature className="w-3 h-3" />}
+                        На бумаге
+                      </button>
+                    </div>
+                  </div>
                 )}
               </div>
 
