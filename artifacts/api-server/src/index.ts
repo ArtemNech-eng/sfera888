@@ -1,5 +1,6 @@
 import app from "./app";
 import { db, usersTable, voronkaColumnsTable } from "@workspace/db";
+import { sql } from "drizzle-orm";
 import { eq, inArray } from "drizzle-orm";
 import { hashPassword } from "./lib/auth.js";
 import { checkOverdueTransactions } from "./lib/orderEligibility.js";
@@ -16,6 +17,24 @@ const port = Number(rawPort);
 
 if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
+}
+
+// Run safe additive migrations on startup (IF NOT EXISTS — idempotent).
+async function runMigrations() {
+  await db.execute(sql`
+    ALTER TABLE masters
+      ADD COLUMN IF NOT EXISTS contract_signed_at TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS contract_sign_ip TEXT,
+      ADD COLUMN IF NOT EXISTS passport_photo_url TEXT,
+      ADD COLUMN IF NOT EXISTS passport_verified BOOLEAN NOT NULL DEFAULT FALSE,
+      ADD COLUMN IF NOT EXISTS passport_verify_note TEXT,
+      ADD COLUMN IF NOT EXISTS contract_full_name TEXT,
+      ADD COLUMN IF NOT EXISTS contract_passport_number TEXT,
+      ADD COLUMN IF NOT EXISTS contract_passport_date TEXT,
+      ADD COLUMN IF NOT EXISTS contract_passport_issuer TEXT,
+      ADD COLUMN IF NOT EXISTS contract_address TEXT
+  `);
+  console.log("[startup] Migrations applied");
 }
 
 // If ADMIN_PASSWORD env var is set, reset the admin user's password on startup.
@@ -71,6 +90,7 @@ async function seedVoronkaColumns() {
   }
 }
 
+runMigrations().catch(console.error);
 maybeResetAdminPassword().catch(console.error);
 seedVoronkaColumns().catch(console.error);
 // Mark overdue commissions on startup and then every 6 hours
