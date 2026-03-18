@@ -6,7 +6,7 @@ import {
   User, Tag, Plus, CheckSquare, Square, Clock, Trash2, History,
   Send, Paperclip, Check, CheckCheck, Calendar, DollarSign, Loader2, CheckCircle2,
   ClipboardList, ExternalLink, ThumbsUp, ThumbsDown, Minus, Sparkles, MessageCircle,
-  Smartphone, KeyRound, Eye, EyeOff, FlaskConical,
+  Smartphone, KeyRound, Eye, EyeOff, FlaskConical, ShieldCheck, ShieldAlert, FileSignature,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -34,6 +34,11 @@ export interface DrawerMaster {
   workingHours?: WorkingHours | null;
   preferredDistricts?: string[];
   minArea?: number;
+  contractSignedAt?: string | null;
+  contractSignIp?: string | null;
+  passportPhotoUrl?: string | null;
+  passportVerified?: boolean;
+  passportVerifyNote?: string | null;
 }
 
 interface MasterTask { id: number; masterId: number; text: string; dueAt: string | null; isCompleted: boolean; createdBy: string | null; createdAt: string; }
@@ -741,6 +746,50 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                   </button>
                 </div>
               )}
+
+              {/* Contract & passport block */}
+              <div className="rounded-xl border border-gray-100 bg-gray-50 p-3 space-y-2.5">
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide flex items-center gap-1.5">
+                  <FileSignature className="w-3 h-3" /> Договор
+                </p>
+                {master.contractSignedAt ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-1.5">
+                      {master.passportVerified
+                        ? <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                        : <ShieldAlert className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
+                      <span className={`text-xs font-medium ${master.passportVerified ? "text-emerald-700" : "text-amber-700"}`}>
+                        {master.passportVerified ? "Паспорт проверен ИИ" : "Паспорт требует проверки"}
+                      </span>
+                    </div>
+                    {master.passportVerifyNote && (
+                      <p className="text-[11px] text-gray-400 leading-relaxed">{master.passportVerifyNote}</p>
+                    )}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[11px] text-gray-400">
+                        Подписан: {format(new Date(master.contractSignedAt), "d MMM yyyy HH:mm", { locale: ru })}
+                      </span>
+                      {master.contractSignIp && (
+                        <span className="text-[11px] text-gray-300">IP: {master.contractSignIp}</span>
+                      )}
+                    </div>
+                    {master.passportPhotoUrl && (
+                      <a
+                        href={master.passportPhotoUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-[11px] text-blue-600 hover:text-blue-800 font-medium transition-colors"
+                      >
+                        <Eye className="w-3 h-3" /> Просмотреть паспорт
+                      </a>
+                    )}
+                  </div>
+                ) : (
+                  <span className="text-xs text-gray-400 flex items-center gap-1.5">
+                    <Clock className="w-3 h-3" /> Договор не подписан
+                  </span>
+                )}
+              </div>
 
               <div className="text-[11px] text-gray-300 pt-2 border-t border-gray-50">
                 Зарегистрирован: {dateShort(master.createdAt)}

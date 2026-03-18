@@ -30,6 +30,11 @@ export const mastersTable = pgTable("masters", {
   minArea: integer("min_area").notNull().default(0),
   deletedAt: timestamp("deleted_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  contractSignedAt: timestamp("contract_signed_at"),
+  contractSignIp: text("contract_sign_ip"),
+  passportPhotoUrl: text("passport_photo_url"),
+  passportVerified: boolean("passport_verified").notNull().default(false),
+  passportVerifyNote: text("passport_verify_note"),
 });
 
 export const insertMasterSchema = createInsertSchema(mastersTable).omit({ id: true, createdAt: true });

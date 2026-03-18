@@ -21,6 +21,7 @@ import trashRouter, { runTrashCleanup } from "./trash.js";
 import tasksRouter from "./tasks.js";
 import masterReviewsRouter from "./master-reviews.js";
 import masterPwaRouter from "./master-pwa.js";
+import contractRouter from "./contract.js";
 
 const router = Router();
 
@@ -45,6 +46,7 @@ router.use("/trash", trashRouter);
 router.use("/tasks", tasksRouter);
 router.use("/master-reviews", masterReviewsRouter);
 router.use("/master-pwa", masterPwaRouter);
+router.use("/contract", contractRouter);
 
 // Seed popular repair services on startup (INSERT ... ON CONFLICT DO NOTHING)
 async function seedServices() {

@@ -69,6 +69,11 @@ function formatMaster(m: any) {
     preferredDistricts: m.preferredDistricts ?? [],
     minArea: m.minArea ?? 0,
     createdAt: m.createdAt,
+    contractSignedAt: m.contractSignedAt ?? null,
+    contractSignIp: m.contractSignIp ?? null,
+    passportPhotoUrl: m.passportPhotoUrl ?? null,
+    passportVerified: m.passportVerified ?? false,
+    passportVerifyNote: m.passportVerifyNote ?? null,
   };
 }
 
