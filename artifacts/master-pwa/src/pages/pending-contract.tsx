@@ -230,6 +230,14 @@ export default function PendingContractPage() {
   const contractDone = !!(master as any)?.contractSignedAt;
   useEffect(() => { if (contractDone) setStep("done"); }, [contractDone]);
 
+  // Poll /auth/me every 8 seconds so the PWA detects admin activation (OkiDoki/paper)
+  // App.tsx routing will auto-redirect to "/" when status becomes non-pending_contract
+  useEffect(() => {
+    if (step === "done") return;
+    const interval = setInterval(() => { refresh(); }, 8_000);
+    return () => clearInterval(interval);
+  }, [step, refresh]);
+
   const contractText = buildContractText(data, master?.phone ?? "", master?.id ?? 0);
 
   const validateData = () => {

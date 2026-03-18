@@ -88,6 +88,16 @@ router.post("/auth/login", async (req, res) => {
   const valid = await verifyPassword(password, master.pwaPasswordHash);
   if (!valid) return res.status(401).json({ error: "Неверный логин или пароль" });
 
+  // Safety: if contractSignedAt is already set (admin marked external) but status
+  // is still pending_contract due to any race/bug, auto-activate now.
+  let effectiveStatus = master.status;
+  if (master.contractSignedAt && master.status === "pending_contract") {
+    await db.update(mastersTable)
+      .set({ status: "active" })
+      .where(eq(mastersTable.id, master.id));
+    effectiveStatus = "active";
+  }
+
   (req.session as any).masterId = master.id;
 
   res.json({
@@ -98,7 +108,7 @@ router.post("/auth/login", async (req, res) => {
     rating: Number(master.rating),
     debt: Number(master.debt),
     phone: master.phone ?? null,
-    status: master.status,
+    status: effectiveStatus,
   });
 });
 
@@ -111,8 +121,16 @@ router.get("/auth/me", async (req, res) => {
   const masterId = (req.session as any).masterId;
   if (!masterId) return res.status(401).json({ error: "Не авторизован" });
 
-  const master = await getMasterById(masterId);
+  let master = await getMasterById(masterId);
   if (!master || master.deletedAt) return res.status(401).json({ error: "Мастер не найден" });
+
+  // Safety: auto-activate if contractSignedAt is set but status still pending_contract
+  if (master.contractSignedAt && master.status === "pending_contract") {
+    await db.update(mastersTable)
+      .set({ status: "active" })
+      .where(eq(mastersTable.id, master.id));
+    master = { ...master, status: "active" };
+  }
 
   res.json({
     id: master.id,
