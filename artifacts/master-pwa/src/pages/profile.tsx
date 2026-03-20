@@ -111,15 +111,30 @@ function EditProfileModal({
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-end justify-center p-0" onClick={onClose}>
       <div
-        className="w-full max-w-[480px] bg-card rounded-t-2xl overflow-y-auto max-h-[90dvh]"
+        className="w-full max-w-[480px] bg-card rounded-t-2xl flex flex-col max-h-[90dvh]"
         onClick={e => e.stopPropagation()}
       >
-        <div className="sticky top-0 bg-card border-b border-border px-5 py-4 flex items-center justify-between">
-          <h3 className="font-bold text-lg">Редактировать профиль</h3>
-          <button onClick={onClose} className="text-muted-foreground"><X size={20} /></button>
+        <div className="sticky top-0 bg-card border-b border-border px-4 py-3 flex items-center gap-3 flex-shrink-0">
+          <button
+            onClick={onClose}
+            className="text-muted-foreground h-9 w-9 flex items-center justify-center rounded-xl hover:bg-muted transition-colors"
+          >
+            <X size={18} />
+          </button>
+          <h3 className="font-bold text-base flex-1">Редактировать профиль</h3>
+          <button
+            onClick={handleSave}
+            disabled={loading}
+            className="h-9 px-4 bg-primary text-white font-semibold rounded-xl text-sm active:opacity-80 disabled:opacity-50 flex items-center gap-1.5"
+          >
+            {loading
+              ? <Loader2 size={15} className="animate-spin" />
+              : <Check size={15} />}
+            Сохранить
+          </button>
         </div>
 
-        <div className="p-5 space-y-4">
+        <div className="p-5 space-y-4 overflow-y-auto flex-1">
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">Имя / псевдоним</label>
             <input
@@ -185,24 +200,6 @@ function EditProfileModal({
             </div>
           </div>
 
-          <div className="flex gap-3 pt-2">
-            <button
-              onClick={onClose}
-              className="flex-1 h-12 rounded-xl border border-border text-muted-foreground text-sm font-medium active:opacity-80"
-            >
-              Отмена
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={loading}
-              className="flex-1 h-12 bg-primary text-white font-semibold rounded-xl active:opacity-80 disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {loading
-                ? <Loader2 size={18} className="animate-spin" />
-                : <Check size={18} />}
-              Сохранить
-            </button>
-          </div>
         </div>
       </div>
     </div>
