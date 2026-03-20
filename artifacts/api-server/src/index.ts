@@ -67,8 +67,8 @@ async function seedVoronkaColumns() {
   const DEFAULT_COLUMNS = [
     { name: "Новые",           position: 1, receivesOrders: false, color: "blue"   },
     { name: "Свободен",        position: 2, receivesOrders: true,  color: "green"  },
-    { name: "Занят",           position: 3, receivesOrders: true,  color: "yellow" },
-    { name: "На объекте",      position: 4, receivesOrders: false, color: "orange" },
+    { name: "Занят",           position: 3, receivesOrders: false, color: "yellow" },
+    { name: "На объекте",      position: 4, receivesOrders: true,  color: "orange" },
     { name: "Ожидает оплаты",  position: 5, receivesOrders: false, color: "red"    },
     { name: "Отстраненные",    position: 6, receivesOrders: false, color: "grey"   },
   ];
@@ -107,10 +107,15 @@ async function seedVoronkaColumns() {
       await db.update(voronkaColumnsTable).set({ position: 5 }).where(eq(voronkaColumnsTable.id, ozhidaetCol.id));
       console.log("[startup] Updated 'Ожидает оплаты' position → 5");
     }
-    // "Занят" must have receivesOrders = true so masters with 1 order can still receive a 2nd dispatch
-    if (!zanyatCol.receivesOrders) {
-      await db.update(voronkaColumnsTable).set({ receivesOrders: true }).where(eq(voronkaColumnsTable.id, zanyatCol.id));
-      console.log("[startup] Updated 'Занят' receivesOrders → true");
+    // "Занят" = manual offline (left the line), must NOT receive dispatches
+    if (zanyatCol.receivesOrders) {
+      await db.update(voronkaColumnsTable).set({ receivesOrders: false }).where(eq(voronkaColumnsTable.id, zanyatCol.id));
+      console.log("[startup] Updated 'Занят' receivesOrders → false");
+    }
+    // "На объекте" = working, CAN receive dispatches (limit enforced by eligibility check)
+    if (naObyekteCol && !naObyekteCol.receivesOrders) {
+      await db.update(voronkaColumnsTable).set({ receivesOrders: true }).where(eq(voronkaColumnsTable.id, naObyekteCol.id));
+      console.log("[startup] Updated 'На объекте' receivesOrders → true");
     }
   }
 }

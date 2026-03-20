@@ -714,7 +714,7 @@ export default function HomePage() {
           <p className="text-sm text-muted-foreground">{master?.city}</p>
         </div>
         <div className="flex items-center gap-2">
-          <AvailabilityToggle isAvailable={isAvailable} atLimit={hasActiveOrders} onChange={setIsAvailable} />
+          <AvailabilityToggle isAvailable={isAvailable} atLimit={atLimit} onChange={setIsAvailable} />
           <div className="flex items-center gap-1 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-2.5 py-1.5 rounded-xl">
             <Star size={13} fill="currentColor" />
             <span className="font-semibold text-sm">{master?.rating?.toFixed(1)}</span>

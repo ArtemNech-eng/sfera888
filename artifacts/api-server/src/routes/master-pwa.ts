@@ -1083,25 +1083,18 @@ router.patch("/availability", requireMasterPwa, async (req: any, res: any) => {
   const master = await getMasterById(masterId);
   if (!master) return res.status(404).json({ error: "Мастер не найден" });
 
-  // If trying to become "Свободен", block if master has any active orders
-  if (available) {
-    const activeCount = await countActiveMasterOrders(masterId);
-    if (activeCount > 0) {
-      const limit = master.isTestMaster ? 1 : 2;
-      return res.status(400).json({
-        error: `У вас ${activeCount} активных ${activeCount === 1 ? "заказ" : "заказа"}. Закройте текущие заказы, чтобы изменить статус на «Свободен».`,
-        code: "has_active_orders",
-        activeCount,
-        limit,
-      });
-    }
-  }
-
   const cols = await db.select().from(voronkaColumnsTable).orderBy(voronkaColumnsTable.position);
 
   let targetCol;
   if (available) {
-    targetCol = cols.find(c => c.receivesOrders);
+    // If master has active orders → "На объекте" (working, still in dispatch pool)
+    // If no active orders → "Свободен" (free, no work)
+    const activeCount = await countActiveMasterOrders(masterId);
+    if (activeCount > 0) {
+      targetCol = cols.find(c => c.name === "На объекте") ?? cols.find(c => c.receivesOrders && c.name !== "Свободен");
+    } else {
+      targetCol = cols.find(c => c.name === "Свободен") ?? cols.find(c => c.receivesOrders);
+    }
   } else {
     targetCol = await getBusyColumn();
   }

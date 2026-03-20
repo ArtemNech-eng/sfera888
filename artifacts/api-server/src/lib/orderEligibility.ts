@@ -20,24 +20,18 @@ export async function countActiveMasterOrders(masterId: number, excludeOrderId?:
 
 /**
  * Returns the correct voronka column ID for a master based on their active order count.
- * - 0 orders → "Свободен" (receivesOrders: true)
- * - 1 order  → "Занят"    (receivesOrders: true — can take one more)
- * - 2+ orders → "На объекте" (receivesOrders: false — at limit)
+ * - 0 orders  → "Свободен"   (receivesOrders: true — free, no active work)
+ * - 1+ orders → "На объекте" (receivesOrders: true — working, limit enforced by eligibility check)
+ * "Занят" is manual offline only (receivesOrders: false).
  */
 export async function getColumnIdForActiveCount(activeCount: number): Promise<number | null> {
   const cols = await db.select().from(voronkaColumnsTable).orderBy(voronkaColumnsTable.position);
   if (activeCount === 0) {
     return cols.find(c => c.name === "Свободен")?.id ?? cols.find(c => c.receivesOrders)?.id ?? null;
   }
-  if (activeCount === 1) {
-    return cols.find(c => c.name === "Занят")?.id
-      ?? cols.find(c => c.receivesOrders && c.name !== "Свободен")?.id
-      ?? cols.find(c => c.receivesOrders)?.id
-      ?? null;
-  }
-  // 2+ orders
+  // 1 or more active orders → "На объекте"
   return cols.find(c => c.name === "На объекте")?.id
-    ?? cols.find(c => !c.receivesOrders && c.position > 1)?.id
+    ?? cols.find(c => c.receivesOrders && c.name !== "Свободен")?.id
     ?? null;
 }
 
