@@ -70,6 +70,7 @@ async function seedVoronkaColumns() {
     { name: "Занят",           position: 3, receivesOrders: false, color: "yellow" },
     { name: "На объекте",      position: 4, receivesOrders: false, color: "orange" },
     { name: "Ожидает оплаты",  position: 5, receivesOrders: false, color: "red"    },
+    { name: "Отстраненные",    position: 6, receivesOrders: false, color: "grey"   },
   ];
 
   const existing = await db.select().from(voronkaColumnsTable);

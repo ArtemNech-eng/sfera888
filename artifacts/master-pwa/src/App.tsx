@@ -11,6 +11,31 @@ import BalancePage from "@/pages/balance";
 import ProfilePage from "@/pages/profile";
 import ChatPage from "@/pages/chat";
 import PendingContractPage from "@/pages/pending-contract";
+import { ShieldBan, LogOut } from "lucide-react";
+
+function SuspendedScreen() {
+  const { logout } = useAuth();
+  return (
+    <div className="flex flex-col items-center justify-center min-h-dvh gap-6 px-6 text-center bg-background">
+      <div className="w-20 h-20 rounded-full bg-red-100 flex items-center justify-center">
+        <ShieldBan className="w-10 h-10 text-red-500" />
+      </div>
+      <div className="space-y-2">
+        <h1 className="text-xl font-bold text-gray-900">Аккаунт заблокирован</h1>
+        <p className="text-sm text-muted-foreground max-w-xs">
+          Ваш аккаунт временно отстранён от работы. Пожалуйста, свяжитесь с менеджером для уточнения деталей.
+        </p>
+      </div>
+      <button
+        onClick={logout}
+        className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-border text-sm font-medium text-muted-foreground hover:bg-muted transition-colors"
+      >
+        <LogOut size={15} />
+        Выйти из аккаунта
+      </button>
+    </div>
+  );
+}
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -34,8 +59,13 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   }
   // Logged in + on login page → redirect
   if (master && location === "/login") {
+    if (master.status === "suspended") return <SuspendedScreen />;
     const target = master.status === "pending_contract" ? "/pending-contract" : "/";
     return <Redirect to={target} />;
+  }
+  // Suspended master → show blocked screen regardless of route
+  if (master && master.status === "suspended") {
+    return <SuspendedScreen />;
   }
   // Logged in but pending contract → only allow /pending-contract
   if (master && master.status === "pending_contract" && location !== "/pending-contract") {
@@ -52,10 +82,11 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 function AppRoutes() {
   const { master } = useAuth();
   const isPending = master?.status === "pending_contract";
+  const isSuspended = master?.status === "suspended";
 
   return (
     <div className="flex flex-col min-h-dvh">
-      <main className={`flex-1 overflow-auto ${master && !isPending ? "pb-20" : ""}`}>
+      <main className={`flex-1 overflow-auto ${master && !isPending && !isSuspended ? "pb-20" : ""}`}>
         <AuthGuard>
           <Switch>
             <Route path="/login" component={LoginPage} />
@@ -68,7 +99,7 @@ function AppRoutes() {
           </Switch>
         </AuthGuard>
       </main>
-      {master && !isPending && <BottomNav />}
+      {master && !isPending && !isSuspended && <BottomNav />}
     </div>
   );
 }

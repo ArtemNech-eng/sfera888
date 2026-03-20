@@ -32,6 +32,7 @@ const COLORS: Record<string, { accent: string; badgeBg: string; badgeText: strin
   yellow: { accent: "#fbbf24", badgeBg: "rgba(251,191,36,0.13)",  badgeText: "#92400e", headerBg: "rgba(254,243,199,0.45)", dot: "bg-yellow-400",  btn: "bg-yellow-50 text-yellow-700 hover:bg-yellow-100" },
   teal:   { accent: "#2dd4bf", badgeBg: "rgba(45,212,191,0.13)",  badgeText: "#0f766e", headerBg: "rgba(204,251,241,0.45)", dot: "bg-teal-400",    btn: "bg-teal-50 text-teal-700 hover:bg-teal-100" },
   pink:   { accent: "#f472b6", badgeBg: "rgba(244,114,182,0.13)", badgeText: "#9d174d", headerBg: "rgba(252,231,243,0.45)", dot: "bg-pink-400",    btn: "bg-pink-50 text-pink-700 hover:bg-pink-100" },
+  grey:   { accent: "#94a3b8", badgeBg: "rgba(148,163,184,0.13)", badgeText: "#475569", headerBg: "rgba(241,245,249,0.45)", dot: "bg-slate-400",   btn: "bg-slate-50 text-slate-700 hover:bg-slate-100" },
 };
 
 const COLOR_OPTS = Object.keys(COLORS);

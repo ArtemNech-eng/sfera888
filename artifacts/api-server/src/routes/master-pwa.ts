@@ -94,6 +94,11 @@ router.post("/auth/login", async (req, res) => {
   const valid = await verifyPassword(password, master.pwaPasswordHash);
   if (!valid) return res.status(401).json({ error: "Неверный логин или пароль" });
 
+  // Block suspended masters from logging in
+  if (master.status === "suspended") {
+    return res.status(403).json({ error: "suspended", message: "Ваш аккаунт заблокирован. Обратитесь к менеджеру." });
+  }
+
   // Safety: if contractSignedAt is already set (admin marked external) but status
   // is still pending_contract due to any race/bug, auto-activate now.
   let effectiveStatus = master.status;

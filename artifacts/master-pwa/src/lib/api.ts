@@ -9,7 +9,7 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error ?? "Ошибка запроса");
+    throw new Error(err.message ?? err.error ?? "Ошибка запроса");
   }
   return res.json();
 }

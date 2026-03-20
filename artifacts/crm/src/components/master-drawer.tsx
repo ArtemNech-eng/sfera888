@@ -7,6 +7,7 @@ import {
   Send, Paperclip, Check, CheckCheck, Calendar, DollarSign, Loader2, CheckCircle2,
   ClipboardList, ExternalLink, ThumbsUp, ThumbsDown, Minus, Sparkles, MessageCircle,
   Smartphone, KeyRound, Eye, EyeOff, FlaskConical, ShieldCheck, ShieldAlert, FileSignature,
+  ShieldBan, ShieldOff,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -229,6 +230,7 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
   const [showActivatePopover, setShowActivatePopover] = useState(false);
   const [activatingContract, setActivatingContract] = useState(false);
   const [markingExternal, setMarkingExternal] = useState(false);
+  const [suspending, setSuspending] = useState(false);
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
@@ -405,6 +407,29 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
       }
     } finally {
       setActivatingContract(false);
+    }
+  };
+
+  const handleSuspend = async () => {
+    const isSuspended = master.status === "suspended";
+    const confirmMsg = isSuspended
+      ? `Разблокировать мастера ${master.alias}? Он снова сможет получать заказы.`
+      : `Заблокировать мастера ${master.alias}? Он потеряет доступ к приложению и не сможет получать заказы.`;
+    if (!confirm(confirmMsg)) return;
+    setSuspending(true);
+    try {
+      const newStatus = isSuspended ? "active" : "suspended";
+      const r = await fetch(`/api/masters/${master.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (r.ok) {
+        onMasterUpdate(master.id, { status: newStatus });
+      }
+    } finally {
+      setSuspending(false);
     }
   };
 
@@ -825,6 +850,32 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                   </button>
                 </div>
               )}
+
+              {/* Block / Unblock */}
+              <div className="border-t border-gray-100 pt-3">
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1">
+                  <ShieldBan className="w-3 h-3" /> Доступ
+                </p>
+                {master.status === "suspended" ? (
+                  <button
+                    onClick={handleSuspend}
+                    disabled={suspending}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-semibold transition-colors disabled:opacity-50"
+                  >
+                    {suspending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldOff className="w-3.5 h-3.5" />}
+                    Разблокировать мастера
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleSuspend}
+                    disabled={suspending}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-xl text-xs font-semibold transition-colors disabled:opacity-50"
+                  >
+                    {suspending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldBan className="w-3.5 h-3.5" />}
+                    Заблокировать мастера
+                  </button>
+                )}
+              </div>
 
               {/* Contract & passport block */}
               <div className="rounded-xl border border-gray-100 bg-gray-50 p-3 space-y-2.5">

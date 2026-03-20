@@ -145,6 +145,28 @@ router.patch("/:id", requireRole("admin", "master_operator"), async (req, res) =
       .where(eq(mastersTable.id, id));
   }
 
+  // On suspend: move master to "Отстраненные" column
+  if (status === "suspended" && oldStatus !== "suspended") {
+    const cols = await db.select().from(voronkaColumnsTable);
+    const suspendedCol = cols.find(c => c.name === "Отстраненные");
+    if (suspendedCol) {
+      await db.update(mastersTable)
+        .set({ voronkaColumnId: suspendedCol.id })
+        .where(eq(mastersTable.id, id));
+    }
+  }
+
+  // On unsuspend (active from suspended): move to "Свободен"
+  if (status === "active" && oldStatus === "suspended") {
+    const cols = await db.select().from(voronkaColumnsTable);
+    const freeCol = cols.find(c => c.name === "Свободен");
+    if (freeCol) {
+      await db.update(mastersTable)
+        .set({ voronkaColumnId: freeCol.id })
+        .where(eq(mastersTable.id, id));
+    }
+  }
+
   // Notify master in Telegram when admin activates from pending_contract
   const updated = result[0];
   if (status === "active" && oldStatus === "pending_contract" && updated.telegramId) {
