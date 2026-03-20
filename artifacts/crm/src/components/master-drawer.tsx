@@ -71,7 +71,7 @@ export interface DrawerMaster {
 }
 
 interface MasterTask { id: number; masterId: number; text: string; dueAt: string | null; isCompleted: boolean; createdBy: string | null; createdAt: string; }
-interface HistoryOrder { id: number; status: string; serviceType: string; district: string; city: string; clientName: string | null; clientPhone: string | null; scheduledAt: string | null; completedAt: string | null; createdAt: string; }
+interface HistoryOrder { id: number; status: string; serviceType: string; district: string; city: string; clientName: string | null; clientPhone: string | null; scheduledAt: string | null; completedAt: string | null; createdAt: string; orderAmount: number | null; commission: number | null; paymentStatus: string | null; }
 interface ChatMessage { id: number; text: string; photoUrl: string | null; fromMaster: boolean; senderName: string | null; isRead: boolean; createdAt: string; }
 interface PendingTx { id: number; orderId: number; orderAmount: number; commission: number; }
 interface MasterReview { id: number; masterId: number; orderId: number | null; sentiment: string; text: string; createdBy: string | null; createdAt: string; }
@@ -1185,11 +1185,30 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
             <div className="p-4 space-y-3">
               {!ordersLoaded && <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"/></div>}
               {ordersLoaded && orders.length === 0 && <div className="text-center text-sm text-gray-300 py-10">Нет заказов</div>}
+              {ordersLoaded && orders.length > 0 && (
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-[11px] text-gray-400 font-medium">{orders.length} заказ{orders.length === 1 ? "" : orders.length < 5 ? "а" : "ов"}</p>
+                  {orders.filter(o => o.orderAmount).length > 0 && (
+                    <p className="text-[11px] text-emerald-600 font-semibold">
+                      Итого: {orders.reduce((s, o) => s + (o.orderAmount ?? 0), 0).toLocaleString("ru-RU")} ₽
+                    </p>
+                  )}
+                </div>
+              )}
               {orders.map(o => (
                 <div key={o.id} className="bg-gray-50 rounded-xl p-3.5 border border-gray-100">
                   <div className="flex items-start justify-between gap-2 mb-2">
-                    <div>
-                      <p className="text-xs font-semibold text-gray-700">#{o.id} · {o.serviceType}</p>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <a
+                          href={`/orders?openOrder=${o.id}`}
+                          onClick={e => e.stopPropagation()}
+                          className="text-xs font-semibold text-blue-600 hover:underline"
+                        >
+                          #{o.id}
+                        </a>
+                        <span className="text-xs font-semibold text-gray-700">· {o.serviceType}</span>
+                      </div>
                       <p className="text-[11px] text-gray-400 mt-0.5">{o.city}, {o.district}</p>
                     </div>
                     <OrderStatusBadge status={o.status} />
@@ -1199,6 +1218,32 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                     <a href={`tel:${o.clientPhone}`} className="text-[11px] text-emerald-600 font-medium flex items-center gap-1 hover:underline">
                       <Phone className="w-3 h-3" />{o.clientPhone}
                     </a>
+                  )}
+                  {/* Financial data */}
+                  {o.orderAmount != null && (
+                    <div className="mt-2 flex items-center gap-3 bg-white rounded-lg px-2.5 py-1.5 border border-gray-100">
+                      <div className="text-[11px]">
+                        <span className="text-gray-400">Сумма: </span>
+                        <span className="font-semibold text-gray-700">{o.orderAmount.toLocaleString("ru-RU")} ₽</span>
+                      </div>
+                      {o.commission != null && (
+                        <>
+                          <div className="w-px h-3 bg-gray-200" />
+                          <div className="text-[11px]">
+                            <span className="text-gray-400">Комиссия: </span>
+                            <span className={`font-semibold ${o.paymentStatus === "confirmed" ? "text-emerald-600" : "text-violet-600"}`}>
+                              {o.commission.toLocaleString("ru-RU")} ₽
+                            </span>
+                          </div>
+                          {o.paymentStatus === "confirmed" && (
+                            <span className="text-[9px] bg-emerald-50 text-emerald-600 rounded-md px-1.5 py-0.5 font-semibold">Оплачено</span>
+                          )}
+                          {o.paymentStatus === "pending" && (
+                            <span className="text-[9px] bg-amber-50 text-amber-600 rounded-md px-1.5 py-0.5 font-semibold">Ожидает</span>
+                          )}
+                        </>
+                      )}
+                    </div>
                   )}
                   <div className="flex items-center gap-3 mt-2 text-[10px] text-gray-300">
                     {o.scheduledAt && <span><Calendar className="w-3 h-3 inline mr-0.5" />{dateShort(o.scheduledAt)}</span>}

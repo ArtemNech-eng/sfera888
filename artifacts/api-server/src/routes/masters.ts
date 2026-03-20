@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, mastersTable, masterTasksTable, ordersTable, leadsTable, telegramChatsTable, voronkaColumnsTable } from "@workspace/db";
+import { db, mastersTable, masterTasksTable, ordersTable, leadsTable, telegramChatsTable, voronkaColumnsTable, transactionsTable } from "@workspace/db";
 import { eq, desc, inArray, isNull } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { notifyMasterActivated } from "../telegram-notify.js";
@@ -285,8 +285,16 @@ router.get("/:id/orders", allMasterRoles, async (req, res) => {
     : [];
   const leadMap = new Map(leads.map(l => [l.id, l]));
 
+  // Fetch transactions to get financial data
+  const orderIds = orders.map(o => o.id);
+  const txRows = orderIds.length
+    ? await db.select().from(transactionsTable).where(inArray(transactionsTable.orderId, orderIds))
+    : [];
+  const txMap = new Map(txRows.map(t => [t.orderId, t]));
+
   res.json(orders.map(o => {
     const lead = leadMap.get(o.leadId ?? 0);
+    const tx = txMap.get(o.id);
     return {
       id: o.id,
       status: o.status,
@@ -298,6 +306,9 @@ router.get("/:id/orders", allMasterRoles, async (req, res) => {
       scheduledAt: o.scheduledAt,
       completedAt: o.completedAt,
       createdAt: o.createdAt,
+      orderAmount: tx ? Number(tx.orderAmount) : null,
+      commission: tx ? Number(tx.commission) : null,
+      paymentStatus: tx?.paymentStatus ?? null,
     };
   }));
 });
