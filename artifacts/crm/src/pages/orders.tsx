@@ -8,7 +8,7 @@ import { formatDate } from "@/lib/utils";
 import {
   Loader2, MapPin, Send, Users, CheckCircle2, Clock, X, UserCheck,
   DollarSign, Check, Pencil, AlertCircle, MessageSquare, Trash2, Search,
-  ClipboardList, CalendarDays, ChevronDown, Filter,
+  ClipboardList, CalendarDays, ChevronDown, Filter, Settings,
 } from "lucide-react";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -215,7 +215,8 @@ export default function Orders() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dispatch", openDispatchId] });
-      toast({ title: "Мастер снят с заказа" });
+      broadcastMutation.reset();
+      toast({ title: "Мастер снят с заказа", description: "Теперь можно сделать новую рассылку" });
     },
     onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
   });
@@ -672,6 +673,17 @@ export default function Orders() {
                               >
                                 <Users className="w-3 h-3" />
                                 {pendingResp ? `Отклики (${pendingResp.respondentCount})` : "Отклики"}
+                              </button>
+                            )}
+                            {(ds === "assigned" || (order.masterId && ds === "none" && order.status !== OrderStatus.waiting_master)) && (
+                              <button
+                                onClick={() => {
+                                  setOpenDispatchId(order.id);
+                                  broadcastMutation.reset();
+                                }}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200 rounded-lg font-medium text-xs transition-colors"
+                              >
+                                <Settings className="w-3 h-3" /> Управление
                               </button>
                             )}
                           </div>
