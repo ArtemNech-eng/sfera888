@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, ordersTable, mastersTable, transactionsTable, voronkaColumnsTable, orderDispatchesTable, leadsTable } from "@workspace/db";
+import { db, ordersTable, mastersTable, transactionsTable, voronkaColumnsTable, orderDispatchesTable, leadsTable, masterMessagesTable } from "@workspace/db";
 import { eq, inArray, and, ne, isNull } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { calculateCommission, getCommissionSettings } from "../lib/commission.js";
@@ -480,6 +480,169 @@ router.post("/:id/assign-master", allOrderRoles, async (req, res) => {
     createdAt: o.createdAt,
     updatedAt: o.updatedAt,
   });
+});
+
+// ─── POST /api/orders/:id/unassign-master — admin removes master from order ───
+router.post("/:id/unassign-master", requireRole("admin", "master_operator"), async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid order id" });
+
+  const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
+  const order = orderRows[0];
+  if (!order) return res.status(404).json({ error: "Order not found" });
+  if (!order.masterId) return res.status(400).json({ error: "Нет назначенного мастера" });
+
+  const prevMasterId = order.masterId;
+
+  // Remove master from order, reset to waiting
+  await db.update(ordersTable).set({
+    masterId: null,
+    status: "waiting_master",
+    dispatchStatus: "none",
+    updatedAt: new Date(),
+  }).where(eq(ordersTable.id, id));
+
+  // Revert dispatch records to dispatched/rejected
+  await db.update(orderDispatchesTable)
+    .set({ status: "dispatched" })
+    .where(and(eq(orderDispatchesTable.orderId, id), eq(orderDispatchesTable.masterId, prevMasterId)));
+
+  // Update master voronka column based on remaining active orders
+  const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, prevMasterId));
+  const master = masterRows[0];
+  if (master) {
+    const remainingCount = await countActiveMasterOrders(prevMasterId, id);
+    const allCols = await db.select().from(voronkaColumnsTable).orderBy(voronkaColumnsTable.position);
+    const colId = getColumnIdForActiveCount(remainingCount, allCols);
+    if (colId) {
+      await db.update(mastersTable).set({ voronkaColumnId: colId }).where(eq(mastersTable.id, prevMasterId));
+    }
+
+    // Notify master
+    if (master.telegramId) {
+      await sendTg(master.telegramId,
+        `ℹ️ Вы были сняты с заявки #${id} (${order.serviceType}, ${order.city}). Обратитесь к оператору за подробностями.`
+      );
+    }
+
+    // Log to CRM chat
+    await db.insert(masterMessagesTable).values({
+      masterId: prevMasterId,
+      telegramChatId: master.telegramId ?? `pwa_${prevMasterId}`,
+      text: `⚠️ Снят с заявки #${id} (${order.serviceType}, ${order.city}) администратором`,
+      fromMaster: false,
+      senderName: "system",
+      isRead: false,
+    }).catch(() => {});
+  }
+
+  res.json({ ok: true });
+});
+
+// ─── POST /api/orders/:id/manual-assign/:masterId — admin force-assigns master ─
+router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operator"), async (req, res) => {
+  const orderId = parseInt(req.params.id);
+  const masterId = parseInt(req.params.masterId);
+  if (isNaN(orderId) || isNaN(masterId)) return res.status(400).json({ error: "Invalid ids" });
+
+  const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
+  const order = orderRows[0];
+  if (!order) return res.status(404).json({ error: "Order not found" });
+
+  if (order.masterId === masterId) return res.status(400).json({ error: "Этот мастер уже назначен на заказ" });
+
+  const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
+  const master = masterRows[0];
+  if (!master) return res.status(404).json({ error: "Master not found" });
+  if (master.status !== "active") return res.status(400).json({ error: "Мастер неактивен" });
+
+  // If there was a previous master assigned, log it
+  const prevMasterId = order.masterId;
+
+  // Assign master to order
+  await db.update(ordersTable).set({
+    masterId,
+    status: "master_assigned",
+    dispatchStatus: "assigned",
+    updatedAt: new Date(),
+  }).where(eq(ordersTable.id, orderId));
+
+  // Update or create dispatch record for this master
+  const existingDispatch = await db.select().from(orderDispatchesTable)
+    .where(and(eq(orderDispatchesTable.orderId, orderId), eq(orderDispatchesTable.masterId, masterId)));
+
+  if (existingDispatch.length > 0) {
+    await db.update(orderDispatchesTable)
+      .set({ status: "assigned" })
+      .where(and(eq(orderDispatchesTable.orderId, orderId), eq(orderDispatchesTable.masterId, masterId)));
+  } else {
+    await db.insert(orderDispatchesTable).values({
+      orderId,
+      masterId,
+      telegramChatId: master.telegramId ?? `pwa_${masterId}`,
+      status: "assigned",
+    });
+  }
+
+  // Mark other dispatch records as rejected
+  await db.update(orderDispatchesTable)
+    .set({ status: "rejected" })
+    .where(and(eq(orderDispatchesTable.orderId, orderId), ne(orderDispatchesTable.masterId, masterId)));
+
+  // Move new master to "На объекте" column and update stats
+  const allCols = await db.select().from(voronkaColumnsTable).orderBy(voronkaColumnsTable.position);
+  const onSiteCol = allCols.find(c => c.receivesOrders === true && c.position > 1) ?? allCols.find(c => c.position === 4) ?? null;
+  await db.update(mastersTable).set({
+    voronkaColumnId: onSiteCol?.id ?? master.voronkaColumnId,
+    totalOrders: master.totalOrders + 1,
+    acceptedOrders: master.acceptedOrders + 1,
+  }).where(eq(mastersTable.id, masterId));
+
+  // If there was a previous master, update their voronka column
+  if (prevMasterId && prevMasterId !== masterId) {
+    const remainingCount = await countActiveMasterOrders(prevMasterId, orderId);
+    const colId = getColumnIdForActiveCount(remainingCount, allCols);
+    if (colId) {
+      await db.update(mastersTable).set({ voronkaColumnId: colId }).where(eq(mastersTable.id, prevMasterId));
+    }
+    const prevMasterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, prevMasterId));
+    const prevMaster = prevMasterRows[0];
+    if (prevMaster?.telegramId) {
+      await sendTg(prevMaster.telegramId,
+        `ℹ️ Заявка #${orderId} (${order.serviceType}, ${order.city}) была передана другому мастеру.`
+      );
+    }
+  }
+
+  // Get lead for client phone
+  const leadRows = await db.select().from(leadsTable).where(eq(leadsTable.id, order.leadId));
+  const lead = leadRows[0];
+
+  // Notify the newly assigned master
+  const assignedMsg =
+    `✅ <b>Заявка #${orderId} назначена вам!</b>\n\n` +
+    `🔧 Услуга: <b>${order.serviceType}</b>\n` +
+    `📍 Район: <b>${order.city}${order.district ? ", " + order.district : ""}</b>\n` +
+    `📐 Объём: <b>${order.area} м²</b>\n` +
+    `📅 Дата: <b>${order.scheduledAt ? new Date(order.scheduledAt).toLocaleDateString("ru-RU") : "не указана"}</b>` +
+    (order.comment ? `\n💬 Комментарий: ${order.comment}` : "") +
+    (lead ? `\n\n📞 Клиент: <b>${lead.clientName}</b>\nТелефон: <b>${lead.clientPhone}</b>` : "");
+
+  if (master.telegramId) {
+    await sendTg(master.telegramId, assignedMsg);
+  }
+
+  // Log to CRM chat
+  await db.insert(masterMessagesTable).values({
+    masterId: master.id,
+    telegramChatId: master.telegramId ?? `pwa_${master.id}`,
+    text: `✅ Назначен на заявку #${orderId} (вручную администратором)`,
+    fromMaster: false,
+    senderName: "system",
+    isRead: false,
+  }).catch(() => {});
+
+  res.json({ ok: true });
 });
 
 // DELETE /api/orders/:id — soft delete (move to trash)

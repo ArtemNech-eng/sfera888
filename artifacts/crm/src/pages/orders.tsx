@@ -187,6 +187,52 @@ export default function Orders() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/orders"] }),
   });
 
+  const [showManualAssign, setShowManualAssign] = useState(false);
+  const [selectedMasterForAssign, setSelectedMasterForAssign] = useState<string>("");
+
+  const { data: activeMasters } = useQuery<{ id: number; alias: string; city: string | null }[]>({
+    queryKey: ["/api/masters"],
+    queryFn: async () => {
+      const r = await fetch("/api/masters", { credentials: "include" });
+      if (!r.ok) throw new Error("Failed");
+      const data = await r.json();
+      return (data as any[])
+        .filter((m: any) => m.status === "active")
+        .map(m => ({ id: m.id, alias: m.alias, city: m.city }));
+    },
+    staleTime: 30000,
+  });
+
+  const unassignMutation = useMutation({
+    mutationFn: async (orderId: number) => {
+      const r = await fetch(`/api/orders/${orderId}/unassign-master`, { method: "POST", credentials: "include" });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Ошибка"); }
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dispatch", openDispatchId] });
+      toast({ title: "Мастер снят с заказа" });
+    },
+    onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
+  });
+
+  const manualAssignMutation = useMutation({
+    mutationFn: async ({ orderId, masterId }: { orderId: number; masterId: number }) => {
+      const r = await fetch(`/api/orders/${orderId}/manual-assign/${masterId}`, { method: "POST", credentials: "include" });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Ошибка"); }
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dispatch", openDispatchId] });
+      setShowManualAssign(false);
+      setSelectedMasterForAssign("");
+      toast({ title: "Мастер назначен вручную" });
+    },
+    onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
+  });
+
   interface PendingDispatch {
     orderId: number;
     serviceType: string;
@@ -582,7 +628,7 @@ export default function Orders() {
                   <h2 className="text-lg font-display font-bold text-foreground">Рассылка заявки #{openDispatchId}</h2>
                   <p className="text-sm text-muted-foreground">{openOrder.serviceType} · {openOrder.city}, {openOrder.district}</p>
                 </div>
-                <button onClick={() => setOpenDispatchId(null)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100">
+                <button onClick={() => { setOpenDispatchId(null); setShowManualAssign(false); setSelectedMasterForAssign(""); }} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100">
                   <X className="w-4 h-4 text-muted-foreground" />
                 </button>
               </div>
@@ -709,9 +755,23 @@ export default function Orders() {
                     )}
 
                     {(openOrder as any).dispatchStatus === "assigned" && (
-                      <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm">
-                        <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-                        Заявка назначена. Мастер получил контакт клиента.
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm">
+                          <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                          Заявка назначена. Мастер получил контакт клиента.
+                        </div>
+                        <button
+                          onClick={() => {
+                            if (confirm("Снять мастера с заказа? Заказ вернётся в статус ожидания.")) {
+                              unassignMutation.mutate(openDispatchId!);
+                            }
+                          }}
+                          disabled={unassignMutation.isPending}
+                          className="w-full flex items-center justify-center gap-2 py-2 px-4 text-sm font-medium text-red-600 border border-red-200 rounded-xl hover:bg-red-50 disabled:opacity-50 transition-colors"
+                        >
+                          {unassignMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
+                          Снять мастера с заказа
+                        </button>
                       </div>
                     )}
 
@@ -743,6 +803,63 @@ export default function Orders() {
                           ))}
                         </div>
                       </details>
+                    )}
+                  </div>
+                )}
+
+                {/* Manual assign section — always available in dispatch panel */}
+                {openDispatchId && (
+                  <div className="border-t border-border/50 pt-4 space-y-2">
+                    {!showManualAssign ? (
+                      <button
+                        onClick={() => setShowManualAssign(true)}
+                        className="w-full flex items-center justify-center gap-2 py-2 px-4 text-sm font-medium text-primary border border-primary/30 rounded-xl hover:bg-primary/5 transition-colors"
+                      >
+                        <UserCheck className="w-3.5 h-3.5" />
+                        Назначить мастера вручную
+                      </button>
+                    ) : (
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Выбрать мастера</p>
+                        <select
+                          value={selectedMasterForAssign}
+                          onChange={e => setSelectedMasterForAssign(e.target.value)}
+                          className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+                        >
+                          <option value="">— Выберите мастера —</option>
+                          {(activeMasters ?? [])
+                            .filter(m => !openOrder || !m.city || m.city === (openOrder as any).city || true)
+                            .map(m => (
+                              <option key={m.id} value={String(m.id)}>
+                                {m.alias}{m.city ? ` (${m.city})` : ""}
+                              </option>
+                            ))}
+                        </select>
+                        {(openOrder as any)?.masterId && selectedMasterForAssign && (
+                          <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                            ⚠️ Текущий мастер будет заменён
+                          </p>
+                        )}
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => { setShowManualAssign(false); setSelectedMasterForAssign(""); }}
+                            className="flex-1 py-2 text-sm font-medium text-muted-foreground border border-border rounded-xl hover:bg-slate-50 transition-colors"
+                          >
+                            Отмена
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (!selectedMasterForAssign) return;
+                              manualAssignMutation.mutate({ orderId: openDispatchId, masterId: parseInt(selectedMasterForAssign) });
+                            }}
+                            disabled={!selectedMasterForAssign || manualAssignMutation.isPending}
+                            className="flex-1 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 disabled:opacity-50 flex items-center justify-center gap-2 transition-colors"
+                          >
+                            {manualAssignMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserCheck className="w-3.5 h-3.5" />}
+                            Назначить
+                          </button>
+                        </div>
+                      </div>
                     )}
                   </div>
                 )}
