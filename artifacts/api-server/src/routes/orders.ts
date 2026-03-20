@@ -518,14 +518,7 @@ router.post("/:id/unassign-master", requireRole("admin", "master_operator"), asy
       await db.update(mastersTable).set({ voronkaColumnId: colId }).where(eq(mastersTable.id, prevMasterId));
     }
 
-    // Notify master
-    if (master.telegramId) {
-      await sendTg(master.telegramId,
-        `ℹ️ Вы были сняты с заявки #${id} (${order.serviceType}, ${order.city}). Обратитесь к оператору за подробностями.`
-      );
-    }
-
-    // Log to CRM chat
+    // Log to CRM chat (visible in PWA chat tab)
     await db.insert(masterMessagesTable).values({
       masterId: prevMasterId,
       telegramChatId: master.telegramId ?? `pwa_${prevMasterId}`,
@@ -605,34 +598,9 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
     if (colId) {
       await db.update(mastersTable).set({ voronkaColumnId: colId }).where(eq(mastersTable.id, prevMasterId));
     }
-    const prevMasterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, prevMasterId));
-    const prevMaster = prevMasterRows[0];
-    if (prevMaster?.telegramId) {
-      await sendTg(prevMaster.telegramId,
-        `ℹ️ Заявка #${orderId} (${order.serviceType}, ${order.city}) была передана другому мастеру.`
-      );
-    }
   }
 
-  // Get lead for client phone
-  const leadRows = await db.select().from(leadsTable).where(eq(leadsTable.id, order.leadId));
-  const lead = leadRows[0];
-
-  // Notify the newly assigned master
-  const assignedMsg =
-    `✅ <b>Заявка #${orderId} назначена вам!</b>\n\n` +
-    `🔧 Услуга: <b>${order.serviceType}</b>\n` +
-    `📍 Район: <b>${order.city}${order.district ? ", " + order.district : ""}</b>\n` +
-    `📐 Объём: <b>${order.area} м²</b>\n` +
-    `📅 Дата: <b>${order.scheduledAt ? new Date(order.scheduledAt).toLocaleDateString("ru-RU") : "не указана"}</b>` +
-    (order.comment ? `\n💬 Комментарий: ${order.comment}` : "") +
-    (lead ? `\n\n📞 Клиент: <b>${lead.clientName}</b>\nТелефон: <b>${lead.clientPhone}</b>` : "");
-
-  if (master.telegramId) {
-    await sendTg(master.telegramId, assignedMsg);
-  }
-
-  // Log to CRM chat
+  // Log to CRM chat (visible in PWA chat tab)
   await db.insert(masterMessagesTable).values({
     masterId: master.id,
     telegramChatId: master.telegramId ?? `pwa_${master.id}`,

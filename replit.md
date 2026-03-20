@@ -52,7 +52,11 @@ artifacts-monorepo/
 - `telegram_chats`, `telegram_messages` — Telegram operator chat history
 - `voronka_columns` — Configurable Kanban columns for masters board
 
-## Telegram Bot
+## Notifications
+
+> **Важно**: Telegram отключён как основной канал уведомлений. Все новые функции должны использовать только PWA push-уведомления и запись в CRM-чат (`masterMessagesTable`). Не добавлять `sendTg()` в новые endpoint'ы.
+
+## Telegram Bot (legacy, не используется для новых функций)
 
 - **Token**: stored as `TELEGRAM_BOT_TOKEN` env var
 - **Webhook**: set to `https://{domain}/api/telegram/webhook`
