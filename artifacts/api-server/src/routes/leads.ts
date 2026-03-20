@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, leadsTable, ordersTable } from "@workspace/db";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, desc } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 
 const router = Router();
@@ -21,13 +21,13 @@ function buildServiceSummary(services: Array<{type: string; area: number; priceP
 }
 
 router.get("/", allLeadRoles, async (req, res) => {
-  const { status } = req.query;
-  let rows;
-  if (status) {
-    rows = await db.select().from(leadsTable).where(and(eq(leadsTable.status, status as any), isNull(leadsTable.deletedAt)));
-  } else {
-    rows = await db.select().from(leadsTable).where(isNull(leadsTable.deletedAt)).orderBy(leadsTable.createdAt);
-  }
+  const { status, source } = req.query;
+  const conditions: any[] = [isNull(leadsTable.deletedAt)];
+  if (status) conditions.push(eq(leadsTable.status, status as any));
+  if (source) conditions.push(eq(leadsTable.source, source as string));
+  const rows = await db.select().from(leadsTable)
+    .where(and(...conditions))
+    .orderBy(desc(leadsTable.createdAt));
   res.json(rows.map(l => ({
     ...l,
     area: Number(l.area),

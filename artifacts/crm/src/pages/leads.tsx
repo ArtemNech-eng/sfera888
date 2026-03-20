@@ -4,7 +4,7 @@ import { useGetLeads, useCreateLead, useSendLeadToBuffer, useGetCities, useGetSe
 import { ProtectedRoute } from "@/hooks/use-auth";
 import { StatusBadge } from "@/components/status-badge";
 import { formatDate } from "@/lib/utils";
-import { Loader2, Plus, Search, Filter, Play, Trash2, User, Phone, MapPin, ChevronDown, Sparkles, Images, Pencil, X, Calendar, Radio, Save } from "lucide-react";
+import { Loader2, Plus, Search, Filter, Play, Trash2, User, Phone, MapPin, ChevronDown, Sparkles, Images, Pencil, X, Calendar, Radio, Save, Ban, UserX, MessageSquare, ExternalLink, CheckCircle2 } from "lucide-react";
 import { PhotoUploader } from "@/components/photo-uploader";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -44,9 +44,11 @@ const SOURCE_OPTIONS = [
 
 export default function Leads() {
   const [statusFilter, setStatusFilter] = useState<string>("");
+  const [sourceFilter, setSourceFilter] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingLead, setEditingLead] = useState<LeadRow | null>(null);
+  const [confirmSendLead, setConfirmSendLead] = useState<LeadRow | null>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -78,10 +80,35 @@ export default function Leads() {
 
   const sendToWorkMutation = useSendLeadToBuffer({
     mutation: {
-      onSuccess: () => {
+      onSuccess: (data: any) => {
         queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
-      }
+        setConfirmSendLead(null);
+        toast({
+          title: "Заявка отправлена в работу",
+          description: data?.id ? `Создан заказ #${data.id}` : "Заказ создан",
+        });
+      },
+      onError: () => {
+        toast({ title: "Ошибка отправки", variant: "destructive" });
+      },
     }
+  });
+
+  const quickStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: string }) => {
+      const r = await fetch(`/api/leads/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ status }),
+      });
+      if (!r.ok) throw new Error("Ошибка");
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+    },
+    onError: () => toast({ title: "Ошибка смены статуса", variant: "destructive" }),
   });
 
   const [formData, setFormData] = useState({
@@ -211,9 +238,10 @@ export default function Leads() {
           l.district?.toLowerCase().includes(q);
         if (!matches) return false;
       }
+      if (sourceFilter && l.source !== sourceFilter) return false;
       return true;
     });
-  }, [leads, searchQuery]);
+  }, [leads, searchQuery, sourceFilter]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -255,15 +283,15 @@ export default function Leads() {
           </div>
 
           {/* Filters */}
-          <div className="flex flex-col sm:flex-row gap-4 bg-card p-4 rounded-2xl border border-border/50 shadow-sm">
-            <div className="flex-1 relative">
+          <div className="flex flex-col sm:flex-row gap-3 bg-card p-4 rounded-2xl border border-border/50 shadow-sm flex-wrap">
+            <div className="flex-1 min-w-[200px] relative">
               <Search className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
               <input 
                 type="text"
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 placeholder="Поиск по имени, телефону, городу..."
-                className="w-full pl-9 pr-4 py-2 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20"
+                className="w-full pl-9 pr-4 py-2 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm"
               />
               {searchQuery && (
                 <button onClick={() => setSearchQuery("")} className="absolute right-3 top-3 text-muted-foreground hover:text-foreground">
@@ -271,12 +299,12 @@ export default function Leads() {
                 </button>
               )}
             </div>
-            <div className="w-full sm:w-64 relative">
-              <Filter className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
+            <div className="w-full sm:w-48 relative">
+              <Filter className="w-4 h-4 absolute left-3 top-3 text-muted-foreground pointer-events-none" />
               <select 
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 appearance-none"
+                className="w-full pl-9 pr-4 py-2 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 appearance-none text-sm"
               >
                 <option value="">Все статусы</option>
                 <option value={LeadStatus.new}>Новые</option>
@@ -286,52 +314,74 @@ export default function Leads() {
                 <option value={LeadStatus.client_refusal}>Отказ</option>
               </select>
             </div>
-            {!isLoading && (
-              <div className="flex items-center text-xs text-muted-foreground whitespace-nowrap self-center">
-                {filteredLeads.length} {filteredLeads.length === 1 ? "заявка" : filteredLeads.length < 5 ? "заявки" : "заявок"}
-                {leads && filteredLeads.length !== leads.length && (
-                  <span className="text-muted-foreground/50 ml-1">из {leads.length}</span>
-                )}
-              </div>
-            )}
+            <div className="w-full sm:w-48 relative">
+              <Radio className="w-4 h-4 absolute left-3 top-3 text-muted-foreground pointer-events-none" />
+              <select
+                value={sourceFilter}
+                onChange={e => setSourceFilter(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 appearance-none text-sm"
+              >
+                <option value="">Все источники</option>
+                {SOURCE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+            <div className="flex items-center gap-3 self-center">
+              {!isLoading && (
+                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                  {filteredLeads.length} {filteredLeads.length === 1 ? "заявка" : filteredLeads.length < 5 ? "заявки" : "заявок"}
+                  {leads && filteredLeads.length !== (leads as unknown as LeadRow[]).length && (
+                    <span className="text-muted-foreground/50 ml-1">из {(leads as unknown as LeadRow[]).length}</span>
+                  )}
+                </span>
+              )}
+              {(statusFilter || sourceFilter || searchQuery) && (
+                <button
+                  onClick={() => { setStatusFilter(""); setSourceFilter(""); setSearchQuery(""); }}
+                  className="text-xs text-primary hover:underline whitespace-nowrap"
+                >
+                  Сбросить
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Table */}
           <div className="bg-card rounded-2xl border border-border/50 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
-                <thead className="bg-slate-50/50 text-muted-foreground font-medium border-b border-border/50">
+                <thead className="bg-slate-50/50 text-muted-foreground font-medium border-b border-border/50 text-xs uppercase tracking-wide">
                   <tr>
-                    <th className="px-6 py-4">ID / Дата</th>
-                    <th className="px-6 py-4">Клиент</th>
-                    <th className="px-6 py-4">Локация</th>
-                    <th className="px-6 py-4">Услуги</th>
-                    <th className="px-4 py-4">Фото</th>
-                    <th className="px-6 py-4">Статус</th>
-                    <th className="px-6 py-4 text-right">Действия</th>
+                    <th className="px-5 py-3.5">ID / Дата</th>
+                    <th className="px-5 py-3.5">Клиент</th>
+                    <th className="px-5 py-3.5">Локация</th>
+                    <th className="px-5 py-3.5">Услуги / Комментарий</th>
+                    <th className="px-4 py-3.5">Фото</th>
+                    <th className="px-5 py-3.5">Статус</th>
+                    <th className="px-5 py-3.5 text-right">Действия</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/50">
                   {isLoading ? (
                     <tr>
-                      <td colSpan={6} className="px-6 py-12 text-center">
+                      <td colSpan={7} className="px-6 py-12 text-center">
                         <Loader2 className="w-6 h-6 animate-spin text-primary mx-auto" />
                       </td>
                     </tr>
                   ) : filteredLeads.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-6 py-12 text-center text-muted-foreground">
-                        {searchQuery ? "Ничего не найдено по запросу" : "Заявок не найдено"}
+                      <td colSpan={7} className="px-6 py-12 text-center text-muted-foreground">
+                        {searchQuery || statusFilter || sourceFilter ? "Ничего не найдено по выбранным фильтрам" : "Заявок не найдено"}
                       </td>
                     </tr>
                   ) : filteredLeads.map((lead) => {
                     const srvs = lead.services;
                     const estimate = srvs ? srvs.reduce((sum, s) => sum + s.area * (s.pricePerM2 || 0), 0) : 0;
                     const sourceName = SOURCE_OPTIONS.find(o => o.value === lead.source)?.label;
+                    const isActive = lead.status === LeadStatus.new || lead.status === LeadStatus.processing;
                     return (
                       <tr key={lead.id} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="px-6 py-4">
-                          <span className="font-medium text-foreground">#{lead.id}</span>
+                        <td className="px-5 py-4">
+                          <span className="font-mono font-semibold text-foreground text-xs">#{lead.id}</span>
                           <div className="text-xs text-muted-foreground mt-1">{formatDate(lead.createdAt)}</div>
                           {lead.scheduledAt && (
                             <div className="inline-flex items-center gap-1 mt-1.5 text-[10px] font-medium bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded-full">
@@ -340,25 +390,32 @@ export default function Leads() {
                             </div>
                           )}
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-5 py-4">
                           <div className="font-medium text-foreground">{lead.clientName}</div>
-                          <div className="text-xs text-muted-foreground mt-1">{lead.clientPhone}</div>
+                          <a
+                            href={`tel:${lead.clientPhone}`}
+                            className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-0.5"
+                            onClick={e => e.stopPropagation()}
+                          >
+                            <Phone className="w-2.5 h-2.5" />
+                            {lead.clientPhone}
+                          </a>
                           {sourceName && (
                             <div className="text-[10px] mt-1 text-slate-400">{sourceName}</div>
                           )}
                         </td>
-                        <td className="px-6 py-4">
-                          <div className="text-foreground">{lead.city}</div>
-                          <div className="text-xs text-muted-foreground mt-1">{lead.district}</div>
+                        <td className="px-5 py-4">
+                          <div className="text-foreground text-sm">{lead.city}</div>
+                          {lead.district && <div className="text-xs text-muted-foreground mt-0.5">{lead.district}</div>}
                         </td>
-                        <td className="px-6 py-4 max-w-[280px]">
+                        <td className="px-5 py-4 max-w-[260px]">
                           {srvs && srvs.length > 0 ? (
                             <div className="space-y-1.5">
-                              <div className="flex flex-wrap gap-1.5">
+                              <div className="flex flex-wrap gap-1">
                                 {srvs.map((s, i) => {
                                   const lineTotal = s.area * (s.pricePerM2 || 0);
                                   return (
-                                    <div key={i} className="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1">
+                                    <div key={i} className="inline-flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-0.5">
                                       <span className="text-xs font-medium text-slate-700">{s.type}</span>
                                       <span className="w-px h-3 bg-slate-300" />
                                       <span className="text-xs text-slate-500">{s.area} м²</span>
@@ -374,27 +431,32 @@ export default function Leads() {
                               </div>
                               {estimate > 0 && (
                                 <div className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full">
-                                  <span>Итого:</span>
-                                  <span>{fmt(estimate)}</span>
+                                  Итого: {fmt(estimate)}
                                 </div>
                               )}
                             </div>
                           ) : (
-                            <div className="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1">
+                            <div className="inline-flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-0.5">
                               <span className="text-xs font-medium text-slate-700">{lead.serviceType}</span>
                               <span className="w-px h-3 bg-slate-300" />
                               <span className="text-xs text-slate-500">{lead.area} м²</span>
+                            </div>
+                          )}
+                          {lead.comment && (
+                            <div className="flex items-start gap-1 mt-1.5">
+                              <MessageSquare className="w-3 h-3 text-slate-400 mt-0.5 flex-shrink-0" />
+                              <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">{lead.comment}</p>
                             </div>
                           )}
                         </td>
                         {/* Photos thumbnails */}
                         <td className="px-4 py-4">
                           {(() => {
-                            const photos = (lead as any).photos as string[] | null;
+                            const photos = lead.photos as string[] | null;
                             if (!photos || photos.length === 0) return <span className="text-xs text-gray-300">—</span>;
                             return (
                               <div className="flex items-center gap-1">
-                                {photos.slice(0, 3).map((p, i) => (
+                                {photos.slice(0, 2).map((p, i) => (
                                   <img
                                     key={i}
                                     src={`/api/storage${p}`}
@@ -402,27 +464,47 @@ export default function Leads() {
                                     className="w-9 h-9 rounded-lg object-cover border border-gray-200 shadow-sm"
                                   />
                                 ))}
-                                {photos.length > 3 && (
+                                {photos.length > 2 && (
                                   <span className="w-9 h-9 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center text-xs font-semibold text-gray-500">
-                                    +{photos.length - 3}
+                                    +{photos.length - 2}
                                   </span>
                                 )}
                               </div>
                             );
                           })()}
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-5 py-4">
                           <StatusBadge status={lead.status} type="lead" />
                         </td>
-                        <td className="px-6 py-4 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            {(lead.status === LeadStatus.new || lead.status === LeadStatus.processing) && (
+                        <td className="px-5 py-4">
+                          <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                            {isActive && (
                               <button
-                                onClick={() => sendToWorkMutation.mutate({ id: lead.id })}
+                                onClick={() => setConfirmSendLead(lead)}
                                 disabled={sendToWorkMutation.isPending}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground rounded-lg font-medium text-xs transition-colors"
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground rounded-lg font-medium text-xs transition-colors"
                               >
                                 <Play className="w-3 h-3" /> В работу
+                              </button>
+                            )}
+                            {isActive && (
+                              <button
+                                onClick={() => quickStatusMutation.mutate({ id: lead.id, status: "non_target" })}
+                                disabled={quickStatusMutation.isPending}
+                                title="Нецелевая"
+                                className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-orange-500 hover:bg-orange-50 transition-all"
+                              >
+                                <Ban className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            {isActive && (
+                              <button
+                                onClick={() => quickStatusMutation.mutate({ id: lead.id, status: "client_refusal" })}
+                                disabled={quickStatusMutation.isPending}
+                                title="Отказ клиента"
+                                className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all"
+                              >
+                                <UserX className="w-3.5 h-3.5" />
                               </button>
                             )}
                             <button
@@ -748,6 +830,61 @@ export default function Leads() {
                   </div>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* Confirmation dialog: send to work */}
+        {confirmSendLead && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.55)", backdropFilter: "blur(6px)" }}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <CheckCircle2 className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900">Отправить в работу?</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">Будет создан новый заказ</p>
+                </div>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3 mb-5 space-y-1.5 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Клиент</span>
+                  <span className="font-medium text-gray-800">{confirmSendLead.clientName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Телефон</span>
+                  <span className="font-medium text-gray-800">{confirmSendLead.clientPhone}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Город</span>
+                  <span className="font-medium text-gray-800">{confirmSendLead.city}{confirmSendLead.district ? `, ${confirmSendLead.district}` : ""}</span>
+                </div>
+                {confirmSendLead.services && confirmSendLead.services.length > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Услуги</span>
+                    <span className="font-medium text-gray-800 text-right max-w-[160px]">{confirmSendLead.services.map(s => s.type).join(", ")}</span>
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setConfirmSendLead(null)}
+                  className="flex-1 px-4 py-2.5 rounded-xl font-medium text-gray-500 hover:bg-gray-100 transition-colors text-sm"
+                >
+                  Отмена
+                </button>
+                <button
+                  onClick={() => sendToWorkMutation.mutate({ id: confirmSendLead.id })}
+                  disabled={sendToWorkMutation.isPending}
+                  className="flex-1 px-4 py-2.5 bg-primary text-white rounded-xl font-semibold hover:bg-primary/90 flex items-center justify-center gap-2 disabled:opacity-50 transition-all text-sm"
+                >
+                  {sendToWorkMutation.isPending
+                    ? <Loader2 className="w-4 h-4 animate-spin" />
+                    : <Play className="w-4 h-4" />}
+                  Отправить
+                </button>
+              </div>
             </div>
           </div>
         )}
