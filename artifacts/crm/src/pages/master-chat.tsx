@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { Layout } from "@/components/layout";
 import { ProtectedRoute } from "@/hooks/use-auth";
 import { useAuth } from "@/hooks/use-auth";
-import { Send, MessageSquare, RefreshCw, Check, CheckCheck, Paperclip, X, Camera, DollarSign, AlertCircle, RotateCcw, Pencil, Loader2, UserCheck, MapPin, Smile, ChevronRight, User2, Trash2 } from "lucide-react";
+import { Send, MessageSquare, RefreshCw, Check, CheckCheck, Paperclip, X, Camera, DollarSign, AlertCircle, RotateCcw, Pencil, Loader2, UserCheck, MapPin, Smile, ChevronRight, User2, Trash2, Search, Phone, ChevronDown, Filter } from "lucide-react";
 import { MasterDrawer, type DrawerMaster, type DrawerColumn } from "@/components/master-drawer";
 import { format, formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -19,12 +19,15 @@ interface Thread {
   masterId: number;
   alias: string;
   city: string;
+  phone: string | null;
   telegramId: string | null;
   pwaLogin: string | null;
+  lastSeenAt: string | null;
   avatarUrl: string | null;
   lastMessage: string;
   lastAt: string;
   unread: number;
+  lastFromMaster: boolean;
 }
 
 interface Message {
@@ -41,11 +44,33 @@ interface Message {
 }
 
 interface ConversationData {
-  master: { id: number; alias: string; city: string; telegramId: string | null; pwaLogin: string | null; avatarUrl: string | null };
+  master: { id: number; alias: string; city: string; phone: string | null; telegramId: string | null; pwaLogin: string | null; avatarUrl: string | null };
   messages: Message[];
   pendingTransactions: PendingTransaction[];
   hasPaymentProof: boolean;
   paymentProofUrl: string | null;
+}
+
+// ─── Helper: is master online (seen within 5 min) ─────────────────────────────
+function isOnline(lastSeenAt: string | null): boolean {
+  if (!lastSeenAt) return false;
+  return Date.now() - new Date(lastSeenAt).getTime() < 5 * 60 * 1000;
+}
+
+// ─── Helper: date separator label ─────────────────────────────────────────────
+function dateSeparatorLabel(dateStr: string): string {
+  const d = new Date(dateStr);
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfYesterday = new Date(startOfToday.getTime() - 86400000);
+  if (d >= startOfToday) return "Сегодня";
+  if (d >= startOfYesterday) return "Вчера";
+  return format(d, "d MMMM yyyy", { locale: ru });
+}
+
+function msgDateKey(dateStr: string): string {
+  const d = new Date(dateStr);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 }
 
 interface PendingOrder {
@@ -122,6 +147,14 @@ export default function MasterChat() {
   // Master drawer overlay
   const [drawerMaster, setDrawerMaster] = useState<DrawerMaster | null>(null);
   const [drawerColumns, setDrawerColumns] = useState<DrawerColumn[]>([]);
+
+  // Thread list filters
+  const [threadSearch, setThreadSearch] = useState("");
+  const [unreadOnly, setUnreadOnly] = useState(false);
+
+  // Scroll-to-bottom
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const messagesAreaRef = useRef<HTMLDivElement>(null);
 
   // Emoji picker
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -430,6 +463,27 @@ export default function MasterChat() {
 
   const totalUnread = threads.reduce((s, t) => s + t.unread, 0);
 
+  const filteredThreads = threads.filter(t => {
+    if (unreadOnly && t.unread === 0) return false;
+    if (threadSearch) {
+      const q = threadSearch.toLowerCase();
+      return t.alias.toLowerCase().includes(q) || t.city.toLowerCase().includes(q) || (t.phone ?? "").includes(q);
+    }
+    return true;
+  });
+
+  // Scroll-to-bottom button visibility
+  const handleMessagesScroll = () => {
+    const el = messagesAreaRef.current;
+    if (!el) return;
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setShowScrollBtn(distFromBottom > 200);
+  };
+
+  const scrollToBottom = () => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
   return (
     <ProtectedRoute allowedRoles={["admin", "master_operator", "lead_operator"]} permissionKey="master-chat">
       <Layout>
@@ -457,10 +511,39 @@ export default function MasterChat() {
           <div className="flex-1 flex gap-4 min-h-0">
             {/* Threads list */}
             <div className="w-72 flex-shrink-0 bg-white border border-gray-100 rounded-2xl overflow-hidden flex flex-col shadow-sm">
-              <div className="px-4 py-3 border-b border-gray-50">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                  {loading ? "Загрузка..." : `${threads.length} диалогов`}
-                </p>
+              {/* Sidebar header with search + filter */}
+              <div className="px-3 py-2.5 border-b border-gray-50 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    {loading ? "Загрузка..." : `${filteredThreads.length} из ${threads.length}`}
+                  </p>
+                  <button
+                    onClick={() => setUnreadOnly(v => !v)}
+                    title="Только непрочитанные"
+                    className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold transition-colors ${
+                      unreadOnly
+                        ? "bg-blue-500 text-white"
+                        : "text-gray-400 hover:bg-gray-100"
+                    }`}
+                  >
+                    <Filter className="w-3 h-3" />
+                    {unreadOnly ? "Непрочит." : totalUnread > 0 ? `${totalUnread} новых` : "Все"}
+                  </button>
+                </div>
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                  <input
+                    value={threadSearch}
+                    onChange={e => setThreadSearch(e.target.value)}
+                    placeholder="Поиск по имени..."
+                    className="w-full pl-8 pr-7 py-1.5 text-xs border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-100 bg-gray-50"
+                  />
+                  {threadSearch && (
+                    <button onClick={() => setThreadSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400">
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="flex-1 overflow-y-auto">
                 {threads.length === 0 && !loading && (
@@ -470,43 +553,64 @@ export default function MasterChat() {
                     <p className="text-xs text-gray-300 mt-1">Мастера пишут через приложение</p>
                   </div>
                 )}
-                {threads.map(t => (
-                  <div
-                    key={t.masterId}
-                    className={`group relative border-b border-gray-50 hover:bg-gray-50 transition-colors cursor-pointer ${
-                      selectedId === t.masterId ? "bg-blue-50 border-l-2 border-l-blue-500" : ""
-                    }`}
-                    onClick={() => setSelectedId(t.masterId)}
-                  >
-                    <div className="flex items-center gap-2.5 px-3 py-2.5">
-                      <div className="relative flex-shrink-0">
-                        <ChatAvatar name={t.alias} id={t.masterId} avatarUrl={t.avatarUrl} size={36} />
-                        {t.unread > 0 && (
-                          <span className="absolute -top-0.5 -right-0.5 bg-blue-500 text-white text-[9px] font-bold rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5">
-                            {t.unread > 9 ? "9+" : t.unread}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-1">
-                          <span className={`font-semibold text-sm truncate ${t.unread > 0 ? "text-gray-900" : "text-gray-700"}`}>{t.alias}</span>
-                          <span className="text-[10px] text-gray-300 flex-shrink-0 group-hover:hidden">{timeAgo(t.lastAt)}</span>
-                          {user?.role === "admin" && (
-                            <button
-                              onClick={e => { e.stopPropagation(); setSelectedId(t.masterId); setShowDeleteDialog(true); }}
-                              className="hidden group-hover:flex items-center justify-center w-6 h-6 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors flex-shrink-0"
-                              title="Удалить диалог"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                {filteredThreads.length === 0 && threads.length > 0 && (
+                  <div className="flex flex-col items-center justify-center py-8 text-center px-4">
+                    <p className="text-sm text-gray-300">Ничего не найдено</p>
+                  </div>
+                )}
+                {filteredThreads.map(t => {
+                  const online = isOnline(t.lastSeenAt);
+                  const lastMsgPreview = t.lastFromMaster
+                    ? t.lastMessage
+                    : `Вы: ${t.lastMessage}`;
+                  return (
+                    <div
+                      key={t.masterId}
+                      className={`group relative border-b border-gray-50 hover:bg-gray-50 transition-colors cursor-pointer ${
+                        selectedId === t.masterId ? "bg-blue-50 border-l-2 border-l-blue-500" : ""
+                      }`}
+                      onClick={() => setSelectedId(t.masterId)}
+                    >
+                      <div className="flex items-center gap-2.5 px-3 py-2.5">
+                        <div className="relative flex-shrink-0">
+                          <ChatAvatar name={t.alias} id={t.masterId} avatarUrl={t.avatarUrl} size={36} />
+                          {/* Online dot */}
+                          {online && (
+                            <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-400 border-2 border-white rounded-full" />
+                          )}
+                          {/* Unread badge */}
+                          {t.unread > 0 && !online && (
+                            <span className="absolute -top-0.5 -right-0.5 bg-blue-500 text-white text-[9px] font-bold rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5">
+                              {t.unread > 9 ? "9+" : t.unread}
+                            </span>
+                          )}
+                          {t.unread > 0 && online && (
+                            <span className="absolute -top-0.5 -right-0.5 bg-blue-500 text-white text-[9px] font-bold rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5">
+                              {t.unread > 9 ? "9+" : t.unread}
+                            </span>
                           )}
                         </div>
-                        <p className="text-[11px] text-gray-400 truncate">{t.city}</p>
-                        <p className={`text-xs mt-0.5 truncate ${t.unread > 0 ? "text-gray-700 font-medium" : "text-gray-400"}`}>{t.lastMessage}</p>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-1">
+                            <span className={`font-semibold text-sm truncate ${t.unread > 0 ? "text-gray-900" : "text-gray-700"}`}>{t.alias}</span>
+                            <span className="text-[10px] text-gray-300 flex-shrink-0 group-hover:hidden">{timeAgo(t.lastAt)}</span>
+                            {user?.role === "admin" && (
+                              <button
+                                onClick={e => { e.stopPropagation(); setSelectedId(t.masterId); setShowDeleteDialog(true); }}
+                                className="hidden group-hover:flex items-center justify-center w-6 h-6 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors flex-shrink-0"
+                                title="Удалить диалог"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-gray-400 truncate">{t.city}{online ? " · 🟢 онлайн" : ""}</p>
+                          <p className={`text-xs mt-0.5 truncate ${t.unread > 0 ? "text-gray-700 font-medium" : "text-gray-400"}`}>{lastMsgPreview}</p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
@@ -545,11 +649,34 @@ export default function MasterChat() {
                         </span>
                       </button>
                       <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-sm text-gray-800">{conv.master.alias}</p>
-                        <p className="text-[11px] text-gray-400">
-                          {conv.master.city}
-                          {conv.master.pwaLogin && <span className="ml-1 text-emerald-500">· Приложение</span>}
-                        </p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold text-sm text-gray-800">{conv.master.alias}</p>
+                          {(() => {
+                            const thread = threads.find(t => t.masterId === conv.master.id);
+                            return isOnline(thread?.lastSeenAt ?? null) ? (
+                              <span className="flex items-center gap-1 text-[10px] text-emerald-600 font-semibold">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-pulse" />
+                                Онлайн
+                              </span>
+                            ) : null;
+                          })()}
+                        </div>
+                        <div className="flex items-center gap-2.5 flex-wrap">
+                          <p className="text-[11px] text-gray-400">
+                            {conv.master.city}
+                            {conv.master.pwaLogin && <span className="ml-1 text-emerald-500">· Приложение</span>}
+                          </p>
+                          {conv.master.phone && (
+                            <a
+                              href={`tel:${conv.master.phone}`}
+                              className="flex items-center gap-1 text-[11px] text-blue-500 hover:text-blue-700 font-medium transition-colors"
+                              onClick={e => e.stopPropagation()}
+                            >
+                              <Phone className="w-2.5 h-2.5" />
+                              {conv.master.phone}
+                            </a>
+                          )}
+                        </div>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
                         {/* Open master card button */}
@@ -609,15 +736,42 @@ export default function MasterChat() {
                   )}
 
                   {/* Messages */}
-                  <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
-                    {conv?.messages.map(msg => {
-                      // System event — render as centered gray pill
+                  <div
+                    ref={messagesAreaRef}
+                    onScroll={handleMessagesScroll}
+                    className="flex-1 overflow-y-auto p-4 space-y-2.5 relative"
+                  >
+                    {/* Scroll to bottom button */}
+                    {showScrollBtn && (
+                      <button
+                        onClick={scrollToBottom}
+                        className="sticky bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 bg-blue-500 text-white text-xs font-semibold px-3 py-1.5 rounded-full shadow-lg hover:bg-blue-600 transition-colors"
+                      >
+                        <ChevronDown className="w-3.5 h-3.5" />
+                        Вниз
+                      </button>
+                    )}
+                    {conv?.messages.map((msg, idx) => {
+                      const currentKey = msgDateKey(msg.createdAt);
+                      const prevKey = idx > 0 ? msgDateKey(conv.messages[idx - 1].createdAt) : null;
+                      const showDateSep = idx === 0 || currentKey !== prevKey;
+                      const dateSepEl = showDateSep ? (
+                        <div className="flex justify-center my-2">
+                          <span className="text-[10px] text-gray-400 bg-gray-100 rounded-full px-3 py-1 font-medium">
+                            {dateSeparatorLabel(msg.createdAt)}
+                          </span>
+                        </div>
+                      ) : null;
+
                       if (msg.senderName === "system") {
                         return (
-                          <div key={msg.id} className="flex justify-center my-1">
-                            <div className="flex items-center gap-1.5 bg-gray-100 text-gray-500 text-[11px] rounded-full px-3 py-1">
-                              <span>{msg.text}</span>
-                              <span className="text-gray-400 text-[10px]">{timeStamp(msg.createdAt)}</span>
+                          <div key={msg.id}>
+                            {dateSepEl}
+                            <div className="flex justify-center my-1">
+                              <div className="flex items-center gap-1.5 bg-gray-100 text-gray-500 text-[11px] rounded-full px-3 py-1">
+                                <span>{msg.text}</span>
+                                <span className="text-gray-400 text-[10px]">{timeStamp(msg.createdAt)}</span>
+                              </div>
                             </div>
                           </div>
                         );
@@ -627,85 +781,57 @@ export default function MasterChat() {
                       const senderLabel = msg.senderName ?? (isMaster ? conv.master.alias : "Оператор");
                       const isEditing = editingMessageId === msg.id;
                       return (
-                        <div key={msg.id} className={`flex items-end gap-2 group ${isMaster ? "justify-start" : "justify-end"}`}>
-                          {/* Master avatar — left */}
-                          {isMaster && (
-                            <ChatAvatar name={conv.master.alias} id={conv.master.id} avatarUrl={conv.master.avatarUrl} size={28} />
-                          )}
-                          {/* Edit button for operator messages */}
-                          {!isMaster && !isEditing && (
-                            <button
-                              onClick={() => { setEditingMessageId(msg.id); setEditingText(msg.text); }}
-                              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-gray-100 rounded-lg flex-shrink-0 self-center"
-                              title="Редактировать"
-                            >
-                              <Pencil className="w-3 h-3 text-gray-400" />
-                            </button>
-                          )}
-                          {/* Bubble */}
-                          <div className={`max-w-[70%] rounded-2xl px-3.5 py-2.5 ${
-                            isMaster
-                              ? "bg-gray-100 text-gray-800 rounded-bl-sm"
-                              : "bg-blue-500 text-white rounded-br-sm"
-                          }`}>
-                            <p className={`text-[10px] font-semibold mb-1 ${isMaster ? "text-gray-500" : "text-blue-100"}`}>
-                              {senderLabel}
-                            </p>
-                            {msg.photoUrl && (
-                              <a href={resolvePhotoUrl(msg.photoUrl)} target="_blank" rel="noopener noreferrer" className="block mb-2">
-                                <img
-                                  src={resolvePhotoUrl(msg.photoUrl)} alt="фото"
-                                  className="rounded-xl max-w-full max-h-52 object-cover cursor-zoom-in"
-                                  onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
-                                />
-                              </a>
+                        <div key={msg.id}>
+                          {dateSepEl}
+                          <div className={`flex items-end gap-2 group ${isMaster ? "justify-start" : "justify-end"}`}>
+                            {isMaster && (
+                              <ChatAvatar name={conv.master.alias} id={conv.master.id} avatarUrl={conv.master.avatarUrl} size={28} />
                             )}
-                            {/* Inline edit or text */}
-                            {isEditing ? (
-                              <div className="space-y-1.5 mt-1">
-                                <textarea
-                                  value={editingText}
-                                  onChange={e => setEditingText(e.target.value)}
-                                  onKeyDown={e => {
-                                    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveEditMessage(); }
-                                    if (e.key === "Escape") { setEditingMessageId(null); setEditingText(""); }
-                                  }}
-                                  autoFocus
-                                  rows={2}
-                                  className="w-full bg-white/20 text-white placeholder-blue-200 border border-blue-300 rounded-lg px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-white resize-none"
-                                  style={{ minWidth: 200 }}
-                                />
-                                <div className="flex gap-1.5">
-                                  <button onClick={saveEditMessage}
-                                    className="flex-1 py-1 bg-white text-blue-600 rounded-lg text-[10px] font-semibold hover:bg-blue-50 transition-colors">
-                                    Сохранить
-                                  </button>
-                                  <button onClick={() => { setEditingMessageId(null); setEditingText(""); }}
-                                    className="py-1 px-2 bg-white/20 text-white rounded-lg text-[10px] hover:bg-white/30 transition-colors">
-                                    Отмена
-                                  </button>
+                            {!isMaster && !isEditing && (
+                              <button
+                                onClick={() => { setEditingMessageId(msg.id); setEditingText(msg.text); }}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-gray-100 rounded-lg flex-shrink-0 self-center"
+                                title="Редактировать"
+                              >
+                                <Pencil className="w-3 h-3 text-gray-400" />
+                              </button>
+                            )}
+                            <div className={`max-w-[70%] rounded-2xl px-3.5 py-2.5 ${isMaster ? "bg-gray-100 text-gray-800 rounded-bl-sm" : "bg-blue-500 text-white rounded-br-sm"}`}>
+                              <p className={`text-[10px] font-semibold mb-1 ${isMaster ? "text-gray-500" : "text-blue-100"}`}>{senderLabel}</p>
+                              {msg.photoUrl && (
+                                <a href={resolvePhotoUrl(msg.photoUrl)} target="_blank" rel="noopener noreferrer" className="block mb-2">
+                                  <img src={resolvePhotoUrl(msg.photoUrl)} alt="фото" className="rounded-xl max-w-full max-h-52 object-cover cursor-zoom-in" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                                </a>
+                              )}
+                              {isEditing ? (
+                                <div className="space-y-1.5 mt-1">
+                                  <textarea
+                                    value={editingText}
+                                    onChange={e => setEditingText(e.target.value)}
+                                    onKeyDown={e => {
+                                      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveEditMessage(); }
+                                      if (e.key === "Escape") { setEditingMessageId(null); setEditingText(""); }
+                                    }}
+                                    autoFocus rows={2}
+                                    className="w-full bg-white/20 text-white placeholder-blue-200 border border-blue-300 rounded-lg px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-white resize-none"
+                                    style={{ minWidth: 200 }}
+                                  />
+                                  <div className="flex gap-1.5">
+                                    <button onClick={saveEditMessage} className="flex-1 py-1 bg-white text-blue-600 rounded-lg text-[10px] font-semibold hover:bg-blue-50 transition-colors">Сохранить</button>
+                                    <button onClick={() => { setEditingMessageId(null); setEditingText(""); }} className="py-1 px-2 bg-white/20 text-white rounded-lg text-[10px] hover:bg-white/30 transition-colors">Отмена</button>
+                                  </div>
                                 </div>
+                              ) : (
+                                msg.text && <p className="text-sm leading-relaxed">{msg.text}</p>
+                              )}
+                              <div className={`flex items-center gap-1 mt-1 ${isMaster ? "justify-start" : "justify-end"}`}>
+                                <span className={`text-[10px] ${isMaster ? "text-gray-400" : "text-blue-100"}`}>{timeStamp(msg.createdAt)}</span>
+                                {msg.editedAt && <span className={`text-[9px] italic ${isMaster ? "text-gray-400" : "text-blue-200"}`}>изм.</span>}
+                                {!isMaster && (msg.isRead ? <CheckCheck className="w-3 h-3 text-blue-200" /> : <Check className="w-3 h-3 text-blue-200" />)}
                               </div>
-                            ) : (
-                              msg.text && <p className="text-sm leading-relaxed">{msg.text}</p>
-                            )}
-                            <div className={`flex items-center gap-1 mt-1 ${isMaster ? "justify-start" : "justify-end"}`}>
-                              <span className={`text-[10px] ${isMaster ? "text-gray-400" : "text-blue-100"}`}>
-                                {timeStamp(msg.createdAt)}
-                              </span>
-                              {msg.editedAt && (
-                                <span className={`text-[9px] italic ${isMaster ? "text-gray-400" : "text-blue-200"}`}>изм.</span>
-                              )}
-                              {!isMaster && (msg.isRead
-                                ? <CheckCheck className="w-3 h-3 text-blue-200" />
-                                : <Check className="w-3 h-3 text-blue-200" />
-                              )}
                             </div>
+                            {!isMaster && <ChatAvatar name={senderLabel} id={0} size={28} />}
                           </div>
-                          {/* Operator avatar — right */}
-                          {!isMaster && (
-                            <ChatAvatar name={senderLabel} id={0} size={28} />
-                          )}
                         </div>
                       );
                     })}

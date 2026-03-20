@@ -76,14 +76,15 @@ router.get("/", requireRole("admin", "master_operator"), async (_req, res) => {
     : [];
   const tgAvatarMap = new Map(tgChats.map(c => [c.telegramChatId, c.avatarUrl ?? null]));
 
-  const threadMap = new Map<number, { lastMessage: string; lastAt: Date; unread: number; telegramChatId: string }>();
+  const threadMap = new Map<number, { lastMessage: string; lastAt: Date; unread: number; telegramChatId: string; lastFromMaster: boolean }>();
   for (const msg of messages) {
     if (!threadMap.has(msg.masterId)) {
       threadMap.set(msg.masterId, {
-        lastMessage: msg.photoUrl ? "📷 Фото" : msg.text,
+        lastMessage: msg.photoUrl ? "📷 Фото" : (msg.senderName === "system" ? `⚙ ${msg.text}` : msg.text),
         lastAt: msg.createdAt,
         unread: 0,
         telegramChatId: msg.telegramChatId,
+        lastFromMaster: msg.fromMaster,
       });
     }
     if (msg.fromMaster && !msg.isRead) {
@@ -99,12 +100,15 @@ router.get("/", requireRole("admin", "master_operator"), async (_req, res) => {
       masterId,
       alias: master?.alias ?? "Неизвестный мастер",
       city: master?.city ?? "",
+      phone: master?.phone ?? null,
       telegramId: master?.telegramId ?? null,
       pwaLogin: master?.pwaLogin ?? null,
+      lastSeenAt: master?.lastSeenAt ?? null,
       avatarUrl,
       lastMessage: info.lastMessage,
       lastAt: info.lastAt,
       unread: info.unread,
+      lastFromMaster: info.lastFromMaster,
     };
   });
 
@@ -157,7 +161,7 @@ router.get("/:masterId", requireRole("admin", "master_operator", "lead_operator"
   console.log(`[master-chat] masterId=${masterId} pendingTx count=${pendingTx.length} hasPaymentProof=${hasPaymentProof}`);
 
   res.json({
-    master: { id: master.id, alias: master.alias, city: master.city, telegramId: master.telegramId, pwaLogin: master.pwaLogin ?? null, avatarUrl },
+    master: { id: master.id, alias: master.alias, city: master.city, phone: master.phone ?? null, telegramId: master.telegramId, pwaLogin: master.pwaLogin ?? null, avatarUrl },
     messages,
     hasPaymentProof,
     paymentProofUrl,
