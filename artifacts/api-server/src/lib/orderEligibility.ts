@@ -93,12 +93,22 @@ export function getMasterEligibility(
     id: number;
     isTestMaster: boolean;
     debt: string | number;
+    passportVerified?: boolean | null;
   },
   currentActiveCount: number,
   overdueMasterIds: Set<number>,
 ): EligibilityResult {
   const debt = Number(master.debt);
   const isOverdue = overdueMasterIds.has(master.id);
+
+  // Admin must verify passport before master can accept orders
+  if (master.passportVerified !== true) {
+    return {
+      canAccept: false,
+      reason: "Договор и паспорт ещё не подтверждены администратором. Дождитесь проверки для получения заказов.",
+      limit: 0,
+    };
+  }
 
   if (isOverdue) {
     return {

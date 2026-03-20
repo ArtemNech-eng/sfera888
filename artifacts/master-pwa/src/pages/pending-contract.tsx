@@ -304,7 +304,7 @@ export default function PendingContractPage() {
         }
         return;
       }
-      toast.success("Договор подписан — аккаунт активирован!");
+      toast.success("Договор подписан! Ожидайте подтверждения администратора.");
       setStep("done");
       await refresh();
     } catch {
@@ -660,10 +660,13 @@ export default function PendingContractPage() {
                 <CheckCircle size={32} className="text-emerald-500" />
               </div>
               <h3 className="font-bold text-lg text-emerald-700">Договор подписан!</h3>
-              <p className="text-sm text-muted-foreground leading-relaxed">Ваш аккаунт активирован. Теперь вы можете принимать заявки.</p>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Ваши данные и фото паспорта переданы на проверку администратору.
+                После подтверждения вы получите уведомление в Telegram и сможете принимать заявки.
+              </p>
             </div>
             <button onClick={refresh} className="w-full h-12 bg-primary text-white font-semibold rounded-xl active:opacity-80">
-              Перейти в приложение
+              Ожидать подтверждения
             </button>
           </div>
         )}

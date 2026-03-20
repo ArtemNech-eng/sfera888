@@ -1,5 +1,5 @@
 import app from "./app";
-import { db, usersTable, voronkaColumnsTable } from "@workspace/db";
+import { db, usersTable, voronkaColumnsTable, mastersTable } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { eq, inArray } from "drizzle-orm";
 import { hashPassword } from "./lib/auth.js";
@@ -120,9 +120,24 @@ async function seedVoronkaColumns() {
   }
 }
 
+// One-time migration: active masters who existed before the admin-confirmation requirement
+// should be granted passportVerified=true so they are not blocked retroactively.
+async function grantPassportVerifiedToActiveMasters() {
+  const updated = await db.update(mastersTable)
+    .set({ passportVerified: true })
+    .where(
+      sql`status = 'active' AND (passport_verified IS FALSE OR passport_verified IS NULL)`
+    );
+  const count = (updated as any).rowCount ?? 0;
+  if (count > 0) {
+    console.log(`[startup] Granted passportVerified=true to ${count} existing active master(s)`);
+  }
+}
+
 runMigrations().catch(console.error);
 maybeResetAdminPassword().catch(console.error);
 seedVoronkaColumns().catch(console.error);
+grantPassportVerifiedToActiveMasters().catch(console.error);
 // Mark overdue commissions on startup and then every 6 hours
 checkOverdueTransactions().catch(console.error);
 setInterval(() => checkOverdueTransactions().catch(console.error), 6 * 60 * 60 * 1000);

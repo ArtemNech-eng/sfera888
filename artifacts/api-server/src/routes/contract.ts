@@ -174,25 +174,7 @@ router.post(
       verifyReg.valid ? null : `Страница прописки: ${verifyReg.note}`,
     ].filter(Boolean).join(" | ") || (verifyMain.note || verifyReg.note);
 
-    // Save to DB
-    await db.update(mastersTable)
-      .set({
-        contractSignedAt: new Date(),
-        contractSignIp: ip,
-        passportPhotoUrl: passportUrl,
-        passportRegPhotoUrl: passportRegUrl,
-        passportVerified: allValid,
-        passportVerifyNote: combinedNote,
-        contractFullName: fullName.trim(),
-        contractPassportNumber: passportNumber.trim(),
-        contractPassportDate: passportDate.trim(),
-        contractPassportIssuer: passportIssuer.trim(),
-        contractAddress: address.trim(),
-        status: allValid ? "active" : "pending_contract",
-        contractLink: null,
-      })
-      .where(eq(mastersTable.id, masterId));
-
+    // If AI rejected the passport, don't save — ask master to retry with better photos
     if (!allValid) {
       return res.status(422).json({
         error: "Паспорт не прошёл проверку",
@@ -202,7 +184,26 @@ router.post(
       });
     }
 
-    res.json({ success: true, note: combinedNote });
+    // AI passed — save but keep pending_contract: admin must manually confirm before master gets orders
+    await db.update(mastersTable)
+      .set({
+        contractSignedAt: new Date(),
+        contractSignIp: ip,
+        passportPhotoUrl: passportUrl,
+        passportRegPhotoUrl: passportRegUrl,
+        passportVerified: false,       // admin confirms via CRM
+        passportVerifyNote: combinedNote || "AI: паспорт прошёл проверку. Ожидает подтверждения администратора.",
+        contractFullName: fullName.trim(),
+        contractPassportNumber: passportNumber.trim(),
+        contractPassportDate: passportDate.trim(),
+        contractPassportIssuer: passportIssuer.trim(),
+        contractAddress: address.trim(),
+        status: "pending_contract",    // always wait for admin
+        contractLink: null,
+      })
+      .where(eq(mastersTable.id, masterId));
+
+    res.json({ success: true, note: combinedNote, pendingAdminConfirmation: true });
   },
 );
 
