@@ -18,13 +18,22 @@ router.get("/dashboard", adminOnly, async (req, res) => {
   const masters = await db.select().from(mastersTable).where(isNull(mastersTable.deletedAt));
   const transactions = await db.select().from(transactionsTable);
 
+  // Leads
   const leadsToday = leads.filter(l => l.createdAt >= todayStart).length;
   const leadsWeek = leads.filter(l => l.createdAt >= weekStart).length;
   const leadsMonth = leads.filter(l => l.createdAt >= monthStart).length;
+  const newLeads = leads.filter(l => l.status === "new").length;
 
+  // Orders
   const ordersTotal = orders.length;
   const ordersActive = orders.filter(o => ["waiting_master", "master_assigned", "in_progress"].includes(o.status)).length;
+  const ordersWaitingMaster = orders.filter(o => o.status === "waiting_master").length;
+  const cancellationRequests = orders.filter(o => o.status === "cancellation_requested").length;
+  const pendingAmounts = orders.filter(o => o.proposedAmount && !o.orderAmount).length;
+  const completedToday = orders.filter(o => o.status === "completed" && o.updatedAt >= todayStart).length;
+  const completedMonth = orders.filter(o => o.status === "completed" && o.updatedAt >= monthStart).length;
 
+  // Finance
   const paidTx = transactions.filter(t => t.paymentStatus === "paid");
   const monthTx = paidTx.filter(t => t.createdAt >= monthStart);
   const prevMonthTx = paidTx.filter(t => t.createdAt >= prevMonthStart && t.createdAt < monthStart);
@@ -37,6 +46,7 @@ router.get("/dashboard", adminOnly, async (req, res) => {
 
   const totalDebt = transactions.filter(t => t.paymentStatus !== "paid").reduce((s, t) => s + Number(t.commission), 0);
 
+  // Conversion
   const sentToWorkMonth = leads.filter(l => l.status === "sent_to_work" && l.createdAt >= monthStart).length;
   const leadsMonthTotal = leads.filter(l => l.createdAt >= monthStart).length;
   const conversionRate = leadsMonthTotal > 0 ? (sentToWorkMonth / leadsMonthTotal) * 100 : 0;
@@ -53,29 +63,52 @@ router.get("/dashboard", adminOnly, async (req, res) => {
     ? completedOrders.reduce((s, o) => s + Number(o.orderAmount), 0) / completedOrders.length
     : 0;
 
+  // Masters
+  const activeMasters = masters.filter(m => m.status === "active").length;
+
+  // Top masters by completed orders this month
+  const completedOrdersThisMonth = orders.filter(o => o.status === "completed" && o.updatedAt >= monthStart && o.masterId);
+  const masterCompletedCount: Record<number, number> = {};
+  const masterRevenueMonth: Record<number, number> = {};
+  for (const o of completedOrdersThisMonth) {
+    if (!o.masterId) continue;
+    masterCompletedCount[o.masterId] = (masterCompletedCount[o.masterId] ?? 0) + 1;
+    masterRevenueMonth[o.masterId] = (masterRevenueMonth[o.masterId] ?? 0) + Number(o.orderAmount ?? 0);
+  }
+
   const topMasters = masters
-    .sort((a, b) => Number(b.rating) - Number(a.rating))
-    .slice(0, 10)
+    .filter(m => m.status === "active")
     .map(m => ({
       id: m.id,
       alias: m.alias,
       rating: Number(m.rating),
       totalOrders: m.totalOrders,
       city: m.city,
-    }));
+      completedMonth: masterCompletedCount[m.id] ?? 0,
+      revenueMonth: masterRevenueMonth[m.id] ?? 0,
+    }))
+    .sort((a, b) => b.completedMonth - a.completedMonth || b.totalOrders - a.totalOrders)
+    .slice(0, 8);
 
   res.json({
     leadsToday,
     leadsWeek,
     leadsMonth,
+    newLeads,
     ordersTotal,
     ordersActive,
+    ordersWaitingMaster,
+    cancellationRequests,
+    pendingAmounts,
+    completedToday,
+    completedMonth,
     incomeMonth,
     incomeTrend,
     totalDebt,
     conversionRate: Math.round(conversionRate * 10) / 10,
     conversionTrend,
     avgCheck: Math.round(avgCheck),
+    activeMasters,
     topMasters,
   });
 });
