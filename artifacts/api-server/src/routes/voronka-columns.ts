@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, voronkaColumnsTable, mastersTable, ordersTable, leadsTable, telegramChatsTable } from "@workspace/db";
+import { db, voronkaColumnsTable, mastersTable, ordersTable, leadsTable, telegramChatsTable, transactionsTable } from "@workspace/db";
 import { eq, inArray, and, isNull } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
 
@@ -77,6 +77,17 @@ router.get("/masters", requireAuth, async (_req, res) => {
     : [];
   const avatarMap = new Map(tgChats.map(c => [c.telegramChatId, c.avatarUrl ?? null]));
 
+  // Get pending (unpaid) transactions count per master
+  const pendingTxs = await db
+    .select({ masterId: transactionsTable.masterId, id: transactionsTable.id })
+    .from(transactionsTable)
+    .where(inArray(transactionsTable.paymentStatus, ["pending", "overdue"]));
+  const pendingTxMap = new Map<number, number>();
+  for (const tx of pendingTxs) {
+    if (!tx.masterId) continue;
+    pendingTxMap.set(tx.masterId, (pendingTxMap.get(tx.masterId) ?? 0) + 1);
+  }
+
   // Get active orders per master
   const activeOrders = await db.select().from(ordersTable)
     .where(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
@@ -123,6 +134,7 @@ router.get("/masters", requireAuth, async (_req, res) => {
     specializations: m.specializations ?? [],
     avatarUrl: (m.telegramId ? (avatarMap.get(m.telegramId) ?? null) : null) ?? m.customAvatarUrl ?? null,
     activeOrders: masterActiveOrders.get(m.id) ?? [],
+    pendingTransactionsCount: pendingTxMap.get(m.id) ?? 0,
     contractLink: m.contractLink ?? null,
     workingHours: m.workingHours ?? null,
     preferredDistricts: m.preferredDistricts ?? [],

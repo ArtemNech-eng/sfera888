@@ -5,7 +5,7 @@ import {
   Plus, Settings, X, ChevronUp, ChevronDown, Trash2,
   Star, Phone, MapPin, Briefcase, AlertTriangle, User,
   ArrowRight, Edit2, MessageSquare, Zap, Smartphone,
-  RefreshCw, ChevronRight, UserX, Banknote, Check,
+  RefreshCw, ChevronRight, UserX, Banknote, Check, Clock,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -15,7 +15,7 @@ import { Avatar, MasterDrawer } from "@/components/master-drawer";
 
 interface VoronkaColumn { id: number; name: string; position: number; receivesOrders: boolean; color: string; }
 interface ActiveOrder { orderId: number; district: string; city: string; serviceType: string; status: string; clientPhone: string | null; clientName: string | null; scheduledAt: string | null; }
-interface VoronkaMaster { id: number; alias: string; city: string; specialization: string; specializations: string[]; tags: string[]; telegramId: string | null; pwaLogin: string | null; phone: string | null; status: string; rating: number; totalOrders: number; acceptedOrders: number; debt: number; voronkaColumnId: number | null; isTestMaster: boolean; avatarUrl: string | null; activeOrders: ActiveOrder[]; contractLink: string | null; createdAt: string; }
+interface VoronkaMaster { id: number; alias: string; city: string; specialization: string; specializations: string[]; tags: string[]; telegramId: string | null; pwaLogin: string | null; phone: string | null; status: string; rating: number; totalOrders: number; acceptedOrders: number; debt: number; voronkaColumnId: number | null; isTestMaster: boolean; avatarUrl: string | null; activeOrders: ActiveOrder[]; pendingTransactionsCount: number; contractLink: string | null; createdAt: string; }
 
 interface MasterTask { id: number; masterId: number; text: string; dueAt: string | null; isCompleted: boolean; createdBy: string | null; createdAt: string; }
 interface HistoryOrder { id: number; status: string; serviceType: string; district: string; city: string; clientName: string | null; clientPhone: string | null; scheduledAt: string | null; completedAt: string | null; createdAt: string; }
@@ -111,6 +111,11 @@ function MasterCard({ master, columns, onMove, onOpenDrawer, onDragStart, onDrag
             </div>
             <div className="flex items-center gap-1.5 text-[10px] text-gray-400">
               <span className="flex items-center gap-0.5"><Briefcase className="w-2.5 h-2.5" />{master.totalOrders}</span>
+              {(master.pendingTransactionsCount ?? 0) > 0 && (
+                <span title={`Неоплаченных комиссий: ${master.pendingTransactionsCount}`} className="flex items-center gap-0.5 text-amber-500 font-medium">
+                  <Clock className="w-2.5 h-2.5" />{master.pendingTransactionsCount}
+                </span>
+              )}
               {master.debt > 0 && (
                 <span className="flex items-center gap-0.5 text-red-400 font-medium">
                   <AlertTriangle className="w-2.5 h-2.5" />{(master.debt/1000).toFixed(0)}k
