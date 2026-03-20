@@ -8,7 +8,7 @@ import {
   Bell, CheckCircle2, XCircle, AlertTriangle, Star,
   MapPin, Calendar, MessageSquare, Clock,
   ChevronRight, X, Images, Wrench, Zap, PauseCircle,
-  PlayCircle, Navigation, Users, Heart, ChevronDown,
+  PlayCircle, Navigation, Users, Heart, ChevronDown, Briefcase,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -571,9 +571,18 @@ function RespondedSheet({ order, onClose }: { order: PendingCard; onClose: () =>
 
 // ─── Availability Toggle ──────────────────────────────────────────────────────
 
-function AvailabilityToggle({ isAvailable, onChange }: { isAvailable: boolean; onChange: (v: boolean) => void }) {
+function AvailabilityToggle({
+  isAvailable,
+  atLimit,
+  onChange,
+}: {
+  isAvailable: boolean;
+  atLimit: boolean;
+  onChange: (v: boolean) => void;
+}) {
   const [loading, setLoading] = useState(false);
   const toggle = async () => {
+    if (atLimit && !isAvailable) return; // already blocked by API, but prevent optimistic UI
     setLoading(true);
     try {
       await api.setAvailability(!isAvailable);
@@ -583,6 +592,16 @@ function AvailabilityToggle({ isAvailable, onChange }: { isAvailable: boolean; o
       toast.error(e.message ?? "Ошибка");
     } finally { setLoading(false); }
   };
+
+  if (atLimit) {
+    return (
+      <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+        <Briefcase size={13} />
+        Лимит заказов
+      </span>
+    );
+  }
+
   return (
     <button onClick={toggle} disabled={loading}
       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all disabled:opacity-60 ${
@@ -673,6 +692,8 @@ export default function HomePage() {
   const available: OrderCard[] = data?.availableOrders ?? [];
   const pending: PendingCard[] = data?.pendingOrders ?? [];
   const active: ActiveOrder[] = data?.activeOrders ?? [];
+  const orderLimit: number = data?.master?.orderLimit ?? 2;
+  const atLimit = active.length >= orderLimit;
 
   const workStatusLabels: Record<string, string> = {
     accepted: "Принят", on_way: "Еду на объект", on_site: "На объекте",
@@ -692,7 +713,7 @@ export default function HomePage() {
           <p className="text-sm text-muted-foreground">{master?.city}</p>
         </div>
         <div className="flex items-center gap-2">
-          <AvailabilityToggle isAvailable={isAvailable} onChange={setIsAvailable} />
+          <AvailabilityToggle isAvailable={isAvailable} atLimit={atLimit} onChange={setIsAvailable} />
           <div className="flex items-center gap-1 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-2.5 py-1.5 rounded-xl">
             <Star size={13} fill="currentColor" />
             <span className="font-semibold text-sm">{master?.rating?.toFixed(1)}</span>
@@ -700,8 +721,19 @@ export default function HomePage() {
         </div>
       </div>
 
+      {/* At order limit warning */}
+      {atLimit && (
+        <div className="flex items-center gap-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-xl p-3">
+          <Briefcase size={18} className="text-orange-500 shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-orange-700 dark:text-orange-400">Максимум заказов ({active.length}/{orderLimit})</p>
+            <p className="text-xs text-orange-600 dark:text-orange-500">Закройте текущие заказы, чтобы принимать новые.</p>
+          </div>
+        </div>
+      )}
+
       {/* Unavailable warning */}
-      {!isAvailable && (
+      {!atLimit && !isAvailable && (
         <div className="flex items-center gap-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3">
           <PauseCircle size={18} className="text-red-500 shrink-0" />
           <div>

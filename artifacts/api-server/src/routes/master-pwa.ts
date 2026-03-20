@@ -287,6 +287,8 @@ router.get("/home", requireMasterPwa, async (req, res) => {
     if (colRows[0]) isAvailable = colRows[0].receivesOrders ?? false;
   }
 
+  const orderLimit = master.isTestMaster ? 1 : 2;
+
   res.json({
     master: {
       id: master.id,
@@ -297,6 +299,8 @@ router.get("/home", requireMasterPwa, async (req, res) => {
       debt: Number(master.debt),
       isTestMaster: master.isTestMaster,
       isAvailable,
+      orderLimit,
+      activeOrdersCount: activeOrders.length,
     },
     availableOrders,
     pendingOrders,
@@ -1077,6 +1081,25 @@ router.patch("/availability", requireMasterPwa, async (req: any, res: any) => {
 
   const master = await getMasterById(masterId);
   if (!master) return res.status(404).json({ error: "Мастер не найден" });
+
+  // If trying to become available, check active order limit
+  if (available) {
+    const activeOrders = await db.select().from(ordersTable)
+      .where(and(
+        eq(ordersTable.masterId, masterId),
+        inArray(ordersTable.status, ["master_assigned", "in_progress", "cancellation_requested"]),
+        isNull(ordersTable.deletedAt),
+      ));
+    const limit = master.isTestMaster ? 1 : 2;
+    if (activeOrders.length >= limit) {
+      return res.status(400).json({
+        error: `У вас ${activeOrders.length} активных заказа. Закройте текущие заказы, чтобы принимать новые.`,
+        code: "at_limit",
+        activeCount: activeOrders.length,
+        limit,
+      });
+    }
+  }
 
   const cols = await db.select().from(voronkaColumnsTable).orderBy(voronkaColumnsTable.position);
 
