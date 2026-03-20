@@ -334,27 +334,60 @@ export default function Orders() {
                   : `${cancellationOrders.length} запроса на отмену заказа`}
               </div>
               {cancellationOrders.map(order => (
-                <div key={order.id} className="bg-white rounded-xl border border-red-100 px-4 py-3 space-y-2">
-                  <div className="flex items-center justify-between">
+                <div key={order.id} className="bg-white rounded-xl border border-red-100 px-4 py-3 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
                     <div>
-                      <span className="font-medium text-foreground">#{order.id}</span>
-                      <span className="mx-2 text-muted-foreground">·</span>
-                      <span className="text-foreground">{order.serviceType}</span>
-                      <span className="mx-2 text-muted-foreground">·</span>
-                      <span className="text-muted-foreground text-xs">{order.city}</span>
+                      <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5">
+                        <span className="font-medium text-foreground">#{order.id}</span>
+                        <span className="text-muted-foreground">·</span>
+                        <span className="text-foreground">{order.serviceType}</span>
+                        <span className="text-muted-foreground">·</span>
+                        <span className="text-muted-foreground text-xs">{order.city}</span>
+                      </div>
                       {order.masterName && (
-                        <span className="ml-2 text-xs text-muted-foreground">мастер {order.masterName}</span>
+                        <button
+                          onClick={() => order.masterId && openMasterChat(order.masterId)}
+                          className="text-xs text-blue-600 hover:underline mt-0.5"
+                        >
+                          мастер {order.masterName}
+                        </button>
                       )}
                     </div>
-                    {order.masterId && (
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {order.masterId && (
+                        <button
+                          onClick={() => openMasterChat(order.masterId!)}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded-lg font-medium text-xs transition-colors"
+                        >
+                          <MessageSquare className="w-3 h-3" />
+                          Чат
+                        </button>
+                      )}
                       <button
-                        onClick={() => openMasterChat(order.masterId!)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-500 text-white hover:bg-red-600 rounded-lg font-medium text-xs transition-colors"
+                        onClick={() => {
+                          if (confirm(`Отклонить запрос на отмену заказа #${order.id}? Заказ продолжится.`)) {
+                            rejectCancellationMutation.mutate(order.id);
+                          }
+                        }}
+                        disabled={rejectCancellationMutation.isPending}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg font-medium text-xs transition-colors disabled:opacity-50"
                       >
-                        <MessageSquare className="w-3 h-3" />
-                        Открыть чат
+                        <X className="w-3 h-3" />
+                        Отклонить
                       </button>
-                    )}
+                      <button
+                        onClick={() => {
+                          if (confirm(`Одобрить отмену заказа #${order.id}? Заказ будет закрыт.`)) {
+                            approveCancellationMutation.mutate(order.id);
+                          }
+                        }}
+                        disabled={approveCancellationMutation.isPending}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-red-500 text-white hover:bg-red-600 rounded-lg font-medium text-xs transition-colors disabled:opacity-50"
+                      >
+                        {approveCancellationMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                        Одобрить отмену
+                      </button>
+                    </div>
                   </div>
                   {(order as any).cancelReason && (
                     <div className="text-sm text-red-700 bg-red-50 rounded-lg px-3 py-2">
@@ -424,24 +457,55 @@ export default function Orders() {
                   : `${pendingAmountOrders.length} заказа ожидают подтверждения суммы`}
               </div>
               {pendingAmountOrders.map(order => (
-                <div key={order.id} className="flex items-center justify-between bg-white rounded-xl border border-amber-100 px-4 py-3">
+                <div key={order.id} className="flex items-start justify-between gap-3 bg-white rounded-xl border border-amber-100 px-4 py-3">
                   <div>
                     <span className="font-medium text-foreground">#{order.id}</span>
                     <span className="mx-2 text-muted-foreground">·</span>
                     <span className="text-foreground">{order.serviceType}</span>
                     <span className="mx-2 text-muted-foreground">·</span>
                     <span className="text-amber-700 font-semibold">{fmt(Number((order as any).proposedAmount))}</span>
-                    <span className="ml-2 text-xs text-muted-foreground">предложил мастер {order.masterName}</span>
+                    {order.masterName && (
+                      <button
+                        onClick={() => order.masterId && openMasterChat(order.masterId)}
+                        className="ml-2 text-xs text-blue-600 hover:underline"
+                      >
+                        мастер {order.masterName}
+                      </button>
+                    )}
                   </div>
-                  {order.masterId && (
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {order.masterId && (
+                      <button
+                        onClick={() => openMasterChat(order.masterId!)}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-amber-200 text-amber-700 hover:bg-amber-50 rounded-lg font-medium text-xs transition-colors"
+                      >
+                        <MessageSquare className="w-3 h-3" />
+                        Чат
+                      </button>
+                    )}
                     <button
-                      onClick={() => openMasterChat(order.masterId!)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 text-white hover:bg-amber-600 rounded-lg font-medium text-xs transition-colors"
+                      onClick={() => {
+                        setEditAmountId(order.id);
+                        setEditAmountValue(String((order as any).proposedAmount ?? ""));
+                      }}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg font-medium text-xs transition-colors"
                     >
-                      <MessageSquare className="w-3 h-3" />
-                      Открыть чат
+                      <Pencil className="w-3 h-3" />
+                      Своя сумма
                     </button>
-                  )}
+                    <button
+                      onClick={() => {
+                        if (confirm(`Принять сумму ${fmt(Number((order as any).proposedAmount))} для заказа #${order.id}?`)) {
+                          acceptProposedMutation.mutate(order.id);
+                        }
+                      }}
+                      disabled={acceptProposedMutation.isPending}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-500 text-white hover:bg-amber-600 rounded-lg font-medium text-xs transition-colors disabled:opacity-50"
+                    >
+                      {acceptProposedMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                      Принять
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -597,6 +661,15 @@ export default function Orders() {
                         <td className="px-6 py-4">
                           <span className="font-medium text-foreground">#{order.id}</span>
                           <div className="text-xs text-muted-foreground mt-1">{formatDate(order.createdAt)}</div>
+                          {(order as any).clientPhone && (
+                            <a
+                              href={`tel:${(order as any).clientPhone}`}
+                              className="text-xs text-blue-600 hover:underline mt-0.5 flex items-center gap-1"
+                              onClick={e => e.stopPropagation()}
+                            >
+                              {(order as any).clientPhone}
+                            </a>
+                          )}
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-1.5 text-foreground font-medium">
@@ -608,34 +681,77 @@ export default function Orders() {
                         <td className="px-6 py-4">
                           <div className="text-foreground">{order.serviceType}</div>
                           <div className="text-xs text-muted-foreground mt-1">{order.area} м²</div>
+                          {order.scheduledAt && (
+                            <div className="text-xs text-blue-600 mt-0.5 flex items-center gap-1">
+                              <CalendarDays className="w-3 h-3" />
+                              {new Date(order.scheduledAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                            </div>
+                          )}
+                          {order.comment && (
+                            <div className="text-xs text-muted-foreground mt-0.5 italic truncate max-w-[180px]" title={order.comment}>
+                              {order.comment}
+                            </div>
+                          )}
                         </td>
                         <td className="px-6 py-4">
                           <StatusBadge status={order.status} type="order" />
                         </td>
                         <td className="px-6 py-4">
                           {order.masterName ? (
-                            <span className="font-medium">{order.masterName}</span>
+                            <button
+                              onClick={() => order.masterId && openMasterChat(order.masterId)}
+                              className="font-medium text-left hover:text-blue-600 hover:underline transition-colors"
+                            >
+                              {order.masterName}
+                            </button>
                           ) : (
                             <span className="text-muted-foreground italic">Не назначен</span>
                           )}
                         </td>
                         <td className="px-6 py-4">
                           {confirmed ? (
-                            <div>
-                              <span className="font-semibold text-foreground">{fmt(confirmed)}</span>
-                              {(order as any).commission && (
-                                <div className="text-xs text-muted-foreground mt-0.5">ком. {fmt(Number((order as any).commission))}</div>
-                              )}
+                            <div className="flex items-start gap-1">
+                              <div>
+                                <span className="font-semibold text-foreground">{fmt(confirmed)}</span>
+                                {(order as any).commission && (
+                                  <div className="text-xs text-muted-foreground mt-0.5">ком. {fmt(Number((order as any).commission))}</div>
+                                )}
+                              </div>
+                              <button
+                                onClick={() => { setEditAmountId(order.id); setEditAmountValue(String(confirmed)); }}
+                                title="Изменить сумму"
+                                className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-muted-foreground/40 hover:text-primary transition-all ml-0.5"
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </button>
                             </div>
                           ) : proposed ? (
                             <div className="space-y-1">
                               <span className="inline-flex items-center gap-1 text-[10px] bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2 py-0.5 font-medium">
                                 <DollarSign className="w-3 h-3" />Предложено
                               </span>
-                              <div className="font-semibold text-amber-700">{fmt(proposed)}</div>
+                              <div className="flex items-center gap-1">
+                                <span className="font-semibold text-amber-700">{fmt(proposed)}</span>
+                                <button
+                                  onClick={() => { setEditAmountId(order.id); setEditAmountValue(String(proposed)); }}
+                                  title="Указать свою сумму"
+                                  className="w-5 h-5 flex items-center justify-center rounded hover:bg-amber-100 text-amber-400 hover:text-amber-700 transition-all"
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                </button>
+                              </div>
                             </div>
                           ) : (
-                            <span className="text-muted-foreground">—</span>
+                            <div className="flex items-center gap-1">
+                              <span className="text-muted-foreground">—</span>
+                              <button
+                                onClick={() => { setEditAmountId(order.id); setEditAmountValue(""); }}
+                                title="Указать сумму"
+                                className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-muted-foreground/30 hover:text-primary transition-all"
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </button>
+                            </div>
                           )}
                         </td>
                         <td className="px-6 py-4 text-right">

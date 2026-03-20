@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, ordersTable, mastersTable, transactionsTable, voronkaColumnsTable, orderDispatchesTable, leadsTable, masterMessagesTable } from "@workspace/db";
-import { eq, inArray, and, ne, isNull } from "drizzle-orm";
+import { eq, inArray, and, ne, isNull, desc } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { calculateCommission, getCommissionSettings } from "../lib/commission.js";
 import { getMasterEligibility, getOverdueMasterIds, countActiveMasterOrders, getColumnIdForActiveCount } from "../lib/orderEligibility.js";
@@ -56,15 +56,17 @@ async function getAwaitingPaymentColumn() {
 
 router.get("/", allOrderRoles, async (req, res) => {
   const { status, masterId } = req.query;
-  let orders;
   const conditions: any[] = [];
   if (status) conditions.push(eq(ordersTable.status, status as any));
   if (masterId) conditions.push(eq(ordersTable.masterId, parseInt(masterId as string)));
   conditions.push(isNull(ordersTable.deletedAt));
-  orders = await db.select().from(ordersTable).where(and(...conditions)).orderBy(ordersTable.createdAt);
+  const orders = await db.select().from(ordersTable).where(and(...conditions)).orderBy(desc(ordersTable.createdAt));
 
   const masters = await db.select().from(mastersTable);
   const masterMap = new Map(masters.map(m => [m.id, m]));
+
+  const leads = await db.select().from(leadsTable);
+  const leadMap = new Map(leads.map(l => [l.id, l]));
 
   res.json(orders.map(o => ({
     id: o.id,
@@ -79,6 +81,8 @@ router.get("/", allOrderRoles, async (req, res) => {
     dispatchStatus: o.dispatchStatus,
     masterId: o.masterId ?? null,
     masterName: o.masterId ? (masterMap.get(o.masterId)?.alias ?? null) : null,
+    clientPhone: leadMap.get(o.leadId)?.phone ?? null,
+    clientName: leadMap.get(o.leadId)?.clientName ?? null,
     proposedAmount: o.proposedAmount ? Number(o.proposedAmount) : null,
     orderAmount: o.orderAmount ? Number(o.orderAmount) : null,
     commission: o.commission ? Number(o.commission) : null,
