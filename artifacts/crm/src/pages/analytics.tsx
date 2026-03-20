@@ -62,6 +62,7 @@ export default function Analytics() {
     { name: "В обработке",   value: funnel.processing,  color: "#f59e0b" },
     { name: "В работе",      value: funnel.sentToWork,  color: "#10b981" },
     { name: "Завершено",     value: funnel.completed,   color: "#059669" },
+    { name: "Отменено",      value: (funnel as any).cancelled ?? 0, color: "#f97316" },
     { name: "Отказ",         value: funnel.refusal,     color: "#ef4444" },
     { name: "Нецелевые",     value: funnel.nonTarget,   color: "#64748b" },
   ] : [];
@@ -92,7 +93,7 @@ export default function Analytics() {
               <MetricCard label="Всего заявок"    value={funnel.total}       icon={Target}       color="bg-blue-100 text-blue-600" />
               <MetricCard label="В работе"         value={funnel.sentToWork}  icon={TrendingUp}   color="bg-emerald-100 text-emerald-600" />
               <MetricCard label="Завершено заказов" value={funnel.completed}  icon={CheckCircle2} color="bg-green-100 text-green-700" />
-              <MetricCard label="Отказов / нецелевых" value={funnel.refusal + funnel.nonTarget} icon={XCircle} color="bg-red-100 text-red-600" />
+              <MetricCard label="Отменено / отказ / нецел." value={((funnel as any).cancelled ?? 0) + funnel.refusal + funnel.nonTarget} icon={XCircle} color="bg-red-100 text-red-600" />
             </div>
           ) : null}
 

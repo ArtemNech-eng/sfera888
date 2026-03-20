@@ -90,6 +90,7 @@ router.get("/funnel", adminOnly, async (req, res) => {
     completed: orders.filter(o => o.status === "completed").length,
     nonTarget: leads.filter(l => l.status === "non_target").length,
     refusal: leads.filter(l => l.status === "client_refusal").length,
+    cancelled: orders.filter(o => o.status === "cancelled").length,
   });
 });
 
