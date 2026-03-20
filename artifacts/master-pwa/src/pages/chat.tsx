@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { api } from "@/lib/api";
+import { api, uploadPhoto, resolvePhotoUrl } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
-import { Send, Loader2, MessageCircle } from "lucide-react";
+import { Send, Loader2, MessageCircle, ImagePlus, X } from "lucide-react";
 
 interface Message {
   id: number;
@@ -35,8 +35,11 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [pendingPhoto, setPendingPhoto] = useState<{ file: File; preview: string } | null>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
 
   const load = async (silent = false) => {
     try {
@@ -61,16 +64,42 @@ export default function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
 
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("Файл слишком большой (макс. 10 МБ)");
+      return;
+    }
+    const preview = URL.createObjectURL(file);
+    setPendingPhoto({ file, preview });
+    e.target.value = "";
+  };
+
+  const removePendingPhoto = () => {
+    if (pendingPhoto) URL.revokeObjectURL(pendingPhoto.preview);
+    setPendingPhoto(null);
+  };
+
   const sendMessage = async () => {
     const trimmed = text.trim();
-    if (!trimmed || sending) return;
+    if (!trimmed && !pendingPhoto) return;
+    if (sending || uploadingPhoto) return;
     setSending(true);
     try {
-      const msg = await api.chat.send(trimmed);
+      let photoUrl: string | undefined;
+      if (pendingPhoto) {
+        setUploadingPhoto(true);
+        photoUrl = await uploadPhoto(pendingPhoto.file);
+        setUploadingPhoto(false);
+      }
+      const msg = await api.chat.send(trimmed, photoUrl);
       setMessages(prev => [...prev, msg]);
       setText("");
+      removePendingPhoto();
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
     } catch (err: any) {
+      setUploadingPhoto(false);
       toast.error(err.message ?? "Ошибка отправки");
     } finally {
       setSending(false);
@@ -84,7 +113,6 @@ export default function ChatPage() {
     }
   };
 
-  // Group messages by day
   const grouped: { day: string; msgs: Message[] }[] = [];
   for (const msg of messages) {
     const day = formatDay(msg.createdAt);
@@ -95,6 +123,8 @@ export default function ChatPage() {
       grouped.push({ day, msgs: [msg] });
     }
   }
+
+  const canSend = (text.trim().length > 0 || pendingPhoto !== null) && !sending;
 
   return (
     <div className="flex flex-col h-[calc(100dvh-5rem)]">
@@ -146,17 +176,19 @@ export default function ChatPage() {
                       </p>
                     )}
                     {msg.photoUrl && (
-                      <a href={msg.photoUrl} target="_blank" rel="noopener noreferrer">
+                      <a href={resolvePhotoUrl(msg.photoUrl)} target="_blank" rel="noopener noreferrer">
                         <img
-                          src={msg.photoUrl}
+                          src={resolvePhotoUrl(msg.photoUrl)}
                           alt="фото"
                           className="rounded-xl max-w-full mb-1.5"
                         />
                       </a>
                     )}
-                    <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
-                      {msg.text}
-                    </p>
+                    {(msg.text && msg.text !== "📷 Фото") && (
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+                        {msg.text}
+                      </p>
+                    )}
                     <div className={`flex items-center gap-1 mt-1 justify-end text-[10px] ${
                       msg.fromMaster ? "text-white/70" : "text-muted-foreground"
                     }`}>
@@ -172,26 +204,65 @@ export default function ChatPage() {
         <div ref={bottomRef} />
       </div>
 
-      <div className="px-3 py-3 border-t border-border bg-card flex items-end gap-2">
-        <textarea
-          ref={inputRef}
-          value={text}
-          onChange={e => setText(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Написать менеджеру..."
-          rows={1}
-          className="flex-1 resize-none px-3.5 py-2.5 rounded-xl border border-input bg-background text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring max-h-28 overflow-y-auto leading-relaxed"
-          style={{ minHeight: 44 }}
-        />
-        <button
-          onClick={sendMessage}
-          disabled={!text.trim() || sending}
-          className="shrink-0 w-11 h-11 rounded-xl bg-primary text-white flex items-center justify-center active:opacity-80 disabled:opacity-50"
-        >
-          {sending
-            ? <Loader2 size={18} className="animate-spin" />
-            : <Send size={18} />}
-        </button>
+      <div className="px-3 py-3 border-t border-border bg-card space-y-2">
+        {pendingPhoto && (
+          <div className="relative w-20 h-20">
+            <img
+              src={pendingPhoto.preview}
+              alt="предпросмотр"
+              className="w-20 h-20 object-cover rounded-xl border border-border"
+            />
+            <button
+              onClick={removePendingPhoto}
+              className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-destructive text-white flex items-center justify-center"
+            >
+              <X size={12} />
+            </button>
+            {uploadingPhoto && (
+              <div className="absolute inset-0 bg-black/40 rounded-xl flex items-center justify-center">
+                <Loader2 size={20} className="animate-spin text-white" />
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="flex items-end gap-2">
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handlePhotoSelect}
+          />
+          <button
+            onClick={() => photoInputRef.current?.click()}
+            disabled={sending}
+            className="shrink-0 w-11 h-11 rounded-xl border border-border bg-background text-muted-foreground flex items-center justify-center active:opacity-70 disabled:opacity-40"
+            title="Прикрепить фото"
+          >
+            <ImagePlus size={20} />
+          </button>
+
+          <textarea
+            ref={inputRef}
+            value={text}
+            onChange={e => setText(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Написать менеджеру..."
+            rows={1}
+            className="flex-1 resize-none px-3.5 py-2.5 rounded-xl border border-input bg-background text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring max-h-28 overflow-y-auto leading-relaxed"
+            style={{ minHeight: 44 }}
+          />
+          <button
+            onClick={sendMessage}
+            disabled={!canSend}
+            className="shrink-0 w-11 h-11 rounded-xl bg-primary text-white flex items-center justify-center active:opacity-80 disabled:opacity-50"
+          >
+            {sending
+              ? <Loader2 size={18} className="animate-spin" />
+              : <Send size={18} />}
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -650,6 +650,19 @@ export default function ProfilePage() {
         </div>
       )}
 
+      {data.tags && data.tags.length > 0 && (
+        <div className="bg-card border border-border rounded-xl p-3.5 space-y-2">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Метки</p>
+          <div className="flex flex-wrap gap-2">
+            {data.tags.map(tag => (
+              <span key={tag} className="text-xs px-2.5 py-1 rounded-full bg-muted text-muted-foreground font-medium border border-border">
+                {tag}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-3">
         <StatCard label="Всего заказов" value={data.totalOrders} icon={<Briefcase size={13} />} />
         <StatCard label="Принято" value={data.acceptedOrders} icon={<BadgeCheck size={13} />} />

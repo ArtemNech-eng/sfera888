@@ -22,6 +22,8 @@ interface BalanceData {
   debt: number;
   totalEarned: number;
   totalPaidCommission: number;
+  pendingCommission: number;
+  pendingEarnings: number;
   transactions: Transaction[];
 }
 
@@ -167,20 +169,46 @@ export default function BalancePage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="bg-card border border-border rounded-xl p-3.5 space-y-1">
-          <div className="flex items-center gap-1.5 text-muted-foreground text-xs">
-            <TrendingUp size={14} />
-            <span>Заработано всего</span>
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-card border border-border rounded-xl p-3.5 space-y-1">
+            <div className="flex items-center gap-1.5 text-muted-foreground text-xs">
+              <TrendingUp size={14} />
+              <span>Заработано (оплач.)</span>
+            </div>
+            <p className="text-xl font-bold">{data.totalEarned.toLocaleString("ru-RU")} ₽</p>
           </div>
-          <p className="text-xl font-bold">{data.totalEarned.toLocaleString("ru-RU")} ₽</p>
+          <div className="bg-card border border-border rounded-xl p-3.5 space-y-1">
+            <div className="flex items-center gap-1.5 text-muted-foreground text-xs">
+              <Wallet size={14} />
+              <span>Чистый доход</span>
+            </div>
+            <p className="text-xl font-bold text-green-600 dark:text-green-400">
+              {(data.totalEarned - data.totalPaidCommission).toLocaleString("ru-RU")} ₽
+            </p>
+          </div>
         </div>
-        <div className="bg-card border border-border rounded-xl p-3.5 space-y-1">
-          <div className="flex items-center gap-1.5 text-muted-foreground text-xs">
-            <Wallet size={14} />
-            <span>Комиссия оплачена</span>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-card border border-border rounded-xl p-3.5 space-y-1">
+            <div className="flex items-center gap-1.5 text-muted-foreground text-xs">
+              <Wallet size={14} />
+              <span>Комиссия оплачена</span>
+            </div>
+            <p className="text-lg font-bold">{data.totalPaidCommission.toLocaleString("ru-RU")} ₽</p>
           </div>
-          <p className="text-xl font-bold">{data.totalPaidCommission.toLocaleString("ru-RU")} ₽</p>
+          {data.pendingCommission > 0 && (
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3.5 space-y-1">
+              <div className="flex items-center gap-1.5 text-amber-600 text-xs">
+                <Clock size={14} />
+                <span>Ожидает оплаты</span>
+              </div>
+              <p className="text-lg font-bold text-amber-700 dark:text-amber-400">
+                {data.pendingCommission.toLocaleString("ru-RU")} ₽
+              </p>
+              <p className="text-[11px] text-amber-600/80">с {data.pendingEarnings.toLocaleString("ru-RU")} ₽</p>
+            </div>
+          )}
         </div>
       </div>
 

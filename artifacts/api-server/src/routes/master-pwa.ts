@@ -643,17 +643,20 @@ router.get("/balance", requireMasterPwa, async (req, res) => {
 
   const realTxs = txRows.filter(t => Number(t.commission) > 0);
 
-  const totalEarned = realTxs
-    .filter(t => t.paymentStatus === "paid")
-    .reduce((s, t) => s + Number(t.orderAmount), 0);
-  const totalPaidCommission = realTxs
-    .filter(t => t.paymentStatus === "paid")
-    .reduce((s, t) => s + Number(t.commission), 0);
+  const paidTxs = realTxs.filter(t => t.paymentStatus === "paid");
+  const pendingTxs = realTxs.filter(t => t.paymentStatus === "pending" || t.paymentStatus === "debt");
+
+  const totalEarned = paidTxs.reduce((s, t) => s + Number(t.orderAmount), 0);
+  const totalPaidCommission = paidTxs.reduce((s, t) => s + Number(t.commission), 0);
+  const pendingCommission = pendingTxs.reduce((s, t) => s + Number(t.commission), 0);
+  const pendingEarnings = pendingTxs.reduce((s, t) => s + Number(t.orderAmount), 0);
 
   res.json({
     debt: Number(master.debt),
     totalEarned,
     totalPaidCommission,
+    pendingCommission,
+    pendingEarnings,
     transactions: realTxs.map(t => {
       const order = orderMap.get(t.orderId);
       return {
@@ -903,19 +906,19 @@ router.get("/chat", requireMasterPwa, async (req, res) => {
 
 router.post("/chat", requireMasterPwa, async (req, res) => {
   const masterId = (req.session as any).masterId;
-  const { text } = req.body;
-  if (!text?.trim()) return res.status(400).json({ error: "Текст сообщения обязателен" });
+  const { text, photoUrl } = req.body;
+  if (!text?.trim() && !photoUrl) return res.status(400).json({ error: "Текст или фото обязательны" });
 
   const master = await getMasterById(masterId);
   if (!master) return res.status(404).json({ error: "Мастер не найден" });
 
-  // Use telegramId if available, otherwise use masterId as placeholder
   const chatId = master.telegramId ? master.telegramId : `pwa_${master.id}`;
 
   const [msg] = await db.insert(masterMessagesTable).values({
     masterId,
     telegramChatId: chatId,
-    text: text.trim(),
+    text: text?.trim() ?? (photoUrl ? "📷 Фото" : ""),
+    photoUrl: photoUrl ?? null,
     fromMaster: true,
     senderName: master.alias,
     isRead: false,
@@ -927,7 +930,7 @@ router.post("/chat", requireMasterPwa, async (req, res) => {
     fromMaster: true,
     senderName: msg.senderName,
     isRead: false,
-    photoUrl: null,
+    photoUrl: msg.photoUrl ?? null,
     createdAt: msg.createdAt,
   });
 });

@@ -871,8 +871,8 @@ export default function HomePage() {
           <div className="text-center py-10 text-muted-foreground text-sm">Нет активных заказов</div>
         ) : (
           active.map(order => (
-            <button key={order.id} onClick={() => setLocation("/orders")}
-              className="w-full bg-card border border-border rounded-2xl p-4 text-left space-y-2">
+            <button key={order.id} onClick={() => setLocation(`/orders?expand=${order.id}`)}
+              className="w-full bg-card border border-border rounded-2xl p-4 text-left space-y-2 active:opacity-80">
               <div className="flex items-center justify-between">
                 <span className="font-semibold text-sm">{order.city}{order.district ? `, ${order.district}` : ""}</span>
                 <span className="text-xs text-muted-foreground">#{order.id}</span>

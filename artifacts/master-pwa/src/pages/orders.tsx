@@ -245,8 +245,8 @@ function PhotoGrid({ urls, label }: { urls: string[]; label: string }) {
   );
 }
 
-function OrderCard({ order, onRefresh }: { order: Order; onRefresh: () => void }) {
-  const [expanded, setExpanded] = useState(false);
+function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefresh: () => void; initialExpanded?: boolean }) {
+  const [expanded, setExpanded] = useState(initialExpanded ?? false);
   const [loadingStatus, setLoadingStatus] = useState<string | null>(null);
   const [loadingPhoto, setLoadingPhoto] = useState<string | null>(null);
   const [showComplete, setShowComplete] = useState(false);
@@ -391,35 +391,47 @@ function OrderCard({ order, onRefresh }: { order: Order; onRefresh: () => void }
 
             {isActive && (
               <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <p className="text-xs font-medium text-muted-foreground">Обновить статус</p>
-                  <div className="flex flex-col gap-1.5">
-                    {workStatusSteps.map((step, idx) => {
-                      const done = idx <= currentStepIdx;
-                      const isNext = idx === currentStepIdx + 1;
-                      return (
-                        <button
-                          key={step.key}
-                          disabled={!isNext || !!loadingStatus}
-                          onClick={() => isNext && handleStatusStep(step.key)}
-                          className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                            done
-                              ? "bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-400"
-                              : isNext
-                              ? "bg-primary text-white active:opacity-80"
-                              : "bg-muted text-muted-foreground opacity-50"
-                          } disabled:cursor-not-allowed`}
-                        >
-                          {loadingStatus === step.key
-                            ? <Loader2 size={14} className="animate-spin shrink-0" />
-                            : done
-                            ? <CheckCircle2 size={14} className="shrink-0" />
-                            : <div className="w-3.5 h-3.5 rounded-full border-2 border-current shrink-0" />}
-                          {step.label}
-                        </button>
-                      );
-                    })}
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">Прогресс выполнения</p>
+                  <div className="bg-muted/50 rounded-xl p-3">
+                    <div className="flex items-start gap-0">
+                      {workStatusSteps.map((step, idx) => {
+                        const done = idx <= currentStepIdx;
+                        const isLast = idx === workStatusSteps.length - 1;
+                        return (
+                          <div key={step.key} className="flex-1 flex flex-col items-center">
+                            <div className="flex items-center w-full">
+                              <div className={`flex-1 h-0.5 ${idx === 0 ? "invisible" : done ? "bg-green-500" : "bg-border"}`} />
+                              <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold border-2 ${
+                                done
+                                  ? "bg-green-500 border-green-500 text-white"
+                                  : "bg-background border-border text-muted-foreground"
+                              }`}>
+                                {done ? <CheckCircle2 size={14} /> : idx + 1}
+                              </div>
+                              <div className={`flex-1 h-0.5 ${isLast ? "invisible" : done && idx < currentStepIdx ? "bg-green-500" : "bg-border"}`} />
+                            </div>
+                            <span className={`text-[10px] mt-1 text-center leading-tight px-0.5 ${
+                              done ? "text-green-600 dark:text-green-400 font-medium" : "text-muted-foreground"
+                            }`}>
+                              {step.label}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
+
+                  {currentStepIdx < workStatusSteps.length - 1 && (
+                    <button
+                      disabled={!!loadingStatus}
+                      onClick={() => handleStatusStep(workStatusSteps[currentStepIdx + 1].key)}
+                      className="w-full h-11 bg-primary text-white font-semibold rounded-xl flex items-center justify-center gap-2 active:opacity-80 disabled:opacity-60 text-sm"
+                    >
+                      {loadingStatus ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                      {workStatusSteps[currentStepIdx + 1].label}
+                    </button>
+                  )}
                 </div>
 
                 <div className="space-y-1.5">
@@ -582,6 +594,14 @@ export default function OrdersPage() {
   const [filter, setFilter] = useState<"active" | "completed" | "history">("active");
   const [loading, setLoading] = useState(true);
 
+  const expandId = (() => {
+    try {
+      const p = new URLSearchParams(window.location.search);
+      const v = p.get("expand");
+      return v ? parseInt(v) : null;
+    } catch { return null; }
+  })();
+
   const load = async () => {
     if (filter === "history") return;
     setLoading(true);
@@ -628,7 +648,7 @@ export default function OrdersPage() {
       ) : (
         <div className="space-y-3">
           {orders.map(order => (
-            <OrderCard key={order.id} order={order} onRefresh={load} />
+            <OrderCard key={order.id} order={order} onRefresh={load} initialExpanded={expandId === order.id} />
           ))}
         </div>
       )}

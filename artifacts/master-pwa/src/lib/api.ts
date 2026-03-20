@@ -48,7 +48,8 @@ export const api = {
   updateProfile: (data: any) => req<any>("PATCH", "/profile", data),
   chat: {
     messages: () => req<any>("GET", "/chat"),
-    send: (text: string) => req<any>("POST", "/chat", { text }),
+    send: (text: string, photoUrl?: string) => req<any>("POST", "/chat", { text, photoUrl }),
+    sendPhoto: (photoUrl: string, caption?: string) => req<any>("POST", "/chat", { text: caption ?? "", photoUrl }),
     unread: () => req<any>("GET", "/chat/unread"),
   },
   admin: {
