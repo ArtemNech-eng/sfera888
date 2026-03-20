@@ -6,6 +6,7 @@ import {
 } from "@workspace/db";
 import { eq, desc, inArray, and, ne } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
+import { countActiveMasterOrders, getColumnIdForActiveCount } from "../lib/orderEligibility.js";
 import { createYandexPayOrder, pollYandexPayStatus, confirmPayment } from "./yandex-pay.js";
 
 // ─── Available specializations (synced with service_types) ────────────────────
@@ -1148,12 +1149,13 @@ async function handleCallback(callbackQuery: any) {
       updatedAt: new Date(),
     }).where(eq(ordersTable.id, orderId));
 
-    // Update master stats + move to "На объекте" column
-    const onSiteCol = await getOnSiteColumn();
+    // Update master stats + move to correct column based on active order count
+    const activeAfterAccept = await countActiveMasterOrders(master.id) + 1;
+    const targetColId = await getColumnIdForActiveCount(activeAfterAccept);
     await db.update(mastersTable).set({
       totalOrders: master.totalOrders + 1,
       acceptedOrders: master.acceptedOrders + 1,
-      voronkaColumnId: onSiteCol?.id ?? master.voronkaColumnId,
+      voronkaColumnId: targetColId ?? master.voronkaColumnId,
     }).where(eq(mastersTable.id, master.id));
 
     let text = `🎉 <b>Заказ #${orderId} взят!</b>\n\n`;

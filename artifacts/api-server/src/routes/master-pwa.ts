@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db, mastersTable, ordersTable, orderDispatchesTable, transactionsTable, leadsTable, voronkaColumnsTable, masterMessagesTable, pushSubscriptionsTable } from "@workspace/db";
 import { eq, and, inArray, isNull, ne, asc, desc } from "drizzle-orm";
 import { verifyPassword, hashPassword } from "../lib/auth.js";
-import { getMasterEligibility, getOverdueMasterIds } from "../lib/orderEligibility.js";
+import { getMasterEligibility, getOverdueMasterIds, countActiveMasterOrders, getColumnIdForActiveCount } from "../lib/orderEligibility.js";
 import multer from "multer";
 import { objectStorageClient } from "../lib/objectStorage.js";
 
@@ -454,12 +454,13 @@ router.post("/orders/:id/accept", requireMasterPwa, async (req, res) => {
   await db.update(orderDispatchesTable).set({ status: "rejected" })
     .where(and(eq(orderDispatchesTable.orderId, orderId), ne(orderDispatchesTable.id, dispatches[0].id)));
 
-  // Update master stats and move to "На объекте" column
-  const onSiteCol = await getOnSiteColumn();
+  // Update master stats and move to correct column based on active order count
+  const activeAfterAccept = myActiveForAccept + 1;
+  const targetColId = await getColumnIdForActiveCount(activeAfterAccept);
   await db.update(mastersTable).set({
     totalOrders: master.totalOrders + 1,
     acceptedOrders: master.acceptedOrders + 1,
-    voronkaColumnId: onSiteCol?.id ?? master.voronkaColumnId,
+    voronkaColumnId: targetColId ?? master.voronkaColumnId,
   }).where(eq(mastersTable.id, masterId));
 
   // Create placeholder transaction
@@ -1082,20 +1083,15 @@ router.patch("/availability", requireMasterPwa, async (req: any, res: any) => {
   const master = await getMasterById(masterId);
   if (!master) return res.status(404).json({ error: "Мастер не найден" });
 
-  // If trying to become available, check active order limit
+  // If trying to become "Свободен", block if master has any active orders
   if (available) {
-    const activeOrders = await db.select().from(ordersTable)
-      .where(and(
-        eq(ordersTable.masterId, masterId),
-        inArray(ordersTable.status, ["master_assigned", "in_progress", "cancellation_requested"]),
-        isNull(ordersTable.deletedAt),
-      ));
-    const limit = master.isTestMaster ? 1 : 2;
-    if (activeOrders.length >= limit) {
+    const activeCount = await countActiveMasterOrders(masterId);
+    if (activeCount > 0) {
+      const limit = master.isTestMaster ? 1 : 2;
       return res.status(400).json({
-        error: `У вас ${activeOrders.length} активных заказа. Закройте текущие заказы, чтобы принимать новые.`,
-        code: "at_limit",
-        activeCount: activeOrders.length,
+        error: `У вас ${activeCount} активных ${activeCount === 1 ? "заказ" : "заказа"}. Закройте текущие заказы, чтобы изменить статус на «Свободен».`,
+        code: "has_active_orders",
+        activeCount,
         limit,
       });
     }

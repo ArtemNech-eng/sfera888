@@ -67,7 +67,7 @@ async function seedVoronkaColumns() {
   const DEFAULT_COLUMNS = [
     { name: "Новые",           position: 1, receivesOrders: false, color: "blue"   },
     { name: "Свободен",        position: 2, receivesOrders: true,  color: "green"  },
-    { name: "Занят",           position: 3, receivesOrders: false, color: "yellow" },
+    { name: "Занят",           position: 3, receivesOrders: true,  color: "yellow" },
     { name: "На объекте",      position: 4, receivesOrders: false, color: "orange" },
     { name: "Ожидает оплаты",  position: 5, receivesOrders: false, color: "red"    },
     { name: "Отстраненные",    position: 6, receivesOrders: false, color: "grey"   },
@@ -93,7 +93,7 @@ async function seedVoronkaColumns() {
     }
   }
 
-  // After ensuring "Занят" exists, fix positions of subsequent columns
+  // After ensuring "Занят" exists, fix positions and receivesOrders of subsequent columns
   const afterInsert = await db.select().from(voronkaColumnsTable);
   const naObyekteCol = afterInsert.find(c => c.name === "На объекте");
   const ozhidaetCol = afterInsert.find(c => c.name === "Ожидает оплаты");
@@ -106,6 +106,11 @@ async function seedVoronkaColumns() {
     if (ozhidaetCol && ozhidaetCol.position !== 5) {
       await db.update(voronkaColumnsTable).set({ position: 5 }).where(eq(voronkaColumnsTable.id, ozhidaetCol.id));
       console.log("[startup] Updated 'Ожидает оплаты' position → 5");
+    }
+    // "Занят" must have receivesOrders = true so masters with 1 order can still receive a 2nd dispatch
+    if (!zanyatCol.receivesOrders) {
+      await db.update(voronkaColumnsTable).set({ receivesOrders: true }).where(eq(voronkaColumnsTable.id, zanyatCol.id));
+      console.log("[startup] Updated 'Занят' receivesOrders → true");
     }
   }
 }

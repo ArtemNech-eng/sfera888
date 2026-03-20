@@ -3,7 +3,7 @@ import { db, transactionsTable, mastersTable, voronkaColumnsTable } from "@works
 import { eq, and, gte, lte, sum, count } from "drizzle-orm";
 import { requirePermission } from "../middlewares/requireAuth.js";
 import { sendPushToMaster } from "../lib/push.js";
-import { checkOverdueTransactions } from "../lib/orderEligibility.js";
+import { checkOverdueTransactions, countActiveMasterOrders, getColumnIdForActiveCount } from "../lib/orderEligibility.js";
 
 const router = Router();
 const adminOnly = requirePermission("finance");
@@ -49,21 +49,21 @@ router.patch("/transactions/:id", opsAndAdmin, async (req, res) => {
   if (!result[0]) return res.status(404).json({ error: "Transaction not found" });
   const t = result[0];
 
-  // When paid: reduce debt, move master to "Свободен", notify via Telegram
+  // When paid: reduce debt, move master to correct column, notify via Telegram
   if (paymentStatus === "paid") {
     const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, t.masterId));
     const master = masterRows[0];
     if (master) {
       const newDebt = Math.max(0, Number(master.debt) - Number(t.commission));
 
-      // Find "Свободен" column (receivesOrders = true)
-      const cols = await db.select().from(voronkaColumnsTable).orderBy(voronkaColumnsTable.position);
-      const freeCol = cols.find(c => c.receivesOrders) ?? null;
+      // Move master to correct column based on their remaining active orders
+      const activeCount = await countActiveMasterOrders(t.masterId);
+      const targetColId = await getColumnIdForActiveCount(activeCount);
 
       await db.update(mastersTable).set({
         debt: String(newDebt),
         isTestMaster: false,
-        ...(freeCol ? { voronkaColumnId: freeCol.id } : {}),
+        ...(targetColId ? { voronkaColumnId: targetColId } : {}),
       }).where(eq(mastersTable.id, t.masterId));
 
       // Push notification (PWA)

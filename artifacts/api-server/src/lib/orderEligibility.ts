@@ -1,5 +1,45 @@
-import { db, transactionsTable, mastersTable } from "@workspace/db";
-import { eq, and, lte, ne } from "drizzle-orm";
+import { db, transactionsTable, mastersTable, voronkaColumnsTable, ordersTable } from "@workspace/db";
+import { eq, and, lte, ne, inArray, isNull } from "drizzle-orm";
+
+/**
+ * Count how many active orders a master currently has (excluding a specific orderId if provided).
+ */
+export async function countActiveMasterOrders(masterId: number, excludeOrderId?: number): Promise<number> {
+  const rows = await db.select({ id: ordersTable.id })
+    .from(ordersTable)
+    .where(and(
+      eq(ordersTable.masterId, masterId),
+      inArray(ordersTable.status, ["master_assigned", "in_progress", "cancellation_requested"]),
+      isNull(ordersTable.deletedAt),
+    ));
+  if (excludeOrderId !== undefined) {
+    return rows.filter(r => r.id !== excludeOrderId).length;
+  }
+  return rows.length;
+}
+
+/**
+ * Returns the correct voronka column ID for a master based on their active order count.
+ * - 0 orders → "Свободен" (receivesOrders: true)
+ * - 1 order  → "Занят"    (receivesOrders: true — can take one more)
+ * - 2+ orders → "На объекте" (receivesOrders: false — at limit)
+ */
+export async function getColumnIdForActiveCount(activeCount: number): Promise<number | null> {
+  const cols = await db.select().from(voronkaColumnsTable).orderBy(voronkaColumnsTable.position);
+  if (activeCount === 0) {
+    return cols.find(c => c.name === "Свободен")?.id ?? cols.find(c => c.receivesOrders)?.id ?? null;
+  }
+  if (activeCount === 1) {
+    return cols.find(c => c.name === "Занят")?.id
+      ?? cols.find(c => c.receivesOrders && c.name !== "Свободен")?.id
+      ?? cols.find(c => c.receivesOrders)?.id
+      ?? null;
+  }
+  // 2+ orders
+  return cols.find(c => c.name === "На объекте")?.id
+    ?? cols.find(c => !c.receivesOrders && c.position > 1)?.id
+    ?? null;
+}
 
 export interface EligibilityResult {
   canAccept: boolean;

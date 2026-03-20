@@ -3,7 +3,7 @@ import { db, ordersTable, mastersTable, transactionsTable, voronkaColumnsTable, 
 import { eq, inArray, and, ne, isNull } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { calculateCommission, getCommissionSettings } from "../lib/commission.js";
-import { getMasterEligibility, getOverdueMasterIds } from "../lib/orderEligibility.js";
+import { getMasterEligibility, getOverdueMasterIds, countActiveMasterOrders, getColumnIdForActiveCount } from "../lib/orderEligibility.js";
 
 const TELEGRAM_API = `https://api.telegram.org/bot${process.env["TELEGRAM_BOT_TOKEN"]}`;
 
@@ -276,28 +276,40 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
   }
 
   // Auto-move master between voronka columns based on status change
-  if (status !== undefined && current.masterId) {
+  if ((status !== undefined || approveCancellation) && current.masterId) {
     const masterId = current.masterId;
     const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
     const master = masterRows[0];
     if (master) {
       if (status === "master_assigned" || status === "in_progress") {
-        // Move to "На объекте"
-        const onSiteCol = await getOnSiteColumn();
-        if (onSiteCol) {
-          await db.update(mastersTable).set({ voronkaColumnId: onSiteCol.id }).where(eq(mastersTable.id, masterId));
+        // Count all active orders for this master (including this one), move to correct column
+        const activeCount = await countActiveMasterOrders(masterId);
+        const colId = await getColumnIdForActiveCount(activeCount);
+        if (colId) {
+          await db.update(mastersTable).set({ voronkaColumnId: colId }).where(eq(mastersTable.id, masterId));
         }
       } else if (status === "completed") {
-        // Move to "Ожидает оплаты" — free only after commission paid
-        const awaitingCol = await getAwaitingPaymentColumn();
-        if (awaitingCol) {
-          await db.update(mastersTable).set({ voronkaColumnId: awaitingCol.id }).where(eq(mastersTable.id, masterId));
+        // Count REMAINING active orders (excluding this order)
+        const remainingCount = await countActiveMasterOrders(masterId, id);
+        if (remainingCount > 0) {
+          // Still has other active orders — keep them in the appropriate column
+          const colId = await getColumnIdForActiveCount(remainingCount);
+          if (colId) {
+            await db.update(mastersTable).set({ voronkaColumnId: colId }).where(eq(mastersTable.id, masterId));
+          }
+        } else {
+          // Last active order completed — move to "Ожидает оплаты"
+          const awaitingCol = await getAwaitingPaymentColumn();
+          if (awaitingCol) {
+            await db.update(mastersTable).set({ voronkaColumnId: awaitingCol.id }).where(eq(mastersTable.id, masterId));
+          }
         }
       } else if (status === "cancelled" || approveCancellation) {
-        // Move back to "Свободен"
-        const freeCol = await getFreeColumn();
-        if (freeCol) {
-          await db.update(mastersTable).set({ voronkaColumnId: freeCol.id }).where(eq(mastersTable.id, masterId));
+        // Count REMAINING active orders (excluding this order)
+        const remainingCount = await countActiveMasterOrders(masterId, id);
+        const colId = await getColumnIdForActiveCount(remainingCount);
+        if (colId) {
+          await db.update(mastersTable).set({ voronkaColumnId: colId }).where(eq(mastersTable.id, masterId));
         }
       } else if (rejectCancellation) {
         // Master stays in current voronka column (operator must free them manually)

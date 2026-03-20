@@ -693,6 +693,7 @@ export default function HomePage() {
   const pending: PendingCard[] = data?.pendingOrders ?? [];
   const active: ActiveOrder[] = data?.activeOrders ?? [];
   const orderLimit: number = data?.master?.orderLimit ?? 2;
+  const hasActiveOrders = active.length > 0;
   const atLimit = active.length >= orderLimit;
 
   const workStatusLabels: Record<string, string> = {
@@ -713,7 +714,7 @@ export default function HomePage() {
           <p className="text-sm text-muted-foreground">{master?.city}</p>
         </div>
         <div className="flex items-center gap-2">
-          <AvailabilityToggle isAvailable={isAvailable} atLimit={atLimit} onChange={setIsAvailable} />
+          <AvailabilityToggle isAvailable={isAvailable} atLimit={hasActiveOrders} onChange={setIsAvailable} />
           <div className="flex items-center gap-1 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-2.5 py-1.5 rounded-xl">
             <Star size={13} fill="currentColor" />
             <span className="font-semibold text-sm">{master?.rating?.toFixed(1)}</span>
@@ -721,19 +722,29 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* At order limit warning */}
-      {atLimit && (
-        <div className="flex items-center gap-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-xl p-3">
-          <Briefcase size={18} className="text-orange-500 shrink-0" />
+      {/* Active orders info */}
+      {hasActiveOrders && (
+        <div className={`flex items-center gap-3 border rounded-xl p-3 ${
+          atLimit
+            ? "bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800"
+            : "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800"
+        }`}>
+          <Briefcase size={18} className={`shrink-0 ${atLimit ? "text-orange-500" : "text-blue-500"}`} />
           <div>
-            <p className="text-sm font-semibold text-orange-700 dark:text-orange-400">Максимум заказов ({active.length}/{orderLimit})</p>
-            <p className="text-xs text-orange-600 dark:text-orange-500">Закройте текущие заказы, чтобы принимать новые.</p>
+            <p className={`text-sm font-semibold ${atLimit ? "text-orange-700 dark:text-orange-400" : "text-blue-700 dark:text-blue-400"}`}>
+              {atLimit ? `Лимит заказов (${active.length}/${orderLimit})` : `В работе (${active.length}/${orderLimit})`}
+            </p>
+            <p className={`text-xs ${atLimit ? "text-orange-600 dark:text-orange-500" : "text-blue-600 dark:text-blue-500"}`}>
+              {atLimit
+                ? "Закройте текущие заказы, чтобы принимать новые."
+                : "Вы можете принять ещё один заказ."}
+            </p>
           </div>
         </div>
       )}
 
       {/* Unavailable warning */}
-      {!atLimit && !isAvailable && (
+      {!hasActiveOrders && !isAvailable && (
         <div className="flex items-center gap-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3">
           <PauseCircle size={18} className="text-red-500 shrink-0" />
           <div>
