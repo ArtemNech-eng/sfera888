@@ -231,6 +231,8 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
   const [activatingContract, setActivatingContract] = useState(false);
   const [markingExternal, setMarkingExternal] = useState(false);
   const [suspending, setSuspending] = useState(false);
+  const [verifyingPassport, setVerifyingPassport] = useState(false);
+  const [verifyNote, setVerifyNote] = useState("");
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
@@ -454,6 +456,35 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
       }
     } finally {
       setMarkingExternal(false);
+    }
+  };
+
+  const verifyPassportManually = async (verified: boolean) => {
+    const note = verifyNote.trim();
+    if (!verified && !note) {
+      const reason = window.prompt("Причина отклонения (необязательно):");
+      if (reason !== null) setVerifyNote(reason);
+    }
+    setVerifyingPassport(true);
+    try {
+      const r = await fetch(`/api/masters/${master.id}/verify-passport`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ verified, note: verifyNote.trim() || undefined }),
+      });
+      if (r.ok) {
+        const updated = await r.json();
+        onMasterUpdate(master.id, {
+          passportVerified: updated.passportVerified,
+          passportVerifyNote: updated.passportVerifyNote,
+          status: updated.status,
+          voronkaColumnId: updated.voronkaColumnId,
+        });
+        setVerifyNote("");
+      }
+    } finally {
+      setVerifyingPassport(false);
     }
   };
 
@@ -884,13 +915,35 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                 </p>
                 {master.contractSignedAt ? (
                   <div className="space-y-2">
-                    <div className="flex items-center gap-1.5">
+                    {/* Verification status + manual controls */}
+                    <div className="flex items-center gap-2 flex-wrap">
                       {master.passportVerified
                         ? <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                         : <ShieldAlert className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
                       <span className={`text-xs font-medium ${master.passportVerified ? "text-emerald-700" : "text-amber-700"}`}>
-                        {master.passportVerified ? "Паспорт проверен ИИ" : "Паспорт требует проверки"}
+                        {master.passportVerified ? "Паспорт подтверждён" : "Требует проверки"}
                       </span>
+                      {/* Manual verify / reject buttons */}
+                      {!master.passportVerified && (
+                        <button
+                          onClick={() => verifyPassportManually(true)}
+                          disabled={verifyingPassport}
+                          className="flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[10px] font-semibold rounded-md px-2 py-1 transition-colors disabled:opacity-60"
+                        >
+                          {verifyingPassport ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <ShieldCheck className="w-2.5 h-2.5" />}
+                          Подтвердить
+                        </button>
+                      )}
+                      {master.passportVerified && (
+                        <button
+                          onClick={() => verifyPassportManually(false)}
+                          disabled={verifyingPassport}
+                          className="flex items-center gap-1 bg-red-50 hover:bg-red-100 text-red-600 text-[10px] font-semibold rounded-md px-2 py-1 transition-colors disabled:opacity-60"
+                        >
+                          {verifyingPassport ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <ShieldBan className="w-2.5 h-2.5" />}
+                          Отклонить
+                        </button>
+                      )}
                     </div>
                     {master.passportVerifyNote && (
                       <p className="text-[11px] text-gray-400 leading-relaxed">{master.passportVerifyNote}</p>
@@ -920,7 +973,16 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                         <span className="text-[11px] text-gray-300">IP: {master.contractSignIp}</span>
                       )}
                     </div>
-                    <div className="flex flex-wrap gap-3">
+                    {/* Links: view PDF contract + passport photos */}
+                    <div className="flex flex-wrap gap-3 items-center">
+                      <a
+                        href={`/api/contract/view/${master.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-[11px] bg-violet-50 text-violet-700 hover:bg-violet-100 font-semibold px-2.5 py-1 rounded-md transition-colors"
+                      >
+                        <FileSignature className="w-3 h-3" /> Открыть договор
+                      </a>
                       {master.passportPhotoUrl && (
                         <a
                           href={master.passportPhotoUrl}

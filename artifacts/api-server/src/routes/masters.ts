@@ -218,6 +218,39 @@ router.post("/:id/mark-contract-external", requireRole("admin"), async (req, res
   res.json(formatMaster(updated));
 });
 
+// PATCH /api/masters/:id/verify-passport — manually approve or reject passport verification
+router.patch("/:id/verify-passport", requireRole("admin"), async (req, res) => {
+  const id = parseInt(req.params.id);
+  const { verified, note } = req.body as { verified: boolean; note?: string };
+  if (typeof verified !== "boolean") return res.status(400).json({ error: "verified (boolean) required" });
+
+  const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, id));
+  if (!master) return res.status(404).json({ error: "Мастер не найден" });
+
+  const updates: Partial<typeof mastersTable.$inferInsert> = {
+    passportVerified: verified,
+    passportVerifyNote: note?.trim() || (verified ? "Подтверждён вручную администратором" : "Отклонён администратором"),
+  };
+
+  // If manually verified and master is still in pending_contract — activate them
+  if (verified && master.status === "pending_contract" && master.contractSignedAt) {
+    const cols = await db.select().from(voronkaColumnsTable);
+    const freeCol = cols.find(c => c.name === "Свободен");
+    updates.status = "active";
+    if (freeCol) updates.voronkaColumnId = freeCol.id;
+
+    if (master.telegramId) {
+      const tgRows = await db.select().from(telegramChatsTable).where(eq(telegramChatsTable.telegramChatId, master.telegramId));
+      const chatId = tgRows[0]?.telegramChatId ?? master.telegramId;
+      notifyMasterActivated(chatId, master.alias).catch(() => {});
+    }
+  }
+
+  await db.update(mastersTable).set(updates).where(eq(mastersTable.id, id));
+  const [updated] = await db.select().from(mastersTable).where(eq(mastersTable.id, id));
+  res.json(formatMaster(updated));
+});
+
 // DELETE /api/masters/:id — soft delete (move to trash)
 router.delete("/:id", requireRole("admin"), async (req, res) => {
   const id = parseInt(req.params.id);

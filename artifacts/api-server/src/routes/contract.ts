@@ -219,6 +219,124 @@ router.get("/status", requireMasterPwa, async (req, res) => {
   res.json(master);
 });
 
+// GET /api/contract/view/:masterId — HTML printable contract view (admin only)
+router.get("/view/:masterId", async (req, res) => {
+  const sessionUserId = (req.session as any).userId;
+  if (!sessionUserId) return res.status(401).send("Не авторизован");
+
+  const masterId = parseInt(req.params.masterId);
+  if (isNaN(masterId)) return res.status(400).send("Некорректный ID");
+
+  const master = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId)).then(r => r[0]);
+  if (!master) return res.status(404).send("Мастер не найден");
+  if (!master.contractSignedAt) return res.status(404).send("Договор не подписан");
+
+  const contractNum = String(masterId).padStart(3, "0");
+  const signedAt = master.contractSignedAt ? new Date(master.contractSignedAt) : new Date();
+  const months = ["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
+  const dateStr = `${signedAt.getDate()} ${months[signedAt.getMonth()]} ${signedAt.getFullYear()} г.`;
+
+  const fn = (v: string | null | undefined, fallback = "—") => v?.trim() || fallback;
+
+  const passportImgTags = [
+    master.passportPhotoUrl ? `<div class="photo-block"><p class="photo-label">Разворот с фото</p><img src="${master.passportPhotoUrl}" alt="Паспорт (разворот)"/></div>` : "",
+    master.passportRegPhotoUrl ? `<div class="photo-block"><p class="photo-label">Страница прописки</p><img src="${master.passportRegPhotoUrl}" alt="Паспорт (прописка)"/></div>` : "",
+  ].filter(Boolean).join("\n");
+
+  const html = `<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<title>Договор № ${contractNum}</title>
+<style>
+  body { font-family: "Times New Roman", serif; font-size: 12pt; max-width: 800px; margin: 40px auto; color: #111; line-height: 1.55; }
+  h1 { font-size: 14pt; text-align: center; margin-bottom: 4px; }
+  h2 { font-size: 12pt; margin-top: 20px; margin-bottom: 6px; }
+  .meta { text-align: center; color: #555; margin-bottom: 24px; font-size: 11pt; }
+  .section { margin-bottom: 14px; }
+  .divider { border: none; border-top: 1px solid #bbb; margin: 18px 0; }
+  .info-table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+  .info-table td { padding: 4px 8px; font-size: 11pt; }
+  .info-table td:first-child { font-weight: bold; color: #555; width: 180px; }
+  .verdict { padding: 8px 14px; border-radius: 6px; display: inline-block; margin: 8px 0; font-size: 11pt; }
+  .verdict.ok { background: #d1fae5; color: #065f46; }
+  .verdict.fail { background: #fef3c7; color: #92400e; }
+  .sign-block { background: #f8f8f8; border: 1px solid #ddd; border-radius: 8px; padding: 14px 18px; margin: 18px 0; font-size: 11pt; }
+  .photos { display: flex; gap: 20px; flex-wrap: wrap; margin: 18px 0; }
+  .photo-block { text-align: center; }
+  .photo-block img { max-width: 340px; max-height: 260px; border: 1px solid #ddd; border-radius: 6px; }
+  .photo-label { font-size: 10pt; color: #555; margin-bottom: 4px; }
+  .contract-text { white-space: pre-wrap; font-size: 11pt; line-height: 1.6; background: #fafafa; border: 1px solid #eee; border-radius: 6px; padding: 16px 20px; }
+  @media print { body { margin: 20px; } }
+</style>
+</head>
+<body>
+<h1>ДОГОВОР № ${contractNum}</h1>
+<div class="meta">г. Краснодар &nbsp;·&nbsp; ${dateStr} &nbsp;·&nbsp; о порядке передачи заказов и вознаграждении агента</div>
+
+<div class="verdict ${master.passportVerified ? "ok" : "fail"}">
+  ${master.passportVerified ? "✅ Паспорт проверен" : "⚠️ Паспорт требует проверки"}
+  ${master.passportVerifyNote ? ` — ${master.passportVerifyNote}` : ""}
+</div>
+
+<h2>Реквизиты мастера</h2>
+<table class="info-table">
+  <tr><td>ФИО</td><td>${fn(master.contractFullName)}</td></tr>
+  <tr><td>Паспорт</td><td>${fn(master.contractPassportNumber)}</td></tr>
+  <tr><td>Выдан</td><td>${fn(master.contractPassportDate)}${master.contractPassportIssuer ? ", " + master.contractPassportIssuer : ""}</td></tr>
+  <tr><td>Адрес</td><td>${fn(master.contractAddress)}</td></tr>
+  <tr><td>Телефон</td><td>${fn(master.phone)}</td></tr>
+</table>
+
+<div class="sign-block">
+  <strong>Подписан:</strong> ${signedAt.toLocaleString("ru-RU", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+  ${master.contractSignIp ? `&nbsp;·&nbsp; <span style="color:#888">IP: ${master.contractSignIp}</span>` : ""}
+</div>
+
+${passportImgTags ? `<h2>Фото документов</h2><div class="photos">${passportImgTags}</div>` : ""}
+
+<hr class="divider"/>
+<h2>Текст договора</h2>
+<div class="contract-text">ДОГОВОР № ${contractNum}  г. Краснодар  ${dateStr}
+о порядке передачи заказов и вознаграждении агента
+
+ИП Коваленко Игорь Геннадьевич, действующий на основании государственной регистрации (далее — «Агент»), с одной стороны, и гражданин(ка) ${fn(master.contractFullName)}, ${fn(master.contractPassportNumber)}, ${fn(master.contractPassportDate)} ${fn(master.contractPassportIssuer)}, проживающий(ая) по адресу: ${fn(master.contractAddress)}, ${fn(master.phone)}, (далее — «Мастер»), с другой стороны, совместно — «Стороны», заключили настоящий договор о нижеследующем.
+
+1. ПРЕДМЕТ ДОГОВОРА
+1.1. Агент передаёт Мастеру заказы по выполнению работ и/или оказанию услуг бытового и ремонтного характера, а Мастер обязуется связаться с Клиентом, договориться об условиях, выполнить Заказ качественно и в срок, а также перечислить Агенту вознаграждение.
+1.2. Агент действует как посредник при привлечении заказов, Мастер — исполнитель.
+
+2. ПОРЯДОК ОПЛАТЫ И ВОЗНАГРАЖДЕНИЕ
+2.1. а) Заказ до 50 000 ₽ — фиксированное вознаграждение 5 000 ₽.
+     б) Заказ свыше 50 000 ₽ — 15% от суммы заказа.
+     в) Заказ свыше 100 000 ₽ — обсуждается индивидуально.
+2.2. Минимальная сумма заказа — 15 000 ₽.
+
+3. ПОДТВЕРЖДЕНИЕ ВЫПОЛНЕНИЯ РАБОТ
+3.1. Обязательны: подписанный акт выполненных работ и фото «до/после».
+3.3. Гарантия на выполненные работы — 6 месяцев.
+
+4. ОТВЕТСТВЕННОСТЬ
+4.1. Штраф за просрочку вознаграждения — 1% в день, не более 100% долга.
+
+5. ПЕРСОНАЛЬНЫЕ ДАННЫЕ
+5.2. Мастер даёт согласие на обработку персональных данных.
+
+8. СРОК И РАСТОРЖЕНИЕ
+8.1. Договор вступает в силу с момента электронного акцепта.
+8.2. Расторжение — письменное уведомление за 7 дней.
+
+Мастер: ${fn(master.contractFullName)}
+Подписано электронно ${signedAt.toLocaleString("ru-RU")}, IP: ${fn(master.contractSignIp)}
+</div>
+
+</body>
+</html>`;
+
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.send(html);
+});
+
 // GET /api/contract/passport/:filename — serve passport photo (admin only, or own)
 router.get("/passport/:filename", async (req, res) => {
   const sessionUserId = (req.session as any).userId;
