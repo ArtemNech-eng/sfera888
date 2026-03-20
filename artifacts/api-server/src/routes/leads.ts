@@ -102,18 +102,28 @@ router.get("/:id", allLeadRoles, async (req, res) => {
 
 router.patch("/:id", allLeadRoles, async (req, res) => {
   const id = parseInt(req.params.id);
-  const { clientName, clientPhone, city, district, serviceType, area, scheduledAt, comment, source, status } = req.body;
+  const { clientName, clientPhone, city, district, serviceType, area, scheduledAt, comment, source, status, services, photos } = req.body;
   const updates: any = { updatedAt: new Date() };
   if (clientName !== undefined) updates.clientName = clientName;
   if (clientPhone !== undefined) updates.clientPhone = clientPhone;
   if (city !== undefined) updates.city = city;
   if (district !== undefined) updates.district = district;
-  if (serviceType !== undefined) updates.serviceType = serviceType;
-  if (area !== undefined) updates.area = String(area);
   if (scheduledAt !== undefined) updates.scheduledAt = scheduledAt ? new Date(scheduledAt) : null;
   if (comment !== undefined) updates.comment = comment;
   if (source !== undefined) updates.source = source;
   if (status !== undefined) updates.status = status;
+  if (photos !== undefined) {
+    updates.photos = Array.isArray(photos) && photos.length > 0 ? JSON.stringify(photos) : null;
+  }
+  if (services !== undefined && Array.isArray(services) && services.length > 0) {
+    const summary = buildServiceSummary(services);
+    updates.services = JSON.stringify(services);
+    updates.serviceType = summary.serviceType;
+    updates.area = String(summary.area);
+  } else {
+    if (serviceType !== undefined) updates.serviceType = serviceType;
+    if (area !== undefined) updates.area = String(area);
+  }
 
   const result = await db.update(leadsTable).set(updates).where(eq(leadsTable.id, id)).returning();
   if (!result[0]) return res.status(404).json({ error: "Lead not found" });
@@ -125,6 +135,7 @@ router.patch("/:id", allLeadRoles, async (req, res) => {
     comment: l.comment ?? null,
     source: l.source ?? null,
     services: parseServices(l.services),
+    photos: l.photos ? JSON.parse(l.photos) : null,
   });
 });
 
