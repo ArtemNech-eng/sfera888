@@ -8,7 +8,7 @@ import { formatDate } from "@/lib/utils";
 import {
   Loader2, MapPin, Send, Users, CheckCircle2, Clock, X, UserCheck,
   DollarSign, Check, Pencil, AlertCircle, MessageSquare, Trash2, Search,
-  ClipboardList,
+  ClipboardList, CalendarDays, ChevronDown, Filter,
 } from "lucide-react";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -69,6 +69,9 @@ export default function Orders() {
     const params = new URLSearchParams(window.location.search);
     return params.get("search") ?? "";
   });
+  const [dateFilter, setDateFilter] = useState<"all"|"today"|"yesterday"|"week"|"month">("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [cityFilter, setCityFilter] = useState<string>("all");
   const highlightId = parseInt(new URLSearchParams(window.location.search).get("highlight") ?? "") || null;
   const highlightRowRef = useRef<HTMLTableRowElement | null>(null);
 
@@ -261,19 +264,55 @@ export default function Orders() {
   const cancellationOrders = orders?.filter(o => o.status === "cancellation_requested" as any) ?? [];
   const pendingResponseOrders = pendingDispatches ?? [];
 
+  const availableCities = useMemo(() => {
+    if (!orders) return [];
+    const cities = Array.from(new Set(orders.map(o => o.city).filter(Boolean) as string[]));
+    return cities.sort((a, b) => a.localeCompare(b, "ru"));
+  }, [orders]);
+
+  const activeFilterCount = [
+    dateFilter !== "all" ? 1 : 0,
+    statusFilter !== "all" ? 1 : 0,
+    cityFilter !== "all" ? 1 : 0,
+  ].reduce((a, b) => a + b, 0);
+
   const filteredOrders = useMemo(() => {
     if (!orders) return [];
-    if (!search.trim()) return orders;
-    const q = search.toLowerCase();
-    return orders.filter(o =>
-      String(o.id).includes(q) ||
-      o.city?.toLowerCase().includes(q) ||
-      (o as any).district?.toLowerCase().includes(q) ||
-      o.serviceType?.toLowerCase().includes(q) ||
-      o.masterName?.toLowerCase().includes(q) ||
-      o.clientPhone?.toLowerCase().includes(q)
-    );
-  }, [orders, search]);
+
+    const now = new Date();
+    const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const today = startOfDay(now);
+    const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+    const weekAgo = new Date(today); weekAgo.setDate(today.getDate() - 6);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    return orders.filter(o => {
+      if (search.trim()) {
+        const q = search.toLowerCase();
+        const matches =
+          String(o.id).includes(q) ||
+          o.city?.toLowerCase().includes(q) ||
+          (o as any).district?.toLowerCase().includes(q) ||
+          o.serviceType?.toLowerCase().includes(q) ||
+          o.masterName?.toLowerCase().includes(q) ||
+          o.clientPhone?.toLowerCase().includes(q);
+        if (!matches) return false;
+      }
+
+      if (dateFilter !== "all") {
+        const created = new Date(o.createdAt);
+        if (dateFilter === "today" && created < today) return false;
+        if (dateFilter === "yesterday" && (created < yesterday || created >= today)) return false;
+        if (dateFilter === "week" && created < weekAgo) return false;
+        if (dateFilter === "month" && created < monthStart) return false;
+      }
+
+      if (statusFilter !== "all" && o.status !== statusFilter) return false;
+      if (cityFilter !== "all" && o.city !== cityFilter) return false;
+
+      return true;
+    });
+  }, [orders, search, dateFilter, statusFilter, cityFilter]);
 
   return (
     <ProtectedRoute allowedRoles={['admin', 'master_operator', 'lead_operator']} permissionKey="orders">
@@ -408,26 +447,108 @@ export default function Orders() {
           )}
 
           <div className="bg-card rounded-2xl border border-border/50 shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-border/50 flex items-center gap-3">
-              <div className="relative flex-1 max-w-xs">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-                <input
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  placeholder="Поиск: ID, город, услуга, мастер..."
-                  className="w-full pl-9 pr-8 py-2 text-sm bg-background border border-border/60 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30"
-                />
-                {search && (
-                  <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                    <X className="w-3.5 h-3.5" />
+            <div className="p-4 border-b border-border/50 space-y-3">
+              {/* Row 1: search + counter */}
+              <div className="flex items-center gap-3">
+                <div className="relative flex-1 max-w-xs">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                  <input
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    placeholder="Поиск: ID, город, услуга, мастер..."
+                    className="w-full pl-9 pr-8 py-2 text-sm bg-background border border-border/60 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                  {search && (
+                    <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+                {activeFilterCount > 0 && (
+                  <button
+                    onClick={() => { setDateFilter("all"); setStatusFilter("all"); setCityFilter("all"); }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-600 bg-red-50 border border-red-200 rounded-xl hover:bg-red-100 transition-colors"
+                  >
+                    <X className="w-3 h-3" />
+                    Сбросить ({activeFilterCount})
                   </button>
                 )}
+                {!isLoading && (
+                  <span className="text-xs text-muted-foreground ml-auto">
+                    {filteredOrders.length} {filteredOrders.length === 1 ? "заказ" : filteredOrders.length < 5 ? "заказа" : "заказов"}
+                    {orders && filteredOrders.length !== orders.length && (
+                      <span className="text-muted-foreground/60"> из {orders.length}</span>
+                    )}
+                  </span>
+                )}
               </div>
-              {!isLoading && (
-                <span className="text-xs text-muted-foreground ml-auto">
-                  {filteredOrders.length} {filteredOrders.length === 1 ? "заказ" : "заказов"}
-                </span>
-              )}
+
+              {/* Row 2: date pills + status + city */}
+              <div className="flex flex-wrap items-center gap-2">
+                <CalendarDays className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                {(["all","today","yesterday","week","month"] as const).map(period => {
+                  const labels = { all: "Все даты", today: "Сегодня", yesterday: "Вчера", week: "7 дней", month: "Этот месяц" };
+                  const active = dateFilter === period;
+                  return (
+                    <button
+                      key={period}
+                      onClick={() => setDateFilter(period)}
+                      className={`px-3 py-1 rounded-xl text-xs font-medium transition-colors border ${
+                        active
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-background border-border/60 text-muted-foreground hover:bg-slate-100"
+                      }`}
+                    >
+                      {labels[period]}
+                    </button>
+                  );
+                })}
+
+                <div className="h-4 w-px bg-border/50 mx-1" />
+
+                {/* Status filter */}
+                <div className="relative">
+                  <select
+                    value={statusFilter}
+                    onChange={e => setStatusFilter(e.target.value)}
+                    className={`appearance-none pl-3 pr-7 py-1 rounded-xl text-xs font-medium border transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 ${
+                      statusFilter !== "all"
+                        ? "bg-primary/10 border-primary/40 text-primary"
+                        : "bg-background border-border/60 text-muted-foreground hover:bg-slate-100"
+                    }`}
+                  >
+                    <option value="all">Все статусы</option>
+                    <option value="waiting_master">Ожидает мастера</option>
+                    <option value="master_assigned">Мастер назначен</option>
+                    <option value="in_progress">В работе</option>
+                    <option value="completed">Завершён</option>
+                    <option value="cancellation_requested">Запрос отмены</option>
+                    <option value="cancelled">Отменён</option>
+                  </select>
+                  <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
+                </div>
+
+                {/* City filter */}
+                {availableCities.length > 1 && (
+                  <div className="relative">
+                    <select
+                      value={cityFilter}
+                      onChange={e => setCityFilter(e.target.value)}
+                      className={`appearance-none pl-3 pr-7 py-1 rounded-xl text-xs font-medium border transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 ${
+                        cityFilter !== "all"
+                          ? "bg-primary/10 border-primary/40 text-primary"
+                          : "bg-background border-border/60 text-muted-foreground hover:bg-slate-100"
+                      }`}
+                    >
+                      <option value="all">Все города</option>
+                      {availableCities.map(city => (
+                        <option key={city} value={city}>{city}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
+                  </div>
+                )}
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
