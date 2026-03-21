@@ -1,9 +1,10 @@
 import app from "./app";
-import { db, usersTable, voronkaColumnsTable, mastersTable } from "@workspace/db";
+import { db, usersTable, voronkaColumnsTable, mastersTable, ordersTable, orderDispatchesTable } from "@workspace/db";
 import { sql } from "drizzle-orm";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, and, lte } from "drizzle-orm";
 import { hashPassword } from "./lib/auth.js";
 import { checkOverdueTransactions } from "./lib/orderEligibility.js";
+import { performBroadcast } from "./lib/broadcastOrder.js";
 
 const rawPort = process.env["PORT"];
 
@@ -35,6 +36,24 @@ async function runMigrations() {
       ADD COLUMN IF NOT EXISTS contract_address TEXT,
       ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP,
       ADD COLUMN IF NOT EXISTS passport_reg_photo_url TEXT
+  `);
+  await db.execute(sql`
+    ALTER TABLE orders
+      ADD COLUMN IF NOT EXISTS operator_note TEXT,
+      ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS order_status_logs (
+      id SERIAL PRIMARY KEY,
+      order_id INTEGER NOT NULL REFERENCES orders(id),
+      old_status TEXT,
+      new_status TEXT NOT NULL,
+      user_id INTEGER,
+      user_alias TEXT,
+      note TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
   `);
   console.log("[startup] Migrations applied");
 }
@@ -134,6 +153,50 @@ async function grantPassportVerifiedToActiveMasters() {
   }
 }
 
+// Auto-expire dispatch records that have been in "sent" status for more than 24 hours.
+// These masters didn't respond — mark them "rejected" so they're excluded from future re-broadcasts.
+async function autoExpireDispatches() {
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const result = await db.update(orderDispatchesTable)
+    .set({ status: "rejected" })
+    .where(and(eq(orderDispatchesTable.status, "sent"), lte(orderDispatchesTable.createdAt, cutoff)))
+    .returning({ id: orderDispatchesTable.id });
+  if (result.length > 0) {
+    console.log(`[auto-expire] Expired ${result.length} dispatch record(s) older than 24h`);
+  }
+}
+
+// Auto-broadcast scheduled orders: if an order has scheduledAt within the next 4 hours
+// and has never been dispatched, trigger broadcast automatically.
+async function autoScheduledOrderBroadcast() {
+  const now = new Date();
+  const in4h = new Date(now.getTime() + 4 * 60 * 60 * 1000);
+  const in2h = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+
+  const orders = await db.select().from(ordersTable)
+    .where(and(
+      eq(ordersTable.status, "waiting_master"),
+      eq(ordersTable.dispatchStatus, "none"),
+    ));
+
+  const tooBroadcast = orders.filter(o =>
+    o.scheduledAt && new Date(o.scheduledAt) >= in2h && new Date(o.scheduledAt) <= in4h
+  );
+
+  for (const order of tooBroadcast) {
+    try {
+      const result = await performBroadcast(order.id);
+      if (result.ok) {
+        console.log(`[auto-broadcast] Sent to ${result.sent} master(s) for scheduled order #${order.id}`);
+      } else {
+        console.log(`[auto-broadcast] Skipped order #${order.id}: ${result.error}`);
+      }
+    } catch (e) {
+      console.error(`[auto-broadcast] Error for order #${order.id}:`, e);
+    }
+  }
+}
+
 runMigrations().catch(console.error);
 maybeResetAdminPassword().catch(console.error);
 seedVoronkaColumns().catch(console.error);
@@ -141,6 +204,11 @@ grantPassportVerifiedToActiveMasters().catch(console.error);
 // Mark overdue commissions on startup and then every 6 hours
 checkOverdueTransactions().catch(console.error);
 setInterval(() => checkOverdueTransactions().catch(console.error), 6 * 60 * 60 * 1000);
+// Auto-expire dispatches that haven't been responded to in 24h
+autoExpireDispatches().catch(console.error);
+setInterval(() => autoExpireDispatches().catch(console.error), 60 * 60 * 1000);
+// Auto-broadcast scheduled orders 2–4h before scheduledAt
+setInterval(() => autoScheduledOrderBroadcast().catch(console.error), 15 * 60 * 1000);
 
 app.listen(port, () => {
   console.log(`Server listening on port ${port}`);

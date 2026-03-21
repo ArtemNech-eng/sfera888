@@ -1,9 +1,10 @@
 import { Router } from "express";
-import { db, ordersTable, mastersTable, transactionsTable, voronkaColumnsTable, orderDispatchesTable, leadsTable, masterMessagesTable } from "@workspace/db";
+import { db, ordersTable, mastersTable, transactionsTable, voronkaColumnsTable, orderDispatchesTable, leadsTable, masterMessagesTable, orderStatusLogsTable, usersTable } from "@workspace/db";
 import { eq, inArray, and, ne, isNull, desc } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { calculateCommission, getCommissionSettings } from "../lib/commission.js";
 import { getMasterEligibility, getOverdueMasterIds, countActiveMasterOrders, getColumnIdForActiveCount } from "../lib/orderEligibility.js";
+import { performBroadcast } from "../lib/broadcastOrder.js";
 
 const TELEGRAM_API = `https://api.telegram.org/bot${process.env["TELEGRAM_BOT_TOKEN"]}`;
 
@@ -88,6 +89,9 @@ router.get("/", allOrderRoles, async (req, res) => {
     commission: o.commission ? Number(o.commission) : null,
     clientRating: o.clientRating ?? null,
     cancelReason: o.cancelReason ?? null,
+    operatorNote: (o as any).operatorNote ?? null,
+    assignedAt: (o as any).assignedAt ?? null,
+    completedAt: (o as any).completedAt ?? null,
     photosBefore: (o as any).photosBefore ?? [],
     photosAfter: (o as any).photosAfter ?? [],
     photoAct: (o as any).photoAct ?? null,
@@ -123,6 +127,9 @@ router.get("/:id", allOrderRoles, async (req, res) => {
     commission: o.commission ? Number(o.commission) : null,
     clientRating: o.clientRating ?? null,
     cancelReason: o.cancelReason ?? null,
+    operatorNote: (o as any).operatorNote ?? null,
+    assignedAt: (o as any).assignedAt ?? null,
+    completedAt: (o as any).completedAt ?? null,
     createdAt: o.createdAt,
     updatedAt: o.updatedAt,
   });
@@ -130,7 +137,7 @@ router.get("/:id", allOrderRoles, async (req, res) => {
 
 router.patch("/:id", allOrderRoles, async (req, res) => {
   const id = parseInt(req.params.id);
-  const { status, orderAmount, commission, clientRating, proposedAmount, acceptProposed, approveCancellation, rejectCancellation } = req.body;
+  const { status, orderAmount, commission, clientRating, proposedAmount, acceptProposed, approveCancellation, rejectCancellation, operatorNote } = req.body;
 
   // Fetch current order to get masterId before update
   const currentRows = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
@@ -140,18 +147,35 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
   const updates: any = { updatedAt: new Date() };
   if (status !== undefined) updates.status = status;
   if (proposedAmount !== undefined) updates.proposedAmount = proposedAmount !== null ? String(proposedAmount) : null;
+  if (operatorNote !== undefined) updates.operatorNote = operatorNote !== null ? operatorNote : null;
+
+  // Track status transition for timestamps and logging
+  let newStatus: string | null = null;
 
   // Approve cancellation → set status cancelled
   if (approveCancellation) {
     updates.status = "cancelled";
+    newStatus = "cancelled";
   }
   // Reject cancellation → detach master, reset order for re-broadcast, clear reason
   if (rejectCancellation) {
     updates.status = "waiting_master";
+    newStatus = "waiting_master";
     updates.masterId = null;
     updates.cancelReason = null;
     updates.dispatchStatus = "none";
   }
+
+  // Set timestamps on status transitions
+  if (status === "master_assigned" && current.status !== "master_assigned") {
+    updates.assignedAt = new Date();
+    newStatus = "master_assigned";
+  }
+  if (status === "completed" && current.status !== "completed") {
+    updates.completedAt = new Date();
+    newStatus = "completed";
+  }
+  if (status && !newStatus) newStatus = status;
 
   // "Accept proposed" — copy proposedAmount → orderAmount and auto-calc commission
   if (acceptProposed && current.proposedAmount) {
@@ -175,6 +199,23 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
   const result = await db.update(ordersTable).set(updates).where(eq(ordersTable.id, id)).returning();
   if (!result[0]) return res.status(404).json({ error: "Order not found" });
   const o = result[0];
+
+  // ── Log status change ─────────────────────────────────────────────────────
+  if (newStatus && newStatus !== current.status) {
+    const sessionUser = (req as any).session?.userId ?? null;
+    let userAlias = "система";
+    if (sessionUser) {
+      const userRows = await db.select().from(usersTable).where(eq(usersTable.id, sessionUser));
+      userAlias = userRows[0]?.name ?? userRows[0]?.login ?? "система";
+    }
+    await db.insert(orderStatusLogsTable).values({
+      orderId: id,
+      oldStatus: current.status,
+      newStatus,
+      userId: sessionUser,
+      userAlias,
+    }).catch(() => {});
+  }
 
   // ── Update/create transaction when commission is confirmed ──────────────────
   const commissionConfirmed = (acceptProposed && current.proposedAmount) ||
@@ -405,6 +446,10 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
     orderAmount: o.orderAmount ? Number(o.orderAmount) : null,
     commission: o.commission ? Number(o.commission) : null,
     clientRating: o.clientRating ?? null,
+    cancelReason: o.cancelReason ?? null,
+    operatorNote: (o as any).operatorNote ?? null,
+    assignedAt: (o as any).assignedAt ?? null,
+    completedAt: (o as any).completedAt ?? null,
     createdAt: o.createdAt,
     updatedAt: o.updatedAt,
   });
@@ -491,7 +536,7 @@ router.post("/:id/unassign-master", requireRole("admin", "master_operator"), asy
   const id = parseInt(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid order id" });
 
-  const { reason } = req.body as { reason?: string };
+  const { reason, rebroadcast } = req.body as { reason?: string; rebroadcast?: boolean };
   if (!reason?.trim()) return res.status(400).json({ error: "Укажите причину снятия мастера" });
 
   const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
@@ -510,10 +555,26 @@ router.post("/:id/unassign-master", requireRole("admin", "master_operator"), asy
     updatedAt: new Date(),
   }).where(eq(ordersTable.id, id));
 
-  // Revert dispatch records to dispatched/rejected
+  // Mark unassigned master's dispatch record as "rejected" so they're excluded from future re-broadcasts
   await db.update(orderDispatchesTable)
-    .set({ status: "dispatched" })
+    .set({ status: "rejected" })
     .where(and(eq(orderDispatchesTable.orderId, id), eq(orderDispatchesTable.masterId, prevMasterId)));
+
+  // Log the status change
+  const sessionUser = (req as any).session?.userId ?? null;
+  let unassignUserAlias = "система";
+  if (sessionUser) {
+    const userRows = await db.select().from(usersTable).where(eq(usersTable.id, sessionUser));
+    unassignUserAlias = userRows[0]?.name ?? userRows[0]?.login ?? "система";
+  }
+  await db.insert(orderStatusLogsTable).values({
+    orderId: id,
+    oldStatus: order.status,
+    newStatus: "waiting_master",
+    userId: sessionUser,
+    userAlias: unassignUserAlias,
+    note: `Мастер снят. Причина: ${reason.trim()}`,
+  }).catch(() => {});
 
   // Update master voronka column based on remaining active orders
   const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, prevMasterId));
@@ -537,7 +598,13 @@ router.post("/:id/unassign-master", requireRole("admin", "master_operator"), asy
     }).catch(() => {});
   }
 
-  res.json({ ok: true });
+  // If rebroadcast requested — trigger broadcast to other eligible masters immediately
+  let broadcastResult = null;
+  if (rebroadcast) {
+    broadcastResult = await performBroadcast(id).catch(() => null);
+  }
+
+  res.json({ ok: true, rebroadcast: broadcastResult });
 });
 
 // ─── POST /api/orders/:id/manual-assign/:masterId — admin force-assigns master ─
@@ -608,6 +675,27 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
     }
   }
 
+  // Set assignedAt timestamp on manual assign
+  await db.update(ordersTable)
+    .set({ assignedAt: new Date() })
+    .where(eq(ordersTable.id, orderId));
+
+  // Log the status change
+  const maSessionUser = (req as any).session?.userId ?? null;
+  let maUserAlias = "система";
+  if (maSessionUser) {
+    const userRows = await db.select().from(usersTable).where(eq(usersTable.id, maSessionUser));
+    maUserAlias = userRows[0]?.name ?? userRows[0]?.login ?? "система";
+  }
+  await db.insert(orderStatusLogsTable).values({
+    orderId,
+    oldStatus: order.status,
+    newStatus: "master_assigned",
+    userId: maSessionUser,
+    userAlias: maUserAlias,
+    note: `Назначен вручную: ${master.alias}`,
+  }).catch(() => {});
+
   // Log to CRM chat (visible in PWA chat tab)
   await db.insert(masterMessagesTable).values({
     masterId: master.id,
@@ -619,6 +707,18 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
   }).catch(() => {});
 
   res.json({ ok: true });
+});
+
+// ─── GET /api/orders/:id/status-log ───────────────────────────────────────────
+router.get("/:id/status-log", allOrderRoles, async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid order id" });
+
+  const logs = await db.select().from(orderStatusLogsTable)
+    .where(eq(orderStatusLogsTable.orderId, id))
+    .orderBy(desc(orderStatusLogsTable.createdAt));
+
+  res.json(logs);
 });
 
 // DELETE /api/orders/:id — soft delete (move to trash)

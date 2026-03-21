@@ -12,3 +12,4 @@ export * from "./master-tasks";
 export * from "./master-reviews";
 export * from "./tasks";
 export * from "./push-subscriptions";
+export * from "./order-status-logs";

@@ -8,7 +8,8 @@ import { formatDate } from "@/lib/utils";
 import {
   Loader2, MapPin, Send, Users, CheckCircle2, Clock, X, UserCheck,
   DollarSign, Check, Pencil, AlertCircle, MessageSquare, Trash2, Search,
-  ClipboardList, CalendarDays, ChevronDown, Filter, Settings,
+  ClipboardList, CalendarDays, ChevronDown, Filter, Settings, AlertTriangle,
+  FileText, History, Timer, RefreshCw, CopyX,
 } from "lucide-react";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -59,6 +60,46 @@ function DispatchBadge({ status }: { status: string }) {
 function fmt(n: number) {
   return n.toLocaleString("ru-RU") + " ₽";
 }
+
+function timeSince(date: string | Date): string {
+  const ms = Date.now() - new Date(date).getTime();
+  const m = Math.floor(ms / 60000);
+  if (m < 60) return `${m} мин`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}ч`;
+  const d = Math.floor(h / 24);
+  return `${d}д ${h % 24}ч`;
+}
+
+function timeBetween(start: string | Date, end: string | Date): string {
+  const ms = new Date(end).getTime() - new Date(start).getTime();
+  const m = Math.floor(ms / 60000);
+  if (m < 60) return `${m} мин`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}ч ${m % 60}мин`;
+  const d = Math.floor(h / 24);
+  return `${d}д ${h % 24}ч`;
+}
+
+interface StatusLogEntry {
+  id: number;
+  orderId: number;
+  oldStatus: string | null;
+  newStatus: string;
+  userId: number | null;
+  userAlias: string | null;
+  note: string | null;
+  createdAt: string;
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  waiting_master: "Ожидает мастера",
+  master_assigned: "Мастер назначен",
+  in_progress: "В работе",
+  completed: "Завершён",
+  cancelled: "Отменён",
+  cancellation_requested: "Запрос на отмену",
+};
 
 export default function Orders() {
   const [location, setLocation] = useLocation();
@@ -194,6 +235,9 @@ export default function Orders() {
   const [selectedMasterForAssign, setSelectedMasterForAssign] = useState<string>("");
   const [showUnassignDialog, setShowUnassignDialog] = useState(false);
   const [unassignReason, setUnassignReason] = useState("");
+  const [rebroadcastOnUnassign, setRebroadcastOnUnassign] = useState(false);
+  const [operatorNoteEdit, setOperatorNoteEdit] = useState<string | null>(null);
+  const [showStatusLog, setShowStatusLog] = useState(false);
 
   const { data: activeMasters } = useQuery<{ id: number; alias: string; city: string | null }[]>({
     queryKey: ["/api/masters"],
@@ -209,25 +253,57 @@ export default function Orders() {
   });
 
   const unassignMutation = useMutation({
-    mutationFn: async ({ orderId, reason }: { orderId: number; reason: string }) => {
+    mutationFn: async ({ orderId, reason, rebroadcast }: { orderId: number; reason: string; rebroadcast: boolean }) => {
       const r = await fetch(`/api/orders/${orderId}/unassign-master`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reason }),
+        body: JSON.stringify({ reason, rebroadcast }),
+      });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Ошибка"); }
+      return r.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dispatch", openDispatchId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/orders", openDispatchId, "status-log"] });
+      broadcastMutation.reset();
+      setShowUnassignDialog(false);
+      setUnassignReason("");
+      setRebroadcastOnUnassign(false);
+      const rebroadcastInfo = data?.rebroadcast?.ok ? ` Разослано ${data.rebroadcast.sent} мастерам.` : "";
+      toast({ title: "Мастер снят с заказа", description: `Снят успешно.${rebroadcastInfo}` });
+    },
+    onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
+  });
+
+  const saveNoteMutation = useMutation({
+    mutationFn: async ({ orderId, note }: { orderId: number; note: string }) => {
+      const r = await fetch(`/api/orders/${orderId}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ operatorNote: note }),
       });
       if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Ошибка"); }
       return r.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dispatch", openDispatchId] });
-      broadcastMutation.reset();
-      setShowUnassignDialog(false);
-      setUnassignReason("");
-      toast({ title: "Мастер снят с заказа", description: "Теперь можно сделать новую рассылку" });
+      setOperatorNoteEdit(null);
+      toast({ title: "Заметка сохранена" });
     },
     onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
+  });
+
+  const { data: statusLog } = useQuery<StatusLogEntry[]>({
+    queryKey: ["/api/orders", openDispatchId, "status-log"],
+    queryFn: async () => {
+      const r = await fetch(`/api/orders/${openDispatchId}/status-log`, { credentials: "include" });
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+    enabled: !!openDispatchId && showStatusLog,
   });
 
   const manualAssignMutation = useMutation({
@@ -707,6 +783,16 @@ export default function Orders() {
                         </td>
                         <td className="px-6 py-4">
                           <StatusBadge status={order.status} type="order" />
+                          {order.status === "waiting_master" && (() => {
+                            const waitH = (Date.now() - new Date(order.createdAt).getTime()) / 3600000;
+                            return (
+                              <div className={`flex items-center gap-1 mt-1 text-[10px] font-medium ${waitH > 24 ? "text-red-500" : "text-amber-500"}`}>
+                                <Timer className="w-3 h-3" />
+                                {timeSince(order.createdAt)}
+                                {waitH > 24 && <AlertTriangle className="w-3 h-3" />}
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td className="px-6 py-4">
                           {order.masterName ? (
@@ -889,7 +975,7 @@ export default function Orders() {
                   <h2 className="text-lg font-display font-bold text-foreground">Рассылка заявки #{openDispatchId}</h2>
                   <p className="text-sm text-muted-foreground">{openOrder.serviceType} · {openOrder.city}, {openOrder.district}</p>
                 </div>
-                <button onClick={() => { setOpenDispatchId(null); setShowManualAssign(false); setSelectedMasterForAssign(""); }} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100">
+                <button onClick={() => { setOpenDispatchId(null); setShowManualAssign(false); setSelectedMasterForAssign(""); setShowStatusLog(false); setOperatorNoteEdit(null); }} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100">
                   <X className="w-4 h-4 text-muted-foreground" />
                 </button>
               </div>
@@ -1130,6 +1216,147 @@ export default function Orders() {
                   </div>
                 )}
 
+                {/* ─── Operator note ─────────────────────────────────────── */}
+                <div className="border-t border-border/50 pt-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                      <FileText className="w-3.5 h-3.5" />Заметка оператора
+                    </p>
+                    {operatorNoteEdit === null && (
+                      <button
+                        onClick={() => setOperatorNoteEdit((openOrder as any).operatorNote ?? "")}
+                        className="text-xs text-blue-500 hover:text-blue-700 flex items-center gap-1"
+                      >
+                        <Pencil className="w-3 h-3" />Редактировать
+                      </button>
+                    )}
+                  </div>
+                  {operatorNoteEdit !== null ? (
+                    <div className="space-y-2">
+                      <textarea
+                        value={operatorNoteEdit}
+                        onChange={e => setOperatorNoteEdit(e.target.value)}
+                        placeholder="Внутренняя заметка (видна только операторам)..."
+                        rows={2}
+                        className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
+                        autoFocus
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setOperatorNoteEdit(null)}
+                          className="flex-1 py-1.5 text-xs font-medium text-muted-foreground border border-border rounded-lg hover:bg-slate-50"
+                        >Отмена</button>
+                        <button
+                          onClick={() => openDispatchId && saveNoteMutation.mutate({ orderId: openDispatchId, note: operatorNoteEdit })}
+                          disabled={saveNoteMutation.isPending}
+                          className="flex-1 py-1.5 text-xs font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 flex items-center justify-center gap-1"
+                        >
+                          {saveNoteMutation.isPending && <Loader2 className="w-3 h-3 animate-spin" />}
+                          Сохранить
+                        </button>
+                      </div>
+                    </div>
+                  ) : (openOrder as any).operatorNote ? (
+                    <p className="text-sm text-muted-foreground bg-slate-50 rounded-lg px-3 py-2 italic">{(openOrder as any).operatorNote}</p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground/50 italic">Нет заметки</p>
+                  )}
+                </div>
+
+                {/* ─── Timing stats ──────────────────────────────────────── */}
+                {((openOrder as any).assignedAt || (openOrder as any).completedAt) && (
+                  <div className="border-t border-border/50 pt-4 space-y-2">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                      <Timer className="w-3.5 h-3.5" />Время в заказе
+                    </p>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      {openOrder?.createdAt && (openOrder as any).assignedAt && (
+                        <div className="bg-slate-50 rounded-lg px-3 py-2">
+                          <p className="text-muted-foreground">Ожидание мастера</p>
+                          <p className="font-semibold text-foreground">{timeBetween(openOrder.createdAt, (openOrder as any).assignedAt)}</p>
+                        </div>
+                      )}
+                      {(openOrder as any).assignedAt && (openOrder as any).completedAt && (
+                        <div className="bg-slate-50 rounded-lg px-3 py-2">
+                          <p className="text-muted-foreground">Время работы</p>
+                          <p className="font-semibold text-foreground">{timeBetween((openOrder as any).assignedAt, (openOrder as any).completedAt)}</p>
+                        </div>
+                      )}
+                      {openOrder?.createdAt && (openOrder as any).completedAt && (
+                        <div className="bg-slate-50 rounded-lg px-3 py-2 col-span-2">
+                          <p className="text-muted-foreground">Общее время заказа</p>
+                          <p className="font-semibold text-foreground">{timeBetween(openOrder.createdAt, (openOrder as any).completedAt)}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* ─── Duplicate client warning ──────────────────────────── */}
+                {openOrder && (() => {
+                  const phone = (openOrder as any).clientPhone;
+                  if (!phone) return null;
+                  const dupes = (orders ?? []).filter(o =>
+                    o.id !== openOrder.id &&
+                    (o as any).clientPhone === phone &&
+                    !["cancelled"].includes(o.status)
+                  );
+                  if (dupes.length === 0) return null;
+                  return (
+                    <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+                      <CopyX className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-xs font-semibold text-amber-700">Дублирующий клиент</p>
+                        <p className="text-xs text-amber-600 mt-0.5">
+                          Этот телефон встречается ещё в {dupes.length} заказ{dupes.length === 1 ? "е" : dupes.length < 5 ? "ах" : "ах"}:{" "}
+                          {dupes.slice(0, 3).map(d => `#${d.id}`).join(", ")}
+                          {dupes.length > 3 && ` и ещё ${dupes.length - 3}`}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* ─── Status log ────────────────────────────────────────── */}
+                <div className="border-t border-border/50 pt-3">
+                  <button
+                    onClick={() => setShowStatusLog(v => !v)}
+                    className="w-full flex items-center justify-between text-xs text-muted-foreground hover:text-foreground transition-colors py-1"
+                  >
+                    <span className="flex items-center gap-1.5 font-semibold uppercase tracking-wide">
+                      <History className="w-3.5 h-3.5" />История статусов
+                    </span>
+                    <ChevronDown className={`w-4 h-4 transition-transform ${showStatusLog ? "rotate-180" : ""}`} />
+                  </button>
+                  {showStatusLog && (
+                    <div className="mt-2 space-y-1.5">
+                      {!statusLog && <div className="text-xs text-muted-foreground text-center py-2"><Loader2 className="w-3 h-3 animate-spin mx-auto" /></div>}
+                      {statusLog && statusLog.length === 0 && (
+                        <p className="text-xs text-muted-foreground/60 text-center py-2">Нет записей</p>
+                      )}
+                      {statusLog?.map(entry => (
+                        <div key={entry.id} className="flex items-start gap-2 text-xs">
+                          <div className="w-1.5 h-1.5 rounded-full bg-blue-400 mt-1.5 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {entry.oldStatus && (
+                                <><span className="text-muted-foreground">{STATUS_LABELS[entry.oldStatus] ?? entry.oldStatus}</span>
+                                <span className="text-muted-foreground">→</span></>
+                              )}
+                              <span className="font-medium text-foreground">{STATUS_LABELS[entry.newStatus] ?? entry.newStatus}</span>
+                            </div>
+                            <div className="text-muted-foreground/60 mt-0.5 flex items-center gap-2">
+                              <span>{new Date(entry.createdAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+                              {entry.userAlias && <span>· {entry.userAlias}</span>}
+                            </div>
+                            {entry.note && <p className="text-muted-foreground/80 mt-0.5 italic">{entry.note}</p>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 {/* Work photos section */}
                 {(((openOrder as any).photosBefore?.length > 0) || ((openOrder as any).photosAfter?.length > 0) || (openOrder as any).photoAct) && (
                   <div className="space-y-2">
@@ -1176,7 +1403,7 @@ export default function Orders() {
                 )}
 
                 <div className="pt-2 flex justify-end">
-                  <button onClick={() => setOpenDispatchId(null)} className="px-4 py-2 rounded-xl font-medium text-muted-foreground hover:bg-slate-100 text-sm">
+                  <button onClick={() => { setOpenDispatchId(null); setShowStatusLog(false); setOperatorNoteEdit(null); }} className="px-4 py-2 rounded-xl font-medium text-muted-foreground hover:bg-slate-100 text-sm">
                     Закрыть
                   </button>
                 </div>
@@ -1203,16 +1430,34 @@ export default function Orders() {
               <textarea
                 value={unassignReason}
                 onChange={e => setUnassignReason(e.target.value)}
-                placeholder="Например: созвонился с клиентом, заказ не актуален; мастер не выходит на связь; передаём другому мастеру..."
+                placeholder="Например: мастер не выходит на связь; передаём другому мастеру..."
                 rows={3}
                 className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-red-200 focus:border-red-300 resize-none"
                 autoFocus
               />
             </div>
 
+            <label className="flex items-start gap-3 cursor-pointer group">
+              <div className="relative mt-0.5">
+                <input
+                  type="checkbox"
+                  className="sr-only"
+                  checked={rebroadcastOnUnassign}
+                  onChange={e => setRebroadcastOnUnassign(e.target.checked)}
+                />
+                <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${rebroadcastOnUnassign ? "bg-blue-500 border-blue-500" : "border-gray-300 bg-white group-hover:border-blue-300"}`}>
+                  {rebroadcastOnUnassign && <Check className="w-3 h-3 text-white" />}
+                </div>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-800">Разослать сразу после снятия</p>
+                <p className="text-xs text-gray-400 mt-0.5">Этот мастер больше не получит заявку. Остальные подходящие мастера получат её немедленно.</p>
+              </div>
+            </label>
+
             <div className="flex gap-2.5 pt-1">
               <button
-                onClick={() => { setShowUnassignDialog(false); setUnassignReason(""); }}
+                onClick={() => { setShowUnassignDialog(false); setUnassignReason(""); setRebroadcastOnUnassign(false); }}
                 className="flex-1 py-2.5 text-sm font-medium text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
               >
                 Отмена
@@ -1220,7 +1465,7 @@ export default function Orders() {
               <button
                 onClick={() => {
                   if (!unassignReason.trim()) return;
-                  unassignMutation.mutate({ orderId: openDispatchId!, reason: unassignReason.trim() });
+                  unassignMutation.mutate({ orderId: openDispatchId!, reason: unassignReason.trim(), rebroadcast: rebroadcastOnUnassign });
                 }}
                 disabled={!unassignReason.trim() || unassignMutation.isPending}
                 className="flex-1 py-2.5 text-sm font-semibold text-white bg-red-500 rounded-xl hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"

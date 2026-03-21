@@ -4,6 +4,7 @@ import { eq, and, ne, inArray } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { sendPushToMaster } from "../lib/push.js";
 import { getOverdueMasterIds, getMasterEligibility } from "../lib/orderEligibility.js";
+import { performBroadcast } from "../lib/broadcastOrder.js";
 
 const router = Router();
 const TELEGRAM_API = `https://api.telegram.org/bot${process.env["TELEGRAM_BOT_TOKEN"]}`;
@@ -243,103 +244,11 @@ router.post("/test-order", ops, async (req, res) => {
 
 router.post("/:orderId/broadcast", ops, async (req, res) => {
   const orderId = parseInt(req.params.orderId);
-
-  const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
-  const order = orderRows[0];
-  if (!order) return res.status(404).json({ error: "Order not found" });
-
-  if (order.dispatchStatus !== "none") {
-    return res.status(400).json({ error: "Already dispatched" });
+  const result = await performBroadcast(orderId);
+  if (!result.ok) {
+    return res.status(400).json({ error: result.error });
   }
-
-  // Find eligible masters: active, with telegramId OR pwaLogin, in the same city as the order
-  const allMasters = await db.select().from(mastersTable)
-    .where(and(eq(mastersTable.status, "active"), eq(mastersTable.city, order.city)));
-  const reachable = allMasters.filter(m => m.telegramId || m.pwaLogin);
-
-  if (reachable.length === 0) {
-    return res.status(400).json({ error: `Нет активных мастеров в городе «${order.city}» (ни в Telegram, ни в приложении)` });
-  }
-
-  // Load all active orders to check per-master limits
-  const activeOrders = await db.select().from(ordersTable)
-    .where(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
-
-  // Load overdue master IDs for eligibility check
-  const overdueMasterIds = await getOverdueMasterIds();
-
-  // Filter out masters who have reached their order limit or have blocking debt
-  const eligible = reachable.filter(master => {
-    const myActiveCount = activeOrders.filter(o => o.masterId === master.id).length;
-    return getMasterEligibility(master, myActiveCount, overdueMasterIds).canAccept;
-  });
-
-  if (eligible.length === 0) {
-    return res.status(400).json({ error: "Все мастера заняты или превысили лимит заказов" });
-  }
-
-  // Filter by specialization: if master has specializations set, only send order
-  // if the order's serviceType matches one of them (case-insensitive, partial match).
-  // Masters with no specializations set receive all order types.
-  const orderType = order.serviceType.toLowerCase().trim();
-  const specialtyEligible = eligible.filter(master => {
-    const specs = master.specializations ?? [];
-    if (specs.length === 0) return true; // no filter — receives all
-    return specs.some(s => {
-      const sp = s.toLowerCase().trim();
-      return sp === orderType || orderType.includes(sp) || sp.includes(orderType);
-    });
-  });
-
-  if (specialtyEligible.length === 0) {
-    return res.status(400).json({
-      error: `Нет доступных мастеров с нужной специализацией «${order.serviceType}» в городе «${order.city}»`,
-    });
-  }
-
-  const cardText = buildOrderCard(order, orderId);
-  const replyMarkup = {
-    inline_keyboard: [
-      [{ text: "Откликнуться 🙋", callback_data: `respond_order_${orderId}` }],
-      [{ text: "💬 Задать вопрос оператору", callback_data: `ask_question_${orderId}` }],
-    ],
-  };
-
-  let sent = 0;
-  let skipped = reachable.length - specialtyEligible.length;
-  for (const master of specialtyEligible) {
-
-    let msgId: string | null = null;
-    if (master.telegramId) {
-      // Send Telegram notification for masters with Telegram
-      msgId = BANNER_NEW_ORDER
-        ? await sendTgPhoto(master.telegramId, BANNER_NEW_ORDER, cardText, replyMarkup)
-        : await sendTg(master.telegramId, cardText, replyMarkup);
-    }
-
-    if (master.pwaLogin) {
-      // Send Web Push notification for PWA masters
-      await sendPushToMaster(master.id, {
-        type: "new_order",
-        title: "Новый заказ",
-        body: `${order.city}${order.district ? ", " + order.district : ""} · ${order.serviceType} · ${order.area} м²`,
-        orderId,
-      }).catch(() => {});
-    }
-
-    await db.insert(orderDispatchesTable).values({
-      orderId,
-      masterId: master.id,
-      telegramChatId: master.telegramId || `pwa_${master.id}`,
-      telegramMessageId: msgId || null,
-      status: "sent",
-    });
-    sent++;
-  }
-
-  await db.update(ordersTable).set({ dispatchStatus: "dispatching", updatedAt: new Date() }).where(eq(ordersTable.id, orderId));
-
-  res.json({ ok: true, sent, skipped });
+  res.json({ ok: true, sent: result.sent, skipped: result.skipped });
 });
 
 // ─── POST /api/dispatch/:orderId/assign/:masterId ──────────────────────────────
