@@ -9,7 +9,7 @@ import {
   MapPin, Calendar, MessageSquare, Clock,
   ChevronRight, X, Images, Wrench, Zap, PauseCircle,
   PlayCircle, Navigation, Users, Heart, ChevronDown, Briefcase,
-  TrendingUp, Eye, EyeOff,
+  Eye, EyeOff,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -809,15 +809,7 @@ export default function HomePage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold">{master?.alias}</h1>
-          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-            <p className="text-sm text-muted-foreground">{master?.city}</p>
-            {todayActivity.total > 0 && (
-              <div className="flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                <TrendingUp size={11} />
-                {todayActivity.total} {todayActivity.total === 1 ? "заявка" : todayActivity.total < 5 ? "заявки" : "заявок"} сегодня
-              </div>
-            )}
-          </div>
+          <p className="text-sm text-muted-foreground mt-0.5">{master?.city}</p>
         </div>
         <div className="flex items-center gap-2">
           <AvailabilityToggle isAvailable={isAvailable} atLimit={atLimit} onChange={setIsAvailable} />
