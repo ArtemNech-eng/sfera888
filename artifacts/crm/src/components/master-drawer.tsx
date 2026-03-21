@@ -1187,7 +1187,27 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
               {ordersLoaded && orders.length === 0 && <div className="text-center text-sm text-gray-300 py-10">Нет заказов</div>}
               {ordersLoaded && orders.length > 0 && (
                 <div className="flex items-center justify-between mb-1">
-                  <p className="text-[11px] text-gray-400 font-medium">{orders.length} заказ{orders.length === 1 ? "" : orders.length < 5 ? "а" : "ов"}</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-[11px] text-gray-400 font-medium">{orders.length} заказ{orders.length === 1 ? "" : orders.length < 5 ? "а" : "ов"}</p>
+                    {(() => {
+                      const cancelledCount = orders.filter(o => o.status === "cancelled").length;
+                      const activeCount = orders.filter(o => o.status !== "cancelled" && o.status !== "completed").length;
+                      return (
+                        <>
+                          {cancelledCount > 0 && (
+                            <span className="text-[10px] bg-gray-100 text-gray-500 rounded-full px-2 py-0.5 font-semibold">
+                              {cancelledCount} отменён{cancelledCount === 1 ? "" : cancelledCount < 5 ? "о" : "о"}
+                            </span>
+                          )}
+                          {activeCount > 0 && (
+                            <span className="text-[10px] bg-blue-50 text-blue-600 rounded-full px-2 py-0.5 font-semibold">
+                              {activeCount} активн{activeCount === 1 ? "ый" : activeCount < 5 ? "ых" : "ых"}
+                            </span>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
                   {orders.filter(o => o.orderAmount).length > 0 && (
                     <p className="text-[11px] text-emerald-600 font-semibold">
                       Итого: {orders.reduce((s, o) => s + (o.orderAmount ?? 0), 0).toLocaleString("ru-RU")} ₽

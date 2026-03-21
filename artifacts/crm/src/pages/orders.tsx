@@ -70,7 +70,7 @@ export default function Orders() {
     return params.get("search") ?? "";
   });
   const [dateFilter, setDateFilter] = useState<"all"|"today"|"yesterday"|"week"|"month">("all");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("active");
   const [cityFilter, setCityFilter] = useState<string>("all");
   const highlightId = parseInt(new URLSearchParams(window.location.search).get("highlight") ?? "") || null;
   const highlightRowRef = useRef<HTMLTableRowElement | null>(null);
@@ -308,7 +308,9 @@ export default function Orders() {
         if (dateFilter === "month" && created < monthStart) return false;
       }
 
-      if (statusFilter !== "all" && o.status !== statusFilter) return false;
+      if (statusFilter === "active") {
+        if (o.status === "cancelled" || o.status === "completed") return false;
+      } else if (statusFilter !== "all" && o.status !== statusFilter) return false;
       if (cityFilter !== "all" && o.city !== cityFilter) return false;
 
       return true;
@@ -577,17 +579,18 @@ export default function Orders() {
                     value={statusFilter}
                     onChange={e => setStatusFilter(e.target.value)}
                     className={`appearance-none pl-3 pr-7 py-1 rounded-xl text-xs font-medium border transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 ${
-                      statusFilter !== "all"
+                      statusFilter !== "active"
                         ? "bg-primary/10 border-primary/40 text-primary"
                         : "bg-background border-border/60 text-muted-foreground hover:bg-slate-100"
                     }`}
                   >
+                    <option value="active">Активные</option>
                     <option value="all">Все статусы</option>
                     <option value="waiting_master">Ожидает мастера</option>
                     <option value="master_assigned">Мастер назначен</option>
                     <option value="in_progress">В работе</option>
-                    <option value="completed">Завершён</option>
                     <option value="cancellation_requested">Запрос отмены</option>
+                    <option value="completed">Завершён</option>
                     <option value="cancelled">Отменён</option>
                   </select>
                   <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />

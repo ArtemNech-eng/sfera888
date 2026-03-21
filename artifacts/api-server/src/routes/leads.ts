@@ -128,6 +128,22 @@ router.patch("/:id", allLeadRoles, async (req, res) => {
   const result = await db.update(leadsTable).set(updates).where(eq(leadsTable.id, id)).returning();
   if (!result[0]) return res.status(404).json({ error: "Lead not found" });
   const l = result[0];
+
+  // When marking a lead as non_target, auto-cancel any associated active order
+  if (status === "non_target") {
+    const ACTIVE_STATUSES = ["waiting_master", "master_assigned", "in_progress", "cancellation_requested", "proposed_amount"];
+    const linkedOrders = await db.select().from(ordersTable).where(eq(ordersTable.leadId, id));
+    for (const order of linkedOrders) {
+      if (ACTIVE_STATUSES.includes(order.status)) {
+        await db.update(ordersTable).set({
+          status: "cancelled",
+          cancelReason: "Лид помечен как не целевой",
+          updatedAt: new Date(),
+        }).where(eq(ordersTable.id, order.id));
+      }
+    }
+  }
+
   res.json({
     ...l,
     area: Number(l.area),
