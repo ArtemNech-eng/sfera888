@@ -192,6 +192,8 @@ export default function Orders() {
 
   const [showManualAssign, setShowManualAssign] = useState(false);
   const [selectedMasterForAssign, setSelectedMasterForAssign] = useState<string>("");
+  const [showUnassignDialog, setShowUnassignDialog] = useState(false);
+  const [unassignReason, setUnassignReason] = useState("");
 
   const { data: activeMasters } = useQuery<{ id: number; alias: string; city: string | null }[]>({
     queryKey: ["/api/masters"],
@@ -207,8 +209,13 @@ export default function Orders() {
   });
 
   const unassignMutation = useMutation({
-    mutationFn: async (orderId: number) => {
-      const r = await fetch(`/api/orders/${orderId}/unassign-master`, { method: "POST", credentials: "include" });
+    mutationFn: async ({ orderId, reason }: { orderId: number; reason: string }) => {
+      const r = await fetch(`/api/orders/${orderId}/unassign-master`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
       if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Ошибка"); }
       return r.json();
     },
@@ -216,6 +223,8 @@ export default function Orders() {
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dispatch", openDispatchId] });
       broadcastMutation.reset();
+      setShowUnassignDialog(false);
+      setUnassignReason("");
       toast({ title: "Мастер снят с заказа", description: "Теперь можно сделать новую рассылку" });
     },
     onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
@@ -889,6 +898,15 @@ export default function Orders() {
 
                 {((openOrder as any).dispatchStatus ?? "none") === "none" && (
                   <div className="space-y-3">
+                    {(openOrder as any).cancelReason && (
+                      <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+                        <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-xs font-semibold text-amber-700">Причина снятия мастера</p>
+                          <p className="text-xs text-amber-700 mt-0.5">{(openOrder as any).cancelReason}</p>
+                        </div>
+                      </div>
+                    )}
                     <p className="text-sm text-muted-foreground">
                       Заявка будет отправлена активным мастерам в городе <b>{openOrder.city}</b>. Телефон клиента скрыт — передаётся только после назначения.
                     </p>
@@ -1013,11 +1031,7 @@ export default function Orders() {
                           Заявка назначена. Мастер получил контакт клиента.
                         </div>
                         <button
-                          onClick={() => {
-                            if (confirm("Снять мастера с заказа? Заказ вернётся в статус ожидания.")) {
-                              unassignMutation.mutate(openDispatchId!);
-                            }
-                          }}
+                          onClick={() => { setShowUnassignDialog(true); setUnassignReason(""); }}
                           disabled={unassignMutation.isPending}
                           className="w-full flex items-center justify-center gap-2 py-2 px-4 text-sm font-medium text-red-600 border border-red-200 rounded-xl hover:bg-red-50 disabled:opacity-50 transition-colors"
                         >
@@ -1170,6 +1184,54 @@ export default function Orders() {
             </div>
           </div>
         )}
+      {/* ─── Unassign master dialog ───────────────────────────────────────────── */}
+      {showUnassignDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                <X className="w-5 h-5 text-red-500" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900 text-base">Снять мастера с заказа</h3>
+                <p className="text-sm text-gray-500 mt-0.5">Заказ вернётся в статус ожидания. Укажите причину — она будет видна в карточке заказа и в чате мастера.</p>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Причина снятия *</label>
+              <textarea
+                value={unassignReason}
+                onChange={e => setUnassignReason(e.target.value)}
+                placeholder="Например: созвонился с клиентом, заказ не актуален; мастер не выходит на связь; передаём другому мастеру..."
+                rows={3}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-red-200 focus:border-red-300 resize-none"
+                autoFocus
+              />
+            </div>
+
+            <div className="flex gap-2.5 pt-1">
+              <button
+                onClick={() => { setShowUnassignDialog(false); setUnassignReason(""); }}
+                className="flex-1 py-2.5 text-sm font-medium text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={() => {
+                  if (!unassignReason.trim()) return;
+                  unassignMutation.mutate({ orderId: openDispatchId!, reason: unassignReason.trim() });
+                }}
+                disabled={!unassignReason.trim() || unassignMutation.isPending}
+                className="flex-1 py-2.5 text-sm font-semibold text-white bg-red-500 rounded-xl hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+              >
+                {unassignMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Снять мастера
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       </Layout>
     </ProtectedRoute>
   );

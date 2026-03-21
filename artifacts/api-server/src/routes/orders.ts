@@ -491,6 +491,9 @@ router.post("/:id/unassign-master", requireRole("admin", "master_operator"), asy
   const id = parseInt(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid order id" });
 
+  const { reason } = req.body as { reason?: string };
+  if (!reason?.trim()) return res.status(400).json({ error: "Укажите причину снятия мастера" });
+
   const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
   const order = orderRows[0];
   if (!order) return res.status(404).json({ error: "Order not found" });
@@ -498,11 +501,12 @@ router.post("/:id/unassign-master", requireRole("admin", "master_operator"), asy
 
   const prevMasterId = order.masterId;
 
-  // Remove master from order, reset to waiting
+  // Remove master from order, reset to waiting, store reason
   await db.update(ordersTable).set({
     masterId: null,
     status: "waiting_master",
     dispatchStatus: "none",
+    cancelReason: reason.trim(),
     updatedAt: new Date(),
   }).where(eq(ordersTable.id, id));
 
@@ -526,7 +530,7 @@ router.post("/:id/unassign-master", requireRole("admin", "master_operator"), asy
     await db.insert(masterMessagesTable).values({
       masterId: prevMasterId,
       telegramChatId: master.telegramId ?? `pwa_${prevMasterId}`,
-      text: `⚠️ Снят с заявки #${id} (${order.serviceType}, ${order.city}) администратором`,
+      text: `⚠️ Снят с заявки #${id} (${order.serviceType}, ${order.city}) администратором. Причина: ${reason.trim()}`,
       fromMaster: false,
       senderName: "system",
       isRead: false,
