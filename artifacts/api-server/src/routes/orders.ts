@@ -41,8 +41,10 @@ const allOrderRoles = requireRole("admin", "master_operator");
 
 async function getOnSiteColumn() {
   const cols = await db.select().from(voronkaColumnsTable).orderBy(voronkaColumnsTable.position);
-  const nonReceiving = cols.filter(c => !c.receivesOrders);
-  return nonReceiving.find(c => c.position > 1) ?? nonReceiving[0] ?? null;
+  return cols.find(c => c.name === "На объекте")
+    ?? cols.find(c => c.receivesOrders && c.name !== "Свободен")
+    ?? cols.find(c => c.receivesOrders)
+    ?? null;
 }
 
 async function getFreeColumn() {
@@ -581,8 +583,7 @@ router.post("/:id/unassign-master", requireRole("admin", "master_operator"), asy
   const master = masterRows[0];
   if (master) {
     const remainingCount = await countActiveMasterOrders(prevMasterId, id);
-    const allCols = await db.select().from(voronkaColumnsTable).orderBy(voronkaColumnsTable.position);
-    const colId = getColumnIdForActiveCount(remainingCount, allCols);
+    const colId = await getColumnIdForActiveCount(remainingCount);
     if (colId) {
       await db.update(mastersTable).set({ voronkaColumnId: colId }).where(eq(mastersTable.id, prevMasterId));
     }
@@ -658,8 +659,7 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
     .where(and(eq(orderDispatchesTable.orderId, orderId), ne(orderDispatchesTable.masterId, masterId)));
 
   // Move new master to "На объекте" column and update stats
-  const allCols = await db.select().from(voronkaColumnsTable).orderBy(voronkaColumnsTable.position);
-  const onSiteCol = allCols.find(c => c.receivesOrders === true && c.position > 1) ?? allCols.find(c => c.position === 4) ?? null;
+  const onSiteCol = await getOnSiteColumn();
   await db.update(mastersTable).set({
     voronkaColumnId: onSiteCol?.id ?? master.voronkaColumnId,
     totalOrders: master.totalOrders + 1,
@@ -669,7 +669,7 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
   // If there was a previous master, update their voronka column
   if (prevMasterId && prevMasterId !== masterId) {
     const remainingCount = await countActiveMasterOrders(prevMasterId, orderId);
-    const colId = getColumnIdForActiveCount(remainingCount, allCols);
+    const colId = await getColumnIdForActiveCount(remainingCount);
     if (colId) {
       await db.update(mastersTable).set({ voronkaColumnId: colId }).where(eq(mastersTable.id, prevMasterId));
     }
