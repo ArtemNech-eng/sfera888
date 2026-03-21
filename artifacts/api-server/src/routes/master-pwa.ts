@@ -743,6 +743,9 @@ router.post("/orders/:id/cancel", requireMasterPwa, async (req, res) => {
   };
 
   if (!cancelType) return res.status(400).json({ error: "Укажите причину отмены" });
+  if (!reason?.trim() || reason.trim().length < 150) {
+    return res.status(400).json({ error: "Комментарий должен содержать не менее 150 символов" });
+  }
 
   const orderRows = await db.select().from(ordersTable)
     .where(and(eq(ordersTable.id, orderId), eq(ordersTable.masterId, masterId)));

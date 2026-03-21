@@ -170,15 +170,19 @@ function CancelModal({
   const [comment, setComment] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const MIN_COMMENT = 150;
+  const commentLen = comment.trim().length;
+  const commentOk = commentLen >= MIN_COMMENT;
+
   const handleSubmit = async () => {
     if (!cancelType) return;
-    if (cancelType === "other" && !comment.trim()) {
-      toast.error("Опишите причину");
+    if (!commentOk) {
+      toast.error(`Напишите минимум ${MIN_COMMENT} символов`);
       return;
     }
     setLoading(true);
     try {
-      await api.orders.cancel(orderId, cancelType, comment.trim() || undefined);
+      await api.orders.cancel(orderId, cancelType, comment.trim());
       toast.success("Запрос на отмену отправлен менеджеру");
       onDone();
     } catch (err: any) {
@@ -214,15 +218,20 @@ function CancelModal({
             </button>
           ))}
         </div>
-        {cancelType === "other" && (
-          <textarea
-            value={comment}
-            onChange={e => setComment(e.target.value)}
-            placeholder="Опишите причину..."
-            rows={2}
-            className="w-full px-4 py-3 rounded-xl border border-input bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
-            autoFocus
-          />
+        {cancelType && (
+          <div className="space-y-1">
+            <textarea
+              value={comment}
+              onChange={e => setComment(e.target.value)}
+              placeholder="Подробно опишите ситуацию — что произошло, о чём говорили с клиентом..."
+              rows={4}
+              className="w-full px-4 py-3 rounded-xl border border-input bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+              autoFocus
+            />
+            <div className={`text-right text-xs font-medium ${commentOk ? "text-emerald-500" : "text-muted-foreground"}`}>
+              {commentLen} / {MIN_COMMENT}
+            </div>
+          </div>
         )}
         <div className="flex gap-3">
           <button
@@ -234,7 +243,7 @@ function CancelModal({
           </button>
           <button
             type="button"
-            disabled={!cancelType || loading || (cancelType === "other" && !comment.trim())}
+            disabled={!cancelType || !commentOk || loading}
             onClick={handleSubmit}
             className="flex-1 h-11 bg-destructive text-white font-semibold rounded-xl active:opacity-80 disabled:opacity-50 flex items-center justify-center gap-2 text-sm"
           >
