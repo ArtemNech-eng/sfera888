@@ -197,10 +197,48 @@ async function autoScheduledOrderBroadcast() {
   }
 }
 
+/**
+ * One-time (and periodic) fix: ensure masters with active orders are in "На объекте",
+ * and masters with no active orders are in "Свободен". Skips masters in non-receiving
+ * columns (e.g. "Занят", "Отстраненные") — those are manually set by operators.
+ */
+async function recalculateMasterVoronkaColumns() {
+  const cols = await db.select().from(voronkaColumnsTable);
+  const freeCol = cols.find(c => c.name === "Свободен" && c.receivesOrders) ?? cols.find(c => c.receivesOrders);
+  const onSiteCol = cols.find(c => c.name === "На объекте")
+    ?? cols.find(c => c.receivesOrders && c.name !== "Свободен");
+  if (!freeCol || !onSiteCol) return;
+
+  const activeOrders = await db.select().from(ordersTable)
+    .where(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
+
+  const activeCountByMaster = new Map<number, number>();
+  for (const o of activeOrders) {
+    if (o.masterId) activeCountByMaster.set(o.masterId, (activeCountByMaster.get(o.masterId) ?? 0) + 1);
+  }
+
+  const masters = await db.select().from(mastersTable).where(eq(mastersTable.status, "active"));
+  let fixed = 0;
+  for (const m of masters) {
+    const currentCol = cols.find(c => c.id === m.voronkaColumnId);
+    // Only auto-correct masters currently in receiving columns (free ↔ on-site)
+    if (!currentCol?.receivesOrders) continue;
+
+    const activeCount = activeCountByMaster.get(m.id) ?? 0;
+    const correctColId = activeCount >= 1 ? onSiteCol.id : freeCol.id;
+    if (m.voronkaColumnId !== correctColId) {
+      await db.update(mastersTable).set({ voronkaColumnId: correctColId }).where(eq(mastersTable.id, m.id));
+      fixed++;
+    }
+  }
+  if (fixed > 0) console.log(`[voronka-fix] Corrected ${fixed} master(s) to proper column`);
+}
+
 runMigrations().catch(console.error);
 maybeResetAdminPassword().catch(console.error);
 seedVoronkaColumns().catch(console.error);
 grantPassportVerifiedToActiveMasters().catch(console.error);
+recalculateMasterVoronkaColumns().catch(console.error);
 // Mark overdue commissions on startup and then every 6 hours
 checkOverdueTransactions().catch(console.error);
 setInterval(() => checkOverdueTransactions().catch(console.error), 6 * 60 * 60 * 1000);
