@@ -221,12 +221,19 @@ async function recalculateMasterVoronkaColumns() {
   let fixed = 0;
   for (const m of masters) {
     const currentCol = cols.find(c => c.id === m.voronkaColumnId);
-    // Only auto-correct masters currently in receiving columns (free ↔ on-site)
-    if (!currentCol?.receivesOrders) continue;
-
     const activeCount = activeCountByMaster.get(m.id) ?? 0;
-    const correctColId = activeCount >= 1 ? onSiteCol.id : freeCol.id;
-    if (m.voronkaColumnId !== correctColId) {
+
+    let correctColId: number | null = null;
+    if (activeCount >= 1) {
+      // Master has active orders → must be "На объекте" regardless of current column
+      correctColId = onSiteCol.id;
+    } else if (currentCol?.receivesOrders) {
+      // Master is free and currently in a receiving column → ensure "Свободен"
+      correctColId = freeCol.id;
+    }
+    // Masters in non-receiving columns (Занят, Отстраненные) with no active orders → leave them alone
+
+    if (correctColId !== null && m.voronkaColumnId !== correctColId) {
       await db.update(mastersTable).set({ voronkaColumnId: correctColId }).where(eq(mastersTable.id, m.id));
       fixed++;
     }
