@@ -30,6 +30,7 @@ export const ordersTable = pgTable("orders", {
   commission: numeric("commission", { precision: 12, scale: 2 }),
   clientRating: integer("client_rating"),
   cancelReason: text("cancel_reason"),
+  cancelType: text("cancel_type"), // "client_refused" | "price_disagreement" | "master_cant" | "other"
   dispatchStatus: text("dispatch_status").notNull().default("none"),
   masterWorkStatus: text("master_work_status"),
   operatorNote: text("operator_note"),

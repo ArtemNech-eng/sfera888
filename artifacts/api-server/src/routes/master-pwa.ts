@@ -737,9 +737,12 @@ router.get("/balance", requireMasterPwa, async (req, res) => {
 router.post("/orders/:id/cancel", requireMasterPwa, async (req, res) => {
   const masterId = (req.session as any).masterId;
   const orderId = parseInt(req.params.id);
-  const { reason } = req.body;
+  const { cancelType, reason } = req.body as {
+    cancelType?: "client_refused" | "price_disagreement" | "master_cant" | "other";
+    reason?: string;
+  };
 
-  if (!reason?.trim()) return res.status(400).json({ error: "Укажите причину отмены" });
+  if (!cancelType) return res.status(400).json({ error: "Укажите причину отмены" });
 
   const orderRows = await db.select().from(ordersTable)
     .where(and(eq(ordersTable.id, orderId), eq(ordersTable.masterId, masterId)));
@@ -750,9 +753,20 @@ router.post("/orders/:id/cancel", requireMasterPwa, async (req, res) => {
     return res.status(400).json({ error: "Нельзя отменить заказ в текущем статусе" });
   }
 
+  const typeLabels: Record<string, string> = {
+    client_refused: "Клиент отказался",
+    price_disagreement: "Не договорились по цене",
+    master_cant: "Не могу выполнить",
+    other: "Другая причина",
+  };
+  const fullReason = reason?.trim()
+    ? `${typeLabels[cancelType]}: ${reason.trim()}`
+    : typeLabels[cancelType];
+
   await db.update(ordersTable).set({
     status: "cancellation_requested",
-    cancelReason: reason.trim(),
+    cancelType,
+    cancelReason: fullReason,
     updatedAt: new Date(),
   }).where(eq(ordersTable.id, orderId));
 

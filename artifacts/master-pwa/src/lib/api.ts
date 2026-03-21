@@ -30,7 +30,7 @@ export const api = {
     respond: (id: number, responseNote?: string) => req<any>("POST", `/orders/${id}/respond`, { responseNote }),
     accept: (id: number) => req<any>("POST", `/orders/${id}/accept`),
     reject: (id: number, reason?: string) => req<any>("POST", `/orders/${id}/reject`, { reason }),
-    cancel: (id: number, reason: string) => req<any>("POST", `/orders/${id}/cancel`, { reason }),
+    cancel: (id: number, cancelType: string, reason?: string) => req<any>("POST", `/orders/${id}/cancel`, { cancelType, reason }),
     updateStatus: (id: number, masterWorkStatus: string) =>
       req<any>("PATCH", `/orders/${id}/status`, { masterWorkStatus }),
     addPhoto: (id: number, type: string, url: string) =>

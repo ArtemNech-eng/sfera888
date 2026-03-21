@@ -9,7 +9,7 @@ import {
   Loader2, MapPin, Send, Users, CheckCircle2, Clock, X, UserCheck,
   DollarSign, Check, Pencil, AlertCircle, MessageSquare, Trash2, Search,
   ClipboardList, CalendarDays, ChevronDown, Filter, Settings, AlertTriangle,
-  FileText, History, Timer, RefreshCw, CopyX,
+  FileText, History, Timer, RefreshCw, CopyX, XCircle,
 } from "lucide-react";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -420,69 +420,89 @@ export default function Orders() {
                   ? "1 запрос на отмену заказа"
                   : `${cancellationOrders.length} запроса на отмену заказа`}
               </div>
-              {cancellationOrders.map(order => (
-                <div key={order.id} className="bg-white rounded-xl border border-red-100 px-4 py-3 space-y-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5">
-                        <span className="font-medium text-foreground">#{order.id}</span>
-                        <span className="text-muted-foreground">·</span>
-                        <span className="text-foreground">{order.serviceType}</span>
-                        <span className="text-muted-foreground">·</span>
-                        <span className="text-muted-foreground text-xs">{order.city}</span>
+              {cancellationOrders.map(order => {
+                const ct = (order as any).cancelType as string | null;
+                const cancelTypeMeta: Record<string, { label: string; badge: string; hint: string }> = {
+                  client_refused:     { label: "Клиент отказался",          badge: "bg-blue-100 text-blue-800",   hint: "Рекомендуется: Отменить заказ" },
+                  price_disagreement: { label: "Не договорились по цене",   badge: "bg-amber-100 text-amber-800", hint: "Рекомендуется: Назначить другого мастера" },
+                  master_cant:        { label: "Мастер не может выполнить", badge: "bg-orange-100 text-orange-800", hint: "Рекомендуется: Назначить другого мастера" },
+                  other:              { label: "Другая причина",             badge: "bg-slate-100 text-slate-700", hint: "" },
+                };
+                const meta = ct ? cancelTypeMeta[ct] : null;
+                return (
+                  <div key={order.id} className="bg-white rounded-xl border border-red-100 px-4 py-3 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5">
+                          <span className="font-medium text-foreground">#{order.id}</span>
+                          <span className="text-muted-foreground">·</span>
+                          <span className="text-foreground">{order.serviceType}</span>
+                          <span className="text-muted-foreground">·</span>
+                          <span className="text-muted-foreground text-xs">{order.city}</span>
+                        </div>
+                        {order.masterName && (
+                          <button
+                            onClick={() => order.masterId && openMasterChat(order.masterId)}
+                            className="text-xs text-blue-600 hover:underline mt-0.5"
+                          >
+                            мастер {order.masterName}
+                          </button>
+                        )}
                       </div>
-                      {order.masterName && (
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {order.masterId && (
+                          <button
+                            onClick={() => openMasterChat(order.masterId!)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded-lg font-medium text-xs transition-colors"
+                          >
+                            <MessageSquare className="w-3 h-3" />
+                            Чат
+                          </button>
+                        )}
                         <button
-                          onClick={() => order.masterId && openMasterChat(order.masterId)}
-                          className="text-xs text-blue-600 hover:underline mt-0.5"
+                          onClick={() => {
+                            if (confirm(`Назначить другого мастера на заказ #${order.id}? Текущий мастер будет откреплён.`)) {
+                              rejectCancellationMutation.mutate(order.id);
+                            }
+                          }}
+                          disabled={rejectCancellationMutation.isPending}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-blue-200 text-blue-600 hover:bg-blue-50 rounded-lg font-medium text-xs transition-colors disabled:opacity-50"
                         >
-                          мастер {order.masterName}
+                          <RefreshCw className="w-3 h-3" />
+                          Назначить другого
                         </button>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {order.masterId && (
                         <button
-                          onClick={() => openMasterChat(order.masterId!)}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded-lg font-medium text-xs transition-colors"
+                          onClick={() => {
+                            if (confirm(`Отменить заказ #${order.id}? Заказ будет закрыт.`)) {
+                              approveCancellationMutation.mutate(order.id);
+                            }
+                          }}
+                          disabled={approveCancellationMutation.isPending}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-red-500 text-white hover:bg-red-600 rounded-lg font-medium text-xs transition-colors disabled:opacity-50"
                         >
-                          <MessageSquare className="w-3 h-3" />
-                          Чат
+                          {approveCancellationMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <XCircle className="w-3 h-3" />}
+                          Отменить заказ
                         </button>
-                      )}
-                      <button
-                        onClick={() => {
-                          if (confirm(`Отклонить запрос на отмену заказа #${order.id}? Заказ продолжится.`)) {
-                            rejectCancellationMutation.mutate(order.id);
-                          }
-                        }}
-                        disabled={rejectCancellationMutation.isPending}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg font-medium text-xs transition-colors disabled:opacity-50"
-                      >
-                        <X className="w-3 h-3" />
-                        Отклонить
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (confirm(`Одобрить отмену заказа #${order.id}? Заказ будет закрыт.`)) {
-                            approveCancellationMutation.mutate(order.id);
-                          }
-                        }}
-                        disabled={approveCancellationMutation.isPending}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-red-500 text-white hover:bg-red-600 rounded-lg font-medium text-xs transition-colors disabled:opacity-50"
-                      >
-                        {approveCancellationMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-                        Одобрить отмену
-                      </button>
+                      </div>
                     </div>
+                    {meta && (
+                      <div className="flex items-start gap-2">
+                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${meta.badge}`}>
+                          {meta.label}
+                        </span>
+                        {meta.hint && (
+                          <span className="text-xs text-muted-foreground mt-1">{meta.hint}</span>
+                        )}
+                      </div>
+                    )}
+                    {(order as any).cancelReason && (
+                      <div className="text-sm text-red-700 bg-red-50 rounded-lg px-3 py-2">
+                        <span className="font-medium">Комментарий мастера: </span>{(order as any).cancelReason}
+                      </div>
+                    )}
                   </div>
-                  {(order as any).cancelReason && (
-                    <div className="text-sm text-red-700 bg-red-50 rounded-lg px-3 py-2">
-                      <span className="font-medium">Причина: </span>{(order as any).cancelReason}
-                    </div>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
@@ -985,12 +1005,26 @@ export default function Orders() {
                 {((openOrder as any).dispatchStatus ?? "none") === "none" && (
                   <div className="space-y-3">
                     {(openOrder as any).cancelReason && (
-                      <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
-                        <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
-                        <div>
+                      <div className="flex flex-col gap-1.5 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+                        <div className="flex items-start gap-2">
+                          <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
                           <p className="text-xs font-semibold text-amber-700">Причина снятия мастера</p>
-                          <p className="text-xs text-amber-700 mt-0.5">{(openOrder as any).cancelReason}</p>
                         </div>
+                        {(openOrder as any).cancelType && (() => {
+                          const ctMeta: Record<string, { label: string; badge: string }> = {
+                            client_refused:     { label: "Клиент отказался",          badge: "bg-blue-100 text-blue-800" },
+                            price_disagreement: { label: "Не договорились по цене",   badge: "bg-amber-100 text-amber-800" },
+                            master_cant:        { label: "Мастер не может выполнить", badge: "bg-orange-100 text-orange-800" },
+                            other:              { label: "Другая причина",             badge: "bg-slate-100 text-slate-700" },
+                          };
+                          const m = ctMeta[(openOrder as any).cancelType];
+                          return m ? (
+                            <span className={`inline-flex items-center self-start px-2 py-0.5 rounded-full text-xs font-semibold ml-6 ${m.badge}`}>
+                              {m.label}
+                            </span>
+                          ) : null;
+                        })()}
+                        <p className="text-xs text-amber-700 ml-6">{(openOrder as any).cancelReason}</p>
                       </div>
                     )}
                     <p className="text-sm text-muted-foreground">

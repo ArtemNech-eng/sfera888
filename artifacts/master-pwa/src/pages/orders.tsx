@@ -150,6 +150,29 @@ function CompleteModal({
   );
 }
 
+const CANCEL_OPTIONS = [
+  {
+    id: "client_refused",
+    label: "Клиент отказался",
+    hint: "Менеджер закроет заказ",
+  },
+  {
+    id: "price_disagreement",
+    label: "Не договорились по цене",
+    hint: "Менеджер назначит другого мастера",
+  },
+  {
+    id: "master_cant",
+    label: "Не могу выполнить",
+    hint: "Менеджер назначит другого мастера",
+  },
+  {
+    id: "other",
+    label: "Другая причина",
+    hint: "Опишите ситуацию в комментарии",
+  },
+] as const;
+
 function CancelModal({
   orderId,
   onDone,
@@ -159,15 +182,19 @@ function CancelModal({
   onDone: () => void;
   onClose: () => void;
 }) {
-  const [reason, setReason] = useState("");
+  const [cancelType, setCancelType] = useState<string>("");
+  const [comment, setComment] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!reason.trim()) { toast.error("Укажите причину отмены"); return; }
+  const handleSubmit = async () => {
+    if (!cancelType) return;
+    if (cancelType === "other" && !comment.trim()) {
+      toast.error("Опишите причину");
+      return;
+    }
     setLoading(true);
     try {
-      await api.orders.cancel(orderId, reason.trim());
+      await api.orders.cancel(orderId, cancelType, comment.trim() || undefined);
       toast.success("Запрос на отмену отправлен менеджеру");
       onDone();
     } catch (err: any) {
@@ -185,37 +212,55 @@ function CancelModal({
           <button onClick={onClose} className="text-muted-foreground"><X size={20} /></button>
         </div>
         <p className="text-sm text-muted-foreground">
-          Укажите причину — менеджер рассмотрит запрос и подтвердит отмену.
+          Выберите причину — менеджер примет решение.
         </p>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="space-y-2">
+          {CANCEL_OPTIONS.map(opt => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => setCancelType(opt.id)}
+              className={`w-full text-left px-4 py-3 rounded-xl border-2 transition-colors ${
+                cancelType === opt.id
+                  ? "border-destructive bg-destructive/5"
+                  : "border-border bg-background"
+              }`}
+            >
+              <div className="text-sm font-semibold text-foreground">{opt.label}</div>
+              <div className="text-xs text-muted-foreground mt-0.5">{opt.hint}</div>
+            </button>
+          ))}
+        </div>
+        {cancelType === "other" && (
           <textarea
-            value={reason}
-            onChange={e => setReason(e.target.value)}
-            placeholder="Причина отмены..."
-            rows={3}
+            value={comment}
+            onChange={e => setComment(e.target.value)}
+            placeholder="Опишите причину..."
+            rows={2}
             className="w-full px-4 py-3 rounded-xl border border-input bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
             autoFocus
           />
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 h-11 rounded-xl border border-border text-muted-foreground text-sm font-medium active:opacity-80"
-            >
-              Отмена
-            </button>
-            <button
-              type="submit"
-              disabled={loading || !reason.trim()}
-              className="flex-1 h-11 bg-destructive text-white font-semibold rounded-xl active:opacity-80 disabled:opacity-50 flex items-center justify-center gap-2 text-sm"
-            >
-              {loading
-                ? <Loader2 size={16} className="animate-spin" />
-                : <XCircle size={16} />}
-              Отправить
-            </button>
-          </div>
-        </form>
+        )}
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 h-11 rounded-xl border border-border text-muted-foreground text-sm font-medium active:opacity-80"
+          >
+            Назад
+          </button>
+          <button
+            type="button"
+            disabled={!cancelType || loading || (cancelType === "other" && !comment.trim())}
+            onClick={handleSubmit}
+            className="flex-1 h-11 bg-destructive text-white font-semibold rounded-xl active:opacity-80 disabled:opacity-50 flex items-center justify-center gap-2 text-sm"
+          >
+            {loading
+              ? <Loader2 size={16} className="animate-spin" />
+              : <XCircle size={16} />}
+            Отправить
+          </button>
+        </div>
       </div>
     </div>
   );

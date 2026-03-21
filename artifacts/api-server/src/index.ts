@@ -41,7 +41,8 @@ async function runMigrations() {
     ALTER TABLE orders
       ADD COLUMN IF NOT EXISTS operator_note TEXT,
       ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMP,
-      ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP
+      ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS cancel_type TEXT
   `);
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS order_status_logs (
@@ -241,16 +242,21 @@ async function recalculateMasterVoronkaColumns() {
   if (fixed > 0) console.log(`[voronka-fix] Corrected ${fixed} master(s) to proper column`);
 }
 
-runMigrations().catch(console.error);
-maybeResetAdminPassword().catch(console.error);
-seedVoronkaColumns().catch(console.error);
-grantPassportVerifiedToActiveMasters().catch(console.error);
-recalculateMasterVoronkaColumns().catch(console.error);
-// Mark overdue commissions on startup and then every 6 hours
-checkOverdueTransactions().catch(console.error);
+// Run migrations first, then all other startup tasks that depend on the schema
+runMigrations()
+  .then(() => {
+    maybeResetAdminPassword().catch(console.error);
+    seedVoronkaColumns().catch(console.error);
+    grantPassportVerifiedToActiveMasters().catch(console.error);
+    recalculateMasterVoronkaColumns().catch(console.error);
+    checkOverdueTransactions().catch(console.error);
+    autoExpireDispatches().catch(console.error);
+  })
+  .catch(console.error);
+
+// Mark overdue commissions every 6 hours
 setInterval(() => checkOverdueTransactions().catch(console.error), 6 * 60 * 60 * 1000);
-// Auto-expire dispatches that haven't been responded to in 24h
-autoExpireDispatches().catch(console.error);
+// Auto-expire dispatches every hour
 setInterval(() => autoExpireDispatches().catch(console.error), 60 * 60 * 1000);
 // Auto-broadcast scheduled orders 2–4h before scheduledAt
 setInterval(() => autoScheduledOrderBroadcast().catch(console.error), 15 * 60 * 1000);
