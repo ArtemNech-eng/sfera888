@@ -5,7 +5,7 @@ import { ProtectedRoute, useAuth } from "@/hooks/use-auth";
 import {
   Loader2, Plus, Star, Phone, MessageSquare, Briefcase,
   AlertTriangle, MapPin, Search, X, Users, Zap, UserX, Filter,
-  FileSignature, Trash2, Smartphone, ChevronDown, Tag, ArrowUpDown,
+  FileSignature, Trash2, Smartphone, ChevronDown, Tag, ArrowUpDown, XCircle,
 } from "lucide-react";
 import { Avatar, MasterDrawer, OnlineBadge } from "@/components/master-drawer";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
@@ -44,6 +44,8 @@ interface Master {
   createdAt: string;
   pwaLogin?: string | null;
   lastSeenAt?: string | null;
+  cancelCount30d?: number;
+  cancelCount7d?: number;
 }
 
 // ─── Sort options ─────────────────────────────────────────────────────────────
@@ -554,6 +556,15 @@ function MasterRow({
           </div>
           <div className="text-[10px] text-gray-400">заказов</div>
         </div>
+
+        {(master.cancelCount30d ?? 0) > 0 && (
+          <div className="text-center hidden sm:block flex-shrink-0">
+            <div className={`font-semibold flex items-center gap-0.5 ${(master.cancelCount30d ?? 0) >= 3 ? "text-red-500" : "text-orange-400"}`}>
+              <XCircle className="w-3 h-3" />{master.cancelCount30d}
+            </div>
+            <div className={`text-[10px] ${(master.cancelCount30d ?? 0) >= 3 ? "text-red-400" : "text-orange-300"}`}>отмен/30д</div>
+          </div>
+        )}
 
         {master.debt > 0 ? (
           <div className="flex flex-col items-end">

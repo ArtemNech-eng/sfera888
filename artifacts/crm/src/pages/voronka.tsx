@@ -5,7 +5,7 @@ import {
   Plus, Settings, X, ChevronUp, ChevronDown, Trash2,
   Star, Phone, MapPin, Briefcase, AlertTriangle, User,
   ArrowRight, Edit2, MessageSquare, Zap, Smartphone,
-  RefreshCw, ChevronRight, UserX, Banknote, Check, Clock,
+  RefreshCw, ChevronRight, UserX, Banknote, Check, Clock, XCircle, AlertCircle,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -15,7 +15,7 @@ import { Avatar, MasterDrawer } from "@/components/master-drawer";
 
 interface VoronkaColumn { id: number; name: string; position: number; receivesOrders: boolean; color: string; }
 interface ActiveOrder { orderId: number; district: string; city: string; serviceType: string; status: string; clientPhone: string | null; clientName: string | null; scheduledAt: string | null; }
-interface VoronkaMaster { id: number; alias: string; city: string; specialization: string; specializations: string[]; tags: string[]; telegramId: string | null; pwaLogin: string | null; phone: string | null; status: string; rating: number; totalOrders: number; acceptedOrders: number; debt: number; voronkaColumnId: number | null; isTestMaster: boolean; avatarUrl: string | null; activeOrders: ActiveOrder[]; pendingTransactionsCount: number; contractLink: string | null; createdAt: string; }
+interface VoronkaMaster { id: number; alias: string; city: string; specialization: string; specializations: string[]; tags: string[]; telegramId: string | null; pwaLogin: string | null; phone: string | null; status: string; rating: number; totalOrders: number; acceptedOrders: number; debt: number; voronkaColumnId: number | null; isTestMaster: boolean; avatarUrl: string | null; activeOrders: ActiveOrder[]; pendingTransactionsCount: number; contractLink: string | null; createdAt: string; cancelCount30d: number; cancelCount7d: number; }
 
 interface MasterTask { id: number; masterId: number; text: string; dueAt: string | null; isCompleted: boolean; createdBy: string | null; createdAt: string; }
 interface HistoryOrder { id: number; status: string; serviceType: string; district: string; city: string; clientName: string | null; clientPhone: string | null; scheduledAt: string | null; completedAt: string | null; createdAt: string; }
@@ -119,6 +119,14 @@ function MasterCard({ master, columns, onMove, onOpenDrawer, onDragStart, onDrag
               {master.debt > 0 && (
                 <span className="flex items-center gap-0.5 text-red-400 font-medium">
                   <AlertTriangle className="w-2.5 h-2.5" />{(master.debt/1000).toFixed(0)}k
+                </span>
+              )}
+              {master.cancelCount30d > 0 && (
+                <span
+                  title={`Отмен по вине мастера за 30 дней: ${master.cancelCount30d}`}
+                  className={`flex items-center gap-0.5 font-semibold ${master.cancelCount30d >= 3 ? "text-red-500" : "text-orange-400"}`}
+                >
+                  <XCircle className="w-2.5 h-2.5" />{master.cancelCount30d}
                 </span>
               )}
             </div>
@@ -576,6 +584,31 @@ export default function Voronka() {
               <Settings className="w-4 h-4"/>Колонки
             </button>
           </div>
+
+          {/* Alert: masters with 2+ cancellations in 7 days */}
+          {(() => {
+            const problemMasters = masters.filter(m => (m.cancelCount7d ?? 0) >= 2);
+            if (problemMasters.length === 0) return null;
+            return (
+              <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-2.5 mb-4 flex items-start gap-2.5 flex-shrink-0">
+                <AlertCircle className="w-4 h-4 text-orange-500 flex-shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-semibold text-orange-800">Высокая отмена за 7 дней: </span>
+                  <span className="text-sm text-orange-700">
+                    {problemMasters.map((m, i) => (
+                      <span key={m.id}>
+                        {i > 0 && ", "}
+                        <button onClick={() => setDrawerMaster(m)} className="font-semibold hover:underline">
+                          {m.alias}
+                        </button>
+                        {" "}({m.cancelCount7d})
+                      </span>
+                    ))}
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
 
           {loading ? (
             <div className="flex items-center justify-center flex-1">

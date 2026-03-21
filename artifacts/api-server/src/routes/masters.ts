@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, mastersTable, masterTasksTable, ordersTable, leadsTable, telegramChatsTable, voronkaColumnsTable, transactionsTable } from "@workspace/db";
-import { eq, desc, inArray, isNull } from "drizzle-orm";
+import { eq, desc, inArray, isNull, isNotNull, ne, count, gte, avg, sql } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { notifyMasterActivated } from "../telegram-notify.js";
 import multer from "multer";
