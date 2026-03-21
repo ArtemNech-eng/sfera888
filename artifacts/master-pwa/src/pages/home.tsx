@@ -9,6 +9,7 @@ import {
   MapPin, Calendar, MessageSquare, Clock,
   ChevronRight, X, Images, Wrench, Zap, PauseCircle,
   PlayCircle, Navigation, Users, Heart, ChevronDown, Briefcase,
+  TrendingUp, Eye, EyeOff,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -37,6 +38,20 @@ interface PendingCard extends OrderCard { respondedAt: string | null; }
 interface ActiveOrder {
   id: number; city: string; district: string | null;
   serviceType: string; area: number; status: string; masterWorkStatus: string | null;
+}
+
+interface MissedOrder {
+  id: number;
+  serviceType: string;
+  district: string | null;
+  area: number;
+  takenAt: string;
+  wasDispatched: boolean;
+}
+
+interface TodayActivity {
+  total: number;
+  taken: number;
 }
 
 // ─── Notification sound + vibration ──────────────────────────────────────────
@@ -631,6 +646,87 @@ function SwipeHint({ onDismiss }: { onDismiss: () => void }) {
   );
 }
 
+// ─── Missed Orders Section ────────────────────────────────────────────────────
+
+function timeAgo(d: string) {
+  const mins = Math.floor((Date.now() - new Date(d).getTime()) / 60_000);
+  if (mins < 60) return `${mins} мин назад`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} ч назад`;
+  return `${Math.floor(hrs / 24)} д назад`;
+}
+
+function MissedOrdersSection({ orders, city }: { orders: MissedOrder[]; city: string }) {
+  const [expanded, setExpanded] = useState(false);
+  if (orders.length === 0) return null;
+
+  return (
+    <section className="space-y-2">
+      <button
+        onClick={() => setExpanded(v => !v)}
+        className="w-full flex items-center justify-between"
+      >
+        <div className="flex items-center gap-2">
+          <Eye size={15} className="text-slate-400" />
+          <span className="font-semibold text-sm text-slate-600 dark:text-slate-400">
+            Недавно разобрали в {city}
+          </span>
+          <span className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-full px-2 py-0.5 font-medium">
+            {orders.length}
+          </span>
+        </div>
+        <ChevronDown
+          size={16}
+          className={`text-slate-400 transition-transform ${expanded ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {expanded && (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground px-1">
+            Эти заявки появились в вашем городе, но уже ушли другим мастерам
+          </p>
+          {orders.map(order => (
+            <div
+              key={order.id}
+              className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 flex items-center gap-3 opacity-80"
+            >
+              <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center shrink-0">
+                <Wrench size={14} className="text-slate-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{order.serviceType}</span>
+                  <span className="text-xs text-slate-400">·</span>
+                  <span className="text-xs text-slate-500">{order.area} м²</span>
+                  {order.district && (
+                    <>
+                      <span className="text-xs text-slate-400">·</span>
+                      <span className="text-xs text-slate-500">{order.district}</span>
+                    </>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-xs text-slate-400">{timeAgo(order.takenAt)}</span>
+                  {order.wasDispatched && (
+                    <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-1.5 py-0.5 rounded-full">
+                      Вам предлагали
+                    </span>
+                  )}
+                </div>
+              </div>
+              <EyeOff size={14} className="text-slate-300 dark:text-slate-600 shrink-0" />
+            </div>
+          ))}
+          <p className="text-xs text-center text-muted-foreground/60 pt-1">
+            Заходите чаще — заявки разбирают быстро
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function HomePage() {
@@ -692,6 +788,8 @@ export default function HomePage() {
   const available: OrderCard[] = data?.availableOrders ?? [];
   const pending: PendingCard[] = data?.pendingOrders ?? [];
   const active: ActiveOrder[] = data?.activeOrders ?? [];
+  const missed: MissedOrder[] = data?.missedOrders ?? [];
+  const todayActivity: TodayActivity = data?.todayActivity ?? { total: 0, taken: 0 };
   const orderLimit: number = data?.master?.orderLimit ?? 2;
   const hasActiveOrders = active.length > 0;
   const atLimit = active.length >= orderLimit;
@@ -711,7 +809,15 @@ export default function HomePage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold">{master?.alias}</h1>
-          <p className="text-sm text-muted-foreground">{master?.city}</p>
+          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+            <p className="text-sm text-muted-foreground">{master?.city}</p>
+            {todayActivity.total > 0 && (
+              <div className="flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                <TrendingUp size={11} />
+                {todayActivity.total} {todayActivity.total === 1 ? "заявка" : todayActivity.total < 5 ? "заявки" : "заявок"} сегодня
+              </div>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <AvailabilityToggle isAvailable={isAvailable} atLimit={atLimit} onChange={setIsAvailable} />
@@ -891,6 +997,9 @@ export default function HomePage() {
           ))
         )}
       </section>
+
+      {/* Missed orders FOMO feed */}
+      <MissedOrdersSection orders={missed} city={master?.city ?? ""} />
 
       {/* Full-screen sheets */}
       {selectedAvail && (

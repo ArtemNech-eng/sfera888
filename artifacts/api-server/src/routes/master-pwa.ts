@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, mastersTable, ordersTable, orderDispatchesTable, transactionsTable, leadsTable, voronkaColumnsTable, masterMessagesTable, pushSubscriptionsTable } from "@workspace/db";
-import { eq, and, inArray, isNull, ne, asc, desc } from "drizzle-orm";
+import { eq, and, inArray, isNull, ne, asc, desc, gte } from "drizzle-orm";
 import { verifyPassword, hashPassword } from "../lib/auth.js";
 import { getMasterEligibility, getOverdueMasterIds, countActiveMasterOrders, getColumnIdForActiveCount } from "../lib/orderEligibility.js";
 import multer from "multer";
@@ -289,6 +289,63 @@ router.get("/home", requireMasterPwa, async (req, res) => {
 
   const orderLimit = master.isTestMaster ? 1 : 2;
 
+  // ─── Missed orders & today's activity (FOMO feed) ────────────────────────
+  const since48h = new Date(Date.now() - 48 * 60 * 60 * 1000);
+  const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const activeOrderIds = new Set(activeOrders.map(o => o.id));
+
+  // Orders in master's city that went to another master in the last 48h
+  const recentlyTakenRaw = await db.select().from(ordersTable)
+    .where(and(
+      eq(ordersTable.city, master.city),
+      inArray(ordersTable.status, ["master_assigned", "in_progress", "completed"]),
+      gte(ordersTable.updatedAt, since48h),
+      isNull(ordersTable.deletedAt),
+    ))
+    .orderBy(desc(ordersTable.updatedAt))
+    .limit(20);
+
+  // Exclude master's own orders, pick the 5 most recent
+  const missedOrdersRaw = recentlyTakenRaw
+    .filter(o => !activeOrderIds.has(o.id) && o.masterId !== masterId)
+    .slice(0, 5);
+
+  const missedOrders = missedOrdersRaw.map(o => ({
+    id: o.id,
+    serviceType: o.serviceType,
+    district: o.district ?? null,
+    area: Number(o.area),
+    takenAt: o.updatedAt ?? o.createdAt,
+    wasDispatched: false, // will fill below
+  }));
+
+  // Mark which of those were dispatched to this master (so he actually saw them)
+  if (missedOrders.length > 0) {
+    const missedIds = missedOrders.map(o => o.id);
+    const dispatchedToMe = await db.select({ orderId: orderDispatchesTable.orderId })
+      .from(orderDispatchesTable)
+      .where(and(
+        inArray(orderDispatchesTable.orderId, missedIds),
+        eq(orderDispatchesTable.masterId, masterId),
+      ));
+    const dispatchedSet = new Set(dispatchedToMe.map(d => d.orderId));
+    for (const o of missedOrders) {
+      o.wasDispatched = dispatchedSet.has(o.id);
+    }
+  }
+
+  // Today's activity — how many orders appeared in master's city in last 24h
+  const todayOrders = await db.select().from(ordersTable)
+    .where(and(
+      eq(ordersTable.city, master.city),
+      gte(ordersTable.createdAt, since24h),
+      isNull(ordersTable.deletedAt),
+    ));
+  const todayActivity = {
+    total: todayOrders.length,
+    taken: todayOrders.filter(o => ["master_assigned", "in_progress", "completed"].includes(o.status)).length,
+  };
+
   res.json({
     master: {
       id: master.id,
@@ -304,6 +361,8 @@ router.get("/home", requireMasterPwa, async (req, res) => {
     },
     availableOrders,
     pendingOrders,
+    missedOrders,
+    todayActivity,
     activeOrders: activeOrders.map(o => ({
       id: o.id,
       city: o.city,
