@@ -422,11 +422,11 @@ export default function Orders() {
               </div>
               {cancellationOrders.map(order => {
                 const ct = (order as any).cancelType as string | null;
-                const cancelTypeMeta: Record<string, { label: string; badge: string; hint: string }> = {
-                  client_refused:     { label: "Клиент отказался",          badge: "bg-blue-100 text-blue-800",   hint: "Рекомендуется: Отменить заказ" },
-                  price_disagreement: { label: "Не договорились по цене",   badge: "bg-amber-100 text-amber-800", hint: "Рекомендуется: Назначить другого мастера" },
-                  master_cant:        { label: "Мастер не может выполнить", badge: "bg-orange-100 text-orange-800", hint: "Рекомендуется: Назначить другого мастера" },
-                  other:              { label: "Другая причина",             badge: "bg-slate-100 text-slate-700", hint: "" },
+                const cancelTypeMeta: Record<string, { label: string; badge: string }> = {
+                  client_refused:     { label: "Клиент отказался",          badge: "bg-blue-100 text-blue-800" },
+                  price_disagreement: { label: "Не договорились по цене",   badge: "bg-amber-100 text-amber-800" },
+                  master_cant:        { label: "Мастер не может выполнить", badge: "bg-orange-100 text-orange-800" },
+                  other:              { label: "Другая причина",             badge: "bg-slate-100 text-slate-700" },
                 };
                 const meta = ct ? cancelTypeMeta[ct] : null;
                 return (
@@ -490,9 +490,6 @@ export default function Orders() {
                         <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${meta.badge}`}>
                           {meta.label}
                         </span>
-                        {meta.hint && (
-                          <span className="text-xs text-muted-foreground mt-1">{meta.hint}</span>
-                        )}
                       </div>
                     )}
                     {(order as any).cancelReason && (

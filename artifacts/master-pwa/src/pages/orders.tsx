@@ -151,26 +151,10 @@ function CompleteModal({
 }
 
 const CANCEL_OPTIONS = [
-  {
-    id: "client_refused",
-    label: "Клиент отказался",
-    hint: "Менеджер закроет заказ",
-  },
-  {
-    id: "price_disagreement",
-    label: "Не договорились по цене",
-    hint: "Менеджер назначит другого мастера",
-  },
-  {
-    id: "master_cant",
-    label: "Не могу выполнить",
-    hint: "Менеджер назначит другого мастера",
-  },
-  {
-    id: "other",
-    label: "Другая причина",
-    hint: "Опишите ситуацию в комментарии",
-  },
+  { id: "client_refused",     label: "Клиент отказался" },
+  { id: "price_disagreement", label: "Не договорились по цене" },
+  { id: "master_cant",        label: "Не могу выполнить" },
+  { id: "other",              label: "Другая причина" },
 ] as const;
 
 function CancelModal({
@@ -227,7 +211,6 @@ function CancelModal({
               }`}
             >
               <div className="text-sm font-semibold text-foreground">{opt.label}</div>
-              <div className="text-xs text-muted-foreground mt-0.5">{opt.hint}</div>
             </button>
           ))}
         </div>
