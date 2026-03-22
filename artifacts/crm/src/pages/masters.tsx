@@ -121,19 +121,26 @@ export default function Masters() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/voronka/masters")
-      .then(r => r.ok ? r.json() : [])
-      .then(data => {
-        const list: Master[] = Array.isArray(data) ? data : [];
-        setMasters(list);
-        setLoading(false);
-        const openId = parseInt(new URLSearchParams(window.location.search).get("openMaster") ?? "");
-        if (openId) {
-          const found = list.find(m => m.id === openId);
-          if (found) setDrawerMaster(found);
-        }
-      })
-      .catch(() => setLoading(false));
+    const load = (initial = false) => {
+      fetch("/api/voronka/masters")
+        .then(r => r.ok ? r.json() : [])
+        .then(data => {
+          const list: Master[] = Array.isArray(data) ? data : [];
+          setMasters(list);
+          if (initial) {
+            setLoading(false);
+            const openId = parseInt(new URLSearchParams(window.location.search).get("openMaster") ?? "");
+            if (openId) {
+              const found = list.find(m => m.id === openId);
+              if (found) setDrawerMaster(found);
+            }
+          }
+        })
+        .catch(() => { if (initial) setLoading(false); });
+    };
+    load(true);
+    const t = setInterval(() => load(false), 10_000);
+    return () => clearInterval(t);
   }, []);
 
   const { data: cities } = useGetCities();

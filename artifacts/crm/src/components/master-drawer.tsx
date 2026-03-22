@@ -428,7 +428,8 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
         body: JSON.stringify({ status: newStatus }),
       });
       if (r.ok) {
-        onMasterUpdate(master.id, { status: newStatus });
+        const updated = await r.json();
+        onMasterUpdate(master.id, { status: newStatus, voronkaColumnId: updated.voronkaColumnId });
       }
     } finally {
       setSuspending(false);
@@ -451,6 +452,7 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
           contractSignedAt: updated.contractSignedAt,
           passportVerified: updated.passportVerified,
           passportVerifyNote: updated.passportVerifyNote,
+          voronkaColumnId: updated.voronkaColumnId,
         });
         setShowActivatePopover(false);
       }

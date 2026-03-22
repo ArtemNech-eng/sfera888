@@ -175,7 +175,9 @@ router.patch("/:id", requireRole("admin", "master_operator"), async (req, res) =
     notifyMasterActivated(chatId, updated.alias).catch(() => {});
   }
 
-  res.json(formatMaster(result[0]));
+  // Re-fetch to get the final state (voronkaColumnId may have been updated above)
+  const [finalMaster] = await db.select().from(mastersTable).where(eq(mastersTable.id, id));
+  res.json(formatMaster(finalMaster ?? result[0]));
 });
 
 // POST /api/masters/:id/mark-contract-external
