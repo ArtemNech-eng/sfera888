@@ -510,13 +510,18 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
                   </button>
                 )}
 
-                <button
-                  onClick={() => setShowCancel(true)}
-                  className="w-full h-10 rounded-xl border border-destructive/50 text-destructive text-sm font-medium flex items-center justify-center gap-2 active:opacity-80"
-                >
-                  <XCircle size={16} />
-                  Запросить отмену
-                </button>
+                <div className="space-y-1">
+                  <button
+                    onClick={() => setShowCancel(true)}
+                    className="w-full h-10 rounded-xl border border-destructive/50 text-destructive text-sm font-medium flex items-center justify-center gap-2 active:opacity-80"
+                  >
+                    <XCircle size={16} />
+                    Запросить отмену
+                  </button>
+                  <p className="text-center text-[11px] text-muted-foreground">
+                    Потребуется выбрать причину и написать подробный комментарий
+                  </p>
+                </div>
               </div>
             )}
           </div>
