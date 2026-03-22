@@ -136,12 +136,12 @@ router.patch("/:id", requireRole("admin", "master_operator"), async (req, res) =
   const result = await db.update(mastersTable).set(updates).where(eq(mastersTable.id, id)).returning();
   if (!result[0]) return res.status(404).json({ error: "Master not found" });
 
-  // On manual activation: clear contract link and move to "Свободен"
+  // On manual activation: clear contract link and move to "Занят" (master goes online themselves)
   if (status === "active" && oldStatus === "pending_contract") {
     const cols = await db.select().from(voronkaColumnsTable);
-    const freeCol = cols.find(c => c.name === "Свободен");
+    const busyCol = cols.find(c => c.name === "Занят") ?? cols.find(c => !c.receivesOrders && c.position > 1);
     await db.update(mastersTable)
-      .set({ contractLink: null, voronkaColumnId: freeCol?.id ?? null })
+      .set({ contractLink: null, voronkaColumnId: busyCol?.id ?? null })
       .where(eq(mastersTable.id, id));
   }
 
@@ -196,7 +196,7 @@ router.post("/:id/mark-contract-external", requireRole("admin"), async (req, res
   if (!master) return res.status(404).json({ error: "Мастер не найден" });
 
   const cols = await db.select().from(voronkaColumnsTable);
-  const freeCol = cols.find(c => c.name === "Свободен");
+  const busyCol = cols.find(c => c.name === "Занят") ?? cols.find(c => !c.receivesOrders && c.position > 1);
 
   await db.update(mastersTable)
     .set({
@@ -205,7 +205,7 @@ router.post("/:id/mark-contract-external", requireRole("admin"), async (req, res
       passportVerifyNote: note,
       contractLink: null,
       status: "active",
-      voronkaColumnId: freeCol?.id ?? master.voronkaColumnId,
+      voronkaColumnId: busyCol?.id ?? master.voronkaColumnId,
     })
     .where(eq(mastersTable.id, id));
 
@@ -237,9 +237,9 @@ router.patch("/:id/verify-passport", requireRole("admin"), async (req, res) => {
   // If manually verified and master is still in pending_contract — activate them
   if (verified && master.status === "pending_contract" && master.contractSignedAt) {
     const cols = await db.select().from(voronkaColumnsTable);
-    const freeCol = cols.find(c => c.name === "Свободен");
+    const busyCol = cols.find(c => c.name === "Занят") ?? cols.find(c => !c.receivesOrders && c.position > 1);
     updates.status = "active";
-    if (freeCol) updates.voronkaColumnId = freeCol.id;
+    if (busyCol) updates.voronkaColumnId = busyCol.id;
 
     if (master.telegramId) {
       const tgRows = await db.select().from(telegramChatsTable).where(eq(telegramChatsTable.telegramChatId, master.telegramId));
