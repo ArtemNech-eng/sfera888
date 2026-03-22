@@ -4,7 +4,7 @@ import { useGetLeads, useCreateLead, useSendLeadToBuffer, useGetCities, useGetSe
 import { ProtectedRoute } from "@/hooks/use-auth";
 import { StatusBadge } from "@/components/status-badge";
 import { formatDate } from "@/lib/utils";
-import { Loader2, Plus, Search, Filter, Play, Trash2, User, Phone, MapPin, ChevronDown, Sparkles, Images, Pencil, X, Calendar, Radio, Save, Ban, UserX, MessageSquare, ExternalLink, CheckCircle2 } from "lucide-react";
+import { Loader2, Plus, Search, Filter, Play, Trash2, User, Phone, MapPin, ChevronDown, Sparkles, Images, Pencil, X, Calendar, Radio, Save, Ban, UserX, MessageSquare, CheckCircle2, Clock, ArrowRight } from "lucide-react";
 import { PhotoUploader } from "@/components/photo-uploader";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -49,6 +49,7 @@ export default function Leads() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingLead, setEditingLead] = useState<LeadRow | null>(null);
   const [confirmSendLead, setConfirmSendLead] = useState<LeadRow | null>(null);
+  const [selectedLead, setSelectedLead] = useState<LeadRow | null>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -345,32 +346,32 @@ export default function Leads() {
             </div>
           </div>
 
-          {/* Table */}
+          {/* Compact table */}
           <div className="bg-card rounded-2xl border border-border/50 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
-                <thead className="bg-slate-50/50 text-muted-foreground font-medium border-b border-border/50 text-xs uppercase tracking-wide">
+                <thead className="bg-slate-50/50 text-muted-foreground font-medium border-b border-border/50 text-xs">
                   <tr>
-                    <th className="px-5 py-3.5">ID / Дата</th>
-                    <th className="px-5 py-3.5">Клиент</th>
-                    <th className="px-5 py-3.5">Локация</th>
-                    <th className="px-5 py-3.5">Услуги / Комментарий</th>
-                    <th className="px-4 py-3.5">Фото</th>
-                    <th className="px-5 py-3.5">Статус</th>
-                    <th className="px-5 py-3.5 text-right">Действия</th>
+                    <th className="px-3 py-2.5 pl-4">Статус</th>
+                    <th className="px-3 py-2.5">ID</th>
+                    <th className="px-3 py-2.5">Клиент</th>
+                    <th className="px-3 py-2.5">Город · Источник</th>
+                    <th className="px-3 py-2.5">Услуги</th>
+                    <th className="px-3 py-2.5">Смета</th>
+                    <th className="px-3 py-2.5 pr-4 text-right">Действия</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/50">
                   {isLoading ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-12 text-center">
+                      <td colSpan={7} className="px-4 py-12 text-center">
                         <Loader2 className="w-6 h-6 animate-spin text-primary mx-auto" />
                       </td>
                     </tr>
                   ) : filteredLeads.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-12 text-center text-muted-foreground">
-                        {searchQuery || statusFilter || sourceFilter ? "Ничего не найдено по выбранным фильтрам" : "Заявок не найдено"}
+                      <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
+                        {searchQuery || statusFilter || sourceFilter ? "Ничего не найдено" : "Заявок не найдено"}
                       </td>
                     </tr>
                   ) : filteredLeads.map((lead) => {
@@ -378,146 +379,80 @@ export default function Leads() {
                     const estimate = srvs ? srvs.reduce((sum, s) => sum + s.area * (s.pricePerM2 || 0), 0) : 0;
                     const sourceName = SOURCE_OPTIONS.find(o => o.value === lead.source)?.label;
                     const isActive = lead.status === LeadStatus.new || lead.status === LeadStatus.processing;
+                    const photoCount = (lead.photos?.length ?? 0);
+                    const firstService = srvs && srvs.length > 0 ? srvs[0] : null;
+                    const serviceLabel = firstService
+                      ? `${firstService.type}${srvs!.length > 1 ? ` +${srvs!.length - 1}` : ""}`
+                      : lead.serviceType;
+                    const totalArea = srvs ? srvs.reduce((s, r) => s + r.area, 0) : lead.area;
                     return (
-                      <tr key={lead.id} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="px-5 py-4">
-                          <span className="font-mono font-semibold text-foreground text-xs">#{lead.id}</span>
-                          <div className="text-xs text-muted-foreground mt-1">{formatDate(lead.createdAt)}</div>
+                      <tr
+                        key={lead.id}
+                        onClick={() => setSelectedLead(lead)}
+                        className={`cursor-pointer hover:bg-slate-50 transition-colors ${
+                          isActive ? "" : "opacity-75"
+                        }`}
+                      >
+                        {/* Status */}
+                        <td className="px-3 py-2.5 pl-4">
+                          <StatusBadge status={lead.status} type="lead" />
                           {lead.scheduledAt && (
-                            <div className="inline-flex items-center gap-1 mt-1.5 text-[10px] font-medium bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded-full">
-                              <Calendar className="w-2.5 h-2.5" />
-                              {new Date(lead.scheduledAt).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                            <div className="flex items-center gap-1 mt-0.5 text-[10px] text-blue-500 font-medium">
+                              <Clock className="w-2.5 h-2.5" />
+                              {new Date(lead.scheduledAt).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" })}
                             </div>
                           )}
                         </td>
-                        <td className="px-5 py-4">
-                          <div className="font-medium text-foreground">{lead.clientName}</div>
-                          <a
-                            href={`tel:${lead.clientPhone}`}
-                            className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-0.5"
-                            onClick={e => e.stopPropagation()}
-                          >
-                            <Phone className="w-2.5 h-2.5" />
+                        {/* ID */}
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          <span className="font-semibold text-foreground">#{lead.id}</span>
+                          <div className="text-[10px] text-muted-foreground mt-0.5">{formatDate(lead.createdAt)}</div>
+                        </td>
+                        {/* Client */}
+                        <td className="px-3 py-2.5 max-w-[160px]">
+                          <p className="font-medium text-foreground truncate">{lead.clientName}</p>
+                          <a href={`tel:${lead.clientPhone}`} onClick={e => e.stopPropagation()}
+                            className="text-xs text-blue-600 hover:underline">
                             {lead.clientPhone}
                           </a>
+                        </td>
+                        {/* City + source */}
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          <p className="text-sm text-foreground">{lead.city}</p>
                           {sourceName && (
-                            <div className="text-[10px] mt-1 text-slate-400">{sourceName}</div>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">{sourceName}</p>
                           )}
                         </td>
-                        <td className="px-5 py-4">
-                          <div className="text-foreground text-sm">{lead.city}</div>
-                          {lead.district && <div className="text-xs text-muted-foreground mt-0.5">{lead.district}</div>}
+                        {/* Services */}
+                        <td className="px-3 py-2.5 max-w-[180px]">
+                          <p className="text-sm text-foreground truncate">{serviceLabel}</p>
+                          <p className="text-xs text-muted-foreground">{totalArea} м²</p>
                         </td>
-                        <td className="px-5 py-4 max-w-[260px]">
-                          {srvs && srvs.length > 0 ? (
-                            <div className="space-y-1.5">
-                              <div className="flex flex-wrap gap-1">
-                                {srvs.map((s, i) => {
-                                  const lineTotal = s.area * (s.pricePerM2 || 0);
-                                  return (
-                                    <div key={i} className="inline-flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-0.5">
-                                      <span className="text-xs font-medium text-slate-700">{s.type}</span>
-                                      <span className="w-px h-3 bg-slate-300" />
-                                      <span className="text-xs text-slate-500">{s.area} м²</span>
-                                      {lineTotal > 0 && (
-                                        <>
-                                          <span className="w-px h-3 bg-slate-300" />
-                                          <span className="text-xs font-semibold text-emerald-600">{lineTotal.toLocaleString("ru-RU")} ₽</span>
-                                        </>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                              {estimate > 0 && (
-                                <div className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full">
-                                  Итого: {fmt(estimate)}
-                                </div>
-                              )}
-                            </div>
+                        {/* Estimate */}
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          {estimate > 0 ? (
+                            <span className="font-semibold text-emerald-600">{fmt(estimate)}</span>
                           ) : (
-                            <div className="inline-flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-0.5">
-                              <span className="text-xs font-medium text-slate-700">{lead.serviceType}</span>
-                              <span className="w-px h-3 bg-slate-300" />
-                              <span className="text-xs text-slate-500">{lead.area} м²</span>
-                            </div>
-                          )}
-                          {lead.comment && (
-                            <div className="flex items-start gap-1 mt-1.5">
-                              <MessageSquare className="w-3 h-3 text-slate-400 mt-0.5 flex-shrink-0" />
-                              <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">{lead.comment}</p>
-                            </div>
+                            <span className="text-muted-foreground/40">—</span>
                           )}
                         </td>
-                        {/* Photos thumbnails */}
-                        <td className="px-4 py-4">
-                          {(() => {
-                            const photos = lead.photos as string[] | null;
-                            if (!photos || photos.length === 0) return <span className="text-xs text-gray-300">—</span>;
-                            return (
-                              <div className="flex items-center gap-1">
-                                {photos.slice(0, 2).map((p, i) => (
-                                  <img
-                                    key={i}
-                                    src={`/api/storage${p}`}
-                                    alt=""
-                                    className="w-9 h-9 rounded-lg object-cover border border-gray-200 shadow-sm"
-                                  />
-                                ))}
-                                {photos.length > 2 && (
-                                  <span className="w-9 h-9 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center text-xs font-semibold text-gray-500">
-                                    +{photos.length - 2}
-                                  </span>
-                                )}
-                              </div>
-                            );
-                          })()}
-                        </td>
-                        <td className="px-5 py-4">
-                          <StatusBadge status={lead.status} type="lead" />
-                        </td>
-                        <td className="px-5 py-4">
-                          <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                            {isActive && (
-                              <button
-                                onClick={() => setConfirmSendLead(lead)}
-                                disabled={sendToWorkMutation.isPending}
-                                className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground rounded-lg font-medium text-xs transition-colors"
-                              >
-                                <Play className="w-3 h-3" /> В работу
-                              </button>
+                        {/* Actions */}
+                        <td className="px-3 py-2.5 pr-4">
+                          <div className="flex items-center justify-end gap-1.5">
+                            {photoCount > 0 && (
+                              <span className="inline-flex items-center gap-1 text-[10px] bg-slate-100 text-slate-500 rounded-full px-1.5 py-0.5 font-medium">
+                                <Images className="w-2.5 h-2.5" />{photoCount}
+                              </span>
                             )}
                             {isActive && (
-                              <button
-                                onClick={() => quickStatusMutation.mutate({ id: lead.id, status: "non_target" })}
-                                disabled={quickStatusMutation.isPending}
-                                title="Нецелевая"
-                                className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-orange-500 hover:bg-orange-50 transition-all"
-                              >
-                                <Ban className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                            {isActive && (
-                              <button
-                                onClick={() => quickStatusMutation.mutate({ id: lead.id, status: "client_refusal" })}
-                                disabled={quickStatusMutation.isPending}
-                                title="Отказ клиента"
-                                className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all"
-                              >
-                                <UserX className="w-3.5 h-3.5" />
-                              </button>
+                              <span className="inline-flex items-center gap-1 text-[10px] bg-primary/10 text-primary rounded-full px-2 py-0.5 font-medium">
+                                <ArrowRight className="w-2.5 h-2.5" />В работу
+                              </span>
                             )}
                             <button
-                              onClick={() => openEditModal(lead)}
-                              title="Редактировать"
-                              className="w-7 h-7 flex items-center justify-center rounded-lg text-muted-foreground/40 hover:text-primary hover:bg-primary/10 transition-all"
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => deleteLeadMutation.mutate(lead.id)}
+                              onClick={e => { e.stopPropagation(); deleteLeadMutation.mutate(lead.id); }}
                               title="В корзину"
-                              className="w-7 h-7 flex items-center justify-center rounded-lg text-muted-foreground/30 hover:text-red-500 hover:bg-red-50 transition-all"
+                              className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground/30 hover:text-red-500 hover:bg-red-50 transition-all"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -531,6 +466,195 @@ export default function Leads() {
             </div>
           </div>
         </div>
+
+        {/* Lead Detail Panel */}
+        {selectedLead && (
+          <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+            <div className="bg-card rounded-t-3xl sm:rounded-3xl border border-border shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-border/50 flex items-start justify-between flex-shrink-0">
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="text-lg font-display font-bold text-foreground">Заявка #{selectedLead.id}</h2>
+                    <StatusBadge status={selectedLead.status} type="lead" />
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-0.5">{selectedLead.city}{selectedLead.district ? `, ${selectedLead.district}` : ""}</p>
+                </div>
+                <button onClick={() => setSelectedLead(null)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 flex-shrink-0 ml-2">
+                  <X className="w-4 h-4 text-muted-foreground" />
+                </button>
+              </div>
+
+              {/* Scrollable body */}
+              <div className="overflow-y-auto flex-1">
+                <div className="p-6 space-y-4">
+
+                  {/* Client info card */}
+                  <div className="bg-slate-50 rounded-2xl p-4 space-y-2.5 text-sm">
+                    <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide">Клиент</p>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                      <div>
+                        <p className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Имя</p>
+                        <p className="font-medium text-foreground">{selectedLead.clientName}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Телефон</p>
+                        <a href={`tel:${selectedLead.clientPhone}`} className="font-medium text-blue-600 hover:underline">{selectedLead.clientPhone}</a>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Город · Район</p>
+                        <p className="font-medium text-foreground">{selectedLead.city}{selectedLead.district ? `, ${selectedLead.district}` : ""}</p>
+                      </div>
+                      {selectedLead.source && (
+                        <div>
+                          <p className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Источник</p>
+                          <p className="font-medium text-foreground">{SOURCE_OPTIONS.find(o => o.value === selectedLead.source)?.label ?? selectedLead.source}</p>
+                        </div>
+                      )}
+                      {selectedLead.scheduledAt && (
+                        <div>
+                          <p className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Дата выезда</p>
+                          <p className="font-medium text-blue-600">{new Date(selectedLead.scheduledAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>
+                        </div>
+                      )}
+                      <div>
+                        <p className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Создана</p>
+                        <p className="font-medium text-foreground">{formatDate(selectedLead.createdAt)}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Services */}
+                  {(() => {
+                    const srvs = selectedLead.services;
+                    const estimate = srvs ? srvs.reduce((sum, s) => sum + s.area * (s.pricePerM2 || 0), 0) : 0;
+                    return (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide">Услуги</p>
+                          {estimate > 0 && (
+                            <span className="text-sm font-bold text-emerald-600">≈ {fmt(estimate)}</span>
+                          )}
+                        </div>
+                        <div className="rounded-xl border border-border/60 overflow-hidden">
+                          {srvs && srvs.length > 0 ? srvs.map((s, i) => {
+                            const lineTotal = s.area * (s.pricePerM2 || 0);
+                            return (
+                              <div key={i} className={`flex items-center justify-between px-4 py-2.5 text-sm ${i > 0 ? "border-t border-border/40" : ""}`}>
+                                <div>
+                                  <span className="font-medium text-foreground">{s.type}</span>
+                                  <span className="text-muted-foreground text-xs ml-2">{s.area} м²</span>
+                                  {s.pricePerM2 > 0 && <span className="text-muted-foreground text-xs ml-1">· {s.pricePerM2.toLocaleString("ru-RU")} ₽/м²</span>}
+                                </div>
+                                {lineTotal > 0 && (
+                                  <span className="font-semibold text-emerald-600 text-xs">{lineTotal.toLocaleString("ru-RU")} ₽</span>
+                                )}
+                              </div>
+                            );
+                          }) : (
+                            <div className="px-4 py-2.5 text-sm flex items-center justify-between">
+                              <div>
+                                <span className="font-medium text-foreground">{selectedLead.serviceType}</span>
+                                <span className="text-muted-foreground text-xs ml-2">{selectedLead.area} м²</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Comment */}
+                  {selectedLead.comment && (
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide">Комментарий</p>
+                      <div className="bg-slate-50 rounded-xl px-4 py-3 text-sm text-foreground leading-relaxed">
+                        {selectedLead.comment}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Photos */}
+                  {selectedLead.photos && selectedLead.photos.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide">Фотографии ({selectedLead.photos.length})</p>
+                      <div className="flex flex-wrap gap-2">
+                        {selectedLead.photos.map((p, i) => (
+                          <a key={i} href={`/api/storage${p}`} target="_blank" rel="noopener noreferrer">
+                            <img src={`/api/storage${p}`} alt={`Фото ${i+1}`} className="w-16 h-16 object-cover rounded-xl border border-border hover:opacity-80 transition-opacity" />
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Quick status change */}
+                  {(selectedLead.status === LeadStatus.new || selectedLead.status === LeadStatus.processing) && (
+                    <div className="space-y-2">
+                      <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide">Быстрые действия</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {selectedLead.status === LeadStatus.new && (
+                          <button
+                            onClick={() => { quickStatusMutation.mutate({ id: selectedLead.id, status: "processing" }); setSelectedLead({ ...selectedLead, status: "processing" }); }}
+                            disabled={quickStatusMutation.isPending}
+                            className="flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-xl text-xs font-medium hover:bg-blue-100 transition-colors disabled:opacity-50"
+                          >
+                            <Clock className="w-3.5 h-3.5" />В обработке
+                          </button>
+                        )}
+                        <button
+                          onClick={() => { quickStatusMutation.mutate({ id: selectedLead.id, status: "non_target" }); setSelectedLead({ ...selectedLead, status: "non_target" }); }}
+                          disabled={quickStatusMutation.isPending}
+                          className="flex items-center justify-center gap-2 px-3 py-2.5 bg-orange-50 text-orange-700 border border-orange-200 rounded-xl text-xs font-medium hover:bg-orange-100 transition-colors disabled:opacity-50"
+                        >
+                          <Ban className="w-3.5 h-3.5" />Нецелевая
+                        </button>
+                        <button
+                          onClick={() => { quickStatusMutation.mutate({ id: selectedLead.id, status: "client_refusal" }); setSelectedLead({ ...selectedLead, status: "client_refusal" }); }}
+                          disabled={quickStatusMutation.isPending}
+                          className="flex items-center justify-center gap-2 px-3 py-2.5 bg-red-50 text-red-700 border border-red-200 rounded-xl text-xs font-medium hover:bg-red-100 transition-colors disabled:opacity-50"
+                        >
+                          <UserX className="w-3.5 h-3.5" />Отказ клиента
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Main actions */}
+                  <div className="border-t border-border/50 pt-4 space-y-2">
+                    {(selectedLead.status === LeadStatus.new || selectedLead.status === LeadStatus.processing) && (
+                      <button
+                        onClick={() => { setConfirmSendLead(selectedLead); setSelectedLead(null); }}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-primary text-primary-foreground rounded-xl font-semibold text-sm hover:bg-primary/90 transition-colors"
+                      >
+                        <Play className="w-4 h-4" />Отправить в работу
+                      </button>
+                    )}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => { openEditModal(selectedLead); setSelectedLead(null); }}
+                        className="flex-1 flex items-center justify-center gap-2 py-2 px-4 bg-white border border-border rounded-xl font-medium text-sm text-foreground hover:bg-slate-50 transition-colors"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />Редактировать
+                      </button>
+                      <button
+                        onClick={() => { if (confirm(`Удалить заявку #${selectedLead.id}?`)) { deleteLeadMutation.mutate(selectedLead.id); setSelectedLead(null); } }}
+                        className="flex items-center justify-center gap-2 py-2 px-4 bg-white border border-red-200 rounded-xl font-medium text-sm text-red-500 hover:bg-red-50 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />В корзину
+                      </button>
+                    </div>
+                    <button onClick={() => setSelectedLead(null)} className="w-full py-2 text-sm font-medium text-muted-foreground hover:bg-slate-50 rounded-xl transition-colors">
+                      Закрыть
+                    </button>
+                  </div>
+
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Create Modal */}
         {isCreateOpen && (
