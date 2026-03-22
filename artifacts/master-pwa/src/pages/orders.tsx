@@ -169,6 +169,8 @@ function CancelModal({
   const [cancelType, setCancelType] = useState<string>("");
   const [comment, setComment] = useState("");
   const [loading, setLoading] = useState(false);
+  const [commentError, setCommentError] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const MIN_COMMENT = 150;
   const commentLen = comment.trim().length;
@@ -177,7 +179,8 @@ function CancelModal({
   const handleSubmit = async () => {
     if (!cancelType) return;
     if (!commentOk) {
-      toast.error(`Напишите минимум ${MIN_COMMENT} символов`);
+      setCommentError(true);
+      textareaRef.current?.focus();
       return;
     }
     setLoading(true);
@@ -220,22 +223,28 @@ function CancelModal({
         </div>
         {cancelType && (
           <div className="space-y-1">
-            <p className="text-xs text-muted-foreground">
-              Опишите ситуацию подробно — это обязательно для отмены.
-            </p>
             <textarea
+              ref={textareaRef}
               value={comment}
-              onChange={e => setComment(e.target.value)}
+              onChange={e => { setComment(e.target.value); if (commentError) setCommentError(false); }}
               placeholder="Что произошло? О чём говорили с клиентом? Почему не получается выполнить?"
               rows={4}
-              className="w-full px-4 py-3 rounded-xl border border-input bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+              className={`w-full px-4 py-3 rounded-xl border-2 bg-background text-foreground text-sm focus:outline-none resize-none transition-colors ${
+                commentError
+                  ? "border-destructive focus:border-destructive"
+                  : "border-input focus:border-ring"
+              }`}
               autoFocus
             />
-            <div className={`text-right text-xs font-medium ${commentOk ? "text-emerald-500" : "text-amber-500"}`}>
-              {commentOk
-                ? "✓ Достаточно"
-                : `ещё ${MIN_COMMENT - commentLen} симв.`}
-            </div>
+            {commentError ? (
+              <p className="text-xs font-medium text-destructive">
+                Напишите причину отказа (ещё {MIN_COMMENT - commentLen} симв.)
+              </p>
+            ) : commentOk ? (
+              <p className="text-right text-xs font-medium text-emerald-500">✓ Достаточно</p>
+            ) : (
+              <p className="text-right text-xs text-muted-foreground">ещё {MIN_COMMENT - commentLen} симв.</p>
+            )}
           </div>
         )}
         <div className="flex gap-3">
@@ -248,7 +257,7 @@ function CancelModal({
           </button>
           <button
             type="button"
-            disabled={!cancelType || !commentOk || loading}
+            disabled={!cancelType || loading}
             onClick={handleSubmit}
             className="flex-1 h-11 bg-destructive text-white font-semibold rounded-xl active:opacity-80 disabled:opacity-50 flex items-center justify-center gap-2 text-sm"
           >
