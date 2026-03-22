@@ -5,6 +5,7 @@ import { requireRole } from "../middlewares/requireAuth.js";
 import { calculateCommission, getCommissionSettings } from "../lib/commission.js";
 import { getMasterEligibility, getOverdueMasterIds, countActiveMasterOrders, getColumnIdForActiveCount } from "../lib/orderEligibility.js";
 import { performBroadcast } from "../lib/broadcastOrder.js";
+import { sendPushToMaster } from "../lib/push.js";
 
 const TELEGRAM_API = `https://api.telegram.org/bot${process.env["TELEGRAM_BOT_TOKEN"]}`;
 
@@ -707,6 +708,15 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
     fromMaster: false,
     senderName: "system",
     isRead: false,
+  }).catch(() => {});
+
+  // Push notification to master's PWA
+  const leadRows = await db.select().from(leadsTable).where(eq(leadsTable.id, order.leadId));
+  const lead = leadRows[0];
+  sendPushToMaster(master.id, {
+    title: "Вас назначили на заказ",
+    body: `Заявка #${orderId}${order.serviceType ? ` · ${order.serviceType}` : ""}${lead?.clientName ? ` · ${lead.clientName}` : ""}`,
+    url: `/master-pwa/orders`,
   }).catch(() => {});
 
   res.json({ ok: true });

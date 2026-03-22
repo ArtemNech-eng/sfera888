@@ -220,16 +220,21 @@ function CancelModal({
         </div>
         {cancelType && (
           <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">
+              Опишите ситуацию подробно — это обязательно для отмены.
+            </p>
             <textarea
               value={comment}
               onChange={e => setComment(e.target.value)}
-              placeholder="Подробно опишите ситуацию — что произошло, о чём говорили с клиентом..."
+              placeholder="Что произошло? О чём говорили с клиентом? Почему не получается выполнить?"
               rows={4}
               className="w-full px-4 py-3 rounded-xl border border-input bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
               autoFocus
             />
-            <div className={`text-right text-xs font-medium ${commentOk ? "text-emerald-500" : "text-muted-foreground"}`}>
-              {commentLen} / {MIN_COMMENT}
+            <div className={`text-right text-xs font-medium ${commentOk ? "text-emerald-500" : "text-amber-500"}`}>
+              {commentOk
+                ? "✓ Достаточно"
+                : `ещё ${MIN_COMMENT - commentLen} симв.`}
             </div>
           </div>
         )}
