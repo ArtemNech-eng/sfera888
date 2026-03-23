@@ -249,7 +249,8 @@ export default function Orders() {
       setShowCancelDialog(false);
       setCancelDialogReason("");
       setCancelDialogNote("");
-      toast({ title: "Заказ отменён", description: "Заказ сохранён в истории со статусом «Отменён»." });
+      setStatusFilter("active");
+      toast({ title: "Заказ отменён", description: "Убран из активных. Найти в истории: фильтр → Отменён." });
     },
     onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
   });
@@ -800,11 +801,13 @@ export default function Orders() {
                         key={order.id}
                         ref={order.id === highlightId ? highlightRowRef : undefined}
                         onClick={openPanel}
-                        className={`cursor-pointer hover:bg-slate-50 transition-colors ${
-                          order.id === highlightId ? "bg-primary/5 ring-2 ring-inset ring-primary/40"
-                          : proposed && !confirmed ? "bg-amber-50/40"
-                          : pendingResp ? "bg-blue-50/40"
-                          : ""
+                        className={`cursor-pointer transition-colors ${
+                          order.status === "cancelled"
+                            ? "opacity-50 bg-slate-50/60 hover:opacity-70"
+                            : order.id === highlightId ? "bg-primary/5 ring-2 ring-inset ring-primary/40 hover:bg-slate-50"
+                            : proposed && !confirmed ? "bg-amber-50/40 hover:bg-slate-50"
+                            : pendingResp ? "bg-blue-50/40 hover:bg-slate-50"
+                            : "hover:bg-slate-50"
                         }`}
                       >
                         {/* Status */}
