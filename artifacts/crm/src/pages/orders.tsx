@@ -231,6 +231,25 @@ export default function Orders() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/orders"] }),
   });
 
+  const cancelOrderMutation = useMutation({
+    mutationFn: async (orderId: number) => {
+      const r = await fetch(`/api/orders/${orderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ status: "cancelled" }),
+      });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Ошибка"); }
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      setOpenDispatchId(null);
+      toast({ title: "Заказ отменён" });
+    },
+    onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
+  });
+
   const [showManualAssign, setShowManualAssign] = useState(false);
   const [selectedMasterForAssign, setSelectedMasterForAssign] = useState<string>("");
   const [showUnassignDialog, setShowUnassignDialog] = useState(false);
@@ -1038,7 +1057,21 @@ export default function Orders() {
                     <button onClick={() => { setOpenDispatchId(null); setLocation(`/tasks?newOrder=${openDispatchId}`); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-border rounded-lg text-xs font-medium text-foreground hover:bg-slate-100 transition-colors">
                       <ClipboardList className="w-3 h-3" />Создать задачу
                     </button>
-                    <button onClick={() => { if (confirm(`Удалить заказ #${openDispatchId}?`)) { deleteOrderMutation.mutate(openDispatchId); setOpenDispatchId(null); } }} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-red-200 rounded-lg text-xs font-medium text-red-500 hover:bg-red-50 transition-colors">
+                    {openOrder.status !== "cancelled" && openOrder.status !== "completed" && (
+                      <button
+                        onClick={() => {
+                          if (confirm(`Отменить заказ #${openDispatchId}? Статус изменится на «Отменён» и останется в истории.`)) {
+                            cancelOrderMutation.mutate(openDispatchId!);
+                          }
+                        }}
+                        disabled={cancelOrderMutation.isPending}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-orange-200 rounded-lg text-xs font-medium text-orange-600 hover:bg-orange-50 transition-colors disabled:opacity-50"
+                      >
+                        {cancelOrderMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <XCircle className="w-3 h-3" />}
+                        Отменить заказ
+                      </button>
+                    )}
+                    <button onClick={() => { if (confirm(`Удалить заказ #${openDispatchId}?`)) { deleteOrderMutation.mutate(openDispatchId!); setOpenDispatchId(null); } }} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-red-200 rounded-lg text-xs font-medium text-red-500 hover:bg-red-50 transition-colors">
                       <Trash2 className="w-3 h-3" />В корзину
                     </button>
                   </div>
