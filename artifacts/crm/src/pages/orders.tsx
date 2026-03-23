@@ -232,20 +232,24 @@ export default function Orders() {
   });
 
   const cancelOrderMutation = useMutation({
-    mutationFn: async (orderId: number) => {
+    mutationFn: async ({ orderId, reason }: { orderId: number; reason: string }) => {
       const r = await fetch(`/api/orders/${orderId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ status: "cancelled" }),
+        body: JSON.stringify({ status: "cancelled", clientCancelReason: reason }),
       });
       if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Ошибка"); }
       return r.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dispatch/pending"] });
       setOpenDispatchId(null);
-      toast({ title: "Заказ отменён" });
+      setShowCancelDialog(false);
+      setCancelDialogReason("");
+      setCancelDialogNote("");
+      toast({ title: "Заказ отменён", description: "Заказ сохранён в истории со статусом «Отменён»." });
     },
     onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
   });
@@ -257,6 +261,9 @@ export default function Orders() {
   const [rebroadcastOnUnassign, setRebroadcastOnUnassign] = useState(false);
   const [operatorNoteEdit, setOperatorNoteEdit] = useState<string | null>(null);
   const [showStatusLog, setShowStatusLog] = useState(false);
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [cancelDialogReason, setCancelDialogReason] = useState("");
+  const [cancelDialogNote, setCancelDialogNote] = useState("");
 
   const { data: activeMasters } = useQuery<{ id: number; alias: string; city: string | null }[]>({
     queryKey: ["/api/masters"],
@@ -664,14 +671,28 @@ export default function Orders() {
                     Сбросить ({activeFilterCount})
                   </button>
                 )}
-                {!isLoading && (
-                  <span className="text-xs text-muted-foreground ml-auto">
-                    {filteredOrders.length} {filteredOrders.length === 1 ? "заказ" : filteredOrders.length < 5 ? "заказа" : "заказов"}
-                    {orders && filteredOrders.length !== orders.length && (
-                      <span className="text-muted-foreground/60"> из {orders.length}</span>
-                    )}
-                  </span>
-                )}
+                {!isLoading && (() => {
+                  const cancelledCount = orders?.filter(o => o.status === "cancelled").length ?? 0;
+                  return (
+                    <div className="flex items-center gap-2 ml-auto">
+                      {cancelledCount > 0 && statusFilter !== "cancelled" && (
+                        <button
+                          onClick={() => setStatusFilter("cancelled")}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-medium bg-orange-100 text-orange-700 border border-orange-200 hover:bg-orange-200 transition-colors"
+                        >
+                          <XCircle className="w-3 h-3" />
+                          Отменённые: {cancelledCount}
+                        </button>
+                      )}
+                      <span className="text-xs text-muted-foreground">
+                        {filteredOrders.length} {filteredOrders.length === 1 ? "заказ" : filteredOrders.length < 5 ? "заказа" : "заказов"}
+                        {orders && filteredOrders.length !== orders.length && (
+                          <span className="text-muted-foreground/60"> из {orders.length}</span>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Row 2: date pills + status + city */}
@@ -967,7 +988,7 @@ export default function Orders() {
                   </div>
                   <p className="text-sm text-muted-foreground mt-0.5">{openOrder.serviceType} · {openOrder.city}{openOrder.district ? `, ${openOrder.district}` : ""}</p>
                 </div>
-                <button onClick={() => { setOpenDispatchId(null); setShowManualAssign(false); setSelectedMasterForAssign(""); setShowStatusLog(false); setOperatorNoteEdit(null); }} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 flex-shrink-0 ml-2">
+                <button onClick={() => { setOpenDispatchId(null); setShowManualAssign(false); setSelectedMasterForAssign(""); setShowStatusLog(false); setOperatorNoteEdit(null); setShowCancelDialog(false); setCancelDialogReason(""); setCancelDialogNote(""); }} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 flex-shrink-0 ml-2">
                   <X className="w-4 h-4 text-muted-foreground" />
                 </button>
               </div>
@@ -1057,24 +1078,77 @@ export default function Orders() {
                     <button onClick={() => { setOpenDispatchId(null); setLocation(`/tasks?newOrder=${openDispatchId}`); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-border rounded-lg text-xs font-medium text-foreground hover:bg-slate-100 transition-colors">
                       <ClipboardList className="w-3 h-3" />Создать задачу
                     </button>
-                    {openOrder.status !== "cancelled" && openOrder.status !== "completed" && (
+                    {openOrder.status !== "cancelled" && openOrder.status !== "completed" && !showCancelDialog && (
                       <button
-                        onClick={() => {
-                          if (confirm(`Отменить заказ #${openDispatchId}? Статус изменится на «Отменён» и останется в истории.`)) {
-                            cancelOrderMutation.mutate(openDispatchId!);
-                          }
-                        }}
-                        disabled={cancelOrderMutation.isPending}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-orange-200 rounded-lg text-xs font-medium text-orange-600 hover:bg-orange-50 transition-colors disabled:opacity-50"
+                        onClick={() => { setShowCancelDialog(true); setCancelDialogReason(""); setCancelDialogNote(""); }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-orange-200 rounded-lg text-xs font-medium text-orange-600 hover:bg-orange-50 transition-colors"
                       >
-                        {cancelOrderMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <XCircle className="w-3 h-3" />}
-                        Отменить заказ
+                        <XCircle className="w-3 h-3" />Отменить заказ
                       </button>
                     )}
                     <button onClick={() => { if (confirm(`Удалить заказ #${openDispatchId}?`)) { deleteOrderMutation.mutate(openDispatchId!); setOpenDispatchId(null); } }} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-red-200 rounded-lg text-xs font-medium text-red-500 hover:bg-red-50 transition-colors">
                       <Trash2 className="w-3 h-3" />В корзину
                     </button>
                   </div>
+
+                  {/* Inline cancel dialog */}
+                  {showCancelDialog && openOrder.status !== "cancelled" && openOrder.status !== "completed" && (
+                    <div className="border border-orange-200 bg-orange-50 rounded-xl p-3 space-y-2.5">
+                      <p className="text-xs font-semibold text-orange-800">Причина отмены заказа</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          { value: "client_changed_mind", label: "Передумал" },
+                          { value: "found_cheaper", label: "Нашёл дешевле" },
+                          { value: "found_other_master", label: "Другой мастер" },
+                          { value: "no_answer", label: "Не берёт трубку" },
+                          { value: "other", label: "Другое" },
+                        ].map(opt => (
+                          <button
+                            key={opt.value}
+                            onClick={() => setCancelDialogReason(opt.value)}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${cancelDialogReason === opt.value ? "bg-orange-500 border-orange-500 text-white" : "bg-white border-orange-200 text-orange-700 hover:bg-orange-100"}`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                      {cancelDialogReason === "other" && (
+                        <textarea
+                          value={cancelDialogNote}
+                          onChange={e => setCancelDialogNote(e.target.value)}
+                          placeholder="Уточните причину..."
+                          rows={2}
+                          className="w-full text-xs border border-orange-200 rounded-lg px-2.5 py-1.5 bg-white resize-none focus:outline-none focus:ring-1 focus:ring-orange-400"
+                        />
+                      )}
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            if (!cancelDialogReason) return;
+                            const reasonLabels: Record<string, string> = {
+                              client_changed_mind: "Клиент передумал",
+                              found_cheaper: "Нашёл дешевле",
+                              found_other_master: "Другой мастер",
+                              no_answer: "Не берёт трубку",
+                              other: cancelDialogNote.trim() || "Другое",
+                            };
+                            cancelOrderMutation.mutate({ orderId: openDispatchId!, reason: reasonLabels[cancelDialogReason] ?? cancelDialogReason });
+                          }}
+                          disabled={!cancelDialogReason || cancelOrderMutation.isPending}
+                          className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-orange-500 text-white rounded-lg text-xs font-medium hover:bg-orange-600 transition-colors disabled:opacity-50"
+                        >
+                          {cancelOrderMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <XCircle className="w-3 h-3" />}
+                          Подтвердить отмену
+                        </button>
+                        <button
+                          onClick={() => { setShowCancelDialog(false); setCancelDialogReason(""); setCancelDialogNote(""); }}
+                          className="px-3 py-1.5 bg-white border border-orange-200 rounded-lg text-xs font-medium text-orange-700 hover:bg-orange-50 transition-colors"
+                        >
+                          Отмена
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {((openOrder as any).dispatchStatus ?? "none") === "none" && (

@@ -142,7 +142,7 @@ router.get("/:id", allOrderRoles, async (req, res) => {
 
 router.patch("/:id", allOrderRoles, async (req, res) => {
   const id = parseInt(req.params.id);
-  const { status, orderAmount, commission, clientRating, proposedAmount, acceptProposed, approveCancellation, rejectCancellation, operatorNote } = req.body;
+  const { status, orderAmount, commission, clientRating, proposedAmount, acceptProposed, approveCancellation, rejectCancellation, operatorNote, clientCancelReason } = req.body;
 
   // Fetch current order to get masterId before update
   const currentRows = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
@@ -153,6 +153,12 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
   if (status !== undefined) updates.status = status;
   if (proposedAmount !== undefined) updates.proposedAmount = proposedAmount !== null ? String(proposedAmount) : null;
   if (operatorNote !== undefined) updates.operatorNote = operatorNote !== null ? operatorNote : null;
+  if (clientCancelReason !== undefined) updates.operatorNote = clientCancelReason || null;
+
+  // When operator directly cancels — close dispatches and reset dispatchStatus
+  if (status === "cancelled" && current.status !== "cancelled") {
+    updates.dispatchStatus = "none";
+  }
 
   // Track status transition for timestamps and logging
   let newStatus: string | null = null;
@@ -323,6 +329,14 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
       // Placeholder — safe to delete, no debt was added
       await db.delete(transactionsTable).where(eq(transactionsTable.id, tx.id));
     }
+  }
+
+  // ── Close dispatch records when operator directly cancels ────────────────────
+  if (status === "cancelled" && current.status !== "cancelled") {
+    await db.update(orderDispatchesTable)
+      .set({ status: "cancelled" } as any)
+      .where(eq(orderDispatchesTable.orderId, id))
+      .catch(() => {});
   }
 
   // Auto-move master between voronka columns based on status change
