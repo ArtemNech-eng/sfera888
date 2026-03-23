@@ -104,8 +104,12 @@ router.get("/pending", ops, async (req, res) => {
   const orders = await db.select().from(ordersTable)
     .where(inArray(ordersTable.id, orderIds));
 
-  // Only return orders that are still in dispatching state (not yet assigned)
-  const pendingOrders = orders.filter(o => o.dispatchStatus === "dispatching");
+  // Only return orders that are still in dispatching state (not cancelled/completed)
+  const pendingOrders = orders.filter(o =>
+    o.dispatchStatus === "dispatching" &&
+    o.status !== "cancelled" &&
+    o.status !== "completed"
+  );
   if (pendingOrders.length === 0) return res.json([]);
 
   const masterIds = [...new Set(responded.map(d => d.masterId))];
