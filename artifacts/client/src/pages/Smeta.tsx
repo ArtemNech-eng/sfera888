@@ -108,6 +108,7 @@ export default function Smeta() {
           setData(d);
           setLoading(false);
           if (d.isClientSubmitted) setOpenSections(new Set(["items"]));
+          try { localStorage.setItem("lastSmetaToken", token); } catch {}
           const stored = getStoredPhone();
           if (!stored || !phonesMatch(stored, d.clientPhone)) setShowGate(true);
         }
@@ -162,14 +163,14 @@ export default function Smeta() {
   };
 
   if (loading) return (
-    <div style={{ height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f4f6fb" }}>
+    <div style={{ height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f5f3ff" }}>
       <div style={{ width: 36, height: 36, border: "3px solid #bfdbfe", borderTopColor: "#1d4ed8", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   );
 
   if (notFound || !data) return (
-    <div style={{ height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f4f6fb", fontFamily: "Inter, sans-serif" }}>
+    <div style={{ height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f5f3ff", fontFamily: "'Plus Jakarta Sans', -apple-system, sans-serif" }}>
       <div style={{ textAlign: "center" }}>
         <div style={{ fontSize: 48, marginBottom: 12 }}>🔍</div>
         <h2 style={{ fontSize: 18, fontWeight: 700, color: "#111827", marginBottom: 6 }}>Смета не найдена</h2>
@@ -190,29 +191,31 @@ export default function Smeta() {
 
   return (
     <div style={{
-      fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+      fontFamily: "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif",
       height: "100dvh",
       display: "flex",
       flexDirection: "column",
-      background: "#f0f2f8",
+      background: "#f5f3ff",
       overflow: "hidden",
     }}>
       {/* ── Topbar ── */}
       <div style={{
-        background: "#111827",
-        display: "flex", alignItems: "center", gap: 8,
+        background: "#fff",
+        borderBottom: "1.5px solid #ede9fc",
+        display: "flex", alignItems: "center", gap: 10,
         padding: "11px 16px",
         paddingTop: "calc(11px + env(safe-area-inset-top, 0px))",
         flexShrink: 0,
+        boxShadow: "0 1px 8px rgba(109,40,217,.06)",
       }}>
-        <div style={{ width: 24, height: 24, background: "#2563eb", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <div style={{ width: 30, height: 30, background: "linear-gradient(135deg,#1e3a8a,#2563eb)", borderRadius: 9, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
             <polyline points="14 2 14 8 20 8"/>
           </svg>
         </div>
-        <span style={{ fontSize: 14, fontWeight: 700, color: "#fff", flex: 1 }}>Честный мастер</span>
-        <span style={{ fontSize: 11, color: "#6b7280" }}>Смета №{data.id}</span>
+        <span style={{ fontSize: 15, fontWeight: 700, color: "#1a1040", flex: 1 }}>Честный мастер</span>
+        <span style={{ fontSize: 11, color: "#9490b4", fontWeight: 500 }}>Смета №{data.id}</span>
       </div>
 
       {/* ── Scrollable ── */}

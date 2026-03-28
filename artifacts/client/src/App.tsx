@@ -45,20 +45,21 @@ function Home() {
 
   return (
     <div style={{
-      fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+      fontFamily: "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif",
       height: "100dvh",
       display: "flex",
       flexDirection: "column",
-      background: "#f4f6fb",
+      background: "#f5f3ff",
       overflow: "hidden",
     }}>
       {/* Header */}
       <div style={{
         background: "#fff",
-        borderBottom: "1px solid #e5e7eb",
+        borderBottom: "1.5px solid #ede9fc",
         padding: "12px 16px",
         paddingTop: "calc(12px + env(safe-area-inset-top, 0px))",
         display: "flex", alignItems: "center", gap: 10, flexShrink: 0,
+        boxShadow: "0 1px 8px rgba(109,40,217,.06)",
       }}>
         <AppIcon size={36} />
         <div style={{ flex: 1 }}>

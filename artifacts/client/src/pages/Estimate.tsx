@@ -111,14 +111,19 @@ export default function Estimate() {
     setSubmitting(false);
   };
 
+  const lastToken = typeof localStorage !== "undefined" ? localStorage.getItem("lastSmetaToken") : null;
+
   return (
-    <div style={{ fontFamily: "'Inter', -apple-system, sans-serif", height: "100dvh", display: "flex", flexDirection: "column", overflow: "hidden", background: "#f4f6fb" }}>
+    <div style={{ fontFamily: "'Plus Jakarta Sans', -apple-system, sans-serif", height: "100dvh", display: "flex", flexDirection: "column", overflow: "hidden", background: "#f5f3ff" }}>
       {/* Topbar */}
-      <div style={{ background: "#111827", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: "14px 20px", paddingTop: "calc(14px + env(safe-area-inset-top, 0px))", flexShrink: 0 }}>
-        <div style={{ width: 28, height: 28, background: "#2563eb", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <div style={{ background: "#fff", borderBottom: "1.5px solid #ede9fc", display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", paddingTop: "calc(14px + env(safe-area-inset-top, 0px))", flexShrink: 0, boxShadow: "0 1px 8px rgba(109,40,217,.06)" }}>
+        <div style={{ width: 32, height: 32, background: "linear-gradient(135deg,#1d4ed8,#3b82f6)", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </div>
-        <span style={{ fontSize: 15, fontWeight: 700, color: "#fff" }}>AI Оценка стоимости</span>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "#1a1040" }}>AI Оценка стоимости</div>
+          <div style={{ fontSize: 11, color: "#9490b4" }}>Честный мастер · Бесплатно</div>
+        </div>
       </div>
       {/* Scrollable body */}
       <div style={{ flex: 1, overflowY: "auto", paddingBottom: 16 }}>
@@ -318,7 +323,7 @@ export default function Estimate() {
         </div>
       )}
       </div>
-      <BottomNav active="estimate" staticMode />
+      <BottomNav token={lastToken ?? undefined} active="estimate" staticMode />
     </div>
   );
 }

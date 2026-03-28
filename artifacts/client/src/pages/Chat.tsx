@@ -98,41 +98,46 @@ export default function Chat() {
 
   return (
     <div style={{
-      fontFamily: "'Inter', -apple-system, sans-serif",
+      fontFamily: "'Plus Jakarta Sans', -apple-system, sans-serif",
       height: "100dvh",
       display: "flex",
       flexDirection: "column",
-      background: "#eef0f5",
+      background: "#f5f3ff",
       overflow: "hidden",
     }}>
       {/* Topbar */}
       <div style={{
-        background: "#111827", display: "flex", alignItems: "center",
-        justifyContent: "center", gap: 10, padding: "14px 24px",
+        background: "#fff",
+        borderBottom: "1.5px solid #ede9fc",
+        display: "flex", alignItems: "center",
+        gap: 10, padding: "14px 16px",
         flexShrink: 0,
         paddingTop: "calc(14px + env(safe-area-inset-top, 0px))",
+        boxShadow: "0 1px 8px rgba(109,40,217,.06)",
       }}>
-        <div style={{ width: 30, height: 30, background: "#2563eb", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ width: 32, height: 32, background: "linear-gradient(135deg,#1d4ed8,#3b82f6)", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
           </svg>
         </div>
-        <span style={{ fontSize: 15, fontWeight: 700, color: "#fff" }}>Чат с поддержкой</span>
-        <span style={{ fontSize: 12, color: "#6b7280", marginLeft: 4 }}>· Честный мастер</span>
+        <div>
+          <span style={{ fontSize: 15, fontWeight: 700, color: "#1a1040" }}>Чат с поддержкой</span>
+          <div style={{ fontSize: 11, color: "#9490b4", marginTop: 1 }}>Честный мастер</div>
+        </div>
       </div>
 
       {/* Operator info banner */}
-      <div style={{ flexShrink: 0, padding: "12px 12px 0" }}>
-        <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 16, padding: "12px 16px", display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 38, height: 38, background: "#1d4ed8", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <div style={{ flexShrink: 0, padding: "10px 12px 0" }}>
+        <div style={{ background: "#ede9fc", border: "1.5px solid #ddd6fe", borderRadius: 14, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 34, height: 34, background: "linear-gradient(135deg,#1d4ed8,#3b82f6)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
               <circle cx="12" cy="7" r="4"/>
             </svg>
           </div>
           <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#1e3a8a" }}>Служба поддержки</div>
-            <div style={{ fontSize: 12, color: "#3b82f6", marginTop: 1 }}>Честный мастер · обычно отвечаем в течение часа</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#1a1040" }}>Служба поддержки</div>
+            <div style={{ fontSize: 11, color: "#6d5fd0", marginTop: 1 }}>Честный мастер · отвечаем в течение часа</div>
           </div>
         </div>
       </div>
