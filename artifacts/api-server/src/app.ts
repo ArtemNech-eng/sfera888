@@ -8,7 +8,26 @@ import router from "./routes/index.js";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
+import multer from "multer";
 import { UPLOAD_BASE } from "./config.js";
+
+const SCREENSHOT_DIR = path.join(UPLOAD_BASE, "receipt-screenshots");
+fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
+
+const screenshotUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, SCREENSHOT_DIR),
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase() || ".jpg";
+      cb(null, `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
+    },
+  }),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith("image/")) cb(null, true);
+    else cb(new Error("Только изображения"));
+  },
+});
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -58,6 +77,7 @@ app.get("/receipt/:token", async (req, res) => {
     const date = new Date(receipt.createdAt).toLocaleString("ru-RU", { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
     const district = receipt.district ? `, ${receipt.district}` : "";
     const lineItems: Array<{description: string; price: number}> = (receipt.lineItems as any) ?? [];
+    const isConfirmed = !!receipt.prepaymentSubmittedAt;
 
     const lineItemsHtml = lineItems.map(item =>
       `<tr><td class="item-desc">${item.description}</td><td class="item-price">${Number(item.price).toLocaleString("ru-RU")} ₽</td></tr>`
@@ -69,6 +89,107 @@ app.get("/receipt/:token", async (req, res) => {
 
     const masterName = master?.contractFullName || master?.alias || "Мастер";
     const masterPhone = master?.phone || "";
+
+    const statusBadgeHtml = isConfirmed
+      ? `<div class="badge badge-pending">⏳ Предоплата ожидает подтверждения</div>`
+      : `<div class="badge badge-unpaid">⚠️ Предоплата не внесена</div>`;
+
+    const confirmSectionHtml = isConfirmed
+      ? `<div class="confirm-success">
+          <div class="confirm-success-icon">✅</div>
+          <div class="confirm-success-title">Заявка принята!</div>
+          <p class="confirm-success-sub">Ваше ФИО и скриншот оплаты отправлены оператору. Мы свяжемся с вами в ближайшее время.</p>
+          ${receipt.clientSubmittedName ? `<p class="confirm-submitted-name">👤 ${receipt.clientSubmittedName}</p>` : ""}
+        </div>`
+      : `<div class="confirm-section">
+          <div class="confirm-title">📲 Внесите предоплату и подтвердите</div>
+          <p class="confirm-desc">Переведите <strong>${prepayment} ₽</strong> на реквизиты ниже, затем введите ваше ФИО и прикрепите скриншот оплаты.</p>
+
+          <div id="form-area">
+            <div class="field-group">
+              <label class="field-label">Ваше ФИО <span class="req">*</span></label>
+              <input id="client-name" type="text" class="field-input" placeholder="Иванов Иван Иванович" autocomplete="name" />
+            </div>
+
+            <div class="field-group">
+              <label class="field-label">Скриншот оплаты <span class="req">*</span></label>
+              <label class="upload-label" for="screenshot-input">
+                <span id="upload-text">📎 Прикрепить скриншот</span>
+              </label>
+              <input id="screenshot-input" type="file" accept="image/*" style="display:none" />
+              <div id="preview-wrap" style="display:none;margin-top:10px">
+                <img id="preview-img" src="" style="max-width:100%;border-radius:10px;border:1px solid #e0e4ec" />
+              </div>
+            </div>
+
+            <div id="form-error" style="display:none;color:#c62828;font-size:13px;margin-bottom:8px;padding:8px 12px;background:#ffeaea;border-radius:8px"></div>
+
+            <button id="submit-btn" class="submit-btn">Отправить подтверждение</button>
+            <p class="field-note">Данные передаются оператору для подтверждения брони</p>
+          </div>
+
+          <div id="success-area" style="display:none">
+            <div class="confirm-success">
+              <div class="confirm-success-icon">✅</div>
+              <div class="confirm-success-title">Заявка отправлена!</div>
+              <p class="confirm-success-sub">Оператор свяжется с вами для подтверждения.</p>
+            </div>
+          </div>
+        </div>
+
+        <script>
+          const fileInput = document.getElementById('screenshot-input');
+          const uploadText = document.getElementById('upload-text');
+          const previewWrap = document.getElementById('preview-wrap');
+          const previewImg = document.getElementById('preview-img');
+          const submitBtn = document.getElementById('submit-btn');
+          const formError = document.getElementById('form-error');
+          const formArea = document.getElementById('form-area');
+          const successArea = document.getElementById('success-area');
+
+          fileInput.addEventListener('change', function() {
+            const file = this.files[0];
+            if (!file) return;
+            uploadText.textContent = '✅ ' + file.name;
+            const reader = new FileReader();
+            reader.onload = e => { previewImg.src = e.target.result; previewWrap.style.display = 'block'; };
+            reader.readAsDataURL(file);
+          });
+
+          submitBtn.addEventListener('click', async function() {
+            const name = document.getElementById('client-name').value.trim();
+            const file = fileInput.files[0];
+            formError.style.display = 'none';
+
+            if (!name) { showError('Введите ваше ФИО'); return; }
+            if (name.split(' ').filter(w=>w.length>1).length < 2) { showError('Введите полное ФИО (Фамилия Имя Отчество)'); return; }
+            if (!file) { showError('Прикрепите скриншот оплаты'); return; }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Отправка...';
+
+            const fd = new FormData();
+            fd.append('clientName', name);
+            fd.append('screenshot', file);
+
+            try {
+              const r = await fetch('/receipt/${req.params.token}/confirm', { method: 'POST', body: fd });
+              const data = await r.json();
+              if (!r.ok) { showError(data.error || 'Ошибка. Попробуйте ещё раз.'); submitBtn.disabled = false; submitBtn.textContent = 'Отправить подтверждение'; return; }
+              formArea.style.display = 'none';
+              successArea.style.display = 'block';
+            } catch(e) {
+              showError('Ошибка сети. Попробуйте ещё раз.');
+              submitBtn.disabled = false;
+              submitBtn.textContent = 'Отправить подтверждение';
+            }
+          });
+
+          function showError(msg) {
+            formError.textContent = msg;
+            formError.style.display = 'block';
+          }
+        </script>`;
 
     const html = `<!DOCTYPE html>
 <html lang="ru">
@@ -86,7 +207,9 @@ app.get("/receipt/:token", async (req, res) => {
     .header-prepay { font-size: 42px; font-weight: 800; margin-top: 6px; letter-spacing: -1px; }
     .header-prepay span { font-size: 20px; font-weight: 600; opacity: .85; }
     .header-sub { font-size: 13px; opacity: .75; margin-top: 4px; }
-    .badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,.18); border-radius: 20px; padding: 5px 14px; margin-top: 14px; font-size: 13px; font-weight: 600; }
+    .badge { display: inline-flex; align-items: center; gap: 6px; border-radius: 20px; padding: 5px 14px; margin-top: 14px; font-size: 13px; font-weight: 600; }
+    .badge-unpaid { background: rgba(255,180,0,.25); color: #ffe082; border: 1px solid rgba(255,180,0,.4); }
+    .badge-pending { background: rgba(255,255,255,.18); color: #fff; }
     .body { padding: 24px 28px; }
     .section { margin-bottom: 16px; }
     .label { font-size: 10px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #999; margin-bottom: 3px; }
@@ -115,7 +238,27 @@ app.get("/receipt/:token", async (req, res) => {
     .footer-bank { font-size: 13px; color: #555; line-height: 1.7; }
     .footer-bank strong { color: #1565c0; }
     .stamp { text-align: center; margin-top: 12px; color: #bbb; font-size: 11px; }
-    @media print { body { background: #fff; padding: 0; } .card { box-shadow: none; border-radius: 0; } }
+    /* Confirm section */
+    .confirm-section { margin: 20px 28px; background: #f0f7ff; border: 1.5px solid #bbdefb; border-radius: 16px; padding: 20px; }
+    .confirm-title { font-size: 15px; font-weight: 700; color: #0d47a1; margin-bottom: 8px; }
+    .confirm-desc { font-size: 13px; color: #444; line-height: 1.6; margin-bottom: 16px; }
+    .field-group { margin-bottom: 14px; }
+    .field-label { display: block; font-size: 12px; font-weight: 600; color: #555; margin-bottom: 6px; }
+    .req { color: #e53935; }
+    .field-input { width: 100%; height: 44px; border: 1.5px solid #c5cae9; border-radius: 10px; padding: 0 14px; font-size: 15px; font-family: inherit; color: #1a1a2e; background: #fff; outline: none; transition: border-color 0.2s; }
+    .field-input:focus { border-color: #1565c0; }
+    .upload-label { display: flex; align-items: center; justify-content: center; gap: 8px; height: 48px; border: 2px dashed #90caf9; border-radius: 12px; background: #fff; cursor: pointer; font-size: 14px; font-weight: 600; color: #1565c0; transition: background 0.2s; }
+    .upload-label:hover { background: #e3f2fd; }
+    .submit-btn { width: 100%; height: 52px; background: linear-gradient(135deg, #1565c0, #0d47a1); color: #fff; font-size: 15px; font-weight: 700; border: none; border-radius: 14px; cursor: pointer; margin-top: 6px; letter-spacing: 0.02em; transition: opacity 0.2s; }
+    .submit-btn:hover { opacity: 0.92; }
+    .submit-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .field-note { font-size: 11px; color: #999; text-align: center; margin-top: 10px; }
+    .confirm-success { margin: 20px 28px; text-align: center; padding: 24px 20px; background: #f1f8e9; border: 1.5px solid #c5e1a5; border-radius: 16px; }
+    .confirm-success-icon { font-size: 40px; margin-bottom: 10px; }
+    .confirm-success-title { font-size: 18px; font-weight: 700; color: #2e7d32; margin-bottom: 8px; }
+    .confirm-success-sub { font-size: 13px; color: #555; line-height: 1.6; }
+    .confirm-submitted-name { margin-top: 12px; font-size: 14px; font-weight: 600; color: #2e7d32; }
+    @media print { body { background: #fff; padding: 0; } .card { box-shadow: none; border-radius: 0; } .confirm-section,.confirm-success { display: none; } }
   </style>
 </head>
 <body>
@@ -125,8 +268,10 @@ app.get("/receipt/:token", async (req, res) => {
     <div class="header-title">Расписка об оплате</div>
     <div class="header-prepay">${prepayment} <span>₽</span></div>
     <div class="header-sub">Предоплата за услуги</div>
-    <div class="badge">✓ Оплата подтверждена</div>
+    ${statusBadgeHtml}
   </div>
+
+  ${confirmSectionHtml}
 
   <div class="body">
     <div class="two-col">
@@ -165,7 +310,7 @@ app.get("/receipt/:token", async (req, res) => {
         <span class="totals-value">${total} ₽</span>
       </div>
       <div class="totals-row prepay-row">
-        <span class="totals-label">Предоплата получена</span>
+        <span class="totals-label">Предоплата к внесению</span>
         <span class="totals-value">${prepayment} ₽</span>
       </div>
     </div>
@@ -212,6 +357,40 @@ app.get("/receipt/:token", async (req, res) => {
   } catch (err) {
     console.error("[receipt-page]", err);
     res.status(500).send("Ошибка сервера");
+  }
+});
+
+// ── Public receipt confirmation (client submits ФИО + screenshot) ─────────────
+app.post("/receipt/:token/confirm", screenshotUpload.single("screenshot"), async (req: any, res) => {
+  try {
+    const { receiptsTable } = await import("@workspace/db");
+    const { db } = await import("@workspace/db");
+    const { eq } = await import("drizzle-orm");
+
+    const [receipt] = await db.select().from(receiptsTable).where(eq(receiptsTable.token, req.params.token));
+    if (!receipt) return res.status(404).json({ error: "Расписка не найдена" });
+    if (receipt.prepaymentSubmittedAt) return res.status(409).json({ error: "Подтверждение уже было отправлено" });
+
+    const clientName = (req.body?.clientName ?? "").trim();
+    if (!clientName) return res.status(400).json({ error: "Укажите ваше ФИО" });
+    if (clientName.split(" ").filter((w: string) => w.length > 1).length < 2) {
+      return res.status(400).json({ error: "Введите полное ФИО (Фамилия Имя Отчество)" });
+    }
+
+    const screenshotUrl = req.file
+      ? `/api/uploads/receipt-screenshots/${req.file.filename}`
+      : null;
+
+    await db.update(receiptsTable).set({
+      clientSubmittedName: clientName,
+      prepaymentSubmittedAt: new Date(),
+      prepaymentScreenshotUrl: screenshotUrl,
+    }).where(eq(receiptsTable.token, req.params.token));
+
+    res.json({ ok: true, message: "Подтверждение принято. Оператор свяжется с вами." });
+  } catch (err) {
+    console.error("[receipt-confirm]", err);
+    res.status(500).json({ error: "Ошибка сервера" });
   }
 });
 

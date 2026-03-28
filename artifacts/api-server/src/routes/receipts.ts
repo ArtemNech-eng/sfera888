@@ -1,6 +1,6 @@
 import { Router, type Request } from "express";
 import { db, receiptsTable, ordersTable, mastersTable, leadsTable } from "@workspace/db";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, isNotNull, desc } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import crypto from "crypto";
 
@@ -35,6 +35,11 @@ async function buildReceiptResponse(receipt: typeof receiptsTable.$inferSelect, 
     masterPhone: master?.phone ?? null,
     masterFullName: master?.contractFullName ?? null,
     publicUrl: `${getPublicBase(req)}/receipt/${receipt.token}`,
+    // Client confirmation
+    clientSubmittedName: receipt.clientSubmittedName ?? null,
+    prepaymentSubmittedAt: receipt.prepaymentSubmittedAt ?? null,
+    prepaymentScreenshotUrl: receipt.prepaymentScreenshotUrl ?? null,
+    prepaymentSeenAt: receipt.prepaymentSeenAt ?? null,
   };
 }
 
@@ -76,6 +81,48 @@ router.get("/my/:orderId", async (req: any, res) => {
     .where(and(eq(receiptsTable.orderId, orderId), eq(receiptsTable.masterId, masterId)));
   const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
   res.json(await Promise.all(rows.map(r => buildReceiptResponse(r, master, req))));
+});
+
+// ─── CRM: GET /api/receipts/dialogs — all client confirmations ───────────────
+
+router.get("/dialogs", requireRole("admin", "master_operator"), async (req, res) => {
+  const rows = await db.select().from(receiptsTable)
+    .where(isNotNull(receiptsTable.prepaymentSubmittedAt))
+    .orderBy(desc(receiptsTable.prepaymentSubmittedAt));
+
+  const masterIds = [...new Set(rows.map(r => r.masterId))];
+  const masters = masterIds.length
+    ? await db.select().from(mastersTable)
+    : [];
+  const masterMap = new Map(masters.map(m => [m.id, m]));
+  const unreadCount = rows.filter(r => !r.prepaymentSeenAt).length;
+
+  res.json({
+    dialogs: await Promise.all(rows.map(r => buildReceiptResponse(r, masterMap.get(r.masterId), req))),
+    unreadCount,
+  });
+});
+
+// ─── CRM: GET /api/receipts/dialogs/unread-count ─────────────────────────────
+
+router.get("/dialogs/unread-count", requireRole("admin", "master_operator"), async (_req, res) => {
+  const rows = await db.select({ id: receiptsTable.id })
+    .from(receiptsTable)
+    .where(and(isNotNull(receiptsTable.prepaymentSubmittedAt), isNull(receiptsTable.prepaymentSeenAt)));
+  res.json({ count: rows.length });
+});
+
+// ─── CRM: PATCH /api/receipts/:id/seen — mark dialog as seen ─────────────────
+
+router.patch("/:id/seen", requireRole("admin", "master_operator"), async (req, res) => {
+  const id = parseInt(req.params.id);
+  const [updated] = await db.update(receiptsTable)
+    .set({ prepaymentSeenAt: new Date() })
+    .where(eq(receiptsTable.id, id))
+    .returning();
+  if (!updated) return res.status(404).json({ error: "Не найдено" });
+  const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, updated.masterId));
+  res.json(await buildReceiptResponse(updated, master, req));
 });
 
 // ─── Public JSON: GET /api/receipts/public/:token ─────────────────────────────

@@ -77,7 +77,11 @@ async function runMigrations() {
   await db.execute(sql`
     ALTER TABLE receipts
       ADD COLUMN IF NOT EXISTS total_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
-      ADD COLUMN IF NOT EXISTS line_items JSONB NOT NULL DEFAULT '[]'
+      ADD COLUMN IF NOT EXISTS line_items JSONB NOT NULL DEFAULT '[]',
+      ADD COLUMN IF NOT EXISTS client_submitted_name TEXT,
+      ADD COLUMN IF NOT EXISTS prepayment_submitted_at TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS prepayment_screenshot_url TEXT,
+      ADD COLUMN IF NOT EXISTS prepayment_seen_at TIMESTAMP
   `);
   console.log("[startup] Migrations applied");
 }

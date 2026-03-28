@@ -308,6 +308,9 @@ interface ExistingReceipt {
   notes: string | null;
   publicUrl: string;
   createdAt: string;
+  clientSubmittedName: string | null;
+  prepaymentSubmittedAt: string | null;
+  prepaymentScreenshotUrl: string | null;
 }
 
 function ReceiptModal({
@@ -539,15 +542,33 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
   const isCancelRequested = order.status === "cancellation_requested";
   const currentStepIdx = workStatusSteps.findIndex(s => s.key === order.masterWorkStatus);
 
-  const fetchReceipts = async () => {
+  const fetchReceipts = async (showNotification = false) => {
     try {
       const r = await fetch(`${import.meta.env.BASE_URL}api/receipts/my/${order.id}`, { credentials: "include" });
-      if (r.ok) setOrderReceipts(await r.json());
+      if (!r.ok) return;
+      const fresh: ExistingReceipt[] = await r.json();
+      if (showNotification) {
+        setOrderReceipts(prev => {
+          fresh.forEach(fr => {
+            const old = prev.find(p => p.id === fr.id);
+            if (!old?.prepaymentSubmittedAt && fr.prepaymentSubmittedAt) {
+              toast.success("🎉 Клиент подтвердил предоплату по расписке!");
+            }
+          });
+          return fresh;
+        });
+      } else {
+        setOrderReceipts(fresh);
+      }
     } catch {}
   };
 
   useEffect(() => {
-    if (expanded && isActive) fetchReceipts();
+    if (expanded && isActive) {
+      fetchReceipts();
+      const interval = setInterval(() => fetchReceipts(true), 30_000);
+      return () => clearInterval(interval);
+    }
   }, [expanded, isActive]);
 
   const handleStatusStep = async (key: string) => {
@@ -770,25 +791,41 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
                         <ReceiptText size={12} /> Расписки
                       </p>
                       {orderReceipts.map(r => (
-                        <div key={r.id} className="flex items-center justify-between gap-2 bg-muted/40 rounded-xl px-3 py-2.5">
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold">{Number(r.totalAmount).toLocaleString("ru-RU")} ₽</p>
-                            <p className="text-xs text-muted-foreground">Предоплата: {Number(r.prepaymentAmount).toLocaleString("ru-RU")} ₽</p>
+                        <div key={r.id} className="bg-muted/40 rounded-xl px-3 py-2.5 space-y-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold">{Number(r.totalAmount).toLocaleString("ru-RU")} ₽</p>
+                              <p className="text-xs text-muted-foreground">Предоплата: {Number(r.prepaymentAmount).toLocaleString("ru-RU")} ₽</p>
+                            </div>
+                            <div className="flex gap-1.5 flex-shrink-0">
+                              <button
+                                onClick={() => { navigator.clipboard.writeText(r.publicUrl); toast.success("Ссылка скопирована!"); }}
+                                className="h-8 px-2.5 rounded-lg border border-border bg-background text-xs font-medium flex items-center gap-1"
+                              >
+                                <Copy size={12} /> Ссылка
+                              </button>
+                              <button
+                                onClick={() => setEditingReceipt(r)}
+                                className="h-8 px-2.5 rounded-lg border border-primary/40 bg-primary/10 text-primary text-xs font-medium flex items-center gap-1"
+                              >
+                                Изменить
+                              </button>
+                            </div>
                           </div>
-                          <div className="flex gap-1.5 flex-shrink-0">
-                            <button
-                              onClick={() => { navigator.clipboard.writeText(r.publicUrl); toast.success("Ссылка скопирована!"); }}
-                              className="h-8 px-2.5 rounded-lg border border-border bg-background text-xs font-medium flex items-center gap-1"
-                            >
-                              <Copy size={12} /> Ссылка
-                            </button>
-                            <button
-                              onClick={() => setEditingReceipt(r)}
-                              className="h-8 px-2.5 rounded-lg border border-primary/40 bg-primary/10 text-primary text-xs font-medium flex items-center gap-1"
-                            >
-                              Изменить
-                            </button>
-                          </div>
+                          {r.prepaymentSubmittedAt ? (
+                            <div className="flex items-center gap-2 bg-green-50 dark:bg-green-900/20 rounded-lg px-2.5 py-1.5">
+                              <CheckCircle2 size={13} className="text-green-600 flex-shrink-0" />
+                              <div className="min-w-0">
+                                <p className="text-xs font-semibold text-green-700 dark:text-green-400">Бронь подтверждена клиентом</p>
+                                {r.clientSubmittedName && <p className="text-xs text-green-600">👤 {r.clientSubmittedName}</p>}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0"></span>
+                              Ожидание подтверждения от клиента
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>

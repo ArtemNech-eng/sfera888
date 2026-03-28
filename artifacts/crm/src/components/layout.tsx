@@ -15,6 +15,7 @@ import {
   MessagesSquare,
   Trash2,
   ClipboardList,
+  MessageCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect, useRef } from "react";
@@ -70,18 +71,27 @@ export function Layout({ children }: LayoutProps) {
   });
   const openTasksCount = taskStats?.open ?? 0;
 
+  const { data: dialogStats } = useQuery<{ count: number }>({
+    queryKey: ["/api/receipts/dialogs/unread-count"],
+    queryFn: () => fetch("/api/receipts/dialogs/unread-count", { credentials: "include" }).then(r => r.json()),
+    enabled: !!user,
+    refetchInterval: 15_000,
+  });
+  const unreadDialogs = dialogStats?.count ?? 0;
+
   const navItems = [
-    { href: "/dashboard",   label: "Дашборд",          icon: LayoutDashboard, permKey: "dashboard" },
-    { href: "/master-chat", label: "Чат с мастерами",   icon: MessagesSquare,  permKey: "master-chat", badge: unreadCount > 0 ? unreadCount : null },
-    { href: "/leads",       label: "Заявки",            icon: Inbox,           permKey: "leads" },
-    { href: "/orders",      label: "Буфер заказов",     icon: Briefcase,       permKey: "orders" },
-    { href: "/masters",     label: "Мастера",           icon: Users,           permKey: "masters" },
-    { href: "/tasks",       label: "Задачи",            icon: ClipboardList,   permKey: "tasks",     badge: openTasksCount > 0 ? openTasksCount : null },
-    { href: "/finance",     label: "Финансы",           icon: Wallet,          permKey: "finance" },
-    { href: "/analytics",   label: "Аналитика",         icon: BarChart3,       permKey: "analytics" },
-    { href: "/trash",       label: "Корзина",           icon: Trash2,          permKey: "trash" },
-    { href: "/settings",    label: "Настройки",         icon: Settings,        permKey: null as null },
-    { href: "/users",       label: "Пользователи",      icon: UserCog,         permKey: null as null },
+    { href: "/dashboard",   label: "Дашборд",             icon: LayoutDashboard, permKey: "dashboard" },
+    { href: "/master-chat", label: "Чат с мастерами",      icon: MessagesSquare,  permKey: "master-chat", badge: unreadCount > 0 ? unreadCount : null },
+    { href: "/dialogs",     label: "Диалоги с клиентами",  icon: MessageCircle,   permKey: "orders",      badge: unreadDialogs > 0 ? unreadDialogs : null },
+    { href: "/leads",       label: "Заявки",               icon: Inbox,           permKey: "leads" },
+    { href: "/orders",      label: "Буфер заказов",        icon: Briefcase,       permKey: "orders" },
+    { href: "/masters",     label: "Мастера",              icon: Users,           permKey: "masters" },
+    { href: "/tasks",       label: "Задачи",               icon: ClipboardList,   permKey: "tasks",       badge: openTasksCount > 0 ? openTasksCount : null },
+    { href: "/finance",     label: "Финансы",              icon: Wallet,          permKey: "finance" },
+    { href: "/analytics",   label: "Аналитика",            icon: BarChart3,       permKey: "analytics" },
+    { href: "/trash",       label: "Корзина",              icon: Trash2,          permKey: "trash" },
+    { href: "/settings",    label: "Настройки",            icon: Settings,        permKey: null as null },
+    { href: "/users",       label: "Пользователи",         icon: UserCog,         permKey: null as null },
   ];
 
   const filteredNav = navItems.filter(item => {

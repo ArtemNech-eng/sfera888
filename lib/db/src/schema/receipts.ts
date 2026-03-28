@@ -22,6 +22,11 @@ export const receiptsTable = pgTable("receipts", {
   prepaymentAmount: numeric("prepayment_amount", { precision: 10, scale: 2 }).notNull(),
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  // Client confirmation fields
+  clientSubmittedName: text("client_submitted_name"),
+  prepaymentSubmittedAt: timestamp("prepayment_submitted_at"),
+  prepaymentScreenshotUrl: text("prepayment_screenshot_url"),
+  prepaymentSeenAt: timestamp("prepayment_seen_at"),
 });
 
 export type Receipt = typeof receiptsTable.$inferSelect;
