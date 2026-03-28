@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, mastersTable, ordersTable, leadsTable, orderDispatchesTable, transactionsTable, masterReviewsTable, masterMessagesTable } from "@workspace/db";
+import { db, mastersTable, ordersTable, leadsTable, orderDispatchesTable, transactionsTable, masterReviewsTable, masterMessagesTable, orderStatusLogsTable } from "@workspace/db";
 import { isNull, isNotNull, lt, and, eq, inArray } from "drizzle-orm";
 import { requirePermission } from "../middlewares/requireAuth.js";
 import { objectStorageClient } from "../lib/objectStorage.js";
@@ -30,6 +30,9 @@ async function deleteAvatarFile(customAvatarUrl: string | null) {
 
 // Permanently delete an order and all its FK-referenced rows
 async function deleteOrderCascade(orderId: number) {
+  // 0. Clean up order_status_logs (FK: order_id → orders.id, no cascade)
+  await db.delete(orderStatusLogsTable).where(eq(orderStatusLogsTable.orderId, orderId));
+
   // 1. Clean up order_dispatches
   await db.delete(orderDispatchesTable).where(eq(orderDispatchesTable.orderId, orderId));
 
