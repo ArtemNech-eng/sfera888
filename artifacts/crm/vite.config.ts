@@ -53,6 +53,10 @@ export default defineConfig({
       strict: true,
       deny: ["**/.*"],
     },
+    proxy: {
+      "/receipt": { target: "http://localhost:8080", changeOrigin: true },
+      "/api": { target: "http://localhost:8080", changeOrigin: true },
+    },
   },
   preview: {
     port,

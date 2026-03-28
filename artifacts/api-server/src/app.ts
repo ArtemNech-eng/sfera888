@@ -33,6 +33,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app: Express = express();
 
+// Trust reverse proxy headers (X-Forwarded-Proto, X-Forwarded-Host) so that
+// req.protocol returns "https" in production behind Replit's proxy.
+app.set("trust proxy", 1);
+
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
