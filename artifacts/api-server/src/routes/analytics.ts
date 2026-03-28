@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { db, leadsTable, ordersTable, mastersTable, transactionsTable } from "@workspace/db";
+import { db, leadsTable, ordersTable, mastersTable, transactionsTable, receiptsTable } from "@workspace/db";
 import { requirePermission } from "../middlewares/requireAuth.js";
-import { isNull } from "drizzle-orm";
+import { isNull, isNotNull } from "drizzle-orm";
 
 const router = Router();
 const adminOnly = requirePermission("analytics");
@@ -17,6 +17,10 @@ router.get("/dashboard", adminOnly, async (req, res) => {
   const orders = await db.select().from(ordersTable).where(isNull(ordersTable.deletedAt));
   const masters = await db.select().from(mastersTable).where(isNull(mastersTable.deletedAt));
   const transactions = await db.select().from(transactionsTable);
+  const paidReceipts = await db.select({
+    prepaymentAmount: receiptsTable.prepaymentAmount,
+    prepaymentSubmittedAt: receiptsTable.prepaymentSubmittedAt,
+  }).from(receiptsTable).where(isNotNull(receiptsTable.prepaymentSubmittedAt));
 
   // Leads
   const leadsToday = leads.filter(l => l.createdAt >= todayStart).length;
@@ -33,13 +37,24 @@ router.get("/dashboard", adminOnly, async (req, res) => {
   const completedToday = orders.filter(o => o.status === "completed" && o.updatedAt >= todayStart).length;
   const completedMonth = orders.filter(o => o.status === "completed" && o.updatedAt >= monthStart).length;
 
-  // Finance
+  // Finance — commissions from masters
   const paidTx = transactions.filter(t => t.paymentStatus === "paid");
   const monthTx = paidTx.filter(t => t.createdAt >= monthStart);
   const prevMonthTx = paidTx.filter(t => t.createdAt >= prevMonthStart && t.createdAt < monthStart);
 
-  const incomeMonth = monthTx.reduce((s, t) => s + Number(t.commission), 0);
-  const incomePrevMonth = prevMonthTx.reduce((s, t) => s + Number(t.commission), 0);
+  const commissionMonth = monthTx.reduce((s, t) => s + Number(t.commission), 0);
+  const commissionPrevMonth = prevMonthTx.reduce((s, t) => s + Number(t.commission), 0);
+
+  // Finance — prepayments (брони) paid by clients
+  const prepayMonth = paidReceipts
+    .filter(r => r.prepaymentSubmittedAt! >= monthStart)
+    .reduce((s, r) => s + Number(r.prepaymentAmount), 0);
+  const prepayPrevMonth = paidReceipts
+    .filter(r => r.prepaymentSubmittedAt! >= prevMonthStart && r.prepaymentSubmittedAt! < monthStart)
+    .reduce((s, r) => s + Number(r.prepaymentAmount), 0);
+
+  const incomeMonth = commissionMonth + prepayMonth;
+  const incomePrevMonth = commissionPrevMonth + prepayPrevMonth;
   const incomeTrend = incomePrevMonth > 0
     ? Math.round(((incomeMonth - incomePrevMonth) / incomePrevMonth) * 1000) / 10
     : null;
@@ -131,19 +146,30 @@ router.get("/monthly-revenue", adminOnly, async (req, res) => {
   const now = new Date();
   const months: { label: string; income: number; count: number }[] = [];
 
+  const txRows = await db.select().from(transactionsTable);
+  const receiptRows = await db.select({
+    prepaymentAmount: receiptsTable.prepaymentAmount,
+    prepaymentSubmittedAt: receiptsTable.prepaymentSubmittedAt,
+  }).from(receiptsTable).where(isNotNull(receiptsTable.prepaymentSubmittedAt));
+
   for (let i = 5; i >= 0; i--) {
     const start = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
     const label = start.toLocaleString("ru-RU", { month: "short", year: "2-digit" });
 
-    const txRows = await db.select().from(transactionsTable);
-    const filtered = txRows.filter(t =>
+    const filteredTx = txRows.filter(t =>
       t.paymentStatus === "paid" &&
       t.createdAt >= start &&
       t.createdAt < end
     );
-    const income = filtered.reduce((s, t) => s + Number(t.commission), 0);
-    months.push({ label, income, count: filtered.length });
+    const commissionIncome = filteredTx.reduce((s, t) => s + Number(t.commission), 0);
+
+    const prepayIncome = receiptRows
+      .filter(r => r.prepaymentSubmittedAt! >= start && r.prepaymentSubmittedAt! < end)
+      .reduce((s, r) => s + Number(r.prepaymentAmount), 0);
+
+    const income = commissionIncome + prepayIncome;
+    months.push({ label, income, count: filteredTx.length });
   }
 
   res.json(months);
