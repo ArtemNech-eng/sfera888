@@ -6,18 +6,10 @@ import { hashPassword } from "./lib/auth.js";
 import { checkOverdueTransactions } from "./lib/orderEligibility.js";
 import { performBroadcast } from "./lib/broadcastOrder.js";
 
-const rawPort = process.env["PORT"];
-
-if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
-}
-
-const port = Number(rawPort);
+const port = Number(process.env["PORT"] || "8080");
 
 if (Number.isNaN(port) || port <= 0) {
-  throw new Error(`Invalid PORT value: "${rawPort}"`);
+  throw new Error(`Invalid PORT value: "${process.env["PORT"]}"`);
 }
 
 // Run safe additive migrations on startup (IF NOT EXISTS — idempotent).
