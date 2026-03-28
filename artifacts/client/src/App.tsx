@@ -4,6 +4,7 @@ import Chat from "@/pages/Chat";
 import History from "@/pages/History";
 import Estimate from "@/pages/Estimate";
 import InstallPrompt from "@/components/InstallPrompt";
+import BottomNav from "@/components/BottomNav";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -135,6 +136,7 @@ function Home() {
         <p style={{ textAlign: "center", fontSize: 11, color: "#d1d5db", marginTop: 20 }}>sfera-project.digital</p>
       </div>
 
+      <BottomNav active="home" staticMode />
       <InstallPrompt />
     </div>
   );

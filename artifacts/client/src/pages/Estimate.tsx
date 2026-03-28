@@ -1,10 +1,5 @@
 import { useState, useRef } from "react";
-
-const TOPBAR: React.CSSProperties = {
-  background: "#111827", display: "flex", alignItems: "center",
-  gap: 10, padding: "14px 20px",
-  position: "sticky", top: 0, zIndex: 50,
-};
+import BottomNav from "@/components/BottomNav";
 
 interface LineItem { description: string; price: number; }
 interface EstimateResult {
@@ -117,21 +112,16 @@ export default function Estimate() {
   };
 
   return (
-    <div style={{ fontFamily: "'Inter', -apple-system, sans-serif", background: "#eef0f5", minHeight: "100vh", paddingBottom: 40 }}>
+    <div style={{ fontFamily: "'Inter', -apple-system, sans-serif", height: "100dvh", display: "flex", flexDirection: "column", overflow: "hidden", background: "#f4f6fb" }}>
       {/* Topbar */}
-      <div style={TOPBAR}>
-        <a href={`${BASE}/`} onClick={e => { e.preventDefault(); window.location.href = `${BASE}/`; }}
-          style={{ color: "#fff", display: "flex", alignItems: "center", gap: 6, padding: "4px 8px", background: "rgba(255,255,255,.15)", borderRadius: 10, textDecoration: "none" }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-          <span style={{ fontSize: 13, fontWeight: 600 }}>Главная</span>
-        </a>
-        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-          <div style={{ width: 28, height: 28, background: "#2563eb", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          </div>
-          <span style={{ fontSize: 15, fontWeight: 700, color: "#fff" }}>AI Оценка стоимости</span>
+      <div style={{ background: "#111827", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: "14px 20px", paddingTop: "calc(14px + env(safe-area-inset-top, 0px))", flexShrink: 0 }}>
+        <div style={{ width: 28, height: 28, background: "#2563eb", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </div>
+        <span style={{ fontSize: 15, fontWeight: 700, color: "#fff" }}>AI Оценка стоимости</span>
       </div>
+      {/* Scrollable body */}
+      <div style={{ flex: 1, overflowY: "auto", paddingBottom: 16 }}>
 
       {step === "submitted" ? (
         <div style={{ maxWidth: 540, width: "calc(100% - 24px)", margin: "40px auto", background: "#fff", borderRadius: 20, padding: 32, textAlign: "center", boxShadow: "0 2px 20px rgba(0,0,0,.08)" }}>
@@ -327,6 +317,8 @@ export default function Estimate() {
           </div>
         </div>
       )}
+      </div>
+      <BottomNav active="estimate" staticMode />
     </div>
   );
 }

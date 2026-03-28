@@ -1,6 +1,6 @@
 interface BottomNavProps {
-  token: string;
-  active: "smeta" | "chat" | "history" | "estimate";
+  token?: string;
+  active: "home" | "smeta" | "chat" | "history" | "estimate";
   unread?: number;
   staticMode?: boolean;
 }
@@ -8,7 +8,34 @@ interface BottomNavProps {
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 export default function BottomNav({ token, active, unread = 0, staticMode = false }: BottomNavProps) {
-  const nav = [
+  const hasToken = !!token;
+
+  const homeNav = [
+    {
+      id: "home",
+      label: "Главная",
+      href: `${BASE}/`,
+      icon: (
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+          <polyline points="9 22 9 12 15 12 15 22"/>
+        </svg>
+      ),
+    },
+    {
+      id: "estimate",
+      label: "AI Оценка",
+      href: `${BASE}/estimate`,
+      icon: (
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="11" cy="11" r="8"/>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+      ),
+    },
+  ] as const;
+
+  const smetaNav = [
     {
       id: "smeta",
       label: "Смета",
@@ -58,6 +85,8 @@ export default function BottomNav({ token, active, unread = 0, staticMode = fals
     },
   ] as const;
 
+  const nav = hasToken ? smetaNav : homeNav;
+
   return (
     <nav style={{
       position: staticMode ? "static" : "fixed",
@@ -69,6 +98,7 @@ export default function BottomNav({ token, active, unread = 0, staticMode = fals
       zIndex: staticMode ? undefined : 100,
       boxShadow: staticMode ? "none" : "0 -2px 12px rgba(0,0,0,.06)",
       paddingBottom: "env(safe-area-inset-bottom, 0px)",
+      flexShrink: 0,
     }}>
       {nav.map(item => {
         const isActive = active === item.id;

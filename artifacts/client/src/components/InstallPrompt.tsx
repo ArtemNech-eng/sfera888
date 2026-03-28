@@ -60,12 +60,11 @@ export default function InstallPrompt() {
   if (showAndroid) {
     return (
       <div style={{
-        position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 999,
-        background: "#fff", borderTop: "1px solid #e5e7eb",
-        padding: "16px 20px",
+        position: "fixed", bottom: "56px", left: 0, right: 0, zIndex: 999,
+        background: "#fff", borderTop: "1px solid #e5e7eb", borderBottom: "1px solid #e5e7eb",
+        padding: "14px 20px",
         boxShadow: "0 -4px 20px rgba(0,0,0,.12)",
         display: "flex", alignItems: "center", gap: 14,
-        paddingBottom: "calc(16px + env(safe-area-inset-bottom, 0px))",
         fontFamily: "'Inter', sans-serif",
       }}>
         <div style={{ width: 44, height: 44, background: "#1d4ed8", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -98,11 +97,10 @@ export default function InstallPrompt() {
   if (showIOS) {
     return (
       <div style={{
-        position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 999,
-        background: "#fff", borderTop: "1px solid #e5e7eb",
-        padding: "16px 20px",
+        position: "fixed", bottom: "56px", left: 0, right: 0, zIndex: 999,
+        background: "#fff", borderTop: "1px solid #e5e7eb", borderBottom: "1px solid #e5e7eb",
+        padding: "14px 20px",
         boxShadow: "0 -4px 20px rgba(0,0,0,.12)",
-        paddingBottom: "calc(16px + env(safe-area-inset-bottom, 0px))",
         fontFamily: "'Inter', sans-serif",
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
