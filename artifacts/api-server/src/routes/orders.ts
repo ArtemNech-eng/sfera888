@@ -142,7 +142,7 @@ router.get("/:id", allOrderRoles, async (req, res) => {
 
 router.patch("/:id", allOrderRoles, async (req, res) => {
   const id = parseInt(req.params.id);
-  const { status, orderAmount, commission, clientRating, proposedAmount, acceptProposed, approveCancellation, rejectCancellation, operatorNote, clientCancelReason } = req.body;
+  const { status, orderAmount, commission, clientRating, proposedAmount, acceptProposed, approveCancellation, rejectCancellation, restoreOrder, operatorNote, clientCancelReason } = req.body;
 
   // Fetch current order to get masterId before update
   const currentRows = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
@@ -175,6 +175,24 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
     updates.masterId = null;
     updates.cancelReason = null;
     updates.dispatchStatus = "none";
+  }
+
+  // Restore cancelled order — smart: keep master if was assigned, otherwise clear for re-broadcast
+  if (restoreOrder && current.status === "cancelled") {
+    updates.cancelReason = null;
+    updates.cancelType = null;
+    if (current.masterId) {
+      // Master was assigned before cancellation — restore to assigned state, keep master
+      updates.status = "master_assigned";
+      newStatus = "master_assigned";
+      updates.dispatchStatus = "assigned";
+      updates.assignedAt = (current as any).assignedAt ?? new Date();
+    } else {
+      // No master — restore to waiting, ready for re-broadcast
+      updates.status = "waiting_master";
+      newStatus = "waiting_master";
+      updates.dispatchStatus = "none";
+    }
   }
 
   // Set timestamps on status transitions

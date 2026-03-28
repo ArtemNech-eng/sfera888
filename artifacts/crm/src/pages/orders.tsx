@@ -209,16 +209,17 @@ export default function Orders() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ status: "waiting_master" }),
+        body: JSON.stringify({ restoreOrder: true }),
       });
       if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Ошибка"); }
       return r.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       setOpenDispatchId(null);
       setStatusFilter("active");
-      toast({ title: "Заказ восстановлен", description: "Заказ возвращён в статус «Ожидает мастера»." });
+      const restoredStatus = data?.status === "master_assigned" ? "Мастер назначен" : "Ожидает мастера";
+      toast({ title: "Заказ восстановлен", description: `Статус: ${restoredStatus}` });
     },
     onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
   });
