@@ -108,321 +108,460 @@ app.get("/api/receipt/:token", async (req, res) => {
     const masterPhone = master?.phone || "";
 
     const statusBadgeHtml = isOperatorConfirmed
-      ? `<div class="badge badge-confirmed">✅ Оплата подтверждена</div>`
+      ? `<div class="status-pill confirmed"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Оплата подтверждена</div>`
       : isClientSubmitted
-        ? `<div class="badge badge-pending">⏳ Проверяем оплату</div>`
-        : `<div class="badge badge-unpaid">⚠️ Предоплата не внесена</div>`;
+        ? `<div class="status-pill pending"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Проверяем оплату</div>`
+        : `<div class="status-pill unpaid"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> Предоплата не внесена</div>`;
 
     const confirmSectionHtml = isClientSubmitted
-      ? `<div class="confirm-success">
-          <div class="confirm-success-icon">${isOperatorConfirmed ? "✅" : "⏳"}</div>
-          <div class="confirm-success-title">${isOperatorConfirmed ? "Оплата подтверждена!" : "Заявка принята!"}</div>
-          <p class="confirm-success-sub">${isOperatorConfirmed
+      ? `<div class="state-box ${isOperatorConfirmed ? "confirmed" : "pending"}">
+          <div class="state-icon">${isOperatorConfirmed ? "✅" : "⏳"}</div>
+          <div class="state-title ${isOperatorConfirmed ? "confirmed" : "pending"}">${isOperatorConfirmed ? "Оплата подтверждена!" : "Заявка принята!"}</div>
+          <p class="state-sub">${isOperatorConfirmed
             ? "Ваша предоплата подтверждена оператором. Мастер приступит к работе в согласованное время."
-            : "Ваше ФИО и скриншот оплаты отправлены оператору. Мы свяжемся с вами в ближайшее время."
+            : "Ваши данные и скриншот оплаты отправлены оператору. Мы свяжемся с вами в ближайшее время."
           }</p>
-          ${receipt.clientSubmittedName ? `<p class="confirm-submitted-name">👤 ${receipt.clientSubmittedName}</p>` : ""}
+          ${receipt.clientSubmittedName ? `<div class="state-name"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>${receipt.clientSubmittedName}</div>` : ""}
         </div>`
-      : `<div class="payment-block">
-          <div class="payment-block-title">💳 Реквизиты для перевода</div>
-          <div style="font-size:13px;color:#555;margin-bottom:6px">Переведите <strong style="color:#1a1a2e">${prepayment} ₽</strong> по номеру телефона:</div>
-          <a href="tel:+79892860863" class="payment-phone">8 989 286-08-63</a>
-          <div class="payment-bank">Альфа Банк · СБП (Система быстрых платежей)</div>
-          <div class="payment-recipient">
-            <strong>Получатель:</strong> ИП Коваленко Игорь Геннадьевич<br>
-            <strong>ИНН:</strong> 262409599800<br>
-            <strong>Назначение:</strong> Предоплата по расписке #${receipt.id}
-          </div>
-          <button class="copy-btn" onclick="navigator.clipboard.writeText('79892860863').then(()=>{this.textContent='✅ Скопировано!';setTimeout(()=>{this.innerHTML='📋 Скопировать номер телефона'},2000)})">📋 Скопировать номер телефона</button>
-          <div class="payment-steps">
-            <div class="payment-step"><div class="payment-step-num">1</div><div>Переведите <strong>${prepayment} ₽</strong> на номер телефона выше через СБП или Альфа Банк</div></div>
-            <div class="payment-step"><div class="payment-step-num">2</div><div>Сделайте скриншот успешного перевода</div></div>
-            <div class="payment-step"><div class="payment-step-num">3</div><div>Заполните форму ниже и прикрепите скриншот — мастер приступит к работе</div></div>
-          </div>
-        </div>
-
-        <div class="confirm-section">
-          <div class="confirm-title">📲 Подтвердите оплату</div>
-          <p class="confirm-desc">После перевода введите ваше ФИО и прикрепите скриншот — оператор проверит оплату и подтвердит бронь.</p>
-
-          <div id="form-area">
-            <div class="field-group">
-              <label class="field-label">Ваше ФИО <span class="req">*</span></label>
-              <input id="client-name" type="text" class="field-input" placeholder="Иванов Иван Иванович" autocomplete="name" />
-            </div>
-
-            <div class="field-group">
-              <label class="field-label">Скриншот оплаты <span class="req">*</span></label>
-              <label class="upload-label" for="screenshot-input">
-                <span id="upload-text">📎 Прикрепить скриншот</span>
-              </label>
-              <input id="screenshot-input" type="file" accept="image/*" style="display:none" />
-              <div id="preview-wrap" style="display:none;margin-top:10px">
-                <img id="preview-img" src="" style="max-width:100%;border-radius:10px;border:1px solid #e0e4ec" />
-              </div>
-            </div>
-
-            <div id="form-error" style="display:none;color:#c62828;font-size:13px;margin-bottom:8px;padding:8px 12px;background:#ffeaea;border-radius:8px"></div>
-
-            <button id="submit-btn" class="submit-btn">Отправить подтверждение</button>
-            <p class="field-note">Данные передаются оператору для подтверждения брони</p>
-          </div>
-
-          <div id="success-area" style="display:none">
-            <div class="confirm-success">
-              <div class="confirm-success-icon">✅</div>
-              <div class="confirm-success-title">Заявка отправлена!</div>
-              <p class="confirm-success-sub">Оператор свяжется с вами для подтверждения.</p>
-            </div>
-          </div>
-        </div>
-
-        <script>
-          const fileInput = document.getElementById('screenshot-input');
-          const uploadText = document.getElementById('upload-text');
-          const previewWrap = document.getElementById('preview-wrap');
-          const previewImg = document.getElementById('preview-img');
-          const submitBtn = document.getElementById('submit-btn');
-          const formError = document.getElementById('form-error');
-          const formArea = document.getElementById('form-area');
-          const successArea = document.getElementById('success-area');
-
-          fileInput.addEventListener('change', function() {
-            const file = this.files[0];
-            if (!file) return;
-            uploadText.textContent = '✅ ' + file.name;
-            const reader = new FileReader();
-            reader.onload = e => { previewImg.src = e.target.result; previewWrap.style.display = 'block'; };
-            reader.readAsDataURL(file);
-          });
-
-          submitBtn.addEventListener('click', async function() {
-            const name = document.getElementById('client-name').value.trim();
-            const file = fileInput.files[0];
-            formError.style.display = 'none';
-
-            if (!name) { showError('Введите ваше ФИО'); return; }
-            if (name.split(' ').filter(w=>w.length>1).length < 2) { showError('Введите полное ФИО (Фамилия Имя Отчество)'); return; }
-            if (!file) { showError('Прикрепите скриншот оплаты'); return; }
-
-            submitBtn.disabled = true;
-            submitBtn.textContent = 'Отправка...';
-
-            const fd = new FormData();
-            fd.append('clientName', name);
-            fd.append('screenshot', file);
-
-            try {
-              const r = await fetch('/api/receipt/${req.params.token}/confirm', { method: 'POST', body: fd });
-              const data = await r.json();
-              if (!r.ok) { showError(data.error || 'Ошибка. Попробуйте ещё раз.'); submitBtn.disabled = false; submitBtn.textContent = 'Отправить подтверждение'; return; }
-              formArea.style.display = 'none';
-              successArea.style.display = 'block';
-            } catch(e) {
-              showError('Ошибка сети. Попробуйте ещё раз.');
-              submitBtn.disabled = false;
-              submitBtn.textContent = 'Отправить подтверждение';
-            }
-          });
-
-          function showError(msg) {
-            formError.textContent = msg;
-            formError.style.display = 'block';
-          }
-        </script>`;
+      : ``;
 
     const html = `<!DOCTYPE html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Расписка об оплате — Честный мастер</title>
+  <title>Расписка №${receipt.id} — Честный мастер</title>
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; padding: 24px 12px 60px; color: #1a1a2e; }
-    .card { background: #fff; border-radius: 20px; box-shadow: 0 4px 32px rgba(0,0,0,.10); max-width: 520px; width: 100%; overflow: hidden; }
-    .header { background: linear-gradient(135deg, #1565c0 0%, #0d47a1 100%); color: #fff; padding: 28px 28px 22px; }
-    .header-logo { font-size: 12px; font-weight: 700; letter-spacing: 0.12em; opacity: .75; text-transform: uppercase; margin-bottom: 10px; }
-    .header-title { font-size: 22px; font-weight: 700; }
-    .header-prepay { font-size: 42px; font-weight: 800; margin-top: 6px; letter-spacing: -1px; }
-    .header-prepay span { font-size: 20px; font-weight: 600; opacity: .85; }
-    .header-sub { font-size: 13px; opacity: .75; margin-top: 4px; }
-    .badge { display: inline-flex; align-items: center; gap: 6px; border-radius: 20px; padding: 5px 14px; margin-top: 14px; font-size: 13px; font-weight: 600; }
-    .badge-unpaid { background: rgba(255,180,0,.25); color: #ffe082; border: 1px solid rgba(255,180,0,.4); }
-    .badge-pending { background: rgba(255,255,255,.18); color: #fff; }
-    .badge-confirmed { background: rgba(76,175,80,.25); color: #c8e6c9; border: 1px solid rgba(76,175,80,.4); }
-    .body { padding: 24px 28px; }
-    .section { margin-bottom: 16px; }
-    .label { font-size: 10px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #999; margin-bottom: 3px; }
-    .value { font-size: 15px; font-weight: 500; color: #1a1a2e; }
-    .divider { height: 1px; background: #eef0f4; margin: 18px 0; }
-    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    .items-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-    .items-table th { font-size: 10px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #999; padding: 0 0 8px; text-align: left; border-bottom: 1px solid #eee; }
-    .items-table th:last-child { text-align: right; }
-    .item-desc { font-size: 14px; color: #222; padding: 9px 12px 9px 0; border-bottom: 1px solid #f5f5f5; line-height: 1.4; }
-    .item-price { font-size: 14px; font-weight: 600; color: #1a1a2e; text-align: right; padding: 9px 0; border-bottom: 1px solid #f5f5f5; white-space: nowrap; }
-    .totals { background: #f8f9fc; border-radius: 12px; padding: 14px 16px; margin-top: 14px; }
-    .totals-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; }
-    .totals-row.total-row { border-top: 1px solid #e0e4ec; margin-top: 8px; padding-top: 10px; }
-    .totals-label { font-size: 13px; color: #666; }
-    .totals-value { font-size: 14px; font-weight: 600; color: #1a1a2e; }
-    .totals-row.prepay-row .totals-label { font-weight: 700; color: #1565c0; font-size: 14px; }
-    .totals-row.prepay-row .totals-value { font-size: 18px; font-weight: 800; color: #1565c0; }
-    .totals-row.remainder-row { border-top: 1px dashed #e0e4ec; margin-top: 6px; padding-top: 8px; }
-    .totals-row.remainder-row .totals-label { font-weight: 600; color: #444; }
-    .totals-row.remainder-row .totals-value { font-size: 15px; font-weight: 700; color: #333; }
-    .guarantee-banner { display: flex; align-items: flex-start; gap: 12px; background: linear-gradient(135deg, #e8f5e9, #f1f8e9); border: 1px solid #c8e6c9; border-radius: 12px; padding: 14px 16px; margin-top: 14px; }
-    .guarantee-icon { font-size: 24px; flex-shrink: 0; line-height: 1; }
-    .guarantee-text { font-size: 12.5px; color: #2e7d32; line-height: 1.5; }
-    .notes-block { background: #f8f9fc; border-radius: 10px; padding: 12px 14px; margin-top: 4px; }
-    .notes-text { font-size: 14px; line-height: 1.5; color: #444; margin-top: 6px; }
-    .parties { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 20px 28px; background: #f8f9fc; border-top: 1px solid #eee; }
-    .party-title { font-size: 10px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #999; margin-bottom: 8px; }
-    .party-name { font-size: 14px; font-weight: 700; color: #1a1a2e; line-height: 1.4; margin-bottom: 4px; }
-    .party-info { font-size: 13px; color: #555; line-height: 1.7; }
-    .footer { padding: 16px 28px 20px; border-top: 1px solid #eee; }
-    .footer-bank { font-size: 13px; color: #555; line-height: 1.7; }
-    .footer-bank strong { color: #1565c0; }
-    .stamp { text-align: center; margin-top: 12px; color: #bbb; font-size: 11px; }
-    /* Confirm section */
-    .confirm-section { margin: 20px 28px; background: #f0f7ff; border: 1.5px solid #bbdefb; border-radius: 16px; padding: 20px; }
-    .confirm-title { font-size: 15px; font-weight: 700; color: #0d47a1; margin-bottom: 8px; }
-    .confirm-desc { font-size: 13px; color: #444; line-height: 1.6; margin-bottom: 16px; }
-    .field-group { margin-bottom: 14px; }
-    .field-label { display: block; font-size: 12px; font-weight: 600; color: #555; margin-bottom: 6px; }
-    .req { color: #e53935; }
-    .field-input { width: 100%; height: 44px; border: 1.5px solid #c5cae9; border-radius: 10px; padding: 0 14px; font-size: 15px; font-family: inherit; color: #1a1a2e; background: #fff; outline: none; transition: border-color 0.2s; }
-    .field-input:focus { border-color: #1565c0; }
-    .upload-label { display: flex; align-items: center; justify-content: center; gap: 8px; height: 48px; border: 2px dashed #90caf9; border-radius: 12px; background: #fff; cursor: pointer; font-size: 14px; font-weight: 600; color: #1565c0; transition: background 0.2s; }
-    .upload-label:hover { background: #e3f2fd; }
-    .submit-btn { width: 100%; height: 52px; background: linear-gradient(135deg, #1565c0, #0d47a1); color: #fff; font-size: 15px; font-weight: 700; border: none; border-radius: 14px; cursor: pointer; margin-top: 6px; letter-spacing: 0.02em; transition: opacity 0.2s; }
-    .submit-btn:hover { opacity: 0.92; }
-    .submit-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-    .field-note { font-size: 11px; color: #999; text-align: center; margin-top: 10px; }
-    .confirm-success { margin: 20px 28px; text-align: center; padding: 24px 20px; background: #f1f8e9; border: 1.5px solid #c5e1a5; border-radius: 16px; }
-    .confirm-success-icon { font-size: 40px; margin-bottom: 10px; }
-    .confirm-success-title { font-size: 18px; font-weight: 700; color: #2e7d32; margin-bottom: 8px; }
-    .confirm-success-sub { font-size: 13px; color: #555; line-height: 1.6; }
-    .confirm-submitted-name { margin-top: 12px; font-size: 14px; font-weight: 600; color: #2e7d32; }
-    .payment-block { margin: 0 28px 0; background: #fff8e1; border: 1.5px solid #ffe082; border-radius: 16px; padding: 18px 20px 16px; }
-    .payment-block-title { font-size: 14px; font-weight: 700; color: #e65100; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
-    .payment-phone { font-size: 28px; font-weight: 800; color: #1565c0; letter-spacing: -0.5px; text-decoration: none; display: block; margin: 4px 0 2px; }
-    .payment-bank { font-size: 13px; color: #555; margin-bottom: 10px; }
-    .payment-recipient { font-size: 12px; color: #777; line-height: 1.6; background: #fff; border-radius: 10px; padding: 10px 12px; border: 1px solid #ffe082; }
-    .copy-btn { display: inline-flex; align-items: center; gap: 6px; background: #1565c0; color: #fff; border: none; border-radius: 10px; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; margin-top: 10px; width: 100%; justify-content: center; }
-    .copy-btn:active { opacity: 0.85; }
-    .payment-steps { margin-top: 14px; border-top: 1px solid #ffe082; padding-top: 12px; }
-    .payment-step { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; font-size: 13px; color: #444; line-height: 1.4; }
-    .payment-step-num { width: 22px; height: 22px; background: #1565c0; color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; margin-top: 1px; }
-    @media print { body { background: #fff; padding: 0; } .card { box-shadow: none; border-radius: 0; } .confirm-section,.confirm-success { display: none; } }
+    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: #eef0f5; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 0 0 60px; color: #1a1d2e; }
+
+    /* ── Top bar ── */
+    .topbar { width: 100%; background: #111827; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 14px 24px; }
+    .topbar-logo { display: flex; align-items: center; gap: 9px; }
+    .topbar-icon { width: 30px; height: 30px; background: #2563eb; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+    .topbar-icon svg { display: block; }
+    .topbar-name { font-size: 15px; font-weight: 700; color: #fff; letter-spacing: -0.3px; }
+    .topbar-sub { font-size: 12px; color: #6b7280; margin-left: 4px; }
+
+    /* ── Card ── */
+    .card { background: #fff; max-width: 540px; width: calc(100% - 24px); margin: 24px auto 0; border-radius: 20px; box-shadow: 0 2px 20px rgba(0,0,0,.08), 0 0 0 1px rgba(0,0,0,.04); overflow: hidden; }
+
+    /* ── Header ── */
+    .hd { background: #111827; padding: 28px 28px 24px; position: relative; overflow: hidden; }
+    .hd::before { content: ''; position: absolute; top: -40px; right: -40px; width: 180px; height: 180px; background: rgba(37,99,235,.15); border-radius: 50%; }
+    .hd::after { content: ''; position: absolute; bottom: -60px; right: 40px; width: 120px; height: 120px; background: rgba(37,99,235,.10); border-radius: 50%; }
+    .hd-doc { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #6b7280; margin-bottom: 14px; }
+    .hd-amount-label { font-size: 13px; color: #9ca3af; margin-bottom: 4px; }
+    .hd-amount { font-size: 52px; font-weight: 800; color: #fff; letter-spacing: -2px; line-height: 1; }
+    .hd-amount span { font-size: 28px; font-weight: 600; opacity: .7; }
+    .hd-meta { margin-top: 12px; font-size: 13px; color: #9ca3af; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .hd-meta-sep { width: 3px; height: 3px; background: #4b5563; border-radius: 50%; }
+    .status-pill { display: inline-flex; align-items: center; gap: 6px; margin-top: 18px; padding: 7px 16px; border-radius: 100px; font-size: 13px; font-weight: 600; }
+    .status-pill.unpaid { background: rgba(245,158,11,.12); color: #f59e0b; border: 1px solid rgba(245,158,11,.25); }
+    .status-pill.pending { background: rgba(99,102,241,.12); color: #818cf8; border: 1px solid rgba(99,102,241,.25); }
+    .status-pill.confirmed { background: rgba(16,185,129,.12); color: #34d399; border: 1px solid rgba(16,185,129,.25); }
+    .status-pill svg { flex-shrink: 0; }
+
+    /* ── Trust bar ── */
+    .trust-bar { display: grid; grid-template-columns: 1fr 1fr 1fr; background: #f9fafb; border-bottom: 1px solid #e5e7eb; }
+    .trust-item { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 14px 8px; text-align: center; border-right: 1px solid #e5e7eb; }
+    .trust-item:last-child { border-right: none; }
+    .trust-item-icon { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+    .trust-item-icon.blue { background: #eff6ff; }
+    .trust-item-icon.green { background: #f0fdf4; }
+    .trust-item-icon.amber { background: #fffbeb; }
+    .trust-item-label { font-size: 11px; font-weight: 600; color: #374151; line-height: 1.3; }
+    .trust-item-sub { font-size: 10px; color: #9ca3af; }
+
+    /* ── Status states ── */
+    .state-box { margin: 20px; border-radius: 16px; padding: 20px; text-align: center; }
+    .state-box.pending { background: linear-gradient(135deg, #eef2ff, #e0e7ff); border: 1px solid #c7d2fe; }
+    .state-box.confirmed { background: linear-gradient(135deg, #ecfdf5, #d1fae5); border: 1px solid #a7f3d0; }
+    .state-icon { font-size: 36px; margin-bottom: 10px; }
+    .state-title { font-size: 17px; font-weight: 700; color: #1a1d2e; margin-bottom: 6px; }
+    .state-title.confirmed { color: #065f46; }
+    .state-title.pending { color: #3730a3; }
+    .state-sub { font-size: 13px; color: #6b7280; line-height: 1.6; }
+    .state-name { margin-top: 10px; display: inline-flex; align-items: center; gap: 6px; background: #fff; border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 600; color: #374151; }
+
+    /* ── Section body ── */
+    .body { padding: 20px 20px 4px; }
+    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: #e5e7eb; border-radius: 12px; overflow: hidden; margin-bottom: 16px; }
+    .info-cell { background: #f9fafb; padding: 12px 14px; }
+    .info-cell.full { grid-column: 1 / -1; }
+    .info-lbl { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #9ca3af; margin-bottom: 3px; }
+    .info-val { font-size: 14px; font-weight: 500; color: #111827; }
+
+    /* ── Items ── */
+    .section-title { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #9ca3af; margin-bottom: 10px; padding: 0 2px; }
+    .items-wrap { border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; margin-bottom: 16px; }
+    .item-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 11px 14px; border-bottom: 1px solid #f3f4f6; }
+    .item-row:last-child { border-bottom: none; }
+    .item-name { font-size: 14px; color: #374151; line-height: 1.4; flex: 1; }
+    .item-amt { font-size: 14px; font-weight: 600; color: #111827; white-space: nowrap; }
+
+    /* ── Totals ── */
+    .totals-wrap { border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; margin-bottom: 16px; }
+    .totals-row { display: flex; justify-content: space-between; align-items: center; padding: 11px 14px; border-bottom: 1px solid #f3f4f6; }
+    .totals-row:last-child { border-bottom: none; }
+    .totals-lbl { font-size: 13px; color: #6b7280; }
+    .totals-val { font-size: 14px; font-weight: 600; color: #111827; }
+    .totals-row.prepay { background: #eff6ff; }
+    .totals-row.prepay .totals-lbl { font-weight: 700; color: #1d4ed8; font-size: 14px; }
+    .totals-row.prepay .totals-val { font-size: 20px; font-weight: 800; color: #1d4ed8; }
+    .totals-row.remainder .totals-lbl { font-weight: 600; color: #374151; }
+    .totals-row.remainder .totals-val { font-weight: 700; color: #374151; }
+
+    /* ── Notes ── */
+    .notes-wrap { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px 14px; margin-bottom: 16px; }
+    .notes-text { font-size: 14px; color: #374151; line-height: 1.6; margin-top: 5px; }
+
+    /* ── Trust info row ── */
+    .trust-detail { display: flex; align-items: flex-start; gap: 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 14px; margin-bottom: 16px; }
+    .trust-detail-text { font-size: 12.5px; color: #15803d; line-height: 1.55; }
+    .trust-detail-text strong { font-weight: 700; }
+
+    /* ── Parties ── */
+    .parties { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: #e5e7eb; border-top: 1px solid #e5e7eb; }
+    .party { background: #f9fafb; padding: 16px 18px; }
+    .party-lbl { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #9ca3af; margin-bottom: 8px; }
+    .party-name { font-size: 13px; font-weight: 700; color: #111827; line-height: 1.4; margin-bottom: 4px; }
+    .party-line { font-size: 12px; color: #6b7280; line-height: 1.7; }
+
+    /* ── Footer ── */
+    .footer { padding: 14px 20px; background: #fff; border-top: 1px solid #e5e7eb; }
+    .footer-row { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9ca3af; margin-bottom: 4px; }
+    .footer-row:last-child { margin-bottom: 0; }
+    .footer-row a { color: #6b7280; text-decoration: none; }
+    .doc-stamp { text-align: center; padding: 12px 20px 0; font-size: 11px; color: #d1d5db; }
+
+    /* ── Payment block ── */
+    .pay-block { margin: 20px; background: #fff; border: 1.5px solid #d1d5db; border-radius: 16px; overflow: hidden; }
+    .pay-block-head { background: #111827; padding: 16px 18px; display: flex; align-items: center; gap: 10px; }
+    .pay-block-head-text { }
+    .pay-block-title { font-size: 14px; font-weight: 700; color: #fff; }
+    .pay-block-subtitle { font-size: 12px; color: #9ca3af; margin-top: 2px; }
+    .pay-body { padding: 16px 18px; }
+    .pay-phone-label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #9ca3af; margin-bottom: 6px; }
+    .pay-phone { font-size: 30px; font-weight: 800; color: #1d4ed8; letter-spacing: -1px; text-decoration: none; display: block; line-height: 1; margin-bottom: 4px; }
+    .pay-bank { font-size: 13px; color: #6b7280; margin-bottom: 14px; }
+    .pay-details { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 11px 13px; font-size: 12px; color: #374151; line-height: 1.8; margin-bottom: 12px; }
+    .pay-details strong { color: #111827; font-weight: 600; }
+    .pay-copy-btn { width: 100%; padding: 13px; background: #1d4ed8; color: #fff; font-size: 14px; font-weight: 700; border: none; border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: background 0.15s; }
+    .pay-copy-btn:hover { background: #1e40af; }
+    .pay-steps { border-top: 1px solid #e5e7eb; padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; }
+    .pay-step { display: flex; align-items: flex-start; gap: 12px; }
+    .pay-step-num { width: 24px; height: 24px; background: #dbeafe; color: #1d4ed8; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; flex-shrink: 0; margin-top: 1px; }
+    .pay-step-text { font-size: 13px; color: #374151; line-height: 1.5; }
+
+    /* ── Confirm form ── */
+    .form-block { margin: 20px; background: #f9fafb; border: 1.5px solid #e5e7eb; border-radius: 16px; padding: 18px; }
+    .form-title { font-size: 15px; font-weight: 700; color: #111827; margin-bottom: 4px; }
+    .form-sub { font-size: 13px; color: #6b7280; margin-bottom: 16px; line-height: 1.5; }
+    .field-group { margin-bottom: 12px; }
+    .field-label { display: block; font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 6px; }
+    .req { color: #ef4444; }
+    .field-input { width: 100%; height: 46px; border: 1.5px solid #d1d5db; border-radius: 10px; padding: 0 14px; font-size: 15px; font-family: inherit; color: #111827; background: #fff; outline: none; transition: border-color 0.2s, box-shadow 0.2s; }
+    .field-input:focus { border-color: #1d4ed8; box-shadow: 0 0 0 3px rgba(29,78,216,.1); }
+    .upload-area { border: 2px dashed #d1d5db; border-radius: 12px; background: #fff; cursor: pointer; transition: all 0.2s; display: block; }
+    .upload-inner { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 20px; }
+    .upload-area:hover { border-color: #1d4ed8; background: #eff6ff; }
+    .upload-icon { width: 36px; height: 36px; background: #dbeafe; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
+    .upload-text { font-size: 13px; font-weight: 600; color: #1d4ed8; }
+    .upload-hint { font-size: 11px; color: #9ca3af; }
+    .form-error { display: none; color: #b91c1c; font-size: 13px; margin-bottom: 10px; padding: 10px 12px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; }
+    .submit-btn { width: 100%; height: 52px; background: #111827; color: #fff; font-size: 15px; font-weight: 700; border: none; border-radius: 12px; cursor: pointer; margin-top: 4px; letter-spacing: 0.01em; transition: background 0.15s; font-family: inherit; }
+    .submit-btn:hover { background: #1f2937; }
+    .submit-btn:disabled { background: #6b7280; cursor: not-allowed; }
+    .form-note { font-size: 11px; color: #9ca3af; text-align: center; margin-top: 10px; }
+    .success-box { text-align: center; padding: 20px; }
+    .success-icon-wrap { width: 64px; height: 64px; background: #d1fae5; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 14px; }
+    .success-title { font-size: 18px; font-weight: 700; color: #111827; margin-bottom: 6px; }
+    .success-sub { font-size: 13px; color: #6b7280; line-height: 1.6; }
+
+    @media(max-width: 420px) { .hd-amount { font-size: 42px; } .hd-amount span { font-size: 22px; } .info-grid { grid-template-columns: 1fr; } .parties { grid-template-columns: 1fr; } }
+    @media print { body { background: #fff; } .card { box-shadow: none; border-radius: 0; margin: 0; width: 100%; } .pay-block, .form-block { display: none; } }
   </style>
 </head>
 <body>
+<div class="topbar">
+  <div class="topbar-logo">
+    <div class="topbar-icon">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+    </div>
+    <span class="topbar-name">Честный мастер</span>
+    <span class="topbar-sub">· sfera-project.digital</span>
+  </div>
+</div>
+
 <div class="card">
-  <div class="header">
-    <div class="header-logo">Честный мастер</div>
-    <div class="header-title">Расписка об оплате</div>
-    <div class="header-prepay">${prepayment} <span>₽</span></div>
-    <div class="header-sub">Предоплата за услуги</div>
+
+  <!-- ── HEADER ── -->
+  <div class="hd">
+    <div class="hd-doc">Расписка об оплате · №${receipt.id}</div>
+    <div class="hd-amount-label">Сумма предоплаты</div>
+    <div class="hd-amount">${prepayment} <span>₽</span></div>
+    <div class="hd-meta">
+      <span>${date}</span>
+      <span class="hd-meta-sep"></span>
+      <span>${receipt.city}${district}</span>
+      <span class="hd-meta-sep"></span>
+      <span>${receipt.serviceType}</span>
+    </div>
     ${statusBadgeHtml}
   </div>
 
+  <!-- ── TRUST BAR ── -->
+  <div class="trust-bar">
+    <div class="trust-item">
+      <div class="trust-item-icon green">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      </div>
+      <div class="trust-item-label">Безопасная сделка</div>
+      <div class="trust-item-sub">Гарантия 6 мес.</div>
+    </div>
+    <div class="trust-item">
+      <div class="trust-item-icon blue">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      </div>
+      <div class="trust-item-label">ИП зарегистрирован</div>
+      <div class="trust-item-sub">ИНН 262409599800</div>
+    </div>
+    <div class="trust-item">
+      <div class="trust-item-icon amber">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 11.9 19.79 19.79 0 0 1 1.6 3.28 2 2 0 0 1 3.58 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.54a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+      </div>
+      <div class="trust-item-label">Поддержка</div>
+      <div class="trust-item-sub">8 (989) 286-08-63</div>
+    </div>
+  </div>
+
+  <!-- ── STATUS STATE (submitted / confirmed) ── -->
   ${confirmSectionHtml}
 
+  <!-- ── BODY ── -->
   <div class="body">
-    <div class="two-col">
-      <div class="section">
-        <p class="label">Заказчик</p>
-        <p class="value">${receipt.clientName}</p>
+    <p class="section-title">Информация о заказе</p>
+    <div class="info-grid">
+      <div class="info-cell">
+        <div class="info-lbl">Заказчик</div>
+        <div class="info-val">${receipt.clientName}</div>
       </div>
-      <div class="section">
-        <p class="label">Телефон</p>
-        <p class="value">${receipt.clientPhone}</p>
+      <div class="info-cell">
+        <div class="info-lbl">Телефон</div>
+        <div class="info-val">${receipt.clientPhone}</div>
       </div>
-    </div>
-
-    <div class="two-col">
-      <div class="section">
-        <p class="label">Вид работ</p>
-        <p class="value">${receipt.serviceType}</p>
+      <div class="info-cell">
+        <div class="info-lbl">Вид работ</div>
+        <div class="info-val">${receipt.serviceType}</div>
       </div>
-      <div class="section">
-        <p class="label">Адрес</p>
-        <p class="value">${receipt.city}${district}</p>
+      <div class="info-cell">
+        <div class="info-lbl">Адрес</div>
+        <div class="info-val">${receipt.city}${district}</div>
       </div>
-    </div>
-
-    <div class="divider"></div>
-
-    <p class="label">Перечень работ</p>
-    <table class="items-table">
-      <thead><tr><th>Наименование</th><th style="text-align:right">Сумма</th></tr></thead>
-      <tbody>${lineItemsHtml}</tbody>
-    </table>
-
-    <div class="totals">
-      <div class="totals-row total-row">
-        <span class="totals-label">Итого по смете</span>
-        <span class="totals-value">${total} ₽</span>
+      <div class="info-cell">
+        <div class="info-lbl">Исполнитель</div>
+        <div class="info-val">${masterName}${masterPhone ? ` · ${masterPhone}` : ""}</div>
       </div>
-      <div class="totals-row prepay-row">
-        <span class="totals-label">Предоплата (бронь)</span>
-        <span class="totals-value">${prepayment} ₽</span>
-      </div>
-      <div class="totals-row remainder-row">
-        <span class="totals-label">Остаток после брони</span>
-        <span class="totals-value">${remainder} ₽</span>
+      <div class="info-cell">
+        <div class="info-lbl">Дата документа</div>
+        <div class="info-val">${date}</div>
       </div>
     </div>
 
-    <div class="guarantee-banner">
-      <div class="guarantee-icon">🛡️</div>
-      <div class="guarantee-text">
-        <strong>Гарантия и безопасная сделка</strong><br>
-        Оплачивая работы через сервис, вы получаете дополнительную гарантию 6 месяцев на выполненные работы и защиту в рамках безопасной сделки.
+    <p class="section-title">Перечень работ</p>
+    <div class="items-wrap">
+      ${lineItems.map(item => `<div class="item-row"><span class="item-name">${item.description}</span><span class="item-amt">${Number(item.price).toLocaleString("ru-RU")} ₽</span></div>`).join("")}
+    </div>
+
+    <div class="totals-wrap">
+      <div class="totals-row">
+        <span class="totals-lbl">Итого по смете</span>
+        <span class="totals-val">${total} ₽</span>
+      </div>
+      <div class="totals-row prepay">
+        <span class="totals-lbl">Предоплата (бронь)</span>
+        <span class="totals-val">${prepayment} ₽</span>
+      </div>
+      <div class="totals-row remainder">
+        <span class="totals-lbl">Остаток мастеру после работ</span>
+        <span class="totals-val">${remainder} ₽</span>
       </div>
     </div>
 
-    ${notesHtml}
+    ${receipt.notes ? `<p class="section-title">Примечание</p><div class="notes-wrap"><div class="notes-text">${receipt.notes}</div></div>` : ""}
 
-    <div class="divider"></div>
-
-    <div class="two-col">
-      <div class="section">
-        <p class="label">Дата составления</p>
-        <p class="value">${date}</p>
-      </div>
-      <div class="section">
-        <p class="label">Номер расписки</p>
-        <p class="value">#${receipt.id}</p>
+    <div class="trust-detail">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:2px"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
+      <div class="trust-detail-text">
+        <strong>Защита покупателя и гарантия качества</strong><br>
+        Предоплата проходит через платформу «Честный мастер». Вы получаете гарантию 6 месяцев на выполненные работы и защиту в рамках безопасной сделки. Мастер не получает деньги до выхода на заказ.
       </div>
     </div>
-  </div>
-
-  <div class="parties">
-    <div>
-      <p class="party-title">Исполнитель</p>
-      <p class="party-name">${masterName}</p>
-      ${masterPhone ? `<p class="party-info">📞 ${masterPhone}</p>` : ""}
-    </div>
-    <div>
-      <p class="party-title">Организатор</p>
-      <p class="party-name">ИП Коваленко Игорь Геннадьевич</p>
-      <p class="party-info">📞 8 (989) 286-08-63</p>
-      <p class="party-info">ИНН: 262409599800</p>
-      <p class="party-info">ОГРНИП: 325265100150717</p>
-    </div>
-  </div>
-
-  <div class="footer">
-    <p class="footer-bank">Получатель: <strong>ИП Коваленко Игорь Геннадьевич</strong></p>
-    <p class="footer-bank">Банк: <strong>Альфа Банк</strong> · Тел. для перевода: <strong>8 (989) 286-08-63</strong></p>
-    <p class="footer-bank">ИНН: 262409599800 · ОГРНИП: 325265100150717</p>
-    <p class="footer-bank">Платформа «Честный мастер» · sfera-project.digital</p>
-    <p class="stamp">Расписка сформирована автоматически и действительна без подписи</p>
   </div>
 </div>
+
+<!-- ── PAYMENT BLOCK ── -->
+${!isClientSubmitted ? `<div style="max-width:540px;width:calc(100% - 24px);margin:16px auto 0">
+  <div class="pay-block">
+    <div class="pay-block-head">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+      <div class="pay-block-head-text">
+        <div class="pay-block-title">Реквизиты для перевода</div>
+        <div class="pay-block-subtitle">Переведите ${prepayment} ₽ на номер телефона</div>
+      </div>
+    </div>
+    <div class="pay-body">
+      <div class="pay-phone-label">Номер телефона (СБП / Альфа Банк)</div>
+      <a href="tel:+79892860863" class="pay-phone">8 989 286-08-63</a>
+      <div class="pay-bank">Альфа Банк · СБП (Система быстрых платежей)</div>
+      <div class="pay-details">
+        <strong>Получатель:</strong> ИП Коваленко Игорь Геннадьевич<br>
+        <strong>ИНН:</strong> 262409599800<br>
+        <strong>Назначение:</strong> Предоплата по расписке №${receipt.id}
+      </div>
+      <button class="pay-copy-btn" id="copy-phone-btn" onclick="navigator.clipboard.writeText('79892860863').then(()=>{this.innerHTML='<svg width=\\'16\\' height=\\'16\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'#fff\\' stroke-width=\\'2.5\\' stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\'><polyline points=\\'20 6 9 17 4 12\\'/></svg> Скопировано!';setTimeout(()=>{this.innerHTML='<svg width=\\'16\\' height=\\'16\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'#fff\\' stroke-width=\\'2\\' stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\'><rect x=\\'9\\' y=\\'9\\' width=\\'13\\' height=\\'13\\' rx=\\'2\\' ry=\\'2\\'/><path d=\\'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1\\'/></svg> Скопировать номер телефона'},2500)})">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Скопировать номер телефона
+      </button>
+    </div>
+    <div class="pay-steps">
+      <div class="pay-step"><div class="pay-step-num">1</div><div class="pay-step-text">Откройте банковское приложение и переведите <strong>${prepayment} ₽</strong> на номер <strong>8 989 286-08-63</strong> через СБП</div></div>
+      <div class="pay-step"><div class="pay-step-num">2</div><div class="pay-step-text">Сделайте скриншот экрана успешного перевода</div></div>
+      <div class="pay-step"><div class="pay-step-num">3</div><div class="pay-step-text">Заполните форму ниже, прикрепите скриншот и нажмите «Отправить»</div></div>
+    </div>
+  </div>
+</div>
+
+<div style="max-width:540px;width:calc(100% - 24px);margin:12px auto 0">
+  <div class="form-block">
+    <div class="form-title">Подтвердите оплату</div>
+    <div class="form-sub">После перевода введите ваше ФИО и прикрепите скриншот — оператор проверит и подтвердит бронь.</div>
+    <div id="form-area">
+      <div class="field-group">
+        <label class="field-label" for="client-name">Ваше ФИО <span class="req">*</span></label>
+        <input id="client-name" type="text" class="field-input" placeholder="Иванов Иван Иванович" autocomplete="name" />
+      </div>
+      <div class="field-group">
+        <label class="field-label">Скриншот оплаты <span class="req">*</span></label>
+        <label class="upload-area" for="screenshot-input">
+          <div class="upload-inner">
+            <div class="upload-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            </div>
+            <div class="upload-text" id="upload-text">Прикрепить скриншот</div>
+            <div class="upload-hint">JPG, PNG · до 10 МБ</div>
+          </div>
+        </label>
+        <input id="screenshot-input" type="file" accept="image/*" style="display:none" />
+        <div id="preview-wrap" style="display:none;margin-top:10px">
+          <img id="preview-img" src="" style="max-width:100%;border-radius:10px;border:1px solid #e5e7eb" />
+        </div>
+      </div>
+      <div id="form-error" class="form-error"></div>
+      <button id="submit-btn" class="submit-btn">Отправить подтверждение</button>
+      <p class="form-note">Данные передаются оператору для подтверждения брони · Защищено платформой «Честный мастер»</p>
+    </div>
+    <div id="success-area" style="display:none">
+      <div class="success-box">
+        <div class="success-icon-wrap">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+        <div class="success-title">Заявка отправлена!</div>
+        <div class="success-sub">Оператор проверит ваш скриншот и подтвердит бронь в ближайшее время.</div>
+      </div>
+    </div>
+  </div>
+</div>` : ""}
+
+<!-- ── BOTTOM CARD: PARTIES + FOOTER ── -->
+<div style="max-width:540px;width:calc(100% - 24px);margin:12px auto 0">
+  <div class="card">
+    <div class="parties">
+      <div class="party">
+        <div class="party-lbl">Исполнитель</div>
+        <div class="party-name">${masterName}</div>
+        ${masterPhone ? `<div class="party-line">${masterPhone}</div>` : ""}
+      </div>
+      <div class="party">
+        <div class="party-lbl">Организатор</div>
+        <div class="party-name">ИП Коваленко И.Г.</div>
+        <div class="party-line">ИНН 262409599800</div>
+        <div class="party-line">ОГРНИП 325265100150717</div>
+        <div class="party-line">Альфа Банк · 8 (989) 286-08-63</div>
+      </div>
+    </div>
+    <div class="footer">
+      <div class="footer-row">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        Расписка №${receipt.id} сформирована автоматически и действительна без подписи
+      </div>
+      <div class="footer-row">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Дата: ${date}
+      </div>
+      <div class="footer-row">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        Платформа «Честный мастер» · <a href="https://sfera-project.digital">sfera-project.digital</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const fileInput = document.getElementById('screenshot-input');
+  const uploadText = document.getElementById('upload-text');
+  const previewWrap = document.getElementById('preview-wrap');
+  const previewImg = document.getElementById('preview-img');
+  const submitBtn = document.getElementById('submit-btn');
+  const formError = document.getElementById('form-error');
+  const formArea = document.getElementById('form-area');
+  const successArea = document.getElementById('success-area');
+
+  if (fileInput) {
+    fileInput.addEventListener('change', function() {
+      const file = this.files[0];
+      if (!file) return;
+      uploadText.textContent = '✓ ' + file.name;
+      const reader = new FileReader();
+      reader.onload = e => { previewImg.src = e.target.result; previewWrap.style.display = 'block'; };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  if (submitBtn) {
+    submitBtn.addEventListener('click', async function() {
+      const name = document.getElementById('client-name').value.trim();
+      const file = fileInput.files[0];
+      formError.style.display = 'none';
+      if (!name) { showError('Введите ваше ФИО'); return; }
+      if (name.split(' ').filter(w=>w.length>1).length < 2) { showError('Введите полное ФИО (Фамилия Имя Отчество)'); return; }
+      if (!file) { showError('Прикрепите скриншот оплаты'); return; }
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Отправляем...';
+      const fd = new FormData();
+      fd.append('clientName', name);
+      fd.append('screenshot', file);
+      try {
+        const r = await fetch('/api/receipt/${req.params.token}/confirm', { method: 'POST', body: fd });
+        const data = await r.json();
+        if (!r.ok) { showError(data.error || 'Ошибка. Попробуйте ещё раз.'); submitBtn.disabled = false; submitBtn.textContent = 'Отправить подтверждение'; return; }
+        formArea.style.display = 'none';
+        successArea.style.display = 'block';
+      } catch(e) {
+        showError('Ошибка сети. Попробуйте ещё раз.');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Отправить подтверждение';
+      }
+    });
+  }
+
+  function showError(msg) {
+    formError.textContent = msg;
+    formError.style.display = 'block';
+  }
+</script>
 </body>
 </html>`;
     res.setHeader("Content-Type", "text/html; charset=utf-8");
