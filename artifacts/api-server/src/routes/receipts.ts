@@ -8,8 +8,14 @@ const router = Router();
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function buildReceiptResponse(receipt: typeof receiptsTable.$inferSelect, master: typeof mastersTable.$inferSelect | undefined) {
-  const host = process.env.PUBLIC_HOST ?? "sfera-project.digital";
+function getPublicBase(req: Request): string {
+  const host = process.env.PUBLIC_HOST;
+  if (host) return `https://${host}`;
+  // Dev: use the actual request origin so the link works in dev environment
+  return `${req.protocol}://${req.get("host")}`;
+}
+
+async function buildReceiptResponse(receipt: typeof receiptsTable.$inferSelect, master: typeof mastersTable.$inferSelect | undefined, req: Request) {
   return {
     id: receipt.id,
     token: receipt.token,
@@ -28,8 +34,7 @@ async function buildReceiptResponse(receipt: typeof receiptsTable.$inferSelect, 
     masterAlias: master?.alias ?? null,
     masterPhone: master?.phone ?? null,
     masterFullName: master?.contractFullName ?? null,
-    masterAddress: (master as any)?.contractAddress ?? null,
-    publicUrl: `https://${host}/receipt/${receipt.token}`,
+    publicUrl: `${getPublicBase(req)}/receipt/${receipt.token}`,
   };
 }
 
@@ -42,6 +47,12 @@ async function getOrderAndLead(orderId: number) {
   return { order, lead: lead ?? null };
 }
 
+function parseLineItems(items: any[]): Array<{ description: string; price: number }> {
+  return items
+    .map((it: any) => ({ description: String(it.description ?? "").trim(), price: Number(it.price ?? 0) }))
+    .filter(i => i.description && i.price > 0);
+}
+
 // ─── CRM: GET /api/receipts/order/:orderId ────────────────────────────────────
 
 router.get("/order/:orderId", requireRole("admin", "master_operator"), async (req, res) => {
@@ -52,7 +63,19 @@ router.get("/order/:orderId", requireRole("admin", "master_operator"), async (re
     ? await db.select().from(mastersTable).where(eq(mastersTable.id, masterIds[0]))
     : [];
   const masterMap = new Map(masters.map(m => [m.id, m]));
-  res.json(await Promise.all(rows.map(r => buildReceiptResponse(r, masterMap.get(r.masterId)))));
+  res.json(await Promise.all(rows.map(r => buildReceiptResponse(r, masterMap.get(r.masterId), req))));
+});
+
+// ─── Master PWA: GET /api/receipts/my/:orderId ────────────────────────────────
+
+router.get("/my/:orderId", async (req: any, res) => {
+  const masterId = req.session?.masterId;
+  if (!masterId) return res.status(401).json({ error: "Не авторизован" });
+  const orderId = parseInt(req.params.orderId);
+  const rows = await db.select().from(receiptsTable)
+    .where(and(eq(receiptsTable.orderId, orderId), eq(receiptsTable.masterId, masterId)));
+  const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
+  res.json(await Promise.all(rows.map(r => buildReceiptResponse(r, master, req))));
 });
 
 // ─── Public JSON: GET /api/receipts/public/:token ─────────────────────────────
@@ -61,7 +84,42 @@ router.get("/public/:token", async (req, res) => {
   const [receipt] = await db.select().from(receiptsTable).where(eq(receiptsTable.token, req.params.token));
   if (!receipt) return res.status(404).json({ error: "Расписка не найдена" });
   const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, receipt.masterId));
-  res.json(await buildReceiptResponse(receipt, master));
+  res.json(await buildReceiptResponse(receipt, master, req));
+});
+
+// ─── PATCH /api/receipts/:id — Edit receipt (master who owns it or admin) ────
+
+router.patch("/:id", async (req: any, res) => {
+  const id = parseInt(req.params.id);
+  const masterId = req.session?.masterId;
+  const isAdmin = req.session?.userId && !masterId; // CRM user
+
+  const [receipt] = await db.select().from(receiptsTable).where(eq(receiptsTable.id, id));
+  if (!receipt) return res.status(404).json({ error: "Расписка не найдена" });
+
+  // Auth: master must own it, or must be a CRM user
+  if (!isAdmin && receipt.masterId !== masterId) {
+    return res.status(403).json({ error: "Нет доступа" });
+  }
+
+  const { lineItems, prepaymentAmount, notes } = req.body;
+  if (!Array.isArray(lineItems) || lineItems.length === 0) return res.status(400).json({ error: "Добавьте хотя бы одну позицию" });
+  if (!prepaymentAmount || Number(prepaymentAmount) <= 0) return res.status(400).json({ error: "Укажите сумму предоплаты" });
+
+  const validItems = parseLineItems(lineItems);
+  if (validItems.length === 0) return res.status(400).json({ error: "Все позиции должны иметь описание и цену" });
+
+  const totalAmount = validItems.reduce((sum, i) => sum + i.price, 0);
+
+  const [updated] = await db.update(receiptsTable).set({
+    lineItems: validItems,
+    totalAmount: String(totalAmount),
+    prepaymentAmount: String(Number(prepaymentAmount)),
+    notes: notes?.trim() || null,
+  }).where(eq(receiptsTable.id, id)).returning();
+
+  const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, updated.masterId));
+  res.json(await buildReceiptResponse(updated, master, req));
 });
 
 // ─── CRM: POST /api/receipts/crm — Admin/operator creates receipt ─────────────
@@ -76,25 +134,18 @@ router.post("/crm", requireRole("admin", "master_operator"), async (req, res) =>
   if (!order) return res.status(404).json({ error: "Заказ не найден" });
   if (!order.masterId) return res.status(400).json({ error: "К заказу не назначен мастер" });
 
-  const validItems = lineItems.map((item: any) => ({
-    description: String(item.description ?? "").trim(),
-    price: Number(item.price ?? 0),
-  })).filter(i => i.description && i.price > 0);
-
+  const validItems = parseLineItems(lineItems);
   if (validItems.length === 0) return res.status(400).json({ error: "Все позиции должны иметь описание и цену" });
 
   const totalAmount = validItems.reduce((sum, i) => sum + i.price, 0);
   const token = crypto.randomBytes(20).toString("hex");
 
-  const finalClientName = clientName?.trim() || lead?.clientName || "Клиент";
-  const finalClientPhone = clientPhone?.trim() || lead?.clientPhone || "";
-
   const [receipt] = await db.insert(receiptsTable).values({
     token,
     orderId,
     masterId: order.masterId,
-    clientName: finalClientName,
-    clientPhone: finalClientPhone,
+    clientName: clientName?.trim() || lead?.clientName || "Клиент",
+    clientPhone: clientPhone?.trim() || lead?.clientPhone || "",
     serviceType: order.serviceType,
     city: order.city,
     district: order.district ?? null,
@@ -105,7 +156,7 @@ router.post("/crm", requireRole("admin", "master_operator"), async (req, res) =>
   }).returning();
 
   const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, order.masterId));
-  res.json(await buildReceiptResponse(receipt, master));
+  res.json(await buildReceiptResponse(receipt, master, req));
 });
 
 // ─── Master PWA: POST /api/receipts — Master creates receipt ─────────────────
@@ -119,7 +170,6 @@ router.post("/", async (req: any, res) => {
   if (!Array.isArray(lineItems) || lineItems.length === 0) return res.status(400).json({ error: "Добавьте хотя бы одну позицию" });
   if (!prepaymentAmount || Number(prepaymentAmount) <= 0) return res.status(400).json({ error: "Укажите сумму предоплаты" });
 
-  // Validate order belongs to this master
   const [order] = await db.select().from(ordersTable)
     .where(and(eq(ordersTable.id, orderId), eq(ordersTable.masterId, masterId), isNull(ordersTable.deletedAt)));
   if (!order) return res.status(404).json({ error: "Заказ не найден" });
@@ -128,11 +178,7 @@ router.post("/", async (req: any, res) => {
     ? await db.select().from(leadsTable).where(eq(leadsTable.id, order.leadId))
     : [];
 
-  const validItems = lineItems.map((item: any) => ({
-    description: String(item.description ?? "").trim(),
-    price: Number(item.price ?? 0),
-  })).filter(i => i.description && i.price > 0);
-
+  const validItems = parseLineItems(lineItems);
   if (validItems.length === 0) return res.status(400).json({ error: "Все позиции должны иметь описание и цену" });
 
   const totalAmount = validItems.reduce((sum, i) => sum + i.price, 0);
@@ -154,7 +200,7 @@ router.post("/", async (req: any, res) => {
   }).returning();
 
   const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
-  res.json(await buildReceiptResponse(receipt, master));
+  res.json(await buildReceiptResponse(receipt, master, req));
 });
 
 export default router;

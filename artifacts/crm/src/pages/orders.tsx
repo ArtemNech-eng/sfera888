@@ -291,6 +291,11 @@ export default function Orders() {
   const [crmCreating, setCrmCreating] = useState(false);
   const [crmCreatedUrl, setCrmCreatedUrl] = useState<string | null>(null);
   const [crmCopied, setCrmCopied] = useState(false);
+  const [editingCrmReceiptId, setEditingCrmReceiptId] = useState<number | null>(null);
+  const [crmEditLineItems, setCrmEditLineItems] = useState([{ description: "", price: "" }]);
+  const [crmEditPrepayment, setCrmEditPrepayment] = useState("5000");
+  const [crmEditNotes, setCrmEditNotes] = useState("");
+  const [crmEditing, setCrmEditing] = useState(false);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [cancelDialogReason, setCancelDialogReason] = useState("");
   const [cancelDialogNote, setCancelDialogNote] = useState("");
@@ -1062,7 +1067,7 @@ export default function Orders() {
                   </div>
                   <p className="text-sm text-muted-foreground mt-0.5">{openOrder.serviceType} · {openOrder.city}{openOrder.district ? `, ${openOrder.district}` : ""}</p>
                 </div>
-                <button onClick={() => { setOpenDispatchId(null); setShowManualAssign(false); setSelectedMasterForAssign(""); setShowStatusLog(false); setShowReceipts(false); setShowCreateReceipt(false); setCrmCreatedUrl(null); setCrmLineItems([{ description: "", price: "" }]); setCrmPrepayment("5000"); setCrmNotes(""); setOperatorNoteEdit(null); setShowCancelDialog(false); setCancelDialogReason(""); setCancelDialogNote(""); }} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 flex-shrink-0 ml-2">
+                <button onClick={() => { setOpenDispatchId(null); setShowManualAssign(false); setSelectedMasterForAssign(""); setShowStatusLog(false); setShowReceipts(false); setShowCreateReceipt(false); setCrmCreatedUrl(null); setCrmLineItems([{ description: "", price: "" }]); setCrmPrepayment("5000"); setCrmNotes(""); setOperatorNoteEdit(null); setShowCancelDialog(false); setCancelDialogReason(""); setCancelDialogNote(""); setEditingCrmReceiptId(null); }} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 flex-shrink-0 ml-2">
                   <X className="w-4 h-4 text-muted-foreground" />
                 </button>
               </div>
@@ -1612,15 +1617,99 @@ export default function Orders() {
                             <span className="text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
                           </div>
                           {r.notes && <p className="text-xs text-muted-foreground">{r.notes}</p>}
-                          <a
-                            href={r.publicUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-1.5 text-xs text-blue-500 hover:underline"
-                          >
-                            <ExternalLink className="w-3 h-3" />
-                            Открыть расписку
-                          </a>
+                          <div className="flex items-center gap-2">
+                            <a href={r.publicUrl} target="_blank" rel="noopener noreferrer"
+                              className="flex items-center gap-1.5 text-xs text-blue-500 hover:underline">
+                              <ExternalLink className="w-3 h-3" /> Открыть
+                            </a>
+                            <button
+                              onClick={() => { navigator.clipboard.writeText(r.publicUrl); toast({ title: "Ссылка скопирована!" }); }}
+                              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                            >
+                              <Copy className="w-3 h-3" /> Ссылка
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (editingCrmReceiptId === r.id) { setEditingCrmReceiptId(null); return; }
+                                setEditingCrmReceiptId(r.id);
+                                setCrmEditLineItems(r.lineItems?.length ? r.lineItems.map((i: any) => ({ description: i.description, price: String(i.price) })) : [{ description: "", price: "" }]);
+                                setCrmEditPrepayment(String(r.prepaymentAmount));
+                                setCrmEditNotes(r.notes ?? "");
+                              }}
+                              className="flex items-center gap-1 text-xs text-primary font-medium hover:underline ml-auto"
+                            >
+                              {editingCrmReceiptId === r.id ? "Отмена" : "Изменить"}
+                            </button>
+                          </div>
+
+                          {editingCrmReceiptId === r.id && (
+                            <div className="border border-border rounded-xl p-3 space-y-2 bg-background mt-1">
+                              <p className="text-xs font-semibold">Редактирование расписки</p>
+                              <div className="space-y-1.5">
+                                <div className="flex items-center justify-between">
+                                  <p className="text-xs text-muted-foreground">Перечень работ</p>
+                                  <button onClick={() => setCrmEditLineItems(prev => [...prev, { description: "", price: "" }])}
+                                    className="text-xs text-primary flex items-center gap-0.5 font-medium">
+                                    <Plus className="w-3 h-3" /> добавить
+                                  </button>
+                                </div>
+                                {crmEditLineItems.map((item, i) => (
+                                  <div key={i} className="flex gap-1.5 items-center">
+                                    <input value={item.description}
+                                      onChange={e => setCrmEditLineItems(prev => prev.map((it, idx) => idx === i ? { ...it, description: e.target.value } : it))}
+                                      placeholder="Описание" className="flex-1 h-7 px-2 text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary/30" />
+                                    <input type="number" value={item.price}
+                                      onChange={e => setCrmEditLineItems(prev => prev.map((it, idx) => idx === i ? { ...it, price: e.target.value } : it))}
+                                      placeholder="₽" className="w-20 h-7 px-2 text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary/30" />
+                                    {crmEditLineItems.length > 1 && (
+                                      <button onClick={() => setCrmEditLineItems(prev => prev.filter((_, idx) => idx !== i))}
+                                        className="text-muted-foreground hover:text-destructive"><X className="w-3.5 h-3.5" /></button>
+                                    )}
+                                  </div>
+                                ))}
+                                {(() => { const t = crmEditLineItems.reduce((s, it) => s + (parseFloat(it.price) || 0), 0); return t > 0 ? (
+                                  <div className="flex justify-between text-xs bg-muted/50 rounded-lg px-2 py-1.5">
+                                    <span className="text-muted-foreground">Итого</span>
+                                    <span className="font-bold">{t.toLocaleString("ru-RU")} ₽</span>
+                                  </div>
+                                ) : null; })()}
+                              </div>
+                              <div>
+                                <label className="text-xs text-muted-foreground">Предоплата (₽)</label>
+                                <input type="number" value={crmEditPrepayment} onChange={e => setCrmEditPrepayment(e.target.value)}
+                                  className="w-full h-7 px-2 text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary/30 mt-0.5 font-semibold" />
+                              </div>
+                              <div>
+                                <label className="text-xs text-muted-foreground">Примечание</label>
+                                <textarea value={crmEditNotes} onChange={e => setCrmEditNotes(e.target.value)} rows={2}
+                                  className="w-full px-2 py-1 text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary/30 mt-0.5 resize-none" placeholder="Необязательно" />
+                              </div>
+                              <button
+                                disabled={crmEditing}
+                                onClick={async () => {
+                                  const valid = crmEditLineItems.filter(it => it.description.trim() && parseFloat(it.price) > 0);
+                                  if (!valid.length) { toast({ title: "Добавьте хотя бы одну позицию", variant: "destructive" }); return; }
+                                  const prepay = parseFloat(crmEditPrepayment);
+                                  if (!prepay || prepay <= 0) { toast({ title: "Введите сумму предоплаты", variant: "destructive" }); return; }
+                                  setCrmEditing(true);
+                                  try {
+                                    const resp = await fetch(`/api/receipts/${r.id}`, {
+                                      method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include",
+                                      body: JSON.stringify({ lineItems: valid.map(i => ({ description: i.description.trim(), price: parseFloat(i.price) })), prepaymentAmount: prepay, notes: crmEditNotes.trim() || undefined }),
+                                    });
+                                    if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(e.error ?? "Ошибка"); }
+                                    toast({ title: "Расписка обновлена!" });
+                                    setEditingCrmReceiptId(null);
+                                    queryClient.invalidateQueries({ queryKey: ["/api/receipts/order", openDispatchId] });
+                                  } catch (e: any) { toast({ title: e.message ?? "Ошибка", variant: "destructive" }); } finally { setCrmEditing(false); }
+                                }}
+                                className="w-full h-8 rounded-lg bg-primary text-white text-xs font-semibold flex items-center justify-center gap-1.5 disabled:opacity-60"
+                              >
+                                {crmEditing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                                Сохранить изменения
+                              </button>
+                            </div>
+                          )}
                         </div>
                       ))}
 

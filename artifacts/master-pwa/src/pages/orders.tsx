@@ -299,12 +299,38 @@ function PhotoGrid({ urls, label }: { urls: string[]; label: string }) {
 
 interface LineItem { description: string; price: string; }
 
-function ReceiptModal({ order, onClose }: { order: Order; onClose: () => void }) {
-  const [lineItems, setLineItems] = useState<LineItem[]>([{ description: "", price: "" }]);
-  const [prepayment, setPrepayment] = useState("5000");
-  const [notes, setNotes] = useState("");
+interface ExistingReceipt {
+  id: number;
+  token: string;
+  lineItems: Array<{ description: string; price: number }>;
+  totalAmount: number;
+  prepaymentAmount: number;
+  notes: string | null;
+  publicUrl: string;
+  createdAt: string;
+}
+
+function ReceiptModal({
+  order,
+  existingReceipt,
+  onSaved,
+  onClose,
+}: {
+  order: Order;
+  existingReceipt?: ExistingReceipt | null;
+  onSaved: (receipt: ExistingReceipt) => void;
+  onClose: () => void;
+}) {
+  const isEdit = !!existingReceipt;
+  const [lineItems, setLineItems] = useState<LineItem[]>(
+    isEdit
+      ? existingReceipt!.lineItems.map(i => ({ description: i.description, price: String(i.price) }))
+      : [{ description: "", price: "" }]
+  );
+  const [prepayment, setPrepayment] = useState(isEdit ? String(existingReceipt!.prepaymentAmount) : "5000");
+  const [notes, setNotes] = useState(isEdit ? (existingReceipt!.notes ?? "") : "");
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ publicUrl: string } | null>(null);
+  const [result, setResult] = useState<ExistingReceipt | null>(null);
   const [copied, setCopied] = useState(false);
 
   const addItem = () => setLineItems(prev => [...prev, { description: "", price: "" }]);
@@ -314,41 +340,44 @@ function ReceiptModal({ order, onClose }: { order: Order; onClose: () => void })
 
   const totalCalc = lineItems.reduce((s, it) => s + (parseFloat(it.price.replace(",", ".")) || 0), 0);
 
-  const handleCreate = async () => {
+  const handleSubmit = async () => {
     const valid = lineItems.filter(it => it.description.trim() && parseFloat(it.price.replace(",", ".")) > 0);
     if (valid.length === 0) { toast.error("Добавьте хотя бы одну позицию с ценой"); return; }
     const prepayNum = parseFloat(prepayment.replace(",", "."));
     if (!prepayNum || prepayNum <= 0) { toast.error("Введите сумму предоплаты"); return; }
     setLoading(true);
     try {
-      const r = await fetch(`${import.meta.env.BASE_URL}api/receipts`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          orderId: order.id,
-          lineItems: valid.map(it => ({ description: it.description.trim(), price: parseFloat(it.price.replace(",", ".")) })),
-          prepaymentAmount: prepayNum,
-          notes: notes.trim() || undefined,
-        }),
-      });
+      const body = {
+        orderId: order.id,
+        lineItems: valid.map(it => ({ description: it.description.trim(), price: parseFloat(it.price.replace(",", ".")) })),
+        prepaymentAmount: prepayNum,
+        notes: notes.trim() || undefined,
+      };
+      const url = isEdit
+        ? `${import.meta.env.BASE_URL}api/receipts/${existingReceipt!.id}`
+        : `${import.meta.env.BASE_URL}api/receipts`;
+      const method = isEdit ? "PATCH" : "POST";
+      const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify(body) });
       if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error ?? "Ошибка"); }
-      setResult(await r.json());
+      const saved = await r.json();
+      setResult(saved);
+      onSaved(saved);
     } catch (err: any) {
-      toast.error(err.message ?? "Ошибка создания расписки");
+      toast.error(err.message ?? "Ошибка");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleCopy = () => {
-    if (!result) return;
-    navigator.clipboard.writeText(result.publicUrl).then(() => {
+  const handleCopy = (url: string) => {
+    navigator.clipboard.writeText(url).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
       toast.success("Ссылка скопирована!");
     });
   };
+
+  const displayUrl = result?.publicUrl ?? existingReceipt?.publicUrl;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-end justify-center" onClick={onClose}>
@@ -359,13 +388,26 @@ function ReceiptModal({ order, onClose }: { order: Order; onClose: () => void })
         <div className="flex justify-between items-center px-5 pt-5 pb-3 flex-shrink-0">
           <h3 className="font-bold text-base flex items-center gap-2">
             <ReceiptText size={18} className="text-primary" />
-            Расписка — заказ #{order.id}
+            {isEdit ? "Изменить расписку" : `Расписка — заказ #${order.id}`}
           </h3>
           <button onClick={onClose} className="text-muted-foreground"><X size={20} /></button>
         </div>
 
         <div className="overflow-y-auto flex-1 px-5 pb-2 space-y-4">
-          {!result ? (
+          {result ? (
+            <>
+              <div className="bg-green-50 dark:bg-green-900/20 rounded-xl p-4 text-center space-y-1">
+                <CheckCircle2 size={32} className="mx-auto text-green-500" />
+                <p className="font-semibold text-green-700 dark:text-green-400">
+                  {isEdit ? "Расписка обновлена!" : "Расписка создана!"}
+                </p>
+                <p className="text-sm text-muted-foreground">Отправьте ссылку клиенту</p>
+              </div>
+              <div className="bg-muted rounded-xl p-3 text-xs break-all font-mono text-muted-foreground">
+                {result.publicUrl}
+              </div>
+            </>
+          ) : (
             <>
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
@@ -377,7 +419,7 @@ function ReceiptModal({ order, onClose }: { order: Order; onClose: () => void })
                 <div className="space-y-2">
                   {lineItems.map((item, i) => (
                     <div key={i} className="flex gap-2 items-start">
-                      <div className="flex-1 space-y-1">
+                      <div className="flex-1">
                         <input
                           value={item.description}
                           onChange={e => updateItem(i, "description", e.target.value)}
@@ -435,34 +477,14 @@ function ReceiptModal({ order, onClose }: { order: Order; onClose: () => void })
                 />
               </div>
             </>
-          ) : (
-            <>
-              <div className="bg-green-50 dark:bg-green-900/20 rounded-xl p-4 text-center space-y-1">
-                <CheckCircle2 size={32} className="mx-auto text-green-500" />
-                <p className="font-semibold text-green-700 dark:text-green-400">Расписка создана!</p>
-                <p className="text-sm text-muted-foreground">Отправьте ссылку клиенту</p>
-              </div>
-              <div className="bg-muted rounded-xl p-3 text-xs break-all font-mono text-muted-foreground">
-                {result.publicUrl}
-              </div>
-            </>
           )}
         </div>
 
         <div className="px-5 pt-3 pb-8 flex-shrink-0 space-y-2 border-t border-border">
-          {!result ? (
-            <button
-              onClick={handleCreate}
-              disabled={loading}
-              className="w-full h-12 bg-primary text-white font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-60"
-            >
-              {loading ? <Loader2 size={16} className="animate-spin" /> : <ReceiptText size={16} />}
-              Создать расписку
-            </button>
-          ) : (
+          {result ? (
             <>
               <button
-                onClick={handleCopy}
+                onClick={() => handleCopy(result.publicUrl)}
                 className="w-full h-12 bg-primary text-white font-semibold rounded-xl flex items-center justify-center gap-2"
               >
                 {copied ? <Check size={16} /> : <Copy size={16} />}
@@ -474,6 +496,26 @@ function ReceiptModal({ order, onClose }: { order: Order; onClose: () => void })
                   className="w-full h-10 rounded-xl border border-border text-sm font-medium flex items-center justify-center gap-2 text-muted-foreground"
                 >
                   Поделиться
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              <button
+                onClick={handleSubmit}
+                disabled={loading}
+                className="w-full h-12 bg-primary text-white font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-60"
+              >
+                {loading ? <Loader2 size={16} className="animate-spin" /> : <ReceiptText size={16} />}
+                {isEdit ? "Сохранить изменения" : "Создать расписку"}
+              </button>
+              {isEdit && displayUrl && (
+                <button
+                  onClick={() => handleCopy(displayUrl)}
+                  className="w-full h-10 rounded-xl border border-border text-sm font-medium flex items-center justify-center gap-2 text-muted-foreground"
+                >
+                  {copied ? <Check size={14} /> : <Copy size={14} />}
+                  {copied ? "Скопировано!" : "Скопировать текущую ссылку"}
                 </button>
               )}
             </>
@@ -490,10 +532,23 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
   const [loadingPhoto, setLoadingPhoto] = useState<string | null>(null);
   const [showComplete, setShowComplete] = useState(false);
   const [showCancel, setShowCancel] = useState(false);
-  const [showReceipt, setShowReceipt] = useState(false);
+  const [orderReceipts, setOrderReceipts] = useState<ExistingReceipt[]>([]);
+  const [editingReceipt, setEditingReceipt] = useState<ExistingReceipt | null>(null);
+  const [showNewReceipt, setShowNewReceipt] = useState(false);
   const isActive = ["master_assigned", "in_progress"].includes(order.status);
   const isCancelRequested = order.status === "cancellation_requested";
   const currentStepIdx = workStatusSteps.findIndex(s => s.key === order.masterWorkStatus);
+
+  const fetchReceipts = async () => {
+    try {
+      const r = await fetch(`${import.meta.env.BASE_URL}api/receipts/my/${order.id}`, { credentials: "include" });
+      if (r.ok) setOrderReceipts(await r.json());
+    } catch {}
+  };
+
+  useEffect(() => {
+    if (expanded && isActive) fetchReceipts();
+  }, [expanded, isActive]);
 
   const handleStatusStep = async (key: string) => {
     setLoadingStatus(key);
@@ -708,13 +763,44 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
                   </button>
                 )}
 
-                <button
-                  onClick={() => setShowReceipt(true)}
-                  className="w-full h-10 rounded-xl border border-border bg-muted/30 text-foreground text-sm font-medium flex items-center justify-center gap-2 active:opacity-80"
-                >
-                  <ReceiptText size={15} />
-                  Создать расписку клиенту
-                </button>
+                <div className="space-y-2">
+                  {orderReceipts.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                        <ReceiptText size={12} /> Расписки
+                      </p>
+                      {orderReceipts.map(r => (
+                        <div key={r.id} className="flex items-center justify-between gap-2 bg-muted/40 rounded-xl px-3 py-2.5">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold">{Number(r.totalAmount).toLocaleString("ru-RU")} ₽</p>
+                            <p className="text-xs text-muted-foreground">Предоплата: {Number(r.prepaymentAmount).toLocaleString("ru-RU")} ₽</p>
+                          </div>
+                          <div className="flex gap-1.5 flex-shrink-0">
+                            <button
+                              onClick={() => { navigator.clipboard.writeText(r.publicUrl); toast.success("Ссылка скопирована!"); }}
+                              className="h-8 px-2.5 rounded-lg border border-border bg-background text-xs font-medium flex items-center gap-1"
+                            >
+                              <Copy size={12} /> Ссылка
+                            </button>
+                            <button
+                              onClick={() => setEditingReceipt(r)}
+                              className="h-8 px-2.5 rounded-lg border border-primary/40 bg-primary/10 text-primary text-xs font-medium flex items-center gap-1"
+                            >
+                              Изменить
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    onClick={() => setShowNewReceipt(true)}
+                    className="w-full h-10 rounded-xl border border-border bg-muted/30 text-foreground text-sm font-medium flex items-center justify-center gap-2 active:opacity-80"
+                  >
+                    <ReceiptText size={15} />
+                    {orderReceipts.length > 0 ? "Создать ещё расписку" : "Создать расписку клиенту"}
+                  </button>
+                </div>
 
                 <div className="space-y-1">
                   <button
@@ -748,8 +834,19 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
           onClose={() => setShowCancel(false)}
         />
       )}
-      {showReceipt && (
-        <ReceiptModal order={order} onClose={() => setShowReceipt(false)} />
+      {(showNewReceipt || editingReceipt) && (
+        <ReceiptModal
+          order={order}
+          existingReceipt={editingReceipt ?? undefined}
+          onSaved={saved => {
+            setOrderReceipts(prev => {
+              const idx = prev.findIndex(r => r.id === saved.id);
+              if (idx >= 0) { const n = [...prev]; n[idx] = saved; return n; }
+              return [...prev, saved];
+            });
+          }}
+          onClose={() => { setShowNewReceipt(false); setEditingReceipt(null); }}
+        />
       )}
     </>
   );
