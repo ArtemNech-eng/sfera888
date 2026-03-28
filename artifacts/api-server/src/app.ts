@@ -111,7 +111,7 @@ app.get("/api/receipt/:token", async (req, res) => {
       ? `<div class="status-pill confirmed"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Оплата подтверждена</div>`
       : isClientSubmitted
         ? `<div class="status-pill pending"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Проверяем оплату</div>`
-        : `<div class="status-pill unpaid"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> Предоплата не внесена</div>`;
+        : `<div class="status-pill unpaid"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> Бронь не оплачена</div>`;
 
     const confirmSectionHtml = isClientSubmitted
       ? `<div class="state-box ${isOperatorConfirmed ? "confirmed" : "pending"}">
@@ -130,7 +130,7 @@ app.get("/api/receipt/:token", async (req, res) => {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Расписка №${receipt.id} — Честный мастер</title>
+  <title>Смета №${receipt.id} — Честный мастер</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -299,9 +299,9 @@ app.get("/api/receipt/:token", async (req, res) => {
 
   <!-- ── HEADER ── -->
   <div class="hd">
-    <div class="hd-doc">Расписка об оплате · №${receipt.id}</div>
-    <div class="hd-amount-label">Сумма предоплаты</div>
-    <div class="hd-amount">${prepayment} <span>₽</span></div>
+    <div class="hd-doc">Смета на выполнение работ · №${receipt.id}</div>
+    <div class="hd-amount-label">Итого по смете</div>
+    <div class="hd-amount">${total} <span>₽</span></div>
     <div class="hd-meta">
       <span>${date}</span>
       <span class="hd-meta-sep"></span>
@@ -381,11 +381,11 @@ app.get("/api/receipt/:token", async (req, res) => {
         <span class="totals-val">${total} ₽</span>
       </div>
       <div class="totals-row prepay">
-        <span class="totals-lbl">Предоплата (бронь)</span>
+        <span class="totals-lbl">Бронь мастера (предоплата)</span>
         <span class="totals-val">${prepayment} ₽</span>
       </div>
       <div class="totals-row remainder">
-        <span class="totals-lbl">Остаток мастеру после работ</span>
+        <span class="totals-lbl">Остаток мастеру по факту работ</span>
         <span class="totals-val">${remainder} ₽</span>
       </div>
     </div>
@@ -396,7 +396,7 @@ app.get("/api/receipt/:token", async (req, res) => {
       <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:2px"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
       <div class="trust-detail-text">
         <strong>Защита покупателя и гарантия качества</strong><br>
-        Предоплата проходит через платформу «Честный мастер». Вы получаете гарантию 6 месяцев на выполненные работы и защиту в рамках безопасной сделки. Мастер не получает деньги до выхода на заказ.
+        Бронь проходит через платформу «Честный мастер» — не напрямую мастеру. Вы получаете гарантию 6 месяцев на выполненные работы и защиту безопасной сделки. Мастер получает деньги только после выполнения работ.
       </div>
     </div>
   </div>
@@ -406,20 +406,25 @@ app.get("/api/receipt/:token", async (req, res) => {
 ${!isClientSubmitted ? `<div style="max-width:540px;width:calc(100% - 24px);margin:16px auto 0">
   <div class="pay-block">
     <div class="pay-block-head">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
       <div class="pay-block-head-text">
-        <div class="pay-block-title">Реквизиты для перевода</div>
-        <div class="pay-block-subtitle">Переведите ${prepayment} ₽ на номер телефона</div>
+        <div class="pay-block-title">Забронируйте мастера</div>
+        <div class="pay-block-subtitle">Внесите бронь ${prepayment} ₽ — мастер будет закреплён за вами</div>
       </div>
     </div>
     <div class="pay-body">
+      <div style="background:#1f2937;border-radius:10px;padding:12px 14px;margin-bottom:14px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center">
+        <div style="font-size:11px;color:#9ca3af;line-height:1.4">Мастер не<br>возьмёт другой<br>заказ</div>
+        <div style="font-size:11px;color:#9ca3af;line-height:1.4;border-left:1px solid #374151;border-right:1px solid #374151">Гарантия<br>6 месяцев<br>на работы</div>
+        <div style="font-size:11px;color:#9ca3af;line-height:1.4">Оплата<br>защищена<br>платформой</div>
+      </div>
       <div class="pay-phone-label">Номер телефона (СБП / Альфа Банк)</div>
       <a href="tel:+79892860863" class="pay-phone">8 989 286-08-63</a>
       <div class="pay-bank">Альфа Банк · СБП (Система быстрых платежей)</div>
       <div class="pay-details">
         <strong>Получатель:</strong> ИП Коваленко Игорь Геннадьевич<br>
         <strong>ИНН:</strong> 262409599800<br>
-        <strong>Назначение:</strong> Предоплата по расписке №${receipt.id}
+        <strong>Назначение:</strong> Бронирование мастера по смете №${receipt.id}
       </div>
       <button class="pay-copy-btn" id="copy-phone-btn" onclick="navigator.clipboard.writeText('79892860863').then(()=>{this.innerHTML='<svg width=\\'16\\' height=\\'16\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'#fff\\' stroke-width=\\'2.5\\' stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\'><polyline points=\\'20 6 9 17 4 12\\'/></svg> Скопировано!';setTimeout(()=>{this.innerHTML='<svg width=\\'16\\' height=\\'16\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'#fff\\' stroke-width=\\'2\\' stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\'><rect x=\\'9\\' y=\\'9\\' width=\\'13\\' height=\\'13\\' rx=\\'2\\' ry=\\'2\\'/><path d=\\'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1\\'/></svg> Скопировать номер телефона'},2500)})">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
@@ -436,8 +441,8 @@ ${!isClientSubmitted ? `<div style="max-width:540px;width:calc(100% - 24px);marg
 
 <div style="max-width:540px;width:calc(100% - 24px);margin:12px auto 0">
   <div class="form-block">
-    <div class="form-title">Подтвердите оплату</div>
-    <div class="form-sub">После перевода введите ваше ФИО и прикрепите скриншот — оператор проверит и подтвердит бронь.</div>
+    <div class="form-title">Подтвердите бронь</div>
+    <div class="form-sub">После перевода введите ваше ФИО и прикрепите скриншот — оператор подтвердит бронь и мастер будет закреплён за вашим заказом.</div>
     <div id="form-area">
       <div class="field-group">
         <label class="field-label" for="client-name">Ваше ФИО <span class="req">*</span></label>
@@ -495,7 +500,7 @@ ${!isClientSubmitted ? `<div style="max-width:540px;width:calc(100% - 24px);marg
     <div class="footer">
       <div class="footer-row">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-        Расписка №${receipt.id} сформирована автоматически и действительна без подписи
+        Смета №${receipt.id} сформирована автоматически и действительна без подписи
       </div>
       <div class="footer-row">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
