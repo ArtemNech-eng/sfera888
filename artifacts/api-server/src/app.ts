@@ -148,19 +148,18 @@ app.get("/api/receipt/:token", async (req, res) => {
     .card { background: #fff; max-width: 540px; width: calc(100% - 24px); margin: 24px auto 0; border-radius: 20px; box-shadow: 0 2px 20px rgba(0,0,0,.08), 0 0 0 1px rgba(0,0,0,.04); overflow: hidden; }
 
     /* ── Header ── */
-    .hd { background: #111827; padding: 28px 28px 24px; position: relative; overflow: hidden; }
-    .hd::before { content: ''; position: absolute; top: -40px; right: -40px; width: 180px; height: 180px; background: rgba(37,99,235,.15); border-radius: 50%; }
-    .hd::after { content: ''; position: absolute; bottom: -60px; right: 40px; width: 120px; height: 120px; background: rgba(37,99,235,.10); border-radius: 50%; }
-    .hd-doc { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #6b7280; margin-bottom: 14px; }
-    .hd-amount-label { font-size: 13px; color: #9ca3af; margin-bottom: 4px; }
-    .hd-amount { font-size: 52px; font-weight: 800; color: #fff; letter-spacing: -2px; line-height: 1; }
-    .hd-amount span { font-size: 28px; font-weight: 600; opacity: .7; }
-    .hd-meta { margin-top: 12px; font-size: 13px; color: #9ca3af; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-    .hd-meta-sep { width: 3px; height: 3px; background: #4b5563; border-radius: 50%; }
-    .status-pill { display: inline-flex; align-items: center; gap: 6px; margin-top: 18px; padding: 7px 16px; border-radius: 100px; font-size: 13px; font-weight: 600; }
-    .status-pill.unpaid { background: rgba(245,158,11,.12); color: #f59e0b; border: 1px solid rgba(245,158,11,.25); }
-    .status-pill.pending { background: rgba(99,102,241,.12); color: #818cf8; border: 1px solid rgba(99,102,241,.25); }
-    .status-pill.confirmed { background: rgba(16,185,129,.12); color: #34d399; border: 1px solid rgba(16,185,129,.25); }
+    .hd { background: #fff; padding: 22px 22px 18px; border-bottom: 1px solid #e5e7eb; }
+    .hd-doc { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #9ca3af; margin-bottom: 16px; }
+    .hd-amount-label { font-size: 12px; font-weight: 700; color: #1d4ed8; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+    .hd-amount { font-size: 48px; font-weight: 800; color: #111827; letter-spacing: -2px; line-height: 1; }
+    .hd-amount span { font-size: 26px; font-weight: 600; color: #6b7280; }
+    .hd-secondary { font-size: 13px; color: #6b7280; margin-top: 8px; }
+    .hd-meta { margin-top: 10px; font-size: 12px; color: #9ca3af; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .hd-meta-sep { width: 3px; height: 3px; background: #d1d5db; border-radius: 50%; }
+    .status-pill { display: inline-flex; align-items: center; gap: 6px; margin-top: 14px; padding: 6px 14px; border-radius: 100px; font-size: 12px; font-weight: 600; }
+    .status-pill.unpaid { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
+    .status-pill.pending { background: #ede9fe; color: #5b21b6; border: 1px solid #c4b5fd; }
+    .status-pill.confirmed { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
     .status-pill svg { flex-shrink: 0; }
 
     /* ── Trust bar ── */
@@ -237,11 +236,11 @@ app.get("/api/receipt/:token", async (req, res) => {
     .doc-stamp { text-align: center; padding: 12px 20px 0; font-size: 11px; color: #d1d5db; }
 
     /* ── Payment block ── */
-    .pay-block { margin: 20px; background: #fff; border: 1.5px solid #d1d5db; border-radius: 16px; overflow: hidden; }
-    .pay-block-head { background: #111827; padding: 16px 18px; display: flex; align-items: center; gap: 10px; }
+    .pay-block { margin: 20px; background: #fff; border: 1.5px solid #bfdbfe; border-radius: 16px; overflow: hidden; }
+    .pay-block-head { background: #eff6ff; padding: 14px 18px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #bfdbfe; }
     .pay-block-head-text { }
-    .pay-block-title { font-size: 14px; font-weight: 700; color: #fff; }
-    .pay-block-subtitle { font-size: 12px; color: #9ca3af; margin-top: 2px; }
+    .pay-block-title { font-size: 14px; font-weight: 700; color: #1e3a8a; }
+    .pay-block-subtitle { font-size: 12px; color: #3b82f6; margin-top: 2px; }
     .pay-body { padding: 16px 18px; }
     .pay-phone-label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #9ca3af; margin-bottom: 6px; }
     .pay-phone { font-size: 30px; font-weight: 800; color: #1d4ed8; letter-spacing: -1px; text-decoration: none; display: block; line-height: 1; margin-bottom: 4px; }
@@ -271,8 +270,8 @@ app.get("/api/receipt/:token", async (req, res) => {
     .upload-text { font-size: 13px; font-weight: 600; color: #1d4ed8; }
     .upload-hint { font-size: 11px; color: #9ca3af; }
     .form-error { display: none; color: #b91c1c; font-size: 13px; margin-bottom: 10px; padding: 10px 12px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; }
-    .submit-btn { width: 100%; height: 52px; background: #111827; color: #fff; font-size: 15px; font-weight: 700; border: none; border-radius: 12px; cursor: pointer; margin-top: 4px; letter-spacing: 0.01em; transition: background 0.15s; font-family: inherit; }
-    .submit-btn:hover { background: #1f2937; }
+    .submit-btn { width: 100%; height: 52px; background: #1d4ed8; color: #fff; font-size: 15px; font-weight: 700; border: none; border-radius: 12px; cursor: pointer; margin-top: 4px; letter-spacing: 0.01em; transition: background 0.15s; font-family: inherit; }
+    .submit-btn:hover { background: #1e40af; }
     .submit-btn:disabled { background: #6b7280; cursor: not-allowed; }
     .form-note { font-size: 11px; color: #9ca3af; text-align: center; margin-top: 10px; }
     .success-box { text-align: center; padding: 20px; }
@@ -280,7 +279,7 @@ app.get("/api/receipt/:token", async (req, res) => {
     .success-title { font-size: 18px; font-weight: 700; color: #111827; margin-bottom: 6px; }
     .success-sub { font-size: 13px; color: #6b7280; line-height: 1.6; }
 
-    @media(max-width: 420px) { .hd-amount { font-size: 42px; } .hd-amount span { font-size: 22px; } .info-grid { grid-template-columns: 1fr; } .parties { grid-template-columns: 1fr; } }
+    @media(max-width: 420px) { .hd-amount { font-size: 38px; } .hd-amount span { font-size: 20px; } .info-grid { grid-template-columns: 1fr; } .parties { grid-template-columns: 1fr; } }
     @media print { body { background: #fff; } .card { box-shadow: none; border-radius: 0; margin: 0; width: 100%; } .pay-block, .form-block { display: none; } }
   </style>
 </head>
@@ -299,15 +298,16 @@ app.get("/api/receipt/:token", async (req, res) => {
 
   <!-- ── HEADER ── -->
   <div class="hd">
-    <div class="hd-doc">Смета на выполнение работ · №${receipt.id}</div>
-    <div class="hd-amount-label">Итого по смете</div>
-    <div class="hd-amount">${total} <span>₽</span></div>
+    <div class="hd-doc">Смета №${receipt.id} · Честный мастер</div>
+    <div class="hd-amount-label">Сумма брони</div>
+    <div class="hd-amount">${prepayment} <span>₽</span></div>
+    <div class="hd-secondary">Итого по смете: ${total} ₽</div>
     <div class="hd-meta">
-      <span>${date}</span>
-      <span class="hd-meta-sep"></span>
       <span>${receipt.city}${district}</span>
       <span class="hd-meta-sep"></span>
       <span>${receipt.serviceType}</span>
+      <span class="hd-meta-sep"></span>
+      <span>${date}</span>
     </div>
     ${statusBadgeHtml}
   </div>
@@ -360,13 +360,9 @@ app.get("/api/receipt/:token", async (req, res) => {
         <div class="info-lbl">Адрес</div>
         <div class="info-val">${receipt.city}${district}</div>
       </div>
-      <div class="info-cell">
+      <div class="info-cell full">
         <div class="info-lbl">Исполнитель</div>
         <div class="info-val">${masterName}${masterPhone ? ` · ${masterPhone}` : ""}</div>
-      </div>
-      <div class="info-cell">
-        <div class="info-lbl">Дата документа</div>
-        <div class="info-val">${date}</div>
       </div>
     </div>
 
@@ -392,13 +388,6 @@ app.get("/api/receipt/:token", async (req, res) => {
 
     ${receipt.notes ? `<p class="section-title">Примечание</p><div class="notes-wrap"><div class="notes-text">${receipt.notes}</div></div>` : ""}
 
-    <div class="trust-detail">
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:2px"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
-      <div class="trust-detail-text">
-        <strong>Защита покупателя и гарантия качества</strong><br>
-        Бронь проходит через платформу «Честный мастер» — не напрямую мастеру. Вы получаете гарантию 6 месяцев на выполненные работы и защиту безопасной сделки. Мастер получает деньги только после выполнения работ.
-      </div>
-    </div>
   </div>
 </div>
 
@@ -406,17 +395,17 @@ app.get("/api/receipt/:token", async (req, res) => {
 ${!isClientSubmitted ? `<div style="max-width:540px;width:calc(100% - 24px);margin:16px auto 0">
   <div class="pay-block">
     <div class="pay-block-head">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
       <div class="pay-block-head-text">
         <div class="pay-block-title">Забронируйте мастера</div>
         <div class="pay-block-subtitle">Внесите бронь ${prepayment} ₽ — мастер будет закреплён за вами</div>
       </div>
     </div>
     <div class="pay-body">
-      <div style="background:#1f2937;border-radius:10px;padding:12px 14px;margin-bottom:14px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center">
-        <div style="font-size:11px;color:#9ca3af;line-height:1.4">Мастер не<br>возьмёт другой<br>заказ</div>
-        <div style="font-size:11px;color:#9ca3af;line-height:1.4;border-left:1px solid #374151;border-right:1px solid #374151">Гарантия<br>6 месяцев<br>на работы</div>
-        <div style="font-size:11px;color:#9ca3af;line-height:1.4">Оплата<br>защищена<br>платформой</div>
+      <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:12px 14px;margin-bottom:14px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center">
+        <div style="font-size:11px;color:#0369a1;line-height:1.4">Мастер не<br>возьмёт другой<br>заказ</div>
+        <div style="font-size:11px;color:#0369a1;line-height:1.4;border-left:1px solid #bae6fd;border-right:1px solid #bae6fd">Гарантия<br>6 месяцев<br>на работы</div>
+        <div style="font-size:11px;color:#0369a1;line-height:1.4">Оплата<br>защищена<br>платформой</div>
       </div>
       <div class="pay-phone-label">Номер телефона (СБП / Альфа Банк)</div>
       <a href="tel:+79892860863" class="pay-phone">8 989 286-08-63</a>
