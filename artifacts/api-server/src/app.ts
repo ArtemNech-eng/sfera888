@@ -274,13 +274,30 @@ app.get("/api/receipt/:token", async (req, res) => {
     .submit-btn:hover { background: #1e40af; }
     .submit-btn:disabled { background: #6b7280; cursor: not-allowed; }
     .form-note { font-size: 11px; color: #9ca3af; text-align: center; margin-top: 10px; }
+
+    /* ── Combined booking block ── */
+    .combined-block { background: #fff; border: 1.5px solid #bfdbfe; border-radius: 16px; overflow: hidden; }
+    .confirm-divider { display: flex; align-items: center; gap: 10px; padding: 4px 18px 16px; }
+    .confirm-divider-line { flex: 1; height: 1px; background: #e5e7eb; }
+    .confirm-divider-text { font-size: 11px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.07em; white-space: nowrap; }
+    .form-inner { padding: 0 18px 18px; }
+    .form-inner .form-sub { font-size: 13px; color: #6b7280; margin-bottom: 14px; line-height: 1.5; }
+
+    /* ── Requisites in footer ── */
+    .req-section { padding: 14px 18px; border-bottom: 1px solid #e5e7eb; }
+    .req-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #9ca3af; margin-bottom: 10px; }
+    .req-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 4px 0; border-bottom: 1px solid #f3f4f6; }
+    .req-row:last-child { border-bottom: none; }
+    .req-lbl { font-size: 12px; color: #9ca3af; white-space: nowrap; flex-shrink: 0; }
+    .req-val { font-size: 12px; color: #374151; font-weight: 500; text-align: right; }
+
     .success-box { text-align: center; padding: 20px; }
     .success-icon-wrap { width: 64px; height: 64px; background: #d1fae5; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 14px; }
     .success-title { font-size: 18px; font-weight: 700; color: #111827; margin-bottom: 6px; }
     .success-sub { font-size: 13px; color: #6b7280; line-height: 1.6; }
 
     @media(max-width: 420px) { .hd-amount { font-size: 38px; } .hd-amount span { font-size: 20px; } .info-grid { grid-template-columns: 1fr; } .parties { grid-template-columns: 1fr; } }
-    @media print { body { background: #fff; } .card { box-shadow: none; border-radius: 0; margin: 0; width: 100%; } .pay-block, .form-block { display: none; } }
+    @media print { body { background: #fff; } .card { box-shadow: none; border-radius: 0; margin: 0; width: 100%; } .combined-block, .req-section { display: none; } }
   </style>
 </head>
 <body>
@@ -342,30 +359,6 @@ app.get("/api/receipt/:token", async (req, res) => {
 
   <!-- ── BODY ── -->
   <div class="body">
-    <p class="section-title">Информация о заказе</p>
-    <div class="info-grid">
-      <div class="info-cell">
-        <div class="info-lbl">Заказчик</div>
-        <div class="info-val">${receipt.clientName}</div>
-      </div>
-      <div class="info-cell">
-        <div class="info-lbl">Телефон</div>
-        <div class="info-val">${receipt.clientPhone}</div>
-      </div>
-      <div class="info-cell">
-        <div class="info-lbl">Вид работ</div>
-        <div class="info-val">${receipt.serviceType}</div>
-      </div>
-      <div class="info-cell">
-        <div class="info-lbl">Адрес</div>
-        <div class="info-val">${receipt.city}${district}</div>
-      </div>
-      <div class="info-cell full">
-        <div class="info-lbl">Исполнитель</div>
-        <div class="info-val">${masterName}${masterPhone ? ` · ${masterPhone}` : ""}</div>
-      </div>
-    </div>
-
     <p class="section-title">Перечень работ</p>
     <div class="items-wrap">
       ${lineItems.map(item => `<div class="item-row"><span class="item-name">${item.description}</span><span class="item-amt">${Number(item.price).toLocaleString("ru-RU")} ₽</span></div>`).join("")}
@@ -391,9 +384,9 @@ app.get("/api/receipt/:token", async (req, res) => {
   </div>
 </div>
 
-<!-- ── PAYMENT BLOCK ── -->
+<!-- ── COMBINED BOOKING + CONFIRM BLOCK ── -->
 ${!isClientSubmitted ? `<div style="max-width:540px;width:calc(100% - 24px);margin:16px auto 0">
-  <div class="pay-block">
+  <div class="combined-block">
     <div class="pay-block-head">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
       <div class="pay-block-head-text">
@@ -402,76 +395,75 @@ ${!isClientSubmitted ? `<div style="max-width:540px;width:calc(100% - 24px);marg
       </div>
     </div>
     <div class="pay-body">
-      <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:12px 14px;margin-bottom:14px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center">
+      <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:10px 14px;margin-bottom:14px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center">
         <div style="font-size:11px;color:#0369a1;line-height:1.4">Мастер не<br>возьмёт другой<br>заказ</div>
         <div style="font-size:11px;color:#0369a1;line-height:1.4;border-left:1px solid #bae6fd;border-right:1px solid #bae6fd">Гарантия<br>6 месяцев<br>на работы</div>
         <div style="font-size:11px;color:#0369a1;line-height:1.4">Оплата<br>защищена<br>платформой</div>
       </div>
-      <div class="pay-phone-label">Номер телефона (СБП / Альфа Банк)</div>
+      <div class="pay-phone-label">Переведите на номер (СБП / Альфа Банк)</div>
       <a href="tel:+79892860863" class="pay-phone">8 989 286-08-63</a>
-      <div class="pay-bank">Альфа Банк · СБП (Система быстрых платежей)</div>
-      <div class="pay-details">
-        <strong>Получатель:</strong> ИП Коваленко Игорь Геннадьевич<br>
-        <strong>ИНН:</strong> 262409599800<br>
-        <strong>Назначение:</strong> Бронирование мастера по смете №${receipt.id}
-      </div>
+      <div class="pay-bank">Альфа Банк · реквизиты в разделе ниже</div>
       <button class="pay-copy-btn" id="copy-phone-btn" onclick="navigator.clipboard.writeText('79892860863').then(()=>{this.innerHTML='<svg width=\\'16\\' height=\\'16\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'#fff\\' stroke-width=\\'2.5\\' stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\'><polyline points=\\'20 6 9 17 4 12\\'/></svg> Скопировано!';setTimeout(()=>{this.innerHTML='<svg width=\\'16\\' height=\\'16\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'#fff\\' stroke-width=\\'2\\' stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\'><rect x=\\'9\\' y=\\'9\\' width=\\'13\\' height=\\'13\\' rx=\\'2\\' ry=\\'2\\'/><path d=\\'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1\\'/></svg> Скопировать номер телефона'},2500)})">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
         Скопировать номер телефона
       </button>
     </div>
-    <div class="pay-steps">
-      <div class="pay-step"><div class="pay-step-num">1</div><div class="pay-step-text">Откройте банковское приложение и переведите <strong>${prepayment} ₽</strong> на номер <strong>8 989 286-08-63</strong> через СБП</div></div>
-      <div class="pay-step"><div class="pay-step-num">2</div><div class="pay-step-text">Сделайте скриншот экрана успешного перевода</div></div>
-      <div class="pay-step"><div class="pay-step-num">3</div><div class="pay-step-text">Заполните форму ниже, прикрепите скриншот и нажмите «Отправить»</div></div>
+    <div class="confirm-divider">
+      <div class="confirm-divider-line"></div>
+      <div class="confirm-divider-text">Подтвердите перевод</div>
+      <div class="confirm-divider-line"></div>
     </div>
-  </div>
-</div>
-
-<div style="max-width:540px;width:calc(100% - 24px);margin:12px auto 0">
-  <div class="form-block">
-    <div class="form-title">Подтвердите бронь</div>
-    <div class="form-sub">После перевода введите ваше ФИО и прикрепите скриншот — оператор подтвердит бронь и мастер будет закреплён за вашим заказом.</div>
-    <div id="form-area">
-      <div class="field-group">
-        <label class="field-label" for="client-name">Ваше ФИО <span class="req">*</span></label>
-        <input id="client-name" type="text" class="field-input" placeholder="Иванов Иван Иванович" autocomplete="name" />
-      </div>
-      <div class="field-group">
-        <label class="field-label">Скриншот оплаты <span class="req">*</span></label>
-        <label class="upload-area" for="screenshot-input">
-          <div class="upload-inner">
-            <div class="upload-icon">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+    <div class="form-inner">
+      <div class="form-sub">После перевода введите ФИО и прикрепите скриншот — оператор подтвердит бронь.</div>
+      <div id="form-area">
+        <div class="field-group">
+          <label class="field-label" for="client-name">Ваше ФИО <span class="req">*</span></label>
+          <input id="client-name" type="text" class="field-input" placeholder="Иванов Иван Иванович" autocomplete="name" />
+        </div>
+        <div class="field-group">
+          <label class="field-label">Скриншот оплаты <span class="req">*</span></label>
+          <label class="upload-area" for="screenshot-input">
+            <div class="upload-inner">
+              <div class="upload-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+              </div>
+              <div class="upload-text" id="upload-text">Прикрепить скриншот</div>
+              <div class="upload-hint">JPG, PNG · до 10 МБ</div>
             </div>
-            <div class="upload-text" id="upload-text">Прикрепить скриншот</div>
-            <div class="upload-hint">JPG, PNG · до 10 МБ</div>
+          </label>
+          <input id="screenshot-input" type="file" accept="image/*" style="display:none" />
+          <div id="preview-wrap" style="display:none;margin-top:10px">
+            <img id="preview-img" src="" style="max-width:100%;border-radius:10px;border:1px solid #e5e7eb" />
           </div>
-        </label>
-        <input id="screenshot-input" type="file" accept="image/*" style="display:none" />
-        <div id="preview-wrap" style="display:none;margin-top:10px">
-          <img id="preview-img" src="" style="max-width:100%;border-radius:10px;border:1px solid #e5e7eb" />
         </div>
+        <div id="form-error" class="form-error"></div>
+        <button id="submit-btn" class="submit-btn">Отправить подтверждение</button>
+        <p class="form-note">Данные передаются оператору · Защищено платформой «Честный мастер»</p>
       </div>
-      <div id="form-error" class="form-error"></div>
-      <button id="submit-btn" class="submit-btn">Отправить подтверждение</button>
-      <p class="form-note">Данные передаются оператору для подтверждения брони · Защищено платформой «Честный мастер»</p>
-    </div>
-    <div id="success-area" style="display:none">
-      <div class="success-box">
-        <div class="success-icon-wrap">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      <div id="success-area" style="display:none">
+        <div class="success-box">
+          <div class="success-icon-wrap">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <div class="success-title">Заявка отправлена!</div>
+          <div class="success-sub">Оператор проверит ваш скриншот и подтвердит бронь в ближайшее время.</div>
         </div>
-        <div class="success-title">Заявка отправлена!</div>
-        <div class="success-sub">Оператор проверит ваш скриншот и подтвердит бронь в ближайшее время.</div>
       </div>
     </div>
   </div>
 </div>` : ""}
 
-<!-- ── BOTTOM CARD: PARTIES + FOOTER ── -->
+<!-- ── BOTTOM CARD: РЕКВИЗИТЫ + PARTIES + FOOTER ── -->
 <div style="max-width:540px;width:calc(100% - 24px);margin:12px auto 0">
   <div class="card">
+    ${!isClientSubmitted ? `<div class="req-section">
+      <div class="req-title">Реквизиты для перевода</div>
+      <div class="req-row"><span class="req-lbl">Телефон (СБП)</span><span class="req-val">8 989 286-08-63</span></div>
+      <div class="req-row"><span class="req-lbl">Банк</span><span class="req-val">Альфа Банк · СБП</span></div>
+      <div class="req-row"><span class="req-lbl">Получатель</span><span class="req-val">ИП Коваленко Игорь Геннадьевич</span></div>
+      <div class="req-row"><span class="req-lbl">ИНН</span><span class="req-val">262409599800</span></div>
+      <div class="req-row"><span class="req-lbl">Назначение</span><span class="req-val">Бронирование по смете №${receipt.id}</span></div>
+    </div>` : ""}
     <div class="parties">
       <div class="party">
         <div class="party-lbl">Исполнитель</div>
@@ -489,11 +481,7 @@ ${!isClientSubmitted ? `<div style="max-width:540px;width:calc(100% - 24px);marg
     <div class="footer">
       <div class="footer-row">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-        Смета №${receipt.id} сформирована автоматически и действительна без подписи
-      </div>
-      <div class="footer-row">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        Дата: ${date}
+        Смета №${receipt.id} · ${date} · действительна без подписи
       </div>
       <div class="footer-row">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
