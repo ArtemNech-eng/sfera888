@@ -67,10 +67,17 @@ async function runMigrations() {
       service_type TEXT NOT NULL,
       city TEXT NOT NULL,
       district TEXT,
-      amount NUMERIC(10,2) NOT NULL,
+      prepayment_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
+      total_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
+      line_items JSONB NOT NULL DEFAULT '[]',
       notes TEXT,
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
+  `);
+  await db.execute(sql`
+    ALTER TABLE receipts
+      ADD COLUMN IF NOT EXISTS total_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS line_items JSONB NOT NULL DEFAULT '[]'
   `);
   console.log("[startup] Migrations applied");
 }

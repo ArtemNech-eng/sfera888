@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import {
   ChevronDown, ChevronUp, MapPin, Phone, Ruler, Calendar,
   Camera, CheckCircle2, Image, FileText, Loader2, X, XCircle,
-  ReceiptText, Copy, Check,
+  ReceiptText, Copy, Check, Plus, Trash2,
 } from "lucide-react";
 
 interface Order {
@@ -297,28 +297,43 @@ function PhotoGrid({ urls, label }: { urls: string[]; label: string }) {
   );
 }
 
+interface LineItem { description: string; price: string; }
+
 function ReceiptModal({ order, onClose }: { order: Order; onClose: () => void }) {
-  const DEFAULT_AMOUNT = 5000;
-  const [amount, setAmount] = useState(String(DEFAULT_AMOUNT));
+  const [lineItems, setLineItems] = useState<LineItem[]>([{ description: "", price: "" }]);
+  const [prepayment, setPrepayment] = useState("5000");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ publicUrl: string } | null>(null);
   const [copied, setCopied] = useState(false);
 
+  const addItem = () => setLineItems(prev => [...prev, { description: "", price: "" }]);
+  const removeItem = (i: number) => setLineItems(prev => prev.filter((_, idx) => idx !== i));
+  const updateItem = (i: number, field: keyof LineItem, val: string) =>
+    setLineItems(prev => prev.map((item, idx) => idx === i ? { ...item, [field]: val } : item));
+
+  const totalCalc = lineItems.reduce((s, it) => s + (parseFloat(it.price.replace(",", ".")) || 0), 0);
+
   const handleCreate = async () => {
-    const amountNum = parseFloat(amount.replace(/\s/g, "").replace(",", "."));
-    if (!amountNum || amountNum <= 0) { toast.error("Введите корректную сумму"); return; }
+    const valid = lineItems.filter(it => it.description.trim() && parseFloat(it.price.replace(",", ".")) > 0);
+    if (valid.length === 0) { toast.error("Добавьте хотя бы одну позицию с ценой"); return; }
+    const prepayNum = parseFloat(prepayment.replace(",", "."));
+    if (!prepayNum || prepayNum <= 0) { toast.error("Введите сумму предоплаты"); return; }
     setLoading(true);
     try {
       const r = await fetch(`${import.meta.env.BASE_URL}api/receipts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ orderId: order.id, amount: amountNum, notes: notes.trim() || undefined }),
+        body: JSON.stringify({
+          orderId: order.id,
+          lineItems: valid.map(it => ({ description: it.description.trim(), price: parseFloat(it.price.replace(",", ".")) })),
+          prepaymentAmount: prepayNum,
+          notes: notes.trim() || undefined,
+        }),
       });
       if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error ?? "Ошибка"); }
-      const data = await r.json();
-      setResult(data);
+      setResult(await r.json());
     } catch (err: any) {
       toast.error(err.message ?? "Ошибка создания расписки");
     } finally {
@@ -337,43 +352,105 @@ function ReceiptModal({ order, onClose }: { order: Order; onClose: () => void })
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-end justify-center" onClick={onClose}>
-      <div className="w-full max-w-sm bg-card rounded-t-2xl p-5 space-y-4 pb-8" onClick={e => e.stopPropagation()}>
-        <div className="flex justify-between items-center">
-          <h3 className="font-bold text-lg flex items-center gap-2">
-            <ReceiptText size={20} className="text-primary" />
-            Расписка #{order.id}
+      <div
+        className="w-full max-w-sm bg-card rounded-t-2xl flex flex-col max-h-[90vh]"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex justify-between items-center px-5 pt-5 pb-3 flex-shrink-0">
+          <h3 className="font-bold text-base flex items-center gap-2">
+            <ReceiptText size={18} className="text-primary" />
+            Расписка — заказ #{order.id}
           </h3>
           <button onClick={onClose} className="text-muted-foreground"><X size={20} /></button>
         </div>
 
-        {!result ? (
-          <>
-            <p className="text-sm text-muted-foreground">
-              Создайте расписку об оплате и отправьте ссылку клиенту.
-            </p>
-            <div className="space-y-3">
+        <div className="overflow-y-auto flex-1 px-5 pb-2 space-y-4">
+          {!result ? (
+            <>
               <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">Сумма предоплаты (₽)</label>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Перечень работ</p>
+                  <button onClick={addItem} className="flex items-center gap-1 text-xs text-primary font-medium">
+                    <Plus size={14} /> Добавить
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {lineItems.map((item, i) => (
+                    <div key={i} className="flex gap-2 items-start">
+                      <div className="flex-1 space-y-1">
+                        <input
+                          value={item.description}
+                          onChange={e => updateItem(i, "description", e.target.value)}
+                          placeholder="Описание работы"
+                          className="w-full h-9 rounded-lg border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                        />
+                      </div>
+                      <div className="w-24 flex-shrink-0">
+                        <input
+                          type="number"
+                          value={item.price}
+                          onChange={e => updateItem(i, "price", e.target.value)}
+                          placeholder="₽"
+                          className="w-full h-9 rounded-lg border border-border bg-background px-3 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary/30"
+                          min="0"
+                        />
+                      </div>
+                      {lineItems.length > 1 && (
+                        <button onClick={() => removeItem(i)} className="mt-1 text-muted-foreground hover:text-destructive">
+                          <Trash2 size={15} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {totalCalc > 0 && (
+                  <div className="flex justify-between items-center bg-muted/50 rounded-lg px-3 py-2 mt-1">
+                    <span className="text-xs text-muted-foreground">Итого по смете</span>
+                    <span className="text-sm font-bold">{totalCalc.toLocaleString("ru-RU")} ₽</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Сумма предоплаты (₽)</label>
                 <input
                   type="number"
-                  value={amount}
-                  onChange={e => setAmount(e.target.value)}
-                  className="w-full h-11 rounded-xl border border-border bg-background px-3 text-base font-semibold focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  value={prepayment}
+                  onChange={e => setPrepayment(e.target.value)}
+                  className="w-full h-11 rounded-xl border-2 border-primary/40 bg-background px-3 text-base font-bold focus:outline-none focus:ring-2 focus:ring-primary/30"
                   placeholder="5000"
                   min="1"
                 />
+                <p className="text-xs text-muted-foreground">Сумма, которую клиент уже оплатил</p>
               </div>
+
               <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">Примечание (не обязательно)</label>
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Примечание</label>
                 <textarea
                   value={notes}
                   onChange={e => setNotes(e.target.value)}
                   rows={2}
                   className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  placeholder="Напр.: монтаж натяжного потолка, зал"
+                  placeholder="Необязательно"
                 />
               </div>
-            </div>
+            </>
+          ) : (
+            <>
+              <div className="bg-green-50 dark:bg-green-900/20 rounded-xl p-4 text-center space-y-1">
+                <CheckCircle2 size={32} className="mx-auto text-green-500" />
+                <p className="font-semibold text-green-700 dark:text-green-400">Расписка создана!</p>
+                <p className="text-sm text-muted-foreground">Отправьте ссылку клиенту</p>
+              </div>
+              <div className="bg-muted rounded-xl p-3 text-xs break-all font-mono text-muted-foreground">
+                {result.publicUrl}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="px-5 pt-3 pb-8 flex-shrink-0 space-y-2 border-t border-border">
+          {!result ? (
             <button
               onClick={handleCreate}
               disabled={loading}
@@ -382,34 +459,26 @@ function ReceiptModal({ order, onClose }: { order: Order; onClose: () => void })
               {loading ? <Loader2 size={16} className="animate-spin" /> : <ReceiptText size={16} />}
               Создать расписку
             </button>
-          </>
-        ) : (
-          <>
-            <div className="bg-green-50 dark:bg-green-900/20 rounded-xl p-4 text-center space-y-1">
-              <CheckCircle2 size={32} className="mx-auto text-green-500" />
-              <p className="font-semibold text-green-700 dark:text-green-400">Расписка создана!</p>
-              <p className="text-sm text-muted-foreground">Скопируйте ссылку и отправьте клиенту</p>
-            </div>
-            <div className="bg-muted rounded-xl p-3 text-xs break-all font-mono text-muted-foreground">
-              {result.publicUrl}
-            </div>
-            <button
-              onClick={handleCopy}
-              className="w-full h-12 bg-primary text-white font-semibold rounded-xl flex items-center justify-center gap-2"
-            >
-              {copied ? <Check size={16} /> : <Copy size={16} />}
-              {copied ? "Скопировано!" : "Скопировать ссылку"}
-            </button>
-            {navigator.share && (
+          ) : (
+            <>
               <button
-                onClick={() => navigator.share({ title: "Расписка об оплате", url: result.publicUrl })}
-                className="w-full h-10 rounded-xl border border-border text-sm font-medium flex items-center justify-center gap-2 text-muted-foreground"
+                onClick={handleCopy}
+                className="w-full h-12 bg-primary text-white font-semibold rounded-xl flex items-center justify-center gap-2"
               >
-                Поделиться
+                {copied ? <Check size={16} /> : <Copy size={16} />}
+                {copied ? "Скопировано!" : "Скопировать ссылку"}
               </button>
-            )}
-          </>
-        )}
+              {typeof navigator.share === "function" && (
+                <button
+                  onClick={() => navigator.share({ title: "Расписка об оплате", url: result.publicUrl })}
+                  className="w-full h-10 rounded-xl border border-border text-sm font-medium flex items-center justify-center gap-2 text-muted-foreground"
+                >
+                  Поделиться
+                </button>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

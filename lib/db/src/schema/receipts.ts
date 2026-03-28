@@ -1,6 +1,11 @@
-import { pgTable, serial, integer, text, numeric, timestamp, varchar } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, numeric, timestamp, varchar, jsonb } from "drizzle-orm/pg-core";
 import { ordersTable } from "./orders";
 import { mastersTable } from "./masters";
+
+export interface LineItem {
+  description: string;
+  price: number;
+}
 
 export const receiptsTable = pgTable("receipts", {
   id: serial("id").primaryKey(),
@@ -12,7 +17,9 @@ export const receiptsTable = pgTable("receipts", {
   serviceType: text("service_type").notNull(),
   city: text("city").notNull(),
   district: text("district"),
-  amount: numeric("amount", { precision: 10, scale: 2 }).notNull(),
+  lineItems: jsonb("line_items").$type<LineItem[]>().notNull().default([]),
+  totalAmount: numeric("total_amount", { precision: 10, scale: 2 }).notNull(),
+  prepaymentAmount: numeric("prepayment_amount", { precision: 10, scale: 2 }).notNull(),
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

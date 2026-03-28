@@ -9,7 +9,7 @@ import {
   Loader2, MapPin, Send, Users, CheckCircle2, Clock, X, UserCheck,
   DollarSign, Check, Pencil, AlertCircle, MessageSquare, Trash2, Search,
   ClipboardList, CalendarDays, ChevronDown, Filter, Settings, AlertTriangle,
-  FileText, History, Timer, RefreshCw, CopyX, XCircle, ReceiptText, ExternalLink,
+  FileText, History, Timer, RefreshCw, CopyX, XCircle, ReceiptText, ExternalLink, Plus, Copy,
 } from "lucide-react";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -284,6 +284,13 @@ export default function Orders() {
   const [operatorNoteEdit, setOperatorNoteEdit] = useState<string | null>(null);
   const [showStatusLog, setShowStatusLog] = useState(false);
   const [showReceipts, setShowReceipts] = useState(false);
+  const [showCreateReceipt, setShowCreateReceipt] = useState(false);
+  const [crmLineItems, setCrmLineItems] = useState([{ description: "", price: "" }]);
+  const [crmPrepayment, setCrmPrepayment] = useState("5000");
+  const [crmNotes, setCrmNotes] = useState("");
+  const [crmCreating, setCrmCreating] = useState(false);
+  const [crmCreatedUrl, setCrmCreatedUrl] = useState<string | null>(null);
+  const [crmCopied, setCrmCopied] = useState(false);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [cancelDialogReason, setCancelDialogReason] = useState("");
   const [cancelDialogNote, setCancelDialogNote] = useState("");
@@ -355,7 +362,7 @@ export default function Orders() {
     enabled: !!openDispatchId && showStatusLog,
   });
 
-  interface ReceiptEntry { id: number; token: string; amount: number; notes: string | null; clientName: string; clientPhone: string; createdAt: string; publicUrl: string; }
+  interface ReceiptEntry { id: number; token: string; prepaymentAmount: number; totalAmount: number; notes: string | null; clientName: string; clientPhone: string; createdAt: string; publicUrl: string; lineItems: { description: string; price: number }[]; }
   const { data: receipts } = useQuery<ReceiptEntry[]>({
     queryKey: ["/api/receipts/order", openDispatchId],
     queryFn: async () => {
@@ -1055,7 +1062,7 @@ export default function Orders() {
                   </div>
                   <p className="text-sm text-muted-foreground mt-0.5">{openOrder.serviceType} · {openOrder.city}{openOrder.district ? `, ${openOrder.district}` : ""}</p>
                 </div>
-                <button onClick={() => { setOpenDispatchId(null); setShowManualAssign(false); setSelectedMasterForAssign(""); setShowStatusLog(false); setShowReceipts(false); setOperatorNoteEdit(null); setShowCancelDialog(false); setCancelDialogReason(""); setCancelDialogNote(""); }} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 flex-shrink-0 ml-2">
+                <button onClick={() => { setOpenDispatchId(null); setShowManualAssign(false); setSelectedMasterForAssign(""); setShowStatusLog(false); setShowReceipts(false); setShowCreateReceipt(false); setCrmCreatedUrl(null); setCrmLineItems([{ description: "", price: "" }]); setCrmPrepayment("5000"); setCrmNotes(""); setOperatorNoteEdit(null); setShowCancelDialog(false); setCancelDialogReason(""); setCancelDialogNote(""); }} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 flex-shrink-0 ml-2">
                   <X className="w-4 h-4 text-muted-foreground" />
                 </button>
               </div>
@@ -1591,13 +1598,17 @@ export default function Orders() {
                   {showReceipts && (
                     <div className="mt-2 space-y-2">
                       {!receipts && <div className="text-xs text-muted-foreground text-center py-2"><Loader2 className="w-3 h-3 animate-spin mx-auto" /></div>}
-                      {receipts && receipts.length === 0 && (
+                      {receipts?.length === 0 && !showCreateReceipt && (
                         <p className="text-xs text-muted-foreground/60 text-center py-2">Расписок нет</p>
                       )}
                       {receipts?.map(r => (
-                        <div key={r.id} className="bg-muted/40 rounded-xl p-3 space-y-1">
+                        <div key={r.id} className="bg-muted/40 rounded-xl p-3 space-y-1.5">
                           <div className="flex items-center justify-between">
-                            <span className="text-sm font-bold text-primary">{Number(r.amount).toLocaleString("ru-RU")} ₽</span>
+                            <div>
+                              <span className="text-xs text-muted-foreground">Предоплата: </span>
+                              <span className="text-sm font-bold text-primary">{Number(r.prepaymentAmount).toLocaleString("ru-RU")} ₽</span>
+                              <span className="text-xs text-muted-foreground ml-2">/ {Number(r.totalAmount).toLocaleString("ru-RU")} ₽ итого</span>
+                            </div>
                             <span className="text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
                           </div>
                           {r.notes && <p className="text-xs text-muted-foreground">{r.notes}</p>}
@@ -1612,6 +1623,153 @@ export default function Orders() {
                           </a>
                         </div>
                       ))}
+
+                      {/* ── Create receipt form ── */}
+                      {!showCreateReceipt && !crmCreatedUrl && (
+                        <button
+                          onClick={() => { setShowCreateReceipt(true); setCrmCreatedUrl(null); setCrmCopied(false); }}
+                          className="w-full flex items-center justify-center gap-1.5 text-xs text-primary font-semibold py-2 border border-dashed border-primary/40 rounded-xl hover:bg-primary/5 transition-colors"
+                        >
+                          <Plus className="w-3.5 h-3.5" /> Создать расписку
+                        </button>
+                      )}
+
+                      {crmCreatedUrl && (
+                        <div className="bg-green-50 dark:bg-green-900/20 rounded-xl p-3 space-y-2">
+                          <div className="flex items-center gap-2 text-green-700 dark:text-green-400 font-semibold text-xs">
+                            <CheckCircle2 className="w-4 h-4" /> Расписка создана
+                          </div>
+                          <div className="bg-white dark:bg-muted rounded-lg p-2 text-xs font-mono break-all text-muted-foreground">{crmCreatedUrl}</div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => { navigator.clipboard.writeText(crmCreatedUrl!); setCrmCopied(true); setTimeout(() => setCrmCopied(false), 2000); }}
+                              className="flex-1 flex items-center justify-center gap-1.5 h-8 rounded-lg bg-primary text-white text-xs font-semibold"
+                            >
+                              {crmCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                              {crmCopied ? "Скопировано" : "Скопировать"}
+                            </button>
+                            <a href={crmCreatedUrl} target="_blank" rel="noopener noreferrer"
+                              className="flex items-center justify-center gap-1.5 h-8 px-3 rounded-lg border border-border text-xs text-muted-foreground hover:bg-muted">
+                              <ExternalLink className="w-3 h-3" /> Открыть
+                            </a>
+                          </div>
+                          <button onClick={() => { setShowCreateReceipt(true); setCrmCreatedUrl(null); }}
+                            className="w-full text-xs text-primary hover:underline">+ Ещё расписка</button>
+                        </div>
+                      )}
+
+                      {showCreateReceipt && !crmCreatedUrl && (
+                        <div className="border border-border rounded-xl p-3 space-y-3 bg-muted/20">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-semibold text-foreground">Новая расписка</p>
+                            <button onClick={() => setShowCreateReceipt(false)} className="text-muted-foreground hover:text-foreground">
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <p className="text-xs font-medium text-muted-foreground">Перечень работ</p>
+                              <button
+                                onClick={() => setCrmLineItems(prev => [...prev, { description: "", price: "" }])}
+                                className="text-xs text-primary flex items-center gap-0.5 font-medium"
+                              >
+                                <Plus className="w-3 h-3" /> добавить
+                              </button>
+                            </div>
+                            {crmLineItems.map((item, i) => (
+                              <div key={i} className="flex gap-1.5 items-center">
+                                <input
+                                  value={item.description}
+                                  onChange={e => setCrmLineItems(prev => prev.map((it, idx) => idx === i ? { ...it, description: e.target.value } : it))}
+                                  placeholder="Описание"
+                                  className="flex-1 h-8 rounded-lg border border-border bg-background px-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/40"
+                                />
+                                <input
+                                  type="number"
+                                  value={item.price}
+                                  onChange={e => setCrmLineItems(prev => prev.map((it, idx) => idx === i ? { ...it, price: e.target.value } : it))}
+                                  placeholder="₽"
+                                  className="w-20 h-8 rounded-lg border border-border bg-background px-2 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-primary/40"
+                                />
+                                {crmLineItems.length > 1 && (
+                                  <button onClick={() => setCrmLineItems(prev => prev.filter((_, idx) => idx !== i))} className="text-muted-foreground hover:text-destructive">
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                            {(() => {
+                              const t = crmLineItems.reduce((s, it) => s + (parseFloat(it.price) || 0), 0);
+                              return t > 0 ? (
+                                <div className="flex justify-between text-xs px-1">
+                                  <span className="text-muted-foreground">Итого</span>
+                                  <span className="font-bold">{t.toLocaleString("ru-RU")} ₽</span>
+                                </div>
+                              ) : null;
+                            })()}
+                          </div>
+
+                          <div className="space-y-1">
+                            <p className="text-xs font-medium text-muted-foreground">Предоплата (₽)</p>
+                            <input
+                              type="number"
+                              value={crmPrepayment}
+                              onChange={e => setCrmPrepayment(e.target.value)}
+                              className="w-full h-9 rounded-lg border-2 border-primary/40 bg-background px-3 text-sm font-bold focus:outline-none focus:ring-1 focus:ring-primary/40"
+                              placeholder="5000"
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <p className="text-xs font-medium text-muted-foreground">Примечание</p>
+                            <textarea
+                              value={crmNotes}
+                              onChange={e => setCrmNotes(e.target.value)}
+                              rows={2}
+                              className="w-full rounded-lg border border-border bg-background px-2.5 py-2 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-primary/40"
+                              placeholder="Необязательно"
+                            />
+                          </div>
+
+                          <button
+                            disabled={crmCreating}
+                            onClick={async () => {
+                              const valid = crmLineItems.filter(it => it.description.trim() && parseFloat(it.price) > 0);
+                              if (valid.length === 0) { toast({ title: "Ошибка", description: "Добавьте хотя бы одну позицию", variant: "destructive" }); return; }
+                              const prep = parseFloat(crmPrepayment);
+                              if (!prep || prep <= 0) { toast({ title: "Ошибка", description: "Укажите сумму предоплаты", variant: "destructive" }); return; }
+                              setCrmCreating(true);
+                              try {
+                                const r = await fetch("/api/receipts/crm", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  credentials: "include",
+                                  body: JSON.stringify({
+                                    orderId: openDispatchId,
+                                    lineItems: valid.map(it => ({ description: it.description.trim(), price: parseFloat(it.price) })),
+                                    prepaymentAmount: prep,
+                                    notes: crmNotes.trim() || undefined,
+                                  }),
+                                });
+                                if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error ?? "Ошибка"); }
+                                const data = await r.json();
+                                setCrmCreatedUrl(data.publicUrl);
+                                setShowCreateReceipt(false);
+                                queryClient.invalidateQueries({ queryKey: ["/api/receipts/order", openDispatchId] });
+                              } catch (err: any) {
+                                toast({ title: "Ошибка", description: err.message, variant: "destructive" });
+                              } finally {
+                                setCrmCreating(false);
+                              }
+                            }}
+                            className="w-full h-9 bg-primary text-white text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 disabled:opacity-60"
+                          >
+                            {crmCreating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ReceiptText className="w-3.5 h-3.5" />}
+                            Создать расписку
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1702,7 +1860,7 @@ export default function Orders() {
                 )}
 
                 <div className="pt-2 flex justify-end">
-                  <button onClick={() => { setOpenDispatchId(null); setShowStatusLog(false); setShowReceipts(false); setOperatorNoteEdit(null); }} className="px-4 py-2 rounded-xl font-medium text-muted-foreground hover:bg-slate-100 text-sm">
+                  <button onClick={() => { setOpenDispatchId(null); setShowStatusLog(false); setShowReceipts(false); setShowCreateReceipt(false); setCrmCreatedUrl(null); setCrmLineItems([{ description: "", price: "" }]); setCrmPrepayment("5000"); setCrmNotes(""); setOperatorNoteEdit(null); }} className="px-4 py-2 rounded-xl font-medium text-muted-foreground hover:bg-slate-100 text-sm">
                     Закрыть
                   </button>
                 </div>
