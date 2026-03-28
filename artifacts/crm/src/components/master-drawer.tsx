@@ -71,7 +71,7 @@ export interface DrawerMaster {
 }
 
 interface MasterTask { id: number; masterId: number; text: string; dueAt: string | null; isCompleted: boolean; createdBy: string | null; createdAt: string; }
-interface HistoryOrder { id: number; status: string; serviceType: string; district: string; city: string; clientName: string | null; clientPhone: string | null; scheduledAt: string | null; completedAt: string | null; createdAt: string; orderAmount: number | null; commission: number | null; paymentStatus: string | null; }
+interface HistoryOrder { id: number; status: string; serviceType: string; district: string; city: string; leadId: number | null; clientName: string | null; clientPhone: string | null; scheduledAt: string | null; completedAt: string | null; createdAt: string; orderAmount: number | null; commission: number | null; paymentStatus: string | null; }
 interface ChatMessage { id: number; text: string; photoUrl: string | null; fromMaster: boolean; senderName: string | null; isRead: boolean; createdAt: string; }
 interface PendingTx { id: number; orderId: number; orderAmount: number; commission: number; }
 interface MasterReview { id: number; masterId: number; orderId: number | null; sentiment: string; text: string; createdBy: string | null; createdAt: string; }
@@ -1235,11 +1235,26 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                     </div>
                     <OrderStatusBadge status={o.status} />
                   </div>
-                  {o.clientName && <p className="text-[11px] text-gray-500 flex items-center gap-1"><User className="w-3 h-3" />{o.clientName}</p>}
-                  {o.clientPhone && (
-                    <a href={`tel:${o.clientPhone}`} className="text-[11px] text-emerald-600 font-medium flex items-center gap-1 hover:underline">
-                      <Phone className="w-3 h-3" />{o.clientPhone}
-                    </a>
+                  {(o.clientName || o.clientPhone) && (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {o.clientName && (
+                        o.leadId ? (
+                          <button
+                            onClick={() => { onClose(); setTimeout(() => setLocation(`/leads?openLead=${o.leadId}`), 50); }}
+                            className="text-[11px] text-blue-600 font-medium flex items-center gap-1 hover:underline"
+                          >
+                            <User className="w-3 h-3" />{o.clientName}
+                          </button>
+                        ) : (
+                          <p className="text-[11px] text-gray-500 flex items-center gap-1"><User className="w-3 h-3" />{o.clientName}</p>
+                        )
+                      )}
+                      {o.clientPhone && (
+                        <a href={`tel:${o.clientPhone}`} className="text-[11px] text-emerald-600 font-medium flex items-center gap-1 hover:underline">
+                          <Phone className="w-3 h-3" />{o.clientPhone}
+                        </a>
+                      )}
+                    </div>
                   )}
                   {/* Financial data */}
                   {o.orderAmount != null && (

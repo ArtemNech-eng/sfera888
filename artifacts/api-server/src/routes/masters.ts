@@ -303,6 +303,7 @@ router.get("/:id/orders", allMasterRoles, async (req, res) => {
       serviceType: o.serviceType,
       district: o.district,
       city: o.city,
+      leadId: o.leadId ?? null,
       clientName: lead?.clientName ?? null,
       clientPhone: lead?.clientPhone ?? null,
       scheduledAt: o.scheduledAt,

@@ -7,7 +7,7 @@ import {
   AlertTriangle, MapPin, Search, X, Users, Zap, UserX, Filter,
   FileSignature, Trash2, Smartphone, ChevronDown, Tag, ArrowUpDown, XCircle,
   LayoutList, Columns, Settings, ArrowRight, Edit2, Banknote, User,
-  ChevronUp, RefreshCw, AlertCircle, Clock, Check, UserCheck, SlidersHorizontal,
+  ChevronUp, RefreshCw, AlertCircle, Clock, Check, UserCheck, SlidersHorizontal, CheckCircle2,
 } from "lucide-react";
 import { Avatar, MasterDrawer, OnlineBadge } from "@/components/master-drawer";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
@@ -32,6 +32,7 @@ interface Master {
   isTestMaster: boolean; avatarUrl: string | null; activeOrders: ActiveOrder[];
   createdAt: string; pwaLogin?: string | null; lastSeenAt?: string | null;
   cancelCount30d?: number; cancelCount7d?: number;
+  completedOrders?: number; cancelledOrders?: number;
   pendingTransactionsCount?: number; contractLink?: string | null;
 }
 
@@ -163,11 +164,28 @@ function MasterRow({ master, onOpenDrawer, onDelete, onGoToChat }: {
           </div>
           <div className="text-[10px] text-gray-400">{master.rating.toFixed(1)}</div>
         </div>
-        <div className="text-center hidden md:block">
-          <div className="font-semibold text-gray-700 flex items-center gap-0.5">
-            <Briefcase className="w-3 h-3 text-gray-400" />{master.totalOrders}
-          </div>
-          <div className="text-[10px] text-gray-400">заказов</div>
+        <div className="hidden md:flex items-center gap-1.5">
+          {master.activeOrders.length > 0 && (
+            <span title={`Активных заказов: ${master.activeOrders.length}`}
+              className="flex items-center gap-0.5 text-[10px] font-semibold bg-blue-50 text-blue-600 rounded-lg px-1.5 py-0.5">
+              <Clock className="w-2.5 h-2.5" />{master.activeOrders.length}
+            </span>
+          )}
+          {(master.completedOrders ?? 0) > 0 && (
+            <span title={`Завершённых заказов: ${master.completedOrders}`}
+              className="flex items-center gap-0.5 text-[10px] font-semibold bg-emerald-50 text-emerald-600 rounded-lg px-1.5 py-0.5">
+              <CheckCircle2 className="w-2.5 h-2.5" />{master.completedOrders}
+            </span>
+          )}
+          {(master.cancelledOrders ?? 0) > 0 && (
+            <span title={`Отменённых заказов: ${master.cancelledOrders}`}
+              className="flex items-center gap-0.5 text-[10px] font-semibold bg-gray-100 text-gray-400 rounded-lg px-1.5 py-0.5">
+              <XCircle className="w-2.5 h-2.5" />{master.cancelledOrders}
+            </span>
+          )}
+          {master.activeOrders.length === 0 && (master.completedOrders ?? 0) === 0 && (master.cancelledOrders ?? 0) === 0 && (
+            <span className="text-[10px] text-gray-300 font-medium">0 зак.</span>
+          )}
         </div>
         {master.debt > 0 && (
           <div className="text-center hidden md:block">

@@ -203,6 +203,26 @@ export default function Orders() {
     },
   });
 
+  const restoreOrderMutation = useMutation({
+    mutationFn: async (orderId: number) => {
+      const r = await fetch(`/api/orders/${orderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ status: "waiting_master" }),
+      });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Ошибка"); }
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      setOpenDispatchId(null);
+      setStatusFilter("active");
+      toast({ title: "Заказ восстановлен", description: "Заказ возвращён в статус «Ожидает мастера»." });
+    },
+    onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
+  });
+
   const approveCancellationMutation = useMutation({
     mutationFn: async (orderId: number) => {
       const r = await fetch(`/api/orders/${orderId}`, {
@@ -771,6 +791,7 @@ export default function Orders() {
                     <th className="px-3 py-2.5 pl-4">Статус</th>
                     <th className="px-3 py-2.5">ID</th>
                     <th className="px-3 py-2.5">Услуга · Локация</th>
+                    <th className="px-3 py-2.5">Клиент</th>
                     <th className="px-3 py-2.5">Мастер</th>
                     <th className="px-3 py-2.5">Сумма</th>
                     <th className="px-3 py-2.5 pr-4 text-right">Действия</th>
@@ -841,6 +862,24 @@ export default function Orders() {
                           </p>
                         </td>
 
+                        {/* Client */}
+                        <td className="px-3 py-2.5 max-w-[140px]">
+                          {(order as any).clientName ? (
+                            <p className="text-sm font-medium text-foreground truncate">{(order as any).clientName}</p>
+                          ) : null}
+                          {(order as any).clientPhone ? (
+                            <a
+                              href={`tel:${(order as any).clientPhone}`}
+                              onClick={e => e.stopPropagation()}
+                              className="text-xs text-blue-600 hover:underline"
+                            >
+                              {(order as any).clientPhone}
+                            </a>
+                          ) : (
+                            !((order as any).clientName) && <span className="text-muted-foreground/40 text-xs">—</span>
+                          )}
+                        </td>
+
                         {/* Master */}
                         <td className="px-3 py-2.5 whitespace-nowrap">
                           {order.masterName ? (
@@ -905,13 +944,25 @@ export default function Orders() {
                             >
                               <ClipboardList className="w-3.5 h-3.5" />
                             </button>
-                            <button
-                              onClick={e => { e.stopPropagation(); deleteOrderMutation.mutate(order.id); }}
-                              title="В корзину"
-                              className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground/30 hover:text-red-500 hover:bg-red-50 transition-all"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            {order.status === "cancelled" ? (
+                              <button
+                                onClick={e => { e.stopPropagation(); restoreOrderMutation.mutate(order.id); }}
+                                title="Восстановить заказ"
+                                disabled={restoreOrderMutation.isPending}
+                                className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-emerald-600 hover:bg-emerald-50 border border-emerald-200 hover:border-emerald-400 transition-all"
+                              >
+                                {restoreOrderMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                                Восстановить
+                              </button>
+                            ) : (
+                              <button
+                                onClick={e => { e.stopPropagation(); deleteOrderMutation.mutate(order.id); }}
+                                title="В корзину"
+                                className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground/30 hover:text-red-500 hover:bg-red-50 transition-all"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -1081,6 +1132,16 @@ export default function Orders() {
                     <button onClick={() => { setOpenDispatchId(null); setLocation(`/tasks?newOrder=${openDispatchId}`); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-border rounded-lg text-xs font-medium text-foreground hover:bg-slate-100 transition-colors">
                       <ClipboardList className="w-3 h-3" />Создать задачу
                     </button>
+                    {openOrder.status === "cancelled" && (
+                      <button
+                        onClick={() => restoreOrderMutation.mutate(openDispatchId!)}
+                        disabled={restoreOrderMutation.isPending}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-300 rounded-lg text-xs font-medium text-emerald-700 hover:bg-emerald-100 transition-colors disabled:opacity-50"
+                      >
+                        {restoreOrderMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                        Восстановить заказ
+                      </button>
+                    )}
                     {openOrder.status !== "cancelled" && openOrder.status !== "completed" && !showCancelDialog && (
                       <button
                         onClick={() => { setShowCancelDialog(true); setCancelDialogReason(""); setCancelDialogNote(""); }}

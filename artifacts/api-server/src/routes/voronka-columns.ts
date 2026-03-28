@@ -93,7 +93,15 @@ router.get("/masters", requireAuth, async (_req, res) => {
   const thirtyDaysAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
   const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
 
-  const [cancelRows30d, cancelRows7d] = await Promise.all([
+  const [completedRows, cancelledRows, cancelRows30d, cancelRows7d] = await Promise.all([
+    db.select({ masterId: ordersTable.masterId, cnt: count() })
+      .from(ordersTable)
+      .where(and(isNotNull(ordersTable.masterId), eq(ordersTable.status, "completed")))
+      .groupBy(ordersTable.masterId),
+    db.select({ masterId: ordersTable.masterId, cnt: count() })
+      .from(ordersTable)
+      .where(and(isNotNull(ordersTable.masterId), eq(ordersTable.status, "cancelled"), isNull(ordersTable.deletedAt)))
+      .groupBy(ordersTable.masterId),
     db.select({ masterId: ordersTable.masterId, cnt: count() })
       .from(ordersTable)
       .where(and(isNotNull(ordersTable.masterId), isNotNull(ordersTable.cancelType), ne(ordersTable.cancelType, "client_refused"), gte(ordersTable.updatedAt, thirtyDaysAgo)))
@@ -103,6 +111,8 @@ router.get("/masters", requireAuth, async (_req, res) => {
       .where(and(isNotNull(ordersTable.masterId), isNotNull(ordersTable.cancelType), ne(ordersTable.cancelType, "client_refused"), gte(ordersTable.updatedAt, sevenDaysAgo)))
       .groupBy(ordersTable.masterId),
   ]);
+  const completedMap = new Map(completedRows.map(r => [r.masterId!, Number(r.cnt)]));
+  const cancelledMap = new Map(cancelledRows.map(r => [r.masterId!, Number(r.cnt)]));
   const cancelMap30d = new Map(cancelRows30d.map(r => [r.masterId!, Number(r.cnt)]));
   const cancelMap7d = new Map(cancelRows7d.map(r => [r.masterId!, Number(r.cnt)]));
 
@@ -173,6 +183,8 @@ router.get("/masters", requireAuth, async (_req, res) => {
     lastSeenAt: m.lastSeenAt ?? null,
     cancelCount30d: cancelMap30d.get(m.id) ?? 0,
     cancelCount7d: cancelMap7d.get(m.id) ?? 0,
+    completedOrders: completedMap.get(m.id) ?? 0,
+    cancelledOrders: cancelledMap.get(m.id) ?? 0,
   })));
 });
 

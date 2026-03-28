@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Layout } from "@/components/layout";
 import { useGetLeads, useCreateLead, useSendLeadToBuffer, useGetCities, useGetServices, LeadStatus } from "@workspace/api-client-react";
 import { ProtectedRoute } from "@/hooks/use-auth";
@@ -65,6 +65,19 @@ export default function Leads() {
     { status: statusFilter || undefined },
     { query: { refetchInterval: 10000 } }
   );
+
+  // Auto-open lead from URL param (e.g. ?openLead=123)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const openLeadId = parseInt(params.get("openLead") ?? "");
+    if (openLeadId && leads) {
+      const found = leads.find((l: any) => l.id === openLeadId);
+      if (found) {
+        setSelectedLead(found as any);
+        window.history.replaceState({}, "", window.location.pathname);
+      }
+    }
+  }, [leads]);
 
   const { data: cities } = useGetCities();
   const { data: services } = useGetServices();
