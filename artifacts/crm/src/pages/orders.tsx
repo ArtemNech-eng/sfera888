@@ -284,6 +284,7 @@ export default function Orders() {
   const [operatorNoteEdit, setOperatorNoteEdit] = useState<string | null>(null);
   const [showStatusLog, setShowStatusLog] = useState(false);
   const [showReceipts, setShowReceipts] = useState(false);
+  const [showPaidCommissions, setShowPaidCommissions] = useState(false);
   const [showCreateReceipt, setShowCreateReceipt] = useState(false);
   const [crmLineItems, setCrmLineItems] = useState([{ description: "", price: "" }]);
   const [crmPrepayment, setCrmPrepayment] = useState("5000");
@@ -375,7 +376,7 @@ export default function Orders() {
       if (!r.ok) throw new Error("Failed");
       return r.json();
     },
-    enabled: !!openDispatchId && showReceipts,
+    enabled: !!openDispatchId && (showReceipts || showPaidCommissions),
   });
 
   const deleteReceiptMutation = useMutation({
@@ -1602,7 +1603,7 @@ export default function Orders() {
                   );
                 })()}
 
-                {/* ─── Receipts ──────────────────────────────────────────── */}
+                {/* ─── Расписки (ожидают оплаты) ────────────────────────────── */}
                 <div className="border-t border-border/50 pt-3">
                   <button
                     onClick={() => setShowReceipts(v => !v)}
@@ -1610,17 +1611,22 @@ export default function Orders() {
                   >
                     <span className="flex items-center gap-1.5 font-semibold uppercase tracking-wide">
                       <ReceiptText className="w-3.5 h-3.5" />Расписки
+                      {receipts && receipts.filter(r => !r.prepaymentSubmittedAt).length > 0 && (
+                        <span className="bg-amber-500 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none">
+                          {receipts.filter(r => !r.prepaymentSubmittedAt).length}
+                        </span>
+                      )}
                     </span>
                     <ChevronDown className={`w-4 h-4 transition-transform ${showReceipts ? "rotate-180" : ""}`} />
                   </button>
                   {showReceipts && (
                     <div className="mt-2 space-y-2">
                       {!receipts && <div className="text-xs text-muted-foreground text-center py-2"><Loader2 className="w-3 h-3 animate-spin mx-auto" /></div>}
-                      {receipts?.length === 0 && !showCreateReceipt && (
-                        <p className="text-xs text-muted-foreground/60 text-center py-2">Расписок нет</p>
+                      {receipts?.filter(r => !r.prepaymentSubmittedAt).length === 0 && !showCreateReceipt && !crmCreatedUrl && (
+                        <p className="text-xs text-muted-foreground/60 text-center py-1">Нет расписок, ожидающих оплаты</p>
                       )}
-                      {receipts?.map(r => (
-                        <div key={r.id} className={`rounded-xl p-3 space-y-1.5 ${r.prepaymentSubmittedAt ? "bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800" : "bg-muted/40"}`}>
+                      {receipts?.filter(r => !r.prepaymentSubmittedAt).map(r => (
+                        <div key={r.id} className="rounded-xl p-3 space-y-1.5 bg-muted/40">
                           <div className="flex items-center justify-between">
                             <div>
                               <span className="text-xs text-muted-foreground">Бронь: </span>
@@ -1629,135 +1635,78 @@ export default function Orders() {
                             </div>
                             <span className="text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
                           </div>
-                          {r.prepaymentSubmittedAt ? (
-                            <div className="flex items-center gap-1.5 text-xs text-green-700 dark:text-green-400 font-medium">
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              Оплата подтверждена · {new Date(r.prepaymentSubmittedAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-                              {r.clientSubmittedName && <span className="text-muted-foreground font-normal">· {r.clientSubmittedName}</span>}
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-amber-600 dark:text-amber-400">⏳ Ожидает оплаты</span>
-                              <button
-                                onClick={async () => {
-                                  if (!window.confirm("Подтвердить получение предоплаты вручную?")) return;
-                                  const resp = await fetch(`/api/receipts/${r.id}/confirm`, { method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ operatorNote: "Подтверждено оператором" }) });
-                                  if (resp.ok) { toast({ title: "Предоплата подтверждена!" }); queryClient.invalidateQueries({ queryKey: ["/api/receipts/order", openDispatchId] }); }
-                                  else toast({ title: "Ошибка подтверждения", variant: "destructive" });
-                                }}
-                                className="ml-auto flex items-center gap-1 text-xs bg-green-600 text-white px-2 py-1 rounded-lg font-medium hover:bg-green-700"
-                              >
-                                <CheckCircle2 className="w-3 h-3" /> Подтвердить
-                              </button>
-                            </div>
-                          )}
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-amber-600 dark:text-amber-400">⏳ Ожидает оплаты</span>
+                            <button
+                              onClick={async () => {
+                                if (!window.confirm("Подтвердить получение предоплаты вручную?")) return;
+                                const resp = await fetch(`/api/receipts/${r.id}/confirm`, { method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ operatorNote: "Подтверждено оператором" }) });
+                                if (resp.ok) { toast({ title: "Предоплата подтверждена!" }); queryClient.invalidateQueries({ queryKey: ["/api/receipts/order", openDispatchId] }); }
+                                else toast({ title: "Ошибка подтверждения", variant: "destructive" });
+                              }}
+                              className="ml-auto flex items-center gap-1 text-xs bg-green-600 text-white px-2 py-1 rounded-lg font-medium hover:bg-green-700"
+                            >
+                              <CheckCircle2 className="w-3 h-3" /> Подтвердить
+                            </button>
+                          </div>
                           {r.prepaymentScreenshotUrl && (
                             <a href={r.prepaymentScreenshotUrl} target="_blank" rel="noopener noreferrer" className="block">
-                              <img src={r.prepaymentScreenshotUrl} alt="Скриншот" className="max-h-32 rounded-lg border object-contain" />
+                              <img src={r.prepaymentScreenshotUrl} alt="Скриншот оплаты" className="max-h-32 rounded-lg border object-contain bg-muted" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
                             </a>
                           )}
                           {r.notes && <p className="text-xs text-muted-foreground">{r.notes}</p>}
                           <div className="flex items-center gap-2">
-                            <a href={r.publicUrl} target="_blank" rel="noopener noreferrer"
-                              className="flex items-center gap-1.5 text-xs text-blue-500 hover:underline">
+                            <a href={r.publicUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs text-blue-500 hover:underline">
                               <ExternalLink className="w-3 h-3" /> Открыть
                             </a>
-                            <button
-                              onClick={() => { navigator.clipboard.writeText(r.publicUrl); toast({ title: "Ссылка скопирована!" }); }}
-                              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                            >
+                            <button onClick={() => { navigator.clipboard.writeText(r.publicUrl); toast({ title: "Ссылка скопирована!" }); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
                               <Copy className="w-3 h-3" /> Ссылка
                             </button>
-                            <button
-                              onClick={() => {
-                                if (editingCrmReceiptId === r.id) { setEditingCrmReceiptId(null); return; }
-                                setEditingCrmReceiptId(r.id);
-                                setCrmEditLineItems(r.lineItems?.length ? r.lineItems.map((i: any) => ({ description: i.description, price: String(i.price) })) : [{ description: "", price: "" }]);
-                                setCrmEditPrepayment(String(r.prepaymentAmount));
-                                setCrmEditNotes(r.notes ?? "");
-                              }}
-                              className="flex items-center gap-1 text-xs text-primary font-medium hover:underline ml-auto"
-                            >
+                            <button onClick={() => { if (editingCrmReceiptId === r.id) { setEditingCrmReceiptId(null); return; } setEditingCrmReceiptId(r.id); setCrmEditLineItems(r.lineItems?.length ? r.lineItems.map((i: any) => ({ description: i.description, price: String(i.price) })) : [{ description: "", price: "" }]); setCrmEditPrepayment(String(r.prepaymentAmount)); setCrmEditNotes(r.notes ?? ""); }} className="flex items-center gap-1 text-xs text-primary font-medium hover:underline ml-auto">
                               {editingCrmReceiptId === r.id ? "Отмена" : "Изменить"}
                             </button>
-                            <button
-                              onClick={() => {
-                                if (!window.confirm("Удалить расписку? Это действие нельзя отменить.")) return;
-                                deleteReceiptMutation.mutate(r.id);
-                              }}
-                              disabled={deleteReceiptMutation.isPending}
-                              className="flex items-center gap-1 text-xs text-destructive hover:opacity-80 disabled:opacity-50"
-                              title="Удалить расписку"
-                            >
+                            <button onClick={() => { if (!window.confirm("Удалить расписку?")) return; deleteReceiptMutation.mutate(r.id); }} disabled={deleteReceiptMutation.isPending} className="flex items-center gap-1 text-xs text-destructive hover:opacity-80 disabled:opacity-50" title="Удалить">
                               <Trash2 className="w-3 h-3" />
                             </button>
                           </div>
-
                           {editingCrmReceiptId === r.id && (
                             <div className="border border-border rounded-xl p-3 space-y-2 bg-background mt-1">
                               <p className="text-xs font-semibold">Редактирование расписки</p>
                               <div className="space-y-1.5">
                                 <div className="flex items-center justify-between">
                                   <p className="text-xs text-muted-foreground">Перечень работ</p>
-                                  <button onClick={() => setCrmEditLineItems(prev => [...prev, { description: "", price: "" }])}
-                                    className="text-xs text-primary flex items-center gap-0.5 font-medium">
-                                    <Plus className="w-3 h-3" /> добавить
-                                  </button>
+                                  <button onClick={() => setCrmEditLineItems(prev => [...prev, { description: "", price: "" }])} className="text-xs text-primary flex items-center gap-0.5 font-medium"><Plus className="w-3 h-3" /> добавить</button>
                                 </div>
                                 {crmEditLineItems.map((item, i) => (
                                   <div key={i} className="flex gap-1.5 items-center">
-                                    <input value={item.description}
-                                      onChange={e => setCrmEditLineItems(prev => prev.map((it, idx) => idx === i ? { ...it, description: e.target.value } : it))}
-                                      placeholder="Описание" className="flex-1 h-7 px-2 text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary/30" />
-                                    <input type="number" value={item.price}
-                                      onChange={e => setCrmEditLineItems(prev => prev.map((it, idx) => idx === i ? { ...it, price: e.target.value } : it))}
-                                      placeholder="₽" className="w-20 h-7 px-2 text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary/30" />
-                                    {crmEditLineItems.length > 1 && (
-                                      <button onClick={() => setCrmEditLineItems(prev => prev.filter((_, idx) => idx !== i))}
-                                        className="text-muted-foreground hover:text-destructive"><X className="w-3.5 h-3.5" /></button>
-                                    )}
+                                    <input value={item.description} onChange={e => setCrmEditLineItems(prev => prev.map((it, idx) => idx === i ? { ...it, description: e.target.value } : it))} placeholder="Описание" className="flex-1 h-7 px-2 text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary/30" />
+                                    <input type="number" value={item.price} onChange={e => setCrmEditLineItems(prev => prev.map((it, idx) => idx === i ? { ...it, price: e.target.value } : it))} placeholder="₽" className="w-20 h-7 px-2 text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary/30" />
+                                    {crmEditLineItems.length > 1 && <button onClick={() => setCrmEditLineItems(prev => prev.filter((_, idx) => idx !== i))} className="text-muted-foreground hover:text-destructive"><X className="w-3.5 h-3.5" /></button>}
                                   </div>
                                 ))}
-                                {(() => { const t = crmEditLineItems.reduce((s, it) => s + (parseFloat(it.price) || 0), 0); return t > 0 ? (
-                                  <div className="flex justify-between text-xs bg-muted/50 rounded-lg px-2 py-1.5">
-                                    <span className="text-muted-foreground">Итого</span>
-                                    <span className="font-bold">{t.toLocaleString("ru-RU")} ₽</span>
-                                  </div>
-                                ) : null; })()}
+                                {(() => { const t = crmEditLineItems.reduce((s, it) => s + (parseFloat(it.price) || 0), 0); return t > 0 ? (<div className="flex justify-between text-xs bg-muted/50 rounded-lg px-2 py-1.5"><span className="text-muted-foreground">Итого</span><span className="font-bold">{t.toLocaleString("ru-RU")} ₽</span></div>) : null; })()}
                               </div>
                               <div>
                                 <label className="text-xs text-muted-foreground">Предоплата (₽)</label>
-                                <input type="number" value={crmEditPrepayment} onChange={e => setCrmEditPrepayment(e.target.value)}
-                                  className="w-full h-7 px-2 text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary/30 mt-0.5 font-semibold" />
+                                <input type="number" value={crmEditPrepayment} onChange={e => setCrmEditPrepayment(e.target.value)} className="w-full h-7 px-2 text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary/30 mt-0.5 font-semibold" />
                               </div>
                               <div>
                                 <label className="text-xs text-muted-foreground">Примечание</label>
-                                <textarea value={crmEditNotes} onChange={e => setCrmEditNotes(e.target.value)} rows={2}
-                                  className="w-full px-2 py-1 text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary/30 mt-0.5 resize-none" placeholder="Необязательно" />
+                                <textarea value={crmEditNotes} onChange={e => setCrmEditNotes(e.target.value)} rows={2} className="w-full px-2 py-1 text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary/30 mt-0.5 resize-none" placeholder="Необязательно" />
                               </div>
-                              <button
-                                disabled={crmEditing}
-                                onClick={async () => {
-                                  const valid = crmEditLineItems.filter(it => it.description.trim() && parseFloat(it.price) > 0);
-                                  if (!valid.length) { toast({ title: "Добавьте хотя бы одну позицию", variant: "destructive" }); return; }
-                                  const prepay = parseFloat(crmEditPrepayment);
-                                  if (!prepay || prepay <= 0) { toast({ title: "Введите сумму предоплаты", variant: "destructive" }); return; }
-                                  setCrmEditing(true);
-                                  try {
-                                    const resp = await fetch(`/api/receipts/${r.id}`, {
-                                      method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include",
-                                      body: JSON.stringify({ lineItems: valid.map(i => ({ description: i.description.trim(), price: parseFloat(i.price) })), prepaymentAmount: prepay, notes: crmEditNotes.trim() || undefined }),
-                                    });
-                                    if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(e.error ?? "Ошибка"); }
-                                    toast({ title: "Расписка обновлена!" });
-                                    setEditingCrmReceiptId(null);
-                                    queryClient.invalidateQueries({ queryKey: ["/api/receipts/order", openDispatchId] });
-                                  } catch (e: any) { toast({ title: e.message ?? "Ошибка", variant: "destructive" }); } finally { setCrmEditing(false); }
-                                }}
-                                className="w-full h-8 rounded-lg bg-primary text-white text-xs font-semibold flex items-center justify-center gap-1.5 disabled:opacity-60"
-                              >
-                                {crmEditing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-                                Сохранить изменения
+                              <button disabled={crmEditing} onClick={async () => {
+                                const valid = crmEditLineItems.filter(it => it.description.trim() && parseFloat(it.price) > 0);
+                                if (!valid.length) { toast({ title: "Добавьте хотя бы одну позицию", variant: "destructive" }); return; }
+                                const prepay = parseFloat(crmEditPrepayment);
+                                if (!prepay || prepay <= 0) { toast({ title: "Введите сумму предоплаты", variant: "destructive" }); return; }
+                                setCrmEditing(true);
+                                try {
+                                  const resp = await fetch(`/api/receipts/${r.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ lineItems: valid.map(i => ({ description: i.description.trim(), price: parseFloat(i.price) })), prepaymentAmount: prepay, notes: crmEditNotes.trim() || undefined }) });
+                                  if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(e.error ?? "Ошибка"); }
+                                  toast({ title: "Расписка обновлена!" }); setEditingCrmReceiptId(null); queryClient.invalidateQueries({ queryKey: ["/api/receipts/order", openDispatchId] });
+                                } catch (e: any) { toast({ title: e.message ?? "Ошибка", variant: "destructive" }); } finally { setCrmEditing(false); }
+                              }} className="w-full h-8 rounded-lg bg-primary text-white text-xs font-semibold flex items-center justify-center gap-1.5 disabled:opacity-60">
+                                {crmEditing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />} Сохранить изменения
                               </button>
                             </div>
                           )}
@@ -1766,35 +1715,21 @@ export default function Orders() {
 
                       {/* ── Create receipt form ── */}
                       {!showCreateReceipt && !crmCreatedUrl && (
-                        <button
-                          onClick={() => { setShowCreateReceipt(true); setCrmCreatedUrl(null); setCrmCopied(false); }}
-                          className="w-full flex items-center justify-center gap-1.5 text-xs text-primary font-semibold py-2 border border-dashed border-primary/40 rounded-xl hover:bg-primary/5 transition-colors"
-                        >
+                        <button onClick={() => { setShowCreateReceipt(true); setCrmCreatedUrl(null); setCrmCopied(false); }} className="w-full flex items-center justify-center gap-1.5 text-xs text-primary font-semibold py-2 border border-dashed border-primary/40 rounded-xl hover:bg-primary/5 transition-colors">
                           <Plus className="w-3.5 h-3.5" /> Создать расписку
                         </button>
                       )}
-
                       {crmCreatedUrl && (
                         <div className="bg-green-50 dark:bg-green-900/20 rounded-xl p-3 space-y-2">
-                          <div className="flex items-center gap-2 text-green-700 dark:text-green-400 font-semibold text-xs">
-                            <CheckCircle2 className="w-4 h-4" /> Расписка создана
-                          </div>
+                          <div className="flex items-center gap-2 text-green-700 dark:text-green-400 font-semibold text-xs"><CheckCircle2 className="w-4 h-4" /> Расписка создана</div>
                           <div className="bg-white dark:bg-muted rounded-lg p-2 text-xs font-mono break-all text-muted-foreground">{crmCreatedUrl}</div>
                           <div className="flex gap-2">
-                            <button
-                              onClick={() => { navigator.clipboard.writeText(crmCreatedUrl!); setCrmCopied(true); setTimeout(() => setCrmCopied(false), 2000); }}
-                              className="flex-1 flex items-center justify-center gap-1.5 h-8 rounded-lg bg-primary text-white text-xs font-semibold"
-                            >
-                              {crmCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                              {crmCopied ? "Скопировано" : "Скопировать"}
+                            <button onClick={() => { navigator.clipboard.writeText(crmCreatedUrl!); setCrmCopied(true); setTimeout(() => setCrmCopied(false), 2000); }} className="flex-1 flex items-center justify-center gap-1.5 h-8 rounded-lg bg-primary text-white text-xs font-semibold">
+                              {crmCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}{crmCopied ? "Скопировано" : "Скопировать"}
                             </button>
-                            <a href={crmCreatedUrl} target="_blank" rel="noopener noreferrer"
-                              className="flex items-center justify-center gap-1.5 h-8 px-3 rounded-lg border border-border text-xs text-muted-foreground hover:bg-muted">
-                              <ExternalLink className="w-3 h-3" /> Открыть
-                            </a>
+                            <a href={crmCreatedUrl} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-1.5 h-8 px-3 rounded-lg border border-border text-xs text-muted-foreground hover:bg-muted"><ExternalLink className="w-3 h-3" /> Открыть</a>
                           </div>
-                          <button onClick={() => { setShowCreateReceipt(true); setCrmCreatedUrl(null); }}
-                            className="w-full text-xs text-primary hover:underline">+ Ещё расписка</button>
+                          <button onClick={() => { setShowCreateReceipt(true); setCrmCreatedUrl(null); }} className="w-full text-xs text-primary hover:underline">+ Ещё расписка</button>
                         </div>
                       )}
 
@@ -1913,6 +1848,63 @@ export default function Orders() {
                     </div>
                   )}
                 </div>
+
+                {/* ─── Комиссия оплачена (confirmed receipts) ───────────── */}
+                {receipts && receipts.filter(r => r.prepaymentSubmittedAt).length > 0 && (
+                  <div className="border-t border-border/50 pt-3">
+                    <button
+                      onClick={() => setShowPaidCommissions(v => !v)}
+                      className="w-full flex items-center justify-between text-xs text-muted-foreground hover:text-foreground transition-colors py-1"
+                    >
+                      <span className="flex items-center gap-1.5 font-semibold uppercase tracking-wide">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
+                        <span className="text-green-700 dark:text-green-400">Комиссия оплачена</span>
+                        <span className="bg-green-600 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none">
+                          {receipts.filter(r => r.prepaymentSubmittedAt).length}
+                        </span>
+                      </span>
+                      <ChevronDown className={`w-4 h-4 transition-transform ${showPaidCommissions ? "rotate-180" : ""}`} />
+                    </button>
+                    {showPaidCommissions && (
+                      <div className="mt-2 space-y-2">
+                        {receipts.filter(r => r.prepaymentSubmittedAt).map(r => (
+                          <div key={r.id} className="rounded-xl p-3 space-y-1.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <span className="text-xs text-muted-foreground">Бронь: </span>
+                                <span className="text-sm font-bold text-green-700 dark:text-green-400">{Number(r.prepaymentAmount).toLocaleString("ru-RU")} ₽</span>
+                                <span className="text-xs text-muted-foreground ml-1">/ {Number(r.totalAmount).toLocaleString("ru-RU")} ₽ итого</span>
+                              </div>
+                              <span className="text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 text-xs text-green-700 dark:text-green-400 font-medium">
+                              <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
+                              Оплата подтверждена · {new Date(r.prepaymentSubmittedAt!).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                              {r.clientSubmittedName && <span className="text-muted-foreground font-normal">· {r.clientSubmittedName}</span>}
+                            </div>
+                            {r.prepaymentScreenshotUrl && (
+                              <a href={r.prepaymentScreenshotUrl} target="_blank" rel="noopener noreferrer" className="block">
+                                <img src={r.prepaymentScreenshotUrl} alt="Скриншот оплаты" className="max-h-32 rounded-lg border border-green-200 object-contain bg-white" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                              </a>
+                            )}
+                            {r.notes && <p className="text-xs text-muted-foreground">{r.notes}</p>}
+                            <div className="flex items-center gap-2">
+                              <a href={r.publicUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs text-blue-500 hover:underline">
+                                <ExternalLink className="w-3 h-3" /> Открыть
+                              </a>
+                              <button onClick={() => { navigator.clipboard.writeText(r.publicUrl); toast({ title: "Ссылка скопирована!" }); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+                                <Copy className="w-3 h-3" /> Ссылка
+                              </button>
+                              <button onClick={() => { if (!window.confirm("Удалить расписку?")) return; deleteReceiptMutation.mutate(r.id); }} disabled={deleteReceiptMutation.isPending} className="flex items-center gap-1 text-xs text-destructive hover:opacity-80 disabled:opacity-50 ml-auto" title="Удалить">
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* ─── Status log ────────────────────────────────────────── */}
                 <div className="border-t border-border/50 pt-3">

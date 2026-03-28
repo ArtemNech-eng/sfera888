@@ -10,24 +10,26 @@ import { fileURLToPath } from "url";
 import fs from "fs";
 import multer from "multer";
 import { UPLOAD_BASE } from "./config.js";
-
-const SCREENSHOT_DIR = path.join(UPLOAD_BASE, "receipt-screenshots");
-fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
+import { objectStorageClient } from "./lib/objectStorage.js";
 
 const screenshotUpload = multer({
-  storage: multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, SCREENSHOT_DIR),
-    filename: (_req, file, cb) => {
-      const ext = path.extname(file.originalname).toLowerCase() || ".jpg";
-      cb(null, `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
-    },
-  }),
+  storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (file.mimetype.startsWith("image/")) cb(null, true);
     else cb(new Error("Только изображения"));
   },
 });
+
+async function uploadScreenshotToStorage(buffer: Buffer, mimetype: string): Promise<string> {
+  const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+  if (!bucketId) throw new Error("Object storage not configured");
+  const ext = mimetype === "image/png" ? "png" : "jpg";
+  const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  const bucket = objectStorageClient.bucket(bucketId);
+  await bucket.file(`public/receipt-screenshots/${filename}`).save(buffer, { contentType: mimetype, resumable: false });
+  return `/api/storage/public-objects/receipt-screenshots/${filename}`;
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -413,9 +415,10 @@ app.post("/api/receipt/:token/confirm", screenshotUpload.single("screenshot"), a
       return res.status(400).json({ error: "Введите полное ФИО (Фамилия Имя Отчество)" });
     }
 
-    const screenshotUrl = req.file
-      ? `/api/uploads/receipt-screenshots/${req.file.filename}`
-      : null;
+    let screenshotUrl: string | null = null;
+    if (req.file) {
+      screenshotUrl = await uploadScreenshotToStorage(req.file.buffer, req.file.mimetype);
+    }
 
     await db.update(receiptsTable).set({
       clientSubmittedName: clientName,
