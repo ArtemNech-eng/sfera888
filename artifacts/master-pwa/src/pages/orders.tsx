@@ -856,26 +856,18 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
                                 Бронь подтверждена · {new Date(r.prepaymentSubmittedAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
                               </div>
                               {r.clientSubmittedName && <p className="text-xs text-muted-foreground pl-5">👤 {r.clientSubmittedName}</p>}
-                              <div className="bg-green-50 dark:bg-green-900/20 rounded-xl p-2.5 space-y-1 text-xs">
+                              <div className="bg-muted/50 rounded-xl p-2.5 space-y-1 text-xs">
                                 <div className="flex justify-between">
-                                  <span className="text-muted-foreground">Бронь внесена</span>
-                                  <span className="font-semibold text-green-700 dark:text-green-400">+{Number(r.prepaymentAmount).toLocaleString("ru-RU")} ₽</span>
+                                  <span className="text-muted-foreground">Бронь (комиссия платформы)</span>
+                                  <span className="font-semibold text-destructive">{Number(r.prepaymentAmount).toLocaleString("ru-RU")} ₽</span>
                                 </div>
-                                {order.commission != null && (
-                                  <div className="flex justify-between">
-                                    <span className="text-muted-foreground">Комиссия платформы</span>
-                                    <span className="font-semibold text-destructive">−{order.commission.toLocaleString("ru-RU")} ₽</span>
-                                  </div>
-                                )}
-                                {order.commission != null && (
-                                  <div className="flex justify-between border-t border-green-200 dark:border-green-800 pt-1 mt-0.5">
-                                    <span className="font-medium text-foreground">К получению с брони</span>
-                                    <span className="font-bold text-foreground">{(Number(r.prepaymentAmount) - order.commission).toLocaleString("ru-RU")} ₽</span>
-                                  </div>
-                                )}
-                                <div className="flex justify-between border-t border-green-200 dark:border-green-800 pt-1 mt-0.5">
-                                  <span className="text-muted-foreground">Остаток от клиента</span>
-                                  <span className="font-semibold">{(Number(r.totalAmount) - Number(r.prepaymentAmount)).toLocaleString("ru-RU")} ₽</span>
+                                <div className="flex justify-between border-t border-border pt-1 mt-0.5">
+                                  <span className="font-medium text-foreground">
+                                    {Number(r.totalAmount) > 50000 ? "Остаток (оплата отдельно)" : "Остаток от клиента"}
+                                  </span>
+                                  <span className="font-bold text-green-700 dark:text-green-400">
+                                    {(Number(r.totalAmount) - Number(r.prepaymentAmount)).toLocaleString("ru-RU")} ₽
+                                  </span>
                                 </div>
                               </div>
                             </div>
