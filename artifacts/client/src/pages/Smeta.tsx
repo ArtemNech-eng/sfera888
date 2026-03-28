@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "wouter";
+import BottomNav from "@/components/BottomNav";
 
 interface LineItem { description: string; price: number; }
 interface ReceiptData {
@@ -116,7 +117,7 @@ export default function Smeta() {
   const isConfirmed = data.isOperatorConfirmed;
 
   return (
-    <div style={{ fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif", background: "#eef0f5", minHeight: "100vh", paddingBottom: 60 }}>
+    <div style={{ fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif", background: "#eef0f5", minHeight: "100vh", paddingBottom: 80 }}>
 
       {/* ── Topbar ── */}
       <div style={s.topbar}>
@@ -319,6 +320,8 @@ export default function Smeta() {
           <div style={{ fontSize: 12, color: "#9ca3af" }}>Платформа «Честный мастер» · <a href="https://sfera-project.digital" style={{ color: "#6b7280", textDecoration: "none" }}>sfera-project.digital</a></div>
         </div>
       </div>
+
+      <BottomNav token={token} active="smeta" />
     </div>
   );
 }

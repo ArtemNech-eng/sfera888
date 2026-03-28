@@ -23,6 +23,7 @@ import tasksRouter from "./tasks.js";
 import masterReviewsRouter from "./master-reviews.js";
 import masterPwaRouter from "./master-pwa.js";
 import contractRouter from "./contract.js";
+import clientRouter from "./client.js";
 
 const router = Router();
 
@@ -49,6 +50,7 @@ router.use("/tasks", tasksRouter);
 router.use("/master-reviews", masterReviewsRouter);
 router.use("/master-pwa", masterPwaRouter);
 router.use("/contract", contractRouter);
+router.use("/client", clientRouter);
 
 // Seed popular repair services on startup (INSERT ... ON CONFLICT DO NOTHING)
 async function seedServices() {

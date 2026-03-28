@@ -51,6 +51,8 @@ artifacts-monorepo/
 - `cities`, `service_types` — Settings
 - `telegram_chats`, `telegram_messages` — Telegram operator chat history
 - `voronka_columns` — Configurable Kanban columns for masters board
+- `receipts` — Electronic estimates (сметы) with client payment confirmation flow
+- `client_support_messages` — Client→operator support chat (tied to receipt token)
 
 ## Notifications
 
