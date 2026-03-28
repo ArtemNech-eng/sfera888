@@ -352,7 +352,7 @@ app.get("/api/receipt/:token", async (req, res) => {
     </div>
     <div>
       <p class="party-title">Организатор</p>
-      <p class="party-name">ИП Коваленко Игорь Игоревич</p>
+      <p class="party-name">ИП Коваленко Игорь Геннадьевич</p>
       <p class="party-info">📞 8 (989) 286-08-63</p>
       <p class="party-info">ИНН: 262409599800</p>
       <p class="party-info">ОГРНИП: 325265100150717</p>
@@ -360,7 +360,7 @@ app.get("/api/receipt/:token", async (req, res) => {
   </div>
 
   <div class="footer">
-    <p class="footer-bank">Получатель: <strong>ИП Коваленко Игорь Игоревич</strong></p>
+    <p class="footer-bank">Получатель: <strong>ИП Коваленко Игорь Геннадьевич</strong></p>
     <p class="footer-bank">Банк: <strong>Альфа Банк</strong> · Тел. для перевода: <strong>8 (989) 286-08-63</strong></p>
     <p class="footer-bank">ИНН: 262409599800 · ОГРНИП: 325265100150717</p>
     <p class="footer-bank">Платформа «Честный мастер» · sfera-project.digital</p>
