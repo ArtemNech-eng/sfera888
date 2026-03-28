@@ -171,3 +171,12 @@ React PWA for masters to manage their orders independently.
 - 50,001–100,000₽ → 15%
 - >100,000₽ → manual (defaults to 15%)
 - When commission marked as "paid" → `is_test_master` set to false
+
+### Electronic Receipts
+- **Table**: `receipts` (id, token UUID hex, orderId FK, masterId FK, clientName, clientPhone, serviceType, city, district, amount, notes, createdAt)
+- **Master PWA**: "Создать расписку клиенту" button in active order detail → bottom-sheet modal → enter amount (default 5000₽) + optional note → creates receipt and shows shareable link + copy/share buttons
+- **Public page**: `GET /receipt/:token` — served as pure HTML (no auth required), shows branded receipt card with amount, client info, service details, requisites (Альфа Банк · Игорь К. · 89892860863)
+- **CRM**: Collapsible "Расписки" section in order detail panel — lists all receipts with amount, timestamp, note, and clickable "Открыть расписку" link
+- **Startup migration**: `receipts` table created via `runMigrations()` on server startup (idempotent CREATE TABLE IF NOT EXISTS)
+- **API**: `POST /api/receipts` (master auth), `GET /api/receipts/order/:orderId` (admin/operator), `GET /api/receipts/public/:token` (public JSON)
+

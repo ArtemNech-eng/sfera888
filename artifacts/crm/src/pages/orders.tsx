@@ -9,7 +9,7 @@ import {
   Loader2, MapPin, Send, Users, CheckCircle2, Clock, X, UserCheck,
   DollarSign, Check, Pencil, AlertCircle, MessageSquare, Trash2, Search,
   ClipboardList, CalendarDays, ChevronDown, Filter, Settings, AlertTriangle,
-  FileText, History, Timer, RefreshCw, CopyX, XCircle,
+  FileText, History, Timer, RefreshCw, CopyX, XCircle, ReceiptText, ExternalLink,
 } from "lucide-react";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -283,6 +283,7 @@ export default function Orders() {
   const [rebroadcastOnUnassign, setRebroadcastOnUnassign] = useState(false);
   const [operatorNoteEdit, setOperatorNoteEdit] = useState<string | null>(null);
   const [showStatusLog, setShowStatusLog] = useState(false);
+  const [showReceipts, setShowReceipts] = useState(false);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [cancelDialogReason, setCancelDialogReason] = useState("");
   const [cancelDialogNote, setCancelDialogNote] = useState("");
@@ -352,6 +353,17 @@ export default function Orders() {
       return r.json();
     },
     enabled: !!openDispatchId && showStatusLog,
+  });
+
+  interface ReceiptEntry { id: number; token: string; amount: number; notes: string | null; clientName: string; clientPhone: string; createdAt: string; publicUrl: string; }
+  const { data: receipts } = useQuery<ReceiptEntry[]>({
+    queryKey: ["/api/receipts/order", openDispatchId],
+    queryFn: async () => {
+      const r = await fetch(`/api/receipts/order/${openDispatchId}`, { credentials: "include" });
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+    enabled: !!openDispatchId && showReceipts,
   });
 
   const manualAssignMutation = useMutation({
@@ -1043,7 +1055,7 @@ export default function Orders() {
                   </div>
                   <p className="text-sm text-muted-foreground mt-0.5">{openOrder.serviceType} · {openOrder.city}{openOrder.district ? `, ${openOrder.district}` : ""}</p>
                 </div>
-                <button onClick={() => { setOpenDispatchId(null); setShowManualAssign(false); setSelectedMasterForAssign(""); setShowStatusLog(false); setOperatorNoteEdit(null); setShowCancelDialog(false); setCancelDialogReason(""); setCancelDialogNote(""); }} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 flex-shrink-0 ml-2">
+                <button onClick={() => { setOpenDispatchId(null); setShowManualAssign(false); setSelectedMasterForAssign(""); setShowStatusLog(false); setShowReceipts(false); setOperatorNoteEdit(null); setShowCancelDialog(false); setCancelDialogReason(""); setCancelDialogNote(""); }} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 flex-shrink-0 ml-2">
                   <X className="w-4 h-4 text-muted-foreground" />
                 </button>
               </div>
@@ -1565,6 +1577,45 @@ export default function Orders() {
                   );
                 })()}
 
+                {/* ─── Receipts ──────────────────────────────────────────── */}
+                <div className="border-t border-border/50 pt-3">
+                  <button
+                    onClick={() => setShowReceipts(v => !v)}
+                    className="w-full flex items-center justify-between text-xs text-muted-foreground hover:text-foreground transition-colors py-1"
+                  >
+                    <span className="flex items-center gap-1.5 font-semibold uppercase tracking-wide">
+                      <ReceiptText className="w-3.5 h-3.5" />Расписки
+                    </span>
+                    <ChevronDown className={`w-4 h-4 transition-transform ${showReceipts ? "rotate-180" : ""}`} />
+                  </button>
+                  {showReceipts && (
+                    <div className="mt-2 space-y-2">
+                      {!receipts && <div className="text-xs text-muted-foreground text-center py-2"><Loader2 className="w-3 h-3 animate-spin mx-auto" /></div>}
+                      {receipts && receipts.length === 0 && (
+                        <p className="text-xs text-muted-foreground/60 text-center py-2">Расписок нет</p>
+                      )}
+                      {receipts?.map(r => (
+                        <div key={r.id} className="bg-muted/40 rounded-xl p-3 space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-bold text-primary">{Number(r.amount).toLocaleString("ru-RU")} ₽</span>
+                            <span className="text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+                          </div>
+                          {r.notes && <p className="text-xs text-muted-foreground">{r.notes}</p>}
+                          <a
+                            href={r.publicUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1.5 text-xs text-blue-500 hover:underline"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            Открыть расписку
+                          </a>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 {/* ─── Status log ────────────────────────────────────────── */}
                 <div className="border-t border-border/50 pt-3">
                   <button
@@ -1651,7 +1702,7 @@ export default function Orders() {
                 )}
 
                 <div className="pt-2 flex justify-end">
-                  <button onClick={() => { setOpenDispatchId(null); setShowStatusLog(false); setOperatorNoteEdit(null); }} className="px-4 py-2 rounded-xl font-medium text-muted-foreground hover:bg-slate-100 text-sm">
+                  <button onClick={() => { setOpenDispatchId(null); setShowStatusLog(false); setShowReceipts(false); setOperatorNoteEdit(null); }} className="px-4 py-2 rounded-xl font-medium text-muted-foreground hover:bg-slate-100 text-sm">
                     Закрыть
                   </button>
                 </div>

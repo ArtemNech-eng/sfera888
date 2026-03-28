@@ -56,6 +56,22 @@ async function runMigrations() {
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS receipts (
+      id SERIAL PRIMARY KEY,
+      token VARCHAR(64) NOT NULL UNIQUE,
+      order_id INTEGER NOT NULL REFERENCES orders(id),
+      master_id INTEGER NOT NULL REFERENCES masters(id),
+      client_name TEXT NOT NULL,
+      client_phone TEXT NOT NULL,
+      service_type TEXT NOT NULL,
+      city TEXT NOT NULL,
+      district TEXT,
+      amount NUMERIC(10,2) NOT NULL,
+      notes TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
   console.log("[startup] Migrations applied");
 }
 

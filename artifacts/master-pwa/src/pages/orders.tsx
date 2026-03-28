@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import {
   ChevronDown, ChevronUp, MapPin, Phone, Ruler, Calendar,
   Camera, CheckCircle2, Image, FileText, Loader2, X, XCircle,
+  ReceiptText, Copy, Check,
 } from "lucide-react";
 
 interface Order {
@@ -296,12 +297,131 @@ function PhotoGrid({ urls, label }: { urls: string[]; label: string }) {
   );
 }
 
+function ReceiptModal({ order, onClose }: { order: Order; onClose: () => void }) {
+  const DEFAULT_AMOUNT = 5000;
+  const [amount, setAmount] = useState(String(DEFAULT_AMOUNT));
+  const [notes, setNotes] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<{ publicUrl: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const handleCreate = async () => {
+    const amountNum = parseFloat(amount.replace(/\s/g, "").replace(",", "."));
+    if (!amountNum || amountNum <= 0) { toast.error("Введите корректную сумму"); return; }
+    setLoading(true);
+    try {
+      const r = await fetch(`${import.meta.env.BASE_URL}api/receipts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ orderId: order.id, amount: amountNum, notes: notes.trim() || undefined }),
+      });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error ?? "Ошибка"); }
+      const data = await r.json();
+      setResult(data);
+    } catch (err: any) {
+      toast.error(err.message ?? "Ошибка создания расписки");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCopy = () => {
+    if (!result) return;
+    navigator.clipboard.writeText(result.publicUrl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      toast.success("Ссылка скопирована!");
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-end justify-center" onClick={onClose}>
+      <div className="w-full max-w-sm bg-card rounded-t-2xl p-5 space-y-4 pb-8" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center">
+          <h3 className="font-bold text-lg flex items-center gap-2">
+            <ReceiptText size={20} className="text-primary" />
+            Расписка #{order.id}
+          </h3>
+          <button onClick={onClose} className="text-muted-foreground"><X size={20} /></button>
+        </div>
+
+        {!result ? (
+          <>
+            <p className="text-sm text-muted-foreground">
+              Создайте расписку об оплате и отправьте ссылку клиенту.
+            </p>
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Сумма предоплаты (₽)</label>
+                <input
+                  type="number"
+                  value={amount}
+                  onChange={e => setAmount(e.target.value)}
+                  className="w-full h-11 rounded-xl border border-border bg-background px-3 text-base font-semibold focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  placeholder="5000"
+                  min="1"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Примечание (не обязательно)</label>
+                <textarea
+                  value={notes}
+                  onChange={e => setNotes(e.target.value)}
+                  rows={2}
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  placeholder="Напр.: монтаж натяжного потолка, зал"
+                />
+              </div>
+            </div>
+            <button
+              onClick={handleCreate}
+              disabled={loading}
+              className="w-full h-12 bg-primary text-white font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-60"
+            >
+              {loading ? <Loader2 size={16} className="animate-spin" /> : <ReceiptText size={16} />}
+              Создать расписку
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="bg-green-50 dark:bg-green-900/20 rounded-xl p-4 text-center space-y-1">
+              <CheckCircle2 size={32} className="mx-auto text-green-500" />
+              <p className="font-semibold text-green-700 dark:text-green-400">Расписка создана!</p>
+              <p className="text-sm text-muted-foreground">Скопируйте ссылку и отправьте клиенту</p>
+            </div>
+            <div className="bg-muted rounded-xl p-3 text-xs break-all font-mono text-muted-foreground">
+              {result.publicUrl}
+            </div>
+            <button
+              onClick={handleCopy}
+              className="w-full h-12 bg-primary text-white font-semibold rounded-xl flex items-center justify-center gap-2"
+            >
+              {copied ? <Check size={16} /> : <Copy size={16} />}
+              {copied ? "Скопировано!" : "Скопировать ссылку"}
+            </button>
+            {navigator.share && (
+              <button
+                onClick={() => navigator.share({ title: "Расписка об оплате", url: result.publicUrl })}
+                className="w-full h-10 rounded-xl border border-border text-sm font-medium flex items-center justify-center gap-2 text-muted-foreground"
+              >
+                Поделиться
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefresh: () => void; initialExpanded?: boolean }) {
   const [expanded, setExpanded] = useState(initialExpanded ?? false);
   const [loadingStatus, setLoadingStatus] = useState<string | null>(null);
   const [loadingPhoto, setLoadingPhoto] = useState<string | null>(null);
   const [showComplete, setShowComplete] = useState(false);
   const [showCancel, setShowCancel] = useState(false);
+  const [showReceipt, setShowReceipt] = useState(false);
   const isActive = ["master_assigned", "in_progress"].includes(order.status);
   const isCancelRequested = order.status === "cancellation_requested";
   const currentStepIdx = workStatusSteps.findIndex(s => s.key === order.masterWorkStatus);
@@ -519,6 +639,14 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
                   </button>
                 )}
 
+                <button
+                  onClick={() => setShowReceipt(true)}
+                  className="w-full h-10 rounded-xl border border-border bg-muted/30 text-foreground text-sm font-medium flex items-center justify-center gap-2 active:opacity-80"
+                >
+                  <ReceiptText size={15} />
+                  Создать расписку клиенту
+                </button>
+
                 <div className="space-y-1">
                   <button
                     onClick={() => setShowCancel(true)}
@@ -550,6 +678,9 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
           onDone={() => { setShowCancel(false); onRefresh(); }}
           onClose={() => setShowCancel(false)}
         />
+      )}
+      {showReceipt && (
+        <ReceiptModal order={order} onClose={() => setShowReceipt(false)} />
       )}
     </>
   );
