@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { Layout } from "@/components/layout";
 import { ProtectedRoute } from "@/hooks/use-auth";
 import { useAuth } from "@/hooks/use-auth";
-import { Send, MessageSquare, RefreshCw, Check, CheckCheck, Paperclip, X, Camera, DollarSign, AlertCircle, RotateCcw, Pencil, Loader2, UserCheck, MapPin, Smile, ChevronRight, User2, Trash2, Search, Phone, ChevronDown, Filter } from "lucide-react";
+import { Send, MessageSquare, RefreshCw, Check, CheckCheck, Paperclip, X, Camera, DollarSign, AlertCircle, RotateCcw, Pencil, Loader2, UserCheck, MapPin, Smile, ChevronRight, User2, Trash2, Search, Phone, ChevronDown, Filter, Megaphone, Zap, Users, Building2, ListChecks } from "lucide-react";
 import { MasterDrawer, type DrawerMaster, type DrawerColumn } from "@/components/master-drawer";
 import { format, formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -175,6 +175,28 @@ export default function MasterChat() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Broadcast state ────────────────────────────────────────────────────────
+  const [showBroadcast, setShowBroadcast] = useState(false);
+  const [broadcastText, setBroadcastText] = useState("");
+  const [broadcastFilter, setBroadcastFilter] = useState<"all" | "city" | "custom">("all");
+  const [broadcastCity, setBroadcastCity] = useState("");
+  const [broadcastSelectedIds, setBroadcastSelectedIds] = useState<number[]>([]);
+  const [broadcastSending, setBroadcastSending] = useState(false);
+  const [broadcastResult, setBroadcastResult] = useState<number | null>(null);
+
+  // ── Quick reply templates ──────────────────────────────────────────────────
+  const [showQuickReplies, setShowQuickReplies] = useState(false);
+  const QUICK_REPLIES = [
+    { label: "Приветствие", text: "Здравствуйте! Чем могу помочь?" },
+    { label: "Новый заказ", text: "Вам назначен новый заказ. Проверьте раздел «Заказы» в приложении." },
+    { label: "Оплата", text: "Пожалуйста, оплатите комиссию по последнему заказу и пришлите скриншот." },
+    { label: "Позвоните нам", text: "Позвоните нам, пожалуйста, по вопросу вашего заказа." },
+    { label: "Клиент ждёт", text: "Клиент ожидает вашего звонка. Свяжитесь с ним как можно скорее." },
+    { label: "Завершите заказ", text: "Не забудьте отметить заказ как выполненный в приложении." },
+    { label: "Спасибо", text: "Спасибо за хорошую работу! 👍" },
+    { label: "Уточните сумму", text: "Уточните, пожалуйста, итоговую сумму по заказу." },
+  ];
 
   const fetchThreads = useCallback(async () => {
     const r = await fetch("/api/master-chat");
@@ -461,6 +483,43 @@ export default function MasterChat() {
     }
   };
 
+  // ── All active masters for broadcast ──────────────────────────────────────
+  const [allMastersForBroadcast, setAllMastersForBroadcast] = useState<{ id: number; alias: string; city: string }[]>([]);
+  useEffect(() => {
+    fetch("/api/masters", { credentials: "include" })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setAllMastersForBroadcast(Array.isArray(data) ? data.filter((m: any) => m.status === "active") : []))
+      .catch(() => {});
+  }, []);
+  const broadcastCities = [...new Set(allMastersForBroadcast.map(m => m.city).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
+
+  // ── Broadcast send ────────────────────────────────────────────────────────
+  const sendBroadcast = async () => {
+    if (!broadcastText.trim() || broadcastSending) return;
+    setBroadcastSending(true);
+    setBroadcastResult(null);
+    try {
+      const filter =
+        broadcastFilter === "city" ? { type: "city", city: broadcastCity } :
+        broadcastFilter === "custom" ? { type: "custom", masterIds: broadcastSelectedIds } :
+        { type: "all" };
+      const r = await fetch("/api/master-chat/broadcast", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ text: broadcastText.trim(), filter }),
+      });
+      if (r.ok) {
+        const { sent } = await r.json();
+        setBroadcastResult(sent);
+        setBroadcastText("");
+        await fetchThreads();
+      }
+    } finally {
+      setBroadcastSending(false);
+    }
+  };
+
   const totalUnread = threads.reduce((s, t) => s + t.unread, 0);
 
   const filteredThreads = threads.filter(t => {
@@ -513,22 +572,32 @@ export default function MasterChat() {
             <div className="w-72 flex-shrink-0 bg-white border border-gray-100 rounded-2xl overflow-hidden flex flex-col shadow-sm">
               {/* Sidebar header with search + filter */}
               <div className="px-3 py-2.5 border-b border-gray-50 space-y-2">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                <div className="flex items-center justify-between gap-1">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide truncate">
                     {loading ? "Загрузка..." : `${filteredThreads.length} из ${threads.length}`}
                   </p>
-                  <button
-                    onClick={() => setUnreadOnly(v => !v)}
-                    title="Только непрочитанные"
-                    className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold transition-colors ${
-                      unreadOnly
-                        ? "bg-blue-500 text-white"
-                        : "text-gray-400 hover:bg-gray-100"
-                    }`}
-                  >
-                    <Filter className="w-3 h-3" />
-                    {unreadOnly ? "Непрочит." : totalUnread > 0 ? `${totalUnread} новых` : "Все"}
-                  </button>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button
+                      onClick={() => setUnreadOnly(v => !v)}
+                      title="Только непрочитанные"
+                      className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold transition-colors ${
+                        unreadOnly ? "bg-blue-500 text-white" : "text-gray-400 hover:bg-gray-100"
+                      }`}
+                    >
+                      <Filter className="w-3 h-3" />
+                      {unreadOnly ? "Непрочит." : totalUnread > 0 ? `${totalUnread} новых` : "Все"}
+                    </button>
+                    <button
+                      onClick={() => { setShowBroadcast(v => !v); setSelectedId(null); setBroadcastResult(null); }}
+                      title="Рассылка"
+                      className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold transition-colors ${
+                        showBroadcast ? "bg-violet-500 text-white" : "text-gray-400 hover:bg-gray-100 hover:text-violet-600"
+                      }`}
+                    >
+                      <Megaphone className="w-3 h-3" />
+                      Рассылка
+                    </button>
+                  </div>
                 </div>
                 <div className="relative">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
@@ -616,11 +685,192 @@ export default function MasterChat() {
 
             {/* Conversation view */}
             <div className="flex-1 bg-white border border-gray-100 rounded-2xl shadow-sm flex flex-col overflow-hidden min-w-0">
-              {!selectedId ? (
+              {showBroadcast ? (
+                /* ═══════ BROADCAST PANEL ═══════ */
+                <div className="flex-1 flex flex-col overflow-hidden">
+                  {/* Header */}
+                  <div className="px-5 py-3.5 border-b border-gray-50 flex items-center gap-3 flex-shrink-0">
+                    <div className="w-9 h-9 rounded-xl bg-violet-100 flex items-center justify-center flex-shrink-0">
+                      <Megaphone className="w-4.5 h-4.5 text-violet-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm text-gray-800">Рассылка мастерам</p>
+                      <p className="text-[11px] text-gray-400">Сообщение получат {allMastersForBroadcast.length} активных мастеров</p>
+                    </div>
+                    <button onClick={() => setShowBroadcast(false)} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
+                      <X className="w-4 h-4 text-gray-400" />
+                    </button>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                    {/* Success state */}
+                    {broadcastResult !== null && (
+                      <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
+                        <CheckCheck className="w-5 h-5 text-emerald-500 flex-shrink-0" />
+                        <div>
+                          <p className="text-sm font-semibold text-emerald-700">Рассылка отправлена</p>
+                          <p className="text-xs text-emerald-600 mt-0.5">Получили {broadcastResult} {broadcastResult === 1 ? "мастер" : broadcastResult < 5 ? "мастера" : "мастеров"}</p>
+                        </div>
+                        <button onClick={() => setBroadcastResult(null)} className="ml-auto p-1 hover:bg-emerald-100 rounded-lg">
+                          <X className="w-3 h-3 text-emerald-500" />
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Recipient filter */}
+                    <div className="space-y-2">
+                      <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Получатели</p>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {([
+                          { value: "all", label: "Все", icon: Users },
+                          { value: "city", label: "По городу", icon: Building2 },
+                          { value: "custom", label: "Выбрать", icon: ListChecks },
+                        ] as const).map(opt => (
+                          <button
+                            key={opt.value}
+                            onClick={() => { setBroadcastFilter(opt.value); setBroadcastSelectedIds([]); }}
+                            className={`flex flex-col items-center gap-1 p-2.5 rounded-xl border text-xs font-medium transition-colors ${
+                              broadcastFilter === opt.value
+                                ? "bg-violet-500 border-violet-500 text-white"
+                                : "bg-white border-gray-200 text-gray-500 hover:border-violet-200 hover:text-violet-600"
+                            }`}
+                          >
+                            <opt.icon className="w-4 h-4" />
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* City selector */}
+                      {broadcastFilter === "city" && (
+                        <div className="space-y-1.5">
+                          <select
+                            value={broadcastCity}
+                            onChange={e => setBroadcastCity(e.target.value)}
+                            className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-violet-100 bg-white"
+                          >
+                            <option value="">— Выберите город —</option>
+                            {broadcastCities.map(c => (
+                              <option key={c} value={c}>{c}</option>
+                            ))}
+                          </select>
+                          {broadcastCity && (
+                            <p className="text-xs text-violet-600 font-medium">
+                              {allMastersForBroadcast.filter(m => m.city === broadcastCity).length} мастеров в {broadcastCity}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Custom master selector */}
+                      {broadcastFilter === "custom" && (
+                        <div className="border border-gray-200 rounded-xl overflow-hidden max-h-44 overflow-y-auto">
+                          {allMastersForBroadcast.map(m => (
+                            <label key={m.id} className="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 cursor-pointer border-b border-gray-50 last:border-0">
+                              <input
+                                type="checkbox"
+                                checked={broadcastSelectedIds.includes(m.id)}
+                                onChange={e => {
+                                  setBroadcastSelectedIds(prev =>
+                                    e.target.checked ? [...prev, m.id] : prev.filter(id => id !== m.id)
+                                  );
+                                }}
+                                className="rounded accent-violet-500"
+                              />
+                              <ChatAvatar name={m.alias} id={m.id} size={22} />
+                              <span className="text-xs font-medium text-gray-700 truncate">{m.alias}</span>
+                              <span className="text-[10px] text-gray-400 ml-auto flex-shrink-0">{m.city}</span>
+                            </label>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Recipient count badge */}
+                      <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                        <Users className="w-3.5 h-3.5 text-violet-400" />
+                        Будет отправлено:
+                        <span className="font-bold text-violet-600">
+                          {broadcastFilter === "all" ? allMastersForBroadcast.length :
+                           broadcastFilter === "city" ? allMastersForBroadcast.filter(m => m.city === broadcastCity).length :
+                           broadcastSelectedIds.length} чел.
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Templates */}
+                    <div className="space-y-2">
+                      <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Шаблоны сообщений</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          "Напоминаем об оплате комиссии за выполненные заказы.",
+                          "Уважаемые мастера! Обновите своё расписание в приложении.",
+                          "Важно: проверьте раздел «Заказы» — есть новые назначения.",
+                          "Спасибо за работу! Рады сотрудничеству с вами. 🤝",
+                        ].map((tpl, i) => (
+                          <button
+                            key={i}
+                            onClick={() => setBroadcastText(tpl)}
+                            className="px-2.5 py-1 bg-gray-50 border border-gray-200 rounded-lg text-[11px] text-gray-600 hover:bg-violet-50 hover:border-violet-200 hover:text-violet-700 transition-colors text-left"
+                          >
+                            {tpl.length > 48 ? tpl.slice(0, 46) + "…" : tpl}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Message input */}
+                    <div className="space-y-2">
+                      <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Текст сообщения</p>
+                      <textarea
+                        value={broadcastText}
+                        onChange={e => setBroadcastText(e.target.value)}
+                        placeholder="Введите текст рассылки..."
+                        rows={5}
+                        className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm text-gray-800 outline-none focus:ring-2 focus:ring-violet-100 resize-none bg-gray-50"
+                      />
+                      <p className="text-[10px] text-gray-400 text-right">{broadcastText.length} симв.</p>
+                    </div>
+                  </div>
+
+                  {/* Send button */}
+                  <div className="px-4 py-3 border-t border-gray-50 flex-shrink-0">
+                    <button
+                      onClick={sendBroadcast}
+                      disabled={
+                        !broadcastText.trim() ||
+                        broadcastSending ||
+                        (broadcastFilter === "city" && !broadcastCity) ||
+                        (broadcastFilter === "custom" && broadcastSelectedIds.length === 0)
+                      }
+                      className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-violet-600 text-white rounded-xl font-medium text-sm hover:bg-violet-700 disabled:opacity-40 transition-colors"
+                    >
+                      {broadcastSending ? (
+                        <><Loader2 className="w-4 h-4 animate-spin" /> Отправляем...</>
+                      ) : (
+                        <><Megaphone className="w-4 h-4" />
+                          Отправить рассылку
+                          {broadcastFilter === "all" && allMastersForBroadcast.length > 0 && (
+                            <span className="bg-violet-500 text-white text-xs px-1.5 py-0.5 rounded-full ml-1">
+                              {allMastersForBroadcast.length}
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              ) : !selectedId ? (
                 <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
                   <MessageSquare className="w-14 h-14 text-gray-200 mb-4" />
                   <p className="text-gray-400 font-medium">Выберите диалог</p>
                   <p className="text-sm text-gray-300 mt-1">Выберите мастера из списка слева</p>
+                  <button
+                    onClick={() => { setShowBroadcast(true); setSelectedId(null); }}
+                    className="mt-6 inline-flex items-center gap-2 px-4 py-2 bg-violet-50 text-violet-600 border border-violet-200 rounded-xl text-sm font-medium hover:bg-violet-100 transition-colors"
+                  >
+                    <Megaphone className="w-4 h-4" />
+                    Создать рассылку
+                  </button>
                 </div>
               ) : (
                 <>
@@ -1054,6 +1304,29 @@ export default function MasterChat() {
 
                   {/* Reply input */}
                   <div className="px-4 py-3.5 border-t border-gray-50 flex-shrink-0">
+                    {/* Quick replies panel */}
+                    {showQuickReplies && (
+                      <div className="mb-2 bg-white border border-gray-200 rounded-2xl shadow-xl p-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Шаблоны ответов</p>
+                          <button onClick={() => setShowQuickReplies(false)} className="text-gray-300 hover:text-gray-500">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-1">
+                          {QUICK_REPLIES.map((qr, i) => (
+                            <button
+                              key={i}
+                              onClick={() => { setReply(qr.text); setShowQuickReplies(false); }}
+                              className="text-left px-2.5 py-2 bg-gray-50 hover:bg-blue-50 hover:text-blue-700 border border-gray-100 hover:border-blue-200 rounded-xl text-[11px] text-gray-600 transition-colors"
+                            >
+                              <span className="font-semibold block text-[10px] text-gray-400 mb-0.5">{qr.label}</span>
+                              <span className="line-clamp-1">{qr.text}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     {/* Emoji picker panel */}
                     {showEmojiPicker && (
                       <div ref={emojiPickerRef}
@@ -1096,10 +1369,19 @@ export default function MasterChat() {
                         <Paperclip className="w-4 h-4" />
                       </button>
 
+                      {/* Quick replies button */}
+                      <button
+                        onClick={() => { setShowQuickReplies(v => !v); setShowEmojiPicker(false); }}
+                        className={`flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-xl border transition-colors ${showQuickReplies ? "border-blue-300 bg-blue-50 text-blue-500" : "border-gray-200 hover:bg-gray-50 text-gray-400 hover:text-gray-600"}`}
+                        title="Шаблоны ответов"
+                      >
+                        <Zap className="w-4 h-4" />
+                      </button>
+
                       {/* Emoji button */}
                       <button
-                        onClick={() => setShowEmojiPicker(v => !v)}
-                        className={`flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-xl border transition-colors ${showEmojiPicker ? "border-blue-300 bg-blue-50 text-blue-500" : "border-gray-200 hover:bg-gray-50 text-gray-400 hover:text-gray-600"}`}
+                        onClick={() => { setShowEmojiPicker(v => !v); setShowQuickReplies(false); }}
+                        className={`flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-xl border transition-colors ${showEmojiPicker ? "border-yellow-300 bg-yellow-50 text-yellow-500" : "border-gray-200 hover:bg-gray-50 text-gray-400 hover:text-gray-600"}`}
                         title="Добавить эмодзи"
                       >
                         <Smile className="w-4 h-4" />

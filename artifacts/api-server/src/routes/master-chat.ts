@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, masterMessagesTable, mastersTable, telegramChatsTable, transactionsTable } from "@workspace/db";
+import { db, masterMessagesTable, mastersTable, telegramChatsTable, transactionsTable, usersTable } from "@workspace/db";
 import { eq, desc, and, inArray } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
 import { sendPushToMaster } from "../lib/push.js";
@@ -264,6 +264,49 @@ router.patch("/:masterId/read", requireRole("admin", "master_operator"), async (
     .set({ isRead: true })
     .where(and(eq(masterMessagesTable.masterId, masterId), eq(masterMessagesTable.fromMaster, true)));
   res.json({ success: true });
+});
+
+// POST /api/master-chat/broadcast — send a message to multiple masters
+router.post("/broadcast", requireRole("admin", "master_operator"), async (req, res) => {
+  const { text, filter } = req.body;
+  if (!text?.trim()) return res.status(400).json({ error: "text required" });
+
+  const sessionUserId = (req as any).session?.userId ?? null;
+  let senderLabel = "Оператор";
+  if (sessionUserId) {
+    const userRows = await db.select().from(usersTable).where(eq(usersTable.id, sessionUserId));
+    senderLabel = userRows[0]?.name ?? userRows[0]?.login ?? "Оператор";
+  }
+
+  const allMasters = await db.select().from(mastersTable).where(eq(mastersTable.status, "active"));
+
+  let targets = allMasters;
+  if (filter?.type === "city" && filter.city) {
+    targets = allMasters.filter(m => m.city === filter.city);
+  } else if (filter?.type === "custom" && Array.isArray(filter.masterIds) && filter.masterIds.length > 0) {
+    targets = allMasters.filter(m => filter.masterIds.includes(m.id));
+  }
+
+  if (targets.length === 0) return res.json({ sent: 0 });
+
+  await Promise.all(targets.map(async (master) => {
+    const chatId = master.telegramId ?? `pwa_${master.id}`;
+    await db.insert(masterMessagesTable).values({
+      masterId: master.id,
+      telegramChatId: chatId,
+      text: text.trim(),
+      fromMaster: false,
+      senderName: `📢 ${senderLabel}`,
+      isRead: true,
+    });
+    sendPushToMaster(master.id, {
+      title: `📢 Объявление`,
+      body: text.trim().length > 80 ? text.trim().slice(0, 77) + "…" : text.trim(),
+      url: "/chat",
+    }).catch(() => {});
+  }));
+
+  res.json({ sent: targets.length });
 });
 
 // DELETE /api/master-chat/:masterId — clear all messages in this conversation
