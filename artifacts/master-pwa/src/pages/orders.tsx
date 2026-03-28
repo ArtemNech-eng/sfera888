@@ -360,8 +360,8 @@ function ReceiptModal({
         notes: notes.trim() || undefined,
       };
       const url = isEdit
-        ? `${import.meta.env.BASE_URL}api/receipts/${existingReceipt!.id}`
-        : `${import.meta.env.BASE_URL}api/receipts`;
+        ? `/api/receipts/${existingReceipt!.id}`
+        : `/api/receipts`;
       const method = isEdit ? "PATCH" : "POST";
       const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify(body) });
       if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error ?? "Ошибка"); }
@@ -565,7 +565,7 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
 
   const fetchReceipts = async (showNotification = false) => {
     try {
-      const r = await fetch(`${import.meta.env.BASE_URL}api/receipts/my/${order.id}`, { credentials: "include" });
+      const r = await fetch(`/api/receipts/my/${order.id}`, { credentials: "include" });
       if (!r.ok) return;
       const fresh: ExistingReceipt[] = await r.json();
       if (showNotification) {
@@ -834,7 +834,7 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
                               <button
                                 onClick={async () => {
                                   if (!window.confirm("Удалить расписку?")) return;
-                                  const res = await fetch(`${import.meta.env.BASE_URL}api/receipts/${r.id}`, { method: "DELETE", credentials: "include" });
+                                  const res = await fetch(`/api/receipts/${r.id}`, { method: "DELETE", credentials: "include" });
                                   if (res.ok) {
                                     setOrderReceipts(prev => prev.filter(x => x.id !== r.id));
                                     toast.success("Расписка удалена");
@@ -850,11 +850,33 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
                             </div>
                           </div>
                           {r.prepaymentSubmittedAt ? (
-                            <div className="flex items-center gap-2 bg-green-50 dark:bg-green-900/20 rounded-lg px-2.5 py-1.5">
-                              <CheckCircle2 size={13} className="text-green-600 flex-shrink-0" />
-                              <div className="min-w-0">
-                                <p className="text-xs font-semibold text-green-700 dark:text-green-400">Бронь подтверждена клиентом</p>
-                                {r.clientSubmittedName && <p className="text-xs text-green-600">👤 {r.clientSubmittedName}</p>}
+                            <div className="space-y-1.5 mt-1">
+                              <div className="flex items-center gap-1.5 text-xs font-semibold text-green-700 dark:text-green-400">
+                                <CheckCircle2 size={13} className="flex-shrink-0" />
+                                Бронь подтверждена · {new Date(r.prepaymentSubmittedAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                              </div>
+                              {r.clientSubmittedName && <p className="text-xs text-muted-foreground pl-5">👤 {r.clientSubmittedName}</p>}
+                              <div className="bg-green-50 dark:bg-green-900/20 rounded-xl p-2.5 space-y-1 text-xs">
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Бронь внесена</span>
+                                  <span className="font-semibold text-green-700 dark:text-green-400">+{Number(r.prepaymentAmount).toLocaleString("ru-RU")} ₽</span>
+                                </div>
+                                {order.commission != null && (
+                                  <div className="flex justify-between">
+                                    <span className="text-muted-foreground">Комиссия платформы</span>
+                                    <span className="font-semibold text-destructive">−{order.commission.toLocaleString("ru-RU")} ₽</span>
+                                  </div>
+                                )}
+                                {order.commission != null && (
+                                  <div className="flex justify-between border-t border-green-200 dark:border-green-800 pt-1 mt-0.5">
+                                    <span className="font-medium text-foreground">К получению с брони</span>
+                                    <span className="font-bold text-foreground">{(Number(r.prepaymentAmount) - order.commission).toLocaleString("ru-RU")} ₽</span>
+                                  </div>
+                                )}
+                                <div className="flex justify-between border-t border-green-200 dark:border-green-800 pt-1 mt-0.5">
+                                  <span className="text-muted-foreground">Остаток от клиента</span>
+                                  <span className="font-semibold">{(Number(r.totalAmount) - Number(r.prepaymentAmount)).toLocaleString("ru-RU")} ₽</span>
+                                </div>
                               </div>
                             </div>
                           ) : (

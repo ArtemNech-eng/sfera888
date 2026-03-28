@@ -112,6 +112,26 @@ router.get("/dialogs/unread-count", requireRole("admin", "master_operator"), asy
   res.json({ count: rows.length });
 });
 
+// ─── CRM: PATCH /api/receipts/:id/confirm — manually confirm prepayment ───────
+
+router.patch("/:id/confirm", requireRole("admin", "master_operator"), async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ error: "Неверный ID" });
+  const { operatorNote } = req.body;
+  const [existing] = await db.select().from(receiptsTable).where(eq(receiptsTable.id, id));
+  if (!existing) return res.status(404).json({ error: "Расписка не найдена" });
+  const [updated] = await db.update(receiptsTable)
+    .set({
+      prepaymentSubmittedAt: existing.prepaymentSubmittedAt ?? new Date(),
+      clientSubmittedName: existing.clientSubmittedName ?? (operatorNote?.trim() || "Подтверждено оператором"),
+      prepaymentSeenAt: new Date(),
+    })
+    .where(eq(receiptsTable.id, id))
+    .returning();
+  const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, updated.masterId));
+  res.json(await buildReceiptResponse(updated, master, req));
+});
+
 // ─── CRM: PATCH /api/receipts/:id/seen — mark dialog as seen ─────────────────
 
 router.patch("/:id/seen", requireRole("admin", "master_operator"), async (req, res) => {

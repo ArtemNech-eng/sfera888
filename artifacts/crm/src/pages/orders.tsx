@@ -367,7 +367,7 @@ export default function Orders() {
     enabled: !!openDispatchId && showStatusLog,
   });
 
-  interface ReceiptEntry { id: number; token: string; prepaymentAmount: number; totalAmount: number; notes: string | null; clientName: string; clientPhone: string; createdAt: string; publicUrl: string; lineItems: { description: string; price: number }[]; }
+  interface ReceiptEntry { id: number; token: string; prepaymentAmount: number; totalAmount: number; notes: string | null; clientName: string; clientPhone: string; createdAt: string; publicUrl: string; lineItems: { description: string; price: number }[]; prepaymentSubmittedAt: string | null; clientSubmittedName: string | null; prepaymentScreenshotUrl: string | null; }
   const { data: receipts } = useQuery<ReceiptEntry[]>({
     queryKey: ["/api/receipts/order", openDispatchId],
     queryFn: async () => {
@@ -1620,15 +1620,42 @@ export default function Orders() {
                         <p className="text-xs text-muted-foreground/60 text-center py-2">Расписок нет</p>
                       )}
                       {receipts?.map(r => (
-                        <div key={r.id} className="bg-muted/40 rounded-xl p-3 space-y-1.5">
+                        <div key={r.id} className={`rounded-xl p-3 space-y-1.5 ${r.prepaymentSubmittedAt ? "bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800" : "bg-muted/40"}`}>
                           <div className="flex items-center justify-between">
                             <div>
-                              <span className="text-xs text-muted-foreground">Предоплата: </span>
+                              <span className="text-xs text-muted-foreground">Бронь: </span>
                               <span className="text-sm font-bold text-primary">{Number(r.prepaymentAmount).toLocaleString("ru-RU")} ₽</span>
-                              <span className="text-xs text-muted-foreground ml-2">/ {Number(r.totalAmount).toLocaleString("ru-RU")} ₽ итого</span>
+                              <span className="text-xs text-muted-foreground ml-1">/ {Number(r.totalAmount).toLocaleString("ru-RU")} ₽ итого</span>
                             </div>
                             <span className="text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
                           </div>
+                          {r.prepaymentSubmittedAt ? (
+                            <div className="flex items-center gap-1.5 text-xs text-green-700 dark:text-green-400 font-medium">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              Оплата подтверждена · {new Date(r.prepaymentSubmittedAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                              {r.clientSubmittedName && <span className="text-muted-foreground font-normal">· {r.clientSubmittedName}</span>}
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-amber-600 dark:text-amber-400">⏳ Ожидает оплаты</span>
+                              <button
+                                onClick={async () => {
+                                  if (!window.confirm("Подтвердить получение предоплаты вручную?")) return;
+                                  const resp = await fetch(`/api/receipts/${r.id}/confirm`, { method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ operatorNote: "Подтверждено оператором" }) });
+                                  if (resp.ok) { toast({ title: "Предоплата подтверждена!" }); queryClient.invalidateQueries({ queryKey: ["/api/receipts/order", openDispatchId] }); }
+                                  else toast({ title: "Ошибка подтверждения", variant: "destructive" });
+                                }}
+                                className="ml-auto flex items-center gap-1 text-xs bg-green-600 text-white px-2 py-1 rounded-lg font-medium hover:bg-green-700"
+                              >
+                                <CheckCircle2 className="w-3 h-3" /> Подтвердить
+                              </button>
+                            </div>
+                          )}
+                          {r.prepaymentScreenshotUrl && (
+                            <a href={r.prepaymentScreenshotUrl} target="_blank" rel="noopener noreferrer" className="block">
+                              <img src={r.prepaymentScreenshotUrl} alt="Скриншот" className="max-h-32 rounded-lg border object-contain" />
+                            </a>
+                          )}
                           {r.notes && <p className="text-xs text-muted-foreground">{r.notes}</p>}
                           <div className="flex items-center gap-2">
                             <a href={r.publicUrl} target="_blank" rel="noopener noreferrer"
