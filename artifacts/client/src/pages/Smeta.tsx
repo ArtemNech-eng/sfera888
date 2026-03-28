@@ -219,7 +219,7 @@ export default function Smeta() {
       </div>
 
       {/* ── Scrollable ── */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "10px 12px 6px", display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ flex: 1, overflowY: "auto", padding: "10px 12px 20px", display: "flex", flexDirection: "column", gap: 8 }}>
 
         {/* ── Hero card ── */}
         <div style={{ background: "#fff", borderRadius: 16, overflow: "hidden", border: "1px solid #e5e7eb" }}>

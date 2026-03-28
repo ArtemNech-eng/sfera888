@@ -79,17 +79,17 @@ export default function Chat() {
   };
 
   if (loading) return (
-    <div style={{ height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#eef0f5", fontFamily: "Inter, sans-serif" }}>
-      <div style={{ width: 36, height: 36, border: "3px solid #bfdbfe", borderTopColor: "#1d4ed8", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+    <div style={{ height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f5f3ff", fontFamily: "'Plus Jakarta Sans', -apple-system, sans-serif" }}>
+      <div style={{ width: 36, height: 36, border: "3px solid #c4b5fd", borderTopColor: "#1d4ed8", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   );
 
   if (notFound) return (
-    <div style={{ height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#eef0f5", fontFamily: "Inter, sans-serif" }}>
+    <div style={{ height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f5f3ff", fontFamily: "'Plus Jakarta Sans', -apple-system, sans-serif" }}>
       <div style={{ textAlign: "center" }}>
         <div style={{ fontSize: 56, marginBottom: 16 }}>🔍</div>
-        <h2 style={{ fontSize: 20, fontWeight: 700, color: "#111827" }}>Смета не найдена</h2>
+        <h2 style={{ fontSize: 20, fontWeight: 700, color: "#1a1040" }}>Смета не найдена</h2>
       </div>
     </div>
   );
