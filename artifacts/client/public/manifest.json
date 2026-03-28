@@ -1,0 +1,26 @@
+{
+  "name": "Честный мастер",
+  "short_name": "Честный мастер",
+  "description": "Просмотр сметы и запись к мастеру",
+  "start_url": "/client/",
+  "scope": "/client/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#1d4ed8",
+  "background_color": "#ffffff",
+  "lang": "ru",
+  "icons": [
+    {
+      "src": "/client/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/client/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

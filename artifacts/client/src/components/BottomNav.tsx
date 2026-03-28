@@ -2,11 +2,12 @@ interface BottomNavProps {
   token: string;
   active: "smeta" | "chat" | "history" | "estimate";
   unread?: number;
+  staticMode?: boolean;
 }
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-export default function BottomNav({ token, active, unread = 0 }: BottomNavProps) {
+export default function BottomNav({ token, active, unread = 0, staticMode = false }: BottomNavProps) {
   const nav = [
     {
       id: "smeta",
@@ -59,10 +60,14 @@ export default function BottomNav({ token, active, unread = 0 }: BottomNavProps)
 
   return (
     <nav style={{
-      position: "fixed", bottom: 0, left: 0, right: 0,
-      background: "#fff", borderTop: "1px solid #e5e7eb",
-      display: "flex", zIndex: 100,
-      boxShadow: "0 -2px 12px rgba(0,0,0,.06)",
+      position: staticMode ? "static" : "fixed",
+      bottom: staticMode ? undefined : 0,
+      left: 0, right: 0,
+      background: "#fff",
+      borderTop: "1px solid #e5e7eb",
+      display: "flex",
+      zIndex: staticMode ? undefined : 100,
+      boxShadow: staticMode ? "none" : "0 -2px 12px rgba(0,0,0,.06)",
       paddingBottom: "env(safe-area-inset-bottom, 0px)",
     }}>
       {nav.map(item => {
