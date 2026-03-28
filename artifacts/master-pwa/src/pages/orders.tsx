@@ -385,21 +385,29 @@ function ReceiptModal({
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-end justify-center" onClick={onClose}>
       <div
-        className="w-full max-w-sm bg-card rounded-t-2xl flex flex-col max-h-[90vh]"
+        className="w-full max-w-sm bg-card rounded-t-3xl flex flex-col"
+        style={{ maxHeight: "92dvh" }}
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex justify-between items-center px-5 pt-5 pb-3 flex-shrink-0">
+        {/* Drag handle */}
+        <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
+          <div className="w-10 h-1 rounded-full bg-muted-foreground/30" />
+        </div>
+
+        {/* Header */}
+        <div className="flex justify-between items-center px-5 pt-2 pb-3 flex-shrink-0">
           <h3 className="font-bold text-base flex items-center gap-2">
             <ReceiptText size={18} className="text-primary" />
             {isEdit ? "Изменить расписку" : `Расписка — заказ #${order.id}`}
           </h3>
-          <button onClick={onClose} className="text-muted-foreground"><X size={20} /></button>
+          <button onClick={onClose} className="text-muted-foreground p-1"><X size={20} /></button>
         </div>
 
-        <div className="overflow-y-auto flex-1 px-5 pb-2 space-y-4">
+        {/* Scrollable body — min-h-0 is critical for flex overflow to work */}
+        <div className="overflow-y-auto flex-1 min-h-0 px-5 pb-3 space-y-4">
           {result ? (
             <>
-              <div className="bg-green-50 dark:bg-green-900/20 rounded-xl p-4 text-center space-y-1">
+              <div className="bg-green-50 dark:bg-green-900/20 rounded-2xl p-4 text-center space-y-1">
                 <CheckCircle2 size={32} className="mx-auto text-green-500" />
                 <p className="font-semibold text-green-700 dark:text-green-400">
                   {isEdit ? "Расписка обновлена!" : "Расписка создана!"}
@@ -412,7 +420,8 @@ function ReceiptModal({
             </>
           ) : (
             <>
-              <div className="space-y-1">
+              {/* Line items */}
+              <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Перечень работ</p>
                   <button onClick={addItem} className="flex items-center gap-1 text-xs text-primary font-medium">
@@ -421,55 +430,58 @@ function ReceiptModal({
                 </div>
                 <div className="space-y-2">
                   {lineItems.map((item, i) => (
-                    <div key={i} className="flex gap-2 items-start">
-                      <div className="flex-1">
-                        <input
-                          value={item.description}
-                          onChange={e => updateItem(i, "description", e.target.value)}
-                          placeholder="Описание работы"
-                          className="w-full h-9 rounded-lg border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                        />
-                      </div>
-                      <div className="w-24 flex-shrink-0">
-                        <input
-                          type="number"
-                          value={item.price}
-                          onChange={e => updateItem(i, "price", e.target.value)}
-                          placeholder="₽"
-                          className="w-full h-9 rounded-lg border border-border bg-background px-3 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary/30"
-                          min="0"
-                        />
-                      </div>
+                    <div key={i} className="flex gap-2 items-center">
+                      <input
+                        value={item.description}
+                        onChange={e => updateItem(i, "description", e.target.value)}
+                        placeholder="Описание работы"
+                        className="flex-1 h-10 rounded-xl border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                      <input
+                        type="number"
+                        value={item.price}
+                        onChange={e => updateItem(i, "price", e.target.value)}
+                        placeholder="₽"
+                        className="w-20 h-10 rounded-xl border border-border bg-background px-3 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary/30"
+                        inputMode="decimal"
+                        min="0"
+                      />
                       {lineItems.length > 1 && (
-                        <button onClick={() => removeItem(i)} className="mt-1 text-muted-foreground hover:text-destructive">
-                          <Trash2 size={15} />
+                        <button onClick={() => removeItem(i)} className="text-muted-foreground hover:text-destructive flex-shrink-0">
+                          <X size={16} />
                         </button>
                       )}
                     </div>
                   ))}
                 </div>
                 {totalCalc > 0 && (
-                  <div className="flex justify-between items-center bg-muted/50 rounded-lg px-3 py-2 mt-1">
+                  <div className="flex justify-between items-center bg-primary/5 rounded-xl px-3 py-2.5">
                     <span className="text-xs text-muted-foreground">Итого по смете</span>
-                    <span className="text-sm font-bold">{totalCalc.toLocaleString("ru-RU")} ₽</span>
+                    <span className="text-sm font-bold text-primary">{totalCalc.toLocaleString("ru-RU")} ₽</span>
                   </div>
                 )}
               </div>
 
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Сумма предоплаты (₽)</label>
-                <input
-                  type="number"
-                  value={prepayment}
-                  onChange={e => setPrepayment(e.target.value)}
-                  className="w-full h-11 rounded-xl border-2 border-primary/40 bg-background px-3 text-base font-bold focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  placeholder="5000"
-                  min="1"
-                />
-                <p className="text-xs text-muted-foreground">Сумма, которую клиент уже оплатил</p>
+              {/* Prepayment */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Сумма предоплаты</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    value={prepayment}
+                    onChange={e => setPrepayment(e.target.value)}
+                    className="w-full h-12 rounded-xl border-2 border-primary/40 bg-background px-4 pr-10 text-lg font-bold focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    placeholder="5000"
+                    inputMode="decimal"
+                    min="1"
+                  />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground font-semibold">₽</span>
+                </div>
+                <p className="text-xs text-muted-foreground">Сумма, которую клиент перечислит как предоплату</p>
               </div>
 
-              <div className="space-y-1">
+              {/* Notes */}
+              <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Примечание</label>
                 <textarea
                   value={notes}
@@ -483,7 +495,9 @@ function ReceiptModal({
           )}
         </div>
 
-        <div className="px-5 pt-3 pb-8 flex-shrink-0 space-y-2 border-t border-border">
+        {/* Footer buttons — always visible */}
+        <div className="px-5 pt-3 flex-shrink-0 space-y-2 border-t border-border"
+          style={{ paddingBottom: "max(20px, env(safe-area-inset-bottom, 20px))" }}>
           {result ? (
             <>
               <button
@@ -496,11 +510,14 @@ function ReceiptModal({
               {typeof navigator.share === "function" && (
                 <button
                   onClick={() => navigator.share({ title: "Расписка об оплате", url: result.publicUrl })}
-                  className="w-full h-10 rounded-xl border border-border text-sm font-medium flex items-center justify-center gap-2 text-muted-foreground"
+                  className="w-full h-11 rounded-xl border border-border text-sm font-medium flex items-center justify-center gap-2 text-muted-foreground"
                 >
                   Поделиться
                 </button>
               )}
+              <button onClick={onClose} className="w-full h-10 text-sm text-muted-foreground">
+                Закрыть
+              </button>
             </>
           ) : (
             <>
