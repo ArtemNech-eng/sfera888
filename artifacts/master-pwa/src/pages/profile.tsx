@@ -6,8 +6,9 @@ import {
   User, Phone, MapPin, Star, Briefcase,
   TrendingUp, ShieldCheck, LogOut, ExternalLink,
   BadgeCheck, Camera, Pencil, Check, X, Loader2,
-  BarChart2, Clock, Filter, ChevronDown, Plus,
+  BarChart2, Clock, Filter, ChevronDown, Plus, Download,
 } from "lucide-react";
+import { useInstallPrompt } from "@/lib/useInstallPrompt";
 
 interface WorkingHours { start: string; end: string; days: number[]; }
 
@@ -505,6 +506,7 @@ export default function ProfilePage() {
   const [uploading, setUploading] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { canInstall, isInstalled, install } = useInstallPrompt();
 
   useEffect(() => {
     api.profile()
@@ -696,6 +698,29 @@ export default function ProfilePage() {
           day: "numeric", month: "long", year: "numeric",
         })}
       </p>
+
+      {/* PWA install button — shown only when browser supports it and app isn't installed */}
+      {canInstall && (
+        <button
+          onClick={async () => {
+            const result = await install();
+            if (result === "accepted") toast.success("Приложение установлено!");
+            else if (result === "dismissed") toast("Установка отменена");
+            else toast("Нажмите «Установить» в адресной строке браузера");
+          }}
+          className="w-full flex items-center justify-center gap-2 h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm active:opacity-80"
+        >
+          <Download size={16} />
+          Установить приложение
+        </button>
+      )}
+
+      {isInstalled && (
+        <div className="flex items-center justify-center gap-2 h-10 text-sm text-muted-foreground">
+          <Check size={14} className="text-green-500" />
+          Приложение установлено
+        </div>
+      )}
 
       <button
         onClick={handleLogout}
