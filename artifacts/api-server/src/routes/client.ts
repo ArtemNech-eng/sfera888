@@ -23,6 +23,35 @@ const openai = new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
 
+// ─── Rate limiter: max 3 AI estimates per phone per 24 hours ──────────────────
+const ESTIMATE_LIMIT = 3;
+const ESTIMATE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+const estimateRateMap = new Map<string, { count: number; resetAt: number }>();
+
+function normalizePhone(phone: string): string {
+  return phone.replace(/\D/g, "").slice(-10);
+}
+
+function checkEstimateLimit(phone: string): { allowed: boolean; remaining: number; resetAt: Date } {
+  const key = normalizePhone(phone);
+  const now = Date.now();
+  let entry = estimateRateMap.get(key);
+
+  if (!entry || entry.resetAt < now) {
+    entry = { count: 0, resetAt: now + ESTIMATE_WINDOW_MS };
+    estimateRateMap.set(key, entry);
+  }
+
+  const remaining = Math.max(0, ESTIMATE_LIMIT - entry.count);
+  if (entry.count >= ESTIMATE_LIMIT) {
+    return { allowed: false, remaining: 0, resetAt: new Date(entry.resetAt) };
+  }
+
+  entry.count++;
+  return { allowed: true, remaining: ESTIMATE_LIMIT - entry.count, resetAt: new Date(entry.resetAt) };
+}
+
 async function uploadImageToStorage(buffer: Buffer, mimetype: string): Promise<string | null> {
   try {
     const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
@@ -140,6 +169,16 @@ router.post("/estimate", upload.single("photo"), async (req, res) => {
   if (!clientPhone?.trim()) return res.status(400).json({ error: "Укажите номер телефона" });
   if (!city?.trim()) return res.status(400).json({ error: "Укажите город" });
   if (!serviceType?.trim()) return res.status(400).json({ error: "Укажите тип работ" });
+
+  const rateCheck = checkEstimateLimit(clientPhone.trim());
+  if (!rateCheck.allowed) {
+    const resetHour = rateCheck.resetAt.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+    return res.status(429).json({
+      error: `Вы использовали все ${ESTIMATE_LIMIT} бесплатные оценки на сегодня. Новые оценки будут доступны после ${resetHour}.`,
+      limitExceeded: true,
+      resetAt: rateCheck.resetAt.toISOString(),
+    });
+  }
 
   try {
     let imageContent: any[] = [];

@@ -33,7 +33,7 @@ const SERVICES = [
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 export default function Estimate() {
-  const [step, setStep] = useState<"form" | "analyzing" | "result" | "submitted">("form");
+  const [step, setStep] = useState<"form" | "analyzing" | "result" | "submitted" | "limited">("form");
   const [photo, setPhoto] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [clientName, setClientName] = useState("");
@@ -43,6 +43,7 @@ export default function Estimate() {
   const [serviceType, setServiceType] = useState("");
   const [description, setDescription] = useState("");
   const [error, setError] = useState("");
+  const [limitError, setLimitError] = useState("");
   const [result, setResult] = useState<EstimateResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -72,7 +73,16 @@ export default function Estimate() {
 
       const r = await fetch("/api/client/estimate", { method: "POST", body: fd });
       const d = await r.json();
-      if (!r.ok) { setError(d.error || "Ошибка при анализе"); setStep("form"); return; }
+      if (!r.ok) {
+        if (d.limitExceeded) {
+          setLimitError(d.error || "Лимит оценок исчерпан");
+          setStep("limited");
+        } else {
+          setError(d.error || "Ошибка при анализе");
+          setStep("form");
+        }
+        return;
+      }
       setResult(d);
       setStep("result");
     } catch {
@@ -200,6 +210,35 @@ export default function Estimate() {
               Изменить параметры
             </button>
           </div>
+        </div>
+      ) : step === "limited" ? (
+        <div style={{ maxWidth: 540, width: "calc(100% - 24px)", margin: "60px auto 0", textAlign: "center" }}>
+          <div style={{ fontSize: 64, marginBottom: 20 }}>⏳</div>
+          <h2 style={{ fontSize: 22, fontWeight: 800, color: "#111827", marginBottom: 12 }}>Лимит на сегодня исчерпан</h2>
+          <p style={{ fontSize: 14, color: "#6b7280", lineHeight: 1.7, marginBottom: 24 }}>{limitError}</p>
+          <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, padding: "16px 20px", marginBottom: 24, textAlign: "left" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 10 }}>Что можно сделать прямо сейчас:</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                <span style={{ fontSize: 18 }}>📞</span>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "#111827" }}>Позвонить напрямую</div>
+                  <a href="tel:+79892860863" style={{ fontSize: 13, color: "#1d4ed8", textDecoration: "none" }}>+7 989 286-08-63</a>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                <span style={{ fontSize: 18 }}>💬</span>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "#111827" }}>Написать мастеру</div>
+                  <div style={{ fontSize: 13, color: "#6b7280" }}>Откройте смету — там есть чат с поддержкой</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <button onClick={() => { setStep("form"); setLimitError(""); }}
+            style={{ padding: "12px 28px", background: "#f3f4f6", color: "#374151", border: "none", borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+            ← Вернуться к форме
+          </button>
         </div>
       ) : (
         /* Form step */
