@@ -74,9 +74,49 @@ app.post("/receipt/:token/confirm", (req, res) => {
   res.redirect(308, `/api/receipt/${req.params.token}/confirm`);
 });
 
+// ── JSON data endpoint for the client React app ─────────────────────────────
+app.get("/api/receipt/:token/data", async (req, res) => {
+  try {
+    const { receiptsTable, mastersTable } = await import("@workspace/db");
+    const { db } = await import("@workspace/db");
+    const { eq } = await import("drizzle-orm");
+    const [receipt] = await db.select().from(receiptsTable).where(eq(receiptsTable.token, req.params.token));
+    if (!receipt) return res.status(404).json({ error: "not_found" });
+    const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, receipt.masterId));
+    const masterName = master?.contractFullName || master?.alias || "Мастер";
+    const masterPhone = master?.phone || "";
+    return res.json({
+      id: receipt.id,
+      token: receipt.token,
+      clientName: receipt.clientName,
+      clientPhone: receipt.clientPhone,
+      city: receipt.city,
+      district: receipt.district,
+      serviceType: receipt.serviceType,
+      prepaymentAmount: Number(receipt.prepaymentAmount),
+      totalAmount: Number(receipt.totalAmount),
+      lineItems: receipt.lineItems ?? [],
+      notes: receipt.notes,
+      masterName,
+      masterPhone,
+      isClientSubmitted: !!receipt.prepaymentSubmittedAt,
+      isOperatorConfirmed: !!receipt.prepaymentSeenAt,
+      createdAt: receipt.createdAt,
+    });
+  } catch (err) {
+    console.error("receipt data error", err);
+    return res.status(500).json({ error: "server_error" });
+  }
+});
+
 // ── Public receipt page (no auth required) — served under /api/ so Replit's ──
 // ── deployment proxy doesn't intercept it (non-/api paths go to CRM static). ──
+// ── Redirects to React client app; use ?html=1 for HTML fallback. ────────────
 app.get("/api/receipt/:token", async (req, res) => {
+  // Redirect to client React app unless HTML fallback is explicitly requested
+  if (!req.query.html) {
+    return res.redirect(302, `/client/smeta/${req.params.token}`);
+  }
   try {
     const { receiptsTable, mastersTable } = await import("@workspace/db");
     const { db } = await import("@workspace/db");
