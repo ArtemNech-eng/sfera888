@@ -378,6 +378,19 @@ export default function Orders() {
     enabled: !!openDispatchId && showReceipts,
   });
 
+  const deleteReceiptMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const r = await fetch(`/api/receipts/${id}`, { method: "DELETE", credentials: "include" });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Ошибка"); }
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/receipts/order", openDispatchId] });
+      toast({ title: "Расписка удалена" });
+    },
+    onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
+  });
+
   const manualAssignMutation = useMutation({
     mutationFn: async ({ orderId, masterId }: { orderId: number; masterId: number }) => {
       const r = await fetch(`/api/orders/${orderId}/manual-assign/${masterId}`, { method: "POST", credentials: "include" });
@@ -1639,6 +1652,17 @@ export default function Orders() {
                               className="flex items-center gap-1 text-xs text-primary font-medium hover:underline ml-auto"
                             >
                               {editingCrmReceiptId === r.id ? "Отмена" : "Изменить"}
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (!window.confirm("Удалить расписку? Это действие нельзя отменить.")) return;
+                                deleteReceiptMutation.mutate(r.id);
+                              }}
+                              disabled={deleteReceiptMutation.isPending}
+                              className="flex items-center gap-1 text-xs text-destructive hover:opacity-80 disabled:opacity-50"
+                              title="Удалить расписку"
+                            >
+                              <Trash2 className="w-3 h-3" />
                             </button>
                           </div>
 

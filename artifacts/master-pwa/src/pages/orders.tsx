@@ -810,6 +810,22 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
                               >
                                 Изменить
                               </button>
+                              <button
+                                onClick={async () => {
+                                  if (!window.confirm("Удалить расписку?")) return;
+                                  const res = await fetch(`${import.meta.env.BASE_URL}api/receipts/${r.id}`, { method: "DELETE", credentials: "include" });
+                                  if (res.ok) {
+                                    setOrderReceipts(prev => prev.filter(x => x.id !== r.id));
+                                    toast.success("Расписка удалена");
+                                  } else {
+                                    toast.error("Не удалось удалить");
+                                  }
+                                }}
+                                className="h-8 w-8 rounded-lg border border-destructive/40 bg-destructive/10 text-destructive flex items-center justify-center flex-shrink-0"
+                                title="Удалить расписку"
+                              >
+                                <Trash2 size={13} />
+                              </button>
                             </div>
                           </div>
                           {r.prepaymentSubmittedAt ? (

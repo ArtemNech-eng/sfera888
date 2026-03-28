@@ -125,6 +125,25 @@ router.patch("/:id/seen", requireRole("admin", "master_operator"), async (req, r
   res.json(await buildReceiptResponse(updated, master, req));
 });
 
+// ─── DELETE /api/receipts/:id ─────────────────────────────────────────────────
+
+router.delete("/:id", requireRole("admin", "master_operator", "master"), async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ error: "Неверный ID" });
+
+  // Masters can only delete their own receipts
+  const [existing] = await db.select().from(receiptsTable).where(eq(receiptsTable.id, id));
+  if (!existing) return res.status(404).json({ error: "Расписка не найдена" });
+
+  const user = (req as any).session?.user;
+  if (user?.role === "master" && existing.masterId !== user.masterId) {
+    return res.status(403).json({ error: "Нет доступа" });
+  }
+
+  await db.delete(receiptsTable).where(eq(receiptsTable.id, id));
+  res.json({ ok: true });
+});
+
 // ─── Public JSON: GET /api/receipts/public/:token ─────────────────────────────
 
 router.get("/public/:token", async (req, res) => {
