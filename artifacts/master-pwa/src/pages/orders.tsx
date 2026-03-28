@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { api, uploadPhoto, resolvePhotoUrl } from "@/lib/api";
 import { toast } from "sonner";
 import {
@@ -114,7 +115,7 @@ function CompleteModal({
     }
   };
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
       <div className="w-full max-w-sm bg-card rounded-2xl p-5 space-y-4" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center">
@@ -147,7 +148,8 @@ function CompleteModal({
           </button>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -196,7 +198,7 @@ function CancelModal({
     }
   };
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
       <div className="w-full max-w-sm bg-card rounded-2xl p-5 space-y-4" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center">
@@ -269,7 +271,8 @@ function CancelModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -382,7 +385,7 @@ function ReceiptModal({
 
   const displayUrl = result?.publicUrl ?? existingReceipt?.publicUrl;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 bg-black/60 flex items-end justify-center" onClick={onClose}>
       <div
         className="w-full max-w-sm bg-card rounded-t-3xl flex flex-col"
@@ -542,7 +545,8 @@ function ReceiptModal({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
