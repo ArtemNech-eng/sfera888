@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "wouter";
 import BottomNav from "@/components/BottomNav";
+import PhoneGate from "@/components/PhoneGate";
+import { getStoredPhone, phonesMatch } from "@/utils/phone";
 
 interface LineItem { description: string; price: number; }
 interface ReceiptData {
@@ -98,6 +100,7 @@ export default function Smeta() {
   const [copied, setCopied] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [openSections, setOpenSections] = useState<Set<string>>(new Set(["payment"]));
+  const [showGate, setShowGate] = useState(false);
 
   useEffect(() => {
     fetch(`/api/receipt/${token}/data`)
@@ -111,6 +114,10 @@ export default function Smeta() {
           setLoading(false);
           if (d.isClientSubmitted) {
             setOpenSections(new Set(["items"]));
+          }
+          const stored = getStoredPhone();
+          if (!stored || !phonesMatch(stored, d.clientPhone)) {
+            setShowGate(true);
           }
         }
       })
@@ -183,6 +190,13 @@ export default function Smeta() {
         <p style={{ color: "#6b7280", fontSize: 14 }}>Ссылка недействительна или устарела</p>
       </div>
     </div>
+  );
+
+  if (showGate) return (
+    <PhoneGate
+      expectedPhone={data.clientPhone}
+      onSuccess={() => setShowGate(false)}
+    />
   );
 
   const date = new Date(data.createdAt).toLocaleString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });

@@ -1,10 +1,13 @@
+import { useState, useEffect } from "react";
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import Smeta from "@/pages/Smeta";
 import Chat from "@/pages/Chat";
 import History from "@/pages/History";
 import Estimate from "@/pages/Estimate";
+import MyOrders from "@/pages/MyOrders";
 import InstallPrompt from "@/components/InstallPrompt";
 import BottomNav from "@/components/BottomNav";
+import { getStoredPhone, clearStoredPhone, formatPhone } from "@/utils/phone";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -29,6 +32,17 @@ function AppIcon({ size = 44 }: { size?: number }) {
 }
 
 function Home() {
+  const [storedPhone] = useState(() => getStoredPhone());
+  const [orderCount, setOrderCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!storedPhone) return;
+    fetch(`/api/client/my-orders?phone=${encodeURIComponent(storedPhone)}`)
+      .then(r => r.json())
+      .then(d => setOrderCount(d.items?.length ?? 0))
+      .catch(() => {});
+  }, [storedPhone]);
+
   return (
     <div style={{
       fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
@@ -47,14 +61,51 @@ function Home() {
         display: "flex", alignItems: "center", gap: 12, flexShrink: 0,
       }}>
         <AppIcon size={40} />
-        <div>
+        <div style={{ flex: 1 }}>
           <div style={{ fontSize: 16, fontWeight: 800, color: "#111827", letterSpacing: -0.3 }}>Честный мастер</div>
           <div style={{ fontSize: 12, color: "#9ca3af" }}>Ремонт · Безопасно · Гарантия 6 мес.</div>
         </div>
+        {storedPhone && (
+          <button
+            onClick={() => window.location.href = `${BASE}/my-orders`}
+            style={{ display: "flex", alignItems: "center", gap: 6, background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, padding: "6px 10px", cursor: "pointer", fontFamily: "inherit" }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+            </svg>
+            <span style={{ fontSize: 12, fontWeight: 600, color: "#1d4ed8" }}>Мои заказы</span>
+          </button>
+        )}
       </div>
 
       {/* Scrollable content */}
       <div style={{ flex: 1, overflowY: "auto", padding: "20px 16px 24px" }}>
+
+        {/* My orders card (if logged in) */}
+        {storedPhone && (
+          <div
+            onClick={() => window.location.href = `${BASE}/my-orders`}
+            style={{
+              background: "#fff", borderRadius: 18, padding: "16px 18px",
+              marginBottom: 14, border: "1.5px solid #bfdbfe",
+              cursor: "pointer", display: "flex", alignItems: "center", gap: 14,
+            }}
+          >
+            <div style={{ width: 42, height: 42, background: "#dbeafe", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="12 8 12 12 14 14"/>
+                <path d="M3.05 11a9 9 0 1 0 .5-4.5"/><polyline points="3 3 3 8 8 8"/>
+              </svg>
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "#1e3a8a" }}>Мои заказы</div>
+              <div style={{ fontSize: 12, color: "#3b82f6", marginTop: 2 }}>
+                {formatPhone(storedPhone)}
+                {orderCount !== null ? ` · ${orderCount} ${orderCount === 1 ? "заказ" : orderCount < 5 ? "заказа" : "заказов"}` : ""}
+              </div>
+            </div>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </div>
+        )}
 
         {/* AI estimate card — primary action */}
         <div
@@ -147,6 +198,7 @@ function Router() {
     <Switch>
       <Route path="/" component={Home} />
       <Route path="/estimate" component={Estimate} />
+      <Route path="/my-orders" component={MyOrders} />
       <Route path="/smeta/:token/chat" component={Chat} />
       <Route path="/smeta/:token/history" component={History} />
       <Route path="/smeta/:token" component={Smeta} />

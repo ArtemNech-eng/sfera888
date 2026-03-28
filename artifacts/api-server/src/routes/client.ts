@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, receiptsTable, clientSupportMessagesTable, leadsTable, ordersTable, mastersTable } from "@workspace/db";
-import { eq, desc, and, isNull, inArray } from "drizzle-orm";
+import { eq, desc, and, isNull, inArray, like, sql } from "drizzle-orm";
 import multer from "multer";
 import { objectStorageClient } from "../lib/objectStorage.js";
 import { performBroadcast } from "../lib/broadcastOrder.js";
@@ -158,6 +158,66 @@ router.get("/history/:token", async (req, res) => {
   }));
 
   res.json({ items, clientPhone: phone });
+});
+
+// ─── GET /api/client/my-orders?phone=... — All orders by phone ───────────────
+
+router.get("/my-orders", async (req, res) => {
+  const { phone } = req.query;
+  if (!phone || typeof phone !== "string" || !phone.trim()) {
+    return res.status(400).json({ error: "Укажите номер телефона" });
+  }
+  const normalized = normalizePhone(phone.trim());
+  if (normalized.length < 7) return res.status(400).json({ error: "Некорректный номер" });
+
+  const allReceipts = await db.select({
+    id: receiptsTable.id,
+    token: receiptsTable.token,
+    serviceType: receiptsTable.serviceType,
+    city: receiptsTable.city,
+    district: receiptsTable.district,
+    totalAmount: receiptsTable.totalAmount,
+    prepaymentAmount: receiptsTable.prepaymentAmount,
+    createdAt: receiptsTable.createdAt,
+    prepaymentSubmittedAt: receiptsTable.prepaymentSubmittedAt,
+    masterId: receiptsTable.masterId,
+    orderId: receiptsTable.orderId,
+  })
+    .from(receiptsTable)
+    .where(sql`right(regexp_replace(${receiptsTable.clientPhone}, '[^0-9]', '', 'g'), 10) = ${normalized}`)
+    .orderBy(desc(receiptsTable.createdAt));
+
+  const masterIds = [...new Set(allReceipts.map(r => r.masterId))];
+  const masters = masterIds.length
+    ? await db.select({ id: mastersTable.id, alias: mastersTable.alias })
+        .from(mastersTable).where(inArray(mastersTable.id, masterIds))
+    : [];
+
+  const orderIds = [...new Set(allReceipts.map(r => r.orderId))];
+  let statusMap = new Map<number, string>();
+  if (orderIds.length) {
+    const orders = await db.select({ id: ordersTable.id, status: ordersTable.status })
+      .from(ordersTable)
+      .where(and(isNull(ordersTable.deletedAt), inArray(ordersTable.id, orderIds)));
+    for (const o of orders) statusMap.set(o.id, o.status);
+  }
+
+  const masterMap = new Map(masters.map(m => [m.id, m]));
+  const items = allReceipts.map(r => ({
+    id: r.id,
+    token: r.token,
+    serviceType: r.serviceType,
+    city: r.city,
+    district: r.district,
+    totalAmount: Number(r.totalAmount),
+    prepaymentAmount: Number(r.prepaymentAmount),
+    createdAt: r.createdAt,
+    isPaid: !!r.prepaymentSubmittedAt,
+    orderStatus: statusMap.get(r.orderId) ?? "waiting_master",
+    masterAlias: masterMap.get(r.masterId)?.alias ?? null,
+  }));
+
+  res.json({ items });
 });
 
 // ─── POST /api/client/estimate — AI photo analysis ───────────────────────────
