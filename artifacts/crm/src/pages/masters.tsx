@@ -614,6 +614,14 @@ export default function Masters() {
     try { localStorage.setItem("masters_view", v); } catch { /* */ }
   };
 
+  const [filtersCollapsed, setFiltersCollapsed] = useState(() => {
+    try { return localStorage.getItem("masters_filters_collapsed") === "1"; } catch { return false; }
+  });
+  const toggleFilters = () => setFiltersCollapsed(v => {
+    try { localStorage.setItem("masters_filters_collapsed", v ? "0" : "1"); } catch { /* */ }
+    return !v;
+  });
+
   // ── Data ─────────────────────────────────────────────────────────────────────
   const [masters, setMasters] = useState<Master[]>([]);
   const [columns, setColumns] = useState<VoronkaColumn[]>([]);
@@ -829,6 +837,16 @@ export default function Masters() {
               </div>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
+              {/* Collapse filters toggle */}
+              <button
+                onClick={e => { e.stopPropagation(); toggleFilters(); }}
+                title={filtersCollapsed ? "Развернуть панель фильтров" : "Свернуть панель фильтров"}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-sm font-medium transition-all ${filtersCollapsed ? "bg-gray-800 text-white border-gray-800" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50"}`}
+              >
+                {filtersCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+                <span className="hidden sm:inline">{filtersCollapsed ? "Панель" : "Свернуть"}</span>
+              </button>
+
               {/* View toggle */}
               <div className="flex items-center bg-gray-100 rounded-xl p-0.5">
                 <button
@@ -863,171 +881,176 @@ export default function Masters() {
             </div>
           </div>
 
-          {/* ── Stats badges ──────────────────────────────────────────────── */}
-          <div className="flex gap-1.5 flex-shrink-0 overflow-x-auto pb-0.5">
-            {STAT_BUTTONS.map(s => (
-              <button key={s.key}
-                onClick={() => setStatusFilter(statusFilter === s.key ? "all" : s.key)}
-                className={`flex-shrink-0 flex items-center gap-1.5 px-2.5 py-2 rounded-xl border text-left transition-all ${s.color} ${statusFilter === s.key ? "ring-2 ring-offset-1 ring-current" : "hover:brightness-95"}`}
-              >
-                <s.icon className="w-3.5 h-3.5 flex-shrink-0" />
-                <div>
-                  <div className="text-base font-bold leading-none">{s.value}</div>
-                  <div className="text-[10px] opacity-70 font-medium leading-tight mt-0.5">{s.label}</div>
-                </div>
-              </button>
-            ))}
-          </div>
+          {/* ── Collapsible panel ─────────────────────────────────────────── */}
+          {!filtersCollapsed && (
+            <>
+              {/* Stats badges */}
+              <div className="flex gap-1.5 flex-shrink-0 overflow-x-auto pb-0.5">
+                {STAT_BUTTONS.map(s => (
+                  <button key={s.key}
+                    onClick={() => setStatusFilter(statusFilter === s.key ? "all" : s.key)}
+                    className={`flex-shrink-0 flex items-center gap-1.5 px-2.5 py-2 rounded-xl border text-left transition-all ${s.color} ${statusFilter === s.key ? "ring-2 ring-offset-1 ring-current" : "hover:brightness-95"}`}
+                  >
+                    <s.icon className="w-3.5 h-3.5 flex-shrink-0" />
+                    <div>
+                      <div className="text-base font-bold leading-none">{s.value}</div>
+                      <div className="text-[10px] opacity-70 font-medium leading-tight mt-0.5">{s.label}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
 
-          {/* ── Problem alert ─────────────────────────────────────────────── */}
-          {problemMasters.length > 0 && (
-            <div className="flex-shrink-0 bg-orange-50 border border-orange-200 rounded-xl px-4 py-2.5 flex items-start gap-2.5">
-              <AlertCircle className="w-4 h-4 text-orange-500 flex-shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <span className="text-sm font-semibold text-orange-800">Много отмен за 7 дней: </span>
-                <span className="text-sm text-orange-700">
-                  {problemMasters.map((m, i) => (
-                    <span key={m.id}>{i > 0 && ", "}
-                      <button onClick={() => setDrawerMaster(m)} className="font-semibold hover:underline">{m.alias}</button> ({m.cancelCount7d})
+              {/* Problem alert */}
+              {problemMasters.length > 0 && (
+                <div className="flex-shrink-0 bg-orange-50 border border-orange-200 rounded-xl px-4 py-2.5 flex items-start gap-2.5">
+                  <AlertCircle className="w-4 h-4 text-orange-500 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-semibold text-orange-800">Много отмен за 7 дней: </span>
+                    <span className="text-sm text-orange-700">
+                      {problemMasters.map((m, i) => (
+                        <span key={m.id}>{i > 0 && ", "}
+                          <button onClick={() => setDrawerMaster(m)} className="font-semibold hover:underline">{m.alias}</button> ({m.cancelCount7d})
+                        </span>
+                      ))}
                     </span>
-                  ))}
-                </span>
-              </div>
-            </div>
-          )}
+                  </div>
+                </div>
+              )}
 
-          {/* ── Debt banner ───────────────────────────────────────────────── */}
-          {statusFilter === "debtors" && filteredDebt > 0 && (
-            <div className="flex-shrink-0 flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
-              <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
-              <span className="text-xs text-red-600 font-semibold">
-                Суммарный долг {filtered.length} мастер{filtered.length === 1 ? "а" : "ов"}: {filteredDebt.toLocaleString("ru-RU")} ₽
-              </span>
-            </div>
-          )}
+              {/* Debt banner */}
+              {statusFilter === "debtors" && filteredDebt > 0 && (
+                <div className="flex-shrink-0 flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+                  <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                  <span className="text-xs text-red-600 font-semibold">
+                    Суммарный долг {filtered.length} мастер{filtered.length === 1 ? "а" : "ов"}: {filteredDebt.toLocaleString("ru-RU")} ₽
+                  </span>
+                </div>
+              )}
 
-          {/* ── Filter row ────────────────────────────────────────────────── */}
-          <div className="flex gap-2 flex-shrink-0 flex-wrap" onClick={e => e.stopPropagation()}>
-            {/* Search */}
-            <div className="relative flex-1 min-w-[180px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-              <input value={search} onChange={e => setSearch(e.target.value)}
-                placeholder="Имя, телефон, специализация, тег..."
-                className="w-full pl-8 pr-8 py-2 text-sm border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 bg-white" />
-              {search && <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X className="w-3.5 h-3.5" /></button>}
-            </div>
-
-            {/* City */}
-            <div className="relative">
-              <MapPin className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-              <select value={cityFilter} onChange={e => setCityFilter(e.target.value)}
-                className="pl-7 pr-6 py-2 text-sm border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-100 bg-white appearance-none">
-                <option value="all">Все города</option>
-                {allCities.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-
-            {/* Spec */}
-            {allSpecs.length > 0 && (
-              <div className="relative">
-                <Briefcase className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-                <select value={specFilter} onChange={e => setSpecFilter(e.target.value)}
-                  className="pl-7 pr-6 py-2 text-sm border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-100 bg-white appearance-none max-w-[160px]">
-                  <option value="all">Все специальности</option>
-                  {allSpecs.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-            )}
-
-            {/* Sort (list only) */}
-            {view === "list" && (
-              <div className="relative">
-                <button onClick={e => { e.stopPropagation(); setShowSortMenu(v => !v); }}
-                  className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-200 rounded-xl text-gray-600 bg-white hover:bg-gray-50 transition-colors">
-                  <ArrowUpDown className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">{SORT_OPTIONS.find(s => s.key === sortKey)?.label}</span>
-                  <ChevronDown className="w-3 h-3" />
-                </button>
-                {showSortMenu && (
-                  <div className="absolute right-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden min-w-[160px]">
-                    {SORT_OPTIONS.map(opt => (
-                      <button key={opt.key} onClick={() => { setSortKey(opt.key); setShowSortMenu(false); }}
-                        className={`w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors ${sortKey === opt.key ? "text-blue-600 font-semibold bg-blue-50" : "text-gray-700"}`}>
-                        {opt.label}
-                      </button>
-                    ))}
+              {/* Filter row */}
+              <div className="flex gap-2 flex-shrink-0 flex-wrap" onClick={e => e.stopPropagation()}>
+                <div className="relative flex-1 min-w-[180px]">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                  <input value={search} onChange={e => setSearch(e.target.value)}
+                    placeholder="Имя, телефон, специализация, тег..."
+                    className="w-full pl-8 pr-8 py-2 text-sm border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 bg-white" />
+                  {search && <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X className="w-3.5 h-3.5" /></button>}
+                </div>
+                <div className="relative">
+                  <MapPin className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                  <select value={cityFilter} onChange={e => setCityFilter(e.target.value)}
+                    className="pl-7 pr-6 py-2 text-sm border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-100 bg-white appearance-none">
+                    <option value="all">Все города</option>
+                    {allCities.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                {allSpecs.length > 0 && (
+                  <div className="relative">
+                    <Briefcase className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                    <select value={specFilter} onChange={e => setSpecFilter(e.target.value)}
+                      className="pl-7 pr-6 py-2 text-sm border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-100 bg-white appearance-none max-w-[160px]">
+                      <option value="all">Все специальности</option>
+                      {allSpecs.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
                   </div>
                 )}
+                {view === "list" && (
+                  <div className="relative">
+                    <button onClick={e => { e.stopPropagation(); setShowSortMenu(v => !v); }}
+                      className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-200 rounded-xl text-gray-600 bg-white hover:bg-gray-50 transition-colors">
+                      <ArrowUpDown className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">{SORT_OPTIONS.find(s => s.key === sortKey)?.label}</span>
+                      <ChevronDown className="w-3 h-3" />
+                    </button>
+                    {showSortMenu && (
+                      <div className="absolute right-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden min-w-[160px]">
+                        {SORT_OPTIONS.map(opt => (
+                          <button key={opt.key} onClick={() => { setSortKey(opt.key); setShowSortMenu(false); }}
+                            className={`w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors ${sortKey === opt.key ? "text-blue-600 font-semibold bg-blue-50" : "text-gray-700"}`}>
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <button onClick={() => setShowAdvanced(v => !v)}
+                  className={`flex items-center gap-1.5 px-3 py-2 text-sm border rounded-xl transition-colors ${hasAdvancedFilters ? "bg-indigo-500 text-white border-indigo-500" : "border-gray-200 text-gray-500 bg-white hover:bg-gray-50"}`}>
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Фильтры</span>
+                  {hasAdvancedFilters && <span className="bg-indigo-400 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center font-bold">!</span>}
+                </button>
+                {hasAnyFilters && (
+                  <button onClick={resetAll}
+                    className="px-3 py-2 text-xs text-gray-500 border border-gray-200 rounded-xl hover:bg-gray-50 flex items-center gap-1.5 bg-white">
+                    <X className="w-3 h-3" /> Сбросить
+                  </button>
+                )}
               </div>
-            )}
 
-            {/* Advanced toggle */}
-            <button onClick={() => setShowAdvanced(v => !v)}
-              className={`flex items-center gap-1.5 px-3 py-2 text-sm border rounded-xl transition-colors ${hasAdvancedFilters ? "bg-indigo-500 text-white border-indigo-500" : "border-gray-200 text-gray-500 bg-white hover:bg-gray-50"}`}>
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Фильтры</span>
-              {hasAdvancedFilters && <span className="bg-indigo-400 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center font-bold">!</span>}
-            </button>
+              {/* Advanced filter panel */}
+              {showAdvanced && (
+                <div className="flex-shrink-0 bg-indigo-50 border border-indigo-100 rounded-2xl px-4 py-3 flex flex-wrap gap-2.5 items-center" onClick={e => e.stopPropagation()}>
+                  <FilterBadge label="Приложение" value={pwaFilter} onChange={v => setPwaFilter(v as any)}
+                    options={[{ value: "all", label: "Все" }, { value: "yes", label: "Есть" }, { value: "no", label: "Нет" }]} />
+                  <FilterBadge label="Активные заказы" value={activeOrdersFilter} onChange={v => setActiveOrdersFilter(v as any)}
+                    options={[{ value: "all", label: "Все" }, { value: "yes", label: "Есть" }, { value: "no", label: "Нет" }]} />
+                  <FilterBadge label="Долг" value={debtFilter} onChange={v => setDebtFilter(v as any)}
+                    options={[{ value: "all", label: "Любой" }, { value: "yes", label: "Есть долг" }, { value: "no", label: "Нет долга" }]} />
+                  <FilterBadge label="Тест" value={testFilter} onChange={v => setTestFilter(v as any)}
+                    options={[{ value: "all", label: "Все" }, { value: "real", label: "Реальные" }, { value: "test", label: "Тестовые" }]} />
+                  <FilterBadge label="Отмены 30д" value={cancelFilter} onChange={v => setCancelFilter(v as any)}
+                    options={[{ value: "all", label: "Любые" }, { value: "one_plus", label: "1+" }, { value: "three_plus", label: "3+" }]} />
+                  <div className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-xl">
+                    <span className="text-sm text-gray-600 flex-shrink-0">Рейтинг ≥</span>
+                    <div className="flex items-center gap-0.5">
+                      {[0,1,2,3,4,5].map(r => (
+                        <button key={r} onClick={() => setMinRating(r)}
+                          className={`w-6 h-6 flex items-center justify-center rounded-lg text-xs font-bold transition-colors ${r === minRating ? "bg-amber-400 text-white" : "text-gray-400 hover:bg-amber-50 hover:text-amber-500"}`}>
+                          {r === 0 ? "—" : r}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
 
-            {hasAnyFilters && (
-              <button onClick={resetAll}
-                className="px-3 py-2 text-xs text-gray-500 border border-gray-200 rounded-xl hover:bg-gray-50 flex items-center gap-1.5 bg-white">
-                <X className="w-3 h-3" /> Сбросить
-              </button>
-            )}
-          </div>
-
-          {/* ── Advanced filter panel ────────────────────────────────────── */}
-          {showAdvanced && (
-            <div className="flex-shrink-0 bg-indigo-50 border border-indigo-100 rounded-2xl px-4 py-3 flex flex-wrap gap-2.5 items-center" onClick={e => e.stopPropagation()}>
-              <FilterBadge label="Приложение" value={pwaFilter} onChange={v => setPwaFilter(v as any)}
-                options={[{ value: "all", label: "Все" }, { value: "yes", label: "Есть" }, { value: "no", label: "Нет" }]} />
-              <FilterBadge label="Активные заказы" value={activeOrdersFilter} onChange={v => setActiveOrdersFilter(v as any)}
-                options={[{ value: "all", label: "Все" }, { value: "yes", label: "Есть" }, { value: "no", label: "Нет" }]} />
-              <FilterBadge label="Долг" value={debtFilter} onChange={v => setDebtFilter(v as any)}
-                options={[{ value: "all", label: "Любой" }, { value: "yes", label: "Есть долг" }, { value: "no", label: "Нет долга" }]} />
-              <FilterBadge label="Тест" value={testFilter} onChange={v => setTestFilter(v as any)}
-                options={[{ value: "all", label: "Все" }, { value: "real", label: "Реальные" }, { value: "test", label: "Тестовые" }]} />
-              <FilterBadge label="Отмены 30д" value={cancelFilter} onChange={v => setCancelFilter(v as any)}
-                options={[{ value: "all", label: "Любые" }, { value: "one_plus", label: "1+" }, { value: "three_plus", label: "3+" }]} />
-              {/* Min rating */}
-              <div className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-xl">
-                <span className="text-sm text-gray-600 flex-shrink-0">Рейтинг ≥</span>
-                <div className="flex items-center gap-0.5">
-                  {[0,1,2,3,4,5].map(r => (
-                    <button key={r} onClick={() => setMinRating(r)}
-                      className={`w-6 h-6 flex items-center justify-center rounded-lg text-xs font-bold transition-colors ${r === minRating ? "bg-amber-400 text-white" : "text-gray-400 hover:bg-amber-50 hover:text-amber-500"}`}>
-                      {r === 0 ? "—" : r}
+              {/* Tag chips */}
+              {allTags.length > 0 && (
+                <div className="flex gap-1.5 flex-shrink-0 overflow-x-auto pb-0.5">
+                  <span className="text-[10px] text-gray-400 flex items-center gap-0.5 shrink-0 font-medium"><Tag className="w-3 h-3" /> Теги:</span>
+                  {allTags.map(tag => (
+                    <button key={tag} onClick={() => setTagFilter(tagFilter === tag ? null : tag)}
+                      className={`shrink-0 text-[11px] px-2.5 py-1 rounded-full font-medium transition-colors ${tagFilter === tag ? "bg-violet-500 text-white" : "bg-violet-50 text-violet-600 hover:bg-violet-100"}`}>
+                      {tag}
                     </button>
                   ))}
                 </div>
+              )}
+
+              {/* Counter row */}
+              <div className="text-xs text-gray-400 flex-shrink-0 -mt-1 flex items-center gap-3">
+                <span>Показано: {filtered.length} из {masters.length}</span>
+                {view === "list" && sortKey !== "name" && (
+                  <span className="text-blue-400">· Сортировка: {SORT_OPTIONS.find(s => s.key === sortKey)?.label}</span>
+                )}
+                {hasAnyFilters && view === "kanban" && (
+                  <span className="text-indigo-400 font-medium">· Фильтры активны</span>
+                )}
               </div>
-            </div>
+            </>
           )}
 
-          {/* ── Tag chips ─────────────────────────────────────────────────── */}
-          {allTags.length > 0 && (
-            <div className="flex gap-1.5 flex-shrink-0 overflow-x-auto pb-0.5">
-              <span className="text-[10px] text-gray-400 flex items-center gap-0.5 shrink-0 font-medium"><Tag className="w-3 h-3" /> Теги:</span>
-              {allTags.map(tag => (
-                <button key={tag} onClick={() => setTagFilter(tagFilter === tag ? null : tag)}
-                  className={`shrink-0 text-[11px] px-2.5 py-1 rounded-full font-medium transition-colors ${tagFilter === tag ? "bg-violet-500 text-white" : "bg-violet-50 text-violet-600 hover:bg-violet-100"}`}>
-                  {tag}
-                </button>
-              ))}
+          {/* Collapsed hint row */}
+          {filtersCollapsed && hasAnyFilters && (
+            <div className="flex-shrink-0 flex items-center gap-2 text-xs">
+              <span className="text-indigo-500 font-medium bg-indigo-50 border border-indigo-100 rounded-lg px-2.5 py-1.5 flex items-center gap-1.5">
+                <Filter className="w-3 h-3" />
+                Фильтры активны · {filtered.length} из {masters.length}
+                <button onClick={resetAll} className="ml-1 text-indigo-400 hover:text-indigo-600"><X className="w-3 h-3" /></button>
+              </span>
             </div>
           )}
-
-          {/* ── Counter row ───────────────────────────────────────────────── */}
-          <div className="text-xs text-gray-400 flex-shrink-0 -mt-1 flex items-center gap-3">
-            <span>Показано: {filtered.length} из {masters.length}</span>
-            {view === "list" && sortKey !== "name" && (
-              <span className="text-blue-400">· Сортировка: {SORT_OPTIONS.find(s => s.key === sortKey)?.label}</span>
-            )}
-            {hasAnyFilters && view === "kanban" && (
-              <span className="text-indigo-400 font-medium">· Фильтры активны</span>
-            )}
-          </div>
 
           {/* ══════════════════════════════════════════════════════════════════ */}
           {/* ── LIST VIEW ─────────────────────────────────────────────────── */}
