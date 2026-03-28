@@ -14,7 +14,6 @@ import Finance from "@/pages/finance";
 import Analytics from "@/pages/analytics";
 import Settings from "@/pages/settings";
 import Users from "@/pages/users";
-import Voronka from "@/pages/voronka";
 import MasterChatPage from "@/pages/master-chat";
 import TrashPage from "@/pages/trash";
 import TasksPage from "@/pages/tasks";
@@ -35,7 +34,8 @@ function Router() {
       <Route path="/analytics" component={Analytics} />
       <Route path="/settings" component={Settings} />
       <Route path="/users" component={Users} />
-      <Route path="/voronka" component={Voronka} />
+      {/* Redirect old /voronka URL to unified masters page with kanban view */}
+      <Route path="/voronka" component={() => { window.location.replace("/masters?view=kanban"); return null; }} />
       <Route path="/master-chat" component={MasterChatPage} />
       <Route path="/trash" component={TrashPage} />
       <Route path="/tasks" component={TasksPage} />
