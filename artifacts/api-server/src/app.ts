@@ -64,8 +64,17 @@ app.use(session({
   },
 }));
 
-// ── Public receipt page (no auth required) ───────────────────────────────────
-app.get("/receipt/:token", async (req, res) => {
+// ── Redirect old /receipt/:token links to new /api/receipt/:token ─────────────
+app.get("/receipt/:token", (req, res) => {
+  res.redirect(301, `/api/receipt/${req.params.token}`);
+});
+app.post("/receipt/:token/confirm", (req, res) => {
+  res.redirect(308, `/api/receipt/${req.params.token}/confirm`);
+});
+
+// ── Public receipt page (no auth required) — served under /api/ so Replit's ──
+// ── deployment proxy doesn't intercept it (non-/api paths go to CRM static). ──
+app.get("/api/receipt/:token", async (req, res) => {
   try {
     const { receiptsTable, mastersTable } = await import("@workspace/db");
     const { db } = await import("@workspace/db");
@@ -177,7 +186,7 @@ app.get("/receipt/:token", async (req, res) => {
             fd.append('screenshot', file);
 
             try {
-              const r = await fetch('/receipt/${req.params.token}/confirm', { method: 'POST', body: fd });
+              const r = await fetch('/api/receipt/${req.params.token}/confirm', { method: 'POST', body: fd });
               const data = await r.json();
               if (!r.ok) { showError(data.error || 'Ошибка. Попробуйте ещё раз.'); submitBtn.disabled = false; submitBtn.textContent = 'Отправить подтверждение'; return; }
               formArea.style.display = 'none';
@@ -365,7 +374,7 @@ app.get("/receipt/:token", async (req, res) => {
 });
 
 // ── Public receipt confirmation (client submits ФИО + screenshot) ─────────────
-app.post("/receipt/:token/confirm", screenshotUpload.single("screenshot"), async (req: any, res) => {
+app.post("/api/receipt/:token/confirm", screenshotUpload.single("screenshot"), async (req: any, res) => {
   try {
     const { receiptsTable } = await import("@workspace/db");
     const { db } = await import("@workspace/db");

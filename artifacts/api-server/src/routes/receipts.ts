@@ -34,7 +34,7 @@ async function buildReceiptResponse(receipt: typeof receiptsTable.$inferSelect, 
     masterAlias: master?.alias ?? null,
     masterPhone: master?.phone ?? null,
     masterFullName: master?.contractFullName ?? null,
-    publicUrl: `${getPublicBase(req)}/receipt/${receipt.token}`,
+    publicUrl: `${getPublicBase(req)}/api/receipt/${receipt.token}`,
     // Client confirmation
     clientSubmittedName: receipt.clientSubmittedName ?? null,
     prepaymentSubmittedAt: receipt.prepaymentSubmittedAt ?? null,
