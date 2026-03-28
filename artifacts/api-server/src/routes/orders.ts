@@ -4,6 +4,7 @@ import { eq, inArray, and, ne, isNull, desc } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { calculateCommission, getCommissionSettings } from "../lib/commission.js";
 import { getMasterEligibility, getOverdueMasterIds, countActiveMasterOrders, getColumnIdForActiveCount } from "../lib/orderEligibility.js";
+import { recalcMasterColumn } from "../lib/masterColumn.js";
 import { performBroadcast } from "../lib/broadcastOrder.js";
 import { sendPushToMaster } from "../lib/push.js";
 
@@ -769,7 +770,18 @@ router.get("/:id/status-log", allOrderRoles, async (req, res) => {
 // DELETE /api/orders/:id — soft delete (move to trash)
 router.delete("/:id", requireRole("admin"), async (req, res) => {
   const id = parseInt(req.params.id);
+
+  // Read masterId before soft-delete so we can recalc the column after
+  const [orderRow] = await db.select({ masterId: ordersTable.masterId })
+    .from(ordersTable).where(eq(ordersTable.id, id));
+
   await db.update(ordersTable).set({ deletedAt: new Date() }).where(eq(ordersTable.id, id));
+
+  // If order had a master, recalculate their voronka column
+  if (orderRow?.masterId) {
+    await recalcMasterColumn(orderRow.masterId).catch(() => {});
+  }
+
   res.json({ success: true });
 });
 

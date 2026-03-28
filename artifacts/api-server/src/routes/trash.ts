@@ -3,6 +3,7 @@ import { db, mastersTable, ordersTable, leadsTable, orderDispatchesTable, transa
 import { isNull, isNotNull, lt, and, eq, inArray } from "drizzle-orm";
 import { requirePermission } from "../middlewares/requireAuth.js";
 import { objectStorageClient } from "../lib/objectStorage.js";
+import { recalcMasterColumn } from "../lib/masterColumn.js";
 
 const router = Router();
 const adminOnly = requirePermission("trash");
@@ -30,6 +31,11 @@ async function deleteAvatarFile(customAvatarUrl: string | null) {
 
 // Permanently delete an order and all its FK-referenced rows
 async function deleteOrderCascade(orderId: number) {
+  // Read masterId before deletion so we can recalc the column after
+  const [orderRow] = await db.select({ masterId: ordersTable.masterId })
+    .from(ordersTable).where(eq(ordersTable.id, orderId));
+  const masterId = orderRow?.masterId ?? null;
+
   // 0. Clean up order_status_logs (FK: order_id → orders.id, no cascade)
   await db.delete(orderStatusLogsTable).where(eq(orderStatusLogsTable.orderId, orderId));
 
@@ -55,6 +61,9 @@ async function deleteOrderCascade(orderId: number) {
 
   // 4. Delete the order itself (must be soft-deleted)
   await db.delete(ordersTable).where(and(eq(ordersTable.id, orderId), isNotNull(ordersTable.deletedAt)));
+
+  // 5. Recalculate master's voronka column (may now have fewer active orders)
+  if (masterId) await recalcMasterColumn(masterId);
 }
 
 // Permanently delete a lead and cascade to its orders
