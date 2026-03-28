@@ -87,6 +87,7 @@ app.get("/api/receipt/:token", async (req, res) => {
 
     const prepayment = Number(receipt.prepaymentAmount).toLocaleString("ru-RU");
     const total = Number(receipt.totalAmount).toLocaleString("ru-RU");
+    const remainder = (Number(receipt.totalAmount) - Number(receipt.prepaymentAmount)).toLocaleString("ru-RU");
     const date = new Date(receipt.createdAt).toLocaleString("ru-RU", { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
     const district = receipt.district ? `, ${receipt.district}` : "";
     const lineItems: Array<{description: string; price: number}> = (receipt.lineItems as any) ?? [];
@@ -241,6 +242,12 @@ app.get("/api/receipt/:token", async (req, res) => {
     .totals-value { font-size: 14px; font-weight: 600; color: #1a1a2e; }
     .totals-row.prepay-row .totals-label { font-weight: 700; color: #1565c0; font-size: 14px; }
     .totals-row.prepay-row .totals-value { font-size: 18px; font-weight: 800; color: #1565c0; }
+    .totals-row.remainder-row { border-top: 1px dashed #e0e4ec; margin-top: 6px; padding-top: 8px; }
+    .totals-row.remainder-row .totals-label { font-weight: 600; color: #444; }
+    .totals-row.remainder-row .totals-value { font-size: 15px; font-weight: 700; color: #333; }
+    .guarantee-banner { display: flex; align-items: flex-start; gap: 12px; background: linear-gradient(135deg, #e8f5e9, #f1f8e9); border: 1px solid #c8e6c9; border-radius: 12px; padding: 14px 16px; margin-top: 14px; }
+    .guarantee-icon { font-size: 24px; flex-shrink: 0; line-height: 1; }
+    .guarantee-text { font-size: 12.5px; color: #2e7d32; line-height: 1.5; }
     .notes-block { background: #f8f9fc; border-radius: 10px; padding: 12px 14px; margin-top: 4px; }
     .notes-text { font-size: 14px; line-height: 1.5; color: #444; margin-top: 6px; }
     .parties { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 20px 28px; background: #f8f9fc; border-top: 1px solid #eee; }
@@ -323,8 +330,20 @@ app.get("/api/receipt/:token", async (req, res) => {
         <span class="totals-value">${total} ₽</span>
       </div>
       <div class="totals-row prepay-row">
-        <span class="totals-label">Предоплата к внесению</span>
+        <span class="totals-label">Предоплата (бронь)</span>
         <span class="totals-value">${prepayment} ₽</span>
+      </div>
+      <div class="totals-row remainder-row">
+        <span class="totals-label">Остаток после брони</span>
+        <span class="totals-value">${remainder} ₽</span>
+      </div>
+    </div>
+
+    <div class="guarantee-banner">
+      <div class="guarantee-icon">🛡️</div>
+      <div class="guarantee-text">
+        <strong>Гарантия и безопасная сделка</strong><br>
+        Оплачивая работы через сервис, вы получаете дополнительную гарантию 6 месяцев на выполненные работы и защиту в рамках безопасной сделки.
       </div>
     </div>
 
