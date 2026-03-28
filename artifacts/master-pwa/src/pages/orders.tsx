@@ -557,6 +557,7 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
   const [showComplete, setShowComplete] = useState(false);
   const [showCancel, setShowCancel] = useState(false);
   const [orderReceipts, setOrderReceipts] = useState<ExistingReceipt[]>([]);
+  const [receiptsFetched, setReceiptsFetched] = useState(false);
   const [editingReceipt, setEditingReceipt] = useState<ExistingReceipt | null>(null);
   const [showNewReceipt, setShowNewReceipt] = useState(false);
   const isActive = ["master_assigned", "in_progress"].includes(order.status);
@@ -581,6 +582,7 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
       } else {
         setOrderReceipts(fresh);
       }
+      setReceiptsFetched(true);
     } catch {}
   };
 
@@ -663,6 +665,24 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
 
         {expanded && (
           <div className="border-t border-border p-3.5 space-y-4">
+
+            {/* ── Красный алерт: смета не создана ─────────────────────── */}
+            {isActive && receiptsFetched && orderReceipts.length === 0 && (
+              <div className="flex items-start gap-3 bg-red-50 dark:bg-red-900/20 border-2 border-red-400 dark:border-red-600 rounded-xl p-3">
+                <div className="text-xl leading-none mt-0.5">🚨</div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-red-700 dark:text-red-400 mb-1">Смета не создана</p>
+                  <p className="text-xs text-red-600 dark:text-red-500 leading-snug mb-2">Клиент не может внести предоплату. Создайте смету прямо сейчас.</p>
+                  <button
+                    onClick={() => setShowNewReceipt(true)}
+                    className="inline-flex items-center gap-1.5 bg-red-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg"
+                  >
+                    + Создать смету
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-1.5 text-sm">
               {order.clientName && (
                 <div className="flex items-center gap-2">

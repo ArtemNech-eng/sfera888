@@ -123,9 +123,27 @@ app.get("/api/receipt/:token", async (req, res) => {
           }</p>
           ${receipt.clientSubmittedName ? `<p class="confirm-submitted-name">👤 ${receipt.clientSubmittedName}</p>` : ""}
         </div>`
-      : `<div class="confirm-section">
-          <div class="confirm-title">📲 Внесите предоплату и подтвердите</div>
-          <p class="confirm-desc">Переведите <strong>${prepayment} ₽</strong> на реквизиты ниже, затем введите ваше ФИО и прикрепите скриншот оплаты.</p>
+      : `<div class="payment-block">
+          <div class="payment-block-title">💳 Реквизиты для перевода</div>
+          <div style="font-size:13px;color:#555;margin-bottom:6px">Переведите <strong style="color:#1a1a2e">${prepayment} ₽</strong> по номеру телефона:</div>
+          <a href="tel:+79892860863" class="payment-phone">8 989 286-08-63</a>
+          <div class="payment-bank">Альфа Банк · СБП (Система быстрых платежей)</div>
+          <div class="payment-recipient">
+            <strong>Получатель:</strong> ИП Коваленко Игорь Геннадьевич<br>
+            <strong>ИНН:</strong> 262409599800<br>
+            <strong>Назначение:</strong> Предоплата по расписке #${receipt.id}
+          </div>
+          <button class="copy-btn" onclick="navigator.clipboard.writeText('79892860863').then(()=>{this.textContent='✅ Скопировано!';setTimeout(()=>{this.innerHTML='📋 Скопировать номер телефона'},2000)})">📋 Скопировать номер телефона</button>
+          <div class="payment-steps">
+            <div class="payment-step"><div class="payment-step-num">1</div><div>Переведите <strong>${prepayment} ₽</strong> на номер телефона выше через СБП или Альфа Банк</div></div>
+            <div class="payment-step"><div class="payment-step-num">2</div><div>Сделайте скриншот успешного перевода</div></div>
+            <div class="payment-step"><div class="payment-step-num">3</div><div>Заполните форму ниже и прикрепите скриншот — мастер приступит к работе</div></div>
+          </div>
+        </div>
+
+        <div class="confirm-section">
+          <div class="confirm-title">📲 Подтвердите оплату</div>
+          <p class="confirm-desc">После перевода введите ваше ФИО и прикрепите скриншот — оператор проверит оплату и подтвердит бронь.</p>
 
           <div id="form-area">
             <div class="field-group">
@@ -287,6 +305,16 @@ app.get("/api/receipt/:token", async (req, res) => {
     .confirm-success-title { font-size: 18px; font-weight: 700; color: #2e7d32; margin-bottom: 8px; }
     .confirm-success-sub { font-size: 13px; color: #555; line-height: 1.6; }
     .confirm-submitted-name { margin-top: 12px; font-size: 14px; font-weight: 600; color: #2e7d32; }
+    .payment-block { margin: 0 28px 0; background: #fff8e1; border: 1.5px solid #ffe082; border-radius: 16px; padding: 18px 20px 16px; }
+    .payment-block-title { font-size: 14px; font-weight: 700; color: #e65100; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+    .payment-phone { font-size: 28px; font-weight: 800; color: #1565c0; letter-spacing: -0.5px; text-decoration: none; display: block; margin: 4px 0 2px; }
+    .payment-bank { font-size: 13px; color: #555; margin-bottom: 10px; }
+    .payment-recipient { font-size: 12px; color: #777; line-height: 1.6; background: #fff; border-radius: 10px; padding: 10px 12px; border: 1px solid #ffe082; }
+    .copy-btn { display: inline-flex; align-items: center; gap: 6px; background: #1565c0; color: #fff; border: none; border-radius: 10px; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; margin-top: 10px; width: 100%; justify-content: center; }
+    .copy-btn:active { opacity: 0.85; }
+    .payment-steps { margin-top: 14px; border-top: 1px solid #ffe082; padding-top: 12px; }
+    .payment-step { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; font-size: 13px; color: #444; line-height: 1.4; }
+    .payment-step-num { width: 22px; height: 22px; background: #1565c0; color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; margin-top: 1px; }
     @media print { body { background: #fff; padding: 0; } .card { box-shadow: none; border-radius: 0; } .confirm-section,.confirm-success { display: none; } }
   </style>
 </head>

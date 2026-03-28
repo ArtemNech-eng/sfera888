@@ -1120,6 +1120,12 @@ export default function Orders() {
                         <button onClick={() => openOrder.masterId && openMasterChat(openOrder.masterId)} className="font-medium text-blue-600 hover:underline text-left">{openOrder.masterName}</button>
                       </div>
                     )}
+                    {openOrder.masterId && receipts && receipts.length === 0 && ["master_assigned","in_progress"].includes(openOrder.status) && (
+                      <div className="col-span-2 flex items-center gap-2 bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-700 rounded-xl px-3 py-2 text-xs font-semibold text-red-700 dark:text-red-400">
+                        <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                        Смета не создана — клиент не может внести предоплату
+                      </div>
+                    )}
                     {(() => {
                       const confirmed = (openOrder as any).orderAmount ? Number((openOrder as any).orderAmount) : null;
                       const proposed = (openOrder as any).proposedAmount ? Number((openOrder as any).proposedAmount) : null;
