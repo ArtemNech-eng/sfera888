@@ -284,6 +284,7 @@ export default function Orders() {
   const [operatorNoteEdit, setOperatorNoteEdit] = useState<string | null>(null);
   const [showStatusLog, setShowStatusLog] = useState(false);
   const [showReceipts, setShowReceipts] = useState(false);
+  const [showPendingReview, setShowPendingReview] = useState(true);
   const [showPaidCommissions, setShowPaidCommissions] = useState(false);
   const [showCreateReceipt, setShowCreateReceipt] = useState(false);
   const [crmLineItems, setCrmLineItems] = useState([{ description: "", price: "" }]);
@@ -376,7 +377,7 @@ export default function Orders() {
       if (!r.ok) throw new Error("Failed");
       return r.json();
     },
-    enabled: !!openDispatchId && (showReceipts || showPaidCommissions),
+    enabled: !!openDispatchId,
   });
 
   const deleteReceiptMutation = useMutation({
@@ -1849,8 +1850,78 @@ export default function Orders() {
                   )}
                 </div>
 
+                {/* ─── Ожидает проверки оператора ───────────────────────── */}
+                {receipts && receipts.filter(r => r.prepaymentSubmittedAt && !r.prepaymentSeenAt).length > 0 && (
+                  <div className="border-t border-border/50 pt-3">
+                    <button
+                      onClick={() => setShowPendingReview(v => !v)}
+                      className="w-full flex items-center justify-between text-xs hover:text-foreground transition-colors py-1"
+                    >
+                      <span className="flex items-center gap-1.5 font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
+                        <Clock className="w-3.5 h-3.5" />
+                        Ожидает проверки
+                        <span className="bg-amber-500 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none">
+                          {receipts.filter(r => r.prepaymentSubmittedAt && !r.prepaymentSeenAt).length}
+                        </span>
+                      </span>
+                      <ChevronDown className={`w-4 h-4 transition-transform ${showPendingReview ? "rotate-180" : ""}`} />
+                    </button>
+                    {showPendingReview && (
+                      <div className="mt-2 space-y-2">
+                        {receipts.filter(r => r.prepaymentSubmittedAt && !r.prepaymentSeenAt).map(r => (
+                          <div key={r.id} className="rounded-xl p-3 space-y-1.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <span className="text-xs text-muted-foreground">Бронь: </span>
+                                <span className="text-sm font-bold text-amber-700 dark:text-amber-400">{Number(r.prepaymentAmount).toLocaleString("ru-RU")} ₽</span>
+                                <span className="text-xs text-muted-foreground ml-1">/ {Number(r.totalAmount).toLocaleString("ru-RU")} ₽ итого</span>
+                              </div>
+                              <span className="text-xs text-muted-foreground">{new Date(r.prepaymentSubmittedAt!).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+                            </div>
+                            {r.clientSubmittedName && (
+                              <div className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400 font-medium">
+                                <Clock className="w-3.5 h-3.5 flex-shrink-0" />
+                                Клиент подтвердил оплату · {r.clientSubmittedName}
+                              </div>
+                            )}
+                            {r.prepaymentScreenshotUrl && (
+                              <a href={r.prepaymentScreenshotUrl} target="_blank" rel="noopener noreferrer" className="block">
+                                <img src={r.prepaymentScreenshotUrl} alt="Скриншот оплаты" className="max-h-40 rounded-lg border border-amber-200 object-contain bg-white w-full" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                              </a>
+                            )}
+                            {!r.prepaymentScreenshotUrl && (
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/40 rounded-lg px-3 py-2">
+                                Скриншот не прикреплён
+                              </div>
+                            )}
+                            <button
+                              onClick={async () => {
+                                if (!window.confirm(`Подтвердить оплату брони от ${r.clientSubmittedName ?? "клиента"}?`)) return;
+                                const resp = await fetch(`/api/receipts/${r.id}/confirm`, { method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ operatorNote: "Подтверждено оператором" }) });
+                                if (resp.ok) { toast({ title: "✅ Оплата подтверждена!" }); queryClient.invalidateQueries({ queryKey: ["/api/receipts/order", openDispatchId] }); queryClient.invalidateQueries({ queryKey: ["/api/receipts/dialogs/unread-count"] }); }
+                                else toast({ title: "Ошибка подтверждения", variant: "destructive" });
+                              }}
+                              className="w-full flex items-center justify-center gap-1.5 text-xs bg-green-600 text-white px-3 py-2 rounded-xl font-semibold hover:bg-green-700"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" /> Подтвердить оплату
+                            </button>
+                            <div className="flex items-center gap-2">
+                              <a href={r.publicUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs text-blue-500 hover:underline">
+                                <ExternalLink className="w-3 h-3" /> Открыть расписку
+                              </a>
+                              <button onClick={() => { navigator.clipboard.writeText(r.publicUrl); toast({ title: "Ссылка скопирована!" }); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground ml-auto">
+                                <Copy className="w-3 h-3" /> Ссылка
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* ─── Комиссия оплачена (confirmed receipts) ───────────── */}
-                {receipts && receipts.filter(r => r.prepaymentSubmittedAt).length > 0 && (
+                {receipts && receipts.filter(r => r.prepaymentSeenAt).length > 0 && (
                   <div className="border-t border-border/50 pt-3">
                     <button
                       onClick={() => setShowPaidCommissions(v => !v)}
@@ -1860,14 +1931,14 @@ export default function Orders() {
                         <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
                         <span className="text-green-700 dark:text-green-400">Комиссия оплачена</span>
                         <span className="bg-green-600 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none">
-                          {receipts.filter(r => r.prepaymentSubmittedAt).length}
+                          {receipts.filter(r => r.prepaymentSeenAt).length}
                         </span>
                       </span>
                       <ChevronDown className={`w-4 h-4 transition-transform ${showPaidCommissions ? "rotate-180" : ""}`} />
                     </button>
                     {showPaidCommissions && (
                       <div className="mt-2 space-y-2">
-                        {receipts.filter(r => r.prepaymentSubmittedAt).map(r => (
+                        {receipts.filter(r => r.prepaymentSeenAt).map(r => (
                           <div key={r.id} className="rounded-xl p-3 space-y-1.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
                             <div className="flex items-center justify-between">
                               <div>

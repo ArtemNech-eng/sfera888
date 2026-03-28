@@ -93,7 +93,8 @@ app.get("/api/receipt/:token", async (req, res) => {
     const date = new Date(receipt.createdAt).toLocaleString("ru-RU", { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
     const district = receipt.district ? `, ${receipt.district}` : "";
     const lineItems: Array<{description: string; price: number}> = (receipt.lineItems as any) ?? [];
-    const isConfirmed = !!receipt.prepaymentSubmittedAt;
+    const isClientSubmitted = !!receipt.prepaymentSubmittedAt;
+    const isOperatorConfirmed = !!receipt.prepaymentSeenAt;
 
     const lineItemsHtml = lineItems.map(item =>
       `<tr><td class="item-desc">${item.description}</td><td class="item-price">${Number(item.price).toLocaleString("ru-RU")} ₽</td></tr>`
@@ -106,15 +107,20 @@ app.get("/api/receipt/:token", async (req, res) => {
     const masterName = master?.contractFullName || master?.alias || "Мастер";
     const masterPhone = master?.phone || "";
 
-    const statusBadgeHtml = isConfirmed
-      ? `<div class="badge badge-pending">⏳ Предоплата ожидает подтверждения</div>`
-      : `<div class="badge badge-unpaid">⚠️ Предоплата не внесена</div>`;
+    const statusBadgeHtml = isOperatorConfirmed
+      ? `<div class="badge badge-confirmed">✅ Оплата подтверждена</div>`
+      : isClientSubmitted
+        ? `<div class="badge badge-pending">⏳ Проверяем оплату</div>`
+        : `<div class="badge badge-unpaid">⚠️ Предоплата не внесена</div>`;
 
-    const confirmSectionHtml = isConfirmed
+    const confirmSectionHtml = isClientSubmitted
       ? `<div class="confirm-success">
-          <div class="confirm-success-icon">✅</div>
-          <div class="confirm-success-title">Заявка принята!</div>
-          <p class="confirm-success-sub">Ваше ФИО и скриншот оплаты отправлены оператору. Мы свяжемся с вами в ближайшее время.</p>
+          <div class="confirm-success-icon">${isOperatorConfirmed ? "✅" : "⏳"}</div>
+          <div class="confirm-success-title">${isOperatorConfirmed ? "Оплата подтверждена!" : "Заявка принята!"}</div>
+          <p class="confirm-success-sub">${isOperatorConfirmed
+            ? "Ваша предоплата подтверждена оператором. Мастер приступит к работе в согласованное время."
+            : "Ваше ФИО и скриншот оплаты отправлены оператору. Мы свяжемся с вами в ближайшее время."
+          }</p>
           ${receipt.clientSubmittedName ? `<p class="confirm-submitted-name">👤 ${receipt.clientSubmittedName}</p>` : ""}
         </div>`
       : `<div class="confirm-section">
@@ -226,6 +232,7 @@ app.get("/api/receipt/:token", async (req, res) => {
     .badge { display: inline-flex; align-items: center; gap: 6px; border-radius: 20px; padding: 5px 14px; margin-top: 14px; font-size: 13px; font-weight: 600; }
     .badge-unpaid { background: rgba(255,180,0,.25); color: #ffe082; border: 1px solid rgba(255,180,0,.4); }
     .badge-pending { background: rgba(255,255,255,.18); color: #fff; }
+    .badge-confirmed { background: rgba(76,175,80,.25); color: #c8e6c9; border: 1px solid rgba(76,175,80,.4); }
     .body { padding: 24px 28px; }
     .section { margin-bottom: 16px; }
     .label { font-size: 10px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #999; margin-bottom: 3px; }

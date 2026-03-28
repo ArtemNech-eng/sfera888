@@ -36,12 +36,13 @@ function DialogsContent() {
     refetchInterval: 20_000,
   });
 
-  const markSeen = useMutation({
+  const confirmPayment = useMutation({
     mutationFn: (id: number) =>
-      fetch(`/api/receipts/${id}/seen`, { method: "PATCH", credentials: "include" }).then(r => r.json()),
+      fetch(`/api/receipts/${id}/confirm`, { method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ operatorNote: "Подтверждено оператором" }) }).then(r => r.json()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/receipts/dialogs"] });
       queryClient.invalidateQueries({ queryKey: ["/api/receipts/dialogs/unread-count"] });
+      toast({ title: "✅ Оплата подтверждена!" });
     },
     onError: () => toast({ title: "Ошибка", variant: "destructive" }),
   });
@@ -164,12 +165,12 @@ function DialogsContent() {
                   {/* Action */}
                   {isNew && (
                     <button
-                      onClick={() => markSeen.mutate(d.id)}
-                      disabled={markSeen.isPending}
-                      className="w-full h-10 rounded-xl bg-primary text-white text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-60"
+                      onClick={() => confirmPayment.mutate(d.id)}
+                      disabled={confirmPayment.isPending}
+                      className="w-full h-10 rounded-xl bg-green-600 text-white text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-60 hover:bg-green-700"
                     >
-                      {markSeen.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                      Отметить как просмотренное
+                      {confirmPayment.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                      Подтвердить оплату
                     </button>
                   )}
                 </div>
