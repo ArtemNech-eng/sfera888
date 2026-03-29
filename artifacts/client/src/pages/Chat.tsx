@@ -14,6 +14,46 @@ interface Message {
 function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
 }
+
+function parsePaymentMsg(raw: string): { clientName: string; screenshotUrl: string | null; amount: number } | null {
+  try {
+    const p = JSON.parse(raw);
+    if (p?.type === "payment_confirm") return p;
+  } catch {}
+  return null;
+}
+
+function PaymentBubble({ payload, time }: { payload: ReturnType<typeof parsePaymentMsg>; time: string }) {
+  if (!payload) return null;
+  return (
+    <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 8 }}>
+      <div style={{ maxWidth: "85%" }}>
+        <div style={{ background: "#f0fdf4", border: "1.5px solid #86efac", borderRadius: "18px 18px 18px 4px", overflow: "hidden" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px 8px" }}>
+            <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#16a34a", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#166534" }}>Подтверждение оплаты отправлено</div>
+              <div style={{ fontSize: 11, color: "#15803d" }}>{payload.clientName}</div>
+            </div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: "#16a34a" }}>{payload.amount.toLocaleString("ru-RU")} ₽</div>
+          </div>
+          {payload.screenshotUrl && (
+            <div style={{ padding: "0 10px 10px" }}>
+              <img src={payload.screenshotUrl} alt="Скриншот оплаты" style={{ width: "100%", borderRadius: 12, maxHeight: 200, objectFit: "cover", border: "1px solid #bbf7d0" }} />
+            </div>
+          )}
+          <div style={{ padding: "6px 14px 10px", background: "#dcfce7", fontSize: 12, color: "#166534", lineHeight: 1.5 }}>
+            Оплата получена — оператор проверит и свяжется с вами
+          </div>
+        </div>
+        <span style={{ fontSize: 10, color: "#9490b4", marginTop: 3, display: "block" }}>{time}</span>
+      </div>
+    </div>
+  );
+}
+
 function formatDate(iso: string) {
   const d = new Date(iso);
   const today = new Date();
@@ -152,10 +192,11 @@ export default function Chat() {
           </div>
         )}
 
-        {messages.map((msg, i) => {
+        {messages.map((msg) => {
           const dateLabel = formatDate(msg.createdAt);
           const showDate = dateLabel !== lastDateLabel;
           if (showDate) lastDateLabel = dateLabel;
+          const payment = parsePaymentMsg(msg.message);
           const isClient = msg.fromClient;
 
           return (
@@ -165,31 +206,35 @@ export default function Chat() {
                   <span style={{ fontSize: 11, color: "#9ca3af", background: "#e5e7eb", padding: "3px 10px", borderRadius: 20, fontWeight: 600 }}>{dateLabel}</span>
                 </div>
               )}
-              <div style={{ display: "flex", justifyContent: isClient ? "flex-end" : "flex-start", marginBottom: 8, alignItems: "flex-end", gap: 6 }}>
-                {!isClient && (
-                  <div style={{ width: 26, height: 26, background: "#1d4ed8", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5">
-                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                      <circle cx="12" cy="7" r="4"/>
-                    </svg>
+              {payment ? (
+                <PaymentBubble payload={payment} time={formatTime(msg.createdAt)} />
+              ) : (
+                <div style={{ display: "flex", justifyContent: isClient ? "flex-end" : "flex-start", marginBottom: 8, alignItems: "flex-end", gap: 6 }}>
+                  {!isClient && (
+                    <div style={{ width: 26, height: 26, background: "#1d4ed8", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                        <circle cx="12" cy="7" r="4"/>
+                      </svg>
+                    </div>
+                  )}
+                  <div style={{ maxWidth: "78%", display: "flex", flexDirection: "column", alignItems: isClient ? "flex-end" : "flex-start" }}>
+                    {!isClient && <span style={{ fontSize: 10, color: "#9ca3af", marginBottom: 2, paddingLeft: 2 }}>{msg.operatorName ?? "Оператор"}</span>}
+                    <div style={{
+                      padding: "10px 14px",
+                      borderRadius: isClient ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
+                      background: isClient ? "#1d4ed8" : "#fff",
+                      color: isClient ? "#fff" : "#111827",
+                      fontSize: 14, lineHeight: 1.5,
+                      boxShadow: "0 1px 4px rgba(0,0,0,.08)",
+                      border: isClient ? "none" : "1px solid #e5e7eb",
+                    }}>
+                      {msg.message}
+                    </div>
+                    <span style={{ fontSize: 10, color: "#9ca3af", marginTop: 3 }}>{formatTime(msg.createdAt)}</span>
                   </div>
-                )}
-                <div style={{ maxWidth: "78%", display: "flex", flexDirection: "column", alignItems: isClient ? "flex-end" : "flex-start" }}>
-                  {!isClient && <span style={{ fontSize: 10, color: "#9ca3af", marginBottom: 2, paddingLeft: 2 }}>{msg.operatorName ?? "Оператор"}</span>}
-                  <div style={{
-                    padding: "10px 14px",
-                    borderRadius: isClient ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
-                    background: isClient ? "#1d4ed8" : "#fff",
-                    color: isClient ? "#fff" : "#111827",
-                    fontSize: 14, lineHeight: 1.5,
-                    boxShadow: "0 1px 4px rgba(0,0,0,.08)",
-                    border: isClient ? "none" : "1px solid #e5e7eb",
-                  }}>
-                    {msg.message}
-                  </div>
-                  <span style={{ fontSize: 10, color: "#9ca3af", marginTop: 3 }}>{formatTime(msg.createdAt)}</span>
                 </div>
-              </div>
+              )}
             </div>
           );
         })}

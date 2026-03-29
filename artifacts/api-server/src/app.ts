@@ -641,6 +641,23 @@ app.post("/api/receipt/:token/confirm", screenshotUpload.single("screenshot"), a
       prepaymentScreenshotUrl: screenshotUrl,
     }).where(eq(receiptsTable.token, req.params.token));
 
+    // Auto-insert payment confirmation message into chat for this receipt
+    try {
+      const { clientSupportMessagesTable } = await import("@workspace/db");
+      await db.insert(clientSupportMessagesTable).values({
+        receiptToken: req.params.token,
+        message: JSON.stringify({
+          type: "payment_confirm",
+          clientName,
+          screenshotUrl,
+          amount: Number(receipt.prepaymentAmount),
+        }),
+        fromClient: true,
+      });
+    } catch (e) {
+      console.error("[receipt-confirm] chat insert error:", e);
+    }
+
     res.json({ ok: true, message: "Подтверждение принято. Оператор свяжется с вами." });
   } catch (err) {
     console.error("[receipt-confirm]", err);
