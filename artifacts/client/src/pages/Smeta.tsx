@@ -66,6 +66,7 @@ export default function Smeta() {
   const [formError, setFormError] = useState("");
   const [copied, setCopied] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const paymentRef = useRef<HTMLDivElement>(null);
   const [showGate, setShowGate] = useState(false);
 
   useEffect(() => {
@@ -207,6 +208,25 @@ export default function Smeta() {
           </div>
         </div>
 
+        {/* Compact pay CTA — only if not yet submitted */}
+        {!isSubmitted && (
+          <button
+            onClick={() => paymentRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            style={{
+              width: "100%", height: 44, background: "#1d4ed8", color: "#fff",
+              fontSize: 14, fontWeight: 700, border: "none", borderRadius: 12,
+              cursor: "pointer", fontFamily: "inherit", display: "flex",
+              alignItems: "center", justifyContent: "center", gap: 8,
+              boxShadow: "0 4px 14px rgba(29,78,216,.3)",
+            }}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            </svg>
+            Забронировать мастера · {fmt(data.prepaymentAmount)} ₽
+          </button>
+        )}
+
         {/* Status banner */}
         {isSubmitted && (
           <div style={{
@@ -225,99 +245,6 @@ export default function Smeta() {
               </div>
             </div>
           </div>
-        )}
-
-        {/* Section: Payment — first, most important action */}
-        {!isSubmitted && (
-          <SectionCard
-            title="Забронировать мастера"
-            accent
-            icon={
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/>
-              </svg>
-            }
-          >
-            <div style={{ padding: "12px 14px 14px" }}>
-
-              {/* Phone + copy inline */}
-              <div style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase" as const, color: "#9ca3af", marginBottom: 4 }}>
-                  СБП / Альфа Банк
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
-                  <div
-                    onClick={copyPhone}
-                    style={{ fontSize: 24, fontWeight: 800, color: "#1d4ed8", letterSpacing: -0.5, cursor: "pointer", flex: 1, lineHeight: 1, userSelect: "none" as const }}
-                  >
-                    8 989 286-08-63
-                  </div>
-                  <button onClick={copyPhone} style={{
-                    flexShrink: 0, padding: "7px 13px",
-                    background: copied ? "#f0fdf4" : "#eff6ff",
-                    border: `1.5px solid ${copied ? "#bbf7d0" : "#bfdbfe"}`,
-                    borderRadius: 9, cursor: "pointer", fontFamily: "inherit",
-                    fontSize: 12, fontWeight: 700,
-                    color: copied ? "#065f46" : "#1d4ed8",
-                    transition: "all 0.15s",
-                  }}>
-                    {copied ? "✓ Скопировано" : "Копировать"}
-                  </button>
-                </div>
-                <div style={{ fontSize: 11, color: "#6b7280" }}>Альфа Банк · ИП Коваленко Игорь Геннадьевич</div>
-              </div>
-
-              {/* Bank details */}
-              <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: "7px 12px", marginBottom: 12 }}>
-                {[
-                  { label: "Банк", val: "Альфа Банк · СБП" },
-                  { label: "ИНН", val: "262409599800" },
-                  { label: "Назначение", val: `Бронь №${data.id}` },
-                ].map((row, i, arr) => (
-                  <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "3px 0", borderBottom: i < arr.length - 1 ? "1px solid #e5e7eb" : "none" }}>
-                    <span style={{ fontSize: 11, color: "#9ca3af", flexShrink: 0 }}>{row.label}</span>
-                    <span style={{ fontSize: 11, color: "#374151", fontWeight: 500, textAlign: "right" as const }}>{row.val}</span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Confirm section */}
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
-                <span style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase" as const, letterSpacing: "0.07em", whiteSpace: "nowrap" as const }}>Подтвердите перевод</span>
-                <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
-              </div>
-
-              <div style={{ marginBottom: 8 }}>
-                <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#374151", marginBottom: 3 }}>Ваше ФИО <span style={{ color: "#ef4444" }}>*</span></label>
-                <input type="text" value={clientName} onChange={e => setClientName(e.target.value)} placeholder="Иванов Иван Иванович" autoComplete="name"
-                  style={{ width: "100%", height: 40, border: "1.5px solid #d1d5db", borderRadius: 9, padding: "0 12px", fontSize: 14, fontFamily: "inherit", color: "#111827", background: "#fff", outline: "none", boxSizing: "border-box" as const }} />
-              </div>
-
-              <div style={{ marginBottom: 8 }}>
-                <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#374151", marginBottom: 3 }}>Скриншот оплаты <span style={{ color: "#ef4444" }}>*</span></label>
-                <div onClick={() => fileRef.current?.click()} style={{ border: "2px dashed #d1d5db", borderRadius: 10, background: "#fff", cursor: "pointer", padding: "10px", display: "flex", alignItems: "center", gap: 8 }}>
-                  <div style={{ width: 28, height: 28, background: "#dbeafe", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: file ? "#065f46" : "#1d4ed8" }}>{file ? `✓ ${file.name}` : "Прикрепить скриншот"}</div>
-                    <div style={{ fontSize: 10, color: "#9ca3af" }}>JPG, PNG · до 10 МБ</div>
-                  </div>
-                </div>
-                <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => handleFile(e.target.files?.[0] || null)} />
-                {previewUrl && <img src={previewUrl} alt="preview" style={{ maxWidth: "100%", borderRadius: 8, border: "1px solid #e5e7eb", marginTop: 8 }} />}
-              </div>
-
-              {formError && <div style={{ color: "#b91c1c", fontSize: 12, marginBottom: 8, padding: "8px 10px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8 }}>{formError}</div>}
-
-              <button onClick={handleSubmit} disabled={submitting}
-                style={{ width: "100%", height: 44, background: submitting ? "#6b7280" : "#1d4ed8", color: "#fff", fontSize: 14, fontWeight: 700, border: "none", borderRadius: 10, cursor: submitting ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-                {submitting ? "Отправляем..." : "Отправить подтверждение"}
-              </button>
-              <p style={{ fontSize: 10, color: "#9ca3af", textAlign: "center" as const, marginTop: 6 }}>Защищено платформой «Честный мастер»</p>
-            </div>
-          </SectionCard>
         )}
 
         {/* Section: Line items */}
@@ -391,6 +318,101 @@ export default function Smeta() {
             </div>
           </div>
         </SectionCard>
+
+        {/* Section: Payment — scrolled to via CTA button */}
+        {!isSubmitted && (
+          <div ref={paymentRef}>
+            <SectionCard
+              title="Забронировать мастера"
+              accent
+              icon={
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/>
+                </svg>
+              }
+            >
+              <div style={{ padding: "12px 14px 14px" }}>
+
+                {/* Phone + copy inline */}
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase" as const, color: "#9ca3af", marginBottom: 4 }}>
+                    СБП / Альфа Банк
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                    <div
+                      onClick={copyPhone}
+                      style={{ fontSize: 24, fontWeight: 800, color: "#1d4ed8", letterSpacing: -0.5, cursor: "pointer", flex: 1, lineHeight: 1, userSelect: "none" as const }}
+                    >
+                      8 989 286-08-63
+                    </div>
+                    <button onClick={copyPhone} style={{
+                      flexShrink: 0, padding: "7px 13px",
+                      background: copied ? "#f0fdf4" : "#eff6ff",
+                      border: `1.5px solid ${copied ? "#bbf7d0" : "#bfdbfe"}`,
+                      borderRadius: 9, cursor: "pointer", fontFamily: "inherit",
+                      fontSize: 12, fontWeight: 700,
+                      color: copied ? "#065f46" : "#1d4ed8",
+                      transition: "all 0.15s",
+                    }}>
+                      {copied ? "✓ Скопировано" : "Копировать"}
+                    </button>
+                  </div>
+                  <div style={{ fontSize: 11, color: "#6b7280" }}>Альфа Банк · ИП Коваленко Игорь Геннадьевич</div>
+                </div>
+
+                {/* Bank details */}
+                <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: "7px 12px", marginBottom: 12 }}>
+                  {[
+                    { label: "Банк", val: "Альфа Банк · СБП" },
+                    { label: "ИНН", val: "262409599800" },
+                    { label: "Назначение", val: `Бронь №${data.id}` },
+                  ].map((row, i, arr) => (
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "3px 0", borderBottom: i < arr.length - 1 ? "1px solid #e5e7eb" : "none" }}>
+                      <span style={{ fontSize: 11, color: "#9ca3af", flexShrink: 0 }}>{row.label}</span>
+                      <span style={{ fontSize: 11, color: "#374151", fontWeight: 500, textAlign: "right" as const }}>{row.val}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Confirm section */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                  <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
+                  <span style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase" as const, letterSpacing: "0.07em", whiteSpace: "nowrap" as const }}>Подтвердите перевод</span>
+                  <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
+                </div>
+
+                <div style={{ marginBottom: 8 }}>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#374151", marginBottom: 3 }}>Ваше ФИО <span style={{ color: "#ef4444" }}>*</span></label>
+                  <input type="text" value={clientName} onChange={e => setClientName(e.target.value)} placeholder="Иванов Иван Иванович" autoComplete="name"
+                    style={{ width: "100%", height: 40, border: "1.5px solid #d1d5db", borderRadius: 9, padding: "0 12px", fontSize: 14, fontFamily: "inherit", color: "#111827", background: "#fff", outline: "none", boxSizing: "border-box" as const }} />
+                </div>
+
+                <div style={{ marginBottom: 8 }}>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#374151", marginBottom: 3 }}>Скриншот оплаты <span style={{ color: "#ef4444" }}>*</span></label>
+                  <div onClick={() => fileRef.current?.click()} style={{ border: "2px dashed #d1d5db", borderRadius: 10, background: "#fff", cursor: "pointer", padding: "10px", display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ width: 28, height: 28, background: "#dbeafe", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: file ? "#065f46" : "#1d4ed8" }}>{file ? `✓ ${file.name}` : "Прикрепить скриншот"}</div>
+                      <div style={{ fontSize: 10, color: "#9ca3af" }}>JPG, PNG · до 10 МБ</div>
+                    </div>
+                  </div>
+                  <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => handleFile(e.target.files?.[0] || null)} />
+                  {previewUrl && <img src={previewUrl} alt="preview" style={{ maxWidth: "100%", borderRadius: 8, border: "1px solid #e5e7eb", marginTop: 8 }} />}
+                </div>
+
+                {formError && <div style={{ color: "#b91c1c", fontSize: 12, marginBottom: 8, padding: "8px 10px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8 }}>{formError}</div>}
+
+                <button onClick={handleSubmit} disabled={submitting}
+                  style={{ width: "100%", height: 44, background: submitting ? "#6b7280" : "#1d4ed8", color: "#fff", fontSize: 14, fontWeight: 700, border: "none", borderRadius: 10, cursor: submitting ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                  {submitting ? "Отправляем..." : "Отправить подтверждение"}
+                </button>
+                <p style={{ fontSize: 10, color: "#9ca3af", textAlign: "center" as const, marginTop: 6 }}>Защищено платформой «Честный мастер»</p>
+              </div>
+            </SectionCard>
+          </div>
+        )}
 
         <div style={{ height: 2 }} />
       </div>
