@@ -3,11 +3,12 @@ interface BottomNavProps {
   active: "home" | "smeta" | "chat" | "history" | "estimate" | "support";
   unread?: number;
   staticMode?: boolean;
+  supportPhone?: string;
 }
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-export default function BottomNav({ token, active, unread = 0, staticMode = false }: BottomNavProps) {
+export default function BottomNav({ token, active, unread = 0, staticMode = false, supportPhone }: BottomNavProps) {
   const hasToken = !!token;
 
   const homeNav = [
@@ -36,7 +37,7 @@ export default function BottomNav({ token, active, unread = 0, staticMode = fals
     {
       id: "support",
       label: "Поддержка",
-      href: `${BASE}/support`,
+      href: supportPhone ? `${BASE}/support?p=${encodeURIComponent(supportPhone)}` : `${BASE}/support`,
       icon: (
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>

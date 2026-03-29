@@ -86,8 +86,24 @@ function PhoneEntry({ onEnter }: { onEnter: (phone: string) => void }) {
   );
 }
 
+function getPhoneFromUrl(): string | null {
+  try {
+    const p = new URLSearchParams(window.location.search).get("p");
+    return p ? decodeURIComponent(p) : null;
+  } catch { return null; }
+}
+
 export default function SupportChat() {
-  const [phone, setPhone] = useState<string | null>(() => getStoredPhone());
+  const [phone, setPhone] = useState<string | null>(() => {
+    const stored = getStoredPhone();
+    if (stored) return stored;
+    const urlPhone = getPhoneFromUrl();
+    if (urlPhone) {
+      setStoredPhone(urlPhone);
+      return urlPhone;
+    }
+    return null;
+  });
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
