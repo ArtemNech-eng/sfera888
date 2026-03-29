@@ -269,21 +269,36 @@ export default function Smeta() {
             }
           >
             <div style={{ padding: "12px 14px 14px" }}>
-              <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-                {["Мастер не\nвозьмёт другой заказ", "Гарантия\n6 месяцев", "Защита\nплатформой"].map((txt, i) => (
-                  <div key={i} style={{ flex: 1, fontSize: 10, color: "#0369a1", lineHeight: 1.5, whiteSpace: "pre-line" as const, background: "#f0f9ff", borderRadius: 8, padding: "6px 4px", textAlign: "center" as const }}>{txt}</div>
-                ))}
+
+              {/* Phone + copy inline */}
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase" as const, color: "#9ca3af", marginBottom: 4 }}>
+                  СБП / Альфа Банк
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                  <div
+                    onClick={copyPhone}
+                    style={{ fontSize: 24, fontWeight: 800, color: "#1d4ed8", letterSpacing: -0.5, cursor: "pointer", flex: 1, lineHeight: 1, userSelect: "none" as const }}
+                  >
+                    8 989 286-08-63
+                  </div>
+                  <button onClick={copyPhone} style={{
+                    flexShrink: 0, padding: "7px 13px",
+                    background: copied ? "#f0fdf4" : "#eff6ff",
+                    border: `1.5px solid ${copied ? "#bbf7d0" : "#bfdbfe"}`,
+                    borderRadius: 9, cursor: "pointer", fontFamily: "inherit",
+                    fontSize: 12, fontWeight: 700,
+                    color: copied ? "#065f46" : "#1d4ed8",
+                    transition: "all 0.15s",
+                  }}>
+                    {copied ? "✓ Скопировано" : "Копировать"}
+                  </button>
+                </div>
+                <div style={{ fontSize: 11, color: "#6b7280" }}>Альфа Банк · ИП Коваленко Игорь Геннадьевич</div>
               </div>
 
-              <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase" as const, color: "#9ca3af", marginBottom: 4 }}>
-                СБП / Альфа Банк
-              </div>
-              <a href="tel:+79892860863" style={{ fontSize: 26, fontWeight: 800, color: "#1d4ed8", letterSpacing: -0.5, textDecoration: "none", display: "block", lineHeight: 1, marginBottom: 2 }}>
-                8 989 286-08-63
-              </a>
-              <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 10 }}>Альфа Банк · ИП Коваленко Игорь Геннадьевич</div>
-
-              <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: "8px 12px", marginBottom: 10 }}>
+              {/* Bank details */}
+              <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: "7px 12px", marginBottom: 12 }}>
                 {[
                   { label: "Банк", val: "Альфа Банк · СБП" },
                   { label: "ИНН", val: "262409599800" },
@@ -296,39 +311,28 @@ export default function Smeta() {
                 ))}
               </div>
 
-              <button onClick={copyPhone} style={{
-                width: "100%", padding: "10px 0", background: "#1d4ed8", color: "#fff",
-                fontSize: 13, fontWeight: 700, border: "none", borderRadius: 10,
-                cursor: "pointer", fontFamily: "inherit", marginBottom: 14,
-              }}>
-                {copied ? "✓ Скопировано!" : "Скопировать номер телефона"}
-              </button>
-
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+              {/* Confirm section */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
                 <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
                 <span style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase" as const, letterSpacing: "0.07em", whiteSpace: "nowrap" as const }}>Подтвердите перевод</span>
                 <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
               </div>
 
-              <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 10, lineHeight: 1.5 }}>
-                Введите ФИО и прикрепите скриншот — оператор подтвердит бронь.
-              </div>
-
-              <div style={{ marginBottom: 10 }}>
-                <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#374151", marginBottom: 4 }}>Ваше ФИО <span style={{ color: "#ef4444" }}>*</span></label>
+              <div style={{ marginBottom: 8 }}>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#374151", marginBottom: 3 }}>Ваше ФИО <span style={{ color: "#ef4444" }}>*</span></label>
                 <input type="text" value={clientName} onChange={e => setClientName(e.target.value)} placeholder="Иванов Иван Иванович" autoComplete="name"
-                  style={{ width: "100%", height: 42, border: "1.5px solid #d1d5db", borderRadius: 9, padding: "0 12px", fontSize: 14, fontFamily: "inherit", color: "#111827", background: "#fff", outline: "none", boxSizing: "border-box" as const }} />
+                  style={{ width: "100%", height: 40, border: "1.5px solid #d1d5db", borderRadius: 9, padding: "0 12px", fontSize: 14, fontFamily: "inherit", color: "#111827", background: "#fff", outline: "none", boxSizing: "border-box" as const }} />
               </div>
 
-              <div style={{ marginBottom: 10 }}>
-                <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#374151", marginBottom: 4 }}>Скриншот оплаты <span style={{ color: "#ef4444" }}>*</span></label>
-                <div onClick={() => fileRef.current?.click()} style={{ border: "2px dashed #d1d5db", borderRadius: 10, background: "#fff", cursor: "pointer", padding: "12px 10px", display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{ width: 32, height: 32, background: "#dbeafe", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+              <div style={{ marginBottom: 8 }}>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#374151", marginBottom: 3 }}>Скриншот оплаты <span style={{ color: "#ef4444" }}>*</span></label>
+                <div onClick={() => fileRef.current?.click()} style={{ border: "2px dashed #d1d5db", borderRadius: 10, background: "#fff", cursor: "pointer", padding: "10px", display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ width: 28, height: 28, background: "#dbeafe", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                   </div>
                   <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: file ? "#065f46" : "#1d4ed8" }}>{file ? `✓ ${file.name}` : "Прикрепить скриншот"}</div>
-                    <div style={{ fontSize: 11, color: "#9ca3af" }}>JPG, PNG · до 10 МБ</div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: file ? "#065f46" : "#1d4ed8" }}>{file ? `✓ ${file.name}` : "Прикрепить скриншот"}</div>
+                    <div style={{ fontSize: 10, color: "#9ca3af" }}>JPG, PNG · до 10 МБ</div>
                   </div>
                 </div>
                 <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => handleFile(e.target.files?.[0] || null)} />
@@ -338,10 +342,10 @@ export default function Smeta() {
               {formError && <div style={{ color: "#b91c1c", fontSize: 12, marginBottom: 8, padding: "8px 10px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8 }}>{formError}</div>}
 
               <button onClick={handleSubmit} disabled={submitting}
-                style={{ width: "100%", height: 46, background: submitting ? "#6b7280" : "#1d4ed8", color: "#fff", fontSize: 14, fontWeight: 700, border: "none", borderRadius: 10, cursor: submitting ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                style={{ width: "100%", height: 44, background: submitting ? "#6b7280" : "#1d4ed8", color: "#fff", fontSize: 14, fontWeight: 700, border: "none", borderRadius: 10, cursor: submitting ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
                 {submitting ? "Отправляем..." : "Отправить подтверждение"}
               </button>
-              <p style={{ fontSize: 10, color: "#9ca3af", textAlign: "center" as const, marginTop: 8 }}>Защищено платформой «Честный мастер»</p>
+              <p style={{ fontSize: 10, color: "#9ca3af", textAlign: "center" as const, marginTop: 6 }}>Защищено платформой «Честный мастер»</p>
             </div>
           </SectionCard>
         )}
