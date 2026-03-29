@@ -154,20 +154,20 @@ export default function Smeta() {
   return (
     <div style={{
       fontFamily: "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif",
-      height: "100dvh",
-      display: "flex",
-      flexDirection: "column",
+      minHeight: "100dvh",
       background: "#f5f3ff",
-      overflow: "hidden",
+      paddingBottom: "calc(72px + env(safe-area-inset-bottom, 0px))",
     }}>
-      {/* Topbar */}
+      {/* Sticky Topbar */}
       <div style={{
+        position: "sticky" as const,
+        top: 0,
+        zIndex: 50,
         background: "#fff",
         borderBottom: "1.5px solid #ede9fc",
         display: "flex", alignItems: "center", gap: 10,
         padding: "11px 16px",
         paddingTop: "calc(11px + env(safe-area-inset-top, 0px))",
-        flexShrink: 0,
         boxShadow: "0 1px 8px rgba(109,40,217,.06)",
       }}>
         <button
@@ -181,8 +181,8 @@ export default function Smeta() {
         <span style={{ fontSize: 11, color: "#9490b4", fontWeight: 500, flexShrink: 0 }}>Смета №{data.id}</span>
       </div>
 
-      {/* Scrollable content */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "10px 12px 20px", display: "flex", flexDirection: "column", gap: 8 }}>
+      {/* Landing-style content — natural page scroll */}
+      <div style={{ padding: "10px 12px 20px", display: "flex", flexDirection: "column", gap: 8 }}>
 
         {/* Hero card — compact */}
         <div style={{ background: "linear-gradient(135deg, #1e3a8a, #2563eb)", borderRadius: 16, padding: "14px 16px", boxShadow: "0 4px 16px rgba(29,78,216,.2)" }}>
@@ -417,7 +417,7 @@ export default function Smeta() {
         <div style={{ height: 2 }} />
       </div>
 
-      <BottomNav token={token} active="smeta" staticMode supportPhone={getStoredPhone() ?? undefined} />
+      <BottomNav token={token} active="smeta" supportPhone={getStoredPhone() ?? undefined} />
     </div>
   );
 }
