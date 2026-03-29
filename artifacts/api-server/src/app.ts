@@ -169,16 +169,16 @@ app.get("/api/receipt/:token", async (req, res) => {
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif; background: #f5f3ff; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 0 0 60px; color: #1a1040; }
+    body { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif; background: #F5FAFA; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 0 0 60px; color: #0D2B28; }
 
     /* ── Top bar ── */
-    .topbar { width: 100%; background: #fff; border-bottom: 1.5px solid #ede9fc; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 20px; box-shadow: 0 1px 8px rgba(109,40,217,.06); }
+    .topbar { width: 100%; background: #fff; border-bottom: 1.5px solid #D0EDEB; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 20px; box-shadow: 0 1px 8px rgba(13,148,136,.06); }
     .topbar-logo { display: flex; align-items: center; gap: 9px; }
-    .topbar-icon { width: 30px; height: 30px; background: linear-gradient(135deg,#1e3a8a,#2563eb); border-radius: 9px; display: flex; align-items: center; justify-content: center; }
+    .topbar-icon { width: 30px; height: 30px; background: linear-gradient(135deg,#0F4C45,#0D9488); border-radius: 9px; display: flex; align-items: center; justify-content: center; }
     .topbar-icon svg { display: block; }
-    .topbar-name { font-size: 15px; font-weight: 700; color: #1a1040; letter-spacing: -0.3px; }
-    .topbar-sub { font-size: 12px; color: #9490b4; margin-left: 2px; }
-    .topbar-install { display: inline-flex; align-items: center; gap: 6px; background: linear-gradient(135deg,#1e3a8a,#1d4ed8); color: #fff; border: none; border-radius: 10px; padding: 7px 12px; font-size: 12px; font-weight: 700; cursor: pointer; text-decoration: none; white-space: nowrap; box-shadow: 0 2px 8px rgba(29,78,216,.3); font-family: inherit; }
+    .topbar-name { font-size: 15px; font-weight: 700; color: #0D2B28; letter-spacing: -0.3px; }
+    .topbar-sub { font-size: 12px; color: #4A6B69; margin-left: 2px; }
+    .topbar-install { display: inline-flex; align-items: center; gap: 6px; background: linear-gradient(135deg,#0F4C45,#0D9488); color: #fff; border: none; border-radius: 10px; padding: 7px 12px; font-size: 12px; font-weight: 700; cursor: pointer; text-decoration: none; white-space: nowrap; box-shadow: 0 2px 8px rgba(13,148,136,.3); font-family: inherit; }
 
     /* ── Card ── */
     .card { background: #fff; max-width: 540px; width: calc(100% - 24px); margin: 24px auto 0; border-radius: 20px; box-shadow: 0 2px 20px rgba(0,0,0,.08), 0 0 0 1px rgba(0,0,0,.04); overflow: hidden; }
@@ -186,7 +186,7 @@ app.get("/api/receipt/:token", async (req, res) => {
     /* ── Header ── */
     .hd { background: #fff; padding: 22px 22px 18px; border-bottom: 1px solid #e5e7eb; }
     .hd-doc { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #9ca3af; margin-bottom: 16px; }
-    .hd-amount-label { font-size: 12px; font-weight: 700; color: #1d4ed8; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+    .hd-amount-label { font-size: 12px; font-weight: 700; color: #0D9488; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
     .hd-amount { font-size: 48px; font-weight: 800; color: #111827; letter-spacing: -2px; line-height: 1; }
     .hd-amount span { font-size: 26px; font-weight: 600; color: #6b7280; }
     .hd-secondary { font-size: 13px; color: #6b7280; margin-top: 8px; }
@@ -194,7 +194,7 @@ app.get("/api/receipt/:token", async (req, res) => {
     .hd-meta-sep { width: 3px; height: 3px; background: #d1d5db; border-radius: 50%; }
     .status-pill { display: inline-flex; align-items: center; gap: 6px; margin-top: 14px; padding: 6px 14px; border-radius: 100px; font-size: 12px; font-weight: 600; }
     .status-pill.unpaid { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
-    .status-pill.pending { background: #ede9fe; color: #5b21b6; border: 1px solid #c4b5fd; }
+    .status-pill.pending { background: #CCFBF1; color: #0F4C45; border: 1px solid #99F6E4; }
     .status-pill.confirmed { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
     .status-pill svg { flex-shrink: 0; }
 
@@ -203,7 +203,7 @@ app.get("/api/receipt/:token", async (req, res) => {
     .trust-item { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 14px 8px; text-align: center; border-right: 1px solid #e5e7eb; }
     .trust-item:last-child { border-right: none; }
     .trust-item-icon { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
-    .trust-item-icon.blue { background: #eff6ff; }
+    .trust-item-icon.blue { background: #F0FDFA; }
     .trust-item-icon.green { background: #f0fdf4; }
     .trust-item-icon.amber { background: #fffbeb; }
     .trust-item-label { font-size: 11px; font-weight: 600; color: #374151; line-height: 1.3; }
@@ -211,12 +211,12 @@ app.get("/api/receipt/:token", async (req, res) => {
 
     /* ── Status states ── */
     .state-box { margin: 20px; border-radius: 16px; padding: 20px; text-align: center; }
-    .state-box.pending { background: linear-gradient(135deg, #eef2ff, #e0e7ff); border: 1px solid #c7d2fe; }
+    .state-box.pending { background: linear-gradient(135deg, #F0FDFA, #CCFBF1); border: 1px solid #99F6E4; }
     .state-box.confirmed { background: linear-gradient(135deg, #ecfdf5, #d1fae5); border: 1px solid #a7f3d0; }
     .state-icon { font-size: 36px; margin-bottom: 10px; }
     .state-title { font-size: 17px; font-weight: 700; color: #1a1d2e; margin-bottom: 6px; }
     .state-title.confirmed { color: #065f46; }
-    .state-title.pending { color: #3730a3; }
+    .state-title.pending { color: #0F4C45; }
     .state-sub { font-size: 13px; color: #6b7280; line-height: 1.6; }
     .state-name { margin-top: 10px; display: inline-flex; align-items: center; gap: 6px; background: #fff; border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 600; color: #374151; }
 
@@ -242,9 +242,9 @@ app.get("/api/receipt/:token", async (req, res) => {
     .totals-row:last-child { border-bottom: none; }
     .totals-lbl { font-size: 13px; color: #6b7280; }
     .totals-val { font-size: 14px; font-weight: 600; color: #111827; }
-    .totals-row.prepay { background: #eff6ff; }
-    .totals-row.prepay .totals-lbl { font-weight: 700; color: #1d4ed8; font-size: 14px; }
-    .totals-row.prepay .totals-val { font-size: 20px; font-weight: 800; color: #1d4ed8; }
+    .totals-row.prepay { background: #F0FDFA; }
+    .totals-row.prepay .totals-lbl { font-weight: 700; color: #0D9488; font-size: 14px; }
+    .totals-row.prepay .totals-val { font-size: 20px; font-weight: 800; color: #0D9488; }
     .totals-row.remainder .totals-lbl { font-weight: 600; color: #374151; }
     .totals-row.remainder .totals-val { font-weight: 700; color: #374151; }
 
@@ -272,22 +272,22 @@ app.get("/api/receipt/:token", async (req, res) => {
     .doc-stamp { text-align: center; padding: 12px 20px 0; font-size: 11px; color: #d1d5db; }
 
     /* ── Payment block ── */
-    .pay-block { margin: 20px; background: #fff; border: 1.5px solid #bfdbfe; border-radius: 16px; overflow: hidden; }
-    .pay-block-head { background: #eff6ff; padding: 14px 18px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #bfdbfe; }
+    .pay-block { margin: 20px; background: #fff; border: 1.5px solid #99F6E4; border-radius: 16px; overflow: hidden; }
+    .pay-block-head { background: #F0FDFA; padding: 14px 18px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #99F6E4; }
     .pay-block-head-text { }
-    .pay-block-title { font-size: 14px; font-weight: 700; color: #1e3a8a; }
-    .pay-block-subtitle { font-size: 12px; color: #3b82f6; margin-top: 2px; }
+    .pay-block-title { font-size: 14px; font-weight: 700; color: #0F4C45; }
+    .pay-block-subtitle { font-size: 12px; color: #0D9488; margin-top: 2px; }
     .pay-body { padding: 16px 18px; }
     .pay-phone-label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #9ca3af; margin-bottom: 6px; }
-    .pay-phone { font-size: 30px; font-weight: 800; color: #1d4ed8; letter-spacing: -1px; text-decoration: none; display: block; line-height: 1; margin-bottom: 4px; }
+    .pay-phone { font-size: 30px; font-weight: 800; color: #0D9488; letter-spacing: -1px; text-decoration: none; display: block; line-height: 1; margin-bottom: 4px; }
     .pay-bank { font-size: 13px; color: #6b7280; margin-bottom: 14px; }
     .pay-details { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 11px 13px; font-size: 12px; color: #374151; line-height: 1.8; margin-bottom: 12px; }
     .pay-details strong { color: #111827; font-weight: 600; }
-    .pay-copy-btn { width: 100%; padding: 13px; background: #1d4ed8; color: #fff; font-size: 14px; font-weight: 700; border: none; border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: background 0.15s; }
-    .pay-copy-btn:hover { background: #1e40af; }
+    .pay-copy-btn { width: 100%; padding: 13px; background: #0D9488; color: #fff; font-size: 14px; font-weight: 700; border: none; border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: background 0.15s; }
+    .pay-copy-btn:hover { background: #0F4C45; }
     .pay-steps { border-top: 1px solid #e5e7eb; padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; }
     .pay-step { display: flex; align-items: flex-start; gap: 12px; }
-    .pay-step-num { width: 24px; height: 24px; background: #dbeafe; color: #1d4ed8; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; flex-shrink: 0; margin-top: 1px; }
+    .pay-step-num { width: 24px; height: 24px; background: #CCFBF1; color: #0D9488; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; flex-shrink: 0; margin-top: 1px; }
     .pay-step-text { font-size: 13px; color: #374151; line-height: 1.5; }
 
     /* ── Confirm form ── */
@@ -298,21 +298,21 @@ app.get("/api/receipt/:token", async (req, res) => {
     .field-label { display: block; font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 6px; }
     .req { color: #ef4444; }
     .field-input { width: 100%; height: 46px; border: 1.5px solid #d1d5db; border-radius: 10px; padding: 0 14px; font-size: 15px; font-family: inherit; color: #111827; background: #fff; outline: none; transition: border-color 0.2s, box-shadow 0.2s; }
-    .field-input:focus { border-color: #1d4ed8; box-shadow: 0 0 0 3px rgba(29,78,216,.1); }
+    .field-input:focus { border-color: #0D9488; box-shadow: 0 0 0 3px rgba(13,148,136,.1); }
     .upload-area { border: 2px dashed #d1d5db; border-radius: 12px; background: #fff; cursor: pointer; transition: all 0.2s; display: block; }
     .upload-inner { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 20px; }
-    .upload-area:hover { border-color: #1d4ed8; background: #eff6ff; }
-    .upload-icon { width: 36px; height: 36px; background: #dbeafe; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
-    .upload-text { font-size: 13px; font-weight: 600; color: #1d4ed8; }
+    .upload-area:hover { border-color: #0D9488; background: #F0FDFA; }
+    .upload-icon { width: 36px; height: 36px; background: #CCFBF1; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
+    .upload-text { font-size: 13px; font-weight: 600; color: #0D9488; }
     .upload-hint { font-size: 11px; color: #9ca3af; }
     .form-error { display: none; color: #b91c1c; font-size: 13px; margin-bottom: 10px; padding: 10px 12px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; }
-    .submit-btn { width: 100%; height: 52px; background: #1d4ed8; color: #fff; font-size: 15px; font-weight: 700; border: none; border-radius: 12px; cursor: pointer; margin-top: 4px; letter-spacing: 0.01em; transition: background 0.15s; font-family: inherit; }
-    .submit-btn:hover { background: #1e40af; }
+    .submit-btn { width: 100%; height: 52px; background: #0D9488; color: #fff; font-size: 15px; font-weight: 700; border: none; border-radius: 12px; cursor: pointer; margin-top: 4px; letter-spacing: 0.01em; transition: background 0.15s; font-family: inherit; }
+    .submit-btn:hover { background: #0F4C45; }
     .submit-btn:disabled { background: #6b7280; cursor: not-allowed; }
     .form-note { font-size: 11px; color: #9ca3af; text-align: center; margin-top: 10px; }
 
     /* ── Combined booking block ── */
-    .combined-block { background: #fff; border: 1.5px solid #bfdbfe; border-radius: 16px; overflow: hidden; }
+    .combined-block { background: #fff; border: 1.5px solid #99F6E4; border-radius: 16px; overflow: hidden; }
     .confirm-divider { display: flex; align-items: center; gap: 10px; padding: 4px 18px 16px; }
     .confirm-divider-line { flex: 1; height: 1px; background: #e5e7eb; }
     .confirm-divider-text { font-size: 11px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.07em; white-space: nowrap; }
@@ -379,7 +379,7 @@ app.get("/api/receipt/:token", async (req, res) => {
     </div>
     <div class="trust-item">
       <div class="trust-item-icon blue">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0D9488" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
       </div>
       <div class="trust-item-label">ИП зарегистрирован</div>
       <div class="trust-item-sub">ИНН 262409599800</div>
@@ -427,7 +427,7 @@ app.get("/api/receipt/:token", async (req, res) => {
 ${!isClientSubmitted ? `<div style="max-width:540px;width:calc(100% - 24px);margin:16px auto 0">
   <div class="combined-block">
     <div class="pay-block-head">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0D9488" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
       <div class="pay-block-head-text">
         <div class="pay-block-title">Забронируйте мастера</div>
         <div class="pay-block-subtitle">Внесите бронь ${prepayment} ₽ — мастер будет закреплён за вами</div>
@@ -464,7 +464,7 @@ ${!isClientSubmitted ? `<div style="max-width:540px;width:calc(100% - 24px);marg
           <label class="upload-area" for="screenshot-input">
             <div class="upload-inner">
               <div class="upload-icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0D9488" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
               </div>
               <div class="upload-text" id="upload-text">Прикрепить скриншот</div>
               <div class="upload-hint">JPG, PNG · до 10 МБ</div>
