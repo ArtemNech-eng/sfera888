@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import BottomNav from "@/components/BottomNav";
 
-interface LineItem { description: string; price: number; }
+interface LineItem { description: string; price: number; unit?: string; }
 interface EstimateResult {
   lineItems: LineItem[];
   totalMin: number;
@@ -168,7 +168,7 @@ export default function Estimate() {
                 <span style={{ fontSize: 36, fontWeight: 800, color: "#fff" }}>{fmt(result.totalMax)}</span>
                 <span style={{ fontSize: 18, color: "rgba(255,255,255,.7)" }}>₽</span>
               </div>
-              <div style={{ fontSize: 12, color: "rgba(255,255,255,.6)", marginTop: 4 }}>приблизительная стоимость работ</div>
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,.6)", marginTop: 4 }}>ориентировочная стоимость по рынку</div>
             </div>
 
             <div style={{ padding: "18px 20px" }}>
@@ -177,7 +177,11 @@ export default function Estimate() {
                 {result.lineItems.map((item, i) => (
                   <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, padding: "10px 14px", borderBottom: i < result.lineItems.length - 1 ? "1px solid #f3f4f6" : "none" }}>
                     <span style={{ fontSize: 13, color: "#374151", flex: 1, lineHeight: 1.4 }}>{item.description}</span>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: "#111827", whiteSpace: "nowrap" }}>{fmt(Number(item.price))} ₽</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: "#111827", whiteSpace: "nowrap" }}>
+                      {item.unit && item.unit !== "итого"
+                        ? `от ${fmt(Number(item.price))} ₽/${item.unit}`
+                        : `${fmt(Number(item.price))} ₽`}
+                    </span>
                   </div>
                 ))}
               </div>
