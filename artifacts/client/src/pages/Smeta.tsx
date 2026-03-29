@@ -53,28 +53,29 @@ function AccordionBlock({ title, subtitle, icon, open, onToggle, children, accen
       background: "#fff",
       borderRadius: 14,
       overflow: "hidden",
-      border: accent ? "1.5px solid #bfdbfe" : "1px solid #e5e7eb",
+      border: accent ? "1.5px solid #bfdbfe" : "1.5px solid #ede9fc",
+      boxShadow: "0 1px 6px rgba(109,40,217,.04)",
     }}>
       <button onClick={onToggle} style={{
         width: "100%", display: "flex", alignItems: "center", gap: 10,
-        padding: "12px 14px",
+        padding: "13px 14px",
         background: accent ? "#eff6ff" : "#fff",
-        border: "none", cursor: "pointer", textAlign: "left", fontFamily: "inherit",
-        borderBottom: open ? (accent ? "1.5px solid #bfdbfe" : "1px solid #f0f0f0") : "none",
+        border: "none", cursor: "pointer", fontFamily: "inherit",
+        borderBottom: open ? (accent ? "1.5px solid #bfdbfe" : "1.5px solid #ede9fc") : "none",
       }}>
         <div style={{
-          width: 32, height: 32, borderRadius: 10, flexShrink: 0,
-          background: accent ? "#dbeafe" : "#f3f4f6",
+          width: 34, height: 34, borderRadius: 10, flexShrink: 0,
+          background: accent ? "#dbeafe" : "#f0effe",
           display: "flex", alignItems: "center", justifyContent: "center",
         }}>{icon}</div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: accent ? "#1e3a8a" : "#111827", display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: accent ? "#1e3a8a" : "#1a1040", display: "flex", alignItems: "center", gap: 6 }}>
             {title}
-            {badge && <span style={{ fontSize: 10, fontWeight: 700, background: accent ? "#bfdbfe" : "#f3f4f6", color: accent ? "#1d4ed8" : "#6b7280", padding: "2px 6px", borderRadius: 20 }}>{badge}</span>}
+            {badge && <span style={{ fontSize: 10, fontWeight: 700, background: accent ? "#bfdbfe" : "#ede9fc", color: accent ? "#1d4ed8" : "#7c3aed", padding: "2px 7px", borderRadius: 20 }}>{badge}</span>}
           </div>
-          {subtitle && <div style={{ fontSize: 11, color: accent ? "#3b82f6" : "#9ca3af", marginTop: 1 }}>{subtitle}</div>}
+          {subtitle && <div style={{ fontSize: 11, color: accent ? "#3b82f6" : "#9490b4", marginTop: 2 }}>{subtitle}</div>}
         </div>
-        <div style={{ color: accent ? "#1d4ed8" : "#9ca3af" }}><ChevronIcon open={open} /></div>
+        <div style={{ color: accent ? "#1d4ed8" : "#9490b4", flexShrink: 0 }}><ChevronIcon open={open} /></div>
       </button>
       {open && <div>{children}</div>}
     </div>
@@ -222,7 +223,7 @@ export default function Smeta() {
       <div style={{ flex: 1, overflowY: "auto", padding: "10px 12px 20px", display: "flex", flexDirection: "column", gap: 8 }}>
 
         {/* ── Hero card ── */}
-        <div style={{ background: "#fff", borderRadius: 16, overflow: "hidden", border: "1px solid #e5e7eb" }}>
+        <div style={{ background: "#fff", borderRadius: 16, overflow: "hidden", border: "1.5px solid #ede9fc", boxShadow: "0 2px 12px rgba(109,40,217,.07)" }}>
           {/* Gradient header */}
           <div style={{ background: "linear-gradient(135deg, #1e3a8a, #2563eb)", padding: "14px 16px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>

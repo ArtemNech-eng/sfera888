@@ -111,12 +111,7 @@ app.get("/api/receipt/:token/data", async (req, res) => {
 
 // ── Public receipt page (no auth required) — served under /api/ so Replit's ──
 // ── deployment proxy doesn't intercept it (non-/api paths go to CRM static). ──
-// ── Redirects to React client app; use ?html=1 for HTML fallback. ────────────
 app.get("/api/receipt/:token", async (req, res) => {
-  // Redirect to client React app unless HTML fallback is explicitly requested
-  if (!req.query.html) {
-    return res.redirect(302, `/client/smeta/${req.params.token}`);
-  }
   try {
     const { receiptsTable, mastersTable } = await import("@workspace/db");
     const { db } = await import("@workspace/db");
@@ -172,17 +167,18 @@ app.get("/api/receipt/:token", async (req, res) => {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Смета №${receipt.id} — Честный мастер</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: #eef0f5; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 0 0 60px; color: #1a1d2e; }
+    body { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif; background: #f5f3ff; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 0 0 60px; color: #1a1040; }
 
     /* ── Top bar ── */
-    .topbar { width: 100%; background: #111827; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 14px 24px; }
+    .topbar { width: 100%; background: #fff; border-bottom: 1.5px solid #ede9fc; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 20px; box-shadow: 0 1px 8px rgba(109,40,217,.06); }
     .topbar-logo { display: flex; align-items: center; gap: 9px; }
-    .topbar-icon { width: 30px; height: 30px; background: #2563eb; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+    .topbar-icon { width: 30px; height: 30px; background: linear-gradient(135deg,#1e3a8a,#2563eb); border-radius: 9px; display: flex; align-items: center; justify-content: center; }
     .topbar-icon svg { display: block; }
-    .topbar-name { font-size: 15px; font-weight: 700; color: #fff; letter-spacing: -0.3px; }
-    .topbar-sub { font-size: 12px; color: #6b7280; margin-left: 4px; }
+    .topbar-name { font-size: 15px; font-weight: 700; color: #1a1040; letter-spacing: -0.3px; }
+    .topbar-sub { font-size: 12px; color: #9490b4; margin-left: 2px; }
+    .topbar-install { display: inline-flex; align-items: center; gap: 6px; background: linear-gradient(135deg,#1e3a8a,#1d4ed8); color: #fff; border: none; border-radius: 10px; padding: 7px 12px; font-size: 12px; font-weight: 700; cursor: pointer; text-decoration: none; white-space: nowrap; box-shadow: 0 2px 8px rgba(29,78,216,.3); font-family: inherit; }
 
     /* ── Card ── */
     .card { background: #fff; max-width: 540px; width: calc(100% - 24px); margin: 24px auto 0; border-radius: 20px; box-shadow: 0 2px 20px rgba(0,0,0,.08), 0 0 0 1px rgba(0,0,0,.04); overflow: hidden; }
@@ -344,11 +340,14 @@ app.get("/api/receipt/:token", async (req, res) => {
 <div class="topbar">
   <div class="topbar-logo">
     <div class="topbar-icon">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
     </div>
     <span class="topbar-name">Честный мастер</span>
-    <span class="topbar-sub">· sfera-project.digital</span>
   </div>
+  <a href="/client/" class="topbar-install" id="pwa-btn">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/></svg>
+    Установить приложение
+  </a>
 </div>
 
 <div class="card">
@@ -532,6 +531,26 @@ ${!isClientSubmitted ? `<div style="max-width:540px;width:calc(100% - 24px);marg
 </div>
 
 <script>
+  // ── PWA install prompt ──────────────────────────────────────────────────────
+  let _pwaPrompt = null;
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    _pwaPrompt = e;
+  });
+  const pwaBtn = document.getElementById('pwa-btn');
+  if (pwaBtn) {
+    pwaBtn.addEventListener('click', async (e) => {
+      if (_pwaPrompt) {
+        e.preventDefault();
+        _pwaPrompt.prompt();
+        const { outcome } = await _pwaPrompt.userChoice;
+        if (outcome === 'accepted') _pwaPrompt = null;
+      }
+      // else: follows href="/client/" naturally
+    });
+  }
+
+  // ── Payment form ────────────────────────────────────────────────────────────
   const fileInput = document.getElementById('screenshot-input');
   const uploadText = document.getElementById('upload-text');
   const previewWrap = document.getElementById('preview-wrap');
