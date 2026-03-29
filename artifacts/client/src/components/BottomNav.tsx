@@ -1,6 +1,6 @@
 interface BottomNavProps {
   token?: string;
-  active: "home" | "smeta" | "chat" | "history" | "estimate";
+  active: "home" | "smeta" | "chat" | "history" | "estimate" | "support";
   unread?: number;
   staticMode?: boolean;
 }
@@ -30,6 +30,16 @@ export default function BottomNav({ token, active, unread = 0, staticMode = fals
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="11" cy="11" r="8"/>
           <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+      ),
+    },
+    {
+      id: "support",
+      label: "Поддержка",
+      href: `${BASE}/support`,
+      icon: (
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
         </svg>
       ),
     },

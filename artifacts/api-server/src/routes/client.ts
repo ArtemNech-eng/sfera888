@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, receiptsTable, clientSupportMessagesTable, leadsTable, ordersTable, mastersTable } from "@workspace/db";
+import { db, receiptsTable, clientSupportMessagesTable, generalSupportMessagesTable, leadsTable, ordersTable, mastersTable } from "@workspace/db";
 import { eq, desc, and, isNull, inArray, like, sql } from "drizzle-orm";
 import multer from "multer";
 import { objectStorageClient } from "../lib/objectStorage.js";
@@ -458,6 +458,108 @@ router.get("/chat-unread", requireRole("admin", "master_operator"), async (_req,
 
   const count = unread.filter(m => !m.seenAt).length;
   res.json({ count });
+});
+
+// ─── General support chat (phone-based, no smeta token required) ─────────────
+
+// GET /api/client/support/:phone — get messages for a phone number
+router.get("/support/:phone", async (req, res) => {
+  const phone = req.params.phone.replace(/\D/g, "").slice(-10);
+  if (phone.length < 10) return res.status(400).json({ error: "Неверный номер" });
+
+  const messages = await db.select()
+    .from(generalSupportMessagesTable)
+    .where(sql`right(regexp_replace(${generalSupportMessagesTable.clientPhone}, '[^0-9]', '', 'g'), 10) = ${phone}`)
+    .orderBy(generalSupportMessagesTable.createdAt);
+
+  // mark operator messages as seen
+  await db.update(generalSupportMessagesTable)
+    .set({ seenAt: new Date() })
+    .where(
+      and(
+        sql`right(regexp_replace(${generalSupportMessagesTable.clientPhone}, '[^0-9]', '', 'g'), 10) = ${phone}`,
+        eq(generalSupportMessagesTable.fromClient, false),
+        isNull(generalSupportMessagesTable.seenAt),
+      )
+    );
+
+  res.json({ messages });
+});
+
+// POST /api/client/support/:phone — client sends message
+router.post("/support/:phone", async (req, res) => {
+  const phone = req.params.phone.replace(/\D/g, "").slice(-10);
+  if (phone.length < 10) return res.status(400).json({ error: "Неверный номер" });
+  const { message, clientName } = req.body;
+  if (!message?.trim()) return res.status(400).json({ error: "Сообщение пустое" });
+
+  const [msg] = await db.insert(generalSupportMessagesTable).values({
+    clientPhone: phone,
+    clientName: clientName?.trim() || null,
+    message: message.trim(),
+    fromClient: true,
+  }).returning();
+
+  res.json({ ok: true, message: msg });
+});
+
+// ─── CRM: GET /api/client/support-threads — all general support chats ─────────
+
+router.get("/support-threads", requireRole("admin", "master_operator"), async (_req, res) => {
+  const messages = await db.select()
+    .from(generalSupportMessagesTable)
+    .orderBy(desc(generalSupportMessagesTable.createdAt));
+
+  const phoneSet = new Set(messages.map(m => m.clientPhone));
+  const threads = [...phoneSet].map(phone => {
+    const threadMsgs = messages.filter(m => m.clientPhone === phone);
+    const last = threadMsgs[0];
+    const unread = threadMsgs.filter(m => m.fromClient && !m.seenAt).length;
+    const clientName = threadMsgs.find(m => m.clientName)?.clientName ?? null;
+    return { phone, clientName, lastMessage: last.message, lastAt: last.createdAt, lastFromClient: last.fromClient, unread };
+  });
+
+  res.json({ threads });
+});
+
+// ─── CRM: GET /api/client/support-messages/:phone — messages for a phone ──────
+
+router.get("/support-messages/:phone", requireRole("admin", "master_operator"), async (req, res) => {
+  const phone = req.params.phone.replace(/\D/g, "").slice(-10);
+  const messages = await db.select()
+    .from(generalSupportMessagesTable)
+    .where(sql`right(regexp_replace(${generalSupportMessagesTable.clientPhone}, '[^0-9]', '', 'g'), 10) = ${phone}`)
+    .orderBy(generalSupportMessagesTable.createdAt);
+
+  await db.update(generalSupportMessagesTable)
+    .set({ seenAt: new Date() })
+    .where(
+      and(
+        sql`right(regexp_replace(${generalSupportMessagesTable.clientPhone}, '[^0-9]', '', 'g'), 10) = ${phone}`,
+        eq(generalSupportMessagesTable.fromClient, true),
+        isNull(generalSupportMessagesTable.seenAt),
+      )
+    );
+
+  res.json({ messages });
+});
+
+// ─── CRM: POST /api/client/support-reply/:phone — operator replies ────────────
+
+router.post("/support-reply/:phone", requireRole("admin", "master_operator"), async (req: any, res) => {
+  const phone = req.params.phone.replace(/\D/g, "").slice(-10);
+  const { message } = req.body;
+  if (!message?.trim()) return res.status(400).json({ error: "Пустое сообщение" });
+  const operatorName = req.user?.username ?? "Оператор";
+
+  const [msg] = await db.insert(generalSupportMessagesTable).values({
+    clientPhone: phone,
+    message: message.trim(),
+    fromClient: false,
+    operatorName,
+  }).returning();
+
+  res.json({ ok: true, message: msg });
 });
 
 export default router;

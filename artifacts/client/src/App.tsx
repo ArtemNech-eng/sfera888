@@ -5,6 +5,7 @@ import Chat from "@/pages/Chat";
 import History from "@/pages/History";
 import Estimate from "@/pages/Estimate";
 import MyOrders from "@/pages/MyOrders";
+import SupportChat from "@/pages/SupportChat";
 import InstallPrompt from "@/components/InstallPrompt";
 import BottomNav from "@/components/BottomNav";
 import { getStoredPhone, clearStoredPhone, formatPhone } from "@/utils/phone";
@@ -180,6 +181,7 @@ function Router() {
     <Switch>
       <Route path="/" component={Home} />
       <Route path="/estimate" component={Estimate} />
+      <Route path="/support" component={SupportChat} />
       <Route path="/my-orders" component={MyOrders} />
       <Route path="/smeta/:token/chat" component={Chat} />
       <Route path="/smeta/:token/history" component={History} />
