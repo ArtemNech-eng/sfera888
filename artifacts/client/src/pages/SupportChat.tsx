@@ -38,7 +38,7 @@ function PhoneEntry({ onEnter }: { onEnter: (phone: string) => void }) {
   };
 
   return (
-    <div style={{ height: "100dvh", display: "flex", flexDirection: "column", background: "#f5f3ff", fontFamily: "'Plus Jakarta Sans', -apple-system, sans-serif" }}>
+    <div style={{ height: "100dvh", overflow: "hidden", display: "flex", flexDirection: "column", background: "#f5f3ff", fontFamily: "'Plus Jakarta Sans', -apple-system, sans-serif" }}>
       {/* Header */}
       <div style={{ background: "#fff", borderBottom: "1.5px solid #ede9fc", padding: "14px 16px", paddingTop: "calc(14px + env(safe-area-inset-top, 0px))", display: "flex", alignItems: "center", gap: 10, flexShrink: 0, boxShadow: "0 1px 8px rgba(109,40,217,.06)" }}>
         <div style={{ width: 32, height: 32, background: "linear-gradient(135deg,#1d4ed8,#3b82f6)", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center" }}>
