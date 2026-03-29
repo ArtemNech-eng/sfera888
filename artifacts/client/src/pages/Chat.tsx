@@ -183,7 +183,7 @@ export default function Chat() {
       </div>
 
       {/* Messages — scrollable area */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "12px 12px 8px", WebkitOverflowScrolling: "touch" } as React.CSSProperties}>
+      <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "12px 12px 8px", WebkitOverflowScrolling: "touch", minWidth: 0 } as React.CSSProperties}>
         {messages.length === 0 && !loading && (
           <div style={{ textAlign: "center", padding: "40px 20px", color: "#9ca3af" }}>
             <div style={{ fontSize: 48, marginBottom: 12 }}>💬</div>
@@ -218,7 +218,7 @@ export default function Chat() {
                       </svg>
                     </div>
                   )}
-                  <div style={{ maxWidth: "78%", display: "flex", flexDirection: "column", alignItems: isClient ? "flex-end" : "flex-start" }}>
+                  <div style={{ maxWidth: "78%", minWidth: 0, display: "flex", flexDirection: "column", alignItems: isClient ? "flex-end" : "flex-start" }}>
                     {!isClient && <span style={{ fontSize: 10, color: "#9ca3af", marginBottom: 2, paddingLeft: 2 }}>{msg.operatorName ?? "Оператор"}</span>}
                     <div style={{
                       padding: "10px 14px",
@@ -228,6 +228,8 @@ export default function Chat() {
                       fontSize: 14, lineHeight: 1.5,
                       boxShadow: "0 1px 4px rgba(0,0,0,.08)",
                       border: isClient ? "none" : "1px solid #e5e7eb",
+                      wordBreak: "break-word",
+                      overflowWrap: "break-word",
                     }}>
                       {msg.message}
                     </div>

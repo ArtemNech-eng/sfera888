@@ -184,7 +184,7 @@ export default function SupportChat() {
       </div>
 
       {/* Messages */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "12px 12px 8px", WebkitOverflowScrolling: "touch" } as React.CSSProperties}>
+      <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "12px 12px 8px", WebkitOverflowScrolling: "touch", minWidth: 0 } as React.CSSProperties}>
         {messages.length === 0 && (
           <div style={{ textAlign: "center", padding: "40px 20px" }}>
             <div style={{ fontSize: 48, marginBottom: 12 }}>💬</div>
@@ -212,9 +212,9 @@ export default function SupportChat() {
                     </svg>
                   </div>
                 )}
-                <div style={{ maxWidth: "78%", display: "flex", flexDirection: "column", alignItems: isClient ? "flex-end" : "flex-start" }}>
+                <div style={{ maxWidth: "78%", minWidth: 0, display: "flex", flexDirection: "column", alignItems: isClient ? "flex-end" : "flex-start" }}>
                   {!isClient && <span style={{ fontSize: 10, color: "#9490b4", marginBottom: 2, paddingLeft: 2 }}>{msg.operatorName ?? "Оператор"}</span>}
-                  <div style={{ padding: "10px 14px", borderRadius: isClient ? "18px 18px 4px 18px" : "18px 18px 18px 4px", background: isClient ? "#1d4ed8" : "#fff", color: isClient ? "#fff" : "#1a1040", fontSize: 14, lineHeight: 1.5, boxShadow: "0 1px 4px rgba(0,0,0,.08)", border: isClient ? "none" : "1px solid #ede9fc" }}>
+                  <div style={{ padding: "10px 14px", borderRadius: isClient ? "18px 18px 4px 18px" : "18px 18px 18px 4px", background: isClient ? "#1d4ed8" : "#fff", color: isClient ? "#fff" : "#1a1040", fontSize: 14, lineHeight: 1.5, boxShadow: "0 1px 4px rgba(0,0,0,.08)", border: isClient ? "none" : "1px solid #ede9fc", wordBreak: "break-word", overflowWrap: "break-word" }}>
                     {msg.message}
                   </div>
                   <span style={{ fontSize: 10, color: "#9490b4", marginTop: 3 }}>{formatTime(msg.createdAt)}</span>
