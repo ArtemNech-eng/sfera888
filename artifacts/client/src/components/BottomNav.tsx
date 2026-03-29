@@ -8,6 +8,10 @@ interface BottomNavProps {
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+const isStandalone =
+  (typeof window !== "undefined" && (window.navigator as { standalone?: boolean }).standalone === true) ||
+  (typeof window !== "undefined" && window.matchMedia("(display-mode: standalone)").matches);
+
 export default function BottomNav({ token, active, unread = 0, staticMode = false, supportPhone }: BottomNavProps) {
   const hasToken = !!token;
 
@@ -84,7 +88,7 @@ export default function BottomNav({ token, active, unread = 0, staticMode = fals
       display: "flex",
       zIndex: staticMode ? undefined : 100,
       boxShadow: staticMode ? "none" : "0 -4px 16px rgba(109,40,217,.08)",
-      paddingBottom: "env(safe-area-inset-bottom, 0px)",
+      paddingBottom: isStandalone ? "env(safe-area-inset-bottom, 0px)" : "0px",
       flexShrink: 0,
     }}>
       {nav.map(item => {
