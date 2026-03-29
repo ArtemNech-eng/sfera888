@@ -257,51 +257,7 @@ export default function Smeta() {
           </div>
         )}
 
-        {/* Section: Line items */}
-        <SectionCard
-          title={`Перечень работ · ${data.lineItems.length} поз.`}
-          icon={
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
-              <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
-            </svg>
-          }
-        >
-          <div style={{ padding: "8px 14px 4px" }}>
-            {data.lineItems.map((item, i) => (
-              <div key={i} style={{
-                display: "flex", justifyContent: "space-between", alignItems: "baseline",
-                gap: 8, padding: "8px 0",
-                borderBottom: i < data.lineItems.length - 1 ? "1px solid #f3f4f6" : "1px solid #e5e7eb",
-              }}>
-                <span style={{ fontSize: 13, color: "#374151", flex: 1, lineHeight: 1.4 }}>{item.description}</span>
-                <span style={{ fontSize: 13, fontWeight: 600, color: "#111827", whiteSpace: "nowrap" as const }}>{fmt(Number(item.price))} ₽</span>
-              </div>
-            ))}
-            <div style={{ padding: "8px 0 4px", display: "flex", flexDirection: "column", gap: 4 }}>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ fontSize: 12, color: "#6b7280" }}>Итого по смете</span>
-                <span style={{ fontSize: 12, fontWeight: 600, color: "#111827" }}>{fmt(data.totalAmount)} ₽</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 10px", background: "#eff6ff", borderRadius: 8 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: "#1d4ed8" }}>Бронь (предоплата)</span>
-                <span style={{ fontSize: 16, fontWeight: 800, color: "#1d4ed8" }}>{fmt(data.prepaymentAmount)} ₽</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ fontSize: 12, color: "#374151" }}>Остаток по факту работ</span>
-                <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>{fmt(remainder)} ₽</span>
-              </div>
-            </div>
-            {data.notes && (
-              <div style={{ margin: "6px 0 8px", background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: "8px 10px" }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase" as const, letterSpacing: "0.06em", marginBottom: 3 }}>Примечание</div>
-                <div style={{ fontSize: 12, color: "#374151", lineHeight: 1.5 }}>{data.notes}</div>
-              </div>
-            )}
-          </div>
-        </SectionCard>
-
-        {/* Section: Payment */}
+        {/* Section: Payment — first, most important action */}
         {!isSubmitted && (
           <SectionCard
             title="Забронировать мастера"
@@ -389,6 +345,50 @@ export default function Smeta() {
             </div>
           </SectionCard>
         )}
+
+        {/* Section: Line items */}
+        <SectionCard
+          title={`Перечень работ · ${data.lineItems.length} поз.`}
+          icon={
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
+              <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+            </svg>
+          }
+        >
+          <div style={{ padding: "8px 14px 10px" }}>
+            {data.lineItems.map((item, i) => (
+              <div key={i} style={{
+                display: "flex", justifyContent: "space-between", alignItems: "baseline",
+                gap: 8, padding: "8px 0",
+                borderBottom: "1px solid #f3f4f6",
+              }}>
+                <span style={{ fontSize: 13, color: "#374151", flex: 1, lineHeight: 1.4 }}>{item.description}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: "#111827", whiteSpace: "nowrap" as const }}>{fmt(Number(item.price))} ₽</span>
+              </div>
+            ))}
+            <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}>
+                <span style={{ fontSize: 12, color: "#6b7280" }}>Итого по смете</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "#111827" }}>{fmt(data.totalAmount)} ₽</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 10px", background: "#eff6ff", borderRadius: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "#1d4ed8" }}>Бронь (предоплата)</span>
+                <span style={{ fontSize: 14, fontWeight: 800, color: "#1d4ed8" }}>{fmt(data.prepaymentAmount)} ₽</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}>
+                <span style={{ fontSize: 12, color: "#374151" }}>Остаток по факту работ</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>{fmt(remainder)} ₽</span>
+              </div>
+            </div>
+            {data.notes && (
+              <div style={{ marginTop: 8, background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: "8px 10px" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase" as const, letterSpacing: "0.06em", marginBottom: 3 }}>Примечание</div>
+                <div style={{ fontSize: 12, color: "#374151", lineHeight: 1.5 }}>{data.notes}</div>
+              </div>
+            )}
+          </div>
+        </SectionCard>
 
         {/* Section: About */}
         <SectionCard
