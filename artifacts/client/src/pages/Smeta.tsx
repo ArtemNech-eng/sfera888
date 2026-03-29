@@ -201,7 +201,7 @@ export default function Smeta() {
               {isConfirmed
                 ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: "rgba(16,185,129,.25)", color: "#6ee7b7" }}>✓ Подтверждена</span>
                 : isSubmitted
-                  ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: "rgba(167,139,250,.25)", color: "#5EEAD4" }}>⏳ Проверяем</span>
+                  ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: "rgba(13,148,136,.2)", color: "#99F6E4" }}>⏳ Проверяем</span>
                   : <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: "rgba(251,191,36,.2)", color: "#fde68a" }}>⚠ Не оплачена</span>
               }
             </div>
