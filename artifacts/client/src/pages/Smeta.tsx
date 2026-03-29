@@ -183,57 +183,27 @@ export default function Smeta() {
       {/* Scrollable content */}
       <div style={{ flex: 1, overflowY: "auto", padding: "10px 12px 20px", display: "flex", flexDirection: "column", gap: 8 }}>
 
-        {/* Hero card */}
-        <div style={{ background: "#fff", borderRadius: 16, overflow: "hidden", border: "1.5px solid #ede9fc", boxShadow: "0 2px 12px rgba(109,40,217,.07)" }}>
-          <div style={{ background: "linear-gradient(135deg, #1e3a8a, #2563eb)", padding: "14px 16px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-              <div>
-                <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase", color: "rgba(255,255,255,.5)", marginBottom: 4 }}>
-                  Сумма брони
-                </div>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                  <span style={{ fontSize: 36, fontWeight: 800, color: "#fff", letterSpacing: -1, lineHeight: 1 }}>{fmt(data.prepaymentAmount)}</span>
-                  <span style={{ fontSize: 18, fontWeight: 600, color: "rgba(255,255,255,.55)" }}>₽</span>
-                </div>
-                <div style={{ fontSize: 11, color: "rgba(255,255,255,.5)", marginTop: 3 }}>Итого по смете: {fmt(data.totalAmount)} ₽</div>
+        {/* Hero card — compact */}
+        <div style={{ background: "linear-gradient(135deg, #1e3a8a, #2563eb)", borderRadius: 16, padding: "14px 16px", boxShadow: "0 4px 16px rgba(29,78,216,.2)" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase" as const, color: "rgba(255,255,255,.5)", marginBottom: 2 }}>Сумма брони</div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 3 }}>
+                <span style={{ fontSize: 30, fontWeight: 800, color: "#fff", letterSpacing: -1, lineHeight: 1 }}>{fmt(data.prepaymentAmount)}</span>
+                <span style={{ fontSize: 15, fontWeight: 600, color: "rgba(255,255,255,.55)" }}>₽</span>
               </div>
-              <div style={{ flexShrink: 0, marginTop: 2 }}>
-                {isConfirmed
-                  ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: "rgba(16,185,129,.25)", color: "#6ee7b7" }}>✓ Подтверждена</span>
-                  : isSubmitted
-                    ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: "rgba(167,139,250,.25)", color: "#c4b5fd" }}>⏳ Проверяем</span>
-                    : <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: "rgba(251,191,36,.2)", color: "#fde68a" }}>⚠ Не оплачена</span>
-                }
+              <div style={{ fontSize: 10, color: "rgba(255,255,255,.45)", marginTop: 2 }}>
+                {data.serviceType} · итого {fmt(data.totalAmount)} ₽
               </div>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" as const }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,.8)" }}>{data.serviceType}</span>
-              <span style={{ width: 3, height: 3, background: "rgba(255,255,255,.3)", borderRadius: "50%", display: "inline-block", flexShrink: 0 }} />
-              <span style={{ fontSize: 12, color: "rgba(255,255,255,.5)" }}>{data.city}{district}</span>
+            <div style={{ flexShrink: 0 }}>
+              {isConfirmed
+                ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: "rgba(16,185,129,.25)", color: "#6ee7b7" }}>✓ Подтверждена</span>
+                : isSubmitted
+                  ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: "rgba(167,139,250,.25)", color: "#c4b5fd" }}>⏳ Проверяем</span>
+                  : <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: "rgba(251,191,36,.2)", color: "#fde68a" }}>⚠ Не оплачена</span>
+              }
             </div>
-          </div>
-          <div style={{ padding: "9px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #f3f4f6" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <div style={{ width: 22, height: 22, background: "#f3f4f6", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
-                </svg>
-              </div>
-              <span style={{ fontSize: 12, color: "#374151", fontWeight: 600 }}>{data.masterName}</span>
-            </div>
-            <span style={{ fontSize: 11, color: "#9ca3af" }}>{date}</span>
-          </div>
-          <div style={{ display: "flex" }}>
-            {[
-              { icon: "🛡", text: "Гарантия 6 мес." },
-              { icon: "✓", text: "ИП офиц." },
-              { icon: "📞", text: "Поддержка 24/7" },
-            ].map((b, i) => (
-              <div key={i} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 4, padding: "7px 4px", borderRight: i < 2 ? "1px solid #f3f4f6" : "none" }}>
-                <span style={{ fontSize: 12 }}>{b.icon}</span>
-                <span style={{ fontSize: 10, color: "#6b7280" }}>{b.text}</span>
-              </div>
-            ))}
           </div>
         </div>
 
