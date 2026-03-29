@@ -114,15 +114,15 @@ export default function Estimate() {
   const lastToken = typeof localStorage !== "undefined" ? localStorage.getItem("lastSmetaToken") : null;
 
   return (
-    <div style={{ fontFamily: "'Plus Jakarta Sans', -apple-system, sans-serif", height: "100dvh", display: "flex", flexDirection: "column", overflow: "hidden", background: "#F1FBF3" }}>
+    <div style={{ fontFamily: "'Plus Jakarta Sans', -apple-system, sans-serif", height: "100dvh", display: "flex", flexDirection: "column", overflow: "hidden", background: "#F5FAFA" }}>
       {/* Topbar */}
-      <div style={{ background: "#fff", borderBottom: "1.5px solid #D5EDD8", display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", paddingTop: "calc(14px + env(safe-area-inset-top, 0px))", flexShrink: 0, boxShadow: "0 1px 8px rgba(33,160,56,.06)" }}>
-        <div style={{ width: 32, height: 32, background: "linear-gradient(135deg,#21A038,#4CAF50)", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ background: "#fff", borderBottom: "1.5px solid #D0EDEB", display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", paddingTop: "calc(14px + env(safe-area-inset-top, 0px))", flexShrink: 0, boxShadow: "0 1px 8px rgba(13,148,136,.06)" }}>
+        <div style={{ width: 32, height: 32, background: "linear-gradient(135deg,#0D9488,#14B8A6)", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </div>
         <div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: "#0F2014" }}>AI Оценка стоимости</div>
-          <div style={{ fontSize: 11, color: "#5E7A62" }}>Честный мастер · Бесплатно</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "#0D2B28" }}>AI Оценка стоимости</div>
+          <div style={{ fontSize: 11, color: "#4A6B69" }}>Честный мастер · Бесплатно</div>
         </div>
       </div>
       {/* Scrollable body */}
@@ -144,13 +144,13 @@ export default function Estimate() {
             </div>
           </div>
           <button onClick={() => { setStep("form"); setResult(null); setPhoto(null); setPhotoPreview(null); setDescription(""); }}
-            style={{ padding: "12px 24px", background: "#21A038", color: "#fff", border: "none", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+            style={{ padding: "12px 24px", background: "#0D9488", color: "#fff", border: "none", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
             Оценить ещё один объект
           </button>
         </div>
       ) : step === "analyzing" ? (
         <div style={{ maxWidth: 540, width: "calc(100% - 24px)", margin: "80px auto", textAlign: "center" }}>
-          <div style={{ width: 60, height: 60, border: "4px solid #BBF7D0", borderTopColor: "#21A038", borderRadius: "50%", margin: "0 auto 24px", animation: "spin 0.9s linear infinite" }} />
+          <div style={{ width: 60, height: 60, border: "4px solid #99F6E4", borderTopColor: "#0D9488", borderRadius: "50%", margin: "0 auto 24px", animation: "spin 0.9s linear infinite" }} />
           <div style={{ fontSize: 18, fontWeight: 700, color: "#111827", marginBottom: 8 }}>AI анализирует фотографию...</div>
           <div style={{ fontSize: 14, color: "#6b7280" }}>Составляем смету на основе вашего запроса</div>
           <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
@@ -159,7 +159,7 @@ export default function Estimate() {
         <div style={{ maxWidth: 540, width: "calc(100% - 24px)", margin: "20px auto 0" }}>
           {/* AI estimate card */}
           <div style={{ background: "#fff", borderRadius: 20, overflow: "hidden", boxShadow: "0 2px 20px rgba(0,0,0,.08)", marginBottom: 16 }}>
-            <div style={{ background: "linear-gradient(135deg, #21A038, #21A038)", padding: "20px 22px" }}>
+            <div style={{ background: "linear-gradient(135deg, #0D9488, #0D9488)", padding: "20px 22px" }}>
               <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,.7)", marginBottom: 8 }}>AI Оценка стоимости</div>
               <div style={{ fontSize: 13, color: "rgba(255,255,255,.8)", marginBottom: 6 }}>{result.serviceType} · {result.city}</div>
               <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
@@ -186,9 +186,9 @@ export default function Estimate() {
                 ))}
               </div>
               {result.notes && (
-                <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 12, padding: "12px 14px", marginBottom: 14 }}>
+                <div style={{ background: "#F0FDFA", border: "1px solid #99F6E4", borderRadius: 12, padding: "12px 14px", marginBottom: 14 }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: "#1e40af", marginBottom: 4 }}>Комментарий AI</div>
-                  <div style={{ fontSize: 13, color: "#155724", lineHeight: 1.5 }}>{result.notes}</div>
+                  <div style={{ fontSize: 13, color: "#0F4C45", lineHeight: 1.5 }}>{result.notes}</div>
                 </div>
               )}
               <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 12, padding: "12px 14px", marginBottom: 4, fontSize: 12, color: "#6b7280", lineHeight: 1.5 }}>
@@ -201,7 +201,7 @@ export default function Estimate() {
 
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <button onClick={submit} disabled={submitting}
-              style={{ height: 52, background: submitting ? "#6b7280" : "#21A038", color: "#fff", border: "none", borderRadius: 14, fontSize: 15, fontWeight: 700, cursor: submitting ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+              style={{ height: 52, background: submitting ? "#6b7280" : "#0D9488", color: "#fff", border: "none", borderRadius: 14, fontSize: 15, fontWeight: 700, cursor: submitting ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
               {submitting ? "Отправляем..." : "Вызвать мастера"}
             </button>
             <button onClick={() => { setStep("form"); setResult(null); }}
@@ -222,7 +222,7 @@ export default function Estimate() {
                 <span style={{ fontSize: 18 }}>📞</span>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 600, color: "#111827" }}>Позвонить напрямую</div>
-                  <a href="tel:+79892860863" style={{ fontSize: 13, color: "#21A038", textDecoration: "none" }}>+7 989 286-08-63</a>
+                  <a href="tel:+79892860863" style={{ fontSize: 13, color: "#0D9488", textDecoration: "none" }}>+7 989 286-08-63</a>
                 </div>
               </div>
               <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
@@ -243,7 +243,7 @@ export default function Estimate() {
         /* Form step */
         <div style={{ maxWidth: 540, width: "calc(100% - 24px)", margin: "20px auto 0" }}>
           {/* Hero */}
-          <div style={{ background: "linear-gradient(135deg, #155724, #21A038)", borderRadius: 20, padding: "24px 22px", marginBottom: 16, color: "#fff" }}>
+          <div style={{ background: "linear-gradient(135deg, #0F4C45, #0D9488)", borderRadius: 20, padding: "24px 22px", marginBottom: 16, color: "#fff" }}>
             <div style={{ fontSize: 32, marginBottom: 10 }}>📸</div>
             <h1 style={{ fontSize: 20, fontWeight: 800, marginBottom: 8, lineHeight: 1.3 }}>Узнайте стоимость работ за 30 секунд</h1>
             <p style={{ fontSize: 13, color: "rgba(255,255,255,.8)", lineHeight: 1.6 }}>Сфотографируйте проблему, опишите что нужно сделать — AI составит смету и мы подберём подходящего мастера</p>
@@ -254,13 +254,13 @@ export default function Estimate() {
             <div style={{ marginBottom: 16 }}>
               <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#374151", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.06em" }}>Фото помещения / проблемы</label>
               <div onClick={() => fileRef.current?.click()}
-                style={{ border: `2px dashed ${photo ? "#21A038" : "#d1d5db"}`, borderRadius: 14, padding: 20, cursor: "pointer", textAlign: "center", background: photo ? "#F0FDF4" : "#fafafa", transition: "all 0.15s" }}>
+                style={{ border: `2px dashed ${photo ? "#0D9488" : "#d1d5db"}`, borderRadius: 14, padding: 20, cursor: "pointer", textAlign: "center", background: photo ? "#F0FDFA" : "#fafafa", transition: "all 0.15s" }}>
                 {photoPreview ? (
                   <img src={photoPreview} alt="preview" style={{ maxWidth: "100%", maxHeight: 200, objectFit: "contain", borderRadius: 10 }} />
                 ) : (
                   <>
                     <div style={{ fontSize: 40, marginBottom: 8 }}>📷</div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: "#21A038" }}>Прикрепить фото</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: "#0D9488" }}>Прикрепить фото</div>
                     <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4 }}>Не обязательно, но поможет точнее оценить</div>
                   </>
                 )}
@@ -275,7 +275,7 @@ export default function Estimate() {
               <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 8 }}>
                 {SERVICES.map(s => (
                   <button key={s} onClick={() => setServiceType(s)}
-                    style={{ padding: "7px 12px", borderRadius: 20, fontSize: 13, border: `1.5px solid ${serviceType === s ? "#21A038" : "#e5e7eb"}`, background: serviceType === s ? "#F0FDF4" : "#fff", color: serviceType === s ? "#21A038" : "#374151", fontWeight: serviceType === s ? 600 : 400, cursor: "pointer", fontFamily: "inherit" }}>
+                    style={{ padding: "7px 12px", borderRadius: 20, fontSize: 13, border: `1.5px solid ${serviceType === s ? "#0D9488" : "#e5e7eb"}`, background: serviceType === s ? "#F0FDFA" : "#fff", color: serviceType === s ? "#0D9488" : "#374151", fontWeight: serviceType === s ? 600 : 400, cursor: "pointer", fontFamily: "inherit" }}>
                     {s}
                   </button>
                 ))}
@@ -318,7 +318,7 @@ export default function Estimate() {
             {error && <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "10px 14px", marginBottom: 12, color: "#b91c1c", fontSize: 13 }}>{error}</div>}
 
             <button onClick={analyze}
-              style={{ width: "100%", height: 52, background: "#21A038", color: "#fff", border: "none", borderRadius: 14, fontSize: 15, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              style={{ width: "100%", height: 52, background: "#0D9488", color: "#fff", border: "none", borderRadius: 14, fontSize: 15, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
               Оценить стоимость
             </button>
