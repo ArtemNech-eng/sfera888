@@ -26,59 +26,29 @@ interface ReceiptData {
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const fmt = (n: number) => n.toLocaleString("ru-RU");
 
-function ChevronIcon({ open }: { open: boolean }) {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-      stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-      style={{ transition: "transform 0.2s", transform: open ? "rotate(90deg)" : "rotate(0deg)", flexShrink: 0 }}>
-      <polyline points="9 18 15 12 9 6"/>
-    </svg>
-  );
-}
-
-interface AccordionProps {
-  id: string;
-  title: string;
-  subtitle?: string;
-  icon: React.ReactNode;
-  open: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
-  accent?: boolean;
-  badge?: string;
-}
-
-function AccordionBlock({ title, subtitle, icon, open, onToggle, children, accent, badge }: AccordionProps) {
+function SectionCard({ title, icon, children, accent }: { title: string; icon: React.ReactNode; children: React.ReactNode; accent?: boolean }) {
   return (
     <div style={{
       background: "#fff",
       borderRadius: 14,
-      overflow: "hidden",
       border: accent ? "1.5px solid #bfdbfe" : "1.5px solid #ede9fc",
       boxShadow: "0 1px 6px rgba(109,40,217,.04)",
+      overflow: "hidden",
     }}>
-      <button onClick={onToggle} style={{
-        width: "100%", display: "flex", alignItems: "center", gap: 10,
-        padding: "13px 14px",
-        background: accent ? "#eff6ff" : "#fff",
-        border: "none", cursor: "pointer", fontFamily: "inherit",
-        borderBottom: open ? (accent ? "1.5px solid #bfdbfe" : "1.5px solid #ede9fc") : "none",
+      <div style={{
+        display: "flex", alignItems: "center", gap: 10,
+        padding: "12px 14px",
+        background: accent ? "#eff6ff" : "#faf9ff",
+        borderBottom: accent ? "1.5px solid #bfdbfe" : "1.5px solid #ede9fc",
       }}>
         <div style={{
-          width: 34, height: 34, borderRadius: 10, flexShrink: 0,
+          width: 32, height: 32, borderRadius: 10, flexShrink: 0,
           background: accent ? "#dbeafe" : "#f0effe",
           display: "flex", alignItems: "center", justifyContent: "center",
         }}>{icon}</div>
-        <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: accent ? "#1e3a8a" : "#1a1040", display: "flex", alignItems: "center", gap: 6 }}>
-            {title}
-            {badge && <span style={{ fontSize: 10, fontWeight: 700, background: accent ? "#bfdbfe" : "#ede9fc", color: accent ? "#1d4ed8" : "#7c3aed", padding: "2px 7px", borderRadius: 20 }}>{badge}</span>}
-          </div>
-          {subtitle && <div style={{ fontSize: 11, color: accent ? "#3b82f6" : "#9490b4", marginTop: 2 }}>{subtitle}</div>}
-        </div>
-        <div style={{ color: accent ? "#1d4ed8" : "#9490b4", flexShrink: 0 }}><ChevronIcon open={open} /></div>
-      </button>
-      {open && <div>{children}</div>}
+        <span style={{ fontSize: 13, fontWeight: 700, color: accent ? "#1e3a8a" : "#1a1040" }}>{title}</span>
+      </div>
+      <div>{children}</div>
     </div>
   );
 }
@@ -96,7 +66,6 @@ export default function Smeta() {
   const [formError, setFormError] = useState("");
   const [copied, setCopied] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-  const [openSections, setOpenSections] = useState<Set<string>>(new Set(["payment"]));
   const [showGate, setShowGate] = useState(false);
 
   useEffect(() => {
@@ -109,7 +78,6 @@ export default function Smeta() {
         if (d) {
           setData(d);
           setLoading(false);
-          if (d.isClientSubmitted) setOpenSections(new Set(["items"]));
           try { localStorage.setItem("lastSmetaToken", token); } catch {}
           const stored = getStoredPhone();
           if (!stored || !phonesMatch(stored, d.clientPhone)) setShowGate(true);
@@ -117,14 +85,6 @@ export default function Smeta() {
       })
       .catch(() => { setNotFound(true); setLoading(false); });
   }, [token]);
-
-  const toggle = (id: string) => {
-    setOpenSections(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
 
   const handleFile = (f: File | null) => {
     setFile(f);
@@ -154,7 +114,6 @@ export default function Smeta() {
       if (r.ok) {
         setSubmitted(true);
         setData(d => d ? { ...d, isClientSubmitted: true } : d);
-        setOpenSections(new Set(["items"]));
       } else {
         setFormError("Ошибка при отправке. Попробуйте ещё раз.");
       }
@@ -200,7 +159,7 @@ export default function Smeta() {
       background: "#f5f3ff",
       overflow: "hidden",
     }}>
-      {/* ── Topbar ── */}
+      {/* Topbar */}
       <div style={{
         background: "#fff",
         borderBottom: "1.5px solid #ede9fc",
@@ -221,12 +180,11 @@ export default function Smeta() {
         <span style={{ fontSize: 11, color: "#9490b4", fontWeight: 500, flexShrink: 0 }}>Смета №{data.id}</span>
       </div>
 
-      {/* ── Scrollable ── */}
+      {/* Scrollable content */}
       <div style={{ flex: 1, overflowY: "auto", padding: "10px 12px 20px", display: "flex", flexDirection: "column", gap: 8 }}>
 
-        {/* ── Hero card ── */}
+        {/* Hero card */}
         <div style={{ background: "#fff", borderRadius: 16, overflow: "hidden", border: "1.5px solid #ede9fc", boxShadow: "0 2px 12px rgba(109,40,217,.07)" }}>
-          {/* Gradient header */}
           <div style={{ background: "linear-gradient(135deg, #1e3a8a, #2563eb)", padding: "14px 16px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
               <div>
@@ -239,7 +197,6 @@ export default function Smeta() {
                 </div>
                 <div style={{ fontSize: 11, color: "rgba(255,255,255,.5)", marginTop: 3 }}>Итого по смете: {fmt(data.totalAmount)} ₽</div>
               </div>
-              {/* Status pill */}
               <div style={{ flexShrink: 0, marginTop: 2 }}>
                 {isConfirmed
                   ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: "rgba(16,185,129,.25)", color: "#6ee7b7" }}>✓ Подтверждена</span>
@@ -249,15 +206,12 @@ export default function Smeta() {
                 }
               </div>
             </div>
-            {/* Service + location */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" as const }}>
               <span style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,.8)" }}>{data.serviceType}</span>
               <span style={{ width: 3, height: 3, background: "rgba(255,255,255,.3)", borderRadius: "50%", display: "inline-block", flexShrink: 0 }} />
               <span style={{ fontSize: 12, color: "rgba(255,255,255,.5)" }}>{data.city}{district}</span>
             </div>
           </div>
-
-          {/* Meta row */}
           <div style={{ padding: "9px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #f3f4f6" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <div style={{ width: 22, height: 22, background: "#f3f4f6", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -269,19 +223,13 @@ export default function Smeta() {
             </div>
             <span style={{ fontSize: 11, color: "#9ca3af" }}>{date}</span>
           </div>
-
-          {/* Trust strip */}
-          <div style={{ display: "flex", borderTop: "none" }}>
+          <div style={{ display: "flex" }}>
             {[
               { icon: "🛡", text: "Гарантия 6 мес." },
               { icon: "✓", text: "ИП офиц." },
               { icon: "📞", text: "Поддержка 24/7" },
             ].map((b, i) => (
-              <div key={i} style={{
-                flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
-                padding: "7px 4px",
-                borderRight: i < 2 ? "1px solid #f3f4f6" : "none",
-              }}>
+              <div key={i} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 4, padding: "7px 4px", borderRight: i < 2 ? "1px solid #f3f4f6" : "none" }}>
                 <span style={{ fontSize: 12 }}>{b.icon}</span>
                 <span style={{ fontSize: 10, color: "#6b7280" }}>{b.text}</span>
               </div>
@@ -289,7 +237,7 @@ export default function Smeta() {
           </div>
         </div>
 
-        {/* ── Submitted banner ── */}
+        {/* Status banner */}
         {isSubmitted && (
           <div style={{
             borderRadius: 14, padding: "12px 14px",
@@ -303,22 +251,60 @@ export default function Smeta() {
                 {isConfirmed ? "Оплата подтверждена!" : "Заявка принята!"}
               </div>
               <div style={{ fontSize: 12, color: "#6b7280", lineHeight: 1.5 }}>
-                {isConfirmed
-                  ? "Мастер закреплён за вашим заказом."
-                  : "Оператор проверяет скриншот — обычно до 30 мин."}
+                {isConfirmed ? "Мастер закреплён за вашим заказом." : "Оператор проверяет скриншот — обычно до 30 мин."}
               </div>
             </div>
           </div>
         )}
 
-        {/* ── Accordion: Оплата ── */}
+        {/* Section: Line items */}
+        <SectionCard
+          title={`Перечень работ · ${data.lineItems.length} поз.`}
+          icon={
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
+              <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+            </svg>
+          }
+        >
+          <div style={{ padding: "8px 14px 4px" }}>
+            {data.lineItems.map((item, i) => (
+              <div key={i} style={{
+                display: "flex", justifyContent: "space-between", alignItems: "baseline",
+                gap: 8, padding: "8px 0",
+                borderBottom: i < data.lineItems.length - 1 ? "1px solid #f3f4f6" : "1px solid #e5e7eb",
+              }}>
+                <span style={{ fontSize: 13, color: "#374151", flex: 1, lineHeight: 1.4 }}>{item.description}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: "#111827", whiteSpace: "nowrap" as const }}>{fmt(Number(item.price))} ₽</span>
+              </div>
+            ))}
+            <div style={{ padding: "8px 0 4px", display: "flex", flexDirection: "column", gap: 4 }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 12, color: "#6b7280" }}>Итого по смете</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "#111827" }}>{fmt(data.totalAmount)} ₽</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 10px", background: "#eff6ff", borderRadius: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "#1d4ed8" }}>Бронь (предоплата)</span>
+                <span style={{ fontSize: 16, fontWeight: 800, color: "#1d4ed8" }}>{fmt(data.prepaymentAmount)} ₽</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 12, color: "#374151" }}>Остаток по факту работ</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>{fmt(remainder)} ₽</span>
+              </div>
+            </div>
+            {data.notes && (
+              <div style={{ margin: "6px 0 8px", background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: "8px 10px" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase" as const, letterSpacing: "0.06em", marginBottom: 3 }}>Примечание</div>
+                <div style={{ fontSize: 12, color: "#374151", lineHeight: 1.5 }}>{data.notes}</div>
+              </div>
+            )}
+          </div>
+        </SectionCard>
+
+        {/* Section: Payment */}
         {!isSubmitted && (
-          <AccordionBlock
-            id="payment"
+          <SectionCard
             title="Забронировать мастера"
-            subtitle={`Предоплата ${fmt(data.prepaymentAmount)} ₽`}
-            open={openSections.has("payment")}
-            onToggle={() => toggle("payment")}
             accent
             icon={
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -327,14 +313,12 @@ export default function Smeta() {
             }
           >
             <div style={{ padding: "12px 14px 14px" }}>
-              {/* Motivation */}
               <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
                 {["Мастер не\nвозьмёт другой заказ", "Гарантия\n6 месяцев", "Защита\nплатформой"].map((txt, i) => (
                   <div key={i} style={{ flex: 1, fontSize: 10, color: "#0369a1", lineHeight: 1.5, whiteSpace: "pre-line" as const, background: "#f0f9ff", borderRadius: 8, padding: "6px 4px", textAlign: "center" as const }}>{txt}</div>
                 ))}
               </div>
 
-              {/* Phone */}
               <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase" as const, color: "#9ca3af", marginBottom: 4 }}>
                 СБП / Альфа Банк
               </div>
@@ -343,7 +327,6 @@ export default function Smeta() {
               </a>
               <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 10 }}>Альфа Банк · ИП Коваленко Игорь Геннадьевич</div>
 
-              {/* Реквизиты */}
               <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: "8px 12px", marginBottom: 10 }}>
                 {[
                   { label: "Банк", val: "Альфа Банк · СБП" },
@@ -365,7 +348,6 @@ export default function Smeta() {
                 {copied ? "✓ Скопировано!" : "Скопировать номер телефона"}
               </button>
 
-              {/* Divider */}
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
                 <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
                 <span style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase" as const, letterSpacing: "0.07em", whiteSpace: "nowrap" as const }}>Подтвердите перевод</span>
@@ -376,14 +358,12 @@ export default function Smeta() {
                 Введите ФИО и прикрепите скриншот — оператор подтвердит бронь.
               </div>
 
-              {/* ФИО */}
               <div style={{ marginBottom: 10 }}>
                 <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#374151", marginBottom: 4 }}>Ваше ФИО <span style={{ color: "#ef4444" }}>*</span></label>
                 <input type="text" value={clientName} onChange={e => setClientName(e.target.value)} placeholder="Иванов Иван Иванович" autoComplete="name"
                   style={{ width: "100%", height: 42, border: "1.5px solid #d1d5db", borderRadius: 9, padding: "0 12px", fontSize: 14, fontFamily: "inherit", color: "#111827", background: "#fff", outline: "none", boxSizing: "border-box" as const }} />
               </div>
 
-              {/* Скриншот */}
               <div style={{ marginBottom: 10 }}>
                 <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#374151", marginBottom: 4 }}>Скриншот оплаты <span style={{ color: "#ef4444" }}>*</span></label>
                 <div onClick={() => fileRef.current?.click()} style={{ border: "2px dashed #d1d5db", borderRadius: 10, background: "#fff", cursor: "pointer", padding: "12px 10px", display: "flex", alignItems: "center", gap: 10 }}>
@@ -407,66 +387,12 @@ export default function Smeta() {
               </button>
               <p style={{ fontSize: 10, color: "#9ca3af", textAlign: "center" as const, marginTop: 8 }}>Защищено платформой «Честный мастер»</p>
             </div>
-          </AccordionBlock>
+          </SectionCard>
         )}
 
-        {/* ── Accordion: Работы ── */}
-        <AccordionBlock
-          id="items"
-          title="Перечень работ"
-          subtitle={`${data.lineItems.length} позиц. · ${fmt(data.totalAmount)} ₽`}
-          open={openSections.has("items")}
-          onToggle={() => toggle("items")}
-          badge={String(data.lineItems.length)}
-          icon={
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
-              <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
-            </svg>
-          }
-        >
-          <div style={{ padding: "8px 14px 4px" }}>
-            {data.lineItems.map((item, i) => (
-              <div key={i} style={{
-                display: "flex", justifyContent: "space-between", alignItems: "baseline",
-                gap: 8, padding: "8px 0",
-                borderBottom: i < data.lineItems.length - 1 ? "1px solid #f3f4f6" : "1px solid #e5e7eb",
-              }}>
-                <span style={{ fontSize: 13, color: "#374151", flex: 1, lineHeight: 1.4 }}>{item.description}</span>
-                <span style={{ fontSize: 13, fontWeight: 600, color: "#111827", whiteSpace: "nowrap" as const }}>{fmt(Number(item.price))} ₽</span>
-              </div>
-            ))}
-            {/* Totals */}
-            <div style={{ padding: "8px 0 2px", display: "flex", flexDirection: "column", gap: 4 }}>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ fontSize: 12, color: "#6b7280" }}>Итого по смете</span>
-                <span style={{ fontSize: 12, fontWeight: 600, color: "#111827" }}>{fmt(data.totalAmount)} ₽</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 10px", background: "#eff6ff", borderRadius: 8 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: "#1d4ed8" }}>Бронь (предоплата)</span>
-                <span style={{ fontSize: 16, fontWeight: 800, color: "#1d4ed8" }}>{fmt(data.prepaymentAmount)} ₽</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ fontSize: 12, color: "#374151" }}>Остаток по факту работ</span>
-                <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>{fmt(remainder)} ₽</span>
-              </div>
-            </div>
-            {data.notes && (
-              <div style={{ margin: "8px 0", background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: "8px 10px" }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase" as const, letterSpacing: "0.06em", marginBottom: 3 }}>Примечание</div>
-                <div style={{ fontSize: 12, color: "#374151", lineHeight: 1.5 }}>{data.notes}</div>
-              </div>
-            )}
-          </div>
-        </AccordionBlock>
-
-        {/* ── Accordion: О заказе ── */}
-        <AccordionBlock
-          id="about"
+        {/* Section: About */}
+        <SectionCard
           title="О заказе"
-          subtitle="Исполнитель и организатор"
-          open={openSections.has("about")}
-          onToggle={() => toggle("about")}
           icon={
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
@@ -490,7 +416,7 @@ export default function Smeta() {
               Смета №{data.id} · {date} · sfera-project.digital
             </div>
           </div>
-        </AccordionBlock>
+        </SectionCard>
 
         <div style={{ height: 2 }} />
       </div>
