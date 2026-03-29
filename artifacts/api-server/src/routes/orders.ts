@@ -288,6 +288,19 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
             const newDebt = Number(m.debt) + netPayable;
             await db.update(mastersTable).set({ debt: String(newDebt) }).where(eq(mastersTable.id, o.masterId));
           }
+          // PWA push — primary notification channel
+          {
+            const pushBody = fullyPaidByPrepayment
+              ? `Сумма ${Number(o.orderAmount).toLocaleString("ru-RU")} ₽. Комиссия ${commissionValue.toLocaleString("ru-RU")} ₽ покрыта предоплатой клиента.`
+              : prepaymentDeducted > 0
+                ? `Сумма ${Number(o.orderAmount).toLocaleString("ru-RU")} ₽. К оплате: ${netPayable.toLocaleString("ru-RU")} ₽ (предоплата ${prepaymentDeducted.toLocaleString("ru-RU")} ₽ зачтена).`
+                : `Сумма ${Number(o.orderAmount).toLocaleString("ru-RU")} ₽. Комиссия к оплате: ${commissionValue.toLocaleString("ru-RU")} ₽.`;
+            sendPushToMaster(o.masterId, {
+              title: "✅ Сумма по заказу подтверждена",
+              body: pushBody,
+              url: "/balance",
+            }).catch(() => {});
+          }
           if (m.telegramId) {
             const prepayNote = prepaymentDeducted > 0
               ? `✅ Предоплата ${prepaymentDeducted.toLocaleString("ru-RU")} ₽ зачтена в комиссию\n`
@@ -340,6 +353,19 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
         if (netPayable > 0) {
           const newDebt = Number(m.debt) + netPayable;
           await db.update(mastersTable).set({ debt: String(newDebt) }).where(eq(mastersTable.id, o.masterId));
+        }
+        // PWA push — primary notification channel
+        {
+          const pushBody = fullyPaidByPrepayment
+            ? `Сумма ${Number(o.orderAmount).toLocaleString("ru-RU")} ₽. Комиссия ${commissionValue.toLocaleString("ru-RU")} ₽ покрыта предоплатой клиента.`
+            : prepaymentDeducted > 0
+              ? `Сумма ${Number(o.orderAmount).toLocaleString("ru-RU")} ₽. К оплате: ${netPayable.toLocaleString("ru-RU")} ₽ (предоплата ${prepaymentDeducted.toLocaleString("ru-RU")} ₽ зачтена).`
+              : `Сумма ${Number(o.orderAmount).toLocaleString("ru-RU")} ₽. Комиссия к оплате: ${commissionValue.toLocaleString("ru-RU")} ₽.`;
+          sendPushToMaster(o.masterId, {
+            title: "✅ Сумма по заказу подтверждена",
+            body: pushBody,
+            url: "/balance",
+          }).catch(() => {});
         }
         if (m.telegramId) {
           const prepayNote = prepaymentDeducted > 0
