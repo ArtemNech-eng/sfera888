@@ -1,15 +1,49 @@
 const PHONE_KEY = "client_phone";
+const COOKIE_DAYS = 365;
+
+function setCookie(value: string) {
+  try {
+    const expires = new Date();
+    expires.setDate(expires.getDate() + COOKIE_DAYS);
+    document.cookie = `${PHONE_KEY}=${encodeURIComponent(value)};expires=${expires.toUTCString()};path=/;SameSite=Lax`;
+  } catch { /* ignore */ }
+}
+
+function getCookie(): string | null {
+  try {
+    const match = document.cookie.split(";").map(c => c.trim()).find(c => c.startsWith(`${PHONE_KEY}=`));
+    return match ? decodeURIComponent(match.split("=").slice(1).join("=")) : null;
+  } catch { return null; }
+}
+
+function deleteCookie() {
+  try {
+    document.cookie = `${PHONE_KEY}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;SameSite=Lax`;
+  } catch { /* ignore */ }
+}
 
 export function getStoredPhone(): string | null {
-  try { return localStorage.getItem(PHONE_KEY); } catch { return null; }
+  try {
+    const ls = localStorage.getItem(PHONE_KEY);
+    if (ls) return ls;
+    const cookie = getCookie();
+    if (cookie) {
+      try { localStorage.setItem(PHONE_KEY, cookie); } catch { /* ignore */ }
+    }
+    return cookie;
+  } catch {
+    return getCookie();
+  }
 }
 
 export function setStoredPhone(phone: string): void {
   try { localStorage.setItem(PHONE_KEY, phone); } catch { /* ignore */ }
+  setCookie(phone);
 }
 
 export function clearStoredPhone(): void {
   try { localStorage.removeItem(PHONE_KEY); } catch { /* ignore */ }
+  deleteCookie();
 }
 
 export function normalizePhone(phone: string): string {
