@@ -2,6 +2,27 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import BottomNav from "@/components/BottomNav";
 import { getStoredPhone, setStoredPhone, formatPhone } from "@/utils/phone";
 
+function useVisualViewportHeight() {
+  const [height, setHeight] = useState(() =>
+    typeof window !== "undefined"
+      ? (window.visualViewport?.height ?? window.innerHeight)
+      : 600
+  );
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => setHeight(vv.height);
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    update();
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, []);
+  return height;
+}
+
 interface Message {
   id: number;
   message: string;
@@ -113,6 +134,7 @@ export default function SupportChat() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const normalizedPhone = phone ? phone.replace(/\D/g, "").slice(-10) : null;
+  const vpHeight = useVisualViewportHeight();
 
   const loadMessages = useCallback(async () => {
     if (!normalizedPhone) return;
@@ -138,6 +160,10 @@ export default function SupportChat() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "instant" });
+  }, [vpHeight]);
+
   const send = async () => {
     if (!text.trim() || sending || !normalizedPhone) return;
     setSending(true);
@@ -158,7 +184,7 @@ export default function SupportChat() {
   if (!phone) return <PhoneEntry onEnter={p => setPhone(p)} />;
 
   if (loading) return (
-    <div style={{ height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f5f3ff", fontFamily: "'Plus Jakarta Sans', -apple-system, sans-serif" }}>
+    <div style={{ height: `${vpHeight}px`, display: "flex", alignItems: "center", justifyContent: "center", background: "#f5f3ff", fontFamily: "'Plus Jakarta Sans', -apple-system, sans-serif" }}>
       <div style={{ width: 36, height: 36, border: "3px solid #c4b5fd", borderTopColor: "#1d4ed8", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
@@ -167,7 +193,7 @@ export default function SupportChat() {
   let lastDateLabel = "";
 
   return (
-    <div style={{ fontFamily: "'Plus Jakarta Sans', -apple-system, sans-serif", height: "100dvh", display: "flex", flexDirection: "column", background: "#f5f3ff", overflow: "hidden" }}>
+    <div style={{ fontFamily: "'Plus Jakarta Sans', -apple-system, sans-serif", height: `${vpHeight}px`, display: "flex", flexDirection: "column", background: "#f5f3ff", overflow: "hidden" }}>
       {/* Topbar */}
       <div style={{ background: "#fff", borderBottom: "1.5px solid #ede9fc", display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", flexShrink: 0, paddingTop: "calc(14px + env(safe-area-inset-top, 0px))", boxShadow: "0 1px 8px rgba(109,40,217,.06)" }}>
         <div style={{ width: 32, height: 32, background: "linear-gradient(135deg,#1d4ed8,#3b82f6)", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center" }}>
