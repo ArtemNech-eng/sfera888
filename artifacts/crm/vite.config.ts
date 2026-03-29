@@ -44,6 +44,19 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    chunkSizeWarningLimit: 1500,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules")) {
+            if (id.includes("framer-motion")) return "motion";
+            if (id.includes("@tanstack/react-query")) return "query";
+            if (id.includes("lucide-react")) return "icons";
+            if (id.includes("date-fns")) return "dates";
+          }
+        },
+      },
+    },
   },
   server: {
     port,
