@@ -22,17 +22,22 @@ router.get("/transactions", opsAndAdmin, async (req, res) => {
   if (from) filtered = filtered.filter(t => t.createdAt >= new Date(from as string));
   if (to) filtered = filtered.filter(t => t.createdAt <= new Date(to as string));
 
-  res.json(filtered.map(t => ({
-    id: t.id,
-    orderId: t.orderId,
-    masterId: t.masterId,
-    masterAlias: masterMap.get(t.masterId)?.alias ?? "Неизвестен",
-    orderAmount: Number(t.orderAmount),
-    commission: Number(t.commission),
-    paymentStatus: t.paymentStatus,
-    createdAt: t.createdAt,
-    paidAt: t.paidAt ?? null,
-  })));
+  res.json(filtered.map(t => {
+    const prepaymentDeducted = Number(t.prepaymentDeducted ?? 0);
+    return {
+      id: t.id,
+      orderId: t.orderId,
+      masterId: t.masterId,
+      masterAlias: masterMap.get(t.masterId)?.alias ?? "Неизвестен",
+      orderAmount: Number(t.orderAmount),
+      commission: Number(t.commission),
+      prepaymentDeducted,
+      netPayable: Math.max(0, Number(t.commission) - prepaymentDeducted),
+      paymentStatus: t.paymentStatus,
+      createdAt: t.createdAt,
+      paidAt: t.paidAt ?? null,
+    };
+  }));
 });
 
 router.patch("/transactions/:id", opsAndAdmin, async (req, res) => {
@@ -49,12 +54,14 @@ router.patch("/transactions/:id", opsAndAdmin, async (req, res) => {
   if (!result[0]) return res.status(404).json({ error: "Transaction not found" });
   const t = result[0];
 
-  // When paid: reduce debt, move master to correct column, notify via Telegram
+  // When paid: reduce debt by net payable (commission minus prepayment already applied)
   if (paymentStatus === "paid") {
     const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, t.masterId));
     const master = masterRows[0];
     if (master) {
-      const newDebt = Math.max(0, Number(master.debt) - Number(t.commission));
+      const prepaymentDeducted = Number(t.prepaymentDeducted ?? 0);
+      const netPayable = Math.max(0, Number(t.commission) - prepaymentDeducted);
+      const newDebt = Math.max(0, Number(master.debt) - netPayable);
 
       // Move master to correct column based on their remaining active orders
       const activeCount = await countActiveMasterOrders(t.masterId);
@@ -67,9 +74,12 @@ router.patch("/transactions/:id", opsAndAdmin, async (req, res) => {
       }).where(eq(mastersTable.id, t.masterId));
 
       // Push notification (PWA)
+      const paidLabel = netPayable > 0
+        ? `${netPayable.toLocaleString("ru-RU")} ₽`
+        : `${Number(t.commission).toLocaleString("ru-RU")} ₽ (через предоплату)`;
       const pushMsg = newDebt > 0
-        ? `Оплачено ${Number(t.commission).toLocaleString("ru-RU")} ₽. Остаток долга: ${newDebt.toLocaleString("ru-RU")} ₽`
-        : `Оплачено ${Number(t.commission).toLocaleString("ru-RU")} ₽. Долг погашен, заказы снова доступны!`;
+        ? `Оплачено ${paidLabel}. Остаток долга: ${newDebt.toLocaleString("ru-RU")} ₽`
+        : `Оплачено ${paidLabel}. Долг погашен, заказы снова доступны!`;
       sendPushToMaster(t.masterId, {
         title: "✅ Оплата принята",
         body: pushMsg,
@@ -79,14 +89,18 @@ router.patch("/transactions/:id", opsAndAdmin, async (req, res) => {
       // Telegram notification
       if (master.telegramId) {
         const TELEGRAM_API = `https://api.telegram.org/bot${process.env["TELEGRAM_BOT_TOKEN"]}`;
+        const prepayLine = prepaymentDeducted > 0
+          ? `✅ Зачтена предоплата: <b>${prepaymentDeducted.toLocaleString("ru-RU")} ₽</b>\n` : "";
         const msgText = newDebt > 0
           ? `✅ <b>Оплата принята!</b>\n\n` +
-            `💳 Оплачено: <b>${Number(t.commission).toLocaleString("ru-RU")} ₽</b>\n` +
+            (netPayable > 0 ? `💳 Оплачено: <b>${netPayable.toLocaleString("ru-RU")} ₽</b>\n` : "") +
+            prepayLine +
             `⚠️ Остаток долга: <b>${newDebt.toLocaleString("ru-RU")} ₽</b>\n\n` +
             `Погасите оставшийся долг, чтобы получить полный доступ к заказам.`
           : `✅ <b>Оплата принята! Спасибо!</b>\n\n` +
-            `💳 Комиссия: <b>${Number(t.commission).toLocaleString("ru-RU")} ₽</b>\n\n` +
-            `🟢 Долг погашен. Вы снова можете принимать заказы!`;
+            (netPayable > 0 ? `💳 Оплачено: <b>${netPayable.toLocaleString("ru-RU")} ₽</b>\n` : "") +
+            prepayLine +
+            `\n🟢 Долг погашен. Вы снова можете принимать заказы!`;
         await fetch(`${TELEGRAM_API}/sendMessage`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -99,6 +113,7 @@ router.patch("/transactions/:id", opsAndAdmin, async (req, res) => {
   const masters = await db.select().from(mastersTable);
   const masterMap = new Map(masters.map(m => [m.id, m]));
 
+  const prepaymentDeducted = Number(t.prepaymentDeducted ?? 0);
   res.json({
     id: t.id,
     orderId: t.orderId,
@@ -106,6 +121,8 @@ router.patch("/transactions/:id", opsAndAdmin, async (req, res) => {
     masterAlias: masterMap.get(t.masterId)?.alias ?? "Неизвестен",
     orderAmount: Number(t.orderAmount),
     commission: Number(t.commission),
+    prepaymentDeducted,
+    netPayable: Math.max(0, Number(t.commission) - prepaymentDeducted),
     paymentStatus: t.paymentStatus,
     createdAt: t.createdAt,
     paidAt: t.paidAt ?? null,
@@ -115,7 +132,10 @@ router.patch("/transactions/:id", opsAndAdmin, async (req, res) => {
 router.get("/summary", opsAndAdmin, async (req, res) => {
   const transactions = await db.select().from(transactionsTable);
   const totalIncome = transactions.filter(t => t.paymentStatus === "paid").reduce((s, t) => s + Number(t.commission), 0);
-  const totalDebt = transactions.filter(t => t.paymentStatus !== "paid").reduce((s, t) => s + Number(t.commission), 0);
+  const totalDebt = transactions.filter(t => t.paymentStatus !== "paid").reduce((s, t) => {
+    const netPayable = Math.max(0, Number(t.commission) - Number(t.prepaymentDeducted ?? 0));
+    return s + netPayable;
+  }, 0);
   const paidCount = transactions.filter(t => t.paymentStatus === "paid").length;
   const pendingCount = transactions.filter(t => t.paymentStatus === "pending").length;
   const overdueCount = transactions.filter(t => t.paymentStatus === "overdue").length;

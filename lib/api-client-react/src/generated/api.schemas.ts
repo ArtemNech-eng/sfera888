@@ -237,6 +237,8 @@ export interface Transaction {
   masterAlias: string;
   orderAmount: number;
   commission: number;
+  prepaymentDeducted: number;
+  netPayable: number;
   paymentStatus: TransactionPaymentStatus;
   createdAt: string;
   paidAt?: string | null;

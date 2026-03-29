@@ -165,14 +165,19 @@ router.get("/:masterId", requireRole("admin", "master_operator", "lead_operator"
     messages,
     hasPaymentProof,
     paymentProofUrl,
-    pendingTransactions: pendingTx.map(t => ({
-      id: t.id,
-      orderId: t.orderId,
-      orderAmount: Number(t.orderAmount),
-      commission: Number(t.commission),
-      paymentStatus: t.paymentStatus,
-      createdAt: t.createdAt,
-    })),
+    pendingTransactions: pendingTx.map(t => {
+      const prepaymentDeducted = Number(t.prepaymentDeducted ?? 0);
+      return {
+        id: t.id,
+        orderId: t.orderId,
+        orderAmount: Number(t.orderAmount),
+        commission: Number(t.commission),
+        prepaymentDeducted,
+        netPayable: Math.max(0, Number(t.commission) - prepaymentDeducted),
+        paymentStatus: t.paymentStatus,
+        createdAt: t.createdAt,
+      };
+    }),
   });
 });
 

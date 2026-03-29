@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { db, ordersTable, mastersTable, transactionsTable, voronkaColumnsTable, orderDispatchesTable, leadsTable, masterMessagesTable, orderStatusLogsTable, usersTable } from "@workspace/db";
-import { eq, inArray, and, ne, isNull, desc } from "drizzle-orm";
+import { db, ordersTable, mastersTable, transactionsTable, voronkaColumnsTable, orderDispatchesTable, leadsTable, masterMessagesTable, orderStatusLogsTable, usersTable, receiptsTable } from "@workspace/db";
+import { eq, inArray, and, ne, isNull, isNotNull, desc } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { calculateCommission, getCommissionSettings } from "../lib/commission.js";
 import { getMasterEligibility, getOverdueMasterIds, countActiveMasterOrders, getColumnIdForActiveCount } from "../lib/orderEligibility.js";
@@ -255,24 +255,46 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
     const existingTx = existingTxRows[0];
     const commissionValue = Number(o.commission);
 
+    // Sum prepayments already confirmed by client for this order
+    const paidReceiptRows = await db.select().from(receiptsTable).where(
+      and(eq(receiptsTable.orderId, id), isNotNull(receiptsTable.prepaymentSubmittedAt))
+    );
+    const totalPrepaid = paidReceiptRows.reduce((sum, r) => sum + Number(r.prepaymentAmount), 0);
+    const prepaymentDeducted = Math.min(totalPrepaid, commissionValue);
+    const netPayable = Math.max(0, commissionValue - prepaymentDeducted);
+    const fullyPaidByPrepayment = netPayable === 0;
+
     if (existingTx) {
       const wasPlaceholder = Number(existingTx.commission) === 0;
       const prevCommission = Number(existingTx.commission);
-      // Update the transaction (placeholder → real, or re-adjust amount)
+      const prevPrepaymentDeducted = Number(existingTx.prepaymentDeducted ?? 0);
+      const prevNetPayable = Math.max(0, prevCommission - prevPrepaymentDeducted);
+
+      // Update the transaction with real amounts and prepayment info
       await db.update(transactionsTable).set({
         orderAmount: o.orderAmount,
         commission: o.commission,
-        paymentStatus: "pending",
+        prepaymentDeducted: String(prepaymentDeducted),
+        paymentStatus: fullyPaidByPrepayment ? "paid" : "pending",
+        paidAt: fullyPaidByPrepayment ? new Date() : existingTx.paidAt,
       }).where(eq(transactionsTable.id, existingTx.id));
 
       const mRows = await db.select().from(mastersTable).where(eq(mastersTable.id, o.masterId));
       const m = mRows[0];
       if (m) {
         if (wasPlaceholder) {
-          // First confirmation: add full commission to debt and notify master
-          const newDebt = Number(m.debt) + commissionValue;
-          await db.update(mastersTable).set({ debt: String(newDebt) }).where(eq(mastersTable.id, o.masterId));
+          // First confirmation: add net payable (commission minus prepayment) to debt
+          if (netPayable > 0) {
+            const newDebt = Number(m.debt) + netPayable;
+            await db.update(mastersTable).set({ debt: String(newDebt) }).where(eq(mastersTable.id, o.masterId));
+          }
           if (m.telegramId) {
+            const prepayNote = prepaymentDeducted > 0
+              ? `✅ Предоплата ${prepaymentDeducted.toLocaleString("ru-RU")} ₽ зачтена в комиссию\n`
+              : "";
+            const payText = fullyPaidByPrepayment
+              ? `✅ Комиссия полностью покрыта предоплатой клиента. Дополнительный перевод не требуется.`
+              : `📲 Реквизиты для перевода:\n<code>89892860863</code> · Альфа Банк · Игорь К.\n\nПосле оплаты комиссии отправьте скриншот чека кнопкой ниже.`;
             await fetch(`${TELEGRAM_API}/sendMessage`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -281,11 +303,12 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
                 text:
                   `✅ <b>Сумма по заказу #${id} подтверждена</b>\n\n` +
                   `💰 Стоимость работ: <b>${Number(o.orderAmount).toLocaleString("ru-RU")} ₽</b>\n` +
-                  `🔸 Комиссия: <b>${commissionValue.toLocaleString("ru-RU")} ₽</b>\n\n` +
-                  `📲 Реквизиты для перевода:\n<code>89892860863</code> · Альфа Банк · Игорь К.\n\n` +
-                  `После оплаты комиссии отправьте скриншот чека кнопкой ниже.`,
+                  `🔸 Комиссия: <b>${commissionValue.toLocaleString("ru-RU")} ₽</b>\n` +
+                  prepayNote +
+                  (netPayable > 0 ? `💳 К оплате: <b>${netPayable.toLocaleString("ru-RU")} ₽</b>\n\n` : "\n") +
+                  payText,
                 parse_mode: "HTML",
-                reply_markup: {
+                reply_markup: fullyPaidByPrepayment ? undefined : {
                   inline_keyboard: [[
                     { text: "📸 Отправить скриншот оплаты", callback_data: "send_payment_proof" }
                   ]],
@@ -293,28 +316,38 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
               }),
             }).catch(() => {});
           }
-        } else if (commissionValue !== prevCommission) {
-          // Commission adjusted after already set: apply delta to debt
-          const delta = commissionValue - prevCommission;
+        } else if (commissionValue !== prevCommission || prepaymentDeducted !== prevPrepaymentDeducted) {
+          // Commission re-adjusted: recalculate delta based on net payable difference
+          const delta = netPayable - prevNetPayable;
           const newDebt = Math.max(0, Number(m.debt) + delta);
           await db.update(mastersTable).set({ debt: String(newDebt) }).where(eq(mastersTable.id, o.masterId));
         }
       }
     } else {
-      // No placeholder exists (legacy order) — create transaction as before
+      // No placeholder exists (legacy order) — create transaction
       await db.insert(transactionsTable).values({
         orderId: id,
         masterId: o.masterId,
         orderAmount: o.orderAmount,
         commission: o.commission,
-        paymentStatus: "pending",
+        prepaymentDeducted: String(prepaymentDeducted),
+        paymentStatus: fullyPaidByPrepayment ? "paid" : "pending",
+        paidAt: fullyPaidByPrepayment ? new Date() : undefined,
       });
       const mRows = await db.select().from(mastersTable).where(eq(mastersTable.id, o.masterId));
       const m = mRows[0];
       if (m) {
-        const newDebt = Number(m.debt) + commissionValue;
-        await db.update(mastersTable).set({ debt: String(newDebt) }).where(eq(mastersTable.id, o.masterId));
+        if (netPayable > 0) {
+          const newDebt = Number(m.debt) + netPayable;
+          await db.update(mastersTable).set({ debt: String(newDebt) }).where(eq(mastersTable.id, o.masterId));
+        }
         if (m.telegramId) {
+          const prepayNote = prepaymentDeducted > 0
+            ? `✅ Предоплата ${prepaymentDeducted.toLocaleString("ru-RU")} ₽ зачтена в комиссию\n`
+            : "";
+          const payText = fullyPaidByPrepayment
+            ? `✅ Комиссия полностью покрыта предоплатой клиента. Дополнительный перевод не требуется.`
+            : `📲 Реквизиты для перевода:\n<code>89892860863</code> · Альфа Банк · Игорь К.\n\nПосле оплаты комиссии отправьте скриншот чека кнопкой ниже.`;
           await fetch(`${TELEGRAM_API}/sendMessage`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -323,11 +356,12 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
               text:
                 `✅ <b>Сумма по заказу #${id} подтверждена</b>\n\n` +
                 `💰 Стоимость работ: <b>${Number(o.orderAmount).toLocaleString("ru-RU")} ₽</b>\n` +
-                `🔸 Комиссия: <b>${commissionValue.toLocaleString("ru-RU")} ₽</b>\n\n` +
-                `📲 Реквизиты для перевода:\n<code>89892860863</code> · Альфа Банк · Игорь К.\n\n` +
-                `После оплаты комиссии отправьте скриншот чека кнопкой ниже.`,
+                `🔸 Комиссия: <b>${commissionValue.toLocaleString("ru-RU")} ₽</b>\n` +
+                prepayNote +
+                (netPayable > 0 ? `💳 К оплате: <b>${netPayable.toLocaleString("ru-RU")} ₽</b>\n\n` : "\n") +
+                payText,
               parse_mode: "HTML",
-              reply_markup: {
+              reply_markup: fullyPaidByPrepayment ? undefined : {
                 inline_keyboard: [[
                   { text: "📸 Отправить скриншот оплаты", callback_data: "send_payment_proof" }
                 ]],

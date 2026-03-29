@@ -59,7 +59,10 @@ router.get("/dashboard", adminOnly, async (req, res) => {
     ? Math.round(((incomeMonth - incomePrevMonth) / incomePrevMonth) * 1000) / 10
     : null;
 
-  const totalDebt = transactions.filter(t => t.paymentStatus !== "paid").reduce((s, t) => s + Number(t.commission), 0);
+  const totalDebt = transactions.filter(t => t.paymentStatus !== "paid").reduce((s, t) => {
+    const netPayable = Math.max(0, Number(t.commission) - Number(t.prepaymentDeducted ?? 0));
+    return s + netPayable;
+  }, 0);
 
   // Conversion
   const sentToWorkMonth = leads.filter(l => l.status === "sent_to_work" && l.createdAt >= monthStart).length;

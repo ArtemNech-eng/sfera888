@@ -12,6 +12,7 @@ export const transactionsTable = pgTable("transactions", {
   masterId: integer("master_id").notNull().references(() => mastersTable.id),
   orderAmount: numeric("order_amount", { precision: 12, scale: 2 }).notNull(),
   commission: numeric("commission", { precision: 12, scale: 2 }).notNull(),
+  prepaymentDeducted: numeric("prepayment_deducted", { precision: 12, scale: 2 }).notNull().default("0"),
   paymentStatus: paymentStatusEnum("payment_status").notNull().default("pending"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   paidAt: timestamp("paid_at"),

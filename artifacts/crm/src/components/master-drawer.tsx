@@ -73,7 +73,7 @@ export interface DrawerMaster {
 interface MasterTask { id: number; masterId: number; text: string; dueAt: string | null; isCompleted: boolean; createdBy: string | null; createdAt: string; }
 interface HistoryOrder { id: number; status: string; serviceType: string; district: string; city: string; leadId: number | null; clientName: string | null; clientPhone: string | null; scheduledAt: string | null; completedAt: string | null; createdAt: string; orderAmount: number | null; commission: number | null; paymentStatus: string | null; }
 interface ChatMessage { id: number; text: string; photoUrl: string | null; fromMaster: boolean; senderName: string | null; isRead: boolean; createdAt: string; }
-interface PendingTx { id: number; orderId: number; orderAmount: number; commission: number; }
+interface PendingTx { id: number; orderId: number; orderAmount: number; commission: number; prepaymentDeducted?: number; netPayable?: number; }
 interface MasterReview { id: number; masterId: number; orderId: number | null; sentiment: string; text: string; createdBy: string | null; createdAt: string; }
 type DrawerTab = "profile" | "chat" | "orders" | "tasks" | "reviews";
 
@@ -1111,9 +1111,23 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                     </div>
                     <div className="border-t border-dashed border-gray-100" />
                     <div className="flex justify-between items-center text-xs">
-                      <span className="text-gray-500">Комиссия (к оплате)</span>
+                      <span className="text-gray-500">Комиссия</span>
                       <span className="font-bold text-violet-700">{tx.commission.toLocaleString("ru-RU")} ₽</span>
                     </div>
+                    {(tx.prepaymentDeducted ?? 0) > 0 && (
+                      <>
+                        <div className="border-t border-dashed border-gray-100" />
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-gray-500">Зачтена предоплата</span>
+                          <span className="font-semibold text-emerald-600">−{(tx.prepaymentDeducted ?? 0).toLocaleString("ru-RU")} ₽</span>
+                        </div>
+                        <div className="border-t border-dashed border-gray-100" />
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-gray-500 font-semibold">К оплате мастером</span>
+                          <span className="font-bold text-violet-900">{(tx.netPayable ?? tx.commission).toLocaleString("ru-RU")} ₽</span>
+                        </div>
+                      </>
+                    )}
                     <div className="border-t border-dashed border-gray-100" />
                     <div className="flex justify-between items-center text-xs">
                       <span className="text-gray-500">Реквизиты</span>

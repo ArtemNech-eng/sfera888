@@ -385,6 +385,8 @@ export default function Finance() {
                       </tr>
                     ) : filtered.map((tx) => {
                       const isPlaceholder = tx.commission === 0 && tx.orderAmount === 0;
+                      const hasPrepay = (tx.prepaymentDeducted ?? 0) > 0;
+                      const netPayable = tx.netPayable ?? tx.commission;
                       return (
                         <tr key={tx.id} className={`hover:bg-slate-50/50 transition-colors ${isPlaceholder ? "opacity-70" : ""}`}>
                           <td className="px-6 py-4">
@@ -394,7 +396,20 @@ export default function Finance() {
                           </td>
                           <td className="px-6 py-4 font-medium">{tx.masterAlias}</td>
                           <td className="px-6 py-4">{isPlaceholder ? <span className="text-muted-foreground italic text-xs">Неизвестна</span> : formatCurrency(tx.orderAmount)}</td>
-                          <td className="px-6 py-4 font-bold text-foreground">{isPlaceholder ? <span className="text-muted-foreground italic text-xs">Неизвестна</span> : formatCurrency(tx.commission)}</td>
+                          <td className="px-6 py-4">
+                            {isPlaceholder ? (
+                              <span className="text-muted-foreground italic text-xs">Неизвестна</span>
+                            ) : (
+                              <div>
+                                <span className="font-bold text-foreground">{formatCurrency(netPayable)}</span>
+                                {hasPrepay && (
+                                  <div className="text-xs text-emerald-600 mt-0.5">
+                                    −{formatCurrency(tx.prepaymentDeducted)} предоплата
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </td>
                           <td className="px-6 py-4">
                             <StatusBadge status={tx.paymentStatus} type="payment" />
                           </td>
