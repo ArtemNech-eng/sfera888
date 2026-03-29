@@ -16,10 +16,10 @@ function AppIcon({ size = 44 }: { size?: number }) {
   return (
     <div style={{
       width: size, height: size,
-      background: "linear-gradient(135deg, #1d4ed8, #3b82f6)",
+      background: "linear-gradient(135deg, #21A038, #4CAF50)",
       borderRadius: size * 0.24,
       display: "flex", alignItems: "center", justifyContent: "center",
-      boxShadow: "0 4px 14px rgba(29,78,216,.35)",
+      boxShadow: "0 4px 14px rgba(33,160,56,.35)",
       flexShrink: 0,
     }}>
       <svg width={size * 0.5} height={size * 0.5} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -60,20 +60,20 @@ function PhoneSheet({ onDone }: { onDone: (phone: string) => void }) {
       <div style={{
         width: "100%", background: "#fff",
         borderRadius: "24px 24px 0 0",
-        boxShadow: "0 -8px 40px rgba(29,78,216,.18)",
+        boxShadow: "0 -8px 40px rgba(33,160,56,.18)",
         paddingBottom: "env(safe-area-inset-bottom, 16px)",
       }}>
         <div style={{ width: 36, height: 4, background: "#e5e7eb", borderRadius: 4, margin: "12px auto 0" }} />
         <div style={{ padding: "20px 24px 28px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
-            <div style={{ width: 48, height: 48, background: "linear-gradient(135deg,#1e3a8a,#2563eb)", borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 4px 14px rgba(29,78,216,.3)" }}>
+            <div style={{ width: 48, height: 48, background: "linear-gradient(135deg,#155724,#21A038)", borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 4px 14px rgba(33,160,56,.3)" }}>
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.41 2 2 0 0 1 3.6 1.22h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 8.9a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
               </svg>
             </div>
             <div>
-              <div style={{ fontSize: 17, fontWeight: 800, color: "#1a1040", lineHeight: 1.2 }}>Ваш номер телефона</div>
-              <div style={{ fontSize: 12, color: "#9490b4", marginTop: 3 }}>Для доступа к заказам и чату поддержки</div>
+              <div style={{ fontSize: 17, fontWeight: 800, color: "#0F2014", lineHeight: 1.2 }}>Ваш номер телефона</div>
+              <div style={{ fontSize: 12, color: "#5E7A62", marginTop: 3 }}>Для доступа к заказам и чату поддержки</div>
             </div>
           </div>
 
@@ -88,10 +88,10 @@ function PhoneSheet({ onDone }: { onDone: (phone: string) => void }) {
               placeholder="+7 999 000-00-00"
               style={{
                 width: "100%", height: 54,
-                border: `1.5px solid ${err ? "#ef4444" : "#ede9fc"}`,
+                border: `1.5px solid ${err ? "#ef4444" : "#D5EDD8"}`,
                 borderRadius: 14, padding: "0 18px",
                 fontSize: 20, fontFamily: "inherit",
-                color: "#1a1040", background: "#f5f3ff",
+                color: "#0F2014", background: "#F1FBF3",
                 outline: "none", boxSizing: "border-box",
                 textAlign: "center", letterSpacing: 1,
                 transition: "border-color 0.15s",
@@ -104,11 +104,11 @@ function PhoneSheet({ onDone }: { onDone: (phone: string) => void }) {
             onClick={submit}
             style={{
               width: "100%", height: 52,
-              background: "linear-gradient(135deg,#1e3a8a,#1d4ed8)", color: "#fff",
+              background: "linear-gradient(135deg,#155724,#21A038)", color: "#fff",
               border: "none", borderRadius: 14,
               fontSize: 16, fontWeight: 700,
               cursor: "pointer", fontFamily: "inherit",
-              boxShadow: "0 4px 16px rgba(29,78,216,.3)",
+              boxShadow: "0 4px 16px rgba(33,160,56,.3)",
               marginBottom: 10,
             }}
           >
@@ -116,7 +116,7 @@ function PhoneSheet({ onDone }: { onDone: (phone: string) => void }) {
           </button>
           <button
             onClick={() => onDone("")}
-            style={{ width: "100%", background: "none", border: "none", fontSize: 13, color: "#9490b4", cursor: "pointer", fontFamily: "inherit", padding: "4px 0" }}
+            style={{ width: "100%", background: "none", border: "none", fontSize: 13, color: "#5E7A62", cursor: "pointer", fontFamily: "inherit", padding: "4px 0" }}
           >
             Пропустить
           </button>
@@ -152,17 +152,17 @@ function Home() {
       height: "100dvh",
       display: "flex",
       flexDirection: "column",
-      background: "#f5f3ff",
+      background: "#F1FBF3",
       overflow: "hidden",
     }}>
       {/* Header */}
       <div style={{
         background: "#fff",
-        borderBottom: "1.5px solid #ede9fc",
+        borderBottom: "1.5px solid #D5EDD8",
         padding: "12px 16px",
         paddingTop: "calc(12px + env(safe-area-inset-top, 0px))",
         display: "flex", alignItems: "center", gap: 10, flexShrink: 0,
-        boxShadow: "0 1px 8px rgba(109,40,217,.06)",
+        boxShadow: "0 1px 8px rgba(33,160,56,.06)",
       }}>
         <AppIcon size={36} />
         <div style={{ flex: 1 }}>
@@ -172,11 +172,11 @@ function Home() {
         {storedPhone && (
           <button
             onClick={() => window.location.href = `${BASE}/my-orders`}
-            style={{ display: "flex", alignItems: "center", gap: 6, background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, padding: "6px 10px", cursor: "pointer", fontFamily: "inherit" }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            style={{ display: "flex", alignItems: "center", gap: 6, background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 10, padding: "6px 10px", cursor: "pointer", fontFamily: "inherit" }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#21A038" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
             </svg>
-            <span style={{ fontSize: 12, fontWeight: 600, color: "#1d4ed8" }}>Мои заказы</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: "#21A038" }}>Мои заказы</span>
           </button>
         )}
       </div>
@@ -188,18 +188,18 @@ function Home() {
         {storedPhone && (
           <div onClick={() => window.location.href = `${BASE}/my-orders`} style={{
             background: "#fff", borderRadius: 14, padding: "12px 14px",
-            marginBottom: 10, border: "1.5px solid #bfdbfe",
+            marginBottom: 10, border: "1.5px solid #BBF7D0",
             cursor: "pointer", display: "flex", alignItems: "center", gap: 12,
           }}>
-            <div style={{ width: 36, height: 36, background: "#dbeafe", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <div style={{ width: 36, height: 36, background: "#DCFCE7", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#21A038" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="12 8 12 12 14 14"/>
                 <path d="M3.05 11a9 9 0 1 0 .5-4.5"/><polyline points="3 3 3 8 8 8"/>
               </svg>
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#1e3a8a" }}>Мои заказы</div>
-              <div style={{ fontSize: 11, color: "#3b82f6", marginTop: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#155724" }}>Мои заказы</div>
+              <div style={{ fontSize: 11, color: "#4CAF50", marginTop: 1 }}>
                 {formatPhone(storedPhone)}
                 {orderCount !== null ? ` · ${orderCount} ${orderCount === 1 ? "заказ" : orderCount < 5 ? "заказа" : "заказов"}` : ""}
               </div>
@@ -210,10 +210,10 @@ function Home() {
 
         {/* AI estimate card — primary action */}
         <div onClick={() => { window.location.href = `${BASE}/estimate`; }} style={{
-          background: "linear-gradient(135deg, #1e3a8a, #1d4ed8)",
+          background: "linear-gradient(135deg, #155724, #21A038)",
           borderRadius: 18, padding: "16px 16px 14px",
           cursor: "pointer", userSelect: "none",
-          boxShadow: "0 6px 20px rgba(29,78,216,.3)",
+          boxShadow: "0 6px 20px rgba(33,160,56,.3)",
           marginBottom: 10,
           position: "relative", overflow: "hidden",
         }}>
@@ -248,14 +248,14 @@ function Home() {
               onClick={isClickable ? () => { window.location.href = smetaHref!; } : undefined}
               style={{
                 background: "#fff", borderRadius: 14, padding: "12px 14px", marginBottom: 10,
-                border: `1.5px solid ${isClickable ? "#bfdbfe" : "#e5e7eb"}`,
+                border: `1.5px solid ${isClickable ? "#BBF7D0" : "#e5e7eb"}`,
                 cursor: isClickable ? "pointer" : "default",
                 display: "flex", alignItems: "center", gap: 12,
                 transition: "box-shadow 0.15s",
               }}
             >
-              <div style={{ width: 36, height: 36, background: isClickable ? "#eff6ff" : "#f9fafb", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={isClickable ? "#1d4ed8" : "#9ca3af"} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <div style={{ width: 36, height: 36, background: isClickable ? "#F0FDF4" : "#f9fafb", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={isClickable ? "#21A038" : "#9ca3af"} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
                   <polyline points="14 2 14 8 20 8"/>
                   <line x1="16" y1="13" x2="8" y2="13"/>
@@ -263,8 +263,8 @@ function Home() {
                 </svg>
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: isClickable ? "#1e3a8a" : "#111827" }}>Открыть мою смету</div>
-                <div style={{ fontSize: 11, color: isClickable ? "#3b82f6" : "#6b7280", marginTop: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: isClickable ? "#155724" : "#111827" }}>Открыть мою смету</div>
+                <div style={{ fontSize: 11, color: isClickable ? "#4CAF50" : "#6b7280", marginTop: 1 }}>
                   {lastSmetaToken ? "Открыть последнюю смету" : storedPhone ? "Посмотреть мои заказы" : "Перейдите по ссылке от мастера"}
                 </div>
               </div>
@@ -278,9 +278,9 @@ function Home() {
         {/* Trust badges */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
           {[
-            { icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>, title: "Гарантия", sub: "6 месяцев" },
-            { icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>, title: "ИП офиц.", sub: "ИНН 2624..." },
-            { icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.41 2 2 0 0 1 3.6 1.22h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 8.9a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>, title: "Поддержка", sub: "24/7" },
+            { icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#21A038" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>, title: "Гарантия", sub: "6 месяцев" },
+            { icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#21A038" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>, title: "ИП офиц.", sub: "ИНН 2624..." },
+            { icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#21A038" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.41 2 2 0 0 1 3.6 1.22h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 8.9a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>, title: "Поддержка", sub: "24/7" },
           ].map((b, i) => (
             <div key={i} style={{ background: "#fff", borderRadius: 12, padding: "10px 8px", textAlign: "center", border: "1px solid #e5e7eb" }}>
               <div style={{ marginBottom: 4, display: "flex", justifyContent: "center" }}>{b.icon}</div>

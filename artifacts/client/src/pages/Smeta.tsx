@@ -31,22 +31,22 @@ function SectionCard({ title, icon, children, accent }: { title: string; icon: R
     <div style={{
       background: "#fff",
       borderRadius: 14,
-      border: accent ? "1.5px solid #bfdbfe" : "1.5px solid #ede9fc",
-      boxShadow: "0 1px 6px rgba(109,40,217,.04)",
+      border: accent ? "1.5px solid #BBF7D0" : "1.5px solid #D5EDD8",
+      boxShadow: "0 1px 6px rgba(33,160,56,.04)",
       overflow: "hidden",
     }}>
       <div style={{
         display: "flex", alignItems: "center", gap: 10,
         padding: "12px 14px",
-        background: accent ? "#eff6ff" : "#faf9ff",
-        borderBottom: accent ? "1.5px solid #bfdbfe" : "1.5px solid #ede9fc",
+        background: accent ? "#F0FDF4" : "#F9FDF9",
+        borderBottom: accent ? "1.5px solid #BBF7D0" : "1.5px solid #D5EDD8",
       }}>
         <div style={{
           width: 32, height: 32, borderRadius: 10, flexShrink: 0,
-          background: accent ? "#dbeafe" : "#f0effe",
+          background: accent ? "#DCFCE7" : "#F0FDF4",
           display: "flex", alignItems: "center", justifyContent: "center",
         }}>{icon}</div>
-        <span style={{ fontSize: 13, fontWeight: 700, color: accent ? "#1e3a8a" : "#1a1040" }}>{title}</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: accent ? "#155724" : "#0F2014" }}>{title}</span>
       </div>
       <div>{children}</div>
     </div>
@@ -125,14 +125,14 @@ export default function Smeta() {
   };
 
   if (loading) return (
-    <div style={{ height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f5f3ff" }}>
-      <div style={{ width: 36, height: 36, border: "3px solid #bfdbfe", borderTopColor: "#1d4ed8", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+    <div style={{ height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#F1FBF3" }}>
+      <div style={{ width: 36, height: 36, border: "3px solid #BBF7D0", borderTopColor: "#21A038", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   );
 
   if (notFound || !data) return (
-    <div style={{ height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f5f3ff", fontFamily: "'Plus Jakarta Sans', -apple-system, sans-serif" }}>
+    <div style={{ height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#F1FBF3", fontFamily: "'Plus Jakarta Sans', -apple-system, sans-serif" }}>
       <div style={{ textAlign: "center" }}>
         <div style={{ fontSize: 48, marginBottom: 12 }}>🔍</div>
         <h2 style={{ fontSize: 18, fontWeight: 700, color: "#111827", marginBottom: 6 }}>Смета не найдена</h2>
@@ -155,7 +155,7 @@ export default function Smeta() {
     <div style={{
       fontFamily: "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif",
       minHeight: "100dvh",
-      background: "#f5f3ff",
+      background: "#F1FBF3",
       paddingBottom: "calc(72px + env(safe-area-inset-bottom, 0px))",
     }}>
       {/* Sticky Topbar */}
@@ -164,28 +164,28 @@ export default function Smeta() {
         top: 0,
         zIndex: 50,
         background: "#fff",
-        borderBottom: "1.5px solid #ede9fc",
+        borderBottom: "1.5px solid #D5EDD8",
         display: "flex", alignItems: "center", gap: 10,
         padding: "11px 16px",
         paddingTop: "calc(11px + env(safe-area-inset-top, 0px))",
-        boxShadow: "0 1px 8px rgba(109,40,217,.06)",
+        boxShadow: "0 1px 8px rgba(33,160,56,.06)",
       }}>
         <button
           onClick={() => { window.location.href = `${BASE}/`; }}
-          style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: "4px 0", color: "#9490b4", fontFamily: "inherit", flexShrink: 0 }}
+          style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: "4px 0", color: "#5E7A62", fontFamily: "inherit", flexShrink: 0 }}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
           <span style={{ fontSize: 12, fontWeight: 600 }}>Главная</span>
         </button>
-        <span style={{ fontSize: 15, fontWeight: 700, color: "#1a1040", flex: 1, textAlign: "center" as const }}>Честный мастер</span>
-        <span style={{ fontSize: 11, color: "#9490b4", fontWeight: 500, flexShrink: 0 }}>Смета №{data.id}</span>
+        <span style={{ fontSize: 15, fontWeight: 700, color: "#0F2014", flex: 1, textAlign: "center" as const }}>Честный мастер</span>
+        <span style={{ fontSize: 11, color: "#5E7A62", fontWeight: 500, flexShrink: 0 }}>Смета №{data.id}</span>
       </div>
 
       {/* Landing-style content — natural page scroll */}
       <div style={{ padding: "10px 12px 20px", display: "flex", flexDirection: "column", gap: 8 }}>
 
         {/* Hero card — compact */}
-        <div style={{ background: "linear-gradient(135deg, #1e3a8a, #2563eb)", borderRadius: 16, padding: "14px 16px", boxShadow: "0 4px 16px rgba(29,78,216,.2)" }}>
+        <div style={{ background: "linear-gradient(135deg, #155724, #21A038)", borderRadius: 16, padding: "14px 16px", boxShadow: "0 4px 16px rgba(33,160,56,.2)" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase" as const, color: "rgba(255,255,255,.5)", marginBottom: 2 }}>Сумма брони</div>
@@ -201,7 +201,7 @@ export default function Smeta() {
               {isConfirmed
                 ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: "rgba(16,185,129,.25)", color: "#6ee7b7" }}>✓ Подтверждена</span>
                 : isSubmitted
-                  ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: "rgba(167,139,250,.25)", color: "#c4b5fd" }}>⏳ Проверяем</span>
+                  ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: "rgba(167,139,250,.25)", color: "#86EFAC" }}>⏳ Проверяем</span>
                   : <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: "rgba(251,191,36,.2)", color: "#fde68a" }}>⚠ Не оплачена</span>
               }
             </div>
@@ -213,11 +213,11 @@ export default function Smeta() {
           <button
             onClick={() => paymentRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
             style={{
-              width: "100%", height: 44, background: "#1d4ed8", color: "#fff",
+              width: "100%", height: 44, background: "#21A038", color: "#fff",
               fontSize: 14, fontWeight: 700, border: "none", borderRadius: 12,
               cursor: "pointer", fontFamily: "inherit", display: "flex",
               alignItems: "center", justifyContent: "center", gap: 8,
-              boxShadow: "0 4px 14px rgba(29,78,216,.3)",
+              boxShadow: "0 4px 14px rgba(33,160,56,.3)",
             }}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -232,12 +232,12 @@ export default function Smeta() {
           <div style={{
             borderRadius: 14, padding: "12px 14px",
             background: isConfirmed ? "#ecfdf5" : "#eef2ff",
-            border: isConfirmed ? "1px solid #a7f3d0" : "1px solid #c7d2fe",
+            border: isConfirmed ? "1px solid #a7f3d0" : "1px solid #A7F3D0",
             display: "flex", alignItems: "center", gap: 10,
           }}>
             <span style={{ fontSize: 24, flexShrink: 0 }}>{isConfirmed ? "✅" : "⏳"}</span>
             <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: isConfirmed ? "#065f46" : "#3730a3", marginBottom: 2 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: isConfirmed ? "#065f46" : "#155724", marginBottom: 2 }}>
                 {isConfirmed ? "Оплата подтверждена!" : "Заявка принята!"}
               </div>
               <div style={{ fontSize: 12, color: "#6b7280", lineHeight: 1.5 }}>
@@ -273,9 +273,9 @@ export default function Smeta() {
                 <span style={{ fontSize: 12, color: "#6b7280" }}>Итого по смете</span>
                 <span style={{ fontSize: 12, fontWeight: 600, color: "#111827" }}>{fmt(data.totalAmount)} ₽</span>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 10px", background: "#eff6ff", borderRadius: 8 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: "#1d4ed8" }}>Бронь (предоплата)</span>
-                <span style={{ fontSize: 14, fontWeight: 800, color: "#1d4ed8" }}>{fmt(data.prepaymentAmount)} ₽</span>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 10px", background: "#F0FDF4", borderRadius: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "#21A038" }}>Бронь (предоплата)</span>
+                <span style={{ fontSize: 14, fontWeight: 800, color: "#21A038" }}>{fmt(data.prepaymentAmount)} ₽</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}>
                 <span style={{ fontSize: 12, color: "#374151" }}>Остаток по факту работ</span>
@@ -326,7 +326,7 @@ export default function Smeta() {
               title="Забронировать мастера"
               accent
               icon={
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#21A038" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/>
                 </svg>
               }
@@ -341,17 +341,17 @@ export default function Smeta() {
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
                     <div
                       onClick={copyPhone}
-                      style={{ fontSize: 24, fontWeight: 800, color: "#1d4ed8", letterSpacing: -0.5, cursor: "pointer", flex: 1, lineHeight: 1, userSelect: "none" as const }}
+                      style={{ fontSize: 24, fontWeight: 800, color: "#21A038", letterSpacing: -0.5, cursor: "pointer", flex: 1, lineHeight: 1, userSelect: "none" as const }}
                     >
                       8 989 286-08-63
                     </div>
                     <button onClick={copyPhone} style={{
                       flexShrink: 0, padding: "7px 13px",
-                      background: copied ? "#f0fdf4" : "#eff6ff",
-                      border: `1.5px solid ${copied ? "#bbf7d0" : "#bfdbfe"}`,
+                      background: copied ? "#f0fdf4" : "#F0FDF4",
+                      border: `1.5px solid ${copied ? "#bbf7d0" : "#BBF7D0"}`,
                       borderRadius: 9, cursor: "pointer", fontFamily: "inherit",
                       fontSize: 12, fontWeight: 700,
-                      color: copied ? "#065f46" : "#1d4ed8",
+                      color: copied ? "#065f46" : "#21A038",
                       transition: "all 0.15s",
                     }}>
                       {copied ? "✓ Скопировано" : "Копировать"}
@@ -390,11 +390,11 @@ export default function Smeta() {
                 <div style={{ marginBottom: 8 }}>
                   <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#374151", marginBottom: 3 }}>Скриншот оплаты <span style={{ color: "#ef4444" }}>*</span></label>
                   <div onClick={() => fileRef.current?.click()} style={{ border: "2px dashed #d1d5db", borderRadius: 10, background: "#fff", cursor: "pointer", padding: "10px", display: "flex", alignItems: "center", gap: 8 }}>
-                    <div style={{ width: 28, height: 28, background: "#dbeafe", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                    <div style={{ width: 28, height: 28, background: "#DCFCE7", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#21A038" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                     </div>
                     <div>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: file ? "#065f46" : "#1d4ed8" }}>{file ? `✓ ${file.name}` : "Прикрепить скриншот"}</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: file ? "#065f46" : "#21A038" }}>{file ? `✓ ${file.name}` : "Прикрепить скриншот"}</div>
                       <div style={{ fontSize: 10, color: "#9ca3af" }}>JPG, PNG · до 10 МБ</div>
                     </div>
                   </div>
@@ -405,7 +405,7 @@ export default function Smeta() {
                 {formError && <div style={{ color: "#b91c1c", fontSize: 12, marginBottom: 8, padding: "8px 10px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8 }}>{formError}</div>}
 
                 <button onClick={handleSubmit} disabled={submitting}
-                  style={{ width: "100%", height: 44, background: submitting ? "#6b7280" : "#1d4ed8", color: "#fff", fontSize: 14, fontWeight: 700, border: "none", borderRadius: 10, cursor: submitting ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                  style={{ width: "100%", height: 44, background: submitting ? "#6b7280" : "#21A038", color: "#fff", fontSize: 14, fontWeight: 700, border: "none", borderRadius: 10, cursor: submitting ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
                   {submitting ? "Отправляем..." : "Отправить подтверждение"}
                 </button>
                 <p style={{ fontSize: 10, color: "#9ca3af", textAlign: "center" as const, marginTop: 6 }}>Защищено платформой «Честный мастер»</p>

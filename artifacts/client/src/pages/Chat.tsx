@@ -48,7 +48,7 @@ function PaymentBubble({ payload, time }: { payload: ReturnType<typeof parsePaym
             Оплата получена — оператор проверит и свяжется с вами
           </div>
         </div>
-        <span style={{ fontSize: 10, color: "#9490b4", marginTop: 3, display: "block" }}>{time}</span>
+        <span style={{ fontSize: 10, color: "#5E7A62", marginTop: 3, display: "block" }}>{time}</span>
       </div>
     </div>
   );
@@ -119,17 +119,17 @@ export default function Chat() {
   };
 
   if (loading) return (
-    <div style={{ height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f5f3ff", fontFamily: "'Plus Jakarta Sans', -apple-system, sans-serif" }}>
-      <div style={{ width: 36, height: 36, border: "3px solid #c4b5fd", borderTopColor: "#1d4ed8", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+    <div style={{ height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#F1FBF3", fontFamily: "'Plus Jakarta Sans', -apple-system, sans-serif" }}>
+      <div style={{ width: 36, height: 36, border: "3px solid #86EFAC", borderTopColor: "#21A038", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   );
 
   if (notFound) return (
-    <div style={{ height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f5f3ff", fontFamily: "'Plus Jakarta Sans', -apple-system, sans-serif" }}>
+    <div style={{ height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#F1FBF3", fontFamily: "'Plus Jakarta Sans', -apple-system, sans-serif" }}>
       <div style={{ textAlign: "center" }}>
         <div style={{ fontSize: 56, marginBottom: 16 }}>🔍</div>
-        <h2 style={{ fontSize: 20, fontWeight: 700, color: "#1a1040" }}>Смета не найдена</h2>
+        <h2 style={{ fontSize: 20, fontWeight: 700, color: "#0F2014" }}>Смета не найдена</h2>
       </div>
     </div>
   );
@@ -142,43 +142,43 @@ export default function Chat() {
       height: "100dvh",
       display: "flex",
       flexDirection: "column",
-      background: "#f5f3ff",
+      background: "#F1FBF3",
       overflow: "hidden",
     }}>
       {/* Topbar */}
       <div style={{
         background: "#fff",
-        borderBottom: "1.5px solid #ede9fc",
+        borderBottom: "1.5px solid #D5EDD8",
         display: "flex", alignItems: "center",
         gap: 10, padding: "14px 16px",
         flexShrink: 0,
         paddingTop: "calc(14px + env(safe-area-inset-top, 0px))",
-        boxShadow: "0 1px 8px rgba(109,40,217,.06)",
+        boxShadow: "0 1px 8px rgba(33,160,56,.06)",
       }}>
         <button
           onClick={() => { window.location.href = (import.meta.env.BASE_URL.replace(/\/$/, "")) + `/smeta/${token}`; }}
-          style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: "4px 0", color: "#9490b4", fontFamily: "inherit", flexShrink: 0 }}
+          style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: "4px 0", color: "#5E7A62", fontFamily: "inherit", flexShrink: 0 }}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
           <span style={{ fontSize: 12, fontWeight: 600 }}>Смета</span>
         </button>
         <div style={{ flex: 1, textAlign: "center" as const }}>
-          <span style={{ fontSize: 15, fontWeight: 700, color: "#1a1040" }}>Чат с мастером</span>
+          <span style={{ fontSize: 15, fontWeight: 700, color: "#0F2014" }}>Чат с мастером</span>
         </div>
         <div style={{ width: 60 }} />
       </div>
 
       {/* Operator info banner */}
       <div style={{ flexShrink: 0, padding: "10px 12px 0" }}>
-        <div style={{ background: "#ede9fc", border: "1.5px solid #ddd6fe", borderRadius: 14, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 34, height: 34, background: "linear-gradient(135deg,#1d4ed8,#3b82f6)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <div style={{ background: "#D5EDD8", border: "1.5px solid #BBF7D0", borderRadius: 14, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 34, height: 34, background: "linear-gradient(135deg,#21A038,#4CAF50)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
               <circle cx="12" cy="7" r="4"/>
             </svg>
           </div>
           <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#1a1040" }}>Чат по смете</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#0F2014" }}>Чат по смете</div>
             <div style={{ fontSize: 11, color: "#6d5fd0", marginTop: 1 }}>Вопросы по вашему заказу · отвечаем в течение часа</div>
           </div>
         </div>
@@ -213,7 +213,7 @@ export default function Chat() {
               ) : (
                 <div style={{ display: "flex", justifyContent: isClient ? "flex-end" : "flex-start", marginBottom: 8, alignItems: "flex-end", gap: 6 }}>
                   {!isClient && (
-                    <div style={{ width: 26, height: 26, background: "#1d4ed8", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <div style={{ width: 26, height: 26, background: "#21A038", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5">
                         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
                         <circle cx="12" cy="7" r="4"/>
@@ -225,7 +225,7 @@ export default function Chat() {
                     <div style={{
                       padding: "10px 14px",
                       borderRadius: isClient ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
-                      background: isClient ? "#1d4ed8" : "#fff",
+                      background: isClient ? "#21A038" : "#fff",
                       color: isClient ? "#fff" : "#111827",
                       fontSize: 14, lineHeight: 1.5,
                       boxShadow: "0 1px 4px rgba(0,0,0,.08)",
@@ -272,7 +272,7 @@ export default function Chat() {
           disabled={!text.trim() || sending}
           style={{
             width: 44, height: 44, borderRadius: "50%", border: "none",
-            background: text.trim() ? "#1d4ed8" : "#e5e7eb",
+            background: text.trim() ? "#21A038" : "#e5e7eb",
             display: "flex", alignItems: "center", justifyContent: "center",
             cursor: text.trim() ? "pointer" : "default",
             transition: "background 0.15s", flexShrink: 0,

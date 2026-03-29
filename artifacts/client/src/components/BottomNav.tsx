@@ -74,10 +74,10 @@ export default function BottomNav({ token, active, staticMode = false, supportPh
       bottom: staticMode ? undefined : 0,
       left: 0, right: 0,
       background: "#fff",
-      borderTop: "1.5px solid #ede9fc",
+      borderTop: "1.5px solid #D5EDD8",
       display: "flex",
       zIndex: staticMode ? undefined : 100,
-      boxShadow: staticMode ? "none" : "0 -2px 20px rgba(109,40,217,.07)",
+      boxShadow: staticMode ? "none" : "0 -2px 20px rgba(33,160,56,.07)",
       paddingBottom: isStandalone ? "env(safe-area-inset-bottom, 0px)" : "0px",
       flexShrink: 0,
     }}>
@@ -107,8 +107,8 @@ export default function BottomNav({ token, active, staticMode = false, supportPh
               width: 44,
               height: 28,
               borderRadius: 10,
-              background: isActive ? "#eff6ff" : "transparent",
-              color: isActive ? "#1d4ed8" : "#9490b4",
+              background: isActive ? "#F0FDF4" : "transparent",
+              color: isActive ? "#21A038" : "#5E7A62",
               transition: "background 0.15s, color 0.15s",
             }}>
               {item.icon}
@@ -116,7 +116,7 @@ export default function BottomNav({ token, active, staticMode = false, supportPh
             <span style={{
               fontSize: 10,
               fontWeight: isActive ? 700 : 500,
-              color: isActive ? "#1d4ed8" : "#9490b4",
+              color: isActive ? "#21A038" : "#5E7A62",
               letterSpacing: "0.01em",
               lineHeight: 1,
               fontFamily: "'Plus Jakarta Sans', -apple-system, sans-serif",
