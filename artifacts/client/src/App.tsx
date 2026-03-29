@@ -35,6 +35,7 @@ function AppIcon({ size = 44 }: { size?: number }) {
 function Home() {
   const [storedPhone] = useState(() => getStoredPhone());
   const [orderCount, setOrderCount] = useState<number | null>(null);
+  const [lastSmetaToken] = useState(() => { try { return localStorage.getItem("lastSmetaToken"); } catch { return null; } });
 
   useEffect(() => {
     if (!storedPhone) return;
@@ -133,24 +134,45 @@ function Home() {
           </div>
         </div>
 
-        {/* Smeta info */}
-        <div style={{ background: "#fff", borderRadius: 14, padding: "12px 14px", marginBottom: 10, border: "1px solid #e5e7eb" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-            <div style={{ width: 32, height: 32, background: "#eff6ff", borderRadius: 9, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-              </svg>
+        {/* Smeta link card */}
+        {(() => {
+          const smetaHref = lastSmetaToken
+            ? `${BASE}/smeta/${lastSmetaToken}`
+            : storedPhone
+            ? `${BASE}/my-orders`
+            : null;
+          const isClickable = !!smetaHref;
+          return (
+            <div
+              onClick={isClickable ? () => { window.location.href = smetaHref!; } : undefined}
+              style={{
+                background: "#fff", borderRadius: 14, padding: "12px 14px", marginBottom: 10,
+                border: `1.5px solid ${isClickable ? "#bfdbfe" : "#e5e7eb"}`,
+                cursor: isClickable ? "pointer" : "default",
+                display: "flex", alignItems: "center", gap: 12,
+                transition: "box-shadow 0.15s",
+              }}
+            >
+              <div style={{ width: 36, height: 36, background: isClickable ? "#eff6ff" : "#f9fafb", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={isClickable ? "#1d4ed8" : "#9ca3af"} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                  <polyline points="14 2 14 8 20 8"/>
+                  <line x1="16" y1="13" x2="8" y2="13"/>
+                  <line x1="16" y1="17" x2="8" y2="17"/>
+                </svg>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: isClickable ? "#1e3a8a" : "#111827" }}>Открыть мою смету</div>
+                <div style={{ fontSize: 11, color: isClickable ? "#3b82f6" : "#6b7280", marginTop: 1 }}>
+                  {lastSmetaToken ? "Открыть последнюю смету" : storedPhone ? "Посмотреть мои заказы" : "Перейдите по ссылке от мастера"}
+                </div>
+              </div>
+              {isClickable && (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+              )}
             </div>
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#111827" }}>Открыть мою смету</div>
-              <div style={{ fontSize: 11, color: "#6b7280" }}>Перейдите по ссылке от мастера</div>
-            </div>
-          </div>
-          <p style={{ fontSize: 12, color: "#6b7280", lineHeight: 1.5, margin: 0 }}>
-            Мастер прислал ссылку в сообщении. Нажмите на неё — откроется смета с деталями и возможностью оплатить бронь.
-          </p>
-        </div>
+          );
+        })()}
 
         {/* Trust badges */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
