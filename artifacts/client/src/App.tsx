@@ -8,7 +8,7 @@ import MyOrders from "@/pages/MyOrders";
 import SupportChat from "@/pages/SupportChat";
 import InstallPrompt from "@/components/InstallPrompt";
 import BottomNav from "@/components/BottomNav";
-import { getStoredPhone, clearStoredPhone, formatPhone } from "@/utils/phone";
+import { getStoredPhone, setStoredPhone, clearStoredPhone, formatPhone } from "@/utils/phone";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -32,10 +32,111 @@ function AppIcon({ size = 44 }: { size?: number }) {
   );
 }
 
+function PhoneSheet({ onDone }: { onDone: (phone: string) => void }) {
+  const [phone, setPhone] = useState("");
+  const [err, setErr] = useState("");
+  const [shaking, setShaking] = useState(false);
+
+  const submit = () => {
+    const digits = phone.trim().replace(/\D/g, "");
+    if (digits.length < 10) {
+      setErr("Введите номер телефона полностью");
+      setShaking(true);
+      setTimeout(() => setShaking(false), 500);
+      return;
+    }
+    const saved = phone.trim();
+    setStoredPhone(saved);
+    onDone(saved);
+  };
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 300,
+      background: "rgba(26,16,64,0.55)", backdropFilter: "blur(6px)",
+      display: "flex", alignItems: "flex-end",
+      fontFamily: "'Plus Jakarta Sans', -apple-system, sans-serif",
+    }}>
+      <div style={{
+        width: "100%", background: "#fff",
+        borderRadius: "24px 24px 0 0",
+        boxShadow: "0 -8px 40px rgba(29,78,216,.18)",
+        paddingBottom: "env(safe-area-inset-bottom, 16px)",
+      }}>
+        <div style={{ width: 36, height: 4, background: "#e5e7eb", borderRadius: 4, margin: "12px auto 0" }} />
+        <div style={{ padding: "20px 24px 28px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
+            <div style={{ width: 48, height: 48, background: "linear-gradient(135deg,#1e3a8a,#2563eb)", borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 4px 14px rgba(29,78,216,.3)" }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.41 2 2 0 0 1 3.6 1.22h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 8.9a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+              </svg>
+            </div>
+            <div>
+              <div style={{ fontSize: 17, fontWeight: 800, color: "#1a1040", lineHeight: 1.2 }}>Ваш номер телефона</div>
+              <div style={{ fontSize: 12, color: "#9490b4", marginTop: 3 }}>Для доступа к заказам и чату поддержки</div>
+            </div>
+          </div>
+
+          <div style={{ animation: shaking ? "shake 0.4s ease" : "none", marginBottom: 12 }}>
+            <input
+              type="tel"
+              autoFocus
+              autoComplete="tel"
+              value={phone}
+              onChange={e => { setPhone(e.target.value); setErr(""); }}
+              onKeyDown={e => e.key === "Enter" && submit()}
+              placeholder="+7 999 000-00-00"
+              style={{
+                width: "100%", height: 54,
+                border: `1.5px solid ${err ? "#ef4444" : "#ede9fc"}`,
+                borderRadius: 14, padding: "0 18px",
+                fontSize: 20, fontFamily: "inherit",
+                color: "#1a1040", background: "#f5f3ff",
+                outline: "none", boxSizing: "border-box",
+                textAlign: "center", letterSpacing: 1,
+                transition: "border-color 0.15s",
+              }}
+            />
+            {err && <div style={{ fontSize: 12, color: "#ef4444", textAlign: "center", marginTop: 6 }}>{err}</div>}
+          </div>
+
+          <button
+            onClick={submit}
+            style={{
+              width: "100%", height: 52,
+              background: "linear-gradient(135deg,#1e3a8a,#1d4ed8)", color: "#fff",
+              border: "none", borderRadius: 14,
+              fontSize: 16, fontWeight: 700,
+              cursor: "pointer", fontFamily: "inherit",
+              boxShadow: "0 4px 16px rgba(29,78,216,.3)",
+              marginBottom: 10,
+            }}
+          >
+            Войти
+          </button>
+          <button
+            onClick={() => onDone("")}
+            style={{ width: "100%", background: "none", border: "none", fontSize: 13, color: "#9490b4", cursor: "pointer", fontFamily: "inherit", padding: "4px 0" }}
+          >
+            Пропустить
+          </button>
+        </div>
+      </div>
+      <style>{`@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-6px)}80%{transform:translateX(6px)}}`}</style>
+    </div>
+  );
+}
+
 function Home() {
-  const [storedPhone] = useState(() => getStoredPhone());
+  const [storedPhone, setStoredPhoneState] = useState(() => getStoredPhone());
+  const [showPhoneSheet, setShowPhoneSheet] = useState(() => !getStoredPhone());
   const [orderCount, setOrderCount] = useState<number | null>(null);
   const [lastSmetaToken] = useState(() => { try { return localStorage.getItem("lastSmetaToken"); } catch { return null; } });
+
+  const handlePhoneDone = (phone: string) => {
+    setShowPhoneSheet(false);
+    if (phone) setStoredPhoneState(phone);
+  };
 
   useEffect(() => {
     if (!storedPhone) return;
@@ -194,6 +295,7 @@ function Home() {
 
       <BottomNav active="home" staticMode />
       <InstallPrompt />
+      {showPhoneSheet && <PhoneSheet onDone={handlePhoneDone} />}
     </div>
   );
 }
