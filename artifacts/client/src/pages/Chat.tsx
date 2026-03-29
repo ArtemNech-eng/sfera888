@@ -155,15 +155,17 @@ export default function Chat() {
         paddingTop: "calc(14px + env(safe-area-inset-top, 0px))",
         boxShadow: "0 1px 8px rgba(109,40,217,.06)",
       }}>
-        <div style={{ width: 32, height: 32, background: "linear-gradient(135deg,#1d4ed8,#3b82f6)", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-          </svg>
+        <button
+          onClick={() => { window.location.href = (import.meta.env.BASE_URL.replace(/\/$/, "")) + `/smeta/${token}`; }}
+          style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: "4px 0", color: "#9490b4", fontFamily: "inherit", flexShrink: 0 }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          <span style={{ fontSize: 12, fontWeight: 600 }}>Смета</span>
+        </button>
+        <div style={{ flex: 1, textAlign: "center" as const }}>
+          <span style={{ fontSize: 15, fontWeight: 700, color: "#1a1040" }}>Чат с мастером</span>
         </div>
-        <div>
-          <span style={{ fontSize: 15, fontWeight: 700, color: "#1a1040" }}>Чат с поддержкой</span>
-          <div style={{ fontSize: 11, color: "#9490b4", marginTop: 1 }}>Честный мастер</div>
-        </div>
+        <div style={{ width: 60 }} />
       </div>
 
       {/* Operator info banner */}
@@ -176,8 +178,8 @@ export default function Chat() {
             </svg>
           </div>
           <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#1a1040" }}>Служба поддержки</div>
-            <div style={{ fontSize: 11, color: "#6d5fd0", marginTop: 1 }}>Честный мастер · отвечаем в течение часа</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#1a1040" }}>Чат по смете</div>
+            <div style={{ fontSize: 11, color: "#6d5fd0", marginTop: 1 }}>Вопросы по вашему заказу · отвечаем в течение часа</div>
           </div>
         </div>
       </div>

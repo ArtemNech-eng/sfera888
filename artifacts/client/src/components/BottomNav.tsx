@@ -61,7 +61,7 @@ export default function BottomNav({ token, active, unread = 0, staticMode = fals
     },
     {
       id: "chat",
-      label: "Чат",
+      label: "Чат с мастером",
       href: `${BASE}/smeta/${token}/chat`,
       badge: unread > 0 ? unread : 0,
       icon: (
@@ -71,25 +71,12 @@ export default function BottomNav({ token, active, unread = 0, staticMode = fals
       ),
     },
     {
-      id: "history",
-      label: "История",
-      href: `${BASE}/smeta/${token}/history`,
+      id: "support",
+      label: "Поддержка",
+      href: `${BASE}/support`,
       icon: (
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="12 8 12 12 14 14"/>
-          <path d="M3.05 11a9 9 0 1 0 .5-4.5"/>
-          <polyline points="3 3 3 8 8 8"/>
-        </svg>
-      ),
-    },
-    {
-      id: "estimate",
-      label: "AI Оценка",
-      href: `${BASE}/estimate`,
-      icon: (
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="11" cy="11" r="8"/>
-          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>
         </svg>
       ),
     },

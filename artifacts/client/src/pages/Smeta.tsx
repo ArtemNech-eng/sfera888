@@ -23,6 +23,7 @@ interface ReceiptData {
   createdAt: string;
 }
 
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const fmt = (n: number) => n.toLocaleString("ru-RU");
 
 function ChevronIcon({ open }: { open: boolean }) {
@@ -209,14 +210,15 @@ export default function Smeta() {
         flexShrink: 0,
         boxShadow: "0 1px 8px rgba(109,40,217,.06)",
       }}>
-        <div style={{ width: 30, height: 30, background: "linear-gradient(135deg,#1e3a8a,#2563eb)", borderRadius: 9, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-            <polyline points="14 2 14 8 20 8"/>
-          </svg>
-        </div>
-        <span style={{ fontSize: 15, fontWeight: 700, color: "#1a1040", flex: 1 }}>Честный мастер</span>
-        <span style={{ fontSize: 11, color: "#9490b4", fontWeight: 500 }}>Смета №{data.id}</span>
+        <button
+          onClick={() => { window.location.href = `${BASE}/`; }}
+          style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: "4px 0", color: "#9490b4", fontFamily: "inherit", flexShrink: 0 }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          <span style={{ fontSize: 12, fontWeight: 600 }}>Главная</span>
+        </button>
+        <span style={{ fontSize: 15, fontWeight: 700, color: "#1a1040", flex: 1, textAlign: "center" as const }}>Честный мастер</span>
+        <span style={{ fontSize: 11, color: "#9490b4", fontWeight: 500, flexShrink: 0 }}>Смета №{data.id}</span>
       </div>
 
       {/* ── Scrollable ── */}
