@@ -286,7 +286,7 @@ export default function Chat() {
       </div>
 
       {/* Bottom nav — статичный, часть flex-колонки */}
-      <BottomNav token={token} active="chat" staticMode />
+      <BottomNav token={token} active="support" staticMode />
     </div>
   );
 }

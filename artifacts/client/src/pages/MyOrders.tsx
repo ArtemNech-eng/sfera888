@@ -71,7 +71,7 @@ export default function MyOrders() {
           На главную
         </button>
       </div>
-      <BottomNav active="home" staticMode />
+      <BottomNav active="orders" staticMode supportPhone={getStoredPhone() ?? undefined} />
     </div>
   );
 
@@ -166,7 +166,7 @@ export default function MyOrders() {
         )}
       </div>
 
-      <BottomNav active="home" staticMode />
+      <BottomNav active="orders" staticMode supportPhone={getStoredPhone() ?? undefined} />
     </div>
   );
 }

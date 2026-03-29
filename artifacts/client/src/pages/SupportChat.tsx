@@ -289,7 +289,7 @@ export default function SupportChat() {
         </button>
       </div>
 
-      <BottomNav active="support" staticMode />
+      <BottomNav active="support" staticMode supportPhone={phone ?? undefined} />
     </div>
   );
 }

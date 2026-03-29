@@ -421,7 +421,7 @@ export default function Smeta() {
         <div style={{ height: 2 }} />
       </div>
 
-      <BottomNav token={token} active="smeta" staticMode />
+      <BottomNav token={token} active="smeta" staticMode supportPhone={getStoredPhone() ?? undefined} />
     </div>
   );
 }

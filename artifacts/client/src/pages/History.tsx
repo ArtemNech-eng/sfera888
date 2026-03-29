@@ -137,7 +137,7 @@ export default function History() {
         )}
       </div>
 
-      <BottomNav token={token} active="history" staticMode />
+      <BottomNav token={token} active="smeta" staticMode />
     </div>
   );
 }
