@@ -71,32 +71,32 @@ export default function Smeta() {
 
   // PWA Install
   const [installPrompt, setInstallPrompt] = useState<any>(null);
-  const [installReady, setInstallReady] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
-  const [iosInstructions, setIosInstructions] = useState(false);
+  const [showInstallInstructions, setShowInstallInstructions] = useState(false);
 
   useEffect(() => {
     const standalone = window.matchMedia("(display-mode: standalone)").matches ||
       (window.navigator as any).standalone === true;
     if (standalone) { setIsInstalled(true); return; }
     const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
-    if (ios) { setIsIOS(true); setInstallReady(true); return; }
+    if (ios) { setIsIOS(true); return; }
     const handler = (e: Event) => {
       e.preventDefault();
       setInstallPrompt(e);
-      setInstallReady(true);
     };
     window.addEventListener("beforeinstallprompt", handler);
     return () => window.removeEventListener("beforeinstallprompt", handler);
   }, []);
 
   const handleInstall = useCallback(async () => {
-    if (isIOS) { setIosInstructions(true); return; }
-    if (!installPrompt) return;
-    await installPrompt.prompt();
-    const { outcome } = await installPrompt.userChoice;
-    if (outcome === "accepted") { setIsInstalled(true); setInstallPrompt(null); }
+    if (isIOS) { setShowInstallInstructions(true); return; }
+    if (installPrompt) {
+      await installPrompt.prompt();
+      const { outcome } = await installPrompt.userChoice;
+      if (outcome === "accepted") { setIsInstalled(true); setInstallPrompt(null); return; }
+    }
+    setShowInstallInstructions(true);
   }, [isIOS, installPrompt]);
 
   useEffect(() => {
@@ -489,8 +489,8 @@ export default function Smeta() {
           </div>
         )}
 
-        {/* Install App */}
-        {!isInstalled && installReady && !iosInstructions && (
+        {/* Install App — always shown unless already installed in standalone */}
+        {!isInstalled && !showInstallInstructions && (
           <div style={{
             background: "#fff",
             border: "1.5px solid #D0EDEB",
@@ -530,8 +530,8 @@ export default function Smeta() {
           </div>
         )}
 
-        {/* iOS install instructions */}
-        {iosInstructions && (
+        {/* Install instructions (iOS or Android fallback) */}
+        {!isInstalled && showInstallInstructions && (
           <div style={{
             background: "#F0FDFA",
             border: "1.5px solid #99F6E4",
@@ -539,23 +539,31 @@ export default function Smeta() {
             padding: "14px 16px",
           }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#0D2B28" }}>Как установить на iPhone</div>
-              <button onClick={() => setIosInstructions(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "#4A6B69", padding: 2 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#0D2B28" }}>
+                {isIOS ? "Как установить на iPhone" : "Как установить приложение"}
+              </div>
+              <button onClick={() => setShowInstallInstructions(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "#4A6B69", padding: 2 }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
             </div>
-            <div style={{ fontSize: 13, color: "#0F4C45", lineHeight: 1.65 }}>
-              1. Нажмите{" "}
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 2, background: "#fff", border: "1px solid #99F6E4", borderRadius: 6, padding: "1px 7px", verticalAlign: "middle" }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0D9488" strokeWidth="2" strokeLinecap="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
-                <span style={{ fontSize: 11, fontWeight: 600, color: "#0D9488" }}>Поделиться</span>
-              </span>
-              {" "}в браузере
-              <br />
-              2. Выберите <b>«На экран Домой»</b>
-              <br />
-              3. Нажмите <b>«Добавить»</b>
-            </div>
+            {isIOS ? (
+              <div style={{ fontSize: 13, color: "#0F4C45", lineHeight: 1.7 }}>
+                1. Нажмите{" "}
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 2, background: "#fff", border: "1px solid #99F6E4", borderRadius: 6, padding: "1px 7px", verticalAlign: "middle" }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0D9488" strokeWidth="2" strokeLinecap="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: "#0D9488" }}>Поделиться</span>
+                </span>
+                {" "}в Safari<br />
+                2. Выберите <b>«На экран Домой»</b><br />
+                3. Нажмите <b>«Добавить»</b>
+              </div>
+            ) : (
+              <div style={{ fontSize: 13, color: "#0F4C45", lineHeight: 1.7 }}>
+                1. Нажмите <b>⋮</b> (меню браузера) в правом верхнем углу<br />
+                2. Выберите <b>«Установить приложение»</b> или <b>«Добавить на главный экран»</b><br />
+                3. Нажмите <b>«Установить»</b>
+              </div>
+            )}
           </div>
         )}
 
