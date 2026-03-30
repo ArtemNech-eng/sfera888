@@ -118,7 +118,7 @@ app.get("/api/receipt/:token", async (req, res) => {
     const { eq } = await import("drizzle-orm");
     const [receipt] = await db.select().from(receiptsTable).where(eq(receiptsTable.token, req.params.token));
     if (!receipt) {
-      return res.status(404).send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Не найдено</title></head><body style="font-family:sans-serif;text-align:center;padding:60px"><h2>Расписка не найдена</h2><p>Ссылка недействительна или устарела.</p></body></html>`);
+      return res.status(404).send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Не найдено</title></head><body style="font-family:sans-serif;text-align:center;padding:60px"><h2>Смета не найдена</h2><p>Ссылка недействительна или устарела.</p></body></html>`);
     }
     const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, receipt.masterId));
 
@@ -297,8 +297,26 @@ app.get("/api/receipt/:token", async (req, res) => {
     .success-title { font-size: 17px; font-weight: 700; color: #111827; margin-bottom: 6px; }
     .success-sub { font-size: 13px; color: #6b7280; line-height: 1.6; }
 
+    /* ── Guarantee block ── */
+    .guarantee { background: linear-gradient(135deg, #0F4C45 0%, #0D9488 100%); border-radius: 16px; padding: 16px 18px; display: flex; gap: 14px; align-items: flex-start; }
+    .guarantee-icon { width: 44px; height: 44px; border-radius: 12px; background: rgba(255,255,255,.15); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .guarantee-title { font-size: 14px; font-weight: 800; color: #fff; margin-bottom: 6px; letter-spacing: -0.01em; }
+    .guarantee-text { font-size: 13px; color: rgba(255,255,255,.88); line-height: 1.55; }
+    .guarantee-note { margin-top: 8px; font-size: 13px; font-weight: 700; color: #86EFAC; }
+
+    /* ── Install banner ── */
+    .install-banner { background: #fff; border: 1.5px solid #D0EDEB; border-radius: 16px; padding: 14px 16px; display: flex; align-items: center; gap: 14px; }
+    .install-icon { width: 42px; height: 42px; border-radius: 12px; flex-shrink: 0; background: linear-gradient(135deg, #0D9488, #0F4C45); display: flex; align-items: center; justify-content: center; }
+    .install-text { flex: 1; min-width: 0; }
+    .install-text-title { font-size: 13px; font-weight: 700; color: #0D2B28; }
+    .install-text-sub { font-size: 11px; color: #4A6B69; margin-top: 2px; }
+    .install-btn { flex-shrink: 0; padding: 8px 14px; background: #0D9488; color: #fff; border: none; border-radius: 10px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; white-space: nowrap; }
+    .install-instructions { background: #F0FDFA; border: 1.5px solid #99F6E4; border-radius: 16px; padding: 14px 16px; display: none; }
+    .install-instructions-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .install-instructions-text { font-size: 13px; color: #0F4C45; line-height: 1.7; }
+
     @media(max-width: 380px) { .hero-amount { font-size: 24px; } .about-grid { grid-template-columns: 1fr; } }
-    @media print { .cta-btn, .sc.accent { display: none; } body { background: #fff; } }
+    @media print { .cta-btn, .sc.accent, .install-banner, .install-instructions { display: none; } body { background: #fff; } }
   </style>
 </head>
 <body>
@@ -369,6 +387,21 @@ app.get("/api/receipt/:token", async (req, res) => {
     </div>
   </div>
 
+  <!-- ── ГАРАНТИЯ ── -->
+  <div class="guarantee">
+    <div class="guarantee-icon">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+        <path d="M12 2L3 7v5c0 5.25 3.75 10.15 9 11.25C17.25 22.15 21 17.25 21 12V7L12 2z" fill="rgba(255,255,255,0.25)" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
+        <path d="M8.5 12.5l2.5 2.5 4.5-4.5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div>
+      <div class="guarantee-title">Гарантия возврата</div>
+      <div class="guarantee-text">Если по любой причине работы не начнутся — предоплата возвращается в полном объёме.</div>
+      <div class="guarantee-note">Вы ничем не рискуете.</div>
+    </div>
+  </div>
+
   <!-- ── О ЗАКАЗЕ ── -->
   <div class="sc">
     <div class="sc-head">
@@ -394,7 +427,30 @@ app.get("/api/receipt/:token", async (req, res) => {
     <div class="about-stamp">Смета №${receipt.id} · ${date} · sfera-project.digital</div>
   </div>
 
-  <!-- ── ЗАБРОНИРОВАТЬ ── -->
+  <!-- ── УСТАНОВИТЬ ПРИЛОЖЕНИЕ ── -->
+  <div class="install-banner" id="install-banner">
+    <div class="install-icon">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+        <line x1="12" y1="18" x2="12" y2="12"/>
+        <polyline points="9 15 12 18 15 15"/>
+      </svg>
+    </div>
+    <div class="install-text">
+      <div class="install-text-title">Установить приложение</div>
+      <div class="install-text-sub">Следите за статусом заказа</div>
+    </div>
+    <button class="install-btn" id="install-btn" onclick="handleInstall()">Установить</button>
+  </div>
+  <div class="install-instructions" id="install-instructions">
+    <div class="install-instructions-title">
+      <span style="font-size:13px;font-weight:700;color:#0F4C45">Как установить</span>
+      <button onclick="document.getElementById('install-instructions').style.display='none'" style="background:none;border:none;cursor:pointer;color:#9ca3af;font-size:18px;line-height:1;padding:0">×</button>
+    </div>
+    <div class="install-instructions-text" id="install-instructions-text"></div>
+  </div>
+
   ${!isClientSubmitted ? `
   <div class="sc accent" id="booking-section">
     <div class="sc-head">
@@ -535,6 +591,43 @@ app.get("/api/receipt/:token", async (req, res) => {
   function showError(msg) {
     formError.textContent = msg;
     formError.style.display = 'block';
+  }
+
+  // ── PWA Install ──
+  let deferredPrompt = null;
+  window.addEventListener('beforeinstallprompt', function(e) {
+    e.preventDefault();
+    deferredPrompt = e;
+  });
+
+  function isIos() { return /iphone|ipad|ipod/i.test(navigator.userAgent); }
+  function isInStandaloneMode() { return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone; }
+
+  function handleInstall() {
+    if (isInStandaloneMode()) {
+      document.getElementById('install-banner').style.display = 'none';
+      return;
+    }
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then(function() { deferredPrompt = null; document.getElementById('install-banner').style.display = 'none'; });
+    } else if (isIos()) {
+      document.getElementById('install-instructions-text').innerHTML =
+        '1. Нажмите кнопку <strong>Поделиться</strong> (квадрат со стрелкой) внизу экрана<br>' +
+        '2. Выберите <strong>«На экран домой»</strong><br>' +
+        '3. Нажмите <strong>«Добавить»</strong>';
+      document.getElementById('install-instructions').style.display = 'block';
+    } else {
+      document.getElementById('install-instructions-text').innerHTML =
+        '1. Нажмите <strong>⋮</strong> (меню браузера) в правом верхнем углу<br>' +
+        '2. Выберите <strong>«Добавить на главный экран»</strong> или <strong>«Установить приложение»</strong>';
+      document.getElementById('install-instructions').style.display = 'block';
+    }
+  }
+
+  // Hide install button if already installed
+  if (isInStandaloneMode()) {
+    document.getElementById('install-banner').style.display = 'none';
   }
 </script>
 </body>
