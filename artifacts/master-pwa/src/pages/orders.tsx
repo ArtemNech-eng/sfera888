@@ -580,7 +580,7 @@ function ReceiptModal({
                 className="w-full h-12 bg-primary text-white font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-60"
               >
                 {loading ? <Loader2 size={16} className="animate-spin" /> : <ReceiptText size={16} />}
-                {isEdit ? "Сохранить изменения" : "Создать расписку"}
+                {isEdit ? "Сохранить изменения" : "Создать смету"}
               </button>
               {isEdit && displayUrl && (
                 <button
@@ -624,7 +624,7 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
           fresh.forEach(fr => {
             const old = prev.find(p => p.id === fr.id);
             if (!old?.prepaymentSubmittedAt && fr.prepaymentSubmittedAt) {
-              toast.success("🎉 Клиент подтвердил предоплату по расписке!");
+              toast.success("🎉 Клиент подтвердил предоплату по смете!");
             }
           });
           return fresh;
@@ -879,7 +879,7 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
                   {orderReceipts.length > 0 && (
                     <div className="space-y-1.5">
                       <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-                        <ReceiptText size={12} /> Расписки
+                        <ReceiptText size={12} /> Сметы
                       </p>
                       {orderReceipts.map(r => (
                         <div key={r.id} className="bg-muted/40 rounded-xl px-3 py-2.5 space-y-2">
@@ -903,7 +903,7 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
                               </button>
                               <button
                                 onClick={async () => {
-                                  if (!window.confirm("Удалить расписку?")) return;
+                                  if (!window.confirm("Удалить смету?")) return;
                                   const res = await fetch(`/api/receipts/${r.id}`, { method: "DELETE", credentials: "include" });
                                   if (res.ok) {
                                     setOrderReceipts(prev => prev.filter(x => x.id !== r.id));
@@ -913,7 +913,7 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
                                   }
                                 }}
                                 className="h-8 w-8 rounded-lg border border-destructive/40 bg-destructive/10 text-destructive flex items-center justify-center flex-shrink-0"
-                                title="Удалить расписку"
+                                title="Удалить смету"
                               >
                                 <Trash2 size={13} />
                               </button>
@@ -956,7 +956,7 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
                     className="w-full h-10 rounded-xl border border-border bg-muted/30 text-foreground text-sm font-medium flex items-center justify-center gap-2 active:opacity-80"
                   >
                     <ReceiptText size={15} />
-                    {orderReceipts.length > 0 ? "Создать ещё расписку" : "Создать расписку клиенту"}
+                    {orderReceipts.length > 0 ? "Создать ещё смету" : "Создать смету клиенту"}
                   </button>
                 </div>
 
