@@ -293,6 +293,40 @@ export default function Smeta() {
           </div>
         </SectionCard>
 
+        {/* Guarantee block */}
+        <div style={{
+          margin: "0 0 4px",
+          background: "linear-gradient(135deg, #0F4C45 0%, #0D9488 100%)",
+          borderRadius: 16,
+          padding: "16px 18px",
+          display: "flex",
+          gap: 14,
+          alignItems: "flex-start",
+        }}>
+          <div style={{
+            width: 44, height: 44, borderRadius: 12,
+            background: "rgba(255,255,255,0.15)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            flexShrink: 0,
+          }}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+              <path d="M12 2L3 7v5c0 5.25 3.75 10.15 9 11.25C17.25 22.15 21 17.25 21 12V7L12 2z" fill="rgba(255,255,255,0.25)" stroke="white" strokeWidth="1.5" strokeLinejoin="round"/>
+              <path d="M8.5 12.5l2.5 2.5 4.5-4.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: "#ffffff", marginBottom: 6, letterSpacing: "-0.01em" }}>
+              Гарантия возврата
+            </div>
+            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.88)", lineHeight: 1.55 }}>
+              Если по любой причине работы не начнутся — предоплата возвращается в полном объёме.
+            </div>
+            <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: "#86EFAC" }}>
+              Вы ничем не рискуете.
+            </div>
+          </div>
+        </div>
+
         {/* Section: About */}
         <SectionCard
           title="О заказе"
