@@ -6,5 +6,8 @@ createRoot(document.getElementById("root")!).render(<App />);
 
 if ("serviceWorker" in navigator) {
   const base = import.meta.env.BASE_URL ?? "/master-pwa/";
-  navigator.serviceWorker.register(`${base}sw.js`).catch(() => {});
+  navigator.serviceWorker
+    .register(`${base}sw.js`, { updateViaCache: "none" })
+    .then(reg => reg.update())
+    .catch(() => {});
 }
