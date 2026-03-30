@@ -26,7 +26,8 @@
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/client/sw.js', { scope: '/client/' })
+          navigator.serviceWorker.register('/client/sw.js', { scope: '/client/', updateViaCache: 'none' })
+            .then(reg => reg.update())
             .catch(() => {});
         });
       }
