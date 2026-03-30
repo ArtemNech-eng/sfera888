@@ -390,7 +390,7 @@ export default function Orders() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/receipts/order", openDispatchId] });
-      toast({ title: "Расписка удалена" });
+      toast({ title: "Смета удалена" });
     },
     onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
   });
@@ -1612,14 +1612,14 @@ export default function Orders() {
                   );
                 })()}
 
-                {/* ─── Расписки (ожидают оплаты) ────────────────────────────── */}
+                {/* ─── Сметы (ожидают оплаты) ────────────────────────────── */}
                 <div className="border-t border-border/50 pt-3">
                   <button
                     onClick={() => setShowReceipts(v => !v)}
                     className="w-full flex items-center justify-between text-xs text-muted-foreground hover:text-foreground transition-colors py-1"
                   >
                     <span className="flex items-center gap-1.5 font-semibold uppercase tracking-wide">
-                      <ReceiptText className="w-3.5 h-3.5" />Расписки
+                      <ReceiptText className="w-3.5 h-3.5" />Сметы
                       {receipts && receipts.filter(r => !r.prepaymentSubmittedAt).length > 0 && (
                         <span className="bg-amber-500 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none">
                           {receipts.filter(r => !r.prepaymentSubmittedAt).length}
@@ -1674,13 +1674,13 @@ export default function Orders() {
                             <button onClick={() => { if (editingCrmReceiptId === r.id) { setEditingCrmReceiptId(null); return; } setEditingCrmReceiptId(r.id); setCrmEditLineItems(r.lineItems?.length ? r.lineItems.map((i: any) => ({ description: i.description, unit: i.unit ?? "", quantity: String(i.quantity ?? 1), price: String(i.price) })) : [{ description: "", unit: "", quantity: "1", price: "" }]); setCrmEditPrepayment(String(r.prepaymentAmount)); setCrmEditNotes(r.notes ?? ""); }} className="flex items-center gap-1 text-xs text-primary font-medium hover:underline ml-auto">
                               {editingCrmReceiptId === r.id ? "Отмена" : "Изменить"}
                             </button>
-                            <button onClick={() => { if (!window.confirm("Удалить расписку?")) return; deleteReceiptMutation.mutate(r.id); }} disabled={deleteReceiptMutation.isPending} className="flex items-center gap-1 text-xs text-destructive hover:opacity-80 disabled:opacity-50" title="Удалить">
+                            <button onClick={() => { if (!window.confirm("Удалить смету?")) return; deleteReceiptMutation.mutate(r.id); }} disabled={deleteReceiptMutation.isPending} className="flex items-center gap-1 text-xs text-destructive hover:opacity-80 disabled:opacity-50" title="Удалить смету">
                               <Trash2 className="w-3 h-3" />
                             </button>
                           </div>
                           {editingCrmReceiptId === r.id && (
                             <div className="border border-border rounded-xl p-3 space-y-2 bg-background mt-1">
-                              <p className="text-xs font-semibold">Редактирование расписки</p>
+                              <p className="text-xs font-semibold">Редактирование сметы</p>
                               <div className="space-y-1.5">
                                 <div className="flex items-center justify-between">
                                   <p className="text-xs text-muted-foreground">Перечень работ</p>
@@ -1719,7 +1719,7 @@ export default function Orders() {
                                 try {
                                   const resp = await fetch(`/api/receipts/${r.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ lineItems: valid.map(i => ({ description: i.description.trim(), unit: i.unit || undefined, quantity: parseFloat(i.quantity) > 0 ? parseFloat(i.quantity) : undefined, price: parseFloat(i.price) })), prepaymentAmount: prepay, notes: crmEditNotes.trim() || undefined }) });
                                   if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(e.error ?? "Ошибка"); }
-                                  toast({ title: "Расписка обновлена!" }); setEditingCrmReceiptId(null); queryClient.invalidateQueries({ queryKey: ["/api/receipts/order", openDispatchId] });
+                                  toast({ title: "Смета обновлена!" }); setEditingCrmReceiptId(null); queryClient.invalidateQueries({ queryKey: ["/api/receipts/order", openDispatchId] });
                                 } catch (e: any) { toast({ title: e.message ?? "Ошибка", variant: "destructive" }); } finally { setCrmEditing(false); }
                               }} className="w-full h-8 rounded-lg bg-primary text-white text-xs font-semibold flex items-center justify-center gap-1.5 disabled:opacity-60">
                                 {crmEditing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />} Сохранить изменения
@@ -1732,12 +1732,12 @@ export default function Orders() {
                       {/* ── Create receipt form ── */}
                       {!showCreateReceipt && !crmCreatedUrl && (
                         <button onClick={() => { setShowCreateReceipt(true); setCrmCreatedUrl(null); setCrmCopied(false); }} className="w-full flex items-center justify-center gap-1.5 text-xs text-primary font-semibold py-2 border border-dashed border-primary/40 rounded-xl hover:bg-primary/5 transition-colors">
-                          <Plus className="w-3.5 h-3.5" /> Создать расписку
+                          <Plus className="w-3.5 h-3.5" /> Создать смету
                         </button>
                       )}
                       {crmCreatedUrl && (
                         <div className="bg-green-50 dark:bg-green-900/20 rounded-xl p-3 space-y-2">
-                          <div className="flex items-center gap-2 text-green-700 dark:text-green-400 font-semibold text-xs"><CheckCircle2 className="w-4 h-4" /> Расписка создана</div>
+                          <div className="flex items-center gap-2 text-green-700 dark:text-green-400 font-semibold text-xs"><CheckCircle2 className="w-4 h-4" /> Смета создана</div>
                           <div className="bg-white dark:bg-muted rounded-lg p-2 text-xs font-mono break-all text-muted-foreground">{crmCreatedUrl}</div>
                           <div className="flex gap-2">
                             <button onClick={() => { navigator.clipboard.writeText(crmCreatedUrl!); setCrmCopied(true); setTimeout(() => setCrmCopied(false), 2000); }} className="flex-1 flex items-center justify-center gap-1.5 h-8 rounded-lg bg-primary text-white text-xs font-semibold">
@@ -1745,14 +1745,14 @@ export default function Orders() {
                             </button>
                             <a href={crmCreatedUrl} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-1.5 h-8 px-3 rounded-lg border border-border text-xs text-muted-foreground hover:bg-muted"><ExternalLink className="w-3 h-3" /> Открыть</a>
                           </div>
-                          <button onClick={() => { setShowCreateReceipt(true); setCrmCreatedUrl(null); }} className="w-full text-xs text-primary hover:underline">+ Ещё расписка</button>
+                          <button onClick={() => { setShowCreateReceipt(true); setCrmCreatedUrl(null); }} className="w-full text-xs text-primary hover:underline">+ Создать ещё смету</button>
                         </div>
                       )}
 
                       {showCreateReceipt && !crmCreatedUrl && (
                         <div className="border border-border rounded-xl p-3 space-y-3 bg-muted/20">
                           <div className="flex items-center justify-between">
-                            <p className="text-xs font-semibold text-foreground">Новая расписка</p>
+                            <p className="text-xs font-semibold text-foreground">Новая смета</p>
                             <button onClick={() => setShowCreateReceipt(false)} className="text-muted-foreground hover:text-foreground">
                               <X className="w-3.5 h-3.5" />
                             </button>
@@ -1858,7 +1858,7 @@ export default function Orders() {
                             className="w-full h-9 bg-primary text-white text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 disabled:opacity-60"
                           >
                             {crmCreating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ReceiptText className="w-3.5 h-3.5" />}
-                            Создать расписку
+                            Создать смету
                           </button>
                         </div>
                       )}
@@ -1923,7 +1923,7 @@ export default function Orders() {
                             </button>
                             <div className="flex items-center gap-2">
                               <a href={r.publicUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs text-blue-500 hover:underline">
-                                <ExternalLink className="w-3 h-3" /> Открыть расписку
+                                <ExternalLink className="w-3 h-3" /> Открыть смету
                               </a>
                               <button onClick={() => { navigator.clipboard.writeText(r.publicUrl); toast({ title: "Ссылка скопирована!" }); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground ml-auto">
                                 <Copy className="w-3 h-3" /> Ссылка
@@ -1982,7 +1982,7 @@ export default function Orders() {
                               <button onClick={() => { navigator.clipboard.writeText(r.publicUrl); toast({ title: "Ссылка скопирована!" }); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
                                 <Copy className="w-3 h-3" /> Ссылка
                               </button>
-                              <button onClick={() => { if (!window.confirm("Удалить расписку?")) return; deleteReceiptMutation.mutate(r.id); }} disabled={deleteReceiptMutation.isPending} className="flex items-center gap-1 text-xs text-destructive hover:opacity-80 disabled:opacity-50 ml-auto" title="Удалить">
+                              <button onClick={() => { if (!window.confirm("Удалить смету?")) return; deleteReceiptMutation.mutate(r.id); }} disabled={deleteReceiptMutation.isPending} className="flex items-center gap-1 text-xs text-destructive hover:opacity-80 disabled:opacity-50 ml-auto" title="Удалить смету">
                                 <Trash2 className="w-3 h-3" />
                               </button>
                             </div>
