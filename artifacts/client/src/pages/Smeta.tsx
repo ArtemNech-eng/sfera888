@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams } from "wouter";
 import BottomNav from "@/components/BottomNav";
 import PhoneGate from "@/components/PhoneGate";
@@ -68,6 +68,36 @@ export default function Smeta() {
   const fileRef = useRef<HTMLInputElement>(null);
   const paymentRef = useRef<HTMLDivElement>(null);
   const [showGate, setShowGate] = useState(false);
+
+  // PWA Install
+  const [installPrompt, setInstallPrompt] = useState<any>(null);
+  const [installReady, setInstallReady] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
+  const [isInstalled, setIsInstalled] = useState(false);
+  const [iosInstructions, setIosInstructions] = useState(false);
+
+  useEffect(() => {
+    const standalone = window.matchMedia("(display-mode: standalone)").matches ||
+      (window.navigator as any).standalone === true;
+    if (standalone) { setIsInstalled(true); return; }
+    const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    if (ios) { setIsIOS(true); setInstallReady(true); return; }
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+      setInstallReady(true);
+    };
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  }, []);
+
+  const handleInstall = useCallback(async () => {
+    if (isIOS) { setIosInstructions(true); return; }
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    if (outcome === "accepted") { setIsInstalled(true); setInstallPrompt(null); }
+  }, [isIOS, installPrompt]);
 
   useEffect(() => {
     fetch(`/api/receipt/${token}/data`)
@@ -447,6 +477,76 @@ export default function Smeta() {
                 <p style={{ fontSize: 10, color: "#9ca3af", textAlign: "center" as const, marginTop: 6 }}>Защищено платформой «Честный мастер»</p>
               </div>
             </SectionCard>
+          </div>
+        )}
+
+        {/* Install App */}
+        {!isInstalled && installReady && !iosInstructions && (
+          <div style={{
+            background: "#fff",
+            border: "1.5px solid #D0EDEB",
+            borderRadius: 16,
+            padding: "14px 16px",
+            display: "flex",
+            alignItems: "center",
+            gap: 14,
+          }}>
+            <div style={{
+              width: 42, height: 42, borderRadius: 12, flexShrink: 0,
+              background: "linear-gradient(135deg, #0D9488, #0F4C45)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2H8a4 4 0 0 0-4 4v12a4 4 0 0 0 4 4h8a4 4 0 0 0 4-4V8l-4-6z"/>
+                <path d="M12 2v6h4M12 13v4M10 15h4"/>
+              </svg>
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#0D2B28" }}>Установить приложение</div>
+              <div style={{ fontSize: 11, color: "#4A6B69", marginTop: 2 }}>Уведомления о заказе прямо на телефон</div>
+            </div>
+            <button
+              onClick={handleInstall}
+              style={{
+                flexShrink: 0, padding: "8px 14px",
+                background: "#0D9488", color: "#fff",
+                border: "none", borderRadius: 10,
+                fontSize: 12, fontWeight: 700,
+                cursor: "pointer", fontFamily: "inherit",
+                whiteSpace: "nowrap" as const,
+              }}
+            >
+              {isIOS ? "Как установить" : "Установить"}
+            </button>
+          </div>
+        )}
+
+        {/* iOS install instructions */}
+        {iosInstructions && (
+          <div style={{
+            background: "#F0FDFA",
+            border: "1.5px solid #99F6E4",
+            borderRadius: 16,
+            padding: "14px 16px",
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#0D2B28" }}>Как установить на iPhone</div>
+              <button onClick={() => setIosInstructions(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "#4A6B69", padding: 2 }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div style={{ fontSize: 13, color: "#0F4C45", lineHeight: 1.65 }}>
+              1. Нажмите{" "}
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 2, background: "#fff", border: "1px solid #99F6E4", borderRadius: 6, padding: "1px 7px", verticalAlign: "middle" }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0D9488" strokeWidth="2" strokeLinecap="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+                <span style={{ fontSize: 11, fontWeight: 600, color: "#0D9488" }}>Поделиться</span>
+              </span>
+              {" "}в браузере
+              <br />
+              2. Выберите <b>«На экран Домой»</b>
+              <br />
+              3. Нажмите <b>«Добавить»</b>
+            </div>
           </div>
         )}
 
