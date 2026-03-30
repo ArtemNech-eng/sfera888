@@ -127,15 +127,23 @@ app.get("/api/receipt/:token", async (req, res) => {
     const remainder = (Number(receipt.totalAmount) - Number(receipt.prepaymentAmount)).toLocaleString("ru-RU");
     const date = new Date(receipt.createdAt).toLocaleString("ru-RU", { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
     const district = receipt.district ? `, ${receipt.district}` : "";
-    const lineItems: Array<{description: string; unit?: string; price: number}> = (receipt.lineItems as any) ?? [];
+    const lineItems: Array<{description: string; unit?: string; quantity?: number; price: number}> = (receipt.lineItems as any) ?? [];
     const isClientSubmitted = !!receipt.prepaymentSubmittedAt;
     const isOperatorConfirmed = !!receipt.prepaymentSeenAt;
 
     const lineItemsHtml = lineItems.map(item => {
-      const amt = item.unit
-        ? `${Number(item.price).toLocaleString("ru-RU")} ₽/${item.unit}`
-        : `${Number(item.price).toLocaleString("ru-RU")} ₽`;
-      return `<div class="item-row"><span class="item-name">${item.description}</span><span class="item-amt">${amt}</span></div>`;
+      const qty = item.quantity && item.quantity !== 1 ? item.quantity : null;
+      const unitStr = item.unit || "";
+      const rowTotal = (item.quantity ?? 1) * item.price;
+      let detailStr = "";
+      if (qty) {
+        detailStr = unitStr
+          ? ` <span class="item-detail">${qty} ${unitStr} × ${Number(item.price).toLocaleString("ru-RU")} ₽</span>`
+          : ` <span class="item-detail">${qty} × ${Number(item.price).toLocaleString("ru-RU")} ₽</span>`;
+      } else if (unitStr) {
+        detailStr = ` <span class="item-detail">₽/${unitStr}</span>`;
+      }
+      return `<div class="item-row"><span class="item-name">${item.description}${detailStr}</span><span class="item-amt">${Number(rowTotal).toLocaleString("ru-RU")} ₽</span></div>`;
     }).join("");
 
     const notesHtml = receipt.notes
@@ -221,6 +229,7 @@ app.get("/api/receipt/:token", async (req, res) => {
     .item-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 8px 0; border-bottom: 1px solid #f3f4f6; }
     .item-row:last-child { border-bottom: none; }
     .item-name { font-size: 13px; color: #374151; flex: 1; line-height: 1.4; }
+    .item-detail { font-size: 11px; color: #9ca3af; margin-left: 4px; font-weight: 400; }
     .item-amt { font-size: 13px; font-weight: 600; color: #111827; white-space: nowrap; }
 
     /* ── Totals ── */

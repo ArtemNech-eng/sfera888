@@ -302,12 +302,12 @@ function PhotoGrid({ urls, label }: { urls: string[]; label: string }) {
 
 const UNITS = ["", "шт", "м²", "м³", "м.п.", "м", "кг", "т", "л", "упак.", "компл.", "ч"];
 
-interface LineItem { description: string; unit: string; price: string; }
+interface LineItem { description: string; unit: string; quantity: string; price: string; }
 
 interface ExistingReceipt {
   id: number;
   token: string;
-  lineItems: Array<{ description: string; unit?: string; price: number }>;
+  lineItems: Array<{ description: string; unit?: string; quantity?: number; price: number }>;
   totalAmount: number;
   prepaymentAmount: number;
   notes: string | null;
@@ -332,8 +332,8 @@ function ReceiptModal({
   const isEdit = !!existingReceipt;
   const [lineItems, setLineItems] = useState<LineItem[]>(
     isEdit
-      ? existingReceipt!.lineItems.map(i => ({ description: i.description, unit: i.unit ?? "", price: String(i.price) }))
-      : [{ description: "", unit: "", price: "" }]
+      ? existingReceipt!.lineItems.map(i => ({ description: i.description, unit: i.unit ?? "", quantity: String(i.quantity ?? 1), price: String(i.price) }))
+      : [{ description: "", unit: "", quantity: "1", price: "" }]
   );
   const [prepayment, setPrepayment] = useState(isEdit ? String(existingReceipt!.prepaymentAmount) : "5000");
   const [notes, setNotes] = useState(isEdit ? (existingReceipt!.notes ?? "") : "");
@@ -341,12 +341,13 @@ function ReceiptModal({
   const [result, setResult] = useState<ExistingReceipt | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const addItem = () => setLineItems(prev => [...prev, { description: "", unit: "", price: "" }]);
+  const addItem = () => setLineItems(prev => [...prev, { description: "", unit: "", quantity: "1", price: "" }]);
   const removeItem = (i: number) => setLineItems(prev => prev.filter((_, idx) => idx !== i));
   const updateItem = (i: number, field: keyof LineItem, val: string) =>
     setLineItems(prev => prev.map((item, idx) => idx === i ? { ...item, [field]: val } : item));
 
-  const totalCalc = lineItems.reduce((s, it) => s + (parseFloat(it.price.replace(",", ".")) || 0), 0);
+  const lineTotal = (it: LineItem) => (parseFloat(it.quantity) || 1) * (parseFloat(it.price.replace(",", ".")) || 0);
+  const totalCalc = lineItems.reduce((s, it) => s + lineTotal(it), 0);
 
   const handleSubmit = async () => {
     const valid = lineItems.filter(it => it.description.trim() && parseFloat(it.price.replace(",", ".")) > 0);
@@ -357,7 +358,12 @@ function ReceiptModal({
     try {
       const body = {
         orderId: order.id,
-        lineItems: valid.map(it => ({ description: it.description.trim(), unit: it.unit || undefined, price: parseFloat(it.price.replace(",", ".")) })),
+        lineItems: valid.map(it => ({
+          description: it.description.trim(),
+          unit: it.unit || undefined,
+          quantity: parseFloat(it.quantity) > 0 ? parseFloat(it.quantity) : undefined,
+          price: parseFloat(it.price.replace(",", ".")),
+        })),
         prepaymentAmount: prepayNum,
         notes: notes.trim() || undefined,
       };
@@ -403,7 +409,7 @@ function ReceiptModal({
         <div className="flex justify-between items-center px-5 pt-2 pb-3 flex-shrink-0">
           <h3 className="font-bold text-base flex items-center gap-2">
             <ReceiptText size={18} className="text-primary" />
-            {isEdit ? "Изменить расписку" : `Расписка — заказ #${order.id}`}
+            {isEdit ? "Изменить смету" : `Смета — заказ #${order.id}`}
           </h3>
           <button onClick={onClose} className="text-muted-foreground p-1"><X size={20} /></button>
         </div>
@@ -415,7 +421,7 @@ function ReceiptModal({
               <div className="bg-green-50 dark:bg-green-900/20 rounded-2xl p-4 text-center space-y-1">
                 <CheckCircle2 size={32} className="mx-auto text-green-500" />
                 <p className="font-semibold text-green-700 dark:text-green-400">
-                  {isEdit ? "Расписка обновлена!" : "Расписка создана!"}
+                  {isEdit ? "Смета обновлена!" : "Смета создана!"}
                 </p>
                 <p className="text-sm text-muted-foreground">Отправьте ссылку клиенту</p>
               </div>
@@ -434,46 +440,72 @@ function ReceiptModal({
                   </button>
                 </div>
                 <div className="space-y-2">
-                  {lineItems.map((item, i) => (
-                    <div key={i} className="space-y-1.5">
-                      <div className="flex gap-2 items-center">
-                        <input
-                          value={item.description}
-                          onChange={e => updateItem(i, "description", e.target.value)}
-                          placeholder="Описание работы"
-                          className="flex-1 h-10 rounded-xl border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                        />
-                        {lineItems.length > 1 && (
-                          <button onClick={() => removeItem(i)} className="text-muted-foreground hover:text-destructive flex-shrink-0">
-                            <X size={16} />
-                          </button>
-                        )}
-                      </div>
-                      <div className="flex gap-2 items-center">
-                        <select
-                          value={item.unit}
-                          onChange={e => updateItem(i, "unit", e.target.value)}
-                          className="w-28 h-9 rounded-xl border border-border bg-background px-2 text-sm text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 appearance-none"
-                        >
-                          {UNITS.map(u => (
-                            <option key={u} value={u}>{u === "" ? "Ед. изм." : u}</option>
-                          ))}
-                        </select>
-                        <div className="relative flex-1">
+                  {lineItems.map((item, i) => {
+                    const rowTotal = lineTotal(item);
+                    return (
+                      <div key={i} className="rounded-xl border border-border bg-background p-2.5 space-y-2">
+                        {/* Row 1: Description + delete */}
+                        <div className="flex gap-2 items-center">
                           <input
-                            type="number"
-                            value={item.price}
-                            onChange={e => updateItem(i, "price", e.target.value)}
-                            placeholder="0"
-                            className="w-full h-9 rounded-xl border border-border bg-background px-3 pr-8 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary/30"
-                            inputMode="decimal"
-                            min="0"
+                            value={item.description}
+                            onChange={e => updateItem(i, "description", e.target.value)}
+                            placeholder="Перечень работ"
+                            className="flex-1 h-9 rounded-lg border border-border bg-muted/40 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                           />
-                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">₽</span>
+                          {lineItems.length > 1 && (
+                            <button onClick={() => removeItem(i)} className="text-muted-foreground hover:text-destructive flex-shrink-0">
+                              <X size={15} />
+                            </button>
+                          )}
+                        </div>
+                        {/* Row 2: Qty | Unit | Price | = Total */}
+                        <div className="grid grid-cols-4 gap-1.5 items-center">
+                          <div>
+                            <div className="text-[10px] text-muted-foreground text-center mb-0.5">Объём</div>
+                            <input
+                              type="number"
+                              value={item.quantity}
+                              onChange={e => updateItem(i, "quantity", e.target.value)}
+                              placeholder="1"
+                              className="w-full h-8 rounded-lg border border-border bg-muted/40 px-2 text-sm text-center font-medium focus:outline-none focus:ring-2 focus:ring-primary/30"
+                              inputMode="decimal"
+                              min="0"
+                            />
+                          </div>
+                          <div>
+                            <div className="text-[10px] text-muted-foreground text-center mb-0.5">Ед.</div>
+                            <select
+                              value={item.unit}
+                              onChange={e => updateItem(i, "unit", e.target.value)}
+                              className="w-full h-8 rounded-lg border border-border bg-muted/40 px-1 text-xs text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 appearance-none text-center"
+                            >
+                              {UNITS.map(u => (
+                                <option key={u} value={u}>{u === "" ? "—" : u}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <div className="text-[10px] text-muted-foreground text-center mb-0.5">Цена ₽</div>
+                            <input
+                              type="number"
+                              value={item.price}
+                              onChange={e => updateItem(i, "price", e.target.value)}
+                              placeholder="0"
+                              className="w-full h-8 rounded-lg border border-border bg-muted/40 px-2 text-sm text-center font-semibold focus:outline-none focus:ring-2 focus:ring-primary/30"
+                              inputMode="decimal"
+                              min="0"
+                            />
+                          </div>
+                          <div>
+                            <div className="text-[10px] text-muted-foreground text-center mb-0.5">Сумма</div>
+                            <div className="h-8 rounded-lg bg-primary/10 flex items-center justify-center text-sm font-bold text-primary px-1">
+                              {rowTotal > 0 ? rowTotal.toLocaleString("ru-RU") : "—"}
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 {totalCalc > 0 && (
                   <div className="flex justify-between items-center bg-primary/5 rounded-xl px-3 py-2.5">
@@ -530,7 +562,7 @@ function ReceiptModal({
               </button>
               {typeof navigator.share === "function" && (
                 <button
-                  onClick={() => navigator.share({ title: "Расписка об оплате", url: result.publicUrl })}
+                  onClick={() => navigator.share({ title: "Смета", url: result.publicUrl })}
                   className="w-full h-11 rounded-xl border border-border text-sm font-medium flex items-center justify-center gap-2 text-muted-foreground"
                 >
                   Поделиться
@@ -875,7 +907,7 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
                                   const res = await fetch(`/api/receipts/${r.id}`, { method: "DELETE", credentials: "include" });
                                   if (res.ok) {
                                     setOrderReceipts(prev => prev.filter(x => x.id !== r.id));
-                                    toast.success("Расписка удалена");
+                                    toast.success("Смета удалена");
                                   } else {
                                     toast.error("Не удалось удалить");
                                   }

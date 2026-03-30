@@ -52,10 +52,19 @@ async function getOrderAndLead(orderId: number) {
   return { order, lead: lead ?? null };
 }
 
-function parseLineItems(items: any[]): Array<{ description: string; price: number }> {
+function parseLineItems(items: any[]): Array<{ description: string; unit?: string; quantity?: number; price: number }> {
   return items
-    .map((it: any) => ({ description: String(it.description ?? "").trim(), price: Number(it.price ?? 0) }))
+    .map((it: any) => ({
+      description: String(it.description ?? "").trim(),
+      unit: it.unit || undefined,
+      quantity: it.quantity ? Number(it.quantity) : undefined,
+      price: Number(it.price ?? 0),
+    }))
     .filter(i => i.description && i.price > 0);
+}
+
+function lineTotal(item: { price: number; quantity?: number }) {
+  return (item.quantity ?? 1) * item.price;
 }
 
 // ─── CRM: GET /api/receipts/order/:orderId ────────────────────────────────────
@@ -195,7 +204,7 @@ router.patch("/:id", async (req: any, res) => {
   const validItems = parseLineItems(lineItems);
   if (validItems.length === 0) return res.status(400).json({ error: "Все позиции должны иметь описание и цену" });
 
-  const totalAmount = validItems.reduce((sum, i) => sum + i.price, 0);
+  const totalAmount = validItems.reduce((sum, i) => sum + lineTotal(i), 0);
 
   const [updated] = await db.update(receiptsTable).set({
     lineItems: validItems,
@@ -223,7 +232,7 @@ router.post("/crm", requireRole("admin", "master_operator"), async (req, res) =>
   const validItems = parseLineItems(lineItems);
   if (validItems.length === 0) return res.status(400).json({ error: "Все позиции должны иметь описание и цену" });
 
-  const totalAmount = validItems.reduce((sum, i) => sum + i.price, 0);
+  const totalAmount = validItems.reduce((sum, i) => sum + lineTotal(i), 0);
   const token = crypto.randomBytes(20).toString("hex");
 
   const [receipt] = await db.insert(receiptsTable).values({
@@ -267,7 +276,7 @@ router.post("/", async (req: any, res) => {
   const validItems = parseLineItems(lineItems);
   if (validItems.length === 0) return res.status(400).json({ error: "Все позиции должны иметь описание и цену" });
 
-  const totalAmount = validItems.reduce((sum, i) => sum + i.price, 0);
+  const totalAmount = validItems.reduce((sum, i) => sum + lineTotal(i), 0);
   const token = crypto.randomBytes(20).toString("hex");
 
   const [receipt] = await db.insert(receiptsTable).values({

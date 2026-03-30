@@ -4,7 +4,7 @@ import BottomNav from "@/components/BottomNav";
 import PhoneGate from "@/components/PhoneGate";
 import { getStoredPhone, phonesMatch } from "@/utils/phone";
 
-interface LineItem { description: string; unit?: string; price: number; }
+interface LineItem { description: string; unit?: string; quantity?: number; price: number; }
 interface ReceiptData {
   id: number;
   clientName: string;
@@ -294,9 +294,18 @@ export default function Smeta() {
                 gap: 8, padding: "8px 0",
                 borderBottom: "1px solid #f3f4f6",
               }}>
-                <span style={{ fontSize: 13, color: "#374151", flex: 1, lineHeight: 1.4 }}>{item.description}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, color: "#374151", lineHeight: 1.4 }}>{item.description}</div>
+                  {(item.quantity && item.quantity !== 1) ? (
+                    <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>
+                      {item.quantity} {item.unit ? `${item.unit} × ` : "× "}{fmt(Number(item.price))} ₽{item.unit ? `/${item.unit}` : ""}
+                    </div>
+                  ) : item.unit ? (
+                    <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>{fmt(Number(item.price))} ₽/{item.unit}</div>
+                  ) : null}
+                </div>
                 <span style={{ fontSize: 13, fontWeight: 600, color: "#111827", whiteSpace: "nowrap" as const }}>
-                  {fmt(Number(item.price))} ₽{item.unit ? `/${item.unit}` : ""}
+                  {fmt((item.quantity ?? 1) * Number(item.price))} ₽
                 </span>
               </div>
             ))}
