@@ -185,6 +185,7 @@ app.get("/api/receipt/:token", async (req, res) => {
     .topbar-back { display: flex; align-items: center; gap: 4px; color: #4A6B69; text-decoration: none; font-size: 12px; font-weight: 600; flex-shrink: 0; }
     .topbar-title { font-size: 15px; font-weight: 700; color: #0D2B28; flex: 1; text-align: center; }
     .topbar-num { font-size: 11px; color: #4A6B69; font-weight: 500; flex-shrink: 0; white-space: nowrap; }
+    .topbar-install { display: flex; align-items: center; gap: 5px; background: #F0FDFA; border: 1.5px solid #99F6E4; border-radius: 8px; padding: 5px 10px; cursor: pointer; font-family: inherit; font-size: 11px; font-weight: 700; color: #0D9488; text-decoration: none; flex-shrink: 0; white-space: nowrap; }
 
     /* ── Layout ── */
     .layout { padding: 10px 12px 20px; display: flex; flex-direction: column; gap: 8px; max-width: 600px; margin: 0 auto; }
@@ -328,7 +329,10 @@ app.get("/api/receipt/:token", async (req, res) => {
     Главная
   </a>
   <span class="topbar-title">Честный мастер</span>
-  <span class="topbar-num">Смета №${receipt.id}</span>
+  <a href="/client/" class="topbar-install" id="topbar-install-btn" title="Установить приложение">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>
+    Установить
+  </a>
 </div>
 
 <div class="layout">
@@ -425,30 +429,6 @@ app.get("/api/receipt/:token", async (req, res) => {
       </div>
     </div>
     <div class="about-stamp">Смета №${receipt.id} · ${date} · sfera-project.digital</div>
-  </div>
-
-  <!-- ── УСТАНОВИТЬ ПРИЛОЖЕНИЕ ── -->
-  <div class="install-banner" id="install-banner">
-    <div class="install-icon">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-        <polyline points="14 2 14 8 20 8"/>
-        <line x1="12" y1="18" x2="12" y2="12"/>
-        <polyline points="9 15 12 18 15 15"/>
-      </svg>
-    </div>
-    <div class="install-text">
-      <div class="install-text-title">Установить приложение</div>
-      <div class="install-text-sub">Следите за статусом заказа</div>
-    </div>
-    <button class="install-btn" id="install-btn" onclick="handleInstall()">Установить</button>
-  </div>
-  <div class="install-instructions" id="install-instructions">
-    <div class="install-instructions-title">
-      <span style="font-size:13px;font-weight:700;color:#0F4C45">Как установить</span>
-      <button onclick="document.getElementById('install-instructions').style.display='none'" style="background:none;border:none;cursor:pointer;color:#9ca3af;font-size:18px;line-height:1;padding:0">×</button>
-    </div>
-    <div class="install-instructions-text" id="install-instructions-text"></div>
   </div>
 
   ${!isClientSubmitted ? `
@@ -593,42 +573,6 @@ app.get("/api/receipt/:token", async (req, res) => {
     formError.style.display = 'block';
   }
 
-  // ── PWA Install ──
-  let deferredPrompt = null;
-  window.addEventListener('beforeinstallprompt', function(e) {
-    e.preventDefault();
-    deferredPrompt = e;
-  });
-
-  function isIos() { return /iphone|ipad|ipod/i.test(navigator.userAgent); }
-  function isInStandaloneMode() { return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone; }
-
-  function handleInstall() {
-    if (isInStandaloneMode()) {
-      document.getElementById('install-banner').style.display = 'none';
-      return;
-    }
-    if (deferredPrompt) {
-      deferredPrompt.prompt();
-      deferredPrompt.userChoice.then(function() { deferredPrompt = null; document.getElementById('install-banner').style.display = 'none'; });
-    } else if (isIos()) {
-      document.getElementById('install-instructions-text').innerHTML =
-        '1. Нажмите кнопку <strong>Поделиться</strong> (квадрат со стрелкой) внизу экрана<br>' +
-        '2. Выберите <strong>«На экран домой»</strong><br>' +
-        '3. Нажмите <strong>«Добавить»</strong>';
-      document.getElementById('install-instructions').style.display = 'block';
-    } else {
-      document.getElementById('install-instructions-text').innerHTML =
-        '1. Нажмите <strong>⋮</strong> (меню браузера) в правом верхнем углу<br>' +
-        '2. Выберите <strong>«Добавить на главный экран»</strong> или <strong>«Установить приложение»</strong>';
-      document.getElementById('install-instructions').style.display = 'block';
-    }
-  }
-
-  // Hide install button if already installed
-  if (isInStandaloneMode()) {
-    document.getElementById('install-banner').style.display = 'none';
-  }
 </script>
 </body>
 </html>
