@@ -300,12 +300,14 @@ function PhotoGrid({ urls, label }: { urls: string[]; label: string }) {
   );
 }
 
-interface LineItem { description: string; price: string; }
+const UNITS = ["", "шт", "м²", "м³", "м.п.", "м", "кг", "т", "л", "упак.", "компл.", "ч"];
+
+interface LineItem { description: string; unit: string; price: string; }
 
 interface ExistingReceipt {
   id: number;
   token: string;
-  lineItems: Array<{ description: string; price: number }>;
+  lineItems: Array<{ description: string; unit?: string; price: number }>;
   totalAmount: number;
   prepaymentAmount: number;
   notes: string | null;
@@ -330,8 +332,8 @@ function ReceiptModal({
   const isEdit = !!existingReceipt;
   const [lineItems, setLineItems] = useState<LineItem[]>(
     isEdit
-      ? existingReceipt!.lineItems.map(i => ({ description: i.description, price: String(i.price) }))
-      : [{ description: "", price: "" }]
+      ? existingReceipt!.lineItems.map(i => ({ description: i.description, unit: i.unit ?? "", price: String(i.price) }))
+      : [{ description: "", unit: "", price: "" }]
   );
   const [prepayment, setPrepayment] = useState(isEdit ? String(existingReceipt!.prepaymentAmount) : "5000");
   const [notes, setNotes] = useState(isEdit ? (existingReceipt!.notes ?? "") : "");
@@ -339,7 +341,7 @@ function ReceiptModal({
   const [result, setResult] = useState<ExistingReceipt | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const addItem = () => setLineItems(prev => [...prev, { description: "", price: "" }]);
+  const addItem = () => setLineItems(prev => [...prev, { description: "", unit: "", price: "" }]);
   const removeItem = (i: number) => setLineItems(prev => prev.filter((_, idx) => idx !== i));
   const updateItem = (i: number, field: keyof LineItem, val: string) =>
     setLineItems(prev => prev.map((item, idx) => idx === i ? { ...item, [field]: val } : item));
@@ -355,7 +357,7 @@ function ReceiptModal({
     try {
       const body = {
         orderId: order.id,
-        lineItems: valid.map(it => ({ description: it.description.trim(), price: parseFloat(it.price.replace(",", ".")) })),
+        lineItems: valid.map(it => ({ description: it.description.trim(), unit: it.unit || undefined, price: parseFloat(it.price.replace(",", ".")) })),
         prepaymentAmount: prepayNum,
         notes: notes.trim() || undefined,
       };
@@ -433,27 +435,43 @@ function ReceiptModal({
                 </div>
                 <div className="space-y-2">
                   {lineItems.map((item, i) => (
-                    <div key={i} className="flex gap-2 items-center">
-                      <input
-                        value={item.description}
-                        onChange={e => updateItem(i, "description", e.target.value)}
-                        placeholder="Описание работы"
-                        className="flex-1 h-10 rounded-xl border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                      />
-                      <input
-                        type="number"
-                        value={item.price}
-                        onChange={e => updateItem(i, "price", e.target.value)}
-                        placeholder="₽"
-                        className="w-20 h-10 rounded-xl border border-border bg-background px-3 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary/30"
-                        inputMode="decimal"
-                        min="0"
-                      />
-                      {lineItems.length > 1 && (
-                        <button onClick={() => removeItem(i)} className="text-muted-foreground hover:text-destructive flex-shrink-0">
-                          <X size={16} />
-                        </button>
-                      )}
+                    <div key={i} className="space-y-1.5">
+                      <div className="flex gap-2 items-center">
+                        <input
+                          value={item.description}
+                          onChange={e => updateItem(i, "description", e.target.value)}
+                          placeholder="Описание работы"
+                          className="flex-1 h-10 rounded-xl border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                        />
+                        {lineItems.length > 1 && (
+                          <button onClick={() => removeItem(i)} className="text-muted-foreground hover:text-destructive flex-shrink-0">
+                            <X size={16} />
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex gap-2 items-center">
+                        <select
+                          value={item.unit}
+                          onChange={e => updateItem(i, "unit", e.target.value)}
+                          className="w-28 h-9 rounded-xl border border-border bg-background px-2 text-sm text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 appearance-none"
+                        >
+                          {UNITS.map(u => (
+                            <option key={u} value={u}>{u === "" ? "Ед. изм." : u}</option>
+                          ))}
+                        </select>
+                        <div className="relative flex-1">
+                          <input
+                            type="number"
+                            value={item.price}
+                            onChange={e => updateItem(i, "price", e.target.value)}
+                            placeholder="0"
+                            className="w-full h-9 rounded-xl border border-border bg-background px-3 pr-8 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary/30"
+                            inputMode="decimal"
+                            min="0"
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">₽</span>
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>

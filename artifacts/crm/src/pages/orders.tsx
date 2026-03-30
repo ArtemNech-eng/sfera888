@@ -92,6 +92,8 @@ interface StatusLogEntry {
   createdAt: string;
 }
 
+const UNITS = ["", "шт", "м²", "м³", "м.п.", "м", "кг", "т", "л", "упак.", "компл.", "ч"];
+
 const STATUS_LABELS: Record<string, string> = {
   waiting_master: "Ожидает мастера",
   master_assigned: "Мастер назначен",
@@ -287,14 +289,14 @@ export default function Orders() {
   const [showPendingReview, setShowPendingReview] = useState(true);
   const [showPaidCommissions, setShowPaidCommissions] = useState(false);
   const [showCreateReceipt, setShowCreateReceipt] = useState(false);
-  const [crmLineItems, setCrmLineItems] = useState([{ description: "", price: "" }]);
+  const [crmLineItems, setCrmLineItems] = useState([{ description: "", unit: "", price: "" }]);
   const [crmPrepayment, setCrmPrepayment] = useState("5000");
   const [crmNotes, setCrmNotes] = useState("");
   const [crmCreating, setCrmCreating] = useState(false);
   const [crmCreatedUrl, setCrmCreatedUrl] = useState<string | null>(null);
   const [crmCopied, setCrmCopied] = useState(false);
   const [editingCrmReceiptId, setEditingCrmReceiptId] = useState<number | null>(null);
-  const [crmEditLineItems, setCrmEditLineItems] = useState([{ description: "", price: "" }]);
+  const [crmEditLineItems, setCrmEditLineItems] = useState([{ description: "", unit: "", price: "" }]);
   const [crmEditPrepayment, setCrmEditPrepayment] = useState("5000");
   const [crmEditNotes, setCrmEditNotes] = useState("");
   const [crmEditing, setCrmEditing] = useState(false);
@@ -369,7 +371,7 @@ export default function Orders() {
     enabled: !!openDispatchId && showStatusLog,
   });
 
-  interface ReceiptEntry { id: number; token: string; prepaymentAmount: number; totalAmount: number; notes: string | null; clientName: string; clientPhone: string; createdAt: string; publicUrl: string; lineItems: { description: string; price: number }[]; prepaymentSubmittedAt: string | null; clientSubmittedName: string | null; prepaymentScreenshotUrl: string | null; }
+  interface ReceiptEntry { id: number; token: string; prepaymentAmount: number; totalAmount: number; notes: string | null; clientName: string; clientPhone: string; createdAt: string; publicUrl: string; lineItems: { description: string; unit?: string; price: number }[]; prepaymentSubmittedAt: string | null; clientSubmittedName: string | null; prepaymentScreenshotUrl: string | null; }
   const { data: receipts } = useQuery<ReceiptEntry[]>({
     queryKey: ["/api/receipts/order", openDispatchId],
     queryFn: async () => {
@@ -1082,7 +1084,7 @@ export default function Orders() {
                   </div>
                   <p className="text-sm text-muted-foreground mt-0.5">{openOrder.serviceType} · {openOrder.city}{openOrder.district ? `, ${openOrder.district}` : ""}</p>
                 </div>
-                <button onClick={() => { setOpenDispatchId(null); setShowManualAssign(false); setSelectedMasterForAssign(""); setShowStatusLog(false); setShowReceipts(false); setShowCreateReceipt(false); setCrmCreatedUrl(null); setCrmLineItems([{ description: "", price: "" }]); setCrmPrepayment("5000"); setCrmNotes(""); setOperatorNoteEdit(null); setShowCancelDialog(false); setCancelDialogReason(""); setCancelDialogNote(""); setEditingCrmReceiptId(null); }} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 flex-shrink-0 ml-2">
+                <button onClick={() => { setOpenDispatchId(null); setShowManualAssign(false); setSelectedMasterForAssign(""); setShowStatusLog(false); setShowReceipts(false); setShowCreateReceipt(false); setCrmCreatedUrl(null); setCrmLineItems([{ description: "", unit: "", price: "" }]); setCrmPrepayment("5000"); setCrmNotes(""); setOperatorNoteEdit(null); setShowCancelDialog(false); setCancelDialogReason(""); setCancelDialogNote(""); setEditingCrmReceiptId(null); }} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 flex-shrink-0 ml-2">
                   <X className="w-4 h-4 text-muted-foreground" />
                 </button>
               </div>
@@ -1669,7 +1671,7 @@ export default function Orders() {
                             <button onClick={() => { navigator.clipboard.writeText(r.publicUrl); toast({ title: "Ссылка скопирована!" }); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
                               <Copy className="w-3 h-3" /> Ссылка
                             </button>
-                            <button onClick={() => { if (editingCrmReceiptId === r.id) { setEditingCrmReceiptId(null); return; } setEditingCrmReceiptId(r.id); setCrmEditLineItems(r.lineItems?.length ? r.lineItems.map((i: any) => ({ description: i.description, price: String(i.price) })) : [{ description: "", price: "" }]); setCrmEditPrepayment(String(r.prepaymentAmount)); setCrmEditNotes(r.notes ?? ""); }} className="flex items-center gap-1 text-xs text-primary font-medium hover:underline ml-auto">
+                            <button onClick={() => { if (editingCrmReceiptId === r.id) { setEditingCrmReceiptId(null); return; } setEditingCrmReceiptId(r.id); setCrmEditLineItems(r.lineItems?.length ? r.lineItems.map((i: any) => ({ description: i.description, unit: i.unit ?? "", price: String(i.price) })) : [{ description: "", unit: "", price: "" }]); setCrmEditPrepayment(String(r.prepaymentAmount)); setCrmEditNotes(r.notes ?? ""); }} className="flex items-center gap-1 text-xs text-primary font-medium hover:underline ml-auto">
                               {editingCrmReceiptId === r.id ? "Отмена" : "Изменить"}
                             </button>
                             <button onClick={() => { if (!window.confirm("Удалить расписку?")) return; deleteReceiptMutation.mutate(r.id); }} disabled={deleteReceiptMutation.isPending} className="flex items-center gap-1 text-xs text-destructive hover:opacity-80 disabled:opacity-50" title="Удалить">
@@ -1682,13 +1684,20 @@ export default function Orders() {
                               <div className="space-y-1.5">
                                 <div className="flex items-center justify-between">
                                   <p className="text-xs text-muted-foreground">Перечень работ</p>
-                                  <button onClick={() => setCrmEditLineItems(prev => [...prev, { description: "", price: "" }])} className="text-xs text-primary flex items-center gap-0.5 font-medium"><Plus className="w-3 h-3" /> добавить</button>
+                                  <button onClick={() => setCrmEditLineItems(prev => [...prev, { description: "", unit: "", price: "" }])} className="text-xs text-primary flex items-center gap-0.5 font-medium"><Plus className="w-3 h-3" /> добавить</button>
                                 </div>
                                 {crmEditLineItems.map((item, i) => (
-                                  <div key={i} className="flex gap-1.5 items-center">
-                                    <input value={item.description} onChange={e => setCrmEditLineItems(prev => prev.map((it, idx) => idx === i ? { ...it, description: e.target.value } : it))} placeholder="Описание" className="flex-1 h-7 px-2 text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary/30" />
-                                    <input type="number" value={item.price} onChange={e => setCrmEditLineItems(prev => prev.map((it, idx) => idx === i ? { ...it, price: e.target.value } : it))} placeholder="₽" className="w-20 h-7 px-2 text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary/30" />
-                                    {crmEditLineItems.length > 1 && <button onClick={() => setCrmEditLineItems(prev => prev.filter((_, idx) => idx !== i))} className="text-muted-foreground hover:text-destructive"><X className="w-3.5 h-3.5" /></button>}
+                                  <div key={i} className="space-y-1 mb-1.5">
+                                    <div className="flex gap-1.5 items-center">
+                                      <input value={item.description} onChange={e => setCrmEditLineItems(prev => prev.map((it, idx) => idx === i ? { ...it, description: e.target.value } : it))} placeholder="Описание" className="flex-1 h-7 px-2 text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary/30" />
+                                      {crmEditLineItems.length > 1 && <button onClick={() => setCrmEditLineItems(prev => prev.filter((_, idx) => idx !== i))} className="text-muted-foreground hover:text-destructive"><X className="w-3.5 h-3.5" /></button>}
+                                    </div>
+                                    <div className="flex gap-1.5 items-center">
+                                      <select value={item.unit} onChange={e => setCrmEditLineItems(prev => prev.map((it, idx) => idx === i ? { ...it, unit: e.target.value } : it))} className="w-24 h-7 px-1.5 text-xs rounded-lg border border-border bg-background text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/30 appearance-none">
+                                        {UNITS.map(u => <option key={u} value={u}>{u === "" ? "Ед. изм." : u}</option>)}
+                                      </select>
+                                      <input type="number" value={item.price} onChange={e => setCrmEditLineItems(prev => prev.map((it, idx) => idx === i ? { ...it, price: e.target.value } : it))} placeholder="Цена ₽" className="flex-1 h-7 px-2 text-xs rounded-lg border border-border bg-background font-semibold focus:outline-none focus:ring-1 focus:ring-primary/30" />
+                                    </div>
                                   </div>
                                 ))}
                                 {(() => { const t = crmEditLineItems.reduce((s, it) => s + (parseFloat(it.price) || 0), 0); return t > 0 ? (<div className="flex justify-between text-xs bg-muted/50 rounded-lg px-2 py-1.5"><span className="text-muted-foreground">Итого</span><span className="font-bold">{t.toLocaleString("ru-RU")} ₽</span></div>) : null; })()}
@@ -1708,7 +1717,7 @@ export default function Orders() {
                                 if (!prepay || prepay <= 0) { toast({ title: "Введите сумму предоплаты", variant: "destructive" }); return; }
                                 setCrmEditing(true);
                                 try {
-                                  const resp = await fetch(`/api/receipts/${r.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ lineItems: valid.map(i => ({ description: i.description.trim(), price: parseFloat(i.price) })), prepaymentAmount: prepay, notes: crmEditNotes.trim() || undefined }) });
+                                  const resp = await fetch(`/api/receipts/${r.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ lineItems: valid.map(i => ({ description: i.description.trim(), unit: i.unit || undefined, price: parseFloat(i.price) })), prepaymentAmount: prepay, notes: crmEditNotes.trim() || undefined }) });
                                   if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(e.error ?? "Ошибка"); }
                                   toast({ title: "Расписка обновлена!" }); setEditingCrmReceiptId(null); queryClient.invalidateQueries({ queryKey: ["/api/receipts/order", openDispatchId] });
                                 } catch (e: any) { toast({ title: e.message ?? "Ошибка", variant: "destructive" }); } finally { setCrmEditing(false); }
@@ -1753,32 +1762,43 @@ export default function Orders() {
                             <div className="flex items-center justify-between">
                               <p className="text-xs font-medium text-muted-foreground">Перечень работ</p>
                               <button
-                                onClick={() => setCrmLineItems(prev => [...prev, { description: "", price: "" }])}
+                                onClick={() => setCrmLineItems(prev => [...prev, { description: "", unit: "", price: "" }])}
                                 className="text-xs text-primary flex items-center gap-0.5 font-medium"
                               >
                                 <Plus className="w-3 h-3" /> добавить
                               </button>
                             </div>
                             {crmLineItems.map((item, i) => (
-                              <div key={i} className="flex gap-1.5 items-center">
-                                <input
-                                  value={item.description}
-                                  onChange={e => setCrmLineItems(prev => prev.map((it, idx) => idx === i ? { ...it, description: e.target.value } : it))}
-                                  placeholder="Описание"
-                                  className="flex-1 h-8 rounded-lg border border-border bg-background px-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/40"
-                                />
-                                <input
-                                  type="number"
-                                  value={item.price}
-                                  onChange={e => setCrmLineItems(prev => prev.map((it, idx) => idx === i ? { ...it, price: e.target.value } : it))}
-                                  placeholder="₽"
-                                  className="w-20 h-8 rounded-lg border border-border bg-background px-2 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-primary/40"
-                                />
-                                {crmLineItems.length > 1 && (
-                                  <button onClick={() => setCrmLineItems(prev => prev.filter((_, idx) => idx !== i))} className="text-muted-foreground hover:text-destructive">
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
+                              <div key={i} className="space-y-1 mb-2">
+                                <div className="flex gap-1.5 items-center">
+                                  <input
+                                    value={item.description}
+                                    onChange={e => setCrmLineItems(prev => prev.map((it, idx) => idx === i ? { ...it, description: e.target.value } : it))}
+                                    placeholder="Описание"
+                                    className="flex-1 h-8 rounded-lg border border-border bg-background px-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/40"
+                                  />
+                                  {crmLineItems.length > 1 && (
+                                    <button onClick={() => setCrmLineItems(prev => prev.filter((_, idx) => idx !== i))} className="text-muted-foreground hover:text-destructive">
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                                <div className="flex gap-1.5 items-center">
+                                  <select
+                                    value={item.unit}
+                                    onChange={e => setCrmLineItems(prev => prev.map((it, idx) => idx === i ? { ...it, unit: e.target.value } : it))}
+                                    className="w-24 h-8 px-1.5 text-xs rounded-lg border border-border bg-background text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 appearance-none"
+                                  >
+                                    {UNITS.map(u => <option key={u} value={u}>{u === "" ? "Ед. изм." : u}</option>)}
+                                  </select>
+                                  <input
+                                    type="number"
+                                    value={item.price}
+                                    onChange={e => setCrmLineItems(prev => prev.map((it, idx) => idx === i ? { ...it, price: e.target.value } : it))}
+                                    placeholder="Цена ₽"
+                                    className="flex-1 h-8 rounded-lg border border-border bg-background px-2 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-primary/40"
+                                  />
+                                </div>
                               </div>
                             ))}
                             {(() => {
@@ -1829,7 +1849,7 @@ export default function Orders() {
                                   credentials: "include",
                                   body: JSON.stringify({
                                     orderId: openDispatchId,
-                                    lineItems: valid.map(it => ({ description: it.description.trim(), price: parseFloat(it.price) })),
+                                    lineItems: valid.map(it => ({ description: it.description.trim(), unit: it.unit || undefined, price: parseFloat(it.price) })),
                                     prepaymentAmount: prep,
                                     notes: crmNotes.trim() || undefined,
                                   }),
@@ -2069,7 +2089,7 @@ export default function Orders() {
                 )}
 
                 <div className="pt-2 flex justify-end">
-                  <button onClick={() => { setOpenDispatchId(null); setShowStatusLog(false); setShowReceipts(false); setShowCreateReceipt(false); setCrmCreatedUrl(null); setCrmLineItems([{ description: "", price: "" }]); setCrmPrepayment("5000"); setCrmNotes(""); setOperatorNoteEdit(null); }} className="px-4 py-2 rounded-xl font-medium text-muted-foreground hover:bg-slate-100 text-sm">
+                  <button onClick={() => { setOpenDispatchId(null); setShowStatusLog(false); setShowReceipts(false); setShowCreateReceipt(false); setCrmCreatedUrl(null); setCrmLineItems([{ description: "", unit: "", price: "" }]); setCrmPrepayment("5000"); setCrmNotes(""); setOperatorNoteEdit(null); }} className="px-4 py-2 rounded-xl font-medium text-muted-foreground hover:bg-slate-100 text-sm">
                     Закрыть
                   </button>
                 </div>

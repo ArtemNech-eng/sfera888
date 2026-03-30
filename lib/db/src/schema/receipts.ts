@@ -4,6 +4,7 @@ import { mastersTable } from "./masters";
 
 export interface LineItem {
   description: string;
+  unit?: string;
   price: number;
 }
 

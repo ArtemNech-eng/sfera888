@@ -127,13 +127,16 @@ app.get("/api/receipt/:token", async (req, res) => {
     const remainder = (Number(receipt.totalAmount) - Number(receipt.prepaymentAmount)).toLocaleString("ru-RU");
     const date = new Date(receipt.createdAt).toLocaleString("ru-RU", { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
     const district = receipt.district ? `, ${receipt.district}` : "";
-    const lineItems: Array<{description: string; price: number}> = (receipt.lineItems as any) ?? [];
+    const lineItems: Array<{description: string; unit?: string; price: number}> = (receipt.lineItems as any) ?? [];
     const isClientSubmitted = !!receipt.prepaymentSubmittedAt;
     const isOperatorConfirmed = !!receipt.prepaymentSeenAt;
 
-    const lineItemsHtml = lineItems.map(item =>
-      `<div class="item-row"><span class="item-name">${item.description}</span><span class="item-amt">${Number(item.price).toLocaleString("ru-RU")} ₽</span></div>`
-    ).join("");
+    const lineItemsHtml = lineItems.map(item => {
+      const amt = item.unit
+        ? `${Number(item.price).toLocaleString("ru-RU")} ₽/${item.unit}`
+        : `${Number(item.price).toLocaleString("ru-RU")} ₽`;
+      return `<div class="item-row"><span class="item-name">${item.description}</span><span class="item-amt">${amt}</span></div>`;
+    }).join("");
 
     const notesHtml = receipt.notes
       ? `<div class="notes"><div class="notes-lbl">Примечание</div><div class="notes-text">${receipt.notes}</div></div>`

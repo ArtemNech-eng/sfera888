@@ -4,7 +4,7 @@ import BottomNav from "@/components/BottomNav";
 import PhoneGate from "@/components/PhoneGate";
 import { getStoredPhone, phonesMatch } from "@/utils/phone";
 
-interface LineItem { description: string; price: number; }
+interface LineItem { description: string; unit?: string; price: number; }
 interface ReceiptData {
   id: number;
   clientName: string;
@@ -265,7 +265,9 @@ export default function Smeta() {
                 borderBottom: "1px solid #f3f4f6",
               }}>
                 <span style={{ fontSize: 13, color: "#374151", flex: 1, lineHeight: 1.4 }}>{item.description}</span>
-                <span style={{ fontSize: 13, fontWeight: 600, color: "#111827", whiteSpace: "nowrap" as const }}>{fmt(Number(item.price))} ₽</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: "#111827", whiteSpace: "nowrap" as const }}>
+                  {fmt(Number(item.price))} ₽{item.unit ? `/${item.unit}` : ""}
+                </span>
               </div>
             ))}
             <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
