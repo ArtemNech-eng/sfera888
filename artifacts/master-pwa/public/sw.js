@@ -11,16 +11,23 @@ self.addEventListener("install", e => {
   );
 });
 
-// Clean up old caches and claim clients
+// Clean up old caches, claim clients, then notify pages to reload
 self.addEventListener("activate", e => {
   e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(
-        keys
-          .filter(k => k !== SHELL_CACHE && k !== ASSET_CACHE)
-          .map(k => caches.delete(k))
+    caches.keys()
+      .then(keys =>
+        Promise.all(
+          keys
+            .filter(k => k !== SHELL_CACHE && k !== ASSET_CACHE)
+            .map(k => caches.delete(k))
+        )
       )
-    ).then(() => self.clients.claim())
+      .then(() => self.clients.claim())
+      .then(() =>
+        self.clients.matchAll({ type: "window" }).then(clients =>
+          clients.forEach(c => c.postMessage({ type: "SW_UPDATED" }))
+        )
+      )
   );
 });
 
