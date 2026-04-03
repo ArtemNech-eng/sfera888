@@ -233,7 +233,7 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
 
     if (!userId || !text) return;
 
-    const { db, mastersTable } = await import("@workspace/db");
+    const { db, mastersTable, masterMessagesTable } = await import("@workspace/db");
     const { eq, isNotNull } = await import("drizzle-orm");
 
     // ── /start ────────────────────────────────────────────────────────────────
@@ -245,8 +245,45 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
       return;
     }
 
-    // ── Отвязать аккаунт ──────────────────────────────────────────────────────
     const lc = text.toLowerCase();
+
+    // ── Если мастер уже привязан → сохраняем сообщение в CRM чат ─────────────
+    {
+      const allLinked = await db.select().from(mastersTable).where(isNotNull(mastersTable.maxChatId));
+      const linkedMaster = allLinked.find(m => m.maxChatId === String(userId));
+
+      if (linkedMaster) {
+        // Отвязка — обрабатываем специально
+        if (lc === "/отвязать" || lc === "отвязать") {
+          await db.update(mastersTable).set({ maxChatId: null }).where(eq(mastersTable.id, linkedMaster.id));
+          logMaxEvent(linkedMaster.id, userId, "unlinked_bot", `Мастер ${linkedMaster.alias} отвязал аккаунт через бот`).catch(() => {});
+          clearPending(userId);
+          await sendMaxMessage(
+            userId,
+            `✅ Аккаунт **${linkedMaster.alias}** отвязан.\n\nВы больше не будете получать уведомления. Чтобы привязать снова — отправьте номер телефона.`
+          );
+          return;
+        }
+
+        // Любое другое сообщение от привязанного мастера → в CRM чат
+        await db.insert(masterMessagesTable).values({
+          masterId: linkedMaster.id,
+          telegramChatId: `max_${userId}`,
+          text,
+          fromMaster: true,
+          senderName: linkedMaster.alias,
+          isRead: false,
+        });
+
+        console.log(`[maxBot] saved message from master ${linkedMaster.alias} (id=${linkedMaster.id}) to CRM chat`);
+
+        // Подтверждение мастеру
+        await sendMaxMessage(userId, "✅ Сообщение передано оператору.");
+        return;
+      }
+    }
+
+    // ── Отвязать аккаунт (не привязан) ───────────────────────────────────────
     if (lc === "/отвязать" || lc === "отвязать") {
       const masters = await db.select().from(mastersTable).where(isNotNull(mastersTable.maxChatId));
       const linked = masters.find(m => m.maxChatId === String(userId));
