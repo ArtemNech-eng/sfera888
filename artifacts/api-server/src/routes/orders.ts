@@ -7,6 +7,7 @@ import { getMasterEligibility, getOverdueMasterIds, countActiveMasterOrders, get
 import { recalcMasterColumn } from "../lib/masterColumn.js";
 import { performBroadcast } from "../lib/broadcastOrder.js";
 import { sendPushToMaster } from "../lib/push.js";
+import { sendMaxMessage } from "../maxBot.js";
 
 const TELEGRAM_API = `https://api.telegram.org/bot${process.env["TELEGRAM_BOT_TOKEN"]}`;
 
@@ -610,6 +611,18 @@ router.post("/:id/assign-master", allOrderRoles, async (req, res) => {
     });
   }
 
+  if (master.maxChatId) {
+    const amLead = o.leadId ? await db.select().from(leadsTable).where(eq(leadsTable.id, o.leadId)) : [];
+    const amLeadRow = amLead[0];
+    const amDate = o.scheduledAt
+      ? new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(o.scheduledAt))
+      : "не указана";
+    sendMaxMessage(
+      master.maxChatId,
+      `✅ Вам назначена заявка #${id}\n\n🔧 ${o.serviceType}\n📍 ${o.city}${o.district ? ", " + o.district : ""}\n📐 ${o.area} м²\n📅 ${amDate}${o.comment ? "\n💬 " + o.comment : ""}${amLeadRow ? `\n\n📞 ${amLeadRow.clientName}\n${amLeadRow.clientPhone}` : ""}`
+    ).catch(() => {});
+  }
+
   res.json({
     id: o.id,
     leadId: o.leadId,
@@ -811,6 +824,16 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
     body: `Заявка #${orderId}${order.serviceType ? ` · ${order.serviceType}` : ""}${lead?.clientName ? ` · ${lead.clientName}` : ""}`,
     url: `/master-pwa/orders`,
   }).catch(() => {});
+
+  if (master.maxChatId) {
+    const maDate = order.scheduledAt
+      ? new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(order.scheduledAt))
+      : "не указана";
+    sendMaxMessage(
+      master.maxChatId,
+      `✅ Вам назначена заявка #${orderId}\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${maDate}${order.comment ? "\n💬 " + order.comment : ""}${lead ? `\n\n📞 ${lead.clientName}\n${lead.clientPhone}` : ""}`
+    ).catch(() => {});
+  }
 
   res.json({ ok: true });
 });

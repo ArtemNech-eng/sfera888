@@ -2,6 +2,7 @@ import { db, ordersTable, mastersTable, orderDispatchesTable } from "@workspace/
 import { eq, and, inArray } from "drizzle-orm";
 import { getMasterEligibility, getOverdueMasterIds } from "./orderEligibility.js";
 import { sendPushToMaster } from "./push.js";
+import { sendMaxMessage } from "../maxBot.js";
 
 const TELEGRAM_API = `https://api.telegram.org/bot${process.env["TELEGRAM_BOT_TOKEN"]}`;
 const _DOMAIN = (process.env.REPLIT_DOMAINS ?? "").split(",")[0].trim();
@@ -163,6 +164,15 @@ export async function performBroadcast(orderId: number): Promise<BroadcastResult
         body: `${order.city}${order.district ? ", " + order.district : ""} · ${order.serviceType} · ${order.area} м²`,
         orderId,
       }).catch(() => {});
+    }
+    if (master.maxChatId) {
+      const date = order.scheduledAt
+        ? new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(order.scheduledAt))
+        : "не указана";
+      sendMaxMessage(
+        master.maxChatId,
+        `📋 Новая заявка #${orderId}\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${date}${order.comment ? "\n💬 " + order.comment : ""}\n\nОткройте приложение мастера, чтобы откликнуться.`
+      ).catch(() => {});
     }
     await db.insert(orderDispatchesTable).values({
       orderId,

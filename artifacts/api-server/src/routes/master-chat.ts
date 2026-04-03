@@ -3,6 +3,7 @@ import { db, masterMessagesTable, mastersTable, telegramChatsTable, transactions
 import { eq, desc, and, inArray } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
 import { sendPushToMaster } from "../lib/push.js";
+import { sendMaxMessage } from "../maxBot.js";
 import multer from "multer";
 
 const router = Router();
@@ -231,6 +232,13 @@ router.post("/:masterId/reply", requireRole("admin", "master_operator"), upload.
     body: pushBody,
     url: "/chat",
   }).catch(() => {});
+
+  if (master.maxChatId && (text || savedPhotoUrl)) {
+    const maxText = text
+      ? `💬 Сообщение от ${senderLabel}:\n\n${text}`
+      : `💬 Фото от ${senderLabel} — откройте приложение мастера.`;
+    sendMaxMessage(master.maxChatId, maxText).catch(() => {});
+  }
 
   res.json(saved);
 });

@@ -139,6 +139,15 @@ router.patch("/:id/confirm", requireRole("admin", "master_operator"), async (req
     .where(eq(receiptsTable.id, id))
     .returning();
   const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, updated.masterId));
+  if (master?.maxChatId) {
+    const amount = updated.prepaymentAmount
+      ? `${Number(updated.prepaymentAmount).toLocaleString("ru-RU")} ₽`
+      : "—";
+    sendMaxMessage(
+      master.maxChatId,
+      `✅ Оплата подтверждена оператором!\n\nСмета #${updated.id}\nКлиент: ${updated.clientSubmittedName || "—"}\nСумма: ${amount}`
+    ).catch(() => {});
+  }
   res.json(await buildReceiptResponse(updated, master, req));
 });
 

@@ -5,6 +5,7 @@ import { requireRole } from "../middlewares/requireAuth.js";
 import { sendPushToMaster } from "../lib/push.js";
 import { getOverdueMasterIds, getMasterEligibility } from "../lib/orderEligibility.js";
 import { performBroadcast } from "../lib/broadcastOrder.js";
+import { sendMaxMessage } from "../maxBot.js";
 
 const router = Router();
 const TELEGRAM_API = `https://api.telegram.org/bot${process.env["TELEGRAM_BOT_TOKEN"]}`;
@@ -232,6 +233,15 @@ router.post("/test-order", ops, async (req, res) => {
       orderId: order.id,
     }).catch(() => {});
   }
+  if (master.maxChatId) {
+    const tDate = order.scheduledAt
+      ? new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(order.scheduledAt))
+      : "не указана";
+    sendMaxMessage(
+      master.maxChatId,
+      `📋 Тестовая заявка #${order.id}\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${tDate}${order.comment ? "\n💬 " + order.comment : ""}\n\nОткройте приложение мастера, чтобы откликнуться.`
+    ).catch(() => {});
+  }
 
   await db.insert(orderDispatchesTable).values({
     orderId: order.id,
@@ -325,6 +335,15 @@ router.post("/:orderId/assign/:masterId", ops, async (req, res) => {
         (lead ? ` · ${lead.clientPhone}` : ""),
       orderId,
     }).catch(() => {});
+  }
+  if (master.maxChatId) {
+    const date = order.scheduledAt
+      ? new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(order.scheduledAt))
+      : "не указана";
+    sendMaxMessage(
+      master.maxChatId,
+      `✅ Заявка #${orderId} назначена вам!\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${date}${order.comment ? "\n💬 " + order.comment : ""}${lead ? `\n\n📞 ${lead.clientName}\n${lead.clientPhone}` : ""}`
+    ).catch(() => {});
   }
 
   // Always log to CRM chat (visible in PWA chat tab as well)
