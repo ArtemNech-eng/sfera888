@@ -34,7 +34,7 @@ export async function broadcastCheckin(): Promise<void> {
 
     await sendMaxWithButtons(
       master.maxChatId,
-      `☀️ Доброе утро, **${name}**!\n\nВы сегодня готовы взять заказ?`,
+      `☀️ Доброе утро, **${name}**!\n\nВы сегодня готовы принимать заказы?`,
       [[
         { text: "✅ Готов", payload: "checkin:yes" },
         { text: "❌ Не готов", payload: "checkin:no" },
@@ -92,7 +92,7 @@ export async function broadcastCheckinReminder(): Promise<void> {
 
     await sendMaxWithButtons(
       master.maxChatId,
-      `🔔 **${name}**, вы ещё не ответили на утренний вопрос.\n\nВы сегодня готовы взять заказ?`,
+      `🔔 **${name}**, вы ещё не ответили на утренний вопрос.\n\nВы готовы сегодня принять заказы?`,
       [[
         { text: "✅ Готов", payload: "checkin:yes" },
         { text: "❌ Не готов", payload: "checkin:no" },
