@@ -117,27 +117,89 @@ router.get("/checkins", allMasterRoles, async (req, res) => {
     .from(mastersTable)
     .where(and(eq(mastersTable.status, "active"), isNotNull(mastersTable.maxChatId)));
 
-  const checkins = await db
-    .select()
-    .from(masterCheckinsTable)
-    .where(eq(masterCheckinsTable.date, targetDate));
+  // Fetch today's checkins AND last 14 days history in one batch query
+  const fourteenDaysAgo = new Date();
+  fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 13);
+  const historyFrom = fourteenDaysAgo.toISOString().split("T")[0];
+  const masterIds = masters.map((m) => m.id);
 
-  const checkinMap = new Map(checkins.map((c) => [c.masterId, c]));
+  const [todayCheckins, allHistory] = await Promise.all([
+    db.select().from(masterCheckinsTable).where(eq(masterCheckinsTable.date, targetDate)),
+    masterIds.length > 0
+      ? db.select().from(masterCheckinsTable)
+          .where(and(inArray(masterCheckinsTable.masterId, masterIds), gte(masterCheckinsTable.date, historyFrom)))
+      : Promise.resolve([]),
+  ]);
 
-  const result = masters.map((m) => ({
-    id: m.id,
-    alias: m.alias,
-    city: m.city,
-    specialization: m.specialization,
-    maxChatId: m.maxChatId,
-    checkin: checkinMap.get(m.id) ?? null,
-  }));
+  const checkinMap = new Map(todayCheckins.map((c) => [c.masterId, c]));
+
+  // Group history by master
+  const historyByMaster = new Map<number, { date: string; isAvailable: boolean | null; respondedAt: Date | null }[]>();
+  for (const h of allHistory) {
+    if (!historyByMaster.has(h.masterId)) historyByMaster.set(h.masterId, []);
+    historyByMaster.get(h.masterId)!.push({ date: h.date, isAvailable: h.isAvailable, respondedAt: h.respondedAt });
+  }
+
+  // Calculate streak: consecutive days ending today where isAvailable = true
+  function calcStreak(history: { date: string; isAvailable: boolean | null }[]): number {
+    const byDate = new Map(history.map((h) => [h.date, h.isAvailable]));
+    let streak = 0;
+    const cur = new Date();
+    for (let i = 0; i < 30; i++) {
+      const d = cur.toISOString().split("T")[0];
+      if (byDate.get(d) === true) { streak++; cur.setDate(cur.getDate() - 1); }
+      else { break; }
+    }
+    return streak;
+  }
+
+  const result = masters.map((m) => {
+    const history = (historyByMaster.get(m.id) ?? []).sort((a, b) => b.date.localeCompare(a.date));
+    return {
+      id: m.id,
+      alias: m.alias,
+      city: m.city,
+      specialization: m.specialization,
+      maxChatId: m.maxChatId,
+      checkin: checkinMap.get(m.id) ?? null,
+      streak: calcStreak(history),
+      history,
+    };
+  });
 
   const ready = result.filter((r) => r.checkin?.isAvailable === true).length;
   const notReady = result.filter((r) => r.checkin?.isAvailable === false).length;
   const noResponse = result.filter((r) => r.checkin === null || r.checkin.respondedAt === null).length;
 
   res.json({ date: targetDate, masters: result, summary: { ready, notReady, noResponse, total: result.length } });
+});
+
+// POST /api/masters/checkins/nudge/:masterId — send reminder to specific non-responding master
+router.post("/checkins/nudge/:masterId", requireRole("admin", "master_operator"), async (req, res) => {
+  const masterId = parseInt(req.params.masterId);
+  if (isNaN(masterId)) return res.status(400).json({ error: "Invalid id" });
+  const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
+  if (!master) return res.status(404).json({ error: "Мастер не найден" });
+  if (!master.maxChatId) return res.status(400).json({ error: "Нет Max аккаунта" });
+  const { sendMaxMessageToChat } = await import("../maxBot.js");
+  await sendMaxMessageToChat(master.maxChatId, "⏰ Напоминаем — пожалуйста, отметьте вашу готовность к заказам на сегодня в боте Честный Мастер.");
+  res.json({ ok: true });
+});
+
+// PATCH /api/masters/:id/checkin — manually override checkin status from CRM
+router.patch("/:id/checkin", requireRole("admin", "master_operator"), async (req, res) => {
+  const masterId = parseInt(req.params.id);
+  if (isNaN(masterId)) return res.status(400).json({ error: "Invalid id" });
+  const { date, isAvailable } = req.body as { date: string; isAvailable: boolean };
+  if (typeof isAvailable !== "boolean" || !date) return res.status(400).json({ error: "date and isAvailable required" });
+  await db
+    .insert(masterCheckinsTable)
+    .values({ masterId, date, isAvailable, respondedAt: new Date() })
+    .onConflictDoUpdate({
+      target: [masterCheckinsTable.masterId, masterCheckinsTable.date],
+      set: { isAvailable, respondedAt: new Date() },
+    });
+  res.json({ ok: true });
 });
 
 // GET /api/masters/:id

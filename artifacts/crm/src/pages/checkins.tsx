@@ -8,9 +8,16 @@ import { ru } from "date-fns/locale";
 import {
   CheckCircle2, XCircle, Clock, RefreshCw, ChevronLeft, ChevronRight,
   Send, Users, MapPin, Wrench, BotMessageSquare, AlarmClock, TrendingUp, Save, Bell,
+  MessageSquare, ChevronDown, ChevronUp, Download, Flame, Filter,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+interface HistoryDay {
+  date: string;
+  isAvailable: boolean | null;
+  respondedAt: string | null;
+}
 
 interface CheckinMaster {
   id: number;
@@ -19,6 +26,8 @@ interface CheckinMaster {
   specialization: string;
   maxChatId: string | null;
   checkin: { id: number; isAvailable: boolean | null; respondedAt: string | null } | null;
+  streak: number;
+  history: HistoryDay[];
 }
 
 interface CheckinsResponse {
@@ -52,6 +61,40 @@ function pct(a: number, b: number): string {
   return `${Math.round((a / b) * 100)}%`;
 }
 
+function getLast14Days(): string[] {
+  const days: string[] = [];
+  const cur = new Date();
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(cur);
+    d.setDate(d.getDate() - i);
+    days.push(toDateStr(d));
+  }
+  return days;
+}
+
+function exportCsv(date: string, masters: CheckinMaster[]) {
+  const header = "Псевдоним,Город,Специализация,Статус,Время ответа";
+  const rows = masters.map((m) => {
+    const status = !m.checkin || m.checkin.respondedAt === null
+      ? "Нет ответа"
+      : m.checkin.isAvailable === true ? "Готов" : "Не готов";
+    const time = m.checkin?.respondedAt
+      ? format(new Date(m.checkin.respondedAt), "HH:mm", { locale: ru })
+      : "";
+    return [m.alias, m.city || "", m.specialization || "", status, time]
+      .map((v) => `"${v.replace(/"/g, '""')}"`)
+      .join(",");
+  });
+  const csv = [header, ...rows].join("\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `готовность-${date}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
 function StatusBadge({ checkin }: { checkin: CheckinMaster["checkin"] }) {
@@ -76,6 +119,53 @@ function StatusBadge({ checkin }: { checkin: CheckinMaster["checkin"] }) {
   );
 }
 
+// ─── History Mini-Grid ────────────────────────────────────────────────────────
+
+function HistoryGrid({ history }: { history: HistoryDay[] }) {
+  const days = getLast14Days();
+  const byDate = new Map(history.map((h) => [h.date, h]));
+  return (
+    <div className="flex items-center gap-1">
+      {days.map((d) => {
+        const h = byDate.get(d);
+        const label = format(parseISO(d), "d MMM", { locale: ru });
+        if (!h || h.respondedAt === null) {
+          return (
+            <div key={d} title={`${label} — нет ответа`}
+              className="w-4 h-4 rounded-sm bg-gray-200" />
+          );
+        }
+        if (h.isAvailable === true) {
+          return (
+            <div key={d} title={`${label} — готов`}
+              className="w-4 h-4 rounded-sm bg-green-400" />
+          );
+        }
+        return (
+          <div key={d} title={`${label} — не готов`}
+            className="w-4 h-4 rounded-sm bg-red-300" />
+        );
+      })}
+      <span className="text-xs text-gray-400 ml-1">14 дн.</span>
+    </div>
+  );
+}
+
+// ─── Streak Badge ─────────────────────────────────────────────────────────────
+
+function StreakBadge({ streak }: { streak: number }) {
+  if (streak < 2) return null;
+  return (
+    <span
+      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-600"
+      title={`${streak} дней подряд готов`}
+    >
+      <Flame className="w-3 h-3" />
+      {streak}
+    </span>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CheckinsPage() {
@@ -93,6 +183,8 @@ function CheckinsContent() {
   const [editTime, setEditTime] = useState<string | null>(null);
   const [editReminderTime, setEditReminderTime] = useState<string | null>(null);
   const [localReminderEnabled, setLocalReminderEnabled] = useState<boolean | null>(null);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [cityFilter, setCityFilter] = useState<string>("all");
   const { toast } = useToast();
   const qc = useQueryClient();
 
@@ -183,15 +275,53 @@ function CheckinsContent() {
     onError: () => toast({ title: "Ошибка", description: "Не удалось запустить рассылку", variant: "destructive" }),
   });
 
+  // Nudge single master
+  const nudgeMutation = useMutation({
+    mutationFn: async (masterId: number) => {
+      const res = await fetch(`/api/masters/checkins/nudge/${masterId}`, { method: "POST", credentials: "include" });
+      if (!res.ok) throw new Error("Ошибка");
+      return res.json();
+    },
+    onSuccess: () => toast({ title: "Напоминание отправлено" }),
+    onError: () => toast({ title: "Не удалось отправить", variant: "destructive" }),
+  });
+
+  // Manual checkin override
+  const overrideMutation = useMutation({
+    mutationFn: async ({ masterId, isAvailable }: { masterId: number; isAvailable: boolean }) => {
+      const res = await fetch(`/api/masters/${masterId}/checkin`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ date, isAvailable }),
+      });
+      if (!res.ok) throw new Error("Ошибка");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Статус обновлён" });
+      qc.invalidateQueries({ queryKey: ["/api/masters/checkins", date] });
+    },
+    onError: () => toast({ title: "Ошибка обновления", variant: "destructive" }),
+  });
+
   const isToday = date === toDateStr(new Date());
   const displayDate = (() => {
     try { return format(parseISO(date), "d MMMM yyyy", { locale: ru }); }
     catch { return date; }
   })();
 
-  const ready     = data?.masters.filter((m) => m.checkin?.isAvailable === true)  ?? [];
-  const notReady  = data?.masters.filter((m) => m.checkin?.isAvailable === false) ?? [];
-  const noResponse = data?.masters.filter((m) => !m.checkin || m.checkin.respondedAt === null) ?? [];
+  // Unique cities from all masters
+  const allCities = Array.from(new Set((data?.masters ?? []).map((m) => m.city).filter(Boolean))).sort();
+
+  // Apply city filter
+  const filteredMasters = (data?.masters ?? []).filter(
+    (m) => cityFilter === "all" || m.city === cityFilter
+  );
+
+  const ready      = filteredMasters.filter((m) => m.checkin?.isAvailable === true);
+  const notReady   = filteredMasters.filter((m) => m.checkin?.isAvailable === false);
+  const noResponse = filteredMasters.filter((m) => !m.checkin || m.checkin.respondedAt === null);
 
   const currentTime = editTime ?? config?.broadcastTime ?? "07:00";
   const timeChanged = config?.broadcastTime !== undefined && currentTime !== config.broadcastTime;
@@ -227,8 +357,6 @@ function CheckinsContent() {
                 <span className="text-3xl font-bold text-gray-900">{stats.connectedToMax}</span>
                 <span className="text-sm text-gray-400 mb-1">/ {stats.totalActive} активных</span>
               </div>
-
-              {/* Progress bar */}
               <div className="w-full bg-gray-100 rounded-full h-2">
                 <div
                   className="bg-blue-500 h-2 rounded-full transition-all"
@@ -238,7 +366,6 @@ function CheckinsContent() {
               <p className="text-xs text-gray-500">
                 {pct(stats.connectedToMax, stats.totalActive)} мастеров подключены к боту
               </p>
-
               <div className="pt-1 border-t border-gray-50 grid grid-cols-2 gap-2 text-xs text-gray-500">
                 <div>
                   <p className="font-medium text-gray-700">{pct(stats.last7dResponded, stats.last7dTotal)}</p>
@@ -389,6 +516,30 @@ function CheckinsContent() {
         </div>
       )}
 
+      {/* City breakdown (when multiple cities) */}
+      {data && allCities.length > 1 && (
+        <div className="rounded-xl border border-gray-100 bg-white p-4">
+          <div className="flex items-center gap-2 mb-3 text-gray-700">
+            <MapPin className="w-4 h-4 text-blue-500" />
+            <span className="text-sm font-semibold">Разбивка по городам</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {allCities.map((city) => {
+              const cityMasters = data.masters.filter((m) => m.city === city);
+              const cityReady = cityMasters.filter((m) => m.checkin?.isAvailable === true).length;
+              const cityTotal = cityMasters.length;
+              return (
+                <div key={city} className="rounded-lg bg-gray-50 px-3 py-2">
+                  <p className="text-xs font-semibold text-gray-700 truncate">{city}</p>
+                  <p className="text-lg font-bold text-gray-900 mt-0.5">{cityReady}<span className="text-xs font-normal text-gray-400"> / {cityTotal}</span></p>
+                  <p className="text-xs text-gray-500">готовы</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Master list */}
       {isLoading ? (
         <div className="flex justify-center py-16">
@@ -401,6 +552,36 @@ function CheckinsContent() {
         </div>
       ) : (
         <div className="space-y-4">
+
+          {/* Filters + Export row */}
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Filter className="w-4 h-4 text-gray-400" />
+              <button
+                onClick={() => setCityFilter("all")}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${cityFilter === "all" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+              >
+                Все города
+              </button>
+              {allCities.map((city) => (
+                <button
+                  key={city}
+                  onClick={() => setCityFilter(city === cityFilter ? "all" : city)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${cityFilter === city ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+                >
+                  {city}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => exportCsv(date, filteredMasters)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-gray-600 hover:bg-gray-50 transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Экспорт CSV
+            </button>
+          </div>
+
           {[
             { label: "✅ Готовы к заказам",  items: ready,      emptyText: "Никто пока не ответил «Готов»" },
             { label: "❌ Не готовы сегодня", items: notReady,   emptyText: "Нет отказов" },
@@ -417,30 +598,97 @@ function CheckinsContent() {
                   <table className="w-full text-sm">
                     <tbody>
                       {items.map((m, i) => (
-                        <tr
-                          key={m.id}
-                          className={`${i % 2 === 0 ? "bg-white" : "bg-gray-50/50"} hover:bg-blue-50/30 transition-colors`}
-                        >
-                          <td className="px-4 py-2.5 font-medium text-gray-900">{m.alias}</td>
-                          <td className="px-4 py-2.5 text-gray-500">
-                            <span className="flex items-center gap-1">
-                              <MapPin className="w-3 h-3 shrink-0" />{m.city || "—"}
-                            </span>
-                          </td>
-                          <td className="px-4 py-2.5 text-gray-500 hidden sm:table-cell">
-                            <span className="flex items-center gap-1">
-                              <Wrench className="w-3 h-3 shrink-0" />{m.specialization || "—"}
-                            </span>
-                          </td>
-                          <td className="px-4 py-2.5">
-                            <StatusBadge checkin={m.checkin} />
-                          </td>
-                          <td className="px-4 py-2.5 text-gray-400 text-xs hidden md:table-cell">
-                            {m.checkin?.respondedAt
-                              ? format(new Date(m.checkin.respondedAt), "HH:mm", { locale: ru })
-                              : "—"}
-                          </td>
-                        </tr>
+                        <>
+                          <tr
+                            key={m.id}
+                            onClick={() => setExpandedId(expandedId === m.id ? null : m.id)}
+                            className={`${i % 2 === 0 ? "bg-white" : "bg-gray-50/50"} hover:bg-blue-50/30 transition-colors cursor-pointer`}
+                          >
+                            {/* Name + streak */}
+                            <td className="px-4 py-2.5">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium text-gray-900">{m.alias}</span>
+                                <StreakBadge streak={m.streak} />
+                                {expandedId === m.id
+                                  ? <ChevronUp className="w-3.5 h-3.5 text-gray-400 ml-auto" />
+                                  : <ChevronDown className="w-3.5 h-3.5 text-gray-400 ml-auto" />
+                                }
+                              </div>
+                            </td>
+                            <td className="px-4 py-2.5 text-gray-500">
+                              <span className="flex items-center gap-1">
+                                <MapPin className="w-3 h-3 shrink-0" />{m.city || "—"}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2.5 text-gray-500 hidden sm:table-cell">
+                              <span className="flex items-center gap-1">
+                                <Wrench className="w-3 h-3 shrink-0" />{m.specialization || "—"}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2.5">
+                              <StatusBadge checkin={m.checkin} />
+                            </td>
+                            <td className="px-4 py-2.5 text-gray-400 text-xs hidden md:table-cell">
+                              {m.checkin?.respondedAt
+                                ? format(new Date(m.checkin.respondedAt), "HH:mm", { locale: ru })
+                                : "—"}
+                            </td>
+                            {/* Actions */}
+                            <td className="px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center gap-1.5 justify-end">
+                                {/* Manual override */}
+                                {m.checkin?.isAvailable !== true && (
+                                  <button
+                                    onClick={() => overrideMutation.mutate({ masterId: m.id, isAvailable: true })}
+                                    disabled={overrideMutation.isPending}
+                                    title="Отметить как Готов"
+                                    className="p-1 rounded-md text-green-600 hover:bg-green-50 transition-colors disabled:opacity-40"
+                                  >
+                                    <CheckCircle2 className="w-4 h-4" />
+                                  </button>
+                                )}
+                                {m.checkin?.isAvailable !== false && (
+                                  <button
+                                    onClick={() => overrideMutation.mutate({ masterId: m.id, isAvailable: false })}
+                                    disabled={overrideMutation.isPending}
+                                    title="Отметить как Не готов"
+                                    className="p-1 rounded-md text-red-500 hover:bg-red-50 transition-colors disabled:opacity-40"
+                                  >
+                                    <XCircle className="w-4 h-4" />
+                                  </button>
+                                )}
+                                {/* Nudge — only for no-response masters */}
+                                {(!m.checkin || m.checkin.respondedAt === null) && (
+                                  <button
+                                    onClick={() => nudgeMutation.mutate(m.id)}
+                                    disabled={nudgeMutation.isPending}
+                                    title="Напомнить в Max"
+                                    className="p-1 rounded-md text-blue-500 hover:bg-blue-50 transition-colors disabled:opacity-40"
+                                  >
+                                    <MessageSquare className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+
+                          {/* Expanded history row */}
+                          {expandedId === m.id && (
+                            <tr key={`${m.id}-history`} className={i % 2 === 0 ? "bg-white" : "bg-gray-50/50"}>
+                              <td colSpan={6} className="px-4 pb-3 pt-0">
+                                <div className="border-t border-gray-100 pt-2.5 space-y-1.5">
+                                  <p className="text-xs text-gray-400 font-medium">История последних 14 дней</p>
+                                  <HistoryGrid history={m.history} />
+                                  <div className="flex gap-3 text-xs text-gray-400 pt-0.5">
+                                    <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-green-400 inline-block" /> Готов</span>
+                                    <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-red-300 inline-block" /> Не готов</span>
+                                    <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-gray-200 inline-block" /> Нет ответа</span>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </>
                       ))}
                     </tbody>
                   </table>
