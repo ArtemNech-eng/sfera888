@@ -145,7 +145,7 @@ router.patch("/:id/confirm", requireRole("admin", "master_operator"), async (req
       : "—";
     sendMaxMessage(
       master.maxChatId,
-      `✅ Оплата подтверждена оператором!\n\nСмета #${updated.id}\nКлиент: ${updated.clientSubmittedName || "—"}\nСумма: ${amount}`
+      `✅ Оплата подтверждена оператором!\n\nСмета #${updated.id}\nКлиент: ${updated.clientSubmittedName || "—"}\nСумма: ${amount}\n\n👉 Перейти в приложение:\nhttps://sfera-project.digital/master-pwa/`
     ).catch(() => {});
   }
   res.json(await buildReceiptResponse(updated, master, req));

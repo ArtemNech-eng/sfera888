@@ -235,8 +235,8 @@ router.post("/:masterId/reply", requireRole("admin", "master_operator"), upload.
 
   if (master.maxChatId && (text || savedPhotoUrl)) {
     const maxText = text
-      ? `💬 Сообщение от ${senderLabel}:\n\n${text}`
-      : `💬 Фото от ${senderLabel} — откройте приложение мастера.`;
+      ? `💬 Сообщение от ${senderLabel}:\n\n${text}\n\n👉 Ответить в приложении:\nhttps://sfera-project.digital/master-pwa/chat`
+      : `💬 Фото от ${senderLabel}\n\n👉 Смотреть в приложении:\nhttps://sfera-project.digital/master-pwa/chat`;
     sendMaxMessage(master.maxChatId, maxText).catch(() => {});
   }
 

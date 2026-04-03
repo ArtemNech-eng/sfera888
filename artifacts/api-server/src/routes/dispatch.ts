@@ -239,7 +239,7 @@ router.post("/test-order", ops, async (req, res) => {
       : "не указана";
     sendMaxMessage(
       master.maxChatId,
-      `📋 Тестовая заявка #${order.id}\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${tDate}${order.comment ? "\n💬 " + order.comment : ""}\n\nОткройте приложение мастера, чтобы откликнуться.`
+      `📋 Тестовая заявка #${order.id}\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${tDate}${order.comment ? "\n💬 " + order.comment : ""}\n\n👉 Откликнитесь в приложении:\nhttps://sfera-project.digital/master-pwa/orders`
     ).catch(() => {});
   }
 
@@ -342,7 +342,7 @@ router.post("/:orderId/assign/:masterId", ops, async (req, res) => {
       : "не указана";
     sendMaxMessage(
       master.maxChatId,
-      `✅ Заявка #${orderId} назначена вам!\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${date}${order.comment ? "\n💬 " + order.comment : ""}${lead ? `\n\n📞 ${lead.clientName}\n${lead.clientPhone}` : ""}`
+      `✅ Заявка #${orderId} назначена вам!\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${date}${order.comment ? "\n💬 " + order.comment : ""}${lead ? `\n\n📞 ${lead.clientName}\n${lead.clientPhone}` : ""}\n\n👉 Подробности в приложении:\nhttps://sfera-project.digital/master-pwa/orders`
     ).catch(() => {});
   }
 

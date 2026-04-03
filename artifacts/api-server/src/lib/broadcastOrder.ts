@@ -171,7 +171,7 @@ export async function performBroadcast(orderId: number): Promise<BroadcastResult
         : "не указана";
       sendMaxMessage(
         master.maxChatId,
-        `📋 Новая заявка #${orderId}\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${date}${order.comment ? "\n💬 " + order.comment : ""}\n\nОткройте приложение мастера, чтобы откликнуться.`
+        `📋 Новая заявка #${orderId}\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${date}${order.comment ? "\n💬 " + order.comment : ""}\n\n👉 Откликнитесь в приложении:\nhttps://sfera-project.digital/master-pwa/orders`
       ).catch(() => {});
     }
     await db.insert(orderDispatchesTable).values({
