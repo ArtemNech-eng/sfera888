@@ -16,3 +16,4 @@ export * from "./order-status-logs";
 export * from "./receipts";
 export * from "./client-support-messages";
 export * from "./general-support-messages";
+export * from "./max-bot-logs";

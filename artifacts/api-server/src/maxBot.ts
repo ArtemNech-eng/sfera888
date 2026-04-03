@@ -4,6 +4,53 @@ function getToken(): string | undefined {
   return process.env.MAX_BOT_TOKEN;
 }
 
+// ─── Pending link confirmations (in-memory, 5 min TTL) ────────────────────────
+
+interface PendingLink {
+  masterId: number;
+  masterName: string;
+  expiry: number;
+}
+const pendingLinks = new Map<number, PendingLink>();
+
+function setPending(userId: number, masterId: number, masterName: string) {
+  pendingLinks.set(userId, { masterId, masterName, expiry: Date.now() + 5 * 60_000 });
+}
+
+function getPending(userId: number): PendingLink | null {
+  const p = pendingLinks.get(userId);
+  if (!p) return null;
+  if (Date.now() > p.expiry) { pendingLinks.delete(userId); return null; }
+  return p;
+}
+
+function clearPending(userId: number) {
+  pendingLinks.delete(userId);
+}
+
+// ─── Logging ──────────────────────────────────────────────────────────────────
+
+export async function logMaxEvent(
+  masterId: number | null,
+  maxUserId: string | number,
+  event: string,
+  note?: string
+) {
+  try {
+    const { db, maxBotLogsTable } = await import("@workspace/db");
+    await db.insert(maxBotLogsTable).values({
+      masterId: masterId ?? null,
+      maxUserId: String(maxUserId),
+      event,
+      note: note ?? null,
+    });
+  } catch (e) {
+    console.error("[maxBot] logEvent error:", e);
+  }
+}
+
+// ─── Send message (Markdown support) ─────────────────────────────────────────
+
 export async function sendMaxMessage(chatId: string | number, text: string): Promise<void> {
   const token = getToken();
   if (!token) return;
@@ -14,7 +61,7 @@ export async function sendMaxMessage(chatId: string | number, text: string): Pro
         Authorization: token,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ user_id: Number(chatId), text }),
+      body: JSON.stringify({ user_id: Number(chatId), text, format: "markdown" }),
     });
     if (!res.ok) {
       const err = await res.text();
@@ -25,6 +72,8 @@ export async function sendMaxMessage(chatId: string | number, text: string): Pro
   }
 }
 
+// ─── Webhook handler ──────────────────────────────────────────────────────────
+
 export async function handleMaxUpdate(update: Record<string, unknown>): Promise<void> {
   try {
     const updateType = update.update_type as string;
@@ -32,7 +81,10 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
     if (updateType === "bot_started") {
       const chatId = (update as any).chat_id as number;
       if (chatId) {
-        await sendMaxMessage(chatId, "👋 Привет! Это бот «Честный мастер».\n\nОтправьте ваш номер телефона, чтобы привязать аккаунт мастера и получать уведомления о новых сметах и оплатах.");
+        await sendMaxMessage(
+          chatId,
+          "👋 Привет! Это бот **Честный мастер**.\n\nОтправьте ваш номер телефона, чтобы привязать аккаунт мастера и получать уведомления о новых заявках, сметах и оплатах."
+        );
       }
       return;
     }
@@ -48,39 +100,121 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
     if (!userId || !text) return;
 
     const { db, mastersTable } = await import("@workspace/db");
-    const { eq, or, isNotNull } = await import("drizzle-orm");
+    const { eq, isNotNull } = await import("drizzle-orm");
 
+    // ── /start ────────────────────────────────────────────────────────────────
     if (text.startsWith("/start")) {
-      await sendMaxMessage(userId, "👋 Привет! Это бот «Честный мастер».\n\nОтправьте ваш номер телефона, чтобы привязать аккаунт мастера и получать уведомления о новых сметах и оплатах.");
+      await sendMaxMessage(
+        userId,
+        "👋 Привет! Это бот **Честный мастер**.\n\nОтправьте ваш номер телефона, чтобы привязать аккаунт мастера и получать уведомления о новых заявках, сметах и оплатах."
+      );
       return;
     }
 
+    // ── Отвязать аккаунт ──────────────────────────────────────────────────────
+    const lc = text.toLowerCase();
+    if (lc === "/отвязать" || lc === "отвязать") {
+      const masters = await db.select().from(mastersTable).where(isNotNull(mastersTable.maxChatId));
+      const linked = masters.find(m => m.maxChatId === String(userId));
+
+      if (!linked) {
+        await sendMaxMessage(userId, "❌ Ваш аккаунт не привязан к боту.");
+        return;
+      }
+
+      await db.update(mastersTable)
+        .set({ maxChatId: null })
+        .where(eq(mastersTable.id, linked.id));
+
+      logMaxEvent(linked.id, userId, "unlinked_bot", `Мастер ${linked.alias} отвязал аккаунт через бот`).catch(() => {});
+      clearPending(userId);
+
+      await sendMaxMessage(
+        userId,
+        `✅ Аккаунт **${linked.alias}** отвязан.\n\nВы больше не будете получать уведомления. Чтобы привязать снова — отправьте номер телефона.`
+      );
+      return;
+    }
+
+    // ── Ожидает подтверждения ─────────────────────────────────────────────────
+    const pending = getPending(userId);
+    if (pending) {
+      const digits = text.replace(/\D/g, "");
+      const isPhone = digits.length >= 10;
+
+      if (isPhone) {
+        // Новый номер — начинаем заново
+        clearPending(userId);
+      } else if (["да", "yes", "+", "ок", "ok", "подтверждаю"].includes(lc)) {
+        // Подтверждение
+        await db.update(mastersTable)
+          .set({ maxChatId: String(userId) })
+          .where(eq(mastersTable.id, pending.masterId));
+
+        logMaxEvent(pending.masterId, userId, "linked", `Мастер ${pending.masterName} подтвердил привязку аккаунта`).catch(() => {});
+        clearPending(userId);
+
+        await sendMaxMessage(
+          userId,
+          `✅ Аккаунт привязан, **${pending.masterName}**!\n\nТеперь вы будете получать уведомления:\n• Новые заявки на выбор\n• Назначение на заявку\n• Подтверждение оплаты\n• Сообщения от оператора\n\nЧтобы отвязать аккаунт — напишите _отвязать_.`
+        );
+        return;
+      } else if (["нет", "no", "-", "отмена", "cancel"].includes(lc)) {
+        // Отмена
+        logMaxEvent(pending.masterId, userId, "confirm_rejected", `Мастер ${pending.masterName} отклонил привязку`).catch(() => {});
+        clearPending(userId);
+
+        await sendMaxMessage(userId, "❌ Привязка отменена.\n\nЕсли захотите привязаться позже — просто отправьте номер телефона.");
+        return;
+      } else {
+        // Непонятный ответ
+        await sendMaxMessage(
+          userId,
+          `⏳ Ожидаю подтверждения для аккаунта **${pending.masterName}**.\n\nОтветьте **ДА** для привязки или **НЕТ** для отмены.`
+        );
+        return;
+      }
+    }
+
+    // ── Ввод номера телефона ──────────────────────────────────────────────────
     const digits = text.replace(/\D/g, "");
     if (digits.length >= 10) {
       const last10 = digits.slice(-10);
 
-      const masters = await db
-        .select()
-        .from(mastersTable)
-        .where(isNotNull(mastersTable.phone));
-
-      const master = masters.find((m) => {
+      const masters = await db.select().from(mastersTable).where(isNotNull(mastersTable.phone));
+      const master = masters.find(m => {
         if (!m.phone) return false;
         return m.phone.replace(/\D/g, "").slice(-10) === last10;
       });
 
       if (master) {
-        await db
-          .update(mastersTable)
-          .set({ maxChatId: String(userId) })
-          .where(eq(mastersTable.id, master.id));
+        // Уже привязан другой аккаунт Max?
+        if (master.maxChatId && master.maxChatId !== String(userId)) {
+          await sendMaxMessage(
+            userId,
+            `⚠️ Аккаунт **${master.alias}** уже привязан к другому пользователю Max.\n\nОбратитесь к администратору.`
+          );
+          return;
+        }
+
+        // Уже привязан этот же userId
+        if (master.maxChatId === String(userId)) {
+          await sendMaxMessage(userId, `✅ Аккаунт **${master.alias}** уже привязан к вам.`);
+          return;
+        }
 
         const name = master.contractFullName?.split(" ")[0] || master.alias;
+
+        // Сохраняем ожидание подтверждения
+        setPending(userId, master.id, name);
+        logMaxEvent(master.id, userId, "confirm_pending", `Найден мастер ${master.alias}, ожидает подтверждения`).catch(() => {});
+
         await sendMaxMessage(
           userId,
-          `✅ Аккаунт привязан, ${name}!\n\nТеперь вы будете получать уведомления:\n• При создании новой сметы\n• Когда клиент отправит скриншот оплаты`
+          `🔍 Найден аккаунт: **${master.alias}**${master.city ? ` (${master.city})` : ""}.\n\nПодтвердите привязку — ответьте **ДА** или **НЕТ**.\n\n_Запрос действителен 5 минут._`
         );
       } else {
+        logMaxEvent(null, userId, "not_found", `Телефон не найден: ${text}`).catch(() => {});
         await sendMaxMessage(
           userId,
           "❌ Мастер с таким номером не найден.\n\nПроверьте номер или обратитесь к администратору."
@@ -89,14 +223,17 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
       return;
     }
 
+    // ── Непонятное сообщение ──────────────────────────────────────────────────
     await sendMaxMessage(
       userId,
-      "Отправьте ваш номер телефона (например: +79001234567) для привязки аккаунта."
+      "Отправьте ваш номер телефона (например: +79001234567) для привязки аккаунта.\n\nЧтобы отвязать аккаунт — напишите _отвязать_."
     );
   } catch (e) {
     console.error("[maxBot] handleUpdate error:", e);
   }
 }
+
+// ─── Register webhook ─────────────────────────────────────────────────────────
 
 export async function registerWebhook(webhookUrl: string): Promise<void> {
   const token = getToken();

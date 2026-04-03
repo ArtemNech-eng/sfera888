@@ -53,6 +53,7 @@ export interface DrawerMaster {
   voronkaColumnId: number | null; isTestMaster: boolean;
   avatarUrl: string | null; activeOrders: any[]; createdAt: string;
   pwaLogin: string | null; contractLink: string | null;
+  maxChatId?: string | null;
   workingHours?: WorkingHours | null;
   preferredDistricts?: string[];
   minArea?: number;
@@ -246,6 +247,31 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
   const [savingPwa, setSavingPwa] = useState(false);
   const [resettingPwa, setResettingPwa] = useState(false);
 
+  interface MaxBotLog { id: number; maxUserId: string | null; event: string; note: string | null; createdAt: string; }
+  const [maxLogs, setMaxLogs] = useState<MaxBotLog[]>([]);
+  const [maxLogsLoaded, setMaxLogsLoaded] = useState(false);
+  const [unlinkingMax, setUnlinkingMax] = useState(false);
+
+  const loadMaxLogs = () => {
+    fetch(`/api/masters/${master.id}/max-logs`, { credentials: "include" })
+      .then(r => r.json())
+      .then(d => { setMaxLogs(Array.isArray(d) ? d : []); setMaxLogsLoaded(true); });
+  };
+
+  const unlinkMax = async () => {
+    if (!confirm("Отвязать аккаунт Max? Мастер перестанет получать уведомления через Max.")) return;
+    setUnlinkingMax(true);
+    try {
+      const r = await fetch(`/api/masters/${master.id}/max-link`, { method: "DELETE", credentials: "include" });
+      if (r.ok) {
+        onMasterUpdate(master.id, { maxChatId: null });
+        loadMaxLogs();
+      }
+    } finally {
+      setUnlinkingMax(false);
+    }
+  };
+
   // ── Test order modal ──────────────────────────────────────────────────────
   const [showTestOrderModal, setShowTestOrderModal] = useState(false);
   const [testOrderForm, setTestOrderForm] = useState({
@@ -347,9 +373,11 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
     setChatMessages([]); setChatLoaded(false); setPendingTxs([]);
     setReviews([]); setReviewsLoaded(false); setAiRecommendation(null);
     setReviewText(""); setReviewSentiment("positive");
+    setMaxLogs([]); setMaxLogsLoaded(false);
   }, [master.id]);
 
   useEffect(() => {
+    if (tab === "profile" && !maxLogsLoaded) loadMaxLogs();
     if (tab === "tasks") {
       fetch(`/api/masters/${master.id}/tasks`, { credentials: "include" }).then(r => r.json()).then(setTasks);
       fetch(`/api/tasks?relatedMasterId=${master.id}`, { credentials: "include" }).then(r => r.json()).then(d => setSystemTasks(Array.isArray(d) ? d : []));
@@ -866,6 +894,64 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                     </button>
                   )}
                 </div>
+              </div>
+
+              {/* Max Bot section */}
+              <div className="border-t border-gray-100 pt-3">
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1">
+                  <MessageCircle className="w-3 h-3" /> Max Бот
+                </p>
+                {master.maxChatId ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 p-2 bg-green-50 border border-green-200 rounded-lg">
+                      <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-green-700 font-medium">Подключён</p>
+                        <p className="text-[10px] text-green-600">ID: {master.maxChatId}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={unlinkMax}
+                      disabled={unlinkingMax}
+                      className="w-full py-1.5 border border-red-200 text-red-500 rounded-lg text-xs font-medium hover:bg-red-50 disabled:opacity-40 transition-colors flex items-center justify-center gap-1"
+                    >
+                      {unlinkingMax ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
+                      Отвязать аккаунт Max
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 p-2 bg-gray-50 border border-gray-200 rounded-lg">
+                    <span className="w-2 h-2 rounded-full bg-gray-300 flex-shrink-0" />
+                    <p className="text-xs text-gray-500">Не подключён — мастер должен написать боту и отправить номер телефона</p>
+                  </div>
+                )}
+                {maxLogsLoaded && maxLogs.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wide">История действий</p>
+                    <div className="max-h-36 overflow-y-auto space-y-1 rounded-lg border border-gray-100 p-1">
+                      {maxLogs.map(log => {
+                        const labels: Record<string, { label: string; color: string }> = {
+                          linked:           { label: "Привязан",             color: "text-green-600" },
+                          confirm_pending:  { label: "Ожидает подтверждения", color: "text-amber-600" },
+                          confirm_rejected: { label: "Отклонил привязку",    color: "text-orange-600" },
+                          unlinked_bot:     { label: "Отвязал сам (бот)",    color: "text-red-500" },
+                          unlinked_crm:     { label: "Отвязан оператором",   color: "text-red-600" },
+                          not_found:        { label: "Не найден по номеру",  color: "text-gray-500" },
+                          already_linked:   { label: "Уже был привязан",     color: "text-blue-500" },
+                        };
+                        const meta = labels[log.event] ?? { label: log.event, color: "text-gray-500" };
+                        return (
+                          <div key={log.id} className="flex items-start gap-2 px-2 py-1 hover:bg-gray-50 rounded">
+                            <span className={`text-[10px] font-medium flex-shrink-0 mt-0.5 ${meta.color}`}>{meta.label}</span>
+                            <span className="text-[10px] text-gray-400 ml-auto flex-shrink-0">
+                              {format(new Date(log.createdAt), "d MMM HH:mm", { locale: ru })}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Test order button — shown only for test masters */}
