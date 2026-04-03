@@ -448,23 +448,43 @@ router.get("/:id/max-logs", requireRole("admin", "master_operator"), async (req,
   res.json(logs);
 });
 
-// GET /api/masters/checkins/config — get broadcast time setting
+// GET /api/masters/checkins/config — get broadcast + reminder time settings
 router.get("/checkins/config", allMasterRoles, async (_req, res) => {
-  const [setting] = await db.select().from(systemSettingsTable).where(eq(systemSettingsTable.key, "checkin_broadcast_time"));
-  res.json({ broadcastTime: setting?.value ?? "07:00" });
+  const settings = await db.select().from(systemSettingsTable)
+    .where(inArray(systemSettingsTable.key, ["checkin_broadcast_time", "checkin_reminder_time", "checkin_reminder_enabled"]));
+  const get = (key: string, def: string) => settings.find(s => s.key === key)?.value ?? def;
+  res.json({
+    broadcastTime:    get("checkin_broadcast_time",   "07:00"),
+    reminderTime:     get("checkin_reminder_time",    "12:00"),
+    reminderEnabled:  get("checkin_reminder_enabled", "false") === "true",
+  });
 });
 
-// PUT /api/masters/checkins/config — update broadcast time
+// PUT /api/masters/checkins/config — update broadcast + reminder settings
 router.put("/checkins/config", requireRole("admin", "master_operator"), async (req, res) => {
-  const { broadcastTime } = req.body as { broadcastTime?: string };
-  if (!broadcastTime || !/^\d{2}:\d{2}$/.test(broadcastTime)) {
-    return res.status(400).json({ error: "Неверный формат времени. Используйте HH:MM" });
+  const body = req.body as { broadcastTime?: string; reminderTime?: string; reminderEnabled?: boolean };
+  const updates: { key: string; value: string }[] = [];
+
+  if (body.broadcastTime !== undefined) {
+    if (!/^\d{2}:\d{2}$/.test(body.broadcastTime))
+      return res.status(400).json({ error: "Неверный формат времени рассылки" });
+    updates.push({ key: "checkin_broadcast_time", value: body.broadcastTime });
   }
-  await db
-    .insert(systemSettingsTable)
-    .values({ key: "checkin_broadcast_time", value: broadcastTime })
-    .onConflictDoUpdate({ target: systemSettingsTable.key, set: { value: broadcastTime, updatedAt: new Date() } });
-  res.json({ ok: true, broadcastTime });
+  if (body.reminderTime !== undefined) {
+    if (!/^\d{2}:\d{2}$/.test(body.reminderTime))
+      return res.status(400).json({ error: "Неверный формат времени напоминания" });
+    updates.push({ key: "checkin_reminder_time", value: body.reminderTime });
+  }
+  if (body.reminderEnabled !== undefined) {
+    updates.push({ key: "checkin_reminder_enabled", value: body.reminderEnabled ? "true" : "false" });
+  }
+
+  for (const u of updates) {
+    await db.insert(systemSettingsTable).values(u)
+      .onConflictDoUpdate({ target: systemSettingsTable.key, set: { value: u.value, updatedAt: new Date() } });
+  }
+
+  res.json({ ok: true });
 });
 
 // GET /api/masters/checkins/stats — Max bot connection & response stats
@@ -533,6 +553,23 @@ router.post("/checkins/broadcast", requireRole("admin", "master_operator"), asyn
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// GET /api/masters/:id/checkins — checkin history for last 30 days
+router.get("/:id/checkins", allMasterRoles, async (req, res) => {
+  const masterId = parseInt(req.params.id);
+  if (isNaN(masterId)) return res.status(400).json({ error: "Invalid id" });
+
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
+  const fromDate = thirtyDaysAgo.toISOString().split("T")[0];
+
+  const checkins = await db
+    .select()
+    .from(masterCheckinsTable)
+    .where(and(eq(masterCheckinsTable.masterId, masterId), gte(masterCheckinsTable.date, fromDate)));
+
+  res.json(checkins);
 });
 
 // DELETE /api/masters/:id/avatar — remove custom avatar from GCS

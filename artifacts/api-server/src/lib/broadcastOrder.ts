@@ -1,4 +1,4 @@
-import { db, ordersTable, mastersTable, orderDispatchesTable } from "@workspace/db";
+import { db, ordersTable, mastersTable, orderDispatchesTable, masterCheckinsTable } from "@workspace/db";
 import { eq, and, inArray } from "drizzle-orm";
 import { getMasterEligibility, getOverdueMasterIds } from "./orderEligibility.js";
 import { sendPushToMaster } from "./push.js";
@@ -139,6 +139,25 @@ export async function performBroadcast(orderId: number): Promise<BroadcastResult
     };
   }
 
+  // Filter out masters who said "not ready" in today's morning checkin
+  const todayStr = new Date().toISOString().split("T")[0];
+  const notReadyRows = await db
+    .select({ masterId: masterCheckinsTable.masterId })
+    .from(masterCheckinsTable)
+    .where(and(
+      eq(masterCheckinsTable.date, todayStr),
+      eq(masterCheckinsTable.isAvailable, false),
+    ));
+  const notReadyIds = new Set(notReadyRows.map(r => r.masterId));
+  const availableEligible = specialtyEligible.filter(m => !notReadyIds.has(m.id));
+
+  if (availableEligible.length === 0) {
+    return {
+      ok: false, sent: 0, skipped: reachable.length,
+      error: "Все подходящие мастера отметились как «не готов» сегодня",
+    };
+  }
+
   const cardText = buildOrderCard(order, orderId);
   const replyMarkup = {
     inline_keyboard: [
@@ -148,9 +167,9 @@ export async function performBroadcast(orderId: number): Promise<BroadcastResult
   };
 
   let sent = 0;
-  const skipped = reachable.length - specialtyEligible.length;
+  const skipped = reachable.length - availableEligible.length;
 
-  for (const master of specialtyEligible) {
+  for (const master of availableEligible) {
     let msgId: string | null = null;
     if (master.telegramId) {
       msgId = BANNER_NEW_ORDER

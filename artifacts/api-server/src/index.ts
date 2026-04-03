@@ -5,7 +5,7 @@ import { eq, inArray, and, lte } from "drizzle-orm";
 import { hashPassword } from "./lib/auth.js";
 import { checkOverdueTransactions } from "./lib/orderEligibility.js";
 import { performBroadcast } from "./lib/broadcastOrder.js";
-import { broadcastCheckin } from "./lib/checkinBroadcast.js";
+import { broadcastCheckin, broadcastCheckinReminder } from "./lib/checkinBroadcast.js";
 import { systemSettingsTable } from "@workspace/db";
 
 const port = Number(process.env["PORT"] || "8080");
@@ -283,6 +283,7 @@ runMigrations()
     recalculateMasterVoronkaColumns().catch(console.error);
     checkOverdueTransactions().catch(console.error);
     autoExpireDispatches().catch(console.error);
+    initCheckinScheduler().catch(console.error);
   })
   .catch(console.error);
 
@@ -293,32 +294,83 @@ setInterval(() => autoExpireDispatches().catch(console.error), 60 * 60 * 1000);
 // Auto-broadcast scheduled orders 2–4h before scheduledAt
 setInterval(() => autoScheduledOrderBroadcast().catch(console.error), 15 * 60 * 1000);
 
-// Dynamic daily checkin broadcast — time stored in system_settings
-// Checks every minute; fires when MSK time matches the configured time
+// ─── Checkin broadcast scheduler ─────────────────────────────────────────────
+// Reads broadcast + reminder times from DB every minute and fires if needed.
+// Also fires on startup if today's broadcast hasn't happened yet.
+
 let checkinFiredDate: string | null = null;
+let reminderFiredDate: string | null = null;
+
+function getMskTime(): { hhmm: string; today: string } {
+  const nowMsk = new Date(Date.now() + 3 * 60 * 60 * 1000);
+  const hh = nowMsk.getUTCHours().toString().padStart(2, "0");
+  const mm = nowMsk.getUTCMinutes().toString().padStart(2, "0");
+  return { hhmm: `${hh}:${mm}`, today: nowMsk.toISOString().split("T")[0] };
+}
+
+async function getCheckinSettings() {
+  const keys = ["checkin_broadcast_time", "checkin_reminder_time", "checkin_reminder_enabled",
+                "checkin_last_broadcast_date", "checkin_last_reminder_date"];
+  const rows = await db.select().from(systemSettingsTable).where(inArray(systemSettingsTable.key, keys));
+  const get = (k: string, d: string) => rows.find(r => r.key === k)?.value ?? d;
+  return {
+    broadcastTime:    get("checkin_broadcast_time",      "07:00"),
+    reminderTime:     get("checkin_reminder_time",       "12:00"),
+    reminderEnabled:  get("checkin_reminder_enabled",    "false") === "true",
+    lastBroadcast:    get("checkin_last_broadcast_date", ""),
+    lastReminder:     get("checkin_last_reminder_date",  ""),
+  };
+}
+
+// Startup: restore in-memory fired-date flags from DB so restarts don't double-fire
+async function initCheckinScheduler() {
+  try {
+    const cfg = await getCheckinSettings();
+    const { today, hhmm } = getMskTime();
+
+    if (cfg.lastBroadcast === today) {
+      checkinFiredDate = today;
+      console.log("[checkin] Broadcast already fired today — skipping startup fire");
+    } else if (hhmm >= cfg.broadcastTime) {
+      // Missed window due to restart — fire now
+      checkinFiredDate = today;
+      console.log(`[checkin] Missed broadcast (${cfg.broadcastTime} MSK), firing on startup`);
+      broadcastCheckin().catch(console.error);
+    }
+
+    if (cfg.lastReminder === today) {
+      reminderFiredDate = today;
+    } else if (cfg.reminderEnabled && hhmm >= cfg.reminderTime && checkinFiredDate === today) {
+      reminderFiredDate = today;
+      console.log(`[checkin] Missed reminder (${cfg.reminderTime} MSK), firing on startup`);
+      broadcastCheckinReminder().catch(console.error);
+    }
+  } catch (e) {
+    console.error("[checkin] initScheduler error:", e);
+  }
+}
 
 setInterval(async () => {
   try {
-    const nowUtc = new Date();
-    const nowMsk = new Date(nowUtc.getTime() + 3 * 60 * 60 * 1000);
-    const hh = nowMsk.getUTCHours().toString().padStart(2, "0");
-    const mm = nowMsk.getUTCMinutes().toString().padStart(2, "0");
-    const currentTime = `${hh}:${mm}`;
-    const today = nowMsk.toISOString().split("T")[0];
+    const { hhmm, today } = getMskTime();
+    const cfg = await getCheckinSettings();
 
-    const [setting] = await db.select().from(systemSettingsTable).where(eq(systemSettingsTable.key, "checkin_broadcast_time"));
-    const broadcastTime = setting?.value ?? "07:00";
-
-    if (currentTime === broadcastTime && checkinFiredDate !== today) {
+    if (hhmm === cfg.broadcastTime && checkinFiredDate !== today) {
       checkinFiredDate = today;
-      console.log(`[checkin] Firing broadcast at ${currentTime} MSK for ${today}`);
+      console.log(`[checkin] Firing broadcast at ${hhmm} MSK`);
       broadcastCheckin().catch(console.error);
+    }
+
+    if (cfg.reminderEnabled && hhmm === cfg.reminderTime && reminderFiredDate !== today && checkinFiredDate === today) {
+      reminderFiredDate = today;
+      console.log(`[checkin] Firing reminder at ${hhmm} MSK`);
+      broadcastCheckinReminder().catch(console.error);
     }
   } catch (e) {
     console.error("[checkin] scheduler error:", e);
   }
 }, 60 * 1000);
-console.log("[checkin] Dynamic daily broadcast scheduler started");
+console.log("[checkin] Dynamic broadcast scheduler started");
 
 app.listen(port, "0.0.0.0", () => {
   console.log(`Server listening on port ${port}`);

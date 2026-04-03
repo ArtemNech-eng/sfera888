@@ -7,7 +7,7 @@ import { format, parseISO } from "date-fns";
 import { ru } from "date-fns/locale";
 import {
   CheckCircle2, XCircle, Clock, RefreshCw, ChevronLeft, ChevronRight,
-  Send, Users, MapPin, Wrench, BotMessageSquare, AlarmClock, TrendingUp, Save,
+  Send, Users, MapPin, Wrench, BotMessageSquare, AlarmClock, TrendingUp, Save, Bell,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -91,6 +91,8 @@ export default function CheckinsPage() {
 function CheckinsContent() {
   const [date, setDate] = useState(toDateStr(new Date()));
   const [editTime, setEditTime] = useState<string | null>(null);
+  const [editReminderTime, setEditReminderTime] = useState<string | null>(null);
+  const [localReminderEnabled, setLocalReminderEnabled] = useState<boolean | null>(null);
   const { toast } = useToast();
   const qc = useQueryClient();
 
@@ -114,8 +116,8 @@ function CheckinsContent() {
     },
   });
 
-  // Broadcast time config
-  const { data: config } = useQuery<{ broadcastTime: string }>({
+  // Broadcast + reminder config
+  const { data: config } = useQuery<{ broadcastTime: string; reminderTime: string; reminderEnabled: boolean }>({
     queryKey: ["/api/masters/checkins/config"],
     queryFn: async () => {
       const res = await fetch("/api/masters/checkins/config", { credentials: "include" });
@@ -124,6 +126,8 @@ function CheckinsContent() {
     },
     onSuccess: (d) => {
       if (editTime === null) setEditTime(d.broadcastTime);
+      if (editReminderTime === null) setEditReminderTime(d.reminderTime);
+      if (localReminderEnabled === null) setLocalReminderEnabled(d.reminderEnabled);
     },
   } as any);
 
@@ -142,6 +146,25 @@ function CheckinsContent() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/masters/checkins/config"] });
       toast({ title: "Время рассылки сохранено" });
+    },
+    onError: () => toast({ title: "Ошибка сохранения", variant: "destructive" }),
+  });
+
+  // Save reminder config
+  const saveReminderMutation = useMutation({
+    mutationFn: async (payload: { reminderTime: string; reminderEnabled: boolean }) => {
+      const res = await fetch("/api/masters/checkins/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error("Ошибка");
+      return res.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/masters/checkins/config"] });
+      toast({ title: "Настройки напоминания сохранены" });
     },
     onError: () => toast({ title: "Ошибка сохранения", variant: "destructive" }),
   });
@@ -172,6 +195,12 @@ function CheckinsContent() {
 
   const currentTime = editTime ?? config?.broadcastTime ?? "07:00";
   const timeChanged = config?.broadcastTime !== undefined && currentTime !== config.broadcastTime;
+
+  const currentReminderTime = editReminderTime ?? config?.reminderTime ?? "12:00";
+  const reminderEnabledVal = localReminderEnabled ?? config?.reminderEnabled ?? false;
+  const reminderChanged = config !== undefined && (
+    currentReminderTime !== config.reminderTime || reminderEnabledVal !== config.reminderEnabled
+  );
 
   return (
     <div className="p-6 space-y-6 max-w-4xl">
@@ -261,6 +290,41 @@ function CheckinsContent() {
               Текущее время: <span className="font-medium text-gray-600">{config.broadcastTime} МСК</span>
             </p>
           )}
+
+          {/* Reminder for non-responders */}
+          <div className="pt-3 border-t border-gray-100 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-gray-700">
+                <Bell className="w-3.5 h-3.5 text-amber-500" />
+                <span className="text-xs font-semibold">Напоминание не ответившим</span>
+              </div>
+              <button
+                onClick={() => setLocalReminderEnabled(!reminderEnabledVal)}
+                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${reminderEnabledVal ? "bg-amber-500" : "bg-gray-200"}`}
+              >
+                <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${reminderEnabledVal ? "translate-x-4" : "translate-x-1"}`} />
+              </button>
+            </div>
+            {reminderEnabledVal && (
+              <div className="flex items-center gap-3">
+                <input
+                  type="time"
+                  value={currentReminderTime}
+                  onChange={(e) => setEditReminderTime(e.target.value)}
+                  className="h-9 px-3 rounded-lg border border-gray-200 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-400 w-28"
+                />
+                <span className="text-xs text-gray-400">МСК</span>
+              </div>
+            )}
+            <button
+              onClick={() => saveReminderMutation.mutate({ reminderTime: currentReminderTime, reminderEnabled: reminderEnabledVal })}
+              disabled={!reminderChanged || saveReminderMutation.isPending}
+              className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-amber-500 text-white text-xs font-medium transition-colors hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Save className="w-3 h-3" />
+              {saveReminderMutation.isPending ? "Сохраняю…" : "Сохранить напоминание"}
+            </button>
+          </div>
 
           <div className="pt-2 border-t border-gray-50">
             <button

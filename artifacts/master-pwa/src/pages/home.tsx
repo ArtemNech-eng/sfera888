@@ -727,6 +727,100 @@ function MissedOrdersSection({ orders, city }: { orders: MissedOrder[]; city: st
   );
 }
 
+// ─── Daily Checkin Card ───────────────────────────────────────────────────────
+
+const BASE_PWA = "/api/master-pwa";
+
+function DailyCheckinCard() {
+  const [checkin, setCheckin] = useState<{
+    isAvailable: boolean | null; respondedAt: string | null;
+  } | null | undefined>(undefined);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    fetch(`${BASE_PWA}/checkin/today`, { credentials: "include" })
+      .then(r => r.ok ? r.json() : null)
+      .then(setCheckin)
+      .catch(() => setCheckin(null));
+  }, []);
+
+  const submit = async (isAvailable: boolean) => {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch(`${BASE_PWA}/checkin/today`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ isAvailable }),
+      });
+      if (res.ok) {
+        setCheckin({ isAvailable, respondedAt: new Date().toISOString() });
+      }
+    } catch {} finally { setSubmitting(false); }
+  };
+
+  // Don't show until loaded
+  if (checkin === undefined) return null;
+
+  // Already answered with a definite answer — show status with change option
+  if (checkin?.respondedAt && checkin.isAvailable !== null) {
+    return (
+      <div className={`flex items-center gap-3 rounded-xl border p-3 ${
+        checkin.isAvailable
+          ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800"
+          : "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800"
+      }`}>
+        {checkin.isAvailable
+          ? <CheckCircle2 size={18} className="text-green-500 shrink-0" />
+          : <XCircle size={18} className="text-red-500 shrink-0" />
+        }
+        <div className="flex-1 min-w-0">
+          <p className={`text-sm font-semibold ${checkin.isAvailable ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"}`}>
+            {checkin.isAvailable ? "Вы готовы сегодня" : "Вы не готовы сегодня"}
+          </p>
+          <p className={`text-xs ${checkin.isAvailable ? "text-green-600 dark:text-green-500" : "text-red-600 dark:text-red-500"}`}>
+            {checkin.isAvailable ? "Заявки будут поступать в обычном режиме" : "Новые заявки сегодня не поступают"}
+          </p>
+        </div>
+        <button
+          onClick={() => submit(!checkin.isAvailable)}
+          disabled={submitting}
+          className="text-xs text-gray-500 dark:text-gray-400 underline shrink-0"
+        >
+          Изменить
+        </button>
+      </div>
+    );
+  }
+
+  // No answer yet — show question card
+  return (
+    <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <Calendar size={16} className="text-amber-500 shrink-0" />
+        <p className="text-sm font-semibold text-amber-800 dark:text-amber-400">Вы готовы принять заказы сегодня?</p>
+      </div>
+      <div className="flex gap-3">
+        <button
+          onClick={() => submit(true)}
+          disabled={submitting}
+          className="flex-1 flex items-center justify-center gap-2 h-11 rounded-xl bg-green-500 hover:bg-green-600 active:scale-95 text-white text-sm font-semibold transition-all disabled:opacity-50"
+        >
+          <CheckCircle2 size={16} /> Готов
+        </button>
+        <button
+          onClick={() => submit(false)}
+          disabled={submitting}
+          className="flex-1 flex items-center justify-center gap-2 h-11 rounded-xl bg-red-500 hover:bg-red-600 active:scale-95 text-white text-sm font-semibold transition-all disabled:opacity-50"
+        >
+          <XCircle size={16} /> Не готов
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function HomePage() {
@@ -851,6 +945,9 @@ export default function HomePage() {
           </div>
         </div>
       )}
+
+      {/* Daily checkin */}
+      <DailyCheckinCard />
 
       {/* Debt warning */}
       {master && (master.debt ?? 0) > 0 && (

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, mastersTable, ordersTable, orderDispatchesTable, transactionsTable, leadsTable, voronkaColumnsTable, masterMessagesTable, pushSubscriptionsTable } from "@workspace/db";
+import { db, mastersTable, ordersTable, orderDispatchesTable, transactionsTable, leadsTable, voronkaColumnsTable, masterMessagesTable, pushSubscriptionsTable, masterCheckinsTable } from "@workspace/db";
 import { eq, and, inArray, isNull, ne, asc, desc, gte } from "drizzle-orm";
 import { verifyPassword, hashPassword } from "../lib/auth.js";
 import { getMasterEligibility, getOverdueMasterIds, countActiveMasterOrders, getColumnIdForActiveCount } from "../lib/orderEligibility.js";
@@ -1187,6 +1187,39 @@ router.patch("/availability", requireMasterPwa, async (req: any, res: any) => {
 
   await db.update(mastersTable).set({ voronkaColumnId: targetCol.id }).where(eq(mastersTable.id, masterId));
   res.json({ ok: true, isAvailable: targetCol.receivesOrders ?? false });
+});
+
+// ─── Checkin (daily readiness) ────────────────────────────────────────────────
+
+// GET /api/master-pwa/checkin/today — returns today's checkin or null
+router.get("/checkin/today", requireMasterPwa, async (req: any, res: any) => {
+  const master: any = req.master;
+  const today = new Date().toISOString().split("T")[0];
+  const rows = await db
+    .select()
+    .from(masterCheckinsTable)
+    .where(and(eq(masterCheckinsTable.masterId, master.id), eq(masterCheckinsTable.date, today)));
+  res.json(rows[0] ?? null);
+});
+
+// POST /api/master-pwa/checkin/today — submit / update today's checkin
+router.post("/checkin/today", requireMasterPwa, async (req: any, res: any) => {
+  const master: any = req.master;
+  const { isAvailable } = req.body as { isAvailable: boolean };
+  if (typeof isAvailable !== "boolean") return res.status(400).json({ error: "isAvailable required" });
+
+  const today = new Date().toISOString().split("T")[0];
+  const now = new Date();
+
+  await db
+    .insert(masterCheckinsTable)
+    .values({ masterId: master.id, date: today, isAvailable, respondedAt: now })
+    .onConflictDoUpdate({
+      target: [masterCheckinsTable.masterId, masterCheckinsTable.date],
+      set: { isAvailable, respondedAt: now },
+    });
+
+  res.json({ ok: true });
 });
 
 // ─── ADMIN: set master PWA credentials (from CRM) ────────────────────────────

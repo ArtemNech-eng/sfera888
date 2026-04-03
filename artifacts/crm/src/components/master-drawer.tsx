@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
+import { useQuery } from "@tanstack/react-query";
 import {
   X, Phone, MapPin, MessageSquare, Star, Briefcase, AlertTriangle,
   User, Tag, Plus, CheckSquare, Square, Clock, Trash2, History,
   Send, Paperclip, Check, CheckCheck, Calendar, DollarSign, Loader2, CheckCircle2,
   ClipboardList, ExternalLink, ThumbsUp, ThumbsDown, Minus, Sparkles, MessageCircle,
   Smartphone, KeyRound, Eye, EyeOff, FlaskConical, ShieldCheck, ShieldAlert, FileSignature,
-  ShieldBan, ShieldOff,
+  ShieldBan, ShieldOff, CalendarCheck, XCircle,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -16,6 +17,86 @@ function resolvePhotoUrl(url: string): string {
   if (!url) return url;
   if (url.startsWith("/objects/")) return `/api/storage${url}`;
   return url;
+}
+
+// ─── Checkin History Section ──────────────────────────────────────────────────
+
+interface CheckinRecord {
+  id: number;
+  masterId: number;
+  date: string;
+  isAvailable: boolean | null;
+  respondedAt: string | null;
+}
+
+function CheckinHistorySection({ masterId }: { masterId: number }) {
+  const { data: checkins, isLoading } = useQuery<CheckinRecord[]>({
+    queryKey: [`/api/masters/${masterId}/checkins`],
+    queryFn: async () => {
+      const res = await fetch(`/api/masters/${masterId}/checkins`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  if (isLoading) return null;
+  if (!checkins || checkins.length === 0) return null;
+
+  // Build last 30 days grid
+  const today = new Date();
+  const days: { date: string; status: "ready" | "not_ready" | "no_response" | "no_record" }[] = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const dateStr = d.toISOString().split("T")[0];
+    const record = checkins.find(c => c.date === dateStr);
+    let status: (typeof days)[0]["status"] = "no_record";
+    if (record) {
+      if (record.respondedAt === null) status = "no_response";
+      else if (record.isAvailable === true) status = "ready";
+      else status = "not_ready";
+    }
+    days.push({ date: dateStr, status });
+  }
+
+  const counts = {
+    ready:       days.filter(d => d.status === "ready").length,
+    not_ready:   days.filter(d => d.status === "not_ready").length,
+    no_response: days.filter(d => d.status === "no_response").length,
+  };
+
+  const colorMap: Record<string, string> = {
+    ready:       "bg-green-500",
+    not_ready:   "bg-red-400",
+    no_response: "bg-amber-300",
+    no_record:   "bg-gray-100",
+  };
+
+  return (
+    <div className="border-t border-gray-100 pt-3">
+      <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1">
+        <CalendarCheck className="w-3 h-3" /> Готовность за 30 дней
+      </p>
+
+      {/* 30-day grid: 6 rows × 5 columns */}
+      <div className="grid grid-cols-10 gap-0.5 mb-2">
+        {days.map((d) => (
+          <div
+            key={d.date}
+            title={`${d.date}: ${d.status === "ready" ? "Готов" : d.status === "not_ready" ? "Не готов" : d.status === "no_response" ? "Нет ответа" : "Нет рассылки"}`}
+            className={`h-4 rounded-sm ${colorMap[d.status]}`}
+          />
+        ))}
+      </div>
+
+      {/* Legend */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-gray-500">
+        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-green-500 flex-shrink-0" /> Готов ({counts.ready})</span>
+        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-red-400 flex-shrink-0" /> Не готов ({counts.not_ready})</span>
+        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-amber-300 flex-shrink-0" /> Нет ответа ({counts.no_response})</span>
+      </div>
+    </div>
+  );
 }
 
 // ─── Online status ─────────────────────────────────────────────────────────────
@@ -953,6 +1034,9 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                   </div>
                 )}
               </div>
+
+              {/* Checkin history — last 30 days */}
+              <CheckinHistorySection masterId={master.id} />
 
               {/* Test order button — shown only for test masters */}
               {master.isTestMaster && (
