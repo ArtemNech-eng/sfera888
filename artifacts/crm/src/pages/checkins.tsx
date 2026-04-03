@@ -256,6 +256,17 @@ function CheckinsContent() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [cityFilter, setCityFilter] = useState<string>("all");
   const [showChart, setShowChart] = useState(false);
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+  const [rowLimit, setRowLimit] = useState<number | null>(10);
+
+  function toggleSection(label: string) {
+    setCollapsedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  }
   const { toast } = useToast();
   const qc = useQueryClient();
 
@@ -612,29 +623,57 @@ function CheckinsContent() {
                 </button>
               ))}
             </div>
-            <button onClick={() => exportCsv(date, filteredMasters)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-gray-600 hover:bg-gray-50 transition-colors">
-              <Download className="w-3.5 h-3.5" />
-              Экспорт CSV
-            </button>
+            <div className="flex items-center gap-2">
+              {/* Row limit switcher */}
+              <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+                {([5, 10, null] as (number | null)[]).map((limit) => (
+                  <button
+                    key={limit ?? "all"}
+                    onClick={() => setRowLimit(limit)}
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${rowLimit === limit ? "bg-white text-gray-800 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+                  >
+                    {limit ?? "Все"}
+                  </button>
+                ))}
+              </div>
+              <button onClick={() => exportCsv(date, filteredMasters)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-gray-600 hover:bg-gray-50 transition-colors">
+                <Download className="w-3.5 h-3.5" />
+                Экспорт CSV
+              </button>
+            </div>
           </div>
 
           {[
             { label: "✅ Готовы к заказам",  items: ready,      emptyText: "Никто пока не ответил «Готов»" },
             { label: "❌ Не готовы сегодня", items: notReady,   emptyText: "Нет отказов" },
             { label: "⏳ Нет ответа",        items: noResponse, emptyText: "Все ответили" },
-          ].map(({ label, items, emptyText }) => (
+          ].map(({ label, items, emptyText }) => {
+            const isCollapsed = collapsedSections.has(label);
+            const visibleItems = rowLimit !== null ? items.slice(0, rowLimit) : items;
+            const hiddenCount = items.length - visibleItems.length;
+            return (
             <div key={label}>
-              <h2 className="text-sm font-semibold text-gray-600 mb-2">
-                {label} <span className="font-normal text-gray-400">({items.length})</span>
-              </h2>
-              {items.length === 0 ? (
+              <button
+                onClick={() => toggleSection(label)}
+                className="flex items-center gap-1.5 mb-2 group w-full text-left"
+              >
+                <h2 className="text-sm font-semibold text-gray-600">
+                  {label} <span className="font-normal text-gray-400">({items.length})</span>
+                </h2>
+                {isCollapsed
+                  ? <ChevronDown className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-600" />
+                  : <ChevronUp className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-600" />
+                }
+              </button>
+              {!isCollapsed && (items.length === 0 ? (
                 <p className="text-xs text-gray-400 pl-1">{emptyText}</p>
               ) : (
+                <>
                 <div className="border border-gray-100 rounded-xl overflow-hidden">
                   <table className="w-full text-sm">
                     <tbody>
-                      {items.map((m, i) => (
+                      {visibleItems.map((m, i) => (
                         <>
                           <tr
                             key={m.id}
@@ -732,9 +771,19 @@ function CheckinsContent() {
                     </tbody>
                   </table>
                 </div>
-              )}
+                {hiddenCount > 0 && (
+                  <button
+                    onClick={() => setRowLimit(null)}
+                    className="w-full text-xs text-gray-400 hover:text-blue-600 py-2 text-center transition-colors"
+                  >
+                    + ещё {hiddenCount} {hiddenCount === 1 ? "мастер" : hiddenCount < 5 ? "мастера" : "мастеров"}
+                  </button>
+                )}
+                </>
+              ))}
             </div>
-          ))}
+          );
+          })}
         </div>
       )}
     </div>
