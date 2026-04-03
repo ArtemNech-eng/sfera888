@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, mastersTable, masterTasksTable, ordersTable, leadsTable, telegramChatsTable, voronkaColumnsTable, transactionsTable, maxBotLogsTable, masterCheckinsTable, systemSettingsTable } from "@workspace/db";
-import { eq, desc, inArray, isNull, isNotNull, ne, count, gte, avg, sql } from "drizzle-orm";
+import { eq, desc, inArray, isNull, isNotNull, ne, count, gte, avg, sql, and } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { notifyMasterActivated } from "../telegram-notify.js";
 import { logMaxEvent } from "../maxBot.js";
@@ -104,6 +104,40 @@ router.post("/", requireRole("admin"), async (req, res) => {
     phone: phone ?? null,
   }).returning();
   return res.status(201).json(formatMaster(result[0]));
+});
+
+// GET /api/masters/checkins?date=YYYY-MM-DD — daily readiness report
+// NOTE: Must be before /:id to avoid Express catching "checkins" as an id param
+router.get("/checkins", allMasterRoles, async (req, res) => {
+  const today = new Date().toISOString().split("T")[0];
+  const targetDate = typeof req.query.date === "string" ? req.query.date : today;
+
+  const masters = await db
+    .select()
+    .from(mastersTable)
+    .where(and(eq(mastersTable.status, "active"), isNotNull(mastersTable.maxChatId)));
+
+  const checkins = await db
+    .select()
+    .from(masterCheckinsTable)
+    .where(eq(masterCheckinsTable.date, targetDate));
+
+  const checkinMap = new Map(checkins.map((c) => [c.masterId, c]));
+
+  const result = masters.map((m) => ({
+    id: m.id,
+    alias: m.alias,
+    city: m.city,
+    specialization: m.specialization,
+    maxChatId: m.maxChatId,
+    checkin: checkinMap.get(m.id) ?? null,
+  }));
+
+  const ready = result.filter((r) => r.checkin?.isAvailable === true).length;
+  const notReady = result.filter((r) => r.checkin?.isAvailable === false).length;
+  const noResponse = result.filter((r) => r.checkin === null || r.checkin.respondedAt === null).length;
+
+  res.json({ date: targetDate, masters: result, summary: { ready, notReady, noResponse, total: result.length } });
 });
 
 // GET /api/masters/:id
@@ -507,41 +541,6 @@ router.get("/checkins/stats", allMasterRoles, async (_req, res) => {
     last7dResponded: Number(responded7dRow.c),
     last7dReady: Number(ready7dRow.c),
   });
-});
-
-// GET /api/masters/checkins?date=YYYY-MM-DD — daily readiness report
-router.get("/checkins", allMasterRoles, async (req, res) => {
-  const { and: andOp } = await import("drizzle-orm");
-  const today = new Date().toISOString().split("T")[0];
-  const targetDate = typeof req.query.date === "string" ? req.query.date : today;
-
-  const masters = await db
-    .select()
-    .from(mastersTable)
-    .where(andOp(eq(mastersTable.status, "active"), isNotNull(mastersTable.maxChatId)));
-
-  const checkins = await db
-    .select()
-    .from(masterCheckinsTable)
-    .where(eq(masterCheckinsTable.date, targetDate));
-
-  const checkinMap = new Map(checkins.map((c) => [c.masterId, c]));
-
-  const result = masters.map((m) => ({
-    id: m.id,
-    alias: m.alias,
-    city: m.city,
-    specialization: m.specialization,
-    maxChatId: m.maxChatId,
-    checkin: checkinMap.get(m.id) ?? null,
-  }));
-
-  // Summary counts
-  const ready = result.filter((r) => r.checkin?.isAvailable === true).length;
-  const notReady = result.filter((r) => r.checkin?.isAvailable === false).length;
-  const noResponse = result.filter((r) => r.checkin === null || r.checkin.respondedAt === null).length;
-
-  res.json({ date: targetDate, masters: result, summary: { ready, notReady, noResponse, total: result.length } });
 });
 
 // POST /api/masters/checkins/broadcast — manually trigger checkin broadcast
