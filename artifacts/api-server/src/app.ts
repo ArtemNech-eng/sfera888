@@ -11,6 +11,7 @@ import fs from "fs";
 import multer from "multer";
 import { UPLOAD_BASE } from "./config.js";
 import { objectStorageClient } from "./lib/objectStorage.js";
+import { handleMaxUpdate, registerWebhook, sendMaxMessage } from "./maxBot.js";
 
 const screenshotUpload = multer({
   storage: multer.memoryStorage(),
@@ -630,6 +631,21 @@ app.post("/api/receipt/:token/confirm", screenshotUpload.single("screenshot"), a
       console.error("[receipt-confirm] chat insert error:", e);
     }
 
+    // Notify master via Max Messenger
+    try {
+      const { mastersTable } = await import("@workspace/db");
+      const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, receipt.masterId));
+      if (master?.maxChatId) {
+        const prepayStr = Number(receipt.prepaymentAmount).toLocaleString("ru-RU");
+        await sendMaxMessage(
+          master.maxChatId,
+          `💰 Клиент оплатил бронь!\n\nСмета #${receipt.id}\nКлиент: ${clientName}\nСумма брони: ${prepayStr} ₽\n\nСкриншот получен — проверьте в CRM.`
+        );
+      }
+    } catch (e) {
+      console.error("[receipt-confirm] max notification error:", e);
+    }
+
     res.json({ ok: true, message: "Подтверждение принято. Оператор свяжется с вами." });
   } catch (err) {
     console.error("[receipt-confirm]", err);
@@ -640,6 +656,14 @@ app.post("/api/receipt/:token/confirm", screenshotUpload.single("screenshot"), a
 app.use("/api/uploads", express.static(UPLOAD_BASE));
 // Serve banner images
 app.use("/api/banners", express.static(path.join(__dirname, "../public/banners")));
+
+// ── Max Messenger Bot Webhook ─────────────────────────────────────────────────
+app.post("/api/max-webhook", express.json(), async (req, res) => {
+  res.sendStatus(200);
+  if (req.body) {
+    handleMaxUpdate(req.body).catch((e) => console.error("[max-webhook]", e));
+  }
+});
 
 app.use("/api", router);
 
@@ -669,5 +693,9 @@ if (fs.existsSync(pwaDistPath)) {
 app.get("/", (_req, res) => {
   res.redirect(301, "/crm/");
 });
+
+// ── Register Max Bot Webhook on startup ───────────────────────────────────────
+const PROD_HOST = "https://sfera-project.digital";
+registerWebhook(`${PROD_HOST}/api/max-webhook`);
 
 export default app;

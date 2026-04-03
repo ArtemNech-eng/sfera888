@@ -1,5 +1,6 @@
 import { Router, type Request } from "express";
 import { db, receiptsTable, ordersTable, mastersTable, leadsTable } from "@workspace/db";
+import { sendMaxMessage } from "../maxBot.js";
 import { eq, and, isNull, isNotNull, desc } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import crypto from "crypto";
@@ -251,6 +252,18 @@ router.post("/crm", requireRole("admin", "master_operator"), async (req, res) =>
   }).returning();
 
   const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, order.masterId));
+
+  if (master?.maxChatId) {
+    const publicUrl = `${getPublicBase(req)}/api/receipt/${receipt.token}`;
+    const clientLabel = receipt.clientName || "Клиент";
+    const amountStr = Number(receipt.totalAmount).toLocaleString("ru-RU");
+    const prepayStr = Number(receipt.prepaymentAmount).toLocaleString("ru-RU");
+    sendMaxMessage(
+      master.maxChatId,
+      `📋 Новая смета #${receipt.id}\n\nКлиент: ${clientLabel}\nСумма: ${amountStr} ₽ (бронь ${prepayStr} ₽)\n\nСсылка: ${publicUrl}`
+    ).catch(() => {});
+  }
+
   res.json(await buildReceiptResponse(receipt, master, req));
 });
 
@@ -295,6 +308,18 @@ router.post("/", async (req: any, res) => {
   }).returning();
 
   const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
+
+  if (master?.maxChatId) {
+    const publicUrl = `${getPublicBase(req)}/api/receipt/${receipt.token}`;
+    const clientLabel = receipt.clientName || "Клиент";
+    const amountStr = Number(receipt.totalAmount).toLocaleString("ru-RU");
+    const prepayStr = Number(receipt.prepaymentAmount).toLocaleString("ru-RU");
+    sendMaxMessage(
+      master.maxChatId,
+      `📋 Смета #${receipt.id} создана\n\nКлиент: ${clientLabel}\nСумма: ${amountStr} ₽ (бронь ${prepayStr} ₽)\n\nСсылка для клиента: ${publicUrl}`
+    ).catch(() => {});
+  }
+
   res.json(await buildReceiptResponse(receipt, master, req));
 });
 

@@ -42,6 +42,7 @@ export const mastersTable = pgTable("masters", {
   contractPassportIssuer: text("contract_passport_issuer"),
   contractAddress: text("contract_address"),
   lastSeenAt: timestamp("last_seen_at"),
+  maxChatId: text("max_chat_id"),
 });
 
 export const insertMasterSchema = createInsertSchema(mastersTable).omit({ id: true, createdAt: true });
