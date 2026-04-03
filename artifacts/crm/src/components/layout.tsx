@@ -16,6 +16,7 @@ import {
   Trash2,
   ClipboardList,
   MessageCircle,
+  CalendarCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect, useRef } from "react";
@@ -86,6 +87,7 @@ export function Layout({ children }: LayoutProps) {
     { href: "/leads",       label: "Заявки",               icon: Inbox,           permKey: "leads" },
     { href: "/orders",      label: "Буфер заказов",        icon: Briefcase,       permKey: "orders" },
     { href: "/masters",     label: "Мастера",              icon: Users,           permKey: "masters" },
+    { href: "/checkins",    label: "Готовность",           icon: CalendarCheck,   permKey: "masters" },
     { href: "/tasks",       label: "Задачи",               icon: ClipboardList,   permKey: "tasks",       badge: openTasksCount > 0 ? openTasksCount : null },
     { href: "/finance",     label: "Финансы",              icon: Wallet,          permKey: "finance" },
     { href: "/analytics",   label: "Аналитика",            icon: BarChart3,       permKey: "analytics" },
