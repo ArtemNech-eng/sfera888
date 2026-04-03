@@ -1193,18 +1193,18 @@ router.patch("/availability", requireMasterPwa, async (req: any, res: any) => {
 
 // GET /api/master-pwa/checkin/today — returns today's checkin or null
 router.get("/checkin/today", requireMasterPwa, async (req: any, res: any) => {
-  const master: any = req.master;
+  const masterId = (req.session as any).masterId as number;
   const today = new Date().toISOString().split("T")[0];
   const rows = await db
     .select()
     .from(masterCheckinsTable)
-    .where(and(eq(masterCheckinsTable.masterId, master.id), eq(masterCheckinsTable.date, today)));
+    .where(and(eq(masterCheckinsTable.masterId, masterId), eq(masterCheckinsTable.date, today)));
   res.json(rows[0] ?? null);
 });
 
 // POST /api/master-pwa/checkin/today — submit / update today's checkin
 router.post("/checkin/today", requireMasterPwa, async (req: any, res: any) => {
-  const master: any = req.master;
+  const masterId = (req.session as any).masterId as number;
   const { isAvailable } = req.body as { isAvailable: boolean };
   if (typeof isAvailable !== "boolean") return res.status(400).json({ error: "isAvailable required" });
 
@@ -1213,7 +1213,7 @@ router.post("/checkin/today", requireMasterPwa, async (req: any, res: any) => {
 
   await db
     .insert(masterCheckinsTable)
-    .values({ masterId: master.id, date: today, isAvailable, respondedAt: now })
+    .values({ masterId, date: today, isAvailable, respondedAt: now })
     .onConflictDoUpdate({
       target: [masterCheckinsTable.masterId, masterCheckinsTable.date],
       set: { isAvailable, respondedAt: now },
