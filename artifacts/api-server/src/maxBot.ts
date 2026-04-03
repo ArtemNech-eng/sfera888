@@ -71,59 +71,44 @@ export async function getBotLink(): Promise<string | null> {
   }
 }
 
-// ─── Send message (Markdown support) ─────────────────────────────────────────
+// ─── Low-level send helper ────────────────────────────────────────────────────
+// Max Bot API: recipient must be a query-param (?user_id= or ?chat_id=),
+// the body carries only the message payload.
 
-export async function sendMaxMessage(chatId: string | number, text: string): Promise<void> {
+async function maxPost(
+  recipientParam: "user_id" | "chat_id",
+  recipientId: number,
+  body: Record<string, unknown>
+): Promise<void> {
   const token = getToken();
   if (!token) return;
+  const url = `${MAX_API}/messages?${recipientParam}=${recipientId}`;
   try {
-    const res = await fetch(`${MAX_API}/messages`, {
+    const res = await fetch(url, {
       method: "POST",
-      headers: {
-        Authorization: token,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ user_id: Number(chatId), text, format: "markdown" }),
+      headers: { Authorization: token, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
       const err = await res.text();
-      console.error("[maxBot] send failed:", res.status, err);
+      console.error(`[maxBot] POST ${recipientParam}=${recipientId} failed:`, res.status, err);
+    } else {
+      console.log(`[maxBot] message sent OK to ${recipientParam}=${recipientId}`);
     }
   } catch (e) {
-    console.error("[maxBot] send error:", e);
+    console.error("[maxBot] POST error:", e);
   }
 }
 
-// Send using chat_id (for bot_started events where chat_id != user_id)
+// ─── Send message (Markdown support) ─────────────────────────────────────────
+
+export async function sendMaxMessage(userId: string | number, text: string): Promise<void> {
+  await maxPost("user_id", Number(userId), { text, format: "markdown" });
+}
+
+// Send using chat_id (for bot_started events)
 export async function sendMaxMessageToChat(chatId: string | number, text: string): Promise<void> {
-  const token = getToken();
-  if (!token) return;
-  try {
-    const res = await fetch(`${MAX_API}/messages`, {
-      method: "POST",
-      headers: {
-        Authorization: token,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ chat_id: Number(chatId), text, format: "markdown" }),
-    });
-    if (!res.ok) {
-      const errText = await res.text();
-      console.error("[maxBot] sendToChat failed:", res.status, errText);
-      // Fallback: try with user_id instead
-      const res2 = await fetch(`${MAX_API}/messages`, {
-        method: "POST",
-        headers: { Authorization: token, "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: Number(chatId), text, format: "markdown" }),
-      });
-      if (!res2.ok) {
-        const err2 = await res2.text();
-        console.error("[maxBot] sendToChat fallback also failed:", res2.status, err2);
-      }
-    }
-  } catch (e) {
-    console.error("[maxBot] sendToChat error:", e);
-  }
+  await maxPost("chat_id", Number(chatId), { text, format: "markdown" });
 }
 
 // ─── Send message with inline keyboard buttons ────────────────────────────────
@@ -136,14 +121,13 @@ export async function sendMaxWithButtons(
   const token = getToken();
   if (!token) return;
   try {
-    const res = await fetch(`${MAX_API}/messages`, {
+    const res = await fetch(`${MAX_API}/messages?user_id=${Number(chatId)}`, {
       method: "POST",
       headers: {
         Authorization: token,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        user_id: Number(chatId),
         text,
         format: "markdown",
         attachments: [
@@ -161,6 +145,8 @@ export async function sendMaxWithButtons(
     if (!res.ok) {
       const err = await res.text();
       console.error("[maxBot] sendWithButtons failed:", res.status, err);
+    } else {
+      console.log(`[maxBot] sendWithButtons OK to user_id=${Number(chatId)}`);
     }
   } catch (e) {
     console.error("[maxBot] sendWithButtons error:", e);
