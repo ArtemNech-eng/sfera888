@@ -191,7 +191,15 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
     }
 
     if (updateType === "bot_started") {
-      const chatId = (update as any).chat_id as number;
+      // Max API can put user id in different places — try all known paths
+      const u = update as any;
+      const chatId: number =
+        u.user?.user_id ??
+        u.message?.sender?.user_id ??
+        u.chat_id ??
+        u.user_id ??
+        0;
+      console.log("[maxBot] bot_started event, extracted chatId:", chatId, "raw keys:", Object.keys(u).join(","));
       if (chatId) {
         await sendMaxMessage(
           chatId,
