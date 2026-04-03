@@ -185,6 +185,7 @@ router.get("/masters", requireAuth, async (_req, res) => {
     cancelCount7d: cancelMap7d.get(m.id) ?? 0,
     completedOrders: completedMap.get(m.id) ?? 0,
     cancelledOrders: cancelledMap.get(m.id) ?? 0,
+    maxChatId: m.maxChatId ?? null,
   })));
 });
 
