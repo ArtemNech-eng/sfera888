@@ -10,7 +10,7 @@ import {
 } from "recharts";
 import {
   CheckCircle2, XCircle, Clock, RefreshCw, ChevronLeft, ChevronRight,
-  Send, Users, MapPin, Wrench, BotMessageSquare, AlarmClock, Save, Bell,
+  Send, Users, MapPin, BotMessageSquare, AlarmClock, Save, Bell,
   MessageSquare, ChevronDown, ChevronUp, Download, Flame, Filter,
   AlertTriangle, TrendingUp, TrendingDown, Minus, BarChart2,
 } from "lucide-react";
@@ -656,11 +656,6 @@ function CheckinsContent() {
                                 <MapPin className="w-3 h-3 shrink-0" />{m.city || "—"}
                               </span>
                             </td>
-                            <td className="px-4 py-2.5 text-gray-500 hidden sm:table-cell">
-                              <span className="flex items-center gap-1">
-                                <Wrench className="w-3 h-3 shrink-0" />{m.specialization || "—"}
-                              </span>
-                            </td>
                             <td className="px-4 py-2.5">
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 <StatusBadge checkin={m.checkin} />
@@ -702,7 +697,7 @@ function CheckinsContent() {
                           {/* Expanded history row */}
                           {expandedId === m.id && (
                             <tr key={`${m.id}-history`} className={i % 2 === 0 ? "bg-white" : "bg-gray-50/50"}>
-                              <td colSpan={6} className="px-4 pb-3 pt-0">
+                              <td colSpan={5} className="px-4 pb-3 pt-0">
                                 <div className="border-t border-gray-100 pt-2.5 space-y-2.5">
                                   <div className="flex items-center gap-4 text-xs text-gray-600 flex-wrap">
                                     <span>
