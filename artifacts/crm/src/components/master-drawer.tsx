@@ -150,6 +150,7 @@ export interface DrawerMaster {
   contractPassportIssuer?: string | null;
   contractAddress?: string | null;
   lastSeenAt?: string | null;
+  servicePrices?: { service: string; priceFrom: number }[] | null;
 }
 
 interface MasterTask { id: number; masterId: number; text: string; dueAt: string | null; isCompleted: boolean; createdBy: string | null; createdAt: string; }
@@ -846,6 +847,20 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                   <div className="flex flex-wrap gap-1.5">
                     {master.specializations.map(s => (
                       <span key={s} className="text-xs bg-blue-50 text-blue-700 rounded-lg px-2.5 py-1 font-medium">{s}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {master.servicePrices && master.servicePrices.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Цены на услуги</p>
+                  <div className="space-y-1.5">
+                    {master.servicePrices.map(p => (
+                      <div key={p.service} className="flex items-center justify-between px-3 py-1.5 bg-gray-50 rounded-lg">
+                        <span className="text-xs text-gray-700">{p.service}</span>
+                        <span className="text-xs font-semibold text-gray-900">от {p.priceFrom.toLocaleString("ru")} ₽</span>
+                      </div>
                     ))}
                   </div>
                 </div>

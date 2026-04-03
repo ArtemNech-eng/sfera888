@@ -36,6 +36,7 @@ interface Master {
   completedOrders?: number; cancelledOrders?: number;
   pendingTransactionsCount?: number; contractLink?: string | null;
   maxChatId?: string | null;
+  servicePrices?: { service: string; priceFrom: number }[] | null;
 }
 
 interface VoronkaColumn {

@@ -1,7 +1,7 @@
 import { useState, useCallback, memo, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
-import { Eye, EyeOff, HardHat } from "lucide-react";
+import { Eye, EyeOff, HardHat, ChevronLeft, RussianRuble } from "lucide-react";
 
 
 function normalizePhone(raw: string): string {
@@ -82,6 +82,83 @@ const SpecsGrid = memo(function SpecsGrid({
   );
 });
 
+// ── Prices step ────────────────────────────────────────────────────────────
+function PricesStep({
+  specs,
+  prices,
+  onPriceChange,
+  errors,
+  onBack,
+  onSubmit,
+  loading,
+}: {
+  specs: string[];
+  prices: Record<string, string>;
+  onPriceChange: (spec: string, value: string) => void;
+  errors: Record<string, string>;
+  onBack: () => void;
+  onSubmit: () => void;
+  loading: boolean;
+}) {
+  return (
+    <div className="space-y-5">
+      <div>
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
+        >
+          <ChevronLeft className="w-4 h-4" />
+          Назад
+        </button>
+        <h2 className="text-base font-semibold text-foreground">Укажите ваши цены</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Минимальная стоимость по каждой услуге — клиенты увидят это при выборе мастера
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        {specs.map(spec => (
+          <div key={spec} className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground">{spec}</label>
+            <div className="relative">
+              <input
+                type="number"
+                inputMode="numeric"
+                min="0"
+                value={prices[spec] ?? ""}
+                onChange={e => onPriceChange(spec, e.target.value)}
+                placeholder="от 0"
+                className={`${inputCls} pr-14 ${errors[spec] ? "border-red-400 ring-1 ring-red-400" : ""}`}
+              />
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground text-sm flex items-center gap-0.5">
+                <RussianRuble className="w-3.5 h-3.5" />
+              </span>
+            </div>
+            {errors[spec] && <p className="text-xs text-red-500 font-medium">{errors[spec]}</p>}
+          </div>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        onClick={onSubmit}
+        disabled={loading}
+        style={{ minHeight: 52 }}
+        className="w-full bg-primary text-white font-semibold text-base rounded-xl disabled:opacity-50 transition-opacity active:opacity-80 flex items-center justify-center gap-2"
+      >
+        {loading
+          ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+          : "Зарегистрироваться"}
+      </button>
+
+      <p className="text-center text-xs text-muted-foreground">
+        После регистрации менеджер свяжется с вами
+      </p>
+    </div>
+  );
+}
+
 // ── Main page ──────────────────────────────────────────────────────────────
 export default function LoginPage() {
   const { login, register } = useAuth();
@@ -99,6 +176,11 @@ export default function LoginPage() {
   const [showRegPass, setShowRegPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [regErrors, setRegErrors] = useState<Record<string, string>>({});
+
+  // Step: "info" = main form, "prices" = prices step
+  const [regStep, setRegStep] = useState<"info" | "prices">("info");
+  const [prices, setPrices] = useState<Record<string, string>>({});
+  const [priceErrors, setPriceErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     fetch("/api/settings/services")
@@ -124,7 +206,8 @@ export default function LoginPage() {
     }
   };
 
-  const handleRegister = async (e: React.FormEvent) => {
+  // Step 1 validation → go to prices step
+  const handleNextStep = (e: React.FormEvent) => {
     e.preventDefault();
     const errs: Record<string, string> = {};
     if (!reg.alias.trim()) errs.alias = "Введите имя или псевдоним";
@@ -135,6 +218,37 @@ export default function LoginPage() {
     if (reg.password.length < 6) errs.password = "Минимум 6 символов";
     setRegErrors(errs);
     if (Object.keys(errs).length > 0) return;
+    setRegStep("prices");
+    // Reset price errors
+    setPriceErrors({});
+  };
+
+  const handlePriceChange = (spec: string, value: string) => {
+    setPrices(prev => ({ ...prev, [spec]: value }));
+    if (value && Number(value) > 0) {
+      setPriceErrors(prev => { const n = { ...prev }; delete n[spec]; return n; });
+    }
+  };
+
+  // Step 2: submit registration
+  const handleRegister = async () => {
+    // Validate prices
+    const errs: Record<string, string> = {};
+    for (const spec of specs) {
+      const val = prices[spec];
+      if (!val || Number(val) <= 0) {
+        errs[spec] = "Укажите цену";
+      }
+    }
+    setPriceErrors(errs);
+    if (Object.keys(errs).length > 0) return;
+
+    const phoneNorm = normalizePhone(reg.phone);
+    const servicePrices = specs.map(spec => ({
+      service: spec,
+      priceFrom: Number(prices[spec]),
+    }));
+
     setLoading(true);
     try {
       await register({
@@ -145,9 +259,11 @@ export default function LoginPage() {
         specializations: specs,
         login: phoneNorm,
         password: reg.password,
+        servicePrices,
       });
     } catch (err: any) {
       toast.error(err.message ?? "Ошибка регистрации");
+      setRegStep("info");
     } finally {
       setLoading(false);
     }
@@ -182,20 +298,22 @@ export default function LoginPage() {
           <p className="text-sm text-muted-foreground">Приложение для мастеров</p>
         </div>
 
-        {/* Tabs */}
-        <div className="flex rounded-xl bg-muted p-1 gap-1">
-          {(["login", "register"] as const).map(t => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${
-                tab === t ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"
-              }`}
-            >
-              {t === "login" ? "Вход" : "Регистрация"}
-            </button>
-          ))}
-        </div>
+        {/* Tabs — hidden on prices step */}
+        {regStep === "info" && (
+          <div className="flex rounded-xl bg-muted p-1 gap-1">
+            {(["login", "register"] as const).map(t => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${
+                  tab === t ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"
+                }`}
+              >
+                {t === "login" ? "Вход" : "Регистрация"}
+              </button>
+            ))}
+          </div>
+        )}
 
         {tab === "login" ? (
           <form onSubmit={handleLogin} className="space-y-4">
@@ -249,8 +367,18 @@ export default function LoginPage() {
               Обратитесь к менеджеру, если нет аккаунта
             </p>
           </form>
+        ) : regStep === "prices" ? (
+          <PricesStep
+            specs={specs}
+            prices={prices}
+            onPriceChange={handlePriceChange}
+            errors={priceErrors}
+            onBack={() => setRegStep("info")}
+            onSubmit={handleRegister}
+            loading={loading}
+          />
         ) : (
-          <form onSubmit={handleRegister} className="space-y-4">
+          <form onSubmit={handleNextStep} className="space-y-4">
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-foreground">Имя / псевдоним *</label>
               <input
@@ -335,15 +463,20 @@ export default function LoginPage() {
               {regErrors.password && <p className="text-xs text-red-500 font-medium">{regErrors.password}</p>}
             </div>
 
+            {/* Step indicator */}
+            <div className="flex items-center gap-2 pt-1">
+              <div className="flex-1 h-1 rounded-full bg-primary" />
+              <div className="flex-1 h-1 rounded-full bg-muted" />
+              <span className="text-xs text-muted-foreground">Шаг 1 из 2</span>
+            </div>
+
             <button
               type="submit"
               disabled={loading}
               style={{ minHeight: 52 }}
               className="w-full bg-primary text-white font-semibold text-base rounded-xl disabled:opacity-50 transition-opacity active:opacity-80 flex items-center justify-center gap-2"
             >
-              {loading
-                ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                : "Зарегистрироваться"}
+              Далее — указать цены →
             </button>
 
             <p className="text-center text-xs text-muted-foreground">

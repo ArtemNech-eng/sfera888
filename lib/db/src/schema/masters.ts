@@ -43,6 +43,7 @@ export const mastersTable = pgTable("masters", {
   contractAddress: text("contract_address"),
   lastSeenAt: timestamp("last_seen_at"),
   maxChatId: text("max_chat_id"),
+  servicePrices: jsonb("service_prices").$type<{ service: string; priceFrom: number }[]>(),
 });
 
 export const insertMasterSchema = createInsertSchema(mastersTable).omit({ id: true, createdAt: true });

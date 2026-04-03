@@ -19,7 +19,7 @@ interface AuthCtx {
   master: Master | null;
   loading: boolean;
   login: (login: string, password: string) => Promise<void>;
-  register: (data: { alias: string; phone?: string; city: string; specialization: string; specializations?: string[]; login: string; password: string }) => Promise<void>;
+  register: (data: { alias: string; phone?: string; city: string; specialization: string; specializations?: string[]; login: string; password: string; servicePrices?: { service: string; priceFrom: number }[] }) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 }

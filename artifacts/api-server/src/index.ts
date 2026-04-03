@@ -93,6 +93,10 @@ async function runMigrations() {
     ALTER TABLE master_checkins
       ADD COLUMN IF NOT EXISTS reason TEXT
   `);
+  await db.execute(sql`
+    ALTER TABLE masters
+      ADD COLUMN IF NOT EXISTS service_prices JSONB
+  `);
   console.log("[startup] Migrations applied");
 }
 

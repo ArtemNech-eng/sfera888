@@ -892,7 +892,7 @@ router.post("/profile/avatar", requireMasterPwa, avatarUpload.single("avatar"), 
 // ─── REGISTRATION ─────────────────────────────────────────────────────────────
 
 router.post("/auth/register", async (req, res) => {
-  const { alias, phone, city, specialization, specializations: specsArr, login, password } = req.body;
+  const { alias, phone, city, specialization, specializations: specsArr, login, password, servicePrices: pricesRaw } = req.body;
   if (!alias || !city || !login || !password) {
     return res.status(400).json({ error: "Заполните все обязательные поля" });
   }
@@ -901,6 +901,18 @@ router.post("/auth/register", async (req, res) => {
     : specialization ? [specialization] : [];
   if (specs.length === 0) {
     return res.status(400).json({ error: "Выберите хотя бы одну специальность" });
+  }
+  // Validate service prices
+  const servicePrices: { service: string; priceFrom: number }[] = [];
+  if (Array.isArray(pricesRaw)) {
+    for (const p of pricesRaw) {
+      if (p.service && typeof p.priceFrom === "number" && p.priceFrom > 0) {
+        servicePrices.push({ service: p.service, priceFrom: p.priceFrom });
+      }
+    }
+  }
+  if (servicePrices.length === 0) {
+    return res.status(400).json({ error: "Укажите цены на услуги" });
   }
   const specText = specialization || specs.join(", ");
   if (password.length < 6) return res.status(400).json({ error: "Пароль минимум 6 символов" });
@@ -927,6 +939,7 @@ router.post("/auth/register", async (req, res) => {
     city,
     specialization: specText,
     specializations: specs,
+    servicePrices,
     pwaLogin: login,
     pwaPasswordHash: passwordHash,
     voronkaColumnId: firstCol?.id ?? null,
