@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bell, RefreshCw, ExternalLink } from "lucide-react";
+import { Bell, RefreshCw } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 
 export default function MaxBotBanner() {
@@ -17,6 +17,8 @@ export default function MaxBotBanner() {
     }
   };
 
+  const botHref = master.maxBotLink ?? "https://max.ru";
+
   return (
     <div className="bg-amber-50 border-b border-amber-200 px-4 py-3">
       <div className="flex items-start gap-3">
@@ -28,16 +30,16 @@ export default function MaxBotBanner() {
             Подключите бот уведомлений
           </p>
           <p className="text-xs text-amber-700 mt-0.5 leading-relaxed">
-            Откройте{" "}
+            Откройте бот{" "}
             <a
-              href="https://max.ru"
+              href={botHref}
               target="_blank"
               rel="noopener noreferrer"
-              className="underline underline-offset-2 font-medium inline-flex items-center gap-0.5"
+              className="font-semibold text-amber-900 underline underline-offset-2 break-all"
             >
-              Max <ExternalLink className="w-2.5 h-2.5" />
-            </a>
-            , найдите бот <strong>«Честный мастер»</strong> и отправьте свой номер телефона.
+              «Честный мастер»
+            </a>{" "}
+            в приложении Max и отправьте свой номер телефона.
             После этого вы будете получать уведомления о новых заявках, назначениях и оплатах.
           </p>
           <button

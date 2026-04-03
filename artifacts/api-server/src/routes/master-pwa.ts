@@ -5,6 +5,7 @@ import { verifyPassword, hashPassword } from "../lib/auth.js";
 import { getMasterEligibility, getOverdueMasterIds, countActiveMasterOrders, getColumnIdForActiveCount } from "../lib/orderEligibility.js";
 import multer from "multer";
 import { objectStorageClient } from "../lib/objectStorage.js";
+import { getBotLink } from "../maxBot.js";
 
 const avatarUpload = multer({
   storage: multer.memoryStorage(),
@@ -143,6 +144,8 @@ router.get("/auth/me", async (req, res) => {
     master = { ...master, status: "active" };
   }
 
+  const maxBotLink = await getBotLink();
+
   res.json({
     id: master.id,
     alias: master.alias,
@@ -159,6 +162,7 @@ router.get("/auth/me", async (req, res) => {
     customAvatarUrl: master.customAvatarUrl ?? null,
     pwaLogin: master.pwaLogin ?? null,
     maxChatId: master.maxChatId ?? null,
+    maxBotLink: maxBotLink ?? null,
   });
 });
 

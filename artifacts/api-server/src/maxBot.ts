@@ -49,6 +49,28 @@ export async function logMaxEvent(
   }
 }
 
+// ─── Bot info (cached) ────────────────────────────────────────────────────────
+
+let _botLinkCache: string | null = null;
+
+export async function getBotLink(): Promise<string | null> {
+  if (_botLinkCache !== null) return _botLinkCache;
+  const token = getToken();
+  if (!token) return null;
+  try {
+    const res = await fetch(`${MAX_API}/me`, {
+      headers: { Authorization: token },
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as Record<string, any>;
+    const link: string | null = data.link ?? null;
+    if (link) _botLinkCache = link.startsWith("http") ? link : `https://max.ru/${link}`;
+    return _botLinkCache;
+  } catch {
+    return null;
+  }
+}
+
 // ─── Send message (Markdown support) ─────────────────────────────────────────
 
 export async function sendMaxMessage(chatId: string | number, text: string): Promise<void> {

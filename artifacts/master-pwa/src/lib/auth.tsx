@@ -12,6 +12,7 @@ interface Master {
   status: string;
   customAvatarUrl?: string | null;
   maxChatId?: string | null;
+  maxBotLink?: string | null;
 }
 
 interface AuthCtx {
