@@ -158,6 +158,7 @@ router.get("/auth/me", async (req, res) => {
     isTestMaster: master.isTestMaster,
     customAvatarUrl: master.customAvatarUrl ?? null,
     pwaLogin: master.pwaLogin ?? null,
+    maxChatId: master.maxChatId ?? null,
   });
 });
 

@@ -11,6 +11,7 @@ interface Master {
   phone: string | null;
   status: string;
   customAvatarUrl?: string | null;
+  maxChatId?: string | null;
 }
 
 interface AuthCtx {
