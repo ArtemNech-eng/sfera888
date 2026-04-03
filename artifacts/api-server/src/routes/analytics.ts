@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db, leadsTable, ordersTable, mastersTable, transactionsTable, receiptsTable } from "@workspace/db";
 import { requirePermission } from "../middlewares/requireAuth.js";
-import { isNull, isNotNull } from "drizzle-orm";
+import { isNull, isNotNull, eq } from "drizzle-orm";
 
 const router = Router();
 const adminOnly = requirePermission("analytics");
@@ -176,6 +176,45 @@ router.get("/monthly-revenue", adminOnly, async (req, res) => {
   }
 
   res.json(months);
+});
+
+router.get("/leads-by-source", adminOnly, async (req, res) => {
+  const leads = await db.select().from(leadsTable).where(isNull(leadsTable.deletedAt));
+  const orders = await db.select({ leadId: ordersTable.leadId, status: ordersTable.status }).from(ordersTable).where(isNull(ordersTable.deletedAt));
+
+  const SOURCE_LABELS: Record<string, string> = {
+    call: "Входящий звонок",
+    website: "Сайт",
+    ads: "Реклама",
+    referral: "Рекомендация",
+    repeat: "Повторный клиент",
+    avito: "Авито",
+    other: "Другое",
+  };
+
+  const workOrderLeadIds = new Set(orders.map(o => o.leadId).filter(Boolean));
+
+  const bySource: Record<string, { total: number; sentToWork: number; nonTarget: number; clientRefusal: number }> = {};
+
+  for (const lead of leads) {
+    const src = lead.source ?? "other";
+    if (!bySource[src]) bySource[src] = { total: 0, sentToWork: 0, nonTarget: 0, clientRefusal: 0 };
+    bySource[src].total++;
+    if (lead.status === "sent_to_work" || workOrderLeadIds.has(lead.id)) bySource[src].sentToWork++;
+    if (lead.status === "non_target") bySource[src].nonTarget++;
+    if (lead.status === "client_refusal") bySource[src].clientRefusal++;
+  }
+
+  const result = Object.entries(bySource).map(([source, stats]) => ({
+    source,
+    total: stats.total,
+    sentToWork: stats.sentToWork,
+    nonTarget: stats.nonTarget,
+    clientRefusal: stats.clientRefusal,
+    conversion: stats.total > 0 ? Math.round((stats.sentToWork / stats.total) * 1000) / 10 : 0,
+  })).sort((a, b) => b.total - a.total);
+
+  res.json(result);
 });
 
 export default router;

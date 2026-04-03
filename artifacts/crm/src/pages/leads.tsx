@@ -1,12 +1,12 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { Layout } from "@/components/layout";
 import { useGetLeads, useCreateLead, useSendLeadToBuffer, useGetCities, useGetServices, LeadStatus } from "@workspace/api-client-react";
 import { ProtectedRoute } from "@/hooks/use-auth";
 import { StatusBadge } from "@/components/status-badge";
 import { formatDate } from "@/lib/utils";
-import { Loader2, Plus, Search, Filter, Play, Trash2, User, Phone, MapPin, ChevronDown, Sparkles, Images, Pencil, X, Calendar, Radio, Save, Ban, UserX, MessageSquare, CheckCircle2, Clock, ArrowRight } from "lucide-react";
+import { Loader2, Plus, Search, Filter, Play, Trash2, User, Phone, MapPin, ChevronDown, Sparkles, Images, Pencil, X, Calendar, Radio, Save, Ban, UserX, MessageSquare, CheckCircle2, Clock, ArrowRight, ExternalLink, AlertTriangle, History } from "lucide-react";
 import { PhotoUploader } from "@/components/photo-uploader";
-import { useQueryClient, useMutation } from "@tanstack/react-query";
+import { useQueryClient, useMutation, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
 interface ServiceRow {
@@ -31,16 +31,31 @@ interface LeadRow {
   photos: string[] | null;
   createdAt: string;
   updatedAt: string;
+  cancellationReason: string | null;
+  orderId: number | null;
 }
 
 const SOURCE_OPTIONS = [
   { value: "call", label: "Входящий звонок" },
   { value: "website", label: "Сайт" },
   { value: "ads", label: "Реклама" },
+  { value: "avito", label: "Авито" },
   { value: "referral", label: "Рекомендация" },
   { value: "repeat", label: "Повторный клиент" },
   { value: "other", label: "Другое" },
 ];
+
+// Returns {label, color} for age since lead was created or status changed
+function leadAge(lead: LeadRow): { label: string; urgent: boolean; warning: boolean } | null {
+  if (lead.status !== "new" && lead.status !== "processing") return null;
+  const ms = Date.now() - new Date(lead.createdAt).getTime();
+  const m = Math.floor(ms / 60000);
+  let label: string;
+  if (m < 60) label = `${m} мин`;
+  else if (m < 1440) label = `${Math.floor(m / 60)} ч`;
+  else label = `${Math.floor(m / 1440)} дн`;
+  return { label, urgent: m > 1440, warning: m > 480 && m <= 1440 };
+}
 
 export default function Leads() {
   const [statusFilter, setStatusFilter] = useState<string>("");
@@ -50,6 +65,13 @@ export default function Leads() {
   const [editingLead, setEditingLead] = useState<LeadRow | null>(null);
   const [confirmSendLead, setConfirmSendLead] = useState<LeadRow | null>(null);
   const [selectedLead, setSelectedLead] = useState<LeadRow | null>(null);
+  const [showTimeline, setShowTimeline] = useState(false);
+  // Cancellation reason dialog
+  const [reasonDialog, setReasonDialog] = useState<{ lead: LeadRow; targetStatus: "non_target" | "client_refusal" } | null>(null);
+  const [reasonInput, setReasonInput] = useState("");
+  // Duplicate phone detection
+  const [phoneCheckResult, setPhoneCheckResult] = useState<{ duplicate: boolean; existing?: { id: number; clientName: string; status: string }[] } | null>(null);
+  const phoneCheckTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -109,12 +131,12 @@ export default function Leads() {
   });
 
   const quickStatusMutation = useMutation({
-    mutationFn: async ({ id, status }: { id: number; status: string }) => {
+    mutationFn: async ({ id, status, reason }: { id: number; status: string; reason?: string }) => {
       const r = await fetch(`/api/leads/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status, ...(reason ? { cancellationReason: reason } : {}) }),
       });
       if (!r.ok) throw new Error("Ошибка");
       return r.json();
@@ -123,6 +145,27 @@ export default function Leads() {
       queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
     },
     onError: () => toast({ title: "Ошибка смены статуса", variant: "destructive" }),
+  });
+
+  const checkPhone = useCallback((phone: string) => {
+    if (phoneCheckTimeout.current) clearTimeout(phoneCheckTimeout.current);
+    if (phone.length < 7) { setPhoneCheckResult(null); return; }
+    phoneCheckTimeout.current = setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/leads/check-phone?phone=${encodeURIComponent(phone)}`, { credentials: "include" });
+        if (r.ok) setPhoneCheckResult(await r.json());
+      } catch {}
+    }, 600);
+  }, []);
+
+  const { data: timelineEvents } = useQuery<{ id: number; event_type: string; description: string; user_alias: string | null; created_at: string }[]>({
+    queryKey: ["/api/leads", selectedLead?.id, "events"],
+    queryFn: async () => {
+      const r = await fetch(`/api/leads/${selectedLead!.id}/events`, { credentials: "include" });
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+    enabled: !!selectedLead && showTimeline,
   });
 
   const [formData, setFormData] = useState({
@@ -144,6 +187,7 @@ export default function Leads() {
     setFormData({ clientName: "", clientPhone: "", city: "", district: "", comment: "", scheduledAt: "", source: "" });
     setServiceRows([{ type: "", area: "", pricePerM2: "" }]);
     setPhotosPaths([]);
+    setPhoneCheckResult(null);
   };
 
   // Edit form state (separate from create)
@@ -398,10 +442,11 @@ export default function Leads() {
                       ? `${firstService.type}${srvs!.length > 1 ? ` +${srvs!.length - 1}` : ""}`
                       : lead.serviceType;
                     const totalArea = srvs ? srvs.reduce((s, r) => s + r.area, 0) : lead.area;
+                    const age = leadAge(lead);
                     return (
                       <tr
                         key={lead.id}
-                        onClick={() => setSelectedLead(lead)}
+                        onClick={() => { setSelectedLead(lead); setShowTimeline(false); }}
                         className={`cursor-pointer hover:bg-slate-50 transition-colors ${
                           isActive ? "" : "opacity-75"
                         }`}
@@ -413,6 +458,11 @@ export default function Leads() {
                             <div className="flex items-center gap-1 mt-0.5 text-[10px] text-blue-500 font-medium">
                               <Clock className="w-2.5 h-2.5" />
                               {new Date(lead.scheduledAt).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" })}
+                            </div>
+                          )}
+                          {age && (
+                            <div className={`flex items-center gap-0.5 mt-0.5 text-[10px] font-medium ${age.urgent ? "text-red-500" : age.warning ? "text-orange-500" : "text-muted-foreground"}`}>
+                              <Clock className="w-2.5 h-2.5" />{age.label}
                             </div>
                           )}
                         </td>
@@ -451,11 +501,20 @@ export default function Leads() {
                         </td>
                         {/* Actions */}
                         <td className="px-3 py-2.5 pr-4">
-                          <div className="flex items-center justify-end gap-1.5">
+                          <div className="flex items-center justify-end gap-1.5 flex-wrap">
                             {photoCount > 0 && (
                               <span className="inline-flex items-center gap-1 text-[10px] bg-slate-100 text-slate-500 rounded-full px-1.5 py-0.5 font-medium">
                                 <Images className="w-2.5 h-2.5" />{photoCount}
                               </span>
+                            )}
+                            {lead.status === "sent_to_work" && lead.orderId && (
+                              <a
+                                href={`/orders?highlight=${lead.orderId}`}
+                                onClick={e => e.stopPropagation()}
+                                className="inline-flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-2 py-0.5 font-medium hover:bg-emerald-100 transition-colors"
+                              >
+                                <ExternalLink className="w-2.5 h-2.5" />Заказ #{lead.orderId}
+                              </a>
                             )}
                             {isActive && (
                               <span className="inline-flex items-center gap-1 text-[10px] bg-primary/10 text-primary rounded-full px-2 py-0.5 font-medium">
@@ -602,6 +661,67 @@ export default function Leads() {
                     </div>
                   )}
 
+                  {/* Timeline */}
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => setShowTimeline(v => !v)}
+                      className="flex items-center gap-2 text-[10px] uppercase text-muted-foreground font-semibold tracking-wide hover:text-foreground transition-colors"
+                    >
+                      <History className="w-3.5 h-3.5" />
+                      История событий
+                      <ChevronDown className={`w-3 h-3 transition-transform ${showTimeline ? "rotate-180" : ""}`} />
+                    </button>
+                    {showTimeline && (
+                      <div className="space-y-1">
+                        {!timelineEvents ? (
+                          <div className="flex items-center justify-center py-4"><Loader2 className="w-4 h-4 animate-spin text-muted-foreground" /></div>
+                        ) : timelineEvents.length === 0 ? (
+                          <p className="text-xs text-muted-foreground py-2">Событий не найдено</p>
+                        ) : (
+                          <div className="relative pl-4 space-y-0">
+                            <div className="absolute left-1.5 top-0 bottom-0 w-px bg-border" />
+                            {timelineEvents.map((ev) => (
+                              <div key={ev.id} className="relative flex gap-3 py-1.5">
+                                <div className="absolute -left-2.5 top-2.5 w-2 h-2 rounded-full bg-primary/40 border-2 border-background" />
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-xs text-foreground leading-snug">{ev.description}</p>
+                                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                                    {new Date(ev.created_at).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                                    {ev.user_alias ? ` · ${ev.user_alias}` : ""}
+                                  </p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Link to order */}
+                  {selectedLead.status === "sent_to_work" && selectedLead.orderId && (
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                        <span className="text-sm font-medium text-emerald-700">Заявка отправлена в работу</span>
+                      </div>
+                      <a
+                        href={`/orders?highlight=${selectedLead.orderId}`}
+                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 hover:text-emerald-900 hover:underline"
+                      >
+                        Заказ #{selectedLead.orderId} <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </div>
+                  )}
+
+                  {/* Cancellation reason badge */}
+                  {selectedLead.cancellationReason && (
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+                      <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide mb-1">Причина закрытия</p>
+                      <p className="text-sm text-foreground">{selectedLead.cancellationReason}</p>
+                    </div>
+                  )}
+
                   {/* Quick status change */}
                   {(selectedLead.status === LeadStatus.new || selectedLead.status === LeadStatus.processing) && (
                     <div className="space-y-2">
@@ -617,14 +737,14 @@ export default function Leads() {
                           </button>
                         )}
                         <button
-                          onClick={() => { quickStatusMutation.mutate({ id: selectedLead.id, status: "non_target" }); setSelectedLead({ ...selectedLead, status: "non_target" }); }}
+                          onClick={() => { setReasonDialog({ lead: selectedLead, targetStatus: "non_target" }); setReasonInput(""); setSelectedLead(null); }}
                           disabled={quickStatusMutation.isPending}
                           className="flex items-center justify-center gap-2 px-3 py-2.5 bg-orange-50 text-orange-700 border border-orange-200 rounded-xl text-xs font-medium hover:bg-orange-100 transition-colors disabled:opacity-50"
                         >
                           <Ban className="w-3.5 h-3.5" />Нецелевая
                         </button>
                         <button
-                          onClick={() => { quickStatusMutation.mutate({ id: selectedLead.id, status: "client_refusal" }); setSelectedLead({ ...selectedLead, status: "client_refusal" }); }}
+                          onClick={() => { setReasonDialog({ lead: selectedLead, targetStatus: "client_refusal" }); setReasonInput(""); setSelectedLead(null); }}
                           disabled={quickStatusMutation.isPending}
                           className="flex items-center justify-center gap-2 px-3 py-2.5 bg-red-50 text-red-700 border border-red-200 rounded-xl text-xs font-medium hover:bg-red-100 transition-colors disabled:opacity-50"
                         >
@@ -721,11 +841,22 @@ export default function Leads() {
                           <input
                             required
                             value={formData.clientPhone}
-                            onChange={e => setFormData({...formData, clientPhone: e.target.value})}
-                            className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-200 bg-white focus:border-primary focus:ring-2 focus:ring-primary/15 outline-none text-sm transition-all"
+                            onChange={e => { setFormData({...formData, clientPhone: e.target.value}); checkPhone(e.target.value); }}
+                            className={`w-full pl-9 pr-3 py-2.5 rounded-xl border bg-white focus:ring-2 outline-none text-sm transition-all ${phoneCheckResult?.duplicate ? "border-orange-400 focus:border-orange-400 focus:ring-orange-200" : "border-gray-200 focus:border-primary focus:ring-primary/15"}`}
                             placeholder="+7 999 000-00-00"
                           />
                         </div>
+                        {phoneCheckResult?.duplicate && phoneCheckResult.existing && (
+                          <div className="flex items-start gap-2 bg-orange-50 border border-orange-200 rounded-xl px-3 py-2.5">
+                            <AlertTriangle className="w-3.5 h-3.5 text-orange-500 flex-shrink-0 mt-0.5" />
+                            <div className="text-xs text-orange-700">
+                              <p className="font-semibold mb-1">Этот телефон уже есть в базе:</p>
+                              {phoneCheckResult.existing.map(e => (
+                                <p key={e.id}>· <button type="button" onClick={() => { setIsCreateOpen(false); resetForm(); setPhoneCheckResult(null); }} className="underline">#{e.id} {e.clientName}</button></p>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
@@ -967,6 +1098,56 @@ export default function Leads() {
                   </div>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* Reason dialog: non_target / client_refusal */}
+        {reasonDialog && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.55)", backdropFilter: "blur(6px)" }}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex items-center gap-3 mb-4">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${reasonDialog.targetStatus === "non_target" ? "bg-orange-100" : "bg-red-100"}`}>
+                  {reasonDialog.targetStatus === "non_target"
+                    ? <Ban className="w-5 h-5 text-orange-600" />
+                    : <UserX className="w-5 h-5 text-red-600" />}
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900">{reasonDialog.targetStatus === "non_target" ? "Нецелевая заявка" : "Отказ клиента"}</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">Заявка #{reasonDialog.lead.id} · {reasonDialog.lead.clientName}</p>
+                </div>
+              </div>
+              <div className="space-y-3 mb-5">
+                <label className="text-sm font-medium text-gray-700">Причина <span className="text-gray-400 font-normal">(необязательно)</span></label>
+                <textarea
+                  value={reasonInput}
+                  onChange={e => setReasonInput(e.target.value)}
+                  placeholder={reasonDialog.targetStatus === "non_target" ? "Не тот тип работ, регион не обслуживаем..." : "Нашёл другого исполнителя, слишком дорого..."}
+                  rows={3}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:border-primary focus:ring-2 focus:ring-primary/15 focus:bg-white outline-none resize-none text-sm transition-all"
+                  autoFocus
+                />
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setReasonDialog(null)}
+                  className="flex-1 px-4 py-2.5 rounded-xl font-medium text-gray-500 hover:bg-gray-100 transition-colors text-sm"
+                >
+                  Отмена
+                </button>
+                <button
+                  onClick={() => {
+                    quickStatusMutation.mutate({ id: reasonDialog.lead.id, status: reasonDialog.targetStatus, reason: reasonInput || undefined });
+                    setReasonDialog(null);
+                    setReasonInput("");
+                  }}
+                  disabled={quickStatusMutation.isPending}
+                  className={`flex-1 px-4 py-2.5 rounded-xl font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-50 transition-all text-sm ${reasonDialog.targetStatus === "non_target" ? "bg-orange-500 hover:bg-orange-600" : "bg-red-500 hover:bg-red-600"}`}
+                >
+                  {quickStatusMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  Подтвердить
+                </button>
+              </div>
             </div>
           </div>
         )}

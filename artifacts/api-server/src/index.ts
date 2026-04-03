@@ -97,6 +97,26 @@ async function runMigrations() {
     ALTER TABLE masters
       ADD COLUMN IF NOT EXISTS service_prices JSONB
   `);
+  await db.execute(sql`
+    ALTER TABLE leads
+      ADD COLUMN IF NOT EXISTS cancellation_reason TEXT,
+      ADD COLUMN IF NOT EXISTS status_updated_at TIMESTAMP
+  `);
+  await db.execute(sql`
+    ALTER TABLE orders
+      ADD COLUMN IF NOT EXISTS broadcast_count INTEGER NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS last_broadcast_at TIMESTAMP
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS lead_events (
+      id SERIAL PRIMARY KEY,
+      lead_id INTEGER NOT NULL REFERENCES leads(id),
+      event_type TEXT NOT NULL,
+      description TEXT NOT NULL,
+      user_alias TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
   console.log("[startup] Migrations applied");
 }
 
@@ -283,6 +303,35 @@ async function recalculateMasterVoronkaColumns() {
   if (fixed > 0) console.log(`[voronka-fix] Corrected ${fixed} master(s) to proper column`);
 }
 
+// Auto re-broadcast orders that have been in "dispatching" for 30+ min with zero responses.
+async function autoReBroadcastNoResponse() {
+  const cutoff = new Date(Date.now() - 30 * 60 * 1000); // 30 min ago
+  const orders = await db.select().from(ordersTable)
+    .where(and(
+      eq(ordersTable.status, "waiting_master"),
+      eq(ordersTable.dispatchStatus, "dispatching"),
+    ));
+
+  for (const order of orders) {
+    // Only re-broadcast if last broadcast was > 30 min ago
+    const lastBroadcast = (order as any).lastBroadcastAt as Date | null;
+    if (lastBroadcast && new Date(lastBroadcast) > cutoff) continue;
+    // Check if any master has responded
+    const dispatches = await db.select().from(orderDispatchesTable)
+      .where(and(eq(orderDispatchesTable.orderId, order.id), eq(orderDispatchesTable.status, "responded")));
+    if (dispatches.length > 0) continue; // Already has responses, skip
+    try {
+      const result = await performBroadcast(order.id);
+      if (result.ok && result.sent > 0) {
+        await db.execute(sql`UPDATE orders SET broadcast_count = COALESCE(broadcast_count, 0) + 1, last_broadcast_at = NOW() WHERE id = ${order.id}`);
+        console.log(`[auto-rebroadcast] Re-sent order #${order.id} to ${result.sent} master(s)`);
+      }
+    } catch (e) {
+      console.error(`[auto-rebroadcast] Error for order #${order.id}:`, e);
+    }
+  }
+}
+
 // Run migrations first, then all other startup tasks that depend on the schema
 runMigrations()
   .then(() => {
@@ -302,6 +351,8 @@ setInterval(() => checkOverdueTransactions().catch(console.error), 6 * 60 * 60 *
 setInterval(() => autoExpireDispatches().catch(console.error), 60 * 60 * 1000);
 // Auto-broadcast scheduled orders 2–4h before scheduledAt
 setInterval(() => autoScheduledOrderBroadcast().catch(console.error), 15 * 60 * 1000);
+// Auto re-broadcast orders with no responses after 30 min
+setInterval(() => autoReBroadcastNoResponse().catch(console.error), 5 * 60 * 1000);
 
 // ─── Checkin broadcast scheduler ─────────────────────────────────────────────
 // Reads broadcast + reminder times from DB every minute and fires if needed.

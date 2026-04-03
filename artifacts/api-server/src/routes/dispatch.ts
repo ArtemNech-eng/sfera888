@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { db, ordersTable, mastersTable, orderDispatchesTable, leadsTable, masterMessagesTable, voronkaColumnsTable } from "@workspace/db";
 import { eq, and, ne, inArray } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { sendPushToMaster } from "../lib/push.js";
 import { getOverdueMasterIds, getMasterEligibility } from "../lib/orderEligibility.js";
@@ -261,6 +262,10 @@ router.post("/:orderId/broadcast", ops, async (req, res) => {
   const result = await performBroadcast(orderId);
   if (!result.ok) {
     return res.status(400).json({ error: result.error });
+  }
+  // Track broadcast time and count
+  if (result.sent > 0) {
+    await db.execute(sql`UPDATE orders SET broadcast_count = COALESCE(broadcast_count, 0) + 1, last_broadcast_at = NOW() WHERE id = ${orderId}`);
   }
   res.json({ ok: true, sent: result.sent, skipped: result.skipped });
 });
