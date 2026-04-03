@@ -94,6 +94,38 @@ export async function sendMaxMessage(chatId: string | number, text: string): Pro
   }
 }
 
+// Send using chat_id (for bot_started events where chat_id != user_id)
+export async function sendMaxMessageToChat(chatId: string | number, text: string): Promise<void> {
+  const token = getToken();
+  if (!token) return;
+  try {
+    const res = await fetch(`${MAX_API}/messages`, {
+      method: "POST",
+      headers: {
+        Authorization: token,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ chat_id: Number(chatId), text, format: "markdown" }),
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error("[maxBot] sendToChat failed:", res.status, errText);
+      // Fallback: try with user_id instead
+      const res2 = await fetch(`${MAX_API}/messages`, {
+        method: "POST",
+        headers: { Authorization: token, "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: Number(chatId), text, format: "markdown" }),
+      });
+      if (!res2.ok) {
+        const err2 = await res2.text();
+        console.error("[maxBot] sendToChat fallback also failed:", res2.status, err2);
+      }
+    }
+  } catch (e) {
+    console.error("[maxBot] sendToChat error:", e);
+  }
+}
+
 // ─── Send message with inline keyboard buttons ────────────────────────────────
 
 export async function sendMaxWithButtons(
@@ -140,6 +172,7 @@ export async function sendMaxWithButtons(
 export async function handleMaxUpdate(update: Record<string, unknown>): Promise<void> {
   try {
     const updateType = update.update_type as string;
+    console.log("[maxBot] incoming update:", JSON.stringify(update).slice(0, 500));
 
     // ── Checkin button callback ───────────────────────────────────────────────
     if (updateType === "message_callback") {
@@ -191,17 +224,12 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
     }
 
     if (updateType === "bot_started") {
-      // Max API can put user id in different places — try all known paths
       const u = update as any;
-      const chatId: number =
-        u.user?.user_id ??
-        u.message?.sender?.user_id ??
-        u.chat_id ??
-        u.user_id ??
-        0;
-      console.log("[maxBot] bot_started event, extracted chatId:", chatId, "raw keys:", Object.keys(u).join(","));
+      // bot_started: chat_id is the DM chat opened with the bot
+      const chatId: number = u.chat_id ?? u.user?.user_id ?? 0;
+      console.log("[maxBot] bot_started, chatId:", chatId, "keys:", Object.keys(u).join(","));
       if (chatId) {
-        await sendMaxMessage(
+        await sendMaxMessageToChat(
           chatId,
           "👋 Привет! Это бот **Честный мастер**.\n\nОтправьте ваш номер телефона, чтобы привязать аккаунт мастера и получать уведомления о новых заявках, сметах и оплатах."
         );
