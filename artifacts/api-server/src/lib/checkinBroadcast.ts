@@ -34,7 +34,7 @@ export async function broadcastCheckin(): Promise<void> {
 
     await sendMaxWithButtons(
       master.maxChatId,
-      `☀️ Доброе утро, **${name}**!\n\nВы сегодня готовы принимать заказы?`,
+      `☀️ Доброе утро, **${name}**!\n\nВы сегодня готовы принимать заказы?\nПри появлении заказа мы отправим его вам в первую очередь.`,
       [[
         { text: "✅ Готов", payload: "checkin:yes" },
         { text: "❌ Не готов", payload: "checkin:no" },
