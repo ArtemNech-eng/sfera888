@@ -6,7 +6,7 @@ import { hashPassword } from "./lib/auth.js";
 import { checkOverdueTransactions } from "./lib/orderEligibility.js";
 import { performBroadcast } from "./lib/broadcastOrder.js";
 import { broadcastCheckin } from "./lib/checkinBroadcast.js";
-import cron from "node-cron";
+import { systemSettingsTable } from "@workspace/db";
 
 const port = Number(process.env["PORT"] || "8080");
 
@@ -293,11 +293,32 @@ setInterval(() => autoExpireDispatches().catch(console.error), 60 * 60 * 1000);
 // Auto-broadcast scheduled orders 2–4h before scheduledAt
 setInterval(() => autoScheduledOrderBroadcast().catch(console.error), 15 * 60 * 1000);
 
-// Daily 7:00 MSK checkin broadcast via Max bot
-cron.schedule("0 7 * * *", () => {
-  broadcastCheckin().catch(console.error);
-}, { timezone: "Europe/Moscow" });
-console.log("[checkin] Daily 7:00 MSK broadcast scheduled");
+// Dynamic daily checkin broadcast — time stored in system_settings
+// Checks every minute; fires when MSK time matches the configured time
+let checkinFiredDate: string | null = null;
+
+setInterval(async () => {
+  try {
+    const nowUtc = new Date();
+    const nowMsk = new Date(nowUtc.getTime() + 3 * 60 * 60 * 1000);
+    const hh = nowMsk.getUTCHours().toString().padStart(2, "0");
+    const mm = nowMsk.getUTCMinutes().toString().padStart(2, "0");
+    const currentTime = `${hh}:${mm}`;
+    const today = nowMsk.toISOString().split("T")[0];
+
+    const [setting] = await db.select().from(systemSettingsTable).where(eq(systemSettingsTable.key, "checkin_broadcast_time"));
+    const broadcastTime = setting?.value ?? "07:00";
+
+    if (currentTime === broadcastTime && checkinFiredDate !== today) {
+      checkinFiredDate = today;
+      console.log(`[checkin] Firing broadcast at ${currentTime} MSK for ${today}`);
+      broadcastCheckin().catch(console.error);
+    }
+  } catch (e) {
+    console.error("[checkin] scheduler error:", e);
+  }
+}, 60 * 1000);
+console.log("[checkin] Dynamic daily broadcast scheduler started");
 
 app.listen(port, "0.0.0.0", () => {
   console.log(`Server listening on port ${port}`);

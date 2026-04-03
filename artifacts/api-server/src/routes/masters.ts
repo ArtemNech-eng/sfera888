@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, mastersTable, masterTasksTable, ordersTable, leadsTable, telegramChatsTable, voronkaColumnsTable, transactionsTable, maxBotLogsTable, masterCheckinsTable } from "@workspace/db";
+import { db, mastersTable, masterTasksTable, ordersTable, leadsTable, telegramChatsTable, voronkaColumnsTable, transactionsTable, maxBotLogsTable, masterCheckinsTable, systemSettingsTable } from "@workspace/db";
 import { eq, desc, inArray, isNull, isNotNull, ne, count, gte, avg, sql } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { notifyMasterActivated } from "../telegram-notify.js";
@@ -446,6 +446,47 @@ router.get("/:id/max-logs", requireRole("admin", "master_operator"), async (req,
     .limit(30);
 
   res.json(logs);
+});
+
+// GET /api/masters/checkins/config — get broadcast time setting
+router.get("/checkins/config", allMasterRoles, async (_req, res) => {
+  const [setting] = await db.select().from(systemSettingsTable).where(eq(systemSettingsTable.key, "checkin_broadcast_time"));
+  res.json({ broadcastTime: setting?.value ?? "07:00" });
+});
+
+// PUT /api/masters/checkins/config — update broadcast time
+router.put("/checkins/config", requireRole("admin", "master_operator"), async (req, res) => {
+  const { broadcastTime } = req.body as { broadcastTime?: string };
+  if (!broadcastTime || !/^\d{2}:\d{2}$/.test(broadcastTime)) {
+    return res.status(400).json({ error: "Неверный формат времени. Используйте HH:MM" });
+  }
+  await db
+    .insert(systemSettingsTable)
+    .values({ key: "checkin_broadcast_time", value: broadcastTime })
+    .onConflictDoUpdate({ target: systemSettingsTable.key, set: { value: broadcastTime, updatedAt: new Date() } });
+  res.json({ ok: true, broadcastTime });
+});
+
+// GET /api/masters/checkins/stats — Max bot connection & response stats
+router.get("/checkins/stats", allMasterRoles, async (_req, res) => {
+  const { and: andOp } = await import("drizzle-orm");
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+  const sevenDaysAgoStr = sevenDaysAgo.toISOString().split("T")[0];
+
+  const [totalActiveRow] = await db.select({ c: count() }).from(mastersTable).where(eq(mastersTable.status, "active"));
+  const [connectedRow] = await db.select({ c: count() }).from(mastersTable).where(andOp(eq(mastersTable.status, "active"), isNotNull(mastersTable.maxChatId)));
+  const [total7dRow] = await db.select({ c: count() }).from(masterCheckinsTable).where(gte(masterCheckinsTable.date, sevenDaysAgoStr));
+  const [responded7dRow] = await db.select({ c: count() }).from(masterCheckinsTable).where(andOp(gte(masterCheckinsTable.date, sevenDaysAgoStr), isNotNull(masterCheckinsTable.respondedAt)));
+  const [ready7dRow] = await db.select({ c: count() }).from(masterCheckinsTable).where(andOp(gte(masterCheckinsTable.date, sevenDaysAgoStr), eq(masterCheckinsTable.isAvailable, true)));
+
+  res.json({
+    totalActive: Number(totalActiveRow.c),
+    connectedToMax: Number(connectedRow.c),
+    last7dTotal: Number(total7dRow.c),
+    last7dResponded: Number(responded7dRow.c),
+    last7dReady: Number(ready7dRow.c),
+  });
 });
 
 // GET /api/masters/checkins?date=YYYY-MM-DD — daily readiness report
