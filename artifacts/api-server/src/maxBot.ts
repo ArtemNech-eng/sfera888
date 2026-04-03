@@ -168,9 +168,6 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
 
       if (!userId || !payload.startsWith("checkin:")) return;
 
-      const isAvailable = payload === "checkin:yes";
-      const today = new Date().toISOString().split("T")[0];
-
       const { db, mastersTable, masterCheckinsTable } = await import("@workspace/db");
       const { eq, isNotNull, and } = await import("drizzle-orm");
 
@@ -181,6 +178,28 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
         await sendMaxMessage(userId, "❌ Аккаунт не найден. Отправьте номер телефона для привязки.");
         return;
       }
+
+      // ── Handle reason after "не готов" ───────────────────────────────────
+      if (payload.startsWith("checkin:reason:")) {
+        const reason = payload.replace("checkin:reason:", "");
+        const today = new Date().toISOString().split("T")[0];
+        await db
+          .update(masterCheckinsTable)
+          .set({ reason })
+          .where(and(eq(masterCheckinsTable.masterId, master.id), eq(masterCheckinsTable.date, today)));
+        const labels: Record<string, string> = {
+          vacation: "отпуск",
+          sick: "болезнь",
+          busy: "занят на объекте",
+          other: "другое",
+        };
+        await sendMaxMessage(userId, `✅ Понял, причина записана: **${labels[reason] ?? reason}**. Если планы изменятся — напишите нам.`);
+        return;
+      }
+
+      // ── Handle yes / no ───────────────────────────────────────────────────
+      const isAvailable = payload === "checkin:yes";
+      const today = new Date().toISOString().split("T")[0];
 
       const existing = await db
         .select()
@@ -201,11 +220,24 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
         });
       }
 
-      const reply = isAvailable
-        ? "✅ Отлично! Вы отмечены как **готов к заказам**. Удачного рабочего дня!"
-        : "👌 Понял, вы **не готовы** сегодня. Если планы изменятся — напишите нам.";
-
-      await sendMaxMessage(userId, reply);
+      if (isAvailable) {
+        await sendMaxMessage(userId, "✅ Отлично! Вы отмечены как **готов к заказам**. Удачного рабочего дня!");
+      } else {
+        await sendMaxWithButtons(
+          userId,
+          "👌 Понял, вы **не готовы** сегодня. Подскажите причину:",
+          [
+            [
+              { text: "🏖 Отпуск", payload: "checkin:reason:vacation" },
+              { text: "🤒 Болезнь", payload: "checkin:reason:sick" },
+            ],
+            [
+              { text: "🔧 Занят на объекте", payload: "checkin:reason:busy" },
+              { text: "🔘 Другое", payload: "checkin:reason:other" },
+            ],
+          ]
+        );
+      }
       return;
     }
 

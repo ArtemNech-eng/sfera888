@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, date, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, date, boolean, timestamp, text } from "drizzle-orm/pg-core";
 import { mastersTable } from "./masters";
 
 export const masterCheckinsTable = pgTable("master_checkins", {
@@ -6,6 +6,7 @@ export const masterCheckinsTable = pgTable("master_checkins", {
   masterId: integer("master_id").notNull().references(() => mastersTable.id),
   date: date("date").notNull(),
   isAvailable: boolean("is_available"),
+  reason: text("reason"),
   respondedAt: timestamp("responded_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });

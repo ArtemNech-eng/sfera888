@@ -117,10 +117,10 @@ router.get("/checkins", allMasterRoles, async (req, res) => {
     .from(mastersTable)
     .where(and(eq(mastersTable.status, "active"), isNotNull(mastersTable.maxChatId)));
 
-  // Fetch today's checkins AND last 14 days history in one batch query
-  const fourteenDaysAgo = new Date();
-  fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 13);
-  const historyFrom = fourteenDaysAgo.toISOString().split("T")[0];
+  // Fetch today's checkins AND last 30 days history in one batch query
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
+  const historyFrom = thirtyDaysAgo.toISOString().split("T")[0];
   const masterIds = masters.map((m) => m.id);
 
   const [todayCheckins, allHistory] = await Promise.all([
@@ -134,10 +134,10 @@ router.get("/checkins", allMasterRoles, async (req, res) => {
   const checkinMap = new Map(todayCheckins.map((c) => [c.masterId, c]));
 
   // Group history by master
-  const historyByMaster = new Map<number, { date: string; isAvailable: boolean | null; respondedAt: Date | null }[]>();
+  const historyByMaster = new Map<number, { date: string; isAvailable: boolean | null; reason: string | null; respondedAt: Date | null }[]>();
   for (const h of allHistory) {
     if (!historyByMaster.has(h.masterId)) historyByMaster.set(h.masterId, []);
-    historyByMaster.get(h.masterId)!.push({ date: h.date, isAvailable: h.isAvailable, respondedAt: h.respondedAt });
+    historyByMaster.get(h.masterId)!.push({ date: h.date, isAvailable: h.isAvailable, reason: h.reason ?? null, respondedAt: h.respondedAt });
   }
 
   // Calculate streak: consecutive days ending today where isAvailable = true
@@ -153,16 +153,39 @@ router.get("/checkins", allMasterRoles, async (req, res) => {
     return streak;
   }
 
+  // Calculate response rate: % of days with a response in last 30 days
+  function calcResponseRate(history: { respondedAt: Date | null }[]): number {
+    if (history.length === 0) return 0;
+    const responded = history.filter((h) => h.respondedAt !== null).length;
+    return Math.round((responded / history.length) * 100);
+  }
+
+  // Calculate average response time: avg clock time (HH:MM) of responses
+  function calcAvgResponseTime(history: { respondedAt: Date | null }[]): string | null {
+    const times = history
+      .filter((h) => h.respondedAt !== null)
+      .map((h) => {
+        const d = new Date(h.respondedAt!);
+        return d.getHours() * 60 + d.getMinutes();
+      });
+    if (times.length === 0) return null;
+    const avg = Math.round(times.reduce((a, b) => a + b, 0) / times.length);
+    return `${String(Math.floor(avg / 60)).padStart(2, "0")}:${String(avg % 60).padStart(2, "0")}`;
+  }
+
   const result = masters.map((m) => {
     const history = (historyByMaster.get(m.id) ?? []).sort((a, b) => b.date.localeCompare(a.date));
+    const todayCheckin = checkinMap.get(m.id) ?? null;
     return {
       id: m.id,
       alias: m.alias,
       city: m.city,
       specialization: m.specialization,
       maxChatId: m.maxChatId,
-      checkin: checkinMap.get(m.id) ?? null,
+      checkin: todayCheckin ? { ...todayCheckin, reason: todayCheckin.reason ?? null } : null,
       streak: calcStreak(history),
+      responseRate: calcResponseRate(history),
+      avgResponseTime: calcAvgResponseTime(history),
       history,
     };
   });
@@ -585,16 +608,33 @@ router.put("/checkins/config", requireRole("admin", "master_operator"), async (r
 
 // GET /api/masters/checkins/stats — Max bot connection & response stats
 router.get("/checkins/stats", allMasterRoles, async (_req, res) => {
-  const { and: andOp } = await import("drizzle-orm");
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
   const sevenDaysAgoStr = sevenDaysAgo.toISOString().split("T")[0];
 
-  const [totalActiveRow] = await db.select({ c: count() }).from(mastersTable).where(eq(mastersTable.status, "active"));
-  const [connectedRow] = await db.select({ c: count() }).from(mastersTable).where(andOp(eq(mastersTable.status, "active"), isNotNull(mastersTable.maxChatId)));
-  const [total7dRow] = await db.select({ c: count() }).from(masterCheckinsTable).where(gte(masterCheckinsTable.date, sevenDaysAgoStr));
-  const [responded7dRow] = await db.select({ c: count() }).from(masterCheckinsTable).where(andOp(gte(masterCheckinsTable.date, sevenDaysAgoStr), isNotNull(masterCheckinsTable.respondedAt)));
-  const [ready7dRow] = await db.select({ c: count() }).from(masterCheckinsTable).where(andOp(gte(masterCheckinsTable.date, sevenDaysAgoStr), eq(masterCheckinsTable.isAvailable, true)));
+  const lastWeek = new Date();
+  lastWeek.setDate(lastWeek.getDate() - 7);
+  const lastWeekStr = lastWeek.toISOString().split("T")[0];
+
+  const today = new Date().toISOString().split("T")[0];
+
+  const [
+    totalActiveRow,
+    connectedRow,
+    total7dRow,
+    responded7dRow,
+    ready7dRow,
+    todayReadyRow,
+    lastWeekReadyRow,
+  ] = await Promise.all([
+    db.select({ c: count() }).from(mastersTable).where(eq(mastersTable.status, "active")).then((r) => r[0]),
+    db.select({ c: count() }).from(mastersTable).where(and(eq(mastersTable.status, "active"), isNotNull(mastersTable.maxChatId))).then((r) => r[0]),
+    db.select({ c: count() }).from(masterCheckinsTable).where(gte(masterCheckinsTable.date, sevenDaysAgoStr)).then((r) => r[0]),
+    db.select({ c: count() }).from(masterCheckinsTable).where(and(gte(masterCheckinsTable.date, sevenDaysAgoStr), isNotNull(masterCheckinsTable.respondedAt))).then((r) => r[0]),
+    db.select({ c: count() }).from(masterCheckinsTable).where(and(gte(masterCheckinsTable.date, sevenDaysAgoStr), eq(masterCheckinsTable.isAvailable, true))).then((r) => r[0]),
+    db.select({ c: count() }).from(masterCheckinsTable).where(and(eq(masterCheckinsTable.date, today), eq(masterCheckinsTable.isAvailable, true))).then((r) => r[0]),
+    db.select({ c: count() }).from(masterCheckinsTable).where(and(eq(masterCheckinsTable.date, lastWeekStr), eq(masterCheckinsTable.isAvailable, true))).then((r) => r[0]),
+  ]);
 
   res.json({
     totalActive: Number(totalActiveRow.c),
@@ -602,7 +642,46 @@ router.get("/checkins/stats", allMasterRoles, async (_req, res) => {
     last7dTotal: Number(total7dRow.c),
     last7dResponded: Number(responded7dRow.c),
     last7dReady: Number(ready7dRow.c),
+    todayReady: Number(todayReadyRow.c),
+    lastWeekReady: Number(lastWeekReadyRow.c),
   });
+});
+
+// GET /api/masters/checkins/monthly — per-day readiness data for last 30 days
+router.get("/checkins/monthly", allMasterRoles, async (_req, res) => {
+  const today = new Date();
+  const todayStr = today.toISOString().split("T")[0];
+  const thirtyDaysAgo = new Date(today);
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
+  const fromStr = thirtyDaysAgo.toISOString().split("T")[0];
+
+  const checkins = await db
+    .select()
+    .from(masterCheckinsTable)
+    .where(gte(masterCheckinsTable.date, fromStr));
+
+  // Build a map of date → counts
+  const byDate = new Map<string, { ready: number; notReady: number; noResponse: number; total: number }>();
+  const cur = new Date(thirtyDaysAgo);
+  while (cur.toISOString().split("T")[0] <= todayStr) {
+    byDate.set(cur.toISOString().split("T")[0], { ready: 0, notReady: 0, noResponse: 0, total: 0 });
+    cur.setDate(cur.getDate() + 1);
+  }
+
+  for (const c of checkins) {
+    const d = byDate.get(c.date);
+    if (!d) continue;
+    d.total++;
+    if (c.isAvailable === true) d.ready++;
+    else if (c.isAvailable === false) d.notReady++;
+    else d.noResponse++;
+  }
+
+  const result = Array.from(byDate.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([date, counts]) => ({ date, ...counts }));
+
+  res.json(result);
 });
 
 // POST /api/masters/checkins/broadcast — manually trigger checkin broadcast

@@ -89,6 +89,10 @@ async function runMigrations() {
       UNIQUE (master_id, date)
     )
   `);
+  await db.execute(sql`
+    ALTER TABLE master_checkins
+      ADD COLUMN IF NOT EXISTS reason TEXT
+  `);
   console.log("[startup] Migrations applied");
 }
 
