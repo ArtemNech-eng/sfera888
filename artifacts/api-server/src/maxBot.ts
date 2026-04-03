@@ -94,11 +94,101 @@ export async function sendMaxMessage(chatId: string | number, text: string): Pro
   }
 }
 
+// ─── Send message with inline keyboard buttons ────────────────────────────────
+
+export async function sendMaxWithButtons(
+  chatId: string | number,
+  text: string,
+  buttons: { text: string; payload: string }[][]
+): Promise<void> {
+  const token = getToken();
+  if (!token) return;
+  try {
+    const res = await fetch(`${MAX_API}/messages`, {
+      method: "POST",
+      headers: {
+        Authorization: token,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        user_id: Number(chatId),
+        text,
+        format: "markdown",
+        attachments: [
+          {
+            type: "inline_keyboard",
+            payload: {
+              buttons: buttons.map((row) =>
+                row.map((btn) => ({ type: "callback", text: btn.text, payload: btn.payload }))
+              ),
+            },
+          },
+        ],
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      console.error("[maxBot] sendWithButtons failed:", res.status, err);
+    }
+  } catch (e) {
+    console.error("[maxBot] sendWithButtons error:", e);
+  }
+}
+
 // ─── Webhook handler ──────────────────────────────────────────────────────────
 
 export async function handleMaxUpdate(update: Record<string, unknown>): Promise<void> {
   try {
     const updateType = update.update_type as string;
+
+    // ── Checkin button callback ───────────────────────────────────────────────
+    if (updateType === "message_callback") {
+      const callback = (update as any).callback;
+      const userId: number = callback?.user?.user_id;
+      const payload: string = callback?.payload ?? "";
+
+      if (!userId || !payload.startsWith("checkin:")) return;
+
+      const isAvailable = payload === "checkin:yes";
+      const today = new Date().toISOString().split("T")[0];
+
+      const { db, mastersTable, masterCheckinsTable } = await import("@workspace/db");
+      const { eq, isNotNull, and } = await import("drizzle-orm");
+
+      const masters = await db.select().from(mastersTable).where(isNotNull(mastersTable.maxChatId));
+      const master = masters.find((m) => m.maxChatId === String(userId));
+
+      if (!master) {
+        await sendMaxMessage(userId, "❌ Аккаунт не найден. Отправьте номер телефона для привязки.");
+        return;
+      }
+
+      const existing = await db
+        .select()
+        .from(masterCheckinsTable)
+        .where(and(eq(masterCheckinsTable.masterId, master.id), eq(masterCheckinsTable.date, today)));
+
+      if (existing.length > 0) {
+        await db
+          .update(masterCheckinsTable)
+          .set({ isAvailable, respondedAt: new Date() })
+          .where(eq(masterCheckinsTable.id, existing[0].id));
+      } else {
+        await db.insert(masterCheckinsTable).values({
+          masterId: master.id,
+          date: today,
+          isAvailable,
+          respondedAt: new Date(),
+        });
+      }
+
+      const reply = isAvailable
+        ? "✅ Отлично! Вы отмечены как **готов к заказам**. Удачного рабочего дня!"
+        : "👌 Понял, вы **не готовы** сегодня. Если планы изменятся — напишите нам.";
+
+      await sendMaxMessage(userId, reply);
+      return;
+    }
 
     if (updateType === "bot_started") {
       const chatId = (update as any).chat_id as number;
@@ -272,7 +362,7 @@ export async function registerWebhook(webhookUrl: string): Promise<void> {
       },
       body: JSON.stringify({
         url: webhookUrl,
-        update_types: ["message_created", "bot_started"],
+        update_types: ["message_created", "bot_started", "message_callback"],
       }),
     });
     const data = await res.json();

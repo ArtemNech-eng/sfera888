@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, mastersTable, masterTasksTable, ordersTable, leadsTable, telegramChatsTable, voronkaColumnsTable, transactionsTable, maxBotLogsTable } from "@workspace/db";
+import { db, mastersTable, masterTasksTable, ordersTable, leadsTable, telegramChatsTable, voronkaColumnsTable, transactionsTable, maxBotLogsTable, masterCheckinsTable } from "@workspace/db";
 import { eq, desc, inArray, isNull, isNotNull, ne, count, gte, avg, sql } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { notifyMasterActivated } from "../telegram-notify.js";
@@ -446,6 +446,52 @@ router.get("/:id/max-logs", requireRole("admin", "master_operator"), async (req,
     .limit(30);
 
   res.json(logs);
+});
+
+// GET /api/masters/checkins?date=YYYY-MM-DD — daily readiness report
+router.get("/checkins", allMasterRoles, async (req, res) => {
+  const { and: andOp } = await import("drizzle-orm");
+  const today = new Date().toISOString().split("T")[0];
+  const targetDate = typeof req.query.date === "string" ? req.query.date : today;
+
+  const masters = await db
+    .select()
+    .from(mastersTable)
+    .where(andOp(eq(mastersTable.status, "active"), isNotNull(mastersTable.maxChatId)));
+
+  const checkins = await db
+    .select()
+    .from(masterCheckinsTable)
+    .where(eq(masterCheckinsTable.date, targetDate));
+
+  const checkinMap = new Map(checkins.map((c) => [c.masterId, c]));
+
+  const result = masters.map((m) => ({
+    id: m.id,
+    alias: m.alias,
+    city: m.city,
+    specialization: m.specialization,
+    maxChatId: m.maxChatId,
+    checkin: checkinMap.get(m.id) ?? null,
+  }));
+
+  // Summary counts
+  const ready = result.filter((r) => r.checkin?.isAvailable === true).length;
+  const notReady = result.filter((r) => r.checkin?.isAvailable === false).length;
+  const noResponse = result.filter((r) => r.checkin === null || r.checkin.respondedAt === null).length;
+
+  res.json({ date: targetDate, masters: result, summary: { ready, notReady, noResponse, total: result.length } });
+});
+
+// POST /api/masters/checkins/broadcast — manually trigger checkin broadcast
+router.post("/checkins/broadcast", requireRole("admin", "master_operator"), async (_req, res) => {
+  try {
+    const { broadcastCheckin } = await import("../lib/checkinBroadcast.js");
+    broadcastCheckin().catch(console.error);
+    res.json({ ok: true, message: "Рассылка запущена" });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // DELETE /api/masters/:id/avatar — remove custom avatar from GCS

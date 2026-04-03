@@ -5,6 +5,8 @@ import { eq, inArray, and, lte } from "drizzle-orm";
 import { hashPassword } from "./lib/auth.js";
 import { checkOverdueTransactions } from "./lib/orderEligibility.js";
 import { performBroadcast } from "./lib/broadcastOrder.js";
+import { broadcastCheckin } from "./lib/checkinBroadcast.js";
+import cron from "node-cron";
 
 const port = Number(process.env["PORT"] || "8080");
 
@@ -74,6 +76,17 @@ async function runMigrations() {
       ADD COLUMN IF NOT EXISTS prepayment_submitted_at TIMESTAMP,
       ADD COLUMN IF NOT EXISTS prepayment_screenshot_url TEXT,
       ADD COLUMN IF NOT EXISTS prepayment_seen_at TIMESTAMP
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS master_checkins (
+      id SERIAL PRIMARY KEY,
+      master_id INTEGER NOT NULL REFERENCES masters(id),
+      date DATE NOT NULL,
+      is_available BOOLEAN,
+      responded_at TIMESTAMP,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      UNIQUE (master_id, date)
+    )
   `);
   console.log("[startup] Migrations applied");
 }
@@ -279,6 +292,12 @@ setInterval(() => checkOverdueTransactions().catch(console.error), 6 * 60 * 60 *
 setInterval(() => autoExpireDispatches().catch(console.error), 60 * 60 * 1000);
 // Auto-broadcast scheduled orders 2–4h before scheduledAt
 setInterval(() => autoScheduledOrderBroadcast().catch(console.error), 15 * 60 * 1000);
+
+// Daily 7:00 MSK checkin broadcast via Max bot
+cron.schedule("0 7 * * *", () => {
+  broadcastCheckin().catch(console.error);
+}, { timezone: "Europe/Moscow" });
+console.log("[checkin] Daily 7:00 MSK broadcast scheduled");
 
 app.listen(port, "0.0.0.0", () => {
   console.log(`Server listening on port ${port}`);

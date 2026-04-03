@@ -18,6 +18,7 @@ import MasterChatPage from "@/pages/master-chat";
 import TrashPage from "@/pages/trash";
 import TasksPage from "@/pages/tasks";
 import DialogsPage from "@/pages/dialogs";
+import CheckinsPage from "@/pages/checkins";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -41,6 +42,7 @@ function Router() {
       <Route path="/trash" component={TrashPage} />
       <Route path="/tasks" component={TasksPage} />
       <Route path="/dialogs" component={DialogsPage} />
+      <Route path="/checkins" component={CheckinsPage} />
       <Route component={NotFound} />
     </Switch>
   );

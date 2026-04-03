@@ -16,6 +16,7 @@ import {
   Smartphone,
   MessagesSquare,
   ClipboardList,
+  CalendarCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -34,6 +35,7 @@ export function Sidebar() {
     { href: "/leads",       label: "Заявки",           icon: Inbox,           permKey: "leads" },
     { href: "/orders",      label: "Буфер заказов",    icon: Briefcase,       permKey: "orders" },
     { href: "/masters",     label: "Мастера",          icon: Users,           permKey: "masters" },
+    { href: "/checkins",    label: "Готовность",        icon: CalendarCheck,   permKey: "masters" },
     { href: "/tasks",       label: "Задачи",           icon: ClipboardList,   permKey: "tasks" },
     { href: "/finance",     label: "Финансы",          icon: Wallet,          permKey: "finance" },
     { href: "/analytics",   label: "Аналитика",        icon: BarChart3,       permKey: "analytics" },
