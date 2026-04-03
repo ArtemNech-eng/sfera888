@@ -29,7 +29,8 @@ async function runMigrations() {
       ADD COLUMN IF NOT EXISTS contract_passport_issuer TEXT,
       ADD COLUMN IF NOT EXISTS contract_address TEXT,
       ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP,
-      ADD COLUMN IF NOT EXISTS passport_reg_photo_url TEXT
+      ADD COLUMN IF NOT EXISTS passport_reg_photo_url TEXT,
+      ADD COLUMN IF NOT EXISTS max_chat_id TEXT
   `);
   await db.execute(sql`
     ALTER TABLE orders
