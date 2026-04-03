@@ -8,6 +8,7 @@ import {
   FileSignature, Trash2, Smartphone, ChevronDown, Tag, ArrowUpDown, XCircle,
   LayoutList, Columns, Settings, ArrowRight, Edit2, Banknote, User,
   ChevronUp, RefreshCw, AlertCircle, Clock, Check, UserCheck, SlidersHorizontal, CheckCircle2,
+  Bot,
 } from "lucide-react";
 import { Avatar, MasterDrawer, OnlineBadge } from "@/components/master-drawer";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
@@ -34,6 +35,7 @@ interface Master {
   cancelCount30d?: number; cancelCount7d?: number;
   completedOrders?: number; cancelledOrders?: number;
   pendingTransactionsCount?: number; contractLink?: string | null;
+  maxChatId?: string | null;
 }
 
 interface VoronkaColumn {
@@ -131,6 +133,11 @@ function MasterRow({ master, onOpenDrawer, onDelete, onGoToChat }: {
           {master.pwaLogin && (
             <span className="text-[10px] bg-emerald-50 text-emerald-600 rounded-full px-1.5 py-0.5 font-semibold flex items-center gap-0.5">
               <Smartphone className="w-2.5 h-2.5" />APP
+            </span>
+          )}
+          {master.maxChatId && (
+            <span className="text-[10px] bg-blue-50 text-blue-600 rounded-full px-1.5 py-0.5 font-semibold flex items-center gap-0.5">
+              <Bot className="w-2.5 h-2.5" />MAX
             </span>
           )}
           {(master.cancelCount30d ?? 0) >= 3 && (
@@ -241,6 +248,7 @@ function MasterCard({ master, columns, onMove, onOpenDrawer, onDragStart, onDrag
               <div className="flex items-center gap-1 flex-wrap">
                 <span className="font-semibold text-[12px] text-gray-800 leading-tight truncate">{master.alias}</span>
                 {master.pwaLogin && <Smartphone className="w-2.5 h-2.5 text-emerald-500 flex-shrink-0" />}
+                {master.maxChatId && <Bot className="w-2.5 h-2.5 text-blue-500 flex-shrink-0" />}
                 {master.isTestMaster && <span className="text-[9px] bg-amber-100 text-amber-700 rounded-md px-1 font-semibold flex-shrink-0">ТЕСТ</span>}
               </div>
               <p className="text-[10px] text-gray-400 truncate leading-tight">{master.city}</p>
@@ -413,7 +421,10 @@ function SuspendedColumn({ masters, onOpenDrawer }: { masters: Master[]; onOpenD
                 <p className="text-[11px] font-semibold text-gray-700 truncate">{m.alias}</p>
                 <p className="text-[10px] text-gray-400 truncate">{m.city}</p>
               </div>
-              {m.pwaLogin && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" />}
+              <div className="flex items-center gap-0.5">
+                {m.pwaLogin && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" />}
+                {m.maxChatId && <div className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0" />}
+              </div>
             </div>
           ))}
         </div>
@@ -454,7 +465,10 @@ function DebtorColumn({ masters, onOpenDrawer }: { masters: Master[]; onOpenDraw
                   <p className="text-[11px] font-semibold text-gray-700 truncate">{m.alias}</p>
                   <p className="text-[10px] text-gray-400 truncate">{m.city}</p>
                 </div>
-                {m.pwaLogin && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" />}
+                <div className="flex items-center gap-0.5">
+                  {m.pwaLogin && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" />}
+                  {m.maxChatId && <div className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0" />}
+                </div>
               </div>
               <div className="flex items-center gap-1 mt-1.5 text-[10px] font-semibold" style={{ color: ACCENT }}>
                 <AlertTriangle className="w-2.5 h-2.5 flex-shrink-0" />{m.debt.toLocaleString("ru")} ₽
@@ -835,6 +849,7 @@ export default function Masters() {
   const kanbanMasters = filtered.filter(m => m.status !== "suspended" && m.debt <= 0);
   const unassigned = kanbanMasters.filter(m => !m.voronkaColumnId || !columns.find(c => c.id === m.voronkaColumnId));
   const tgCount = masters.filter(m => m.pwaLogin).length;
+  const maxCount = masters.filter(m => m.maxChatId).length;
   const activeCount = masters.filter(m => m.activeOrders.length > 0).length;
   const problemMasters = masters.filter(m => (m.cancelCount7d ?? 0) >= 2);
 
@@ -850,6 +865,7 @@ export default function Masters() {
               <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-400">
                 <span>{masters.length} мастеров</span>
                 <span className="flex items-center gap-1 text-emerald-500"><Smartphone className="w-3 h-3" />{tgCount} с приложением</span>
+                {maxCount > 0 && <span className="flex items-center gap-1 text-blue-500"><Bot className="w-3 h-3" />{maxCount} в Max</span>}
                 {activeCount > 0 && <span className="flex items-center gap-1 text-blue-500"><Zap className="w-3 h-3" />{activeCount} на объекте</span>}
                 {totalDebt > 0 && <span className="text-red-400 font-semibold">· Долг: {totalDebt.toLocaleString("ru-RU")} ₽</span>}
               </div>
