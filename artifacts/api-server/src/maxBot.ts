@@ -63,8 +63,8 @@ export async function getBotLink(): Promise<string | null> {
     });
     if (!res.ok) return null;
     const data = await res.json() as Record<string, any>;
-    const link: string | null = data.link ?? null;
-    if (link) _botLinkCache = link.startsWith("http") ? link : `https://max.ru/${link}`;
+    const username: string | null = data.username ?? data.link ?? null;
+    if (username) _botLinkCache = username.startsWith("http") ? username : `https://max.ru/${username}`;
     return _botLinkCache;
   } catch {
     return null;
