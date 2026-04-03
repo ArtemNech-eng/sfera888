@@ -1172,6 +1172,15 @@ export default function Orders() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <h2 className="text-lg font-display font-bold text-foreground">Заказ #{openDispatchId}</h2>
                     <StatusBadge status={openOrder.status} type="order" />
+                    {openOrder.leadId && (
+                      <a
+                        href={`/leads?openLead=${openOrder.leadId}`}
+                        className="inline-flex items-center gap-1 text-[11px] font-medium text-primary/70 hover:text-primary border border-primary/20 hover:border-primary/50 bg-primary/5 hover:bg-primary/10 rounded-full px-2 py-0.5 transition-all"
+                        title="Открыть заявку"
+                      >
+                        <ExternalLink className="w-2.5 h-2.5" />Заявка #{openOrder.leadId}
+                      </a>
+                    )}
                   </div>
                   <p className="text-sm text-muted-foreground mt-0.5">{openOrder.serviceType} · {openOrder.city}{openOrder.district ? `, ${openOrder.district}` : ""}</p>
                 </div>
@@ -1483,18 +1492,22 @@ export default function Orders() {
 
                     {/* Rejected masters */}
                     {rejectedDispatches.length > 0 && (
-                      <div className="space-y-2">
+                      <div className="space-y-1.5">
                         <p className="text-xs font-semibold text-red-600 uppercase tracking-wide flex items-center gap-1">
                           <X className="w-3 h-3" /> Отказались ({rejectedDispatches.length})
                         </p>
-                        {rejectedDispatches.map(d => (
-                          <div key={d.id} className="p-3 bg-red-50 border border-red-100 rounded-xl">
-                            <p className="text-sm font-medium text-foreground">{d.masterName}</p>
-                            {d.rejectionReason && (
-                              <p className="text-xs text-red-600 mt-1">Причина: {d.rejectionReason}</p>
-                            )}
-                          </div>
-                        ))}
+                        <div className="flex flex-wrap gap-1">
+                          {rejectedDispatches.map(d => (
+                            <span
+                              key={d.id}
+                              title={d.rejectionReason ? `Причина: ${d.rejectionReason}` : undefined}
+                              className="inline-flex items-center gap-1 text-xs bg-red-50 text-red-700 border border-red-100 rounded-full px-2.5 py-0.5 cursor-default"
+                            >
+                              {d.masterName}
+                              {d.rejectionReason && <span className="text-red-400 text-[10px]">·&nbsp;{d.rejectionReason.length > 20 ? d.rejectionReason.slice(0, 20) + "…" : d.rejectionReason}</span>}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     )}
 
