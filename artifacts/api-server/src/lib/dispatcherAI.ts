@@ -51,6 +51,15 @@ const checkinOrders = new Set<number>();        // 24h check-in sent
 const estimateReminders = new Set<number>();    // estimate reminder sent
 const preDayReminders = new Set<number>();      // day-before reminder sent
 
+// ─── Follow-up tracking ───────────────────────────────────────────────────────
+// If bot sends a message and master doesn't reply within 5h → send a follow-up
+
+const lastBotMessageAt = new Map<number, number>();    // masterId → timestamp
+const lastMasterReplyAt = new Map<number, number>();   // masterId → timestamp
+const followupSentAt = new Map<number, number>();      // masterId → timestamp (last follow-up)
+const FOLLOWUP_DELAY_H = 5;    // hours before sending follow-up
+const FOLLOWUP_COOLDOWN_H = 20; // min hours between follow-ups
+
 // ─── Tool implementations ────────────────────────────────────────────────────
 
 async function getMasterActiveOrders(masterId: number) {
@@ -219,6 +228,9 @@ export async function handleMasterMessage(
   maxChatId: string,
   text: string,
 ): Promise<void> {
+  // Track that master replied — used by follow-up logic
+  lastMasterReplyAt.set(masterId, Date.now());
+
   const context = await buildMasterContext(masterId);
   const systemPrompt = `Ты — AI-диспетчер ремонтного сервиса «Честный мастер». Ты общаешься с мастером ${masterAlias} от лица компании.
 
@@ -309,8 +321,9 @@ ${context}
   }
 }
 
-// Save bot reply to CRM chat for visibility
+// Save bot reply to CRM chat for visibility + track timing for follow-ups
 async function saveBotReply(masterId: number, chatId: string, text: string) {
+  lastBotMessageAt.set(masterId, Date.now());
   try {
     await db.insert(masterMessagesTable).values({
       masterId,
@@ -466,7 +479,168 @@ export async function runProactiveChecks(): Promise<void> {
         }
       }
     }
+
+    // ── Follow-up for ignored messages ──────────────────────────────────────
+    // For each master with active orders that has been messaged but hasn't replied
+    for (const master of masters) {
+      if (!master.maxChatId) continue;
+      const lastBot = lastBotMessageAt.get(master.id);
+      if (!lastBot) continue;
+
+      const lastMaster = lastMasterReplyAt.get(master.id) ?? 0;
+      if (lastMaster >= lastBot) continue; // master already replied after our message
+
+      const hoursSinceBot = (now - lastBot) / 3600000;
+      if (hoursSinceBot < FOLLOWUP_DELAY_H) continue; // too soon
+
+      const lastFollowup = followupSentAt.get(master.id) ?? 0;
+      if (lastFollowup > lastBot) continue; // already sent follow-up for this cycle
+      const hoursSinceFollowup = (now - lastFollowup) / 3600000;
+      if (lastFollowup > 0 && hoursSinceFollowup < FOLLOWUP_COOLDOWN_H) continue;
+
+      // Send a gentle follow-up
+      const msg = `${master.alias}, вы получили наше сообщение? Пожалуйста, ответьте — это важно для координации работ. Если есть вопросы, мы готовы помочь! 🙏`;
+      await sendMaxMessage(master.maxChatId, msg);
+      await saveBotReply(master.id, master.maxChatId, msg);
+      followupSentAt.set(master.id, now);
+      console.log(`[dispatcherAI] Sent follow-up to ${master.alias} (no reply for ${Math.round(hoursSinceBot)}h)`);
+    }
   } catch (e) {
     console.error("[dispatcherAI] proactive checks error:", e);
+  }
+}
+
+// ─── Manager bot integrations ─────────────────────────────────────────────────
+
+/** Returns a formatted conversation history with a specific master (for manager reports) */
+export async function getMasterConversationReport(masterNameOrId: string): Promise<string> {
+  try {
+    // Find master by name or ID
+    const allMasters = await db.select().from(mastersTable);
+    const lower = masterNameOrId.toLowerCase();
+    const master = allMasters.find(m =>
+      String(m.id) === masterNameOrId ||
+      m.alias.toLowerCase().includes(lower) ||
+      (m.phone ?? "").includes(masterNameOrId),
+    );
+    if (!master) return `Мастер "${masterNameOrId}" не найден.`;
+
+    const messages = await db.select().from(masterMessagesTable)
+      .where(eq(masterMessagesTable.masterId, master.id))
+      .orderBy(masterMessagesTable.createdAt);
+
+    const last20 = messages.slice(-20);
+    if (last20.length === 0) return `С мастером ${master.alias} сообщений нет.`;
+
+    const fmt = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Moscow" });
+
+    let report = `📋 Переписка с ${master.alias} (последние ${last20.length} сообщений):\n\n`;
+    for (const msg of last20) {
+      const who = msg.fromMaster ? `👷 ${master.alias}` : "🤖 Диспетчер";
+      const time = fmt.format(new Date(msg.createdAt));
+      report += `[${time}] ${who}:\n${msg.text}\n\n`;
+    }
+
+    const lastBot = lastBotMessageAt.get(master.id);
+    const lastReply = lastMasterReplyAt.get(master.id);
+    if (lastBot && !lastReply || (lastBot && lastReply && lastReply < lastBot)) {
+      const h = Math.round((Date.now() - lastBot!) / 3600000);
+      report += `⚠️ Мастер не ответил на последнее сообщение диспетчера (${h}ч назад).`;
+    } else if (lastReply) {
+      const h = Math.round((Date.now() - lastReply) / 3600000);
+      report += `✅ Последний ответ мастера — ${h}ч назад.`;
+    }
+
+    return report;
+  } catch (e) {
+    console.error("[dispatcherAI] getMasterConversationReport error:", e);
+    return "Ошибка получения переписки.";
+  }
+}
+
+/** Returns a summary of all active masters and their communication status */
+export async function getDispatcherActivityReport(): Promise<string> {
+  try {
+    const activeOrders = await db.select().from(ordersTable)
+      .where(and(inArray(ordersTable.status, ["master_assigned", "in_progress"]), isNull(ordersTable.deletedAt)));
+
+    if (activeOrders.length === 0) return "Нет активных заказов.";
+
+    const masterIds = [...new Set(activeOrders.map(o => o.masterId).filter(Boolean))] as number[];
+    const masters = await db.select().from(mastersTable)
+      .where(inArray(mastersTable.id, masterIds));
+
+    const now = Date.now();
+    let report = `📊 Статус связи с мастерами (${masters.length}):\n\n`;
+
+    for (const master of masters) {
+      const orders = activeOrders.filter(o => o.masterId === master.id);
+      const orderList = orders.map(o => `#${o.id} ${o.serviceType}`).join(", ");
+
+      const lastBot = lastBotMessageAt.get(master.id);
+      const lastReply = lastMasterReplyAt.get(master.id);
+
+      let statusIcon = "⚪";
+      let statusText = "сообщений не было";
+
+      if (lastBot) {
+        if (!lastReply || lastReply < lastBot) {
+          const h = Math.round((now - lastBot) / 3600000);
+          statusIcon = h >= FOLLOWUP_DELAY_H ? "🔴" : "🟡";
+          statusText = `не отвечает ${h}ч`;
+        } else {
+          const h = Math.round((now - lastReply) / 3600000);
+          statusIcon = "🟢";
+          statusText = `ответил ${h}ч назад`;
+        }
+      }
+
+      report += `${statusIcon} *${master.alias}* ${master.maxChatId ? "(Max ✓)" : "(без Max)"}\n`;
+      report += `   Заказы: ${orderList}\n`;
+      report += `   Связь: ${statusText}\n\n`;
+    }
+
+    return report;
+  } catch (e) {
+    console.error("[dispatcherAI] getDispatcherActivityReport error:", e);
+    return "Ошибка получения отчёта.";
+  }
+}
+
+/** Manager instructs the AI dispatcher to send a message/task to a master */
+export async function sendTaskToMaster(masterNameOrId: string, task: string): Promise<string> {
+  try {
+    const allMasters = await db.select().from(mastersTable);
+    const lower = masterNameOrId.toLowerCase();
+    const master = allMasters.find(m =>
+      String(m.id) === masterNameOrId ||
+      m.alias.toLowerCase().includes(lower) ||
+      (m.phone ?? "").includes(masterNameOrId),
+    );
+    if (!master) return `Мастер "${masterNameOrId}" не найден.`;
+    if (!master.maxChatId) return `У мастера ${master.alias} нет подключённого Max — сообщение не отправить.`;
+
+    // Build context and generate an appropriate message via GPT-4o
+    const context = await buildMasterContext(master.id);
+    const prompt = `Ты — AI-диспетчер. Менеджер поставил тебе задачу: "${task}".
+Напиши сообщение мастеру ${master.alias} от лица диспетчера компании. Коротко, по делу, дружелюбно.
+Контекст мастера: ${context}`;
+
+    const resp = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 300,
+    });
+
+    const msg = resp.choices[0]?.message?.content?.trim();
+    if (!msg) return "Не удалось сгенерировать сообщение.";
+
+    await sendMaxMessage(master.maxChatId, msg);
+    await saveBotReply(master.id, master.maxChatId, msg);
+    console.log(`[dispatcherAI] Manager task sent to ${master.alias}: ${task}`);
+    return `✅ Сообщение отправлено мастеру ${master.alias}:\n\n"${msg}"`;
+  } catch (e) {
+    console.error("[dispatcherAI] sendTaskToMaster error:", e);
+    return "Ошибка отправки сообщения.";
   }
 }

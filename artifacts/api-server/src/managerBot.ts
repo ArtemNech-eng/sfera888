@@ -26,6 +26,11 @@ import {
 } from "@workspace/db";
 import { eq, and, isNull, desc, gte, sql, inArray, lte } from "drizzle-orm";
 import { performBroadcast } from "./lib/broadcastOrder.js";
+// dispatcherAI is dynamically imported to avoid circular dependency
+// (dispatcherAI imports sendMsg/getManagerUserId from this file)
+async function getDispatcherModule() {
+  return import("./lib/dispatcherAI.js");
+}
 
 const MAX_API = "https://platform-api.max.ru";
 
@@ -703,6 +708,43 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
       parameters: { type: "object", properties: {}, required: [] },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "get_master_conversation",
+      description: "Показать переписку диспетчера с конкретным мастером — последние сообщения и статус ответа",
+      parameters: {
+        type: "object",
+        properties: {
+          masterNameOrId: { type: "string", description: "Имя мастера, часть имени или ID" },
+        },
+        required: ["masterNameOrId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_dispatcher_activity",
+      description: "Сводный отчёт по всем мастерам с активными заказами: когда последний раз писали, ответили ли, кто молчит",
+      parameters: { type: "object", properties: {}, required: [] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "send_task_to_dispatcher",
+      description: "Поставить задачу AI-диспетчеру — отправить конкретное сообщение или напоминание мастеру",
+      parameters: {
+        type: "object",
+        properties: {
+          masterNameOrId: { type: "string", description: "Имя мастера или его ID" },
+          task: { type: "string", description: "Что нужно сообщить мастеру (например: 'напомнить отправить смету по заказу #47')" },
+        },
+        required: ["masterNameOrId", "task"],
+      },
+    },
+  },
 ];
 
 const SYSTEM_PROMPT = `Ты — AI-ассистент руководителя ремонтного сервиса "Честный мастер".
@@ -719,6 +761,9 @@ const SYSTEM_PROMPT = `Ты — AI-ассистент руководителя �
 - Добавлять заметки к заказам
 - Подтверждать паспорта мастеров
 - Запоминать предпочтения (например, какой мастер лучше для определённого типа работ)
+- Просматривать переписку диспетчера с мастером (get_master_conversation)
+- Сводный отчёт по активности: кто из мастеров молчит, кто ответил (get_dispatcher_activity)
+- Ставить задачи AI-диспетчеру: написать мастеру конкретное сообщение (send_task_to_dispatcher)
 
 Правила:
 - Говори кратко и по делу. Ты в мессенджере, не в документе.
@@ -918,6 +963,21 @@ export async function handleManagerUpdate(update: unknown) {
           case "list_preferences":
             toolResult = await toolListPreferences();
             break;
+          case "get_master_conversation": {
+            const d = await getDispatcherModule();
+            toolResult = await d.getMasterConversationReport(args.masterNameOrId);
+            break;
+          }
+          case "get_dispatcher_activity": {
+            const d = await getDispatcherModule();
+            toolResult = await d.getDispatcherActivityReport();
+            break;
+          }
+          case "send_task_to_dispatcher": {
+            const d = await getDispatcherModule();
+            toolResult = await d.sendTaskToMaster(args.masterNameOrId, args.task);
+            break;
+          }
           case "add_order_note":
             toolResult = await toolAddOrderNote(args.orderId, args.note);
             break;
