@@ -742,7 +742,7 @@ async function toolAlertSubmittedReceipts(): Promise<string> {
     const text = `💰 Клиент оплатил бронь — требуется подтверждение!\n\nСмета **#${r.id}**\n👤 ${r.clientName} (${r.clientPhone})\n🔧 ${r.serviceType}, ${r.city}\n👷 Мастер: ${masterName}\n💵 Предоплата: **${prep} ₽** (итого ${total} ₽)`;
     await sendWithButtons(managerUserId, text, [[
       { text: "✅ Подтвердить оплату", payload: `confirm_receipt:${r.id}` },
-      { text: "🔎 Проверить позже", payload: "confirm:no" },
+      { text: "🔎 Проверить позже", payload: "receipt:skip" },
     ]]);
     // Track in session for context
     injectNotification(text, { description: `Смета #${r.id}, мастер ${masterName}` });
@@ -1842,6 +1842,23 @@ export async function handleManagerUpdate(update: unknown) {
       await sendMsg(userId, "⏳ Рассылаю...");
       const result = await toolBroadcastOrder(orderId);
       await sendMsg(userId, `📢 ${result}`);
+      return;
+    }
+
+    if (payload.startsWith("confirm_receipt:")) {
+      const receiptId = parseInt(payload.replace("confirm_receipt:", ""));
+      if (isNaN(receiptId)) {
+        await sendMsg(userId, "❌ Неверный ID сметы.");
+        return;
+      }
+      await sendMsg(userId, "⏳ Подтверждаю оплату...");
+      const result = await toolConfirmReceipt(receiptId);
+      await sendMsg(userId, result);
+      return;
+    }
+
+    if (payload === "receipt:skip") {
+      await sendMsg(userId, "🔎 Хорошо, проверите позже.");
       return;
     }
 
