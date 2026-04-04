@@ -29,7 +29,7 @@ import {
   masterCheckinsTable,
   masterMessagesTable,
 } from "@workspace/db";
-import { eq, and, isNull, desc, gte, sql, inArray, lte } from "drizzle-orm";
+import { eq, and, isNull, desc, gte, sql, inArray, lte, or } from "drizzle-orm";
 import { performBroadcast } from "./lib/broadcastOrder.js";
 import { execFile } from "child_process";
 import { writeFile, readFile, unlink } from "fs/promises";
@@ -688,14 +688,21 @@ async function toolSetOrderStatus(orderId: number, status: string, note?: string
     return `Неверный статус. Допустимые: ${validStatuses.join(", ")}`;
   }
 
-  const rows = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
-  if (!rows[0]) return `Заказ #${orderId} не найден.`;
+  // Search by order ID first, then by leadId (manager often says "заявка #N" which is a lead ID)
+  let rows = await db.select().from(ordersTable)
+    .where(and(eq(ordersTable.id, orderId), isNull(ordersTable.deletedAt)));
+  if (!rows[0]) {
+    rows = await db.select().from(ordersTable)
+      .where(and(eq(ordersTable.leadId, orderId), isNull(ordersTable.deletedAt)));
+  }
+  if (!rows[0]) return `Заказ/заявка #${orderId} не найдена.`;
 
+  const order = rows[0];
   const update: any = { status, updatedAt: new Date() };
   if (note) update.operatorNote = note;
   if (status === "completed") update.completedAt = new Date();
 
-  await db.update(ordersTable).set(update).where(eq(ordersTable.id, orderId));
+  await db.update(ordersTable).set(update).where(eq(ordersTable.id, order.id));
 
   const statusLabels: Record<string, string> = {
     waiting_master: "ожидает мастера",
@@ -705,7 +712,8 @@ async function toolSetOrderStatus(orderId: number, status: string, note?: string
     cancelled: "отменён",
   };
 
-  return `✅ Заказ #${orderId} → статус «${statusLabels[status] ?? status}»${note ? `. Заметка: ${note}` : ""}.`;
+  const displayNum = order.leadId ?? order.id;
+  return `✅ Заявка #${displayNum} → статус «${statusLabels[status] ?? status}»${note ? `. Заметка: ${note}` : ""}.`;
 }
 
 async function toolAddOrderNote(orderId: number, note: string) {
@@ -1193,9 +1201,26 @@ const SYSTEM_PROMPT = `Ты — AI-ассистент и стратегичес�
 — Прежде чем создавать заявку/менять статус/подтверждать паспорт — ВСЕГДА вызывай propose_* функцию
 — Если в сообщении есть данные клиента (имя, телефон, тип работ) — сразу вызывай propose_lead_creation
 — Если руководитель спрашивает "кто лучший мастер для X" — сначала get_preference, потом get_available_masters
-— Когда спрашивают о конкретном клиенте или заказе — используй search_orders
+— Когда спрашивают о конкретном клиенте или заказе — используй search_orders, потом get_order_details
 — При анализе данных всегда сравнивай с целью: "движемся ли мы к миллиарду?"
-— Используй только русский язык`;
+— Используй только русский язык
+
+═══════════════════════════════════════
+⚠️ КРИТИЧЕСКИЕ ПРАВИЛА (НЕ НАРУШАТЬ)
+═══════════════════════════════════════
+ОТМЕНА/ЗАКРЫТИЕ ЗАЯВКИ/ЗАКАЗА:
+  "закрыть заявку", "отменить заявку", "закрыть заказ", "отменить заказ", "закрой", "отмени" →
+  ВСЕГДА propose_set_order_status(orderId=..., status="cancelled")
+  НЕ ИСПОЛЬЗУЙ propose_broadcast для закрытия!
+
+РАССЫЛКА МАСТЕРАМ:
+  propose_broadcast — ТОЛЬКО когда нужно разослать заявку мастерам для поиска исполнителя.
+  НЕ путать с закрытием/отменой заказа!
+
+ПОИСК ЗАКАЗА ПО НОМЕРУ ЗАЯВКИ:
+  Если менеджер называет "заявка #N" — сначала search_orders с запросом по этому номеру,
+  получи orderId из результата, затем используй этот orderId для действий.
+  Если orderId не найден — сообщи, что заявка не найдена.`;
 
 // ─── Main update handler ──────────────────────────────────────────────────────
 
@@ -1437,6 +1462,8 @@ export async function handleManagerUpdate(update: unknown) {
             ].filter(Boolean).join("\n");
 
             session.pending = { type: "create_lead", data: args, description: parts };
+            // Close the tool call in history so OpenAI doesn't error on next message
+            addMessage(session, { role: "tool", content: "pending_confirmation", tool_call_id: tc.id, name: fnName });
             await sendWithButtons(
               userId,
               `Создать заявку?\n\n${parts}`,
@@ -1449,6 +1476,8 @@ export async function handleManagerUpdate(update: unknown) {
           }
           case "propose_broadcast": {
             session.pending = { type: "broadcast_order", data: { orderId: args.orderId }, description: `Заказ #${args.orderId}` };
+            // Close the tool call in history so OpenAI doesn't error on next message
+            addMessage(session, { role: "tool", content: "pending_confirmation", tool_call_id: tc.id, name: fnName });
             await sendWithButtons(
               userId,
               `Разослать заказ #${args.orderId} всем мастерам города?`,
@@ -1468,6 +1497,8 @@ export async function handleManagerUpdate(update: unknown) {
               cancelled: "отменён",
             };
             session.pending = { type: "set_order_status", data: args, description: `Заказ #${args.orderId} → ${statusLabels[args.status] ?? args.status}` };
+            // Close the tool call in history so OpenAI doesn't error on next message
+            addMessage(session, { role: "tool", content: "pending_confirmation", tool_call_id: tc.id, name: fnName });
             await sendWithButtons(
               userId,
               `Изменить статус заказа #${args.orderId} на «${statusLabels[args.status] ?? args.status}»?${args.note ? `\nЗаметка: ${args.note}` : ""}`,
@@ -1480,6 +1511,8 @@ export async function handleManagerUpdate(update: unknown) {
           }
           case "propose_approve_passport": {
             session.pending = { type: "approve_passport", data: args, description: `Паспорт мастера ${args.masterIdOrName}` };
+            // Close the tool call in history so OpenAI doesn't error on next message
+            addMessage(session, { role: "tool", content: "pending_confirmation", tool_call_id: tc.id, name: fnName });
             await sendWithButtons(
               userId,
               `Подтвердить паспорт мастера "${args.masterIdOrName}"?`,
