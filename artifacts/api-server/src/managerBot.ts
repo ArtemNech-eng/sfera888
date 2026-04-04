@@ -596,19 +596,17 @@ export async function registerManagerWebhook() {
     return;
   }
 
-  const host = process.env.PUBLIC_HOST;
-  if (!host) {
-    console.log("[managerBot] PUBLIC_HOST not set — skipping webhook registration");
-    return;
-  }
-
+  const host = process.env.PUBLIC_HOST ?? "sfera-project.digital";
   const webhookUrl = `https://${host}/api/manager-webhook`;
 
   try {
-    const res = await fetch(`${MAX_API}/subscriptions/webhook`, {
+    const res = await fetch(`${MAX_API}/subscriptions`, {
       method: "POST",
       headers: { Authorization: token, "Content-Type": "application/json" },
-      body: JSON.stringify({ url: webhookUrl }),
+      body: JSON.stringify({
+        url: webhookUrl,
+        update_types: ["message_created", "bot_started", "message_callback"],
+      }),
     });
     if (res.ok) {
       console.log("[managerBot] webhook registered:", webhookUrl);
