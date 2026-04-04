@@ -73,6 +73,16 @@ const followupSentAt = new Map<number, number>();      // masterId → timestamp
 const FOLLOWUP_DELAY_H = 5;    // hours before sending follow-up
 const FOLLOWUP_COOLDOWN_H = 20; // min hours between follow-ups
 
+// ─── Manager task pending notifications ───────────────────────────────────────
+// When manager sends a task via send_task_to_dispatcher, track it so the manager
+// gets notified when the master replies with the result.
+interface PendingManagerTask {
+  task: string;
+  masterAlias: string;
+  sentAt: number;
+}
+const pendingManagerTasks = new Map<number, PendingManagerTask>(); // masterId → task
+
 // ─── Tool implementations ────────────────────────────────────────────────────
 
 async function getMasterActiveOrders(masterId: number) {
@@ -297,6 +307,19 @@ export async function handleMasterMessage(
 ): Promise<void> {
   // Track that master replied — used by follow-up logic
   lastMasterReplyAt.set(masterId, Date.now());
+
+  // If manager asked dispatcher to contact this master — notify manager of the reply
+  const pendingTask = pendingManagerTasks.get(masterId);
+  if (pendingTask) {
+    pendingManagerTasks.delete(masterId);
+    const managerId = getManagerUserId();
+    if (managerId) {
+      const elapsed = Math.round((Date.now() - pendingTask.sentAt) / 60000);
+      await sendManagerMsg(managerId,
+        `📩 ${pendingTask.masterAlias} ответил (через ${elapsed} мин):\n\n"${text}"\n\n_Задача была: ${pendingTask.task}_`
+      );
+    }
+  }
 
   const context = await buildMasterContext(masterId);
   const systemPrompt = `Ты — AI-диспетчер ремонтного сервиса «Честный мастер». Ты общаешься с мастером ${masterAlias} от лица компании.
@@ -733,8 +756,12 @@ export async function sendTaskToMaster(masterNameOrId: string, task: string): Pr
 
     await sendMaxMessage(master.maxChatId, msg);
     await saveBotReply(master.id, master.maxChatId, msg);
+
+    // Track that manager is waiting for reply from this master
+    pendingManagerTasks.set(master.id, { task, masterAlias: master.alias, sentAt: Date.now() });
+
     console.log(`[dispatcherAI] Manager task sent to ${master.alias}: ${task}`);
-    return `✅ Сообщение отправлено мастеру ${master.alias}:\n\n"${msg}"`;
+    return `✅ Отправлено мастеру ${master.alias}:\n\n"${msg}"\n\n⏳ Как только ${master.alias} ответит — я тебя уведомлю.`;
   } catch (e) {
     console.error("[dispatcherAI] sendTaskToMaster error:", e);
     return "Ошибка отправки сообщения.";
