@@ -10,8 +10,8 @@
  */
 
 import OpenAI from "openai";
-import { db, ordersTable, mastersTable, leadsTable, receiptsTable, masterMessagesTable } from "@workspace/db";
-import { eq, and, isNull, inArray } from "drizzle-orm";
+import { db, ordersTable, mastersTable, leadsTable, receiptsTable, masterMessagesTable, dispatcherFollowupsTable } from "@workspace/db";
+import { eq, and, isNull, inArray, lte } from "drizzle-orm";
 import { sendMaxMessage } from "../maxBot.js";
 import { sendMsg as sendManagerMsg, getManagerUserId } from "../managerBot.js";
 
@@ -132,6 +132,29 @@ async function toolGetEstimateStatus(orderId: number): Promise<string> {
   return `Смета создана. Итого: ${total.toLocaleString("ru-RU")} ₽${r.notes ? ". Заметки: " + r.notes : ""}.`;
 }
 
+async function toolScheduleFollowup(
+  masterId: number,
+  orderId: number,
+  hoursFromNow: number,
+  question: string,
+  context?: string,
+): Promise<string> {
+  const followupAt = new Date(Date.now() + hoursFromNow * 3600000);
+  await db.insert(dispatcherFollowupsTable).values({
+    masterId,
+    orderId,
+    followupAt,
+    question,
+    context: context ?? null,
+    sent: false,
+  });
+  const fmt = new Intl.DateTimeFormat("ru-RU", {
+    day: "numeric", month: "long", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Moscow",
+  });
+  console.log(`[dispatcherAI] Scheduled follow-up for master ${masterId} at ${fmt.format(followupAt)}: "${question}"`);
+  return `Запланировано: ${fmt.format(followupAt)} напишу мастеру: "${question}"`;
+}
+
 // ─── Build context summary for system prompt ─────────────────────────────────
 
 async function buildMasterContext(masterId: number): Promise<string> {
@@ -154,7 +177,21 @@ async function buildMasterContext(masterId: number): Promise<string> {
     return `• Заказ #${o.id}: ${o.serviceType}, ${o.city}${o.district ? ", " + o.district : ""}, ${o.area} м², дата: ${scheduledStr}, назначен ${ageH}ч назад, ${estimateStr}`;
   }));
 
-  return `Активные заказы (${orders.length}):\n${lines.join("\n")}`;
+  let result = `Активные заказы (${orders.length}):\n${lines.join("\n")}`;
+
+  // Include pending scheduled follow-ups so AI doesn't double-schedule
+  const pendingFollowups = await db.select().from(dispatcherFollowupsTable)
+    .where(and(
+      eq(dispatcherFollowupsTable.masterId, masterId),
+      eq(dispatcherFollowupsTable.sent, false),
+    ));
+  if (pendingFollowups.length > 0) {
+    const fmt = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Moscow" });
+    const lines2 = pendingFollowups.map(f => `  • ${fmt.format(new Date(f.followupAt))}: "${f.question}"${f.context ? ` [обещал: ${f.context}]` : ""}`);
+    result += `\n\nЗапланированные уточнения (${pendingFollowups.length}):\n${lines2.join("\n")}`;
+  }
+
+  return result;
 }
 
 // ─── GPT-4o tool definitions ─────────────────────────────────────────────────
@@ -218,6 +255,23 @@ const DISPATCHER_TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "schedule_followup",
+      description: "Запланировать уточняющий вопрос мастеру на конкретное время. Используй когда мастер называет срок ('закончу через 3 дня', 'сдам в пятницу', 'приеду завтра'). Бот автоматически напишет в нужный момент и уточнит, выполнено ли обещание.",
+      parameters: {
+        type: "object",
+        properties: {
+          orderId: { type: "number", description: "ID заказа" },
+          hoursFromNow: { type: "number", description: "Через сколько часов написать мастеру (например: 'через 3 дня' = 72, 'завтра' = 24)" },
+          question: { type: "string", description: "Что спросить мастера в нужный момент (конкретно, по-русски). Например: 'Вы говорили закончить через 3 дня — готово? Клиент ждёт подтверждения.'"},
+          context: { type: "string", description: "Краткий контекст — что именно обещал мастер" },
+        },
+        required: ["orderId", "hoursFromNow", "question"],
+      },
+    },
+  },
 ];
 
 // ─── Main AI response function ────────────────────────────────────────────────
@@ -244,12 +298,14 @@ ${context}
 - Если мастер сообщает о начале работ — фиксировать в CRM
 - Сохранять важные детали (проблемы, сроки, договорённости) через add_order_note
 - При СЕРЬЁЗНЫХ проблемах (конфликт с клиентом, повреждение имущества, травма) — немедленно вызывать escalate_to_manager
+- Если мастер называет КОНКРЕТНЫЙ срок ("закончу через 3 дня", "сдам в пятницу", "приеду завтра") — ВСЕГДА вызывай schedule_followup чтобы бот уточнил в нужный момент
 
 Правила:
 - Пиши коротко — ты в мессенджере
 - Будь конкретным: называй заказ (#номер)
 - Не перегружай мастера вопросами — один вопрос за раз
-- Если мастер написал что-то важное — сначала сохрани через tool, потом ответь`;
+- Если мастер написал что-то важное — сначала сохрани через tool, потом ответь
+- При schedule_followup: пиши question от имени диспетчера, конкретно, со ссылкой на обещание мастера`;
 
   addToHistory(masterId, { role: "user", content: text });
 
@@ -287,6 +343,8 @@ ${context}
           toolResult = await toolGetEstimateStatus(args.orderId);
         } else if (fnName === "escalate_to_manager") {
           toolResult = await toolEscalateToManager(args.message, masterId, args.orderId);
+        } else if (fnName === "schedule_followup") {
+          toolResult = await toolScheduleFollowup(masterId, args.orderId, args.hoursFromNow, args.question, args.context);
         }
 
         addToHistory(masterId, { role: "tool", content: toolResult, tool_call_id: tc.id, name: fnName });
@@ -424,6 +482,30 @@ export async function sendPreDayReminder(
 
 export async function runProactiveChecks(): Promise<void> {
   try {
+    // ── Scheduled follow-ups (master commitments) ─────────────────────────
+    const dueFollowups = await db.select().from(dispatcherFollowupsTable)
+      .where(and(
+        eq(dispatcherFollowupsTable.sent, false),
+        lte(dispatcherFollowupsTable.followupAt, new Date()),
+      ));
+
+    for (const followup of dueFollowups) {
+      const master = await db.select().from(mastersTable)
+        .where(eq(mastersTable.id, followup.masterId))
+        .then(r => r[0]);
+
+      if (master?.maxChatId) {
+        await sendMaxMessage(master.maxChatId, followup.question);
+        await saveBotReply(master.id, master.maxChatId, followup.question);
+        console.log(`[dispatcherAI] Sent scheduled follow-up #${followup.id} to ${master.alias}`);
+      }
+
+      // Mark as sent regardless (master may not have Max)
+      await db.update(dispatcherFollowupsTable)
+        .set({ sent: true })
+        .where(eq(dispatcherFollowupsTable.id, followup.id));
+    }
+
     const activeOrders = await db.select().from(ordersTable)
       .where(and(
         inArray(ordersTable.status, ["master_assigned", "in_progress"]),
