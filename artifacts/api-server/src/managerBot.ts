@@ -244,13 +244,29 @@ export function injectNotification(text: string, ctx: ActiveContext) {
 }
 
 function sanitizeHistory(msgs: Message[]): Message[] {
-  // After trimming, the slice may start with orphaned "tool" messages whose
-  // parent assistant-with-tool_calls was cut off. Remove them from the top.
+  // 1. Remove orphaned "tool" messages at the START (parent assistant was trimmed away)
   let start = 0;
-  while (start < msgs.length && msgs[start].role === "tool") {
-    start++;
+  while (start < msgs.length && msgs[start].role === "tool") start++;
+  msgs = msgs.slice(start);
+
+  // 2. Remove orphaned assistant messages with tool_calls at the END
+  //    (their tool responses were trimmed, or return happened before adding them)
+  while (msgs.length > 0) {
+    const last = msgs[msgs.length - 1];
+    if (last.role === "assistant" && (last as any).tool_calls?.length > 0) {
+      // Check if all tool_call_ids have matching tool responses
+      const tcIds = new Set((last as any).tool_calls.map((tc: any) => tc.id));
+      const hasAllResponses = [...tcIds].every(id =>
+        msgs.some(m => m.role === "tool" && (m as any).tool_call_id === id)
+      );
+      if (!hasAllResponses) {
+        msgs = msgs.slice(0, -1); // Remove unmatched assistant message
+        continue;
+      }
+    }
+    break;
   }
-  return msgs.slice(start);
+  return msgs;
 }
 
 function addMessage(session: Session, msg: Message) {
@@ -604,9 +620,11 @@ async function toolGetPendingReceipts() {
       const total = Number(r.totalAmount).toLocaleString("ru-RU");
       const prep = Number(r.prepaymentAmount).toLocaleString("ru-RU");
       const submitted = fmt.format(new Date(r.prepaymentSubmittedAt!));
-      result += `• Смета **#${r.id}** — ${masterName} | Заказ #${r.orderId}\n`;
-      result += `  ${r.serviceType}, ${r.clientName} (${r.clientPhone})\n`;
-      result += `  Предоплата: **${prep} ₽** (итого ${total} ₽) | Оплачено: ${submitted}\n`;
+      result += `• Смета **#${r.id}** | Заказ #${r.orderId}\n`;
+      result += `  👷 Мастер: ${masterName}\n`;
+      result += `  👤 Клиент: ${r.clientName} (${r.clientPhone})\n`;
+      result += `  🔧 ${r.serviceType} | Предоплата: **${prep} ₽** (итого ${total} ₽)\n`;
+      result += `  Оплачено клиентом: ${submitted}\n`;
     }
   }
 
@@ -617,9 +635,11 @@ async function toolGetPendingReceipts() {
       const total = Number(r.totalAmount).toLocaleString("ru-RU");
       const prep = Number(r.prepaymentAmount).toLocaleString("ru-RU");
       const age = Math.round((Date.now() - new Date(r.createdAt).getTime()) / 3600000);
-      result += `• Смета **#${r.id}** — ${masterName} | Заказ #${r.orderId}\n`;
-      result += `  ${r.serviceType}, ${r.clientName} (${r.clientPhone})\n`;
-      result += `  Предоплата: **${prep} ₽** (итого ${total} ₽) | Выставлена ${age}ч назад\n`;
+      result += `• Смета **#${r.id}** | Заказ #${r.orderId}\n`;
+      result += `  👷 Мастер: ${masterName}\n`;
+      result += `  👤 Клиент: ${r.clientName} (${r.clientPhone})\n`;
+      result += `  🔧 ${r.serviceType} | Предоплата: **${prep} ₽** (итого ${total} ₽)\n`;
+      result += `  Выставлена ${age}ч назад\n`;
     }
   }
 
@@ -1906,13 +1926,15 @@ export async function handleManagerUpdate(update: unknown) {
       const { type, data } = session.pending;
       session.pending = null;
 
+      let actionResult = "";
       if (type === "create_lead") {
         await sendMsg(userId, "⏳ Создаю заявку...");
         try {
           const { leadId, orderId } = await toolCreateLeadAndOrder(data);
+          actionResult = `Заявка #${leadId} создана → Заказ #${orderId}`;
           await sendWithButtons(
             userId,
-            `✅ Заявка #${leadId} создана → Заказ #${orderId}\n\nРазослать мастерам сейчас?`,
+            `✅ ${actionResult}\n\nРазослать мастерам сейчас?`,
             [[
               { text: "📢 Разослать мастерам", payload: `broadcast:${orderId}` },
               { text: "⏸ Позже", payload: "broadcast:skip" },
@@ -1920,30 +1942,36 @@ export async function handleManagerUpdate(update: unknown) {
           );
         } catch (e) {
           console.error("[managerBot] create lead error:", e);
-          await sendMsg(userId, "❌ Ошибка при создании заявки. Попробуйте снова.");
+          actionResult = "Ошибка при создании заявки.";
+          await sendMsg(userId, `❌ ${actionResult}`);
         }
       } else if (type === "broadcast_order") {
         await sendMsg(userId, "⏳ Отправляю рассылку...");
-        const result = await toolBroadcastOrder(data.orderId);
-        await sendMsg(userId, `📢 ${result}`);
+        actionResult = await toolBroadcastOrder(data.orderId);
+        await sendMsg(userId, `📢 ${actionResult}`);
       } else if (type === "set_order_status") {
-        const result = await toolSetOrderStatus(data.orderId, data.status, data.note);
-        await sendMsg(userId, result);
+        actionResult = await toolSetOrderStatus(data.orderId, data.status, data.note);
+        await sendMsg(userId, actionResult);
       } else if (type === "approve_passport") {
-        const result = await toolApproveMasterPassport(data.masterIdOrName);
-        await sendMsg(userId, result);
+        actionResult = await toolApproveMasterPassport(data.masterIdOrName);
+        await sendMsg(userId, actionResult);
       } else if (type === "send_task_force") {
         await sendMsg(userId, "⏳ Отправляю задачу...");
         const d = await getDispatcherModule();
-        const result = await d.sendTaskToMaster(data.masterNameOrId, data.task);
+        actionResult = await d.sendTaskToMaster(data.masterNameOrId, data.task);
         recordTaskDedup(data.masterId, data.masterAlias, data.task);
-        await sendMsg(userId, result);
+        await sendMsg(userId, actionResult);
+      }
+      // Record confirmed action result in session so GPT knows it's done
+      if (actionResult) {
+        addMessage(session, { role: "assistant", content: `✅ Действие выполнено: ${actionResult}` });
       }
       return;
     }
 
     if (payload === "confirm:no") {
       session.pending = null;
+      addMessage(session, { role: "assistant", content: "❌ Действие отменено пользователем." });
       await sendMsg(userId, "❌ Отменено. Что-то ещё?");
       return;
     }
