@@ -74,6 +74,44 @@ const openai = new OpenAI({
 // Auto-detected from first/last person who writes to the bot
 
 let managerUserId: number | null = null;
+
+// ─── Task Dedup Store ─────────────────────────────────────────────────────────
+// Prevents the same task from being sent to the same master multiple times
+// within a 6h window. Both interactive bot and autonomous agent share this map.
+const TASK_DEDUP_WINDOW_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+interface DedupEntry {
+  task: string;
+  sentAt: Date;
+  masterAlias: string;
+}
+
+const taskDedup = new Map<number, DedupEntry>(); // key = masterId
+
+function checkTaskDedup(masterId: number): DedupEntry | null {
+  const entry = taskDedup.get(masterId);
+  if (!entry) return null;
+  if (Date.now() - entry.sentAt.getTime() > TASK_DEDUP_WINDOW_MS) {
+    taskDedup.delete(masterId);
+    return null;
+  }
+  return entry;
+}
+
+function recordTaskDedup(masterId: number, masterAlias: string, task: string) {
+  taskDedup.set(masterId, { task, sentAt: new Date(), masterAlias });
+}
+
+/** Resolve master by id or name string. Returns master row or null. */
+async function resolveMasterByNameOrId(nameOrId: string) {
+  const all = await db.select().from(mastersTable).where(isNull(mastersTable.deletedAt));
+  const lower = nameOrId.toLowerCase().trim();
+  return all.find(m =>
+    String(m.id) === nameOrId ||
+    m.alias.toLowerCase().includes(lower) ||
+    (m.phone ?? "").includes(nameOrId),
+  ) ?? null;
+}
 const staleAlertedOrders = new Set<number>(); // track which orders we've already alerted about
 
 export function getManagerUserId(): number | null { return managerUserId; }
@@ -94,7 +132,7 @@ interface Message {
 }
 
 interface PendingConfirmation {
-  type: "create_lead" | "broadcast_order" | "set_order_status" | "approve_passport";
+  type: "create_lead" | "broadcast_order" | "set_order_status" | "approve_passport" | "send_task_force";
   data: Record<string, any>;
   description: string;
 }
@@ -575,15 +613,24 @@ async function toolPingMastersWithActiveOrders(): Promise<string> {
     const hoursOld = masterOrders.map(o => Math.round((Date.now() - new Date(o.updatedAt).getTime()) / 3600000));
     const maxHours = Math.max(...hoursOld);
 
-    // Only ping if last update > 6 hours ago (avoid spamming recently active masters)
+    // Skip if recently pinged via dedup or if order was recently updated
+    const dupEntry = checkTaskDedup(master.id);
+    if (dupEntry) {
+      const minsAgo = Math.round((Date.now() - dupEntry.sentAt.getTime()) / 60000);
+      results.push(`${master.alias}: пропущен (уже уведомлён ${minsAgo} мин назад)`);
+      continue;
+    }
+
+    // Also skip if order was recently updated < 6h ago
     if (maxHours < 6) {
-      results.push(`${master.alias}: пропущен (обновлён ${maxHours}ч назад)`);
+      results.push(`${master.alias}: пропущен (активность ${maxHours}ч назад)`);
       continue;
     }
 
     const task = `Уточни статус по ${orderList}. Как идут работы? Есть ли проблемы? Когда планируется завершение?`;
     try {
       await d.sendTaskToMaster(String(master.id), task);
+      recordTaskDedup(master.id, master.alias, task);
       pinged++;
       results.push(`${master.alias}: ✅ уведомлён (заказов: ${masterOrders.length})`);
     } catch (e) {
@@ -1693,6 +1740,12 @@ export async function handleManagerUpdate(update: unknown) {
       } else if (type === "approve_passport") {
         const result = await toolApproveMasterPassport(data.masterIdOrName);
         await sendMsg(userId, result);
+      } else if (type === "send_task_force") {
+        await sendMsg(userId, "⏳ Отправляю задачу...");
+        const d = await getDispatcherModule();
+        const result = await d.sendTaskToMaster(data.masterNameOrId, data.task);
+        recordTaskDedup(data.masterId, data.masterAlias, data.task);
+        await sendMsg(userId, result);
       }
       return;
     }
@@ -1890,8 +1943,27 @@ export async function handleManagerUpdate(update: unknown) {
             break;
           }
           case "send_task_to_dispatcher": {
+            const master = await resolveMasterByNameOrId(args.masterNameOrId);
+            if (!master) {
+              toolResult = `Мастер "${args.masterNameOrId}" не найден.`;
+              break;
+            }
+            const dupEntry = checkTaskDedup(master.id);
+            if (dupEntry) {
+              const minsAgo = Math.round((Date.now() - dupEntry.sentAt.getTime()) / 60000);
+              const hoursAgo = minsAgo >= 60 ? `${Math.round(minsAgo / 60)}ч` : `${minsAgo} мин`;
+              const dupText = `⚠️ Дубль задачи!\n\nМастеру **${master.alias}** уже отправлялась задача ${hoursAgo} назад:\n_"${dupEntry.task}"_\n\nОтправить снова?`;
+              session.pending = { type: "send_task_force", data: { masterNameOrId: String(master.id), task: args.task, masterAlias: master.alias, masterId: master.id }, description: dupText };
+              addMessage(session, { role: "tool", content: "pending_duplicate_confirmation", tool_call_id: tc.id, name: fnName });
+              await sendWithButtons(userId, dupText, [[
+                { text: "✅ Да, отправить", payload: "confirm:yes" },
+                { text: "❌ Не надо", payload: "confirm:no" },
+              ]]);
+              return;
+            }
             const d = await getDispatcherModule();
-            toolResult = await d.sendTaskToMaster(args.masterNameOrId, args.task);
+            toolResult = await d.sendTaskToMaster(String(master.id), args.task);
+            recordTaskDedup(master.id, master.alias, args.task);
             break;
           }
           case "add_order_note":
@@ -2585,8 +2657,22 @@ export async function runAutonomousCycle(triggerReason = "scheduled") {
           }
           case "send_task_to_dispatcher": {
             try {
+              const master = await resolveMasterByNameOrId(args.masterNameOrId);
+              if (!master) {
+                toolResult = `Мастер "${args.masterNameOrId}" не найден — пропускаю.`;
+                break;
+              }
+              const dup = checkTaskDedup(master.id);
+              if (dup) {
+                const minsAgo = Math.round((Date.now() - dup.sentAt.getTime()) / 60000);
+                const hoursAgo = minsAgo >= 60 ? `${Math.round(minsAgo / 60)}ч` : `${minsAgo} мин`;
+                toolResult = `ДУБЛЬ: мастеру ${master.alias} уже отправляли задачу ${hoursAgo} назад ("${dup.task}"). Пропускаю чтобы не спамить.`;
+                console.log(`[autonomousAgent] Dedup skip: ${master.alias} (sent ${hoursAgo} ago)`);
+                break;
+              }
               const d = await getDispatcherModule();
-              toolResult = await d.sendTaskToMaster(args.masterNameOrId, args.task);
+              toolResult = await d.sendTaskToMaster(String(master.id), args.task);
+              recordTaskDedup(master.id, master.alias, args.task);
             } catch (e) {
               toolResult = `Ошибка: ${String(e)}`;
             }
