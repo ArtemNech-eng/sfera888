@@ -125,6 +125,7 @@ router.get("/pending", ops, async (req, res) => {
     const orderRespondents = responded.filter(d => d.orderId === o.id);
     return {
       orderId: o.id,
+      leadId: o.leadId ?? null,
       serviceType: o.serviceType,
       city: o.city,
       district: o.district,

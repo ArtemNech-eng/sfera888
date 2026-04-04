@@ -416,6 +416,7 @@ export default function Orders() {
 
   interface PendingDispatch {
     orderId: number;
+    leadId: number | null;
     serviceType: string;
     city: string;
     district: string | null;
@@ -469,6 +470,7 @@ export default function Orders() {
         const q = search.toLowerCase();
         const matches =
           String(o.id).includes(q) ||
+          (o.leadId != null && String(o.leadId).includes(q)) ||
           o.city?.toLowerCase().includes(q) ||
           (o as any).district?.toLowerCase().includes(q) ||
           o.serviceType?.toLowerCase().includes(q) ||
@@ -526,7 +528,7 @@ export default function Orders() {
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5">
-                          <span className="font-medium text-foreground">#{order.id}</span>
+                          <span className="font-medium text-foreground">#{order.leadId ?? order.id}</span>
                           <span className="text-muted-foreground">·</span>
                           <span className="text-foreground">{order.serviceType}</span>
                           <span className="text-muted-foreground">·</span>
@@ -553,7 +555,7 @@ export default function Orders() {
                         )}
                         <button
                           onClick={() => {
-                            if (confirm(`Назначить другого мастера на заказ #${order.id}? Текущий мастер будет откреплён.`)) {
+                            if (confirm(`Назначить другого мастера на заявку #${order.leadId ?? order.id}? Текущий мастер будет откреплён.`)) {
                               rejectCancellationMutation.mutate(order.id);
                             }
                           }}
@@ -565,7 +567,7 @@ export default function Orders() {
                         </button>
                         <button
                           onClick={() => {
-                            if (confirm(`Отменить заказ #${order.id}? Заказ будет закрыт.`)) {
+                            if (confirm(`Отменить заявку #${order.leadId ?? order.id}? Заказ будет закрыт.`)) {
                               approveCancellationMutation.mutate(order.id);
                             }
                           }}
@@ -611,7 +613,7 @@ export default function Orders() {
                 <div key={item.orderId} className="bg-white rounded-xl border border-blue-100 px-4 py-3 space-y-2">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
-                      <span className="font-medium text-foreground">#{item.orderId}</span>
+                      <span className="font-medium text-foreground">#{item.leadId ?? item.orderId}</span>
                       <span className="text-muted-foreground">·</span>
                       <span className="text-foreground">{item.serviceType}</span>
                       <span className="text-muted-foreground">·</span>
@@ -658,7 +660,7 @@ export default function Orders() {
               {pendingAmountOrders.map(order => (
                 <div key={order.id} className="flex items-start justify-between gap-3 bg-white rounded-xl border border-amber-100 px-4 py-3">
                   <div>
-                    <span className="font-medium text-foreground">#{order.id}</span>
+                    <span className="font-medium text-foreground">#{order.leadId ?? order.id}</span>
                     <span className="mx-2 text-muted-foreground">·</span>
                     <span className="text-foreground">{order.serviceType}</span>
                     <span className="mx-2 text-muted-foreground">·</span>
@@ -694,7 +696,7 @@ export default function Orders() {
                     </button>
                     <button
                       onClick={() => {
-                        if (confirm(`Принять сумму ${fmt(Number((order as any).proposedAmount))} для заказа #${order.id}?`)) {
+                        if (confirm(`Принять сумму ${fmt(Number((order as any).proposedAmount))} для заявки #${order.leadId ?? order.id}?`)) {
                           acceptProposedMutation.mutate(order.id);
                         }
                       }}
@@ -883,7 +885,7 @@ export default function Orders() {
                                   className="bg-white rounded-xl border border-border/50 p-3 cursor-pointer hover:shadow-md hover:border-primary/30 transition-all group"
                                 >
                                   <div className="flex items-start justify-between gap-2 mb-2">
-                                    <span className="text-[10px] font-bold text-muted-foreground">#{order.id}</span>
+                                    <span className="text-[10px] font-bold text-muted-foreground">#{order.leadId ?? order.id}</span>
                                     {(order as any).dispatchStatus === "dispatching" && (
                                       <span className="inline-flex items-center gap-1 text-[9px] bg-blue-100 text-blue-700 rounded-full px-1.5 py-0.5 font-medium"><Clock className="w-2.5 h-2.5" />Разослано</span>
                                     )}
@@ -977,7 +979,7 @@ export default function Orders() {
 
                         {/* ID + date */}
                         <td className="px-3 py-2.5 whitespace-nowrap">
-                          <span className="font-semibold text-foreground">#{order.id}</span>
+                          <span className="font-semibold text-foreground">#{order.leadId ?? order.id}</span>
                           <div className="text-[10px] text-muted-foreground mt-0.5">{formatDate(order.createdAt)}</div>
                         </td>
 
@@ -1170,15 +1172,15 @@ export default function Orders() {
               <div className="px-6 py-4 border-b border-border/50 flex items-start justify-between flex-shrink-0">
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h2 className="text-lg font-display font-bold text-foreground">Заказ #{openDispatchId}</h2>
+                    <h2 className="text-lg font-display font-bold text-foreground">Заявка #{openOrder.leadId ?? openDispatchId}</h2>
                     <StatusBadge status={openOrder.status} type="order" />
                     {openOrder.leadId && (
                       <a
                         href={`/leads?openLead=${openOrder.leadId}`}
                         className="inline-flex items-center gap-1 text-[11px] font-medium text-primary/70 hover:text-primary border border-primary/20 hover:border-primary/50 bg-primary/5 hover:bg-primary/10 rounded-full px-2 py-0.5 transition-all"
-                        title="Открыть заявку"
+                        title="Открыть в разделе Заявки"
                       >
-                        <ExternalLink className="w-2.5 h-2.5" />Заявка #{openOrder.leadId}
+                        <ExternalLink className="w-2.5 h-2.5" />Открыть заявку
                       </a>
                     )}
                   </div>
@@ -1321,7 +1323,7 @@ export default function Orders() {
                         <XCircle className="w-3 h-3" />Отменить заказ
                       </button>
                     )}
-                    <button onClick={() => { if (confirm(`Удалить заказ #${openDispatchId}?`)) { deleteOrderMutation.mutate(openDispatchId!); setOpenDispatchId(null); } }} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-red-200 rounded-lg text-xs font-medium text-red-500 hover:bg-red-50 transition-colors">
+                    <button onClick={() => { if (confirm(`Удалить заявку #${openOrder?.leadId ?? openDispatchId}?`)) { deleteOrderMutation.mutate(openDispatchId!); setOpenDispatchId(null); } }} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-red-200 rounded-lg text-xs font-medium text-red-500 hover:bg-red-50 transition-colors">
                       <Trash2 className="w-3 h-3" />В корзину
                     </button>
                   </div>
