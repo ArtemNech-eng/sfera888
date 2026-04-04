@@ -779,12 +779,12 @@ async function toolGetStuckOrders(): Promise<string> {
   return `⚠️ Зависших заказов (master_assigned >48ч): ${stuck.length}\n${lines.join("\n")}`;
 }
 
-/** SLA: orders in "new" status >30 min (not yet dispatched to masters) */
+/** SLA: orders in "waiting_master" status >30 min (not yet dispatched to masters) */
 async function toolGetSlaBreaches(): Promise<string> {
   const cutoff30m = new Date(Date.now() - 30 * 60 * 1000);
   const breaches = await db.select().from(ordersTable)
     .where(and(
-      eq(ordersTable.status, "new"),
+      eq(ordersTable.status, "waiting_master"),
       lte(ordersTable.createdAt, cutoff30m),
       isNull(ordersTable.deletedAt),
     ));
@@ -2847,11 +2847,11 @@ export async function runQuickAutonomousCheck() {
       }
     }
 
-    // 2. SLA alert: orders in "new" status >30 min without dispatch
+    // 2. SLA alert: orders in "waiting_master" status >30 min without dispatch
     const cutoff30m = new Date(now - 30 * 60 * 1000);
     const slaBreaches = await db.select().from(ordersTable)
       .where(and(
-        eq(ordersTable.status, "new"),
+        eq(ordersTable.status, "waiting_master"),
         lte(ordersTable.createdAt, cutoff30m),
         isNull(ordersTable.deletedAt),
       ));
