@@ -580,28 +580,49 @@ async function toolGetPendingReceipts() {
   const receipts = await db.select().from(receiptsTable)
     .orderBy(desc(receiptsTable.createdAt));
 
-  const pending = receipts.filter(r => r.prepaymentSubmittedAt && !r.prepaymentSeenAt);
+  // Не подтверждённые = все сметы где prepaymentSeenAt IS NULL
+  const active = receipts.filter(r => !r.prepaymentSeenAt);
+  // Из них: ждут подтверждения руководителя (клиент уже оплатил)
+  const waitingConfirm = active.filter(r => r.prepaymentSubmittedAt);
+  // Из них: клиент ещё не оплатил
+  const unpaid = active.filter(r => !r.prepaymentSubmittedAt);
 
-  if (pending.length === 0) return "✅ Смет, ожидающих подтверждения, нет.";
+  if (active.length === 0) return "✅ Все сметы закрыты — неоплаченных и неподтверждённых нет.";
 
-  const masterIds = [...new Set(pending.map(r => r.masterId))];
+  const masterIds = [...new Set(active.map(r => r.masterId))];
   const masters = await db.select().from(mastersTable).where(inArray(mastersTable.id, masterIds));
   const masterMap = new Map(masters.map(m => [m.id, m.alias]));
 
   const fmt = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Moscow" });
 
-  let result = `📋 Сметы, ожидающие подтверждения (${pending.length}):\n\n`;
-  for (const r of pending) {
-    const masterName = masterMap.get(r.masterId) ?? `#${r.masterId}`;
-    const total = Number(r.totalAmount).toLocaleString("ru-RU");
-    const prep = Number(r.prepaymentAmount).toLocaleString("ru-RU");
-    const submitted = r.prepaymentSubmittedAt ? fmt.format(new Date(r.prepaymentSubmittedAt)) : "—";
-    result += `• Смета **#${r.id}** — Мастер: ${masterName}, Заказ #${r.orderId}\n`;
-    result += `  Услуга: ${r.serviceType}\n`;
-    result += `  Клиент: ${r.clientName} (${r.clientPhone})\n`;
-    result += `  Предоплата: **${prep} ₽** (итого ${total} ₽)\n`;
-    result += `  Оплачено: ${submitted}\n\n`;
+  let result = `📋 Активные сметы (${active.length} всего):\n`;
+
+  if (waitingConfirm.length > 0) {
+    result += `\n🔴 Клиент ОПЛАТИЛ — нужно подтверждение (${waitingConfirm.length}):\n`;
+    for (const r of waitingConfirm) {
+      const masterName = masterMap.get(r.masterId) ?? `#${r.masterId}`;
+      const total = Number(r.totalAmount).toLocaleString("ru-RU");
+      const prep = Number(r.prepaymentAmount).toLocaleString("ru-RU");
+      const submitted = fmt.format(new Date(r.prepaymentSubmittedAt!));
+      result += `• Смета **#${r.id}** — ${masterName} | Заказ #${r.orderId}\n`;
+      result += `  ${r.serviceType}, ${r.clientName} (${r.clientPhone})\n`;
+      result += `  Предоплата: **${prep} ₽** (итого ${total} ₽) | Оплачено: ${submitted}\n`;
+    }
   }
+
+  if (unpaid.length > 0) {
+    result += `\n🟡 Ожидают оплаты от клиента (${unpaid.length}):\n`;
+    for (const r of unpaid) {
+      const masterName = masterMap.get(r.masterId) ?? `#${r.masterId}`;
+      const total = Number(r.totalAmount).toLocaleString("ru-RU");
+      const prep = Number(r.prepaymentAmount).toLocaleString("ru-RU");
+      const age = Math.round((Date.now() - new Date(r.createdAt).getTime()) / 3600000);
+      result += `• Смета **#${r.id}** — ${masterName} | Заказ #${r.orderId}\n`;
+      result += `  ${r.serviceType}, ${r.clientName} (${r.clientPhone})\n`;
+      result += `  Предоплата: **${prep} ₽** (итого ${total} ₽) | Выставлена ${age}ч назад\n`;
+    }
+  }
+
   return result.trim();
 }
 
@@ -1728,13 +1749,21 @@ const SYSTEM_PROMPT = `Ты — AI-ассистент и стратегичес�
 3. Система рассылает заказ подходящим мастерам через Max-бота
 4. Мастер принимает → статус master_assigned
 5. Мастер начинает работу → статус in_progress
-6. Мастер отправляет смету с предоплатой → клиент оплачивает
-7. Смета поступает тебе на подтверждение (ты видишь кнопку "Подтвердить оплату")
-8. После подтверждения → мастер завершает работу → фото + акт
-9. Статус completed → клиент оставляет отзыв
-10. Комиссия списывается с мастера
+6. Мастер выставляет смету → смета создана, клиент ещё НЕ платил
+7. Клиент оплачивает предоплату и отправляет скриншот → смета "оплачена клиентом, ждёт подтверждения"
+8. Руководитель получает уведомление с кнопкой → подтверждает получение денег
+9. После подтверждения → мастер завершает работу → фото + акт
+10. Статус completed → клиент оставляет отзыв
+11. Комиссия списывается с мастера
 
 СТАТУСЫ ЗАКАЗА: waiting_master → master_assigned → in_progress → completed / cancelled / cancellation_requested
+
+СТАТУСЫ СМЕТЫ (три разных состояния — знай их наизусть!):
+🟡 "Не оплачена" = мастер выставил, клиент НЕ платил → нет prepaymentSubmittedAt
+🔴 "Оплачена, ждёт подтверждения" = клиент оплатил и прислал скриншот, руководитель не подтвердил
+✅ "Подтверждена" = руководитель проверил и нажал "Подтвердить"
+
+ВАЖНО: Когда спрашивают "неоплаченные сметы" / "есть ли долги по сметам" / "покажи сметы" — ВСЕГДА вызывай get_pending_receipts. Эта функция теперь показывает ОБЕ категории незакрытых смет.
 
 ═══════════════════════════════════════
 ⏰ РАСПИСАНИЕ АВТОМАТИЧЕСКИХ ПРОВЕРОК
