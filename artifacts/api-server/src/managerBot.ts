@@ -291,11 +291,23 @@ function sanitizeHistory(msgs: Message[]): Message[] {
   return msgs;
 }
 
-function addMessage(session: Session, msg: Message) {
+/** Push without trimming — use inside tool-call loops where messages must stay paired */
+function pushRaw(session: Session, msg: Message) {
   session.messages.push(msg);
+}
+
+/** Trim + sanitize — call once after ALL tool responses for a batch have been pushed */
+function flushSession(session: Session) {
   if (session.messages.length > MAX_HISTORY) {
     session.messages = sanitizeHistory(session.messages.slice(-MAX_HISTORY));
+  } else {
+    session.messages = sanitizeHistory(session.messages);
   }
+}
+
+function addMessage(session: Session, msg: Message) {
+  session.messages.push(msg);
+  flushSession(session);
 }
 
 // ─── Max API helpers ──────────────────────────────────────────────────────────
@@ -2127,8 +2139,9 @@ export async function handleManagerUpdate(update: unknown) {
 
     // ── Handle tool calls ─────────────────────────────────────────────────
     if (assistantMsg.tool_calls && assistantMsg.tool_calls.length > 0) {
-      // MUST save tool_calls with the message — otherwise tool responses become orphans
-      addMessage(session, { role: "assistant", content: assistantMsg.content ?? "", tool_calls: assistantMsg.tool_calls });
+      // Push the assistant message WITHOUT trimming — we must keep it paired with
+      // ALL tool responses. flushSession() is called once after the entire loop.
+      pushRaw(session, { role: "assistant", content: assistantMsg.content ?? "", tool_calls: assistantMsg.tool_calls });
 
       for (const tc of assistantMsg.tool_calls) {
         const fnName = tc.function.name;
@@ -2219,7 +2232,8 @@ export async function handleManagerUpdate(update: unknown) {
             if (quiet) {
               const nightText = `🌙 Сейчас ночное время у мастера **${master.alias}** — ${localTimeStr}.\n\nОтправка в ночное время может разбудить мастера. Всё равно отправить?`;
               session.pending = { type: "send_task_force", data: pendingData, description: nightText };
-              addMessage(session, { role: "tool", content: "pending_quiet_hours_confirmation", tool_call_id: tc.id, name: fnName });
+              pushRaw(session, { role: "tool", content: "pending_quiet_hours_confirmation", tool_call_id: tc.id, name: fnName });
+              flushSession(session);
               await sendWithButtons(userId, nightText, [[
                 { text: "🌙 Да, отправить", payload: "confirm:yes" },
                 { text: "⏰ Утром", payload: "confirm:no" },
@@ -2234,7 +2248,8 @@ export async function handleManagerUpdate(update: unknown) {
               const hoursAgo = minsAgo >= 60 ? `${Math.round(minsAgo / 60)}ч` : `${minsAgo} мин`;
               const dupText = `⚠️ Дубль задачи!\n\nМастеру **${master.alias}** уже отправлялась задача ${hoursAgo} назад:\n_"${dupEntry.task}"_\n\nОтправить снова?`;
               session.pending = { type: "send_task_force", data: pendingData, description: dupText };
-              addMessage(session, { role: "tool", content: "pending_duplicate_confirmation", tool_call_id: tc.id, name: fnName });
+              pushRaw(session, { role: "tool", content: "pending_duplicate_confirmation", tool_call_id: tc.id, name: fnName });
+              flushSession(session);
               await sendWithButtons(userId, dupText, [[
                 { text: "✅ Да, отправить", payload: "confirm:yes" },
                 { text: "❌ Не надо", payload: "confirm:no" },
@@ -2263,8 +2278,8 @@ export async function handleManagerUpdate(update: unknown) {
             ].filter(Boolean).join("\n");
 
             session.pending = { type: "create_lead", data: args, description: parts };
-            // Close the tool call in history so OpenAI doesn't error on next message
-            addMessage(session, { role: "tool", content: "pending_confirmation", tool_call_id: tc.id, name: fnName });
+            pushRaw(session, { role: "tool", content: "pending_confirmation", tool_call_id: tc.id, name: fnName });
+            flushSession(session);
             await sendWithButtons(
               userId,
               `Создать заявку?\n\n${parts}`,
@@ -2277,8 +2292,8 @@ export async function handleManagerUpdate(update: unknown) {
           }
           case "propose_broadcast": {
             session.pending = { type: "broadcast_order", data: { orderId: args.orderId }, description: `Заказ #${args.orderId}` };
-            // Close the tool call in history so OpenAI doesn't error on next message
-            addMessage(session, { role: "tool", content: "pending_confirmation", tool_call_id: tc.id, name: fnName });
+            pushRaw(session, { role: "tool", content: "pending_confirmation", tool_call_id: tc.id, name: fnName });
+            flushSession(session);
             await sendWithButtons(
               userId,
               `Разослать заказ #${args.orderId} всем мастерам города?`,
@@ -2298,8 +2313,8 @@ export async function handleManagerUpdate(update: unknown) {
               cancelled: "отменён",
             };
             session.pending = { type: "set_order_status", data: args, description: `Заказ #${args.orderId} → ${statusLabels[args.status] ?? args.status}` };
-            // Close the tool call in history so OpenAI doesn't error on next message
-            addMessage(session, { role: "tool", content: "pending_confirmation", tool_call_id: tc.id, name: fnName });
+            pushRaw(session, { role: "tool", content: "pending_confirmation", tool_call_id: tc.id, name: fnName });
+            flushSession(session);
             await sendWithButtons(
               userId,
               `Изменить статус заказа #${args.orderId} на «${statusLabels[args.status] ?? args.status}»?${args.note ? `\nЗаметка: ${args.note}` : ""}`,
@@ -2312,8 +2327,8 @@ export async function handleManagerUpdate(update: unknown) {
           }
           case "propose_approve_passport": {
             session.pending = { type: "approve_passport", data: args, description: `Паспорт мастера ${args.masterIdOrName}` };
-            // Close the tool call in history so OpenAI doesn't error on next message
-            addMessage(session, { role: "tool", content: "pending_confirmation", tool_call_id: tc.id, name: fnName });
+            pushRaw(session, { role: "tool", content: "pending_confirmation", tool_call_id: tc.id, name: fnName });
+            flushSession(session);
             await sendWithButtons(
               userId,
               `Подтвердить паспорт мастера "${args.masterIdOrName}"?`,
@@ -2328,8 +2343,12 @@ export async function handleManagerUpdate(update: unknown) {
             toolResult = "Функция не найдена.";
         }
 
-        addMessage(session, { role: "tool", content: toolResult, tool_call_id: tc.id, name: fnName });
+        // Use pushRaw — do NOT trim mid-loop; flushSession() runs once after all results
+        pushRaw(session, { role: "tool", content: toolResult, tool_call_id: tc.id, name: fnName });
       }
+
+      // All tool responses collected — now trim & sanitize once
+      flushSession(session);
 
       // Second AI call with tool results
       const followUp = await openai.chat.completions.create({
