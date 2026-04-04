@@ -12,6 +12,7 @@ import multer from "multer";
 import { UPLOAD_BASE } from "./config.js";
 import { objectStorageClient } from "./lib/objectStorage.js";
 import { handleMaxUpdate, registerWebhook, sendMaxMessage } from "./maxBot.js";
+import { handleManagerUpdate, registerManagerWebhook } from "./managerBot.js";
 
 const screenshotUpload = multer({
   storage: multer.memoryStorage(),
@@ -657,11 +658,19 @@ app.use("/api/uploads", express.static(UPLOAD_BASE));
 // Serve banner images
 app.use("/api/banners", express.static(path.join(__dirname, "../public/banners")));
 
-// ── Max Messenger Bot Webhook ─────────────────────────────────────────────────
+// ── Max Messenger Bot Webhook (Masters) ──────────────────────────────────────
 app.post("/api/max-webhook", express.json(), async (req, res) => {
   res.sendStatus(200);
   if (req.body) {
     handleMaxUpdate(req.body).catch((e) => console.error("[max-webhook]", e));
+  }
+});
+
+// ── Manager AI Bot Webhook ────────────────────────────────────────────────────
+app.post("/api/manager-webhook", express.json(), async (req, res) => {
+  res.sendStatus(200);
+  if (req.body) {
+    handleManagerUpdate(req.body).catch((e) => console.error("[manager-webhook]", e));
   }
 });
 
@@ -694,8 +703,9 @@ app.get("/", (_req, res) => {
   res.redirect(301, "/crm/");
 });
 
-// ── Register Max Bot Webhook on startup ───────────────────────────────────────
+// ── Register Max Bot Webhooks on startup ──────────────────────────────────────
 const PROD_HOST = "https://sfera-project.digital";
 registerWebhook(`${PROD_HOST}/api/max-webhook`);
+registerManagerWebhook();
 
 export default app;
