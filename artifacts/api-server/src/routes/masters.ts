@@ -83,6 +83,7 @@ function formatMaster(m: any) {
     contractPassportIssuer: m.contractPassportIssuer ?? null,
     contractAddress: m.contractAddress ?? null,
     lastSeenAt: m.lastSeenAt ?? null,
+    servicePrices: m.servicePrices ?? null,
   };
 }
 
