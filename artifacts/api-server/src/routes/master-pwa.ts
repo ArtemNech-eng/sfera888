@@ -6,6 +6,7 @@ import { getMasterEligibility, getOverdueMasterIds, countActiveMasterOrders, get
 import multer from "multer";
 import { objectStorageClient } from "../lib/objectStorage.js";
 import { getBotLink } from "../maxBot.js";
+import { notifyManagerMasterResponse } from "../managerBot.js";
 
 const avatarUpload = multer({
   storage: multer.memoryStorage(),
@@ -592,6 +593,9 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
     isRead: false,
   });
 
+  // Notify manager bot
+  notifyManagerMasterResponse(orderId, master.alias, true).catch(() => {});
+
   res.json({ success: true });
 });
 
@@ -611,6 +615,11 @@ router.post("/orders/:id/reject", requireMasterPwa, async (req, res) => {
       eq(orderDispatchesTable.orderId, orderId),
       inArray(orderDispatchesTable.status, ["sent", "responded"]),
     ));
+
+  // Notify manager bot about rejection (non-blocking)
+  getMasterById(masterId).then(m => {
+    if (m) notifyManagerMasterResponse(orderId, m.alias, false).catch(() => {});
+  }).catch(() => {});
 
   res.json({ success: true });
 });

@@ -7,6 +7,7 @@ import { checkOverdueTransactions } from "./lib/orderEligibility.js";
 import { performBroadcast } from "./lib/broadcastOrder.js";
 import { broadcastCheckin, broadcastCheckinReminder } from "./lib/checkinBroadcast.js";
 import { systemSettingsTable } from "@workspace/db";
+import { sendMorningBriefing, checkStaleOrders } from "./managerBot.js";
 
 const port = Number(process.env["PORT"] || "8080");
 
@@ -353,6 +354,8 @@ setInterval(() => autoExpireDispatches().catch(console.error), 60 * 60 * 1000);
 setInterval(() => autoScheduledOrderBroadcast().catch(console.error), 15 * 60 * 1000);
 // Auto re-broadcast orders with no responses after 30 min
 setInterval(() => autoReBroadcastNoResponse().catch(console.error), 5 * 60 * 1000);
+// Check for stale orders (waiting > 2h) every 30 min
+setInterval(() => checkStaleOrders().catch(console.error), 30 * 60 * 1000);
 
 // ─── Checkin broadcast scheduler ─────────────────────────────────────────────
 // Reads broadcast + reminder times from DB every minute and fires if needed.
@@ -410,6 +413,8 @@ async function initCheckinScheduler() {
   }
 }
 
+let morningBriefingFiredDate: string | null = null;
+
 setInterval(async () => {
   try {
     const { hhmm, today } = getMskTime();
@@ -425,6 +430,13 @@ setInterval(async () => {
       reminderFiredDate = today;
       console.log(`[checkin] Firing reminder at ${hhmm} MSK`);
       broadcastCheckinReminder().catch(console.error);
+    }
+
+    // Morning briefing to manager bot at 09:00 MSK
+    if (hhmm === "09:00" && morningBriefingFiredDate !== today) {
+      morningBriefingFiredDate = today;
+      console.log("[managerBot] Firing morning briefing at 09:00 MSK");
+      sendMorningBriefing().catch(console.error);
     }
   } catch (e) {
     console.error("[checkin] scheduler error:", e);

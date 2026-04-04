@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db, leadsTable, ordersTable } from "@workspace/db";
 import { eq, and, isNull, desc, sql } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
+import { notifyManagerNewLead } from "../managerBot.js";
 
 const router = Router();
 
@@ -115,6 +116,16 @@ router.post("/", allLeadRoles, async (req, res) => {
 
   const userAlias = (req.session as any)?.user?.name ?? (req.session as any)?.user?.login ?? "оператор";
   await logLeadEvent(lead.id, "created", `Заявка создана. Клиент: ${clientName}, источник: ${source ?? "не указан"}`, userAlias);
+
+  // Notify manager bot about new lead (non-blocking)
+  notifyManagerNewLead({
+    id: lead.id,
+    clientName: lead.clientName,
+    clientPhone: lead.clientPhone,
+    city: lead.city,
+    serviceType: lead.serviceType,
+    source: lead.source,
+  }).catch(() => {});
 
   return res.status(201).json({
     ...lead,
