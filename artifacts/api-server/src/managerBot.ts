@@ -513,6 +513,120 @@ async function toolConfirmReceipt(receiptId: number) {
   return `✅ Смета #${receiptId} подтверждена. Мастер: ${masterName}, предоплата ${prep} ₽ по заказу #${receipt.orderId}.`;
 }
 
+async function toolGetCommissionSummary(): Promise<string> {
+  const all = await db.select().from(transactionsTable)
+    .where(or(
+      eq(transactionsTable.paymentStatus, "pending"),
+      eq(transactionsTable.paymentStatus, "overdue"),
+    ));
+
+  if (all.length === 0) return "✅ Нет неоплаченных комиссий.";
+
+  const masterIds = [...new Set(all.map(t => t.masterId))];
+  const masters = await db.select().from(mastersTable).where(inArray(mastersTable.id, masterIds));
+  const masterMap = new Map(masters.map(m => [m.id, m.alias]));
+
+  const byMaster = new Map<number, { pending: number; overdue: number; total: number }>();
+  for (const t of all) {
+    const commission = Number(t.commission ?? 0);
+    const entry = byMaster.get(t.masterId) ?? { pending: 0, overdue: 0, total: 0 };
+    if (t.paymentStatus === "overdue") entry.overdue += commission;
+    else entry.pending += commission;
+    entry.total += commission;
+    byMaster.set(t.masterId, entry);
+  }
+
+  const sorted = [...byMaster.entries()].sort((a, b) => b[1].overdue - a[1].overdue);
+  const totalAll = sorted.reduce((s, [, v]) => s + v.total, 0);
+  const overdueAll = sorted.reduce((s, [, v]) => s + v.overdue, 0);
+
+  let result = `💼 Остатки комиссий (всего: ${totalAll.toLocaleString("ru-RU")} ₽, просрочено: ${overdueAll.toLocaleString("ru-RU")} ₽):\n\n`;
+  for (const [masterId, data] of sorted) {
+    const alias = masterMap.get(masterId) ?? `#${masterId}`;
+    const overdueStr = data.overdue > 0 ? ` ⚠️просрочено: ${data.overdue.toLocaleString("ru-RU")} ₽` : "";
+    const pendingStr = data.pending > 0 ? ` ожидает: ${data.pending.toLocaleString("ru-RU")} ₽` : "";
+    result += `• ${alias}: всего ${data.total.toLocaleString("ru-RU")} ₽${overdueStr}${pendingStr}\n`;
+  }
+  return result.trim();
+}
+
+/** Autonomous: ping each master with an active order via dispatcher */
+async function toolPingMastersWithActiveOrders(): Promise<string> {
+  const activeOrders = await db.select().from(ordersTable)
+    .where(and(
+      inArray(ordersTable.status, ["master_assigned", "in_progress"]),
+      isNull(ordersTable.deletedAt),
+    ));
+
+  if (activeOrders.length === 0) return "Нет активных заказов для проверки.";
+
+  const masterIds = [...new Set(activeOrders.map(o => o.masterId).filter(Boolean) as number[])];
+  if (masterIds.length === 0) return "Нет мастеров на активных заказах.";
+
+  const masters = await db.select().from(mastersTable).where(inArray(mastersTable.id, masterIds));
+  const d = await getDispatcherModule();
+
+  let pinged = 0;
+  const results: string[] = [];
+
+  for (const master of masters) {
+    const masterOrders = activeOrders.filter(o => o.masterId === master.id);
+    const orderList = masterOrders.map(o => `заказ #${o.id} (${o.serviceType}, ${o.city})`).join(", ");
+    const hoursOld = masterOrders.map(o => Math.round((Date.now() - new Date(o.updatedAt).getTime()) / 3600000));
+    const maxHours = Math.max(...hoursOld);
+
+    // Only ping if last update > 6 hours ago (avoid spamming recently active masters)
+    if (maxHours < 6) {
+      results.push(`${master.alias}: пропущен (обновлён ${maxHours}ч назад)`);
+      continue;
+    }
+
+    const task = `Уточни статус по ${orderList}. Как идут работы? Есть ли проблемы? Когда планируется завершение?`;
+    try {
+      await d.sendTaskToMaster(String(master.id), task);
+      pinged++;
+      results.push(`${master.alias}: ✅ уведомлён (заказов: ${masterOrders.length})`);
+    } catch (e) {
+      results.push(`${master.alias}: ⚠️ ошибка`);
+    }
+  }
+
+  return `Проверка мастеров с активными заказами:\n${results.join("\n")}\n\nУведомлено: ${pinged} из ${masters.length}`;
+}
+
+/** Autonomous: send submitted receipts to manager with confirmation buttons */
+async function toolAlertSubmittedReceipts(): Promise<string> {
+  if (!managerUserId) return "Менеджер не онлайн.";
+
+  const receipts = await db.select().from(receiptsTable)
+    .where(and(
+      sql`prepayment_submitted_at IS NOT NULL`,
+      sql`prepayment_seen_at IS NULL`,
+    ))
+    .orderBy(receiptsTable.createdAt);
+
+  if (receipts.length === 0) return "Нет смет, ожидающих подтверждения.";
+
+  const masterIds = [...new Set(receipts.map(r => r.masterId))];
+  const masters = await db.select().from(mastersTable).where(inArray(mastersTable.id, masterIds));
+  const masterMap = new Map(masters.map(m => [m.id, m.alias]));
+
+  for (const r of receipts) {
+    const masterName = masterMap.get(r.masterId) ?? `#${r.masterId}`;
+    const prep = Number(r.prepaymentAmount).toLocaleString("ru-RU");
+    const total = Number(r.totalAmount).toLocaleString("ru-RU");
+    const text = `💰 Клиент оплатил бронь — требуется подтверждение!\n\nСмета **#${r.id}**\n👤 ${r.clientName} (${r.clientPhone})\n🔧 ${r.serviceType}, ${r.city}\n👷 Мастер: ${masterName}\n💵 Предоплата: **${prep} ₽** (итого ${total} ₽)`;
+    await sendWithButtons(managerUserId, text, [[
+      { text: "✅ Подтвердить оплату", payload: `confirm_receipt:${r.id}` },
+      { text: "🔎 Проверить позже", payload: "confirm:no" },
+    ]]);
+    // Track in session for context
+    injectNotification(text, { description: `Смета #${r.id}, мастер ${masterName}` });
+  }
+
+  return `Отправлены уведомления о ${receipts.length} смете(ах). Ждём решения руководителя.`;
+}
+
 async function toolSearchOrders(query: string, statusFilter?: string) {
   const allOrders = await db.select().from(ordersTable)
     .where(isNull(ordersTable.deletedAt))
@@ -1913,35 +2027,48 @@ const alertedMarkets = new Set<string>();
 // ─── Autonomous AI Agent ──────────────────────────────────────────────────────
 
 const AUTONOMOUS_SYSTEM_PROMPT = `Ты — автономный AI-операционист ремонтного сервиса "Честный мастер".
-Ты работаешь как самостоятельный сотрудник: регулярно проверяешь систему и СРАЗУ ВЫПОЛНЯЕШЬ нужные действия, не ожидая команд руководителя.
+Ты работаешь как самостоятельный старший операционист: проверяешь всю систему и СРАЗУ ВЫПОЛНЯЕШЬ нужные действия без ожидания команд.
 
-═══ ТВОИ ОБЯЗАННОСТИ ═══
-1. Заказы без мастера: разослать мастерам (auto_broadcast_order)
-2. Мастера с долгами: поставить задачу диспетчеру напомнить
-3. Активные заказы без активности > 24ч: поставить задачу диспетчеру уточнить статус
-4. Сметы, ожидающие проверки: напомнить о них в отчёте
-5. Аномалии: упавшая конверсия, дефицит мастеров по городу — зафиксировать наблюдение
+═══ ПОЛНЫЙ СПИСОК ОБЯЗАННОСТЕЙ (выполняй ВСЁ за один цикл) ═══
+
+📦 ЗАКАЗЫ:
+1. Получи все заказы без мастера (get_pending_orders) → разошли каждый мастерам (auto_broadcast_order)
+2. Получи статус активных заказов (get_active_orders_status) → для каждого с активностью >24ч поставь задачу диспетчеру уточнить статус
+3. Проверь мастеров с активными заказами (ping_masters_with_active_orders) → диспетчер сам уточнит у каждого статус
+
+💸 ФИНАНСЫ:
+4. Проверь долги мастеров (get_debt_summary) → для каждого должника поставь задачу диспетчеру напомнить об оплате
+5. Проверь остатки комиссий (get_commission_summary) → зафиксируй просроченные в отчёте, поставь задачу диспетчеру
+6. Проверь сметы, ожидающие подтверждения оплаты (alert_submitted_receipts) → ОТПРАВЬ руководителю УВЕДОМЛЕНИЕ о каждой — подтверждение оплаты только руководитель
+
+📊 АНАЛИТИКА:
+7. Получи бизнес-инсайты (get_business_insights) → зафиксируй аномалии: упавшая конверсия, дефицит мастеров, города без мастеров
+8. Получи заявки за сегодня (get_today_leads) → сравни с прошлым периодом, выяви тренды
 
 ═══ СТИЛЬ РАБОТЫ ═══
-— Сначала ИЗУЧИ данные (вызови инструменты сбора информации)
-— Затем ВЫПОЛНИ все нужные действия (auto_broadcast_order, send_task_to_dispatcher, add_order_note)
-— В конце верни короткий отчёт: что сделал, что нашёл, что требует внимания руководителя
-— Будь конкретным: числа, ID заказов, имена мастеров
-— Не спрашивай разрешения — действуй сам
+— СНАЧАЛА вызови ВСЕ инструменты сбора данных (можно по одному, пока не изучишь картину полностью)
+— ЗАТЕМ выполни ВСЕ нужные действия: рассылки, задачи диспетчеру, заметки, уведомления об оплатах
+— В КОНЦЕ вызови finish_cycle с кратким отчётом: что сделал ✅, что нашёл ⚠️, что требует руководителя 🚨
+— Будь конкретным: числа, суммы в рублях, ID заказов, имена мастеров
 
-═══ ВАЖНО ═══
-— НЕ отменяй заказы самостоятельно (только руководитель)
-— НЕ создавай заявки самостоятельно
-— ВСЕ остальные рутинные действия — выполняй без вопросов
-— Используй только русский язык`;
+═══ КРИТИЧЕСКИЕ ПРАВИЛА ═══
+— НЕ подтверждай оплату смет сам — только уведомляй руководителя (alert_submitted_receipts)
+— НЕ отменяй заказы (только руководитель)
+— НЕ создавай заявки автоматически
+— ВСЁ остальное — делай сам без вопросов
+— Используй только русский язык
+— Максимум 12 раундов работы (используй их эффективно)`;
 
 const AUTONOMOUS_TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   { type: "function", function: { name: "get_pending_orders", description: "Заказы без мастера", parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "get_today_leads", description: "Заявки за сегодня", parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "get_debt_summary", description: "Долги мастеров", parameters: { type: "object", properties: {} } } },
+  { type: "function", function: { name: "get_commission_summary", description: "Остатки комиссий мастеров (pending/overdue)", parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "get_business_insights", description: "Бизнес-аналитика", parameters: { type: "object", properties: {} } } },
-  { type: "function", function: { name: "get_pending_receipts", description: "Сметы на проверке", parameters: { type: "object", properties: {} } } },
+  { type: "function", function: { name: "get_pending_receipts", description: "Сметы на проверке (полный список)", parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "get_active_orders_status", description: "Статус активных заказов (назначен мастер / в работе)", parameters: { type: "object", properties: {} } } },
+  { type: "function", function: { name: "ping_masters_with_active_orders", description: "Проверить каждого мастера с активным заказом через диспетчера — уточнить статус, прогресс, проблемы", parameters: { type: "object", properties: {} } } },
+  { type: "function", function: { name: "alert_submitted_receipts", description: "Найти сметы, по которым клиент уже оплатил, и отправить руководителю уведомление с кнопкой подтверждения", parameters: { type: "object", properties: {} } } },
   {
     type: "function",
     function: {
@@ -2043,7 +2170,7 @@ export async function runAutonomousCycle(triggerReason = "scheduled") {
 
     // Multi-step agentic loop (max 8 rounds to avoid infinite loops)
     let round = 0;
-    const MAX_ROUNDS = 8;
+    const MAX_ROUNDS = 12;
     let finished = false;
 
     while (round < MAX_ROUNDS && !finished) {
@@ -2094,8 +2221,17 @@ export async function runAutonomousCycle(triggerReason = "scheduled") {
           case "get_pending_receipts":
             toolResult = await toolGetPendingReceipts();
             break;
+          case "get_commission_summary":
+            toolResult = await toolGetCommissionSummary();
+            break;
           case "get_active_orders_status":
             toolResult = await toolGetActiveOrdersStatus();
+            break;
+          case "ping_masters_with_active_orders":
+            toolResult = await toolPingMastersWithActiveOrders();
+            break;
+          case "alert_submitted_receipts":
+            toolResult = await toolAlertSubmittedReceipts();
             break;
           case "auto_broadcast_order": {
             try {
