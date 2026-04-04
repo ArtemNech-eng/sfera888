@@ -24,6 +24,10 @@ import {
   orderDispatchesTable,
   transactionsTable,
   receiptsTable,
+  masterReviewsTable,
+  orderStatusLogsTable,
+  masterCheckinsTable,
+  masterMessagesTable,
 } from "@workspace/db";
 import { eq, and, isNull, desc, gte, sql, inArray, lte } from "drizzle-orm";
 import { performBroadcast } from "./lib/broadcastOrder.js";
@@ -488,6 +492,196 @@ async function toolConfirmReceipt(receiptId: number) {
   return `✅ Смета #${receiptId} подтверждена. Мастер: ${masterName}, предоплата ${prep} ₽ по заказу #${receipt.orderId}.`;
 }
 
+async function toolSearchOrders(query: string, statusFilter?: string) {
+  const allOrders = await db.select().from(ordersTable)
+    .where(isNull(ordersTable.deletedAt))
+    .orderBy(desc(ordersTable.createdAt))
+    .limit(200);
+
+  const allLeads = await db.select().from(leadsTable).where(isNull(leadsTable.deletedAt));
+  const leadMap = new Map(allLeads.map(l => [l.id, l]));
+
+  const q = query.toLowerCase().trim();
+  const matches = allOrders.filter(o => {
+    const lead = leadMap.get(o.leadId);
+    if (statusFilter && o.status !== statusFilter) return false;
+    return (
+      String(o.id) === q ||
+      o.serviceType.toLowerCase().includes(q) ||
+      o.city.toLowerCase().includes(q) ||
+      (o.district ?? "").toLowerCase().includes(q) ||
+      (o.operatorNote ?? "").toLowerCase().includes(q) ||
+      (lead?.clientName ?? "").toLowerCase().includes(q) ||
+      (lead?.clientPhone ?? "").includes(q)
+    );
+  });
+
+  if (matches.length === 0) return `По запросу "${query}" заказов не найдено.`;
+
+  const statusLabels: Record<string, string> = {
+    waiting_master: "ждёт мастера", master_assigned: "мастер назначен",
+    in_progress: "в работе", completed: "завершён", cancelled: "отменён",
+  };
+
+  const fmt = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", timeZone: "Europe/Moscow" });
+
+  return `🔍 Найдено заказов: ${matches.length}\n\n` + matches.slice(0, 15).map(o => {
+    const lead = leadMap.get(o.leadId);
+    const client = lead ? `${lead.clientName}, ${lead.clientPhone}` : "—";
+    const amount = o.orderAmount ? `${Number(o.orderAmount).toLocaleString("ru-RU")} ₽` : "цена не указана";
+    return `• Заказ **#${o.id}** [${fmt.format(new Date(o.createdAt))}] — ${statusLabels[o.status] ?? o.status}\n  ${o.serviceType}, ${o.city}${o.district ? ` (${o.district})` : ""}, ${o.area} м²\n  Клиент: ${client} | ${amount}`;
+  }).join("\n\n");
+}
+
+async function toolGetOrderDetails(orderId: number) {
+  const orders = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
+  const order = orders[0];
+  if (!order) return `Заказ #${orderId} не найден.`;
+
+  const leads = await db.select().from(leadsTable).where(eq(leadsTable.id, order.leadId));
+  const lead = leads[0];
+
+  let masterInfo = "не назначен";
+  if (order.masterId) {
+    const masters = await db.select().from(mastersTable).where(eq(mastersTable.id, order.masterId));
+    if (masters[0]) masterInfo = `${masters[0].alias} (#${masters[0].id}), тел: ${masters[0].phone ?? "нет"}`;
+  }
+
+  const logs = await db.select().from(orderStatusLogsTable)
+    .where(eq(orderStatusLogsTable.orderId, orderId))
+    .orderBy(desc(orderStatusLogsTable.createdAt))
+    .limit(10);
+
+  const receipts = await db.select().from(receiptsTable).where(eq(receiptsTable.orderId, orderId));
+
+  const fmt = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Moscow" });
+  const statusLabels: Record<string, string> = {
+    waiting_master: "ждёт мастера", master_assigned: "мастер назначен",
+    in_progress: "в работе", completed: "завершён", cancelled: "отменён",
+  };
+
+  let result = `📦 **Заказ #${orderId}**\n`;
+  result += `Статус: ${statusLabels[order.status] ?? order.status}\n`;
+  result += `Услуга: ${order.serviceType}, ${order.city}${order.district ? ` (${order.district})` : ""}, ${order.area} м²\n`;
+  if (lead) result += `Клиент: ${lead.clientName}, ${lead.clientPhone}\n`;
+  result += `Мастер: ${masterInfo}\n`;
+  if (order.scheduledAt) result += `Запланировано: ${fmt.format(new Date(order.scheduledAt))}\n`;
+  if (order.orderAmount) result += `Стоимость: ${Number(order.orderAmount).toLocaleString("ru-RU")} ₽\n`;
+  if (order.commission) result += `Комиссия: ${Number(order.commission).toLocaleString("ru-RU")} ₽\n`;
+  if (order.comment) result += `Комментарий: ${order.comment}\n`;
+  if (order.operatorNote) result += `Заметка оператора: ${order.operatorNote}\n`;
+  if (order.cancelReason) result += `Причина отмены: ${order.cancelReason}\n`;
+  result += `Создан: ${fmt.format(new Date(order.createdAt))}\n`;
+
+  if (receipts.length > 0) {
+    result += `\n📄 Смет: ${receipts.length}`;
+    for (const r of receipts) {
+      const status = r.prepaymentSeenAt ? "✅ подтверждена" : r.prepaymentSubmittedAt ? "⏳ ожидает подтверждения" : "📝 оплата не поступала";
+      result += `\n  • Смета #${r.id}: ${Number(r.totalAmount).toLocaleString("ru-RU")} ₽ — ${status}`;
+    }
+  }
+
+  if (logs.length > 0) {
+    result += `\n\n📋 История статусов (${logs.length}):\n`;
+    for (const log of logs.slice(0, 5)) {
+      result += `  ${fmt.format(new Date(log.createdAt))}: ${log.oldStatus ?? "—"} → ${log.newStatus}`;
+      if (log.note) result += ` (${log.note})`;
+      result += "\n";
+    }
+  }
+
+  return result.trim();
+}
+
+async function toolGetMasterReviews(masterIdOrName: string) {
+  const id = parseInt(masterIdOrName);
+  let master;
+  if (!isNaN(id)) {
+    const rows = await db.select().from(mastersTable).where(eq(mastersTable.id, id));
+    master = rows[0];
+  } else {
+    const all = await db.select().from(mastersTable).where(isNull(mastersTable.deletedAt));
+    master = all.find(m => m.alias.toLowerCase().includes(masterIdOrName.toLowerCase()));
+  }
+  if (!master) return `Мастер "${masterIdOrName}" не найден.`;
+
+  const reviews = await db.select().from(masterReviewsTable)
+    .where(eq(masterReviewsTable.masterId, master.id))
+    .orderBy(desc(masterReviewsTable.createdAt))
+    .limit(20);
+
+  if (reviews.length === 0) return `Отзывов о мастере ${master.alias} пока нет.`;
+
+  const positive = reviews.filter(r => r.sentiment === "positive").length;
+  const negative = reviews.filter(r => r.sentiment === "negative").length;
+  const neutral = reviews.filter(r => r.sentiment === "neutral").length;
+
+  const fmt = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", timeZone: "Europe/Moscow" });
+  const sentimentIcon: Record<string, string> = { positive: "✅", negative: "❌", neutral: "⚪" };
+
+  let result = `⭐ Отзывы о мастере **${master.alias}** (${reviews.length} всего):\n`;
+  result += `✅ ${positive} положительных | ❌ ${negative} отрицательных | ⚪ ${neutral} нейтральных\n\n`;
+
+  for (const r of reviews.slice(0, 10)) {
+    result += `${sentimentIcon[r.sentiment] ?? "⚪"} [${fmt.format(new Date(r.createdAt))}] ${r.text}\n\n`;
+  }
+  return result.trim();
+}
+
+async function toolGetBusinessInsights() {
+  const now = new Date();
+  const month = new Date(now); month.setMonth(now.getMonth() - 1);
+  const week = new Date(now); week.setDate(now.getDate() - 7);
+
+  const [allOrders, allMasters, allLeads, allReceipts, allTransactions] = await Promise.all([
+    db.select().from(ordersTable).where(isNull(ordersTable.deletedAt)),
+    db.select().from(mastersTable).where(isNull(mastersTable.deletedAt)),
+    db.select().from(leadsTable).where(isNull(leadsTable.deletedAt)),
+    db.select().from(receiptsTable),
+    db.select().from(transactionsTable),
+  ]);
+
+  // Conversion
+  const totalLeads = allLeads.length;
+  const convertedLeads = allLeads.filter(l => l.status === "sent_to_work").length;
+  const conversionRate = totalLeads > 0 ? Math.round(convertedLeads / totalLeads * 100) : 0;
+
+  // Revenue
+  const totalRevenue = allTransactions.filter(t => t.status === "paid")
+    .reduce((s, t) => s + Number(t.amount ?? 0), 0);
+  const monthRevenue = allTransactions.filter(t => t.status === "paid" && new Date(t.createdAt) >= month)
+    .reduce((s, t) => s + Number(t.amount ?? 0), 0);
+
+  // Cities
+  const cityCount = new Map<string, number>();
+  allOrders.forEach(o => cityCount.set(o.city, (cityCount.get(o.city) ?? 0) + 1));
+  const topCities = [...cityCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+  // Masters
+  const activeMasters = allMasters.filter(m => m.status === "active").length;
+  const mastersWithMax = allMasters.filter(m => m.maxChatId).length;
+  const mastersNoPassport = allMasters.filter(m => !m.passportVerified && m.status === "active").length;
+
+  // Orders
+  const activeOrders = allOrders.filter(o => ["master_assigned", "in_progress"].includes(o.status)).length;
+  const waitingOrders = allOrders.filter(o => o.status === "waiting_master").length;
+  const completedOrders = allOrders.filter(o => o.status === "completed").length;
+
+  // Receipts
+  const pendingReceipts = allReceipts.filter(r => r.prepaymentSubmittedAt && !r.prepaymentSeenAt);
+  const pendingReceiptsSum = pendingReceipts.reduce((s, r) => s + Number(r.prepaymentAmount), 0);
+
+  return `📊 **Бизнес-аналитика «Честный мастер»**\n
+🎯 Конверсия лидов: **${conversionRate}%** (${convertedLeads} из ${totalLeads})
+💰 Выручка всего: **${totalRevenue.toLocaleString("ru-RU")} ₽** | За 30 дней: ${monthRevenue.toLocaleString("ru-RU")} ₽
+👷 Мастера: ${activeMasters} активных | ${mastersWithMax} в Max | ${mastersNoPassport} без паспорта
+📦 Заказы: ${activeOrders} в работе | ${waitingOrders} ждут мастера | ${completedOrders} завершено
+⏳ Сметы к подтверждению: ${pendingReceipts.length} шт, ${pendingReceiptsSum.toLocaleString("ru-RU")} ₽
+
+🏙️ Топ городов по заказам:
+${topCities.map((c, i) => `  ${i + 1}. ${c[0]}: ${c[1]} заказов`).join("\n")}`;
+}
+
 async function toolSetOrderStatus(orderId: number, status: string, note?: string) {
   const validStatuses = ["waiting_master", "master_assigned", "in_progress", "completed", "cancelled"];
   if (!validStatuses.includes(status)) {
@@ -725,6 +919,57 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "search_orders",
+      description: "Поиск заказов по имени клиента, телефону, городу, типу услуги, ID заказа или ключевому слову. Используй когда спрашивают о конкретном клиенте или заказе.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Поисковый запрос: имя, телефон, город, услуга, ID" },
+          statusFilter: { type: "string", enum: ["waiting_master", "master_assigned", "in_progress", "completed", "cancelled"], description: "Опционально: фильтр по статусу" },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_order_details",
+      description: "Получить полную информацию о заказе: клиент, мастер, стоимость, история статусов, сметы, заметки. Используй когда спрашивают о конкретном заказе по номеру.",
+      parameters: {
+        type: "object",
+        properties: {
+          orderId: { type: "number", description: "Номер заказа" },
+        },
+        required: ["orderId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_master_reviews",
+      description: "Получить отзывы клиентов о конкретном мастере. Используй когда спрашивают о репутации или качестве работы мастера.",
+      parameters: {
+        type: "object",
+        properties: {
+          masterIdOrName: { type: "string", description: "ID или имя мастера" },
+        },
+        required: ["masterIdOrName"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_business_insights",
+      description: "Получить ключевые бизнес-метрики: конверсия, выручка, топ городов, активность мастеров, незакрытые задачи. Используй для стратегического анализа.",
+      parameters: { type: "object", properties: {}, required: [] },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "confirm_receipt",
       description: "Подтвердить предоплату по смете (отметить как проверенную). Используй когда руководитель говорит 'подтвердить смету', 'принял оплату', 'вижу платёж'.",
       parameters: {
@@ -892,32 +1137,65 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
   },
 ];
 
-const SYSTEM_PROMPT = `Ты — AI-ассистент руководителя ремонтного сервиса "Честный мастер".
-Ты помогаешь управлять бизнесом прямо из мессенджера.
+const SYSTEM_PROMPT = `Ты — AI-ассистент и стратегический советник руководителя ремонтного сервиса "Честный мастер".
 
-Твои возможности:
-- Создавать заявки из голосовых/текстовых сообщений
-- Показывать мастеров по городу (с умным ранжированием по опыту)
-- Рассылать заказы мастерам
-- Формировать отчёты (заявки, заказы, выручка, конверсия)
-- Финансовая аналитика: выручка, долги мастеров
-- Статистика по конкретному мастеру
-- Менять статус заказа
-- Добавлять заметки к заказам
-- Подтверждать паспорта мастеров
-- Запоминать предпочтения (например, какой мастер лучше для определённого типа работ)
-- Просматривать переписку диспетчера с мастером (get_master_conversation)
-- Сводный отчёт по активности: кто из мастеров молчит, кто ответил (get_dispatcher_activity)
-- Ставить задачи AI-диспетчеру: написать мастеру конкретное сообщение (send_task_to_dispatcher)
-- Просматривать сметы мастеров: get_master_stats включает сметы, get_pending_receipts — все неподтверждённые
-- Подтверждать предоплату по смете (confirm_receipt)
+═══════════════════════════════════════
+🎯 МИССИЯ КОМПАНИИ
+═══════════════════════════════════════
+Выйти на оборот 1 МИЛЛИАРД рублей и охватить ВСЕ ГОРОДА России.
+Ты — лучший сотрудник компании. Ты не просто отвечаешь на вопросы — ты думаешь как партнёр, замечаешь возможности, предлагаешь идеи и помогаешь двигаться к цели.
 
-Правила:
-- Говори кратко и по делу. Ты в мессенджере, не в документе.
-- Прежде чем создавать заявку, менять статус или подтверждать паспорт — всегда вызывай propose_* функцию.
-- Если в сообщении есть данные клиента (имя, телефон, тип работ) — сразу вызывай propose_lead_creation.
-- Используй русский язык.
-- Если руководитель спрашивает "кто лучший мастер для X" — проверь предпочтения через get_preference, потом get_available_masters.`;
+═══════════════════════════════════════
+📊 ДОСТУП К ДАННЫМ CRM
+═══════════════════════════════════════
+У тебя полный доступ ко всей системе:
+• Заявки (лиды) — все входящие обращения
+• Заказы — статусы, стоимость, мастера, история изменений
+• Мастера — рейтинг, долги, специализации, цены, паспорта, доступность, отзывы
+• Сметы — предоплата, подтверждение, суммы
+• Финансы — транзакции, выручка, долги
+• Переписка с мастерами через AI-диспетчера
+• Бизнес-аналитика: конверсия, топ городов, ключевые метрики
+
+═══════════════════════════════════════
+🛠️ ЧТО УМЕЕШЬ ДЕЛАТЬ
+═══════════════════════════════════════
+— Создавать заявки из голосовых/текстовых сообщений
+— Искать заказы: по клиенту, телефону, городу, типу услуги (search_orders)
+— Просматривать полные детали любого заказа (get_order_details)
+— Видеть мастеров с рейтингом, опытом, ценами (get_available_masters)
+— Статистика мастера включая сметы и отзывы (get_master_stats, get_master_reviews)
+— Рассылать заказы мастерам (propose_broadcast)
+— Менять статусы заказов (propose_set_order_status)
+— Добавлять заметки к заказам (add_order_note)
+— Финансовые отчёты: выручка, долги, конверсия (get_report, get_revenue_stats, get_debt_summary)
+— Бизнес-аналитика с идеями для роста (get_business_insights)
+— Сметы: просмотр и подтверждение (get_pending_receipts, confirm_receipt)
+— Паспорта мастеров (get_pending_passports, approve_master_passport)
+— Переписка с мастерами через диспетчера (get_master_conversation, get_dispatcher_activity)
+— Постановка задач диспетчеру (send_task_to_dispatcher)
+— Запоминать предпочтения по мастерам (save_preference, get_preference)
+
+═══════════════════════════════════════
+💡 ПРАВИЛО ИДЕЙ — ОЧЕНЬ ВАЖНО
+═══════════════════════════════════════
+После любого отчёта или аналитики — ВСЕГДА добавляй 1-2 конкретных идеи для роста.
+Примеры:
+• "Конверсия 32% — ниже среднего. Идея: настрой автоответ на заявки в течение 5 минут — это может поднять её до 50%+"
+• "В Краснодаре 15 заказов, а мастеров только 2. Идея: запустить набор мастеров в Краснодаре — потенциал явно не использован"
+• "3 мастера без паспортов — риск. Идея: поставь дедлайн 3 дня и автоматически заблокируй тех, кто не пришлёт"
+Идеи должны быть: конкретными, с числами, практичными, ориентированными на масштаб.
+
+═══════════════════════════════════════
+📐 ПРАВИЛА РАБОТЫ
+═══════════════════════════════════════
+— Пиши кратко и по делу — ты в мессенджере
+— Прежде чем создавать заявку/менять статус/подтверждать паспорт — ВСЕГДА вызывай propose_* функцию
+— Если в сообщении есть данные клиента (имя, телефон, тип работ) — сразу вызывай propose_lead_creation
+— Если руководитель спрашивает "кто лучший мастер для X" — сначала get_preference, потом get_available_masters
+— Когда спрашивают о конкретном клиенте или заказе — используй search_orders
+— При анализе данных всегда сравнивай с целью: "движемся ли мы к миллиарду?"
+— Используй только русский язык`;
 
 // ─── Main update handler ──────────────────────────────────────────────────────
 
@@ -1107,6 +1385,18 @@ export async function handleManagerUpdate(update: unknown) {
             break;
           case "confirm_receipt":
             toolResult = await toolConfirmReceipt(Number(args.receiptId));
+            break;
+          case "search_orders":
+            toolResult = await toolSearchOrders(args.query, args.statusFilter);
+            break;
+          case "get_order_details":
+            toolResult = await toolGetOrderDetails(Number(args.orderId));
+            break;
+          case "get_master_reviews":
+            toolResult = await toolGetMasterReviews(args.masterIdOrName);
+            break;
+          case "get_business_insights":
+            toolResult = await toolGetBusinessInsights();
             break;
           case "save_preference":
             toolResult = await toolSavePreference(args.key, args.value);
