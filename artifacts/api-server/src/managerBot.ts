@@ -63,6 +63,7 @@ interface Message {
   content: string;
   tool_call_id?: string;
   name?: string;
+  tool_calls?: any[];
 }
 
 interface PendingConfirmation {
@@ -86,10 +87,20 @@ function getSession(userId: number): Session {
   return sessions.get(userId)!;
 }
 
+function sanitizeHistory(msgs: Message[]): Message[] {
+  // After trimming, the slice may start with orphaned "tool" messages whose
+  // parent assistant-with-tool_calls was cut off. Remove them from the top.
+  let start = 0;
+  while (start < msgs.length && msgs[start].role === "tool") {
+    start++;
+  }
+  return msgs.slice(start);
+}
+
 function addMessage(session: Session, msg: Message) {
   session.messages.push(msg);
   if (session.messages.length > MAX_HISTORY) {
-    session.messages = session.messages.slice(-MAX_HISTORY);
+    session.messages = sanitizeHistory(session.messages.slice(-MAX_HISTORY));
   }
 }
 
@@ -140,10 +151,15 @@ async function transcribeAudio(buffer: Buffer, mimeType = "audio/ogg"): Promise<
   try {
     const ext = mimeType.includes("ogg") ? "ogg" : mimeType.includes("mp4") ? "mp4" : mimeType.includes("webm") ? "webm" : "ogg";
     const file = new File([buffer], `voice.${ext}`, { type: mimeType });
-    const result = await openai.audio.transcriptions.create({ model: "whisper-1", file, language: "ru" });
+    const result = await openai.audio.transcriptions.create({
+      model: "gpt-4o-mini-transcribe",
+      file,
+      language: "ru",
+      response_format: "json",
+    });
     return result.text || null;
   } catch (e) {
-    console.error("[managerBot] Whisper error:", e);
+    console.error("[managerBot] Transcription error:", e);
     return null;
   }
 }
@@ -920,7 +936,8 @@ export async function handleManagerUpdate(update: unknown) {
 
     // ── Handle tool calls ─────────────────────────────────────────────────
     if (assistantMsg.tool_calls && assistantMsg.tool_calls.length > 0) {
-      addMessage(session, { role: "assistant", content: assistantMsg.content ?? "" });
+      // MUST save tool_calls with the message — otherwise tool responses become orphans
+      addMessage(session, { role: "assistant", content: assistantMsg.content ?? "", tool_calls: assistantMsg.tool_calls });
 
       for (const tc of assistantMsg.tool_calls) {
         const fnName = tc.function.name;

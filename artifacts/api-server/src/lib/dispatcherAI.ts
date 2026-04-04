@@ -27,6 +27,7 @@ interface ChatMessage {
   content: string;
   tool_call_id?: string;
   name?: string;
+  tool_calls?: any[];
 }
 
 const masterSessions = new Map<number, ChatMessage[]>();
@@ -37,10 +38,22 @@ function getHistory(masterId: number): ChatMessage[] {
   return masterSessions.get(masterId)!;
 }
 
+function sanitizeHistory(msgs: ChatMessage[]): ChatMessage[] {
+  // After trimming, the slice may start with orphaned "tool" messages whose
+  // parent assistant-with-tool_calls was cut off. Remove them from the top.
+  let start = 0;
+  while (start < msgs.length && msgs[start].role === "tool") {
+    start++;
+  }
+  return msgs.slice(start);
+}
+
 function addToHistory(masterId: number, msg: ChatMessage) {
   const h = getHistory(masterId);
   h.push(msg);
-  if (h.length > MAX_HISTORY) masterSessions.set(masterId, h.slice(-MAX_HISTORY));
+  if (h.length > MAX_HISTORY) {
+    masterSessions.set(masterId, sanitizeHistory(h.slice(-MAX_HISTORY)));
+  }
 }
 
 // ─── Proactive message tracking (in-memory) ──────────────────────────────────
@@ -327,7 +340,8 @@ ${context}
     const assistantMsg = choice.message;
 
     if (assistantMsg.tool_calls && assistantMsg.tool_calls.length > 0) {
-      addToHistory(masterId, { role: "assistant", content: assistantMsg.content ?? "" });
+      // MUST save tool_calls with the message — otherwise tool responses become orphans
+      addToHistory(masterId, { role: "assistant", content: assistantMsg.content ?? "", tool_calls: assistantMsg.tool_calls });
 
       for (const tc of assistantMsg.tool_calls) {
         const fnName = tc.function.name;
