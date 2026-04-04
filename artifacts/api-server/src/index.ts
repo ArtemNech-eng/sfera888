@@ -7,7 +7,7 @@ import { checkOverdueTransactions } from "./lib/orderEligibility.js";
 import { performBroadcast } from "./lib/broadcastOrder.js";
 import { broadcastCheckin, broadcastCheckinReminder } from "./lib/checkinBroadcast.js";
 import { systemSettingsTable } from "@workspace/db";
-import { sendMorningBriefing, checkStaleOrders, sendWeeklyReport, checkNewMarkets } from "./managerBot.js";
+import { sendMorningBriefing, checkStaleOrders, sendWeeklyReport, checkNewMarkets, runAutonomousCycle, runQuickAutonomousCheck } from "./managerBot.js";
 import { runProactiveChecks } from "./lib/dispatcherAI.js";
 
 const port = Number(process.env["PORT"] || "8080");
@@ -359,10 +359,14 @@ setInterval(() => autoReBroadcastNoResponse().catch(console.error), 5 * 60 * 100
 setInterval(() => checkStaleOrders().catch(console.error), 30 * 60 * 1000);
 // AI dispatcher proactive checks every 30 min
 setInterval(() => runProactiveChecks().catch(console.error), 30 * 60 * 1000);
+// Quick autonomous check: auto-broadcast undispatched orders waiting > 1h
+setInterval(() => runQuickAutonomousCheck().catch(console.error), 30 * 60 * 1000);
 // New market detector: check every 6 hours
 setInterval(() => checkNewMarkets().catch(console.error), 6 * 60 * 60 * 1000);
 // Run market detector on startup too
 checkNewMarkets().catch(console.error);
+// Autonomous AI agent: full cycle every 2 hours
+setInterval(() => runAutonomousCycle("плановая проверка каждые 2 часа").catch(console.error), 2 * 60 * 60 * 1000);
 
 // ─── Checkin broadcast scheduler ─────────────────────────────────────────────
 // Reads broadcast + reminder times from DB every minute and fires if needed.
@@ -421,6 +425,8 @@ async function initCheckinScheduler() {
 }
 
 let morningBriefingFiredDate: string | null = null;
+let eveningReportFiredDate: string | null = null;
+const autonomousCycleFiredHours = new Set<string>(); // "YYYY-MM-DD HH"
 
 setInterval(async () => {
   try {
@@ -451,7 +457,29 @@ setInterval(async () => {
         console.log("[managerBot] Monday — firing weekly report");
         sendWeeklyReport().catch(console.error);
       }
+
+      // First autonomous cycle of the day
+      setTimeout(() => runAutonomousCycle("утренняя проверка после брифинга").catch(console.error), 2 * 60 * 1000);
     }
+
+    // Evening summary at 19:00 MSK
+    if (hhmm === "19:00" && eveningReportFiredDate !== today) {
+      eveningReportFiredDate = today;
+      console.log("[managerBot] Firing evening autonomous cycle at 19:00 MSK");
+      runAutonomousCycle("вечерняя проверка — итоги дня").catch(console.error);
+    }
+
+    // Autonomous cycle at 12:00 and 15:00 MSK
+    const autoHours = ["12:00", "15:00"];
+    for (const slot of autoHours) {
+      const slotKey = `${today} ${slot}`;
+      if (hhmm === slot && !autonomousCycleFiredHours.has(slotKey)) {
+        autonomousCycleFiredHours.add(slotKey);
+        console.log(`[autonomousAgent] Firing scheduled cycle at ${slot} MSK`);
+        runAutonomousCycle(`плановая проверка ${slot} МСК`).catch(console.error);
+      }
+    }
+
   } catch (e) {
     console.error("[checkin] scheduler error:", e);
   }

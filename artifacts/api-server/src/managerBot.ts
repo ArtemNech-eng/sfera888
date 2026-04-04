@@ -1152,6 +1152,14 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "run_autonomous_check",
+      description: "Запустить полную автономную проверку системы прямо сейчас — агент сам посмотрит все заказы, выполнит нужные действия и пришлёт отчёт. Используй когда руководитель говорит 'запусти проверку', 'что происходит', 'посмотри что там', 'проверь систему'.",
+      parameters: { type: "object", properties: {}, required: [] },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "send_task_to_dispatcher",
       description: "Поставить задачу AI-диспетчеру — отправить конкретное сообщение или напоминание мастеру",
       parameters: {
@@ -1478,6 +1486,12 @@ export async function handleManagerUpdate(update: unknown) {
           case "get_dispatcher_activity": {
             const d = await getDispatcherModule();
             toolResult = await d.getDispatcherActivityReport();
+            break;
+          }
+          case "run_autonomous_check": {
+            // Fire autonomous cycle in background, don't await (it's long-running)
+            setTimeout(() => runAutonomousCycle("запрос руководителя вручную").catch(console.error), 100);
+            toolResult = "Запускаю полную проверку системы. Отчёт придёт отдельным сообщением через ~30 секунд.";
             break;
           }
           case "send_task_to_dispatcher": {
@@ -1895,6 +1909,284 @@ export async function checkNewMarkets() {
 }
 
 const alertedMarkets = new Set<string>();
+
+// ─── Autonomous AI Agent ──────────────────────────────────────────────────────
+
+const AUTONOMOUS_SYSTEM_PROMPT = `Ты — автономный AI-операционист ремонтного сервиса "Честный мастер".
+Ты работаешь как самостоятельный сотрудник: регулярно проверяешь систему и СРАЗУ ВЫПОЛНЯЕШЬ нужные действия, не ожидая команд руководителя.
+
+═══ ТВОИ ОБЯЗАННОСТИ ═══
+1. Заказы без мастера: разослать мастерам (auto_broadcast_order)
+2. Мастера с долгами: поставить задачу диспетчеру напомнить
+3. Активные заказы без активности > 24ч: поставить задачу диспетчеру уточнить статус
+4. Сметы, ожидающие проверки: напомнить о них в отчёте
+5. Аномалии: упавшая конверсия, дефицит мастеров по городу — зафиксировать наблюдение
+
+═══ СТИЛЬ РАБОТЫ ═══
+— Сначала ИЗУЧИ данные (вызови инструменты сбора информации)
+— Затем ВЫПОЛНИ все нужные действия (auto_broadcast_order, send_task_to_dispatcher, add_order_note)
+— В конце верни короткий отчёт: что сделал, что нашёл, что требует внимания руководителя
+— Будь конкретным: числа, ID заказов, имена мастеров
+— Не спрашивай разрешения — действуй сам
+
+═══ ВАЖНО ═══
+— НЕ отменяй заказы самостоятельно (только руководитель)
+— НЕ создавай заявки самостоятельно
+— ВСЕ остальные рутинные действия — выполняй без вопросов
+— Используй только русский язык`;
+
+const AUTONOMOUS_TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
+  { type: "function", function: { name: "get_pending_orders", description: "Заказы без мастера", parameters: { type: "object", properties: {} } } },
+  { type: "function", function: { name: "get_today_leads", description: "Заявки за сегодня", parameters: { type: "object", properties: {} } } },
+  { type: "function", function: { name: "get_debt_summary", description: "Долги мастеров", parameters: { type: "object", properties: {} } } },
+  { type: "function", function: { name: "get_business_insights", description: "Бизнес-аналитика", parameters: { type: "object", properties: {} } } },
+  { type: "function", function: { name: "get_pending_receipts", description: "Сметы на проверке", parameters: { type: "object", properties: {} } } },
+  { type: "function", function: { name: "get_active_orders_status", description: "Статус активных заказов (назначен мастер / в работе)", parameters: { type: "object", properties: {} } } },
+  {
+    type: "function",
+    function: {
+      name: "auto_broadcast_order",
+      description: "Разослать заказ мастерам автоматически (без подтверждения)",
+      parameters: {
+        type: "object",
+        properties: { orderId: { type: "number" } },
+        required: ["orderId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "send_task_to_dispatcher",
+      description: "Поставить задачу AI-диспетчеру: уточнить у мастера статус, напомнить о долге, проверить готовность",
+      parameters: {
+        type: "object",
+        properties: {
+          masterNameOrId: { type: "string" },
+          task: { type: "string" },
+        },
+        required: ["masterNameOrId", "task"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "add_order_note",
+      description: "Добавить заметку к заказу",
+      parameters: {
+        type: "object",
+        properties: {
+          orderId: { type: "number" },
+          note: { type: "string" },
+        },
+        required: ["orderId", "note"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "finish_cycle",
+      description: "Завершить цикл проверки и отправить итоговый отчёт руководителю",
+      parameters: {
+        type: "object",
+        properties: {
+          report: { type: "string", description: "Краткий отчёт: что проверил, что сделал, что требует внимания" },
+          hasUrgentIssues: { type: "boolean", description: "true если есть срочные проблемы требующие внимания руководителя" },
+        },
+        required: ["report", "hasUrgentIssues"],
+      },
+    },
+  },
+];
+
+async function toolGetActiveOrdersStatus(): Promise<string> {
+  const activeOrders = await db.select().from(ordersTable)
+    .where(and(
+      inArray(ordersTable.status, ["master_assigned", "in_progress"]),
+      isNull(ordersTable.deletedAt),
+    ))
+    .orderBy(desc(ordersTable.updatedAt))
+    .limit(20);
+
+  if (activeOrders.length === 0) return "Нет активных заказов.";
+
+  const now = Date.now();
+  const lines = activeOrders.map(o => {
+    const hoursAgo = Math.round((now - new Date(o.updatedAt).getTime()) / 3600000);
+    const stale = hoursAgo > 24 ? " ⚠️ нет активности >24ч" : "";
+    return `#${o.id} | ${o.serviceType} | ${o.city} | мастер_id:${o.masterId ?? "–"} | обновлён ${hoursAgo}ч назад${stale}`;
+  });
+  return lines.join("\n");
+}
+
+let autonomousCycleRunning = false;
+let lastAutonomousCycleAt: Date | null = null;
+
+export async function runAutonomousCycle(triggerReason = "scheduled") {
+  if (!managerUserId) return;
+  if (autonomousCycleRunning) {
+    console.log("[autonomousAgent] Cycle already running, skipping");
+    return;
+  }
+
+  autonomousCycleRunning = true;
+  lastAutonomousCycleAt = new Date();
+  console.log(`[autonomousAgent] Starting cycle (reason: ${triggerReason})`);
+
+  try {
+    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+      { role: "system", content: AUTONOMOUS_SYSTEM_PROMPT },
+      { role: "user", content: `Выполни плановую проверку системы. Причина запуска: ${triggerReason}. Сейчас: ${new Date().toLocaleString("ru-RU", { timeZone: "Europe/Moscow" })} МСК.` },
+    ];
+
+    // Multi-step agentic loop (max 8 rounds to avoid infinite loops)
+    let round = 0;
+    const MAX_ROUNDS = 8;
+    let finished = false;
+
+    while (round < MAX_ROUNDS && !finished) {
+      round++;
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages,
+        tools: AUTONOMOUS_TOOLS,
+        tool_choice: "auto",
+        max_tokens: 1500,
+      });
+
+      const choice = response.choices[0];
+      const assistantMsg = choice.message;
+      messages.push({ role: "assistant", content: assistantMsg.content ?? "", tool_calls: assistantMsg.tool_calls });
+
+      if (!assistantMsg.tool_calls || assistantMsg.tool_calls.length === 0) {
+        // No tool calls — just a text reply, treat as done
+        if (assistantMsg.content) {
+          await sendMsg(managerUserId, `🤖 _Автономная проверка завершена:_\n\n${assistantMsg.content}`);
+        }
+        finished = true;
+        break;
+      }
+
+      // Execute each tool call
+      for (const tc of assistantMsg.tool_calls) {
+        const fnName = tc.function.name;
+        let args: any = {};
+        try { args = JSON.parse(tc.function.arguments); } catch {}
+
+        let toolResult = "";
+
+        switch (fnName) {
+          case "get_pending_orders":
+            toolResult = await toolGetPendingOrders();
+            break;
+          case "get_today_leads":
+            toolResult = await toolGetTodayLeads();
+            break;
+          case "get_debt_summary":
+            toolResult = await toolGetDebtSummary();
+            break;
+          case "get_business_insights":
+            toolResult = await toolGetBusinessInsights();
+            break;
+          case "get_pending_receipts":
+            toolResult = await toolGetPendingReceipts();
+            break;
+          case "get_active_orders_status":
+            toolResult = await toolGetActiveOrdersStatus();
+            break;
+          case "auto_broadcast_order": {
+            try {
+              const { performBroadcast } = await import("./lib/broadcastOrder.js");
+              const result = await performBroadcast(args.orderId);
+              if (result.ok) {
+                toolResult = `✅ Заказ #${args.orderId} разослан ${result.sent} мастерам.`;
+                console.log(`[autonomousAgent] Broadcast order #${args.orderId} → ${result.sent} masters`);
+              } else {
+                toolResult = `⚠️ Рассылка заказа #${args.orderId}: ${result.error ?? "нет мастеров"}`;
+              }
+            } catch (e) {
+              toolResult = `Ошибка рассылки: ${String(e)}`;
+            }
+            break;
+          }
+          case "send_task_to_dispatcher": {
+            try {
+              const d = await getDispatcherModule();
+              toolResult = await d.sendTaskToMaster(args.masterNameOrId, args.task);
+            } catch (e) {
+              toolResult = `Ошибка: ${String(e)}`;
+            }
+            break;
+          }
+          case "add_order_note":
+            toolResult = await toolAddOrderNote(args.orderId, args.note);
+            break;
+          case "finish_cycle": {
+            const icon = args.hasUrgentIssues ? "🚨" : "✅";
+            const prefix = args.hasUrgentIssues
+              ? `${icon} _Автономная проверка — требуется ваше внимание:_\n\n`
+              : `${icon} _Автономная проверка завершена:_\n\n`;
+            await sendMsg(managerUserId, prefix + args.report);
+            // Inject into session so manager can ask follow-up
+            injectNotification(prefix + args.report, {});
+            toolResult = "Отчёт отправлен руководителю.";
+            finished = true;
+            break;
+          }
+          default:
+            toolResult = "Функция не найдена.";
+        }
+
+        messages.push({ role: "tool", content: toolResult, tool_call_id: tc.id } as any);
+      }
+    }
+
+    if (!finished) {
+      console.log("[autonomousAgent] Max rounds reached without finish_cycle");
+    }
+
+  } catch (e) {
+    console.error("[autonomousAgent] Cycle error:", e);
+  } finally {
+    autonomousCycleRunning = false;
+  }
+}
+
+/** Quick check every 30 min: time-sensitive only (new orders without dispatch) */
+export async function runQuickAutonomousCheck() {
+  if (!managerUserId) return;
+  try {
+    // Find orders waiting for master > 1h with no dispatch attempt yet
+    const cutoff1h = new Date(Date.now() - 60 * 60 * 1000);
+    const undispatched = await db.select().from(ordersTable)
+      .where(and(
+        eq(ordersTable.status, "waiting_master"),
+        eq(ordersTable.dispatchStatus, "none"),
+        isNull(ordersTable.deletedAt),
+        lte(ordersTable.createdAt, cutoff1h),
+      ));
+
+    for (const order of undispatched) {
+      try {
+        const { performBroadcast } = await import("./lib/broadcastOrder.js");
+        const result = await performBroadcast(order.id);
+        if (result.ok && result.sent > 0) {
+          const text = `📢 _Автоматически разослал заказ #${order.id} (${order.serviceType}, ${order.city}) ${result.sent} мастерам — ждал более 1 часа без рассылки._`;
+          await sendMsg(managerUserId, text);
+          injectNotification(text, { orderId: order.id, city: order.city ?? undefined, serviceType: order.serviceType ?? undefined });
+          console.log(`[autonomousAgent] Quick check: auto-broadcast order #${order.id}`);
+        }
+      } catch (e) {
+        console.error(`[autonomousAgent] Quick broadcast error for order #${order.id}:`, e);
+      }
+    }
+  } catch (e) {
+    console.error("[autonomousAgent] Quick check error:", e);
+  }
+}
 
 // ─── Webhook registration ─────────────────────────────────────────────────────
 
