@@ -8,6 +8,7 @@ import { performBroadcast } from "./lib/broadcastOrder.js";
 import { broadcastCheckin, broadcastCheckinReminder } from "./lib/checkinBroadcast.js";
 import { systemSettingsTable } from "@workspace/db";
 import { sendMorningBriefing, checkStaleOrders } from "./managerBot.js";
+import { runProactiveChecks } from "./lib/dispatcherAI.js";
 
 const port = Number(process.env["PORT"] || "8080");
 
@@ -356,6 +357,8 @@ setInterval(() => autoScheduledOrderBroadcast().catch(console.error), 15 * 60 * 
 setInterval(() => autoReBroadcastNoResponse().catch(console.error), 5 * 60 * 1000);
 // Check for stale orders (waiting > 2h) every 30 min
 setInterval(() => checkStaleOrders().catch(console.error), 30 * 60 * 1000);
+// AI dispatcher proactive checks every 30 min
+setInterval(() => runProactiveChecks().catch(console.error), 30 * 60 * 1000);
 
 // ─── Checkin broadcast scheduler ─────────────────────────────────────────────
 // Reads broadcast + reminder times from DB every minute and fires if needed.

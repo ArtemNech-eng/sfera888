@@ -297,7 +297,7 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
           return;
         }
 
-        // Любое другое сообщение от привязанного мастера → в CRM чат
+        // Сохраняем сообщение мастера в CRM чат
         await db.insert(masterMessagesTable).values({
           masterId: linkedMaster.id,
           telegramChatId: `max_${userId}`,
@@ -307,10 +307,14 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
           isRead: false,
         });
 
-        console.log(`[maxBot] saved message from master ${linkedMaster.alias} (id=${linkedMaster.id}) to CRM chat`);
+        console.log(`[maxBot] message from master ${linkedMaster.alias} → AI dispatcher`);
 
-        // Подтверждение мастеру
-        await sendMaxMessage(userId, "✅ Сообщение передано оператору.");
+        // AI-диспетчер отвечает вместо "Сообщение передано оператору"
+        const { handleMasterMessage } = await import("./lib/dispatcherAI.js");
+        handleMasterMessage(linkedMaster.id, linkedMaster.alias, String(userId), text).catch(e => {
+          console.error("[maxBot] dispatcherAI error:", e);
+          sendMaxMessage(userId, "Принял! Если что-то срочное — операторы перезвонят.").catch(() => {});
+        });
         return;
       }
     }

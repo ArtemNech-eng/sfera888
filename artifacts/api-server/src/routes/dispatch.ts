@@ -7,6 +7,7 @@ import { sendPushToMaster } from "../lib/push.js";
 import { getOverdueMasterIds, getMasterEligibility } from "../lib/orderEligibility.js";
 import { performBroadcast } from "../lib/broadcastOrder.js";
 import { sendMaxMessage } from "../maxBot.js";
+import { sendAssignmentGreeting } from "../lib/dispatcherAI.js";
 
 const router = Router();
 const TELEGRAM_API = `https://api.telegram.org/bot${process.env["TELEGRAM_BOT_TOKEN"]}`;
@@ -342,13 +343,8 @@ router.post("/:orderId/assign/:masterId", ops, async (req, res) => {
     }).catch(() => {});
   }
   if (master.maxChatId) {
-    const date = order.scheduledAt
-      ? new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(order.scheduledAt))
-      : "не указана";
-    sendMaxMessage(
-      master.maxChatId,
-      `✅ Заявка #${orderId} назначена вам!\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${date}${order.comment ? "\n💬 " + order.comment : ""}${lead ? `\n\n📞 ${lead.clientName}\n${lead.clientPhone}` : ""}\n\n👉 Подробности в приложении:\nhttps://sfera-project.digital/master-pwa/orders`
-    ).catch(() => {});
+    // AI dispatcher sends a smart greeting with context and confirmation request
+    sendAssignmentGreeting(master.id, master.alias, master.maxChatId, orderId).catch(() => {});
   }
 
   // Always log to CRM chat (visible in PWA chat tab as well)
