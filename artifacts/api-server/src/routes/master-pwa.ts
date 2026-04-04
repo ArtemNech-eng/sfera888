@@ -6,7 +6,7 @@ import { getMasterEligibility, getOverdueMasterIds, countActiveMasterOrders, get
 import multer from "multer";
 import { objectStorageClient } from "../lib/objectStorage.js";
 import { getBotLink } from "../maxBot.js";
-import { notifyManagerMasterResponse } from "../managerBot.js";
+import { notifyManagerMasterResponse, notifyManagerNewMaster } from "../managerBot.js";
 
 const avatarUpload = multer({
   storage: multer.memoryStorage(),
@@ -964,6 +964,15 @@ router.post("/auth/register", async (req, res) => {
   }).returning();
 
   (req.session as any).masterId = master.id;
+
+  // Notify manager bot about new master (non-blocking)
+  notifyManagerNewMaster({
+    id: master.id,
+    alias: master.alias,
+    city: master.city,
+    specialization: master.specialization,
+    phone: master.phone ?? null,
+  }).catch(() => {});
 
   res.json({
     id: master.id,

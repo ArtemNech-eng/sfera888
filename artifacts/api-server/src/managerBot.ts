@@ -1651,6 +1651,187 @@ export async function checkStaleOrders() {
   }
 }
 
+// ─── Notification: client paid receipt ───────────────────────────────────────
+
+export async function notifyManagerReceiptPaid(receipt: {
+  id: number;
+  clientName: string;
+  clientPhone: string;
+  prepaymentAmount: number;
+  masterAlias?: string;
+  city?: string;
+  serviceType?: string;
+}) {
+  if (!managerUserId) return;
+  try {
+    const amount = receipt.prepaymentAmount.toLocaleString("ru-RU");
+    const masterStr = receipt.masterAlias ? ` · мастер: ${receipt.masterAlias}` : "";
+    const cityStr = receipt.city ? `📍 ${receipt.city}` : "";
+    const serviceStr = receipt.serviceType ? ` · ${receipt.serviceType}` : "";
+    await sendMsg(
+      managerUserId,
+      `💰 Клиент оплатил бронь!\n\nСмета #${receipt.id}\n👤 ${receipt.clientName} (${receipt.clientPhone})\n${cityStr}${serviceStr}${masterStr}\n💵 Сумма брони: **${amount} ₽**\n\n_Проверьте скриншот в CRM → Оплаты._`
+    );
+  } catch (e) {
+    console.error("[managerBot] notifyManagerReceiptPaid error:", e);
+  }
+}
+
+// ─── Notification: new master registered ─────────────────────────────────────
+
+export async function notifyManagerNewMaster(master: {
+  id: number;
+  alias: string;
+  city: string;
+  specialization: string;
+  phone?: string | null;
+}) {
+  if (!managerUserId) return;
+  try {
+    const phoneStr = master.phone ? ` · ${master.phone}` : "";
+    await sendMsg(
+      managerUserId,
+      `🆕 Новый мастер зарегистрировался!\n\n👷 **${master.alias}**${phoneStr}\n📍 ${master.city} · ${master.specialization}\n\n_Требует проверки паспорта и подписания договора._\nCRM → Мастера → #${master.id}`
+    );
+  } catch (e) {
+    console.error("[managerBot] notifyManagerNewMaster error:", e);
+  }
+}
+
+// ─── Weekly report (sent every Monday at 09:00 MSK) ──────────────────────────
+
+export async function sendWeeklyReport() {
+  if (!managerUserId) {
+    console.log("[managerBot] weekly report: no manager user ID, skipping");
+    return;
+  }
+
+  try {
+    const now = new Date();
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+
+    const [allLeads, allOrders, allMasters, allReceipts] = await Promise.all([
+      db.select().from(leadsTable).where(isNull(leadsTable.deletedAt)),
+      db.select().from(ordersTable).where(isNull(ordersTable.deletedAt)),
+      db.select().from(mastersTable).where(isNull(mastersTable.deletedAt)),
+      db.select({
+        id: receiptsTable.id,
+        prepaymentAmount: receiptsTable.prepaymentAmount,
+        prepaymentSubmittedAt: receiptsTable.prepaymentSubmittedAt,
+      }).from(receiptsTable),
+    ]);
+
+    // This week stats
+    const weekLeads = allLeads.filter(l => new Date(l.createdAt) >= weekAgo);
+    const weekOrders = allOrders.filter(o => new Date(o.createdAt) >= weekAgo);
+    const completedThisWeek = allOrders.filter(o => o.completedAt && new Date(o.completedAt) >= weekAgo);
+    const paidThisWeek = allReceipts.filter(r => r.prepaymentSubmittedAt && new Date(r.prepaymentSubmittedAt) >= weekAgo);
+    const weekRevenue = paidThisWeek.reduce((s, r) => s + Number(r.prepaymentAmount ?? 0), 0);
+
+    // Prev week stats (for delta)
+    const prevLeads = allLeads.filter(l => new Date(l.createdAt) >= twoWeeksAgo && new Date(l.createdAt) < weekAgo);
+    const prevRevenue = allReceipts
+      .filter(r => r.prepaymentSubmittedAt && new Date(r.prepaymentSubmittedAt) >= twoWeeksAgo && new Date(r.prepaymentSubmittedAt) < weekAgo)
+      .reduce((s, r) => s + Number(r.prepaymentAmount ?? 0), 0);
+
+    const activeMasters = allMasters.filter(m => m.status === "active").length;
+    const pendingMasters = allMasters.filter(m => m.status === "pending_contract").length;
+
+    const delta = (a: number, b: number) => {
+      if (b === 0) return "";
+      const pct = Math.round(((a - b) / b) * 100);
+      return pct > 0 ? ` ▲${pct}%` : pct < 0 ? ` ▼${Math.abs(pct)}%` : " →0%";
+    };
+
+    const conversionRate = weekLeads.length > 0
+      ? Math.round((weekOrders.length / weekLeads.length) * 100)
+      : 0;
+
+    const weekNum = Math.ceil((now.getTime() - new Date(now.getFullYear(), 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000));
+
+    let report = `📊 **Еженедельный отчёт — неделя ${weekNum}**\n\n`;
+    report += `**Заявки:** ${weekLeads.length}${delta(weekLeads.length, prevLeads.length)}\n`;
+    report += `**Новые заказы:** ${weekOrders.length}\n`;
+    report += `**Завершено:** ${completedThisWeek.length}\n`;
+    report += `**Оплат получено:** ${paidThisWeek.length} на сумму **${weekRevenue.toLocaleString("ru-RU")} ₽**${delta(weekRevenue, prevRevenue)}\n`;
+    report += `**Конверсия лид→заказ:** ${conversionRate}%\n\n`;
+    report += `**Мастеров активных:** ${activeMasters}`;
+    if (pendingMasters > 0) report += ` (ждут проверки: ${pendingMasters})`;
+    report += `\n\n`;
+
+    // Idea of the week
+    if (conversionRate < 40) {
+      report += `💡 **Идея:** Конверсия ${conversionRate}% — ниже нормы. Автоответ клиентам в первые 5 минут поднимет её до 50%+.\n`;
+    } else if (weekRevenue < 50000) {
+      report += `💡 **Идея:** Выручка за неделю ${weekRevenue.toLocaleString("ru-RU")} ₽ — можно поднять акцией "Бесплатный выезд мастера до пятницы".\n`;
+    } else {
+      report += `💡 **Идея:** Хорошая неделя! Попробуйте запустить 1 новый город — возьмите самый частый запрос вне зоны покрытия и наберите там мастера.\n`;
+    }
+
+    await sendMsg(managerUserId, report);
+    console.log("[managerBot] Weekly report sent");
+  } catch (e) {
+    console.error("[managerBot] sendWeeklyReport error:", e);
+  }
+}
+
+// ─── Market detector: cities with 3+ orders but no active masters ─────────────
+
+export async function checkNewMarkets() {
+  if (!managerUserId) return;
+
+  try {
+    const [allOrders, allMasters] = await Promise.all([
+      db.select({ city: ordersTable.city }).from(ordersTable).where(isNull(ordersTable.deletedAt)),
+      db.select({ city: mastersTable.city, status: mastersTable.status }).from(mastersTable).where(isNull(mastersTable.deletedAt)),
+    ]);
+
+    const activeMasterCities = new Set(
+      allMasters.filter(m => m.status === "active").map(m => (m.city ?? "").toLowerCase().trim())
+    );
+
+    const ordersByCityMap = new Map<string, number>();
+    for (const o of allOrders) {
+      const city = (o.city ?? "").trim();
+      if (!city) continue;
+      ordersByCityMap.set(city, (ordersByCityMap.get(city) ?? 0) + 1);
+    }
+
+    const newMarkets: { city: string; count: number }[] = [];
+    for (const [city, count] of ordersByCityMap.entries()) {
+      if (count >= 3 && !activeMasterCities.has(city.toLowerCase())) {
+        newMarkets.push({ city, count });
+      }
+    }
+
+    if (newMarkets.length === 0) return;
+
+    // Only alert about markets we haven't already alerted about
+    const alreadyAlerted = newMarkets.filter(m => alertedMarkets.has(m.city));
+    const toAlert = newMarkets.filter(m => !alertedMarkets.has(m.city));
+
+    for (const m of toAlert) alertedMarkets.add(m.city);
+    if (toAlert.length === 0) return;
+
+    const lines = toAlert
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5)
+      .map(m => `• **${m.city}** — ${m.count} заявок, мастеров нет`)
+      .join("\n");
+
+    await sendMsg(
+      managerUserId,
+      `🗺️ **Обнаружены новые рынки!**\n\n${lines}\n\n💡 Это неохваченный спрос. Наберите мастеров в этих городах — каждая заявка сейчас теряется.`
+    );
+    console.log(`[managerBot] New markets alert: ${toAlert.map(m => m.city).join(", ")}`);
+  } catch (e) {
+    console.error("[managerBot] checkNewMarkets error:", e);
+  }
+}
+
+const alertedMarkets = new Set<string>();
+
 // ─── Webhook registration ─────────────────────────────────────────────────────
 
 export async function registerManagerWebhook() {

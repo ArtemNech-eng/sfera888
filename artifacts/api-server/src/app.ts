@@ -12,7 +12,7 @@ import multer from "multer";
 import { UPLOAD_BASE } from "./config.js";
 import { objectStorageClient } from "./lib/objectStorage.js";
 import { handleMaxUpdate, registerWebhook, sendMaxMessage } from "./maxBot.js";
-import { handleManagerUpdate, registerManagerWebhook } from "./managerBot.js";
+import { handleManagerUpdate, registerManagerWebhook, notifyManagerReceiptPaid } from "./managerBot.js";
 
 const screenshotUpload = multer({
   storage: multer.memoryStorage(),
@@ -632,7 +632,7 @@ app.post("/api/receipt/:token/confirm", screenshotUpload.single("screenshot"), a
       console.error("[receipt-confirm] chat insert error:", e);
     }
 
-    // Notify master via Max Messenger
+    // Notify master via Max Messenger + notify manager bot
     try {
       const { mastersTable } = await import("@workspace/db");
       const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, receipt.masterId));
@@ -643,6 +643,16 @@ app.post("/api/receipt/:token/confirm", screenshotUpload.single("screenshot"), a
           `💰 Клиент оплатил бронь!\n\nСмета #${receipt.id}\nКлиент: ${clientName}\nСумма брони: ${prepayStr} ₽\n\nСкриншот получен — проверьте в CRM.`
         );
       }
+      // Notify manager bot immediately
+      notifyManagerReceiptPaid({
+        id: receipt.id,
+        clientName,
+        clientPhone: receipt.clientPhone,
+        prepaymentAmount: Number(receipt.prepaymentAmount),
+        masterAlias: master?.alias,
+        city: receipt.city,
+        serviceType: receipt.serviceType,
+      }).catch(() => {});
     } catch (e) {
       console.error("[receipt-confirm] max notification error:", e);
     }

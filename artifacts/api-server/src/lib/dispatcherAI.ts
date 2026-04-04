@@ -73,6 +73,11 @@ const followupSentAt = new Map<number, number>();      // masterId → timestamp
 const FOLLOWUP_DELAY_H = 5;    // hours before sending follow-up
 const FOLLOWUP_COOLDOWN_H = 20; // min hours between follow-ups
 
+// ─── Dormant master tracking ──────────────────────────────────────────────────
+// High-rating masters with no orders for 7+ days get a proactive ping
+const dormantMasterPingedAt = new Map<number, number>(); // masterId → timestamp
+const DORMANT_PING_COOLDOWN_DAYS = 7;
+
 // ─── Manager task pending notifications ───────────────────────────────────────
 // When manager sends a task via send_task_to_dispatcher, track it so the manager
 // gets notified when the master replies with the result.
@@ -549,13 +554,11 @@ export async function runProactiveChecks(): Promise<void> {
         isNull(ordersTable.deletedAt),
       ));
 
-    if (activeOrders.length === 0) return;
-
     const masterIds = [...new Set(activeOrders.map(o => o.masterId).filter(Boolean))] as number[];
-    if (masterIds.length === 0) return;
 
-    const masters = await db.select().from(mastersTable)
-      .where(inArray(mastersTable.id, masterIds));
+    const masters = masterIds.length > 0
+      ? await db.select().from(mastersTable).where(inArray(mastersTable.id, masterIds))
+      : [];
 
     const masterMap = new Map(masters.map(m => [m.id, m]));
 
@@ -623,6 +626,34 @@ export async function runProactiveChecks(): Promise<void> {
       await saveBotReply(master.id, master.maxChatId, msg);
       followupSentAt.set(master.id, now);
       console.log(`[dispatcherAI] Sent follow-up to ${master.alias} (no reply for ${Math.round(hoursSinceBot)}h)`);
+    }
+
+    // ── Proactive outreach: high-rating masters with no active orders ────────
+    // Find active masters with rating >= 4.0 that have no current active orders
+    // and haven't been pinged in the last 7 days → send a warm check-in
+    const activeMasterIds = new Set(masterIds);
+    const cooldownMs = DORMANT_PING_COOLDOWN_DAYS * 24 * 3600000;
+
+    const topFreeMasters = await db.select().from(mastersTable)
+      .where(and(eq(mastersTable.status, "active"), isNull(mastersTable.deletedAt)));
+
+    for (const m of topFreeMasters) {
+      if (!m.maxChatId) continue;
+      if (activeMasterIds.has(m.id)) continue; // already has active orders
+      if (Number(m.rating ?? 0) < 4.0) continue; // only top-rated
+
+      const lastPing = dormantMasterPingedAt.get(m.id) ?? 0;
+      if (now - lastPing < cooldownMs) continue;
+
+      const lastReply = lastMasterReplyAt.get(m.id) ?? 0;
+      const daysSinceReply = (now - lastReply) / (24 * 3600000);
+      if (daysSinceReply < 7 && lastReply > 0) continue; // was active recently
+
+      dormantMasterPingedAt.set(m.id, now);
+      const greeting = `${m.alias}, добрый день! Давно не было заказов — хотим убедиться, что всё в порядке и вы готовы к работе. Если есть вопросы или пожелания — напишите нам, мы всегда на связи. 🙌`;
+      await sendMaxMessage(m.maxChatId, greeting);
+      await saveBotReply(m.id, m.maxChatId, greeting);
+      console.log(`[dispatcherAI] Proactive ping sent to dormant top master ${m.alias} (rating ${m.rating})`);
     }
   } catch (e) {
     console.error("[dispatcherAI] proactive checks error:", e);

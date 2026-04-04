@@ -7,7 +7,7 @@ import { checkOverdueTransactions } from "./lib/orderEligibility.js";
 import { performBroadcast } from "./lib/broadcastOrder.js";
 import { broadcastCheckin, broadcastCheckinReminder } from "./lib/checkinBroadcast.js";
 import { systemSettingsTable } from "@workspace/db";
-import { sendMorningBriefing, checkStaleOrders } from "./managerBot.js";
+import { sendMorningBriefing, checkStaleOrders, sendWeeklyReport, checkNewMarkets } from "./managerBot.js";
 import { runProactiveChecks } from "./lib/dispatcherAI.js";
 
 const port = Number(process.env["PORT"] || "8080");
@@ -359,6 +359,10 @@ setInterval(() => autoReBroadcastNoResponse().catch(console.error), 5 * 60 * 100
 setInterval(() => checkStaleOrders().catch(console.error), 30 * 60 * 1000);
 // AI dispatcher proactive checks every 30 min
 setInterval(() => runProactiveChecks().catch(console.error), 30 * 60 * 1000);
+// New market detector: check every 6 hours
+setInterval(() => checkNewMarkets().catch(console.error), 6 * 60 * 60 * 1000);
+// Run market detector on startup too
+checkNewMarkets().catch(console.error);
 
 // ─── Checkin broadcast scheduler ─────────────────────────────────────────────
 // Reads broadcast + reminder times from DB every minute and fires if needed.
@@ -440,6 +444,13 @@ setInterval(async () => {
       morningBriefingFiredDate = today;
       console.log("[managerBot] Firing morning briefing at 09:00 MSK");
       sendMorningBriefing().catch(console.error);
+
+      // Weekly report on Monday
+      const nowMsk = new Date(Date.now() + 3 * 60 * 60 * 1000);
+      if (nowMsk.getUTCDay() === 1) {
+        console.log("[managerBot] Monday — firing weekly report");
+        sendWeeklyReport().catch(console.error);
+      }
     }
   } catch (e) {
     console.error("[checkin] scheduler error:", e);
