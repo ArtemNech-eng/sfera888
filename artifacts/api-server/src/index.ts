@@ -426,6 +426,8 @@ async function initCheckinScheduler() {
 
 let morningBriefingFiredDate: string | null = null;
 let eveningReportFiredDate: string | null = null;
+let fridayWeeklySummaryFiredDate: string | null = null;
+let monthlyReportFiredDate: string | null = null;
 const autonomousCycleFiredHours = new Set<string>(); // "YYYY-MM-DD HH"
 
 setInterval(async () => {
@@ -467,6 +469,22 @@ setInterval(async () => {
       eveningReportFiredDate = today;
       console.log("[managerBot] Firing evening autonomous cycle at 19:00 MSK");
       runAutonomousCycle("вечерняя проверка — итоги дня").catch(console.error);
+    }
+
+    // Friday weekly full summary at 18:00 MSK (day 5 = Friday)
+    const nowMskWeek = new Date(Date.now() + 3 * 60 * 60 * 1000);
+    if (hhmm === "18:00" && nowMskWeek.getUTCDay() === 5 && fridayWeeklySummaryFiredDate !== today) {
+      fridayWeeklySummaryFiredDate = today;
+      console.log("[managerBot] Friday 18:00 — full weekly autonomous cycle");
+      runAutonomousCycle("пятничный итог недели — полная аналитика: топ мастеров, топ услуг, города, финансы").catch(console.error);
+    }
+
+    // Monthly report on 1st of month at 10:00 MSK
+    const nowMskMonth = new Date(Date.now() + 3 * 60 * 60 * 1000);
+    if (hhmm === "10:00" && nowMskMonth.getUTCDate() === 1 && monthlyReportFiredDate !== today) {
+      monthlyReportFiredDate = today;
+      console.log("[managerBot] 1st of month 10:00 — monthly autonomous cycle");
+      runAutonomousCycle("ежемесячный отчёт — первое число месяца: итоги месяца, рейтинг мастеров, финансы, планы на месяц").catch(console.error);
     }
 
     // Autonomous cycle at 12:00 and 15:00 MSK

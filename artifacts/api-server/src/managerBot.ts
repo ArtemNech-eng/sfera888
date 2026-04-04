@@ -627,6 +627,287 @@ async function toolAlertSubmittedReceipts(): Promise<string> {
   return `Отправлены уведомления о ${receipts.length} смете(ах). Ждём решения руководителя.`;
 }
 
+// ─── Extended autonomous tools ────────────────────────────────────────────────
+
+/** Orders stuck in master_assigned >48h without moving to in_progress */
+async function toolGetStuckOrders(): Promise<string> {
+  const cutoff48h = new Date(Date.now() - 48 * 60 * 60 * 1000);
+  const stuck = await db.select().from(ordersTable)
+    .where(and(
+      eq(ordersTable.status, "master_assigned"),
+      lte(ordersTable.updatedAt, cutoff48h),
+      isNull(ordersTable.deletedAt),
+    ));
+
+  if (stuck.length === 0) return "✅ Нет зависших заказов (master_assigned >48ч).";
+
+  const masterIds = [...new Set(stuck.map(o => o.masterId).filter(Boolean) as number[])];
+  const masters = masterIds.length > 0 ? await db.select().from(mastersTable).where(inArray(mastersTable.id, masterIds)) : [];
+  const masterMap = new Map(masters.map(m => [m.id, m.alias]));
+
+  const now = Date.now();
+  const lines = stuck.map(o => {
+    const hoursStuck = Math.round((now - new Date(o.updatedAt).getTime()) / 3600000);
+    const masterName = masterMap.get(o.masterId!) ?? `#${o.masterId}`;
+    return `• #${o.id} — ${o.serviceType}, ${o.city} | мастер: ${masterName} | зависло ${hoursStuck}ч`;
+  });
+
+  return `⚠️ Зависших заказов (master_assigned >48ч): ${stuck.length}\n${lines.join("\n")}`;
+}
+
+/** SLA: orders in "new" status >30 min (not yet dispatched to masters) */
+async function toolGetSlaBreaches(): Promise<string> {
+  const cutoff30m = new Date(Date.now() - 30 * 60 * 1000);
+  const breaches = await db.select().from(ordersTable)
+    .where(and(
+      eq(ordersTable.status, "new"),
+      lte(ordersTable.createdAt, cutoff30m),
+      isNull(ordersTable.deletedAt),
+    ));
+
+  if (breaches.length === 0) return "✅ Нет нарушений SLA (заказы рассылаются в норме).";
+
+  const now = Date.now();
+  const lines = breaches.map(o => {
+    const minsWaiting = Math.round((now - new Date(o.createdAt).getTime()) / 60000);
+    return `• #${o.id} — ${o.serviceType}, ${o.city} | ждёт ${minsWaiting} мин`;
+  });
+
+  return `🚨 SLA нарушен (заказ >30 мин без рассылки): ${breaches.length}\n${lines.join("\n")}`;
+}
+
+/** Daily revenue: today vs yesterday vs same weekday last week */
+async function toolGetDailyRevenue(): Promise<string> {
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const yesterdayStart = new Date(todayStart.getTime() - 86400000);
+  const weekAgoStart = new Date(todayStart.getTime() - 7 * 86400000);
+  const weekAgoEnd = new Date(weekAgoStart.getTime() + 86400000);
+
+  const allPaid = await db.select().from(transactionsTable)
+    .where(and(
+      eq(transactionsTable.paymentStatus, "paid"),
+      gte(transactionsTable.createdAt, weekAgoStart),
+    ));
+
+  const todayRev = allPaid.filter(t => new Date(t.createdAt) >= todayStart)
+    .reduce((s, t) => s + Number(t.commission), 0);
+  const yesterdayRev = allPaid.filter(t => new Date(t.createdAt) >= yesterdayStart && new Date(t.createdAt) < todayStart)
+    .reduce((s, t) => s + Number(t.commission), 0);
+  const weekAgoRev = allPaid.filter(t => new Date(t.createdAt) >= weekAgoStart && new Date(t.createdAt) < weekAgoEnd)
+    .reduce((s, t) => s + Number(t.commission), 0);
+
+  const pct = (a: number, b: number) => b > 0 ? ` (${a > b ? "▲" : "▼"}${Math.abs(Math.round((a - b) / b * 100))}%)` : "";
+  const fmt = (n: number) => n.toLocaleString("ru-RU");
+
+  return `💰 Выручка по комиссиям:\n• Сегодня: ${fmt(todayRev)} ₽\n• Вчера: ${fmt(yesterdayRev)} ₽${pct(todayRev, yesterdayRev)}\n• Тот же день неделю назад: ${fmt(weekAgoRev)} ₽${pct(todayRev, weekAgoRev)}`;
+}
+
+/** Top-5 masters by commissions this week */
+async function toolGetTopMasters(): Promise<string> {
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const paid = await db.select().from(transactionsTable)
+    .where(and(eq(transactionsTable.paymentStatus, "paid"), gte(transactionsTable.createdAt, weekAgo)));
+
+  if (paid.length === 0) return "Нет оплаченных комиссий за эту неделю.";
+
+  const byMaster = new Map<number, number>();
+  for (const t of paid) byMaster.set(t.masterId, (byMaster.get(t.masterId) ?? 0) + Number(t.commission));
+
+  const sorted = [...byMaster.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const masterIds = sorted.map(([id]) => id);
+  const masters = await db.select().from(mastersTable).where(inArray(mastersTable.id, masterIds));
+  const masterMap = new Map(masters.map(m => [m.id, m.alias]));
+
+  const medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"];
+  const lines = sorted.map(([id, amount], i) =>
+    `${medals[i]} ${masterMap.get(id) ?? `#${id}`}: ${amount.toLocaleString("ru-RU")} ₽`
+  );
+  return `🏆 Топ мастеров за неделю:\n${lines.join("\n")}`;
+}
+
+/** City analysis: master count vs lead demand */
+async function toolGetCityAnalysis(): Promise<string> {
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+  const [activeMasters, recentLeads] = await Promise.all([
+    db.select().from(mastersTable).where(and(eq(mastersTable.status, "active"), isNull(mastersTable.deletedAt))),
+    db.select().from(leadsTable).where(and(gte(leadsTable.createdAt, weekAgo), isNull(leadsTable.deletedAt))),
+  ]);
+
+  const mastersByCity = new Map<string, number>();
+  for (const m of activeMasters) {
+    if (m.city) mastersByCity.set(m.city, (mastersByCity.get(m.city) ?? 0) + 1);
+  }
+
+  const leadsByCity = new Map<string, number>();
+  for (const l of recentLeads) {
+    if (l.city) leadsByCity.set(l.city, (leadsByCity.get(l.city) ?? 0) + 1);
+  }
+
+  const allCities = new Set([...mastersByCity.keys(), ...leadsByCity.keys()]);
+  const cityData = [...allCities].map(city => ({
+    city,
+    masters: mastersByCity.get(city) ?? 0,
+    leads: leadsByCity.get(city) ?? 0,
+    ratio: (leadsByCity.get(city) ?? 0) / Math.max(mastersByCity.get(city) ?? 0, 1),
+  })).sort((a, b) => b.ratio - a.ratio);
+
+  if (cityData.length === 0) return "Нет данных по городам.";
+
+  const critical: string[] = [];
+  const warn: string[] = [];
+  const ok: string[] = [];
+
+  for (const c of cityData) {
+    const line = `${c.city}: ${c.leads} заявок / ${c.masters} мастеров`;
+    if (c.leads > 0 && c.masters === 0) critical.push(`🚨 ${line} — НЕТ МАСТЕРОВ`);
+    else if (c.ratio > 3) warn.push(`⚠️ ${line} — дефицит`);
+    else ok.push(`✅ ${line}`);
+  }
+
+  return `🗺 Анализ по городам (7 дней):\n\n${[...critical, ...warn, ...ok].join("\n")}`;
+}
+
+/** Top services this week */
+async function toolGetTopServices(): Promise<string> {
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const recent = await db.select().from(ordersTable)
+    .where(and(gte(ordersTable.createdAt, weekAgo), isNull(ordersTable.deletedAt)));
+
+  if (recent.length === 0) return "Нет заказов за эту неделю.";
+
+  const byService = new Map<string, number>();
+  for (const o of recent) byService.set(o.serviceType, (byService.get(o.serviceType) ?? 0) + 1);
+
+  const sorted = [...byService.entries()].sort((a, b) => b[1] - a[1]).slice(0, 7);
+  const lines = sorted.map(([service, count], i) => `${i + 1}. ${service}: ${count}`);
+
+  return `🔧 Топ услуг за неделю:\n${lines.join("\n")}`;
+}
+
+/** Cancellation rate today and for the week */
+async function toolGetCancellationRate(): Promise<string> {
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+  const [todayOrders, weekOrders] = await Promise.all([
+    db.select().from(ordersTable).where(and(gte(ordersTable.createdAt, todayStart), isNull(ordersTable.deletedAt))),
+    db.select().from(ordersTable).where(and(gte(ordersTable.createdAt, weekAgo), isNull(ordersTable.deletedAt))),
+  ]);
+
+  const todayCancelled = todayOrders.filter(o => o.status === "cancelled").length;
+  const todayRate = todayOrders.length > 0 ? Math.round(todayCancelled / todayOrders.length * 100) : 0;
+  const weekCancelled = weekOrders.filter(o => o.status === "cancelled").length;
+  const weekRate = weekOrders.length > 0 ? Math.round(weekCancelled / weekOrders.length * 100) : 0;
+
+  let result = `📊 Отмены:\n• Сегодня: ${todayCancelled}/${todayOrders.length} (${todayRate}%)\n• За неделю: ${weekCancelled}/${weekOrders.length} (${weekRate}%)`;
+  if (todayRate > 20) result += `\n\n🚨 АНОМАЛИЯ: уровень отмен сегодня превышает 20%!`;
+
+  return result;
+}
+
+/** New masters who haven't taken their first order in 3+ days */
+async function toolGetNewMastersWithoutOrders(): Promise<string> {
+  const cutoff3d = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+  const newMasters = await db.select().from(mastersTable)
+    .where(and(
+      eq(mastersTable.status, "active"),
+      isNull(mastersTable.deletedAt),
+      lte(mastersTable.createdAt, cutoff3d),
+    ));
+
+  const withoutOrders = newMasters.filter(m => (m.totalOrders ?? 0) === 0);
+  if (withoutOrders.length === 0) return "✅ Все новые мастера уже взяли первый заказ.";
+
+  const fmt = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit" });
+  const lines = withoutOrders.map(m => {
+    const daysAgo = Math.floor((Date.now() - new Date(m.createdAt).getTime()) / 86400000);
+    return `• ${m.alias} — регистрация ${fmt.format(new Date(m.createdAt))} (${daysAgo} дн. назад)`;
+  });
+
+  return `👤 Новые мастера без первого заказа (${withoutOrders.length}):\n${lines.join("\n")}`;
+}
+
+/** Masters who haven't worked in 7+ days */
+async function toolGetInactiveMasters(): Promise<string> {
+  const cutoff7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+  const activeMasters = await db.select().from(mastersTable)
+    .where(and(eq(mastersTable.status, "active"), isNull(mastersTable.deletedAt)));
+
+  const recentOrders = await db.select({ masterId: ordersTable.masterId })
+    .from(ordersTable)
+    .where(and(gte(ordersTable.updatedAt, cutoff7d), isNull(ordersTable.deletedAt)));
+
+  const recentMasterIds = new Set(recentOrders.map(o => o.masterId).filter(Boolean));
+  const inactive = activeMasters.filter(m => !recentMasterIds.has(m.id));
+
+  if (inactive.length === 0) return "✅ Все активные мастера работали последние 7 дней.";
+
+  const lines = inactive.map(m => {
+    const daysSince = Math.floor((Date.now() - new Date(m.createdAt).getTime()) / 86400000);
+    return `• ${m.alias} — заказов всего: ${m.totalOrders ?? 0}, долг: ${Number(m.debt ?? 0).toLocaleString("ru-RU")} ₽`;
+  });
+
+  return `😴 Неактивные мастера >7 дней (${inactive.length}):\n${lines.join("\n")}`;
+}
+
+/** Masters without passport verification or Max bot linked */
+async function toolGetUncompletedMasters(): Promise<string> {
+  const all = await db.select().from(mastersTable)
+    .where(and(eq(mastersTable.status, "active"), isNull(mastersTable.deletedAt)));
+
+  const noPassport = all.filter(m => !m.passportVerified);
+  const noMax = all.filter(m => !m.maxChatId);
+
+  let result = "";
+  if (noPassport.length > 0) {
+    result += `📋 Без верификации паспорта (${noPassport.length}):\n`;
+    result += noPassport.map(m => `• ${m.alias}`).join("\n") + "\n\n";
+  }
+  if (noMax.length > 0) {
+    result += `📱 Без привязки Max-бота (${noMax.length}):\n`;
+    result += noMax.map(m => `• ${m.alias}`).join("\n");
+  }
+
+  return result.trim() || "✅ Все мастера верифицированы и привязали Max-бот.";
+}
+
+/** Data quality: duplicate lead phones this week */
+async function toolGetDataQualityIssues(): Promise<string> {
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+  const recentLeads = await db.select().from(leadsTable)
+    .where(and(isNull(leadsTable.deletedAt), gte(leadsTable.createdAt, weekAgo)));
+
+  const phoneCount = new Map<string, number>();
+  for (const l of recentLeads) {
+    if (l.phone) phoneCount.set(l.phone, (phoneCount.get(l.phone) ?? 0) + 1);
+  }
+  const duplicates = [...phoneCount.entries()].filter(([, count]) => count > 1);
+
+  const noLeadsIn3h = await (async () => {
+    const cutoff3h = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    const recent = recentLeads.filter(l => new Date(l.createdAt) >= cutoff3h);
+    return recent.length === 0;
+  })();
+
+  const issues: string[] = [];
+
+  if (noLeadsIn3h) {
+    issues.push(`🚨 Нет ни одной заявки за последние 3 часа — возможна поломка формы на сайте!`);
+  }
+
+  if (duplicates.length > 0) {
+    issues.push(`⚠️ Дублирующиеся телефоны в заявках за 7 дней (${duplicates.length}):\n` +
+      duplicates.slice(0, 5).map(([phone, count]) => `  • ${phone}: ${count} раза`).join("\n"));
+  }
+
+  return issues.length > 0 ? issues.join("\n\n") : "✅ Проблем с качеством данных не обнаружено.";
+}
+
 async function toolSearchOrders(query: string, statusFilter?: string) {
   const allOrders = await db.select().from(ordersTable)
     .where(isNull(ordersTable.deletedAt))
@@ -2032,32 +2313,42 @@ const AUTONOMOUS_SYSTEM_PROMPT = `Ты — автономный AI-операц�
 ═══ ПОЛНЫЙ СПИСОК ОБЯЗАННОСТЕЙ (выполняй ВСЁ за один цикл) ═══
 
 📦 ЗАКАЗЫ:
-1. Получи все заказы без мастера (get_pending_orders) → разошли каждый мастерам (auto_broadcast_order)
-2. Получи статус активных заказов (get_active_orders_status) → для каждого с активностью >24ч поставь задачу диспетчеру уточнить статус
-3. Проверь мастеров с активными заказами (ping_masters_with_active_orders) → диспетчер сам уточнит у каждого статус
+1. Заказы без мастера (get_pending_orders) → разошли каждый (auto_broadcast_order)
+2. Нарушения SLA (get_sla_breaches) → заказ >30 мин без рассылки → срочно разошли
+3. Зависшие заказы (get_stuck_orders) → master_assigned >48ч → поставь задачу диспетчеру
+4. Статус активных заказов (get_active_orders_status) + проверь мастеров (ping_masters_with_active_orders)
+5. Уровень отмен (get_cancellation_rate) → если >20% — включи в отчёт как аномалию
 
 💸 ФИНАНСЫ:
-4. Проверь долги мастеров (get_debt_summary) → для каждого должника поставь задачу диспетчеру напомнить об оплате
-5. Проверь остатки комиссий (get_commission_summary) → зафиксируй просроченные в отчёте, поставь задачу диспетчеру
-6. Проверь сметы, ожидающие подтверждения оплаты (alert_submitted_receipts) → ОТПРАВЬ руководителю УВЕДОМЛЕНИЕ о каждой — подтверждение оплаты только руководитель
+6. Долги мастеров (get_debt_summary) → каждому должнику — задачу диспетчеру напомнить
+7. Остатки комиссий (get_commission_summary) → просроченные — в отчёт + задача диспетчеру
+8. Оплаченные сметы (alert_submitted_receipts) → ОТПРАВЬ уведомление руководителю (сам не подтверждай!)
+9. Выручка дня (get_daily_revenue) → динамика vs вчера и прошлая неделя
+
+👷 МАСТЕРА:
+10. Новые без первого заказа (get_new_masters_without_orders) → диспетчер уточняет барьеры
+11. Неактивные >7 дней (get_inactive_masters) → диспетчер напоминает о работе
+12. Незавершённый профиль (get_uncompleted_masters) → диспетчер просит верифицировать / привязать бот
 
 📊 АНАЛИТИКА:
-7. Получи бизнес-инсайты (get_business_insights) → зафиксируй аномалии: упавшая конверсия, дефицит мастеров, города без мастеров
-8. Получи заявки за сегодня (get_today_leads) → сравни с прошлым периодом, выяви тренды
+13. Анализ по городам (get_city_analysis) → дефицит мастеров, города без покрытия
+14. Топ услуг (get_top_services) + Топ мастеров (get_top_masters) → тренды недели
+15. Качество данных (get_data_quality_issues) → дубли, нет заявок 3ч (поломка?)
+16. Бизнес-инсайты (get_business_insights) → общая аналитика
 
 ═══ СТИЛЬ РАБОТЫ ═══
-— СНАЧАЛА вызови ВСЕ инструменты сбора данных (можно по одному, пока не изучишь картину полностью)
-— ЗАТЕМ выполни ВСЕ нужные действия: рассылки, задачи диспетчеру, заметки, уведомления об оплатах
-— В КОНЦЕ вызови finish_cycle с кратким отчётом: что сделал ✅, что нашёл ⚠️, что требует руководителя 🚨
-— Будь конкретным: числа, суммы в рублях, ID заказов, имена мастеров
+— СНАЧАЛА вызови инструменты сбора данных (все нужные — приоритет: SLA, заказы, финансы, мастера, аналитика)
+— ЗАТЕМ выполни ВСЕ действия: рассылки, задачи диспетчеру, уведомления об оплатах
+— В КОНЦЕ вызови finish_cycle: краткий отчёт — что сделал ✅, что нашёл ⚠️, что требует руководителя 🚨
+— Будь конкретным: числа, суммы ₽, ID заказов, имена мастеров
 
 ═══ КРИТИЧЕСКИЕ ПРАВИЛА ═══
-— НЕ подтверждай оплату смет сам — только уведомляй руководителя (alert_submitted_receipts)
+— НЕ подтверждай оплату смет — только вызови alert_submitted_receipts
 — НЕ отменяй заказы (только руководитель)
 — НЕ создавай заявки автоматически
 — ВСЁ остальное — делай сам без вопросов
-— Используй только русский язык
-— Максимум 12 раундов работы (используй их эффективно)`;
+— Только русский язык
+— Максимум 16 раундов — используй эффективно, группируй действия`;
 
 const AUTONOMOUS_TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   { type: "function", function: { name: "get_pending_orders", description: "Заказы без мастера", parameters: { type: "object", properties: {} } } },
@@ -2069,6 +2360,17 @@ const AUTONOMOUS_TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   { type: "function", function: { name: "get_active_orders_status", description: "Статус активных заказов (назначен мастер / в работе)", parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "ping_masters_with_active_orders", description: "Проверить каждого мастера с активным заказом через диспетчера — уточнить статус, прогресс, проблемы", parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "alert_submitted_receipts", description: "Найти сметы, по которым клиент уже оплатил, и отправить руководителю уведомление с кнопкой подтверждения", parameters: { type: "object", properties: {} } } },
+  { type: "function", function: { name: "get_stuck_orders", description: "Заказы в статусе master_assigned более 48ч без движения", parameters: { type: "object", properties: {} } } },
+  { type: "function", function: { name: "get_sla_breaches", description: "Заказы в статусе new более 30 минут без рассылки мастерам", parameters: { type: "object", properties: {} } } },
+  { type: "function", function: { name: "get_daily_revenue", description: "Выручка сегодня vs вчера vs тот же день прошлой недели", parameters: { type: "object", properties: {} } } },
+  { type: "function", function: { name: "get_top_masters", description: "Топ-5 мастеров по заработанным комиссиям за неделю", parameters: { type: "object", properties: {} } } },
+  { type: "function", function: { name: "get_city_analysis", description: "Анализ по городам: соотношение заявок и мастеров, дефицит", parameters: { type: "object", properties: {} } } },
+  { type: "function", function: { name: "get_top_services", description: "Топ услуг по количеству заказов за неделю", parameters: { type: "object", properties: {} } } },
+  { type: "function", function: { name: "get_cancellation_rate", description: "Уровень отмен заказов сегодня и за неделю, аномалии", parameters: { type: "object", properties: {} } } },
+  { type: "function", function: { name: "get_new_masters_without_orders", description: "Новые мастера (3+ дня), ещё не взявшие ни одного заказа", parameters: { type: "object", properties: {} } } },
+  { type: "function", function: { name: "get_inactive_masters", description: "Мастера без активности более 7 дней", parameters: { type: "object", properties: {} } } },
+  { type: "function", function: { name: "get_uncompleted_masters", description: "Мастера без верификации паспорта или без привязки Max-бота", parameters: { type: "object", properties: {} } } },
+  { type: "function", function: { name: "get_data_quality_issues", description: "Проблемы с данными: дублирующиеся телефоны, отсутствие заявок 3ч (возможная поломка)", parameters: { type: "object", properties: {} } } },
   {
     type: "function",
     function: {
@@ -2170,7 +2472,7 @@ export async function runAutonomousCycle(triggerReason = "scheduled") {
 
     // Multi-step agentic loop (max 8 rounds to avoid infinite loops)
     let round = 0;
-    const MAX_ROUNDS = 12;
+    const MAX_ROUNDS = 16;
     let finished = false;
 
     while (round < MAX_ROUNDS && !finished) {
@@ -2232,6 +2534,39 @@ export async function runAutonomousCycle(triggerReason = "scheduled") {
             break;
           case "alert_submitted_receipts":
             toolResult = await toolAlertSubmittedReceipts();
+            break;
+          case "get_stuck_orders":
+            toolResult = await toolGetStuckOrders();
+            break;
+          case "get_sla_breaches":
+            toolResult = await toolGetSlaBreaches();
+            break;
+          case "get_daily_revenue":
+            toolResult = await toolGetDailyRevenue();
+            break;
+          case "get_top_masters":
+            toolResult = await toolGetTopMasters();
+            break;
+          case "get_city_analysis":
+            toolResult = await toolGetCityAnalysis();
+            break;
+          case "get_top_services":
+            toolResult = await toolGetTopServices();
+            break;
+          case "get_cancellation_rate":
+            toolResult = await toolGetCancellationRate();
+            break;
+          case "get_new_masters_without_orders":
+            toolResult = await toolGetNewMastersWithoutOrders();
+            break;
+          case "get_inactive_masters":
+            toolResult = await toolGetInactiveMasters();
+            break;
+          case "get_uncompleted_masters":
+            toolResult = await toolGetUncompletedMasters();
+            break;
+          case "get_data_quality_issues":
+            toolResult = await toolGetDataQualityIssues();
             break;
           case "auto_broadcast_order": {
             try {
@@ -2295,8 +2630,10 @@ export async function runAutonomousCycle(triggerReason = "scheduled") {
 export async function runQuickAutonomousCheck() {
   if (!managerUserId) return;
   try {
-    // Find orders waiting for master > 1h with no dispatch attempt yet
-    const cutoff1h = new Date(Date.now() - 60 * 60 * 1000);
+    const now = Date.now();
+
+    // 1. Orders waiting for master > 1h with no dispatch attempt yet → auto-broadcast
+    const cutoff1h = new Date(now - 60 * 60 * 1000);
     const undispatched = await db.select().from(ordersTable)
       .where(and(
         eq(ordersTable.status, "waiting_master"),
@@ -2319,6 +2656,49 @@ export async function runQuickAutonomousCheck() {
         console.error(`[autonomousAgent] Quick broadcast error for order #${order.id}:`, e);
       }
     }
+
+    // 2. SLA alert: orders in "new" status >30 min without dispatch
+    const cutoff30m = new Date(now - 30 * 60 * 1000);
+    const slaBreaches = await db.select().from(ordersTable)
+      .where(and(
+        eq(ordersTable.status, "new"),
+        lte(ordersTable.createdAt, cutoff30m),
+        isNull(ordersTable.deletedAt),
+      ));
+
+    if (slaBreaches.length > 0) {
+      const lines = slaBreaches.map(o => {
+        const mins = Math.round((now - new Date(o.createdAt).getTime()) / 60000);
+        return `• #${o.id} — ${o.serviceType}, ${o.city} (${mins} мин)`;
+      });
+      const text = `🚨 _SLA нарушен! ${slaBreaches.length} заказ(а) ждут рассылки >30 мин:_\n${lines.join("\n")}`;
+      await sendMsg(managerUserId, text);
+      injectNotification(text, {});
+      console.log(`[quickCheck] SLA breach: ${slaBreaches.length} orders waiting >30min`);
+    }
+
+    // 3. No new leads in 3h → possible site form broken
+    const cutoff3h = new Date(now - 3 * 60 * 60 * 1000);
+    const recentLeads = await db.select({ id: leadsTable.id })
+      .from(leadsTable)
+      .where(and(gte(leadsTable.createdAt, cutoff3h), isNull(leadsTable.deletedAt)));
+
+    if (recentLeads.length === 0) {
+      // Only alert once every 3h by checking last 6h
+      const cutoff6h = new Date(now - 6 * 60 * 60 * 1000);
+      const prevLeads = await db.select({ id: leadsTable.id })
+        .from(leadsTable)
+        .where(and(gte(leadsTable.createdAt, cutoff6h), lte(leadsTable.createdAt, cutoff3h), isNull(leadsTable.deletedAt)));
+
+      if (prevLeads.length > 0) {
+        // Were leads 3-6h ago but nothing in last 3h → alert
+        const text = `🚨 _Внимание! За последние 3 часа не поступило ни одной заявки. Возможна поломка формы на сайте или рекламы._`;
+        await sendMsg(managerUserId, text);
+        injectNotification(text, {});
+        console.log(`[quickCheck] No leads in 3h alert sent`);
+      }
+    }
+
   } catch (e) {
     console.error("[autonomousAgent] Quick check error:", e);
   }
