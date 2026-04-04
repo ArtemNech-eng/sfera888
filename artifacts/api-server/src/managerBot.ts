@@ -112,6 +112,76 @@ async function resolveMasterByNameOrId(nameOrId: string) {
     (m.phone ?? "").includes(nameOrId),
   ) ?? null;
 }
+// ─── City Timezone Map ────────────────────────────────────────────────────────
+// UTC offsets for Russian cities. Default: UTC+3 (Moscow).
+const CITY_UTC_OFFSETS: Record<string, number> = {
+  // UTC+2
+  "Калининград": 2,
+  // UTC+3 (Moscow standard)
+  "Москва": 3, "Санкт-Петербург": 3, "Питер": 3, "СПб": 3,
+  "Краснодар": 3, "Ростов-на-Дону": 3, "Ростов": 3,
+  "Воронеж": 3, "Нижний Новгород": 3, "Нижний": 3,
+  "Казань": 3, "Самара": 3, "Волгоград": 3,
+  "Саратов": 3, "Тверь": 3, "Ярославль": 3,
+  "Рязань": 3, "Тула": 3, "Брянск": 3, "Орёл": 3, "Орел": 3,
+  "Липецк": 3, "Тамбов": 3, "Белгород": 3, "Курск": 3,
+  "Смоленск": 3, "Владимир": 3, "Иваново": 3, "Кострома": 3,
+  "Пенза": 3, "Ульяновск": 3, "Чебоксары": 3, "Саранск": 3,
+  "Псков": 3, "Великий Новгород": 3, "Вологда": 3,
+  "Мурманск": 3, "Петрозаводск": 3, "Архангельск": 3,
+  "Сыктывкар": 3, "Ставрополь": 3, "Махачкала": 3,
+  "Владикавказ": 3, "Нальчик": 3, "Черкесск": 3, "Майкоп": 3,
+  "Астрахань": 3, "Элиста": 3,
+  // UTC+4
+  "Ижевск": 4, "Оренбург": 4,
+  // UTC+5
+  "Екатеринбург": 5, "Пермь": 5, "Челябинск": 5, "Тюмень": 5,
+  "Уфа": 5, "Магнитогорск": 5, "Курган": 5,
+  // UTC+6
+  "Омск": 6,
+  // UTC+7
+  "Новосибирск": 7, "Красноярск": 7, "Кемерово": 7,
+  "Новокузнецк": 7, "Барнаул": 7, "Томск": 7, "Горно-Алтайск": 7,
+  "Абакан": 7,
+  // UTC+8
+  "Иркутск": 8, "Улан-Удэ": 8, "Чита": 9,
+  // UTC+9
+  "Якутск": 9,
+  // UTC+10
+  "Владивосток": 10, "Хабаровск": 10, "Южно-Сахалинск": 11,
+  "Петропавловск-Камчатский": 12, "Анадырь": 12,
+};
+
+/**
+ * Returns the UTC offset for a city (defaults to UTC+3 = Moscow if unknown).
+ */
+function getCityUtcOffset(city?: string | null): number {
+  if (!city) return 3;
+  const c = city.trim();
+  // Exact match first
+  if (CITY_UTC_OFFSETS[c] !== undefined) return CITY_UTC_OFFSETS[c];
+  // Partial match
+  const key = Object.keys(CITY_UTC_OFFSETS).find(k => c.toLowerCase().includes(k.toLowerCase()) || k.toLowerCase().includes(c.toLowerCase()));
+  return key ? CITY_UTC_OFFSETS[key] : 3;
+}
+
+const QUIET_HOURS_START = 22; // 22:00 local → do not send
+const QUIET_HOURS_END = 8;    // 08:00 local → ok to send
+
+/**
+ * Returns whether the master's local time is in quiet hours (22:00–08:00).
+ * Also returns a human-readable local time string for messages.
+ */
+function getMasterQuietStatus(city?: string | null): { quiet: boolean; localTimeStr: string } {
+  const offset = getCityUtcOffset(city);
+  const nowLocal = new Date(Date.now() + offset * 3600000);
+  const hour = nowLocal.getUTCHours();
+  const min = nowLocal.getUTCMinutes().toString().padStart(2, "0");
+  const localTimeStr = `${hour}:${min} (UTC+${offset}${city ? `, ${city}` : ""})`;
+  const quiet = hour >= QUIET_HOURS_START || hour < QUIET_HOURS_END;
+  return { quiet, localTimeStr };
+}
+
 const staleAlertedOrders = new Set<number>(); // track which orders we've already alerted about
 
 export function getManagerUserId(): number | null { return managerUserId; }
@@ -613,7 +683,14 @@ async function toolPingMastersWithActiveOrders(): Promise<string> {
     const hoursOld = masterOrders.map(o => Math.round((Date.now() - new Date(o.updatedAt).getTime()) / 3600000));
     const maxHours = Math.max(...hoursOld);
 
-    // Skip if recently pinged via dedup or if order was recently updated
+    // Skip if quiet hours in master's city
+    const quietCheck = getMasterQuietStatus(master.city);
+    if (quietCheck.quiet) {
+      results.push(`${master.alias}: пропущен — тихие часы (${quietCheck.localTimeStr})`);
+      continue;
+    }
+
+    // Skip if recently pinged via dedup
     const dupEntry = checkTaskDedup(master.id);
     if (dupEntry) {
       const minsAgo = Math.round((Date.now() - dupEntry.sentAt.getTime()) / 60000);
@@ -1948,12 +2025,28 @@ export async function handleManagerUpdate(update: unknown) {
               toolResult = `Мастер "${args.masterNameOrId}" не найден.`;
               break;
             }
+            const pendingData = { masterNameOrId: String(master.id), task: args.task, masterAlias: master.alias, masterId: master.id };
+
+            // 1. Check quiet hours first
+            const { quiet, localTimeStr } = getMasterQuietStatus(master.city);
+            if (quiet) {
+              const nightText = `🌙 Сейчас ночное время у мастера **${master.alias}** — ${localTimeStr}.\n\nОтправка в ночное время может разбудить мастера. Всё равно отправить?`;
+              session.pending = { type: "send_task_force", data: pendingData, description: nightText };
+              addMessage(session, { role: "tool", content: "pending_quiet_hours_confirmation", tool_call_id: tc.id, name: fnName });
+              await sendWithButtons(userId, nightText, [[
+                { text: "🌙 Да, отправить", payload: "confirm:yes" },
+                { text: "⏰ Утром", payload: "confirm:no" },
+              ]]);
+              return;
+            }
+
+            // 2. Check dedup
             const dupEntry = checkTaskDedup(master.id);
             if (dupEntry) {
               const minsAgo = Math.round((Date.now() - dupEntry.sentAt.getTime()) / 60000);
               const hoursAgo = minsAgo >= 60 ? `${Math.round(minsAgo / 60)}ч` : `${minsAgo} мин`;
               const dupText = `⚠️ Дубль задачи!\n\nМастеру **${master.alias}** уже отправлялась задача ${hoursAgo} назад:\n_"${dupEntry.task}"_\n\nОтправить снова?`;
-              session.pending = { type: "send_task_force", data: { masterNameOrId: String(master.id), task: args.task, masterAlias: master.alias, masterId: master.id }, description: dupText };
+              session.pending = { type: "send_task_force", data: pendingData, description: dupText };
               addMessage(session, { role: "tool", content: "pending_duplicate_confirmation", tool_call_id: tc.id, name: fnName });
               await sendWithButtons(userId, dupText, [[
                 { text: "✅ Да, отправить", payload: "confirm:yes" },
@@ -1961,6 +2054,8 @@ export async function handleManagerUpdate(update: unknown) {
               ]]);
               return;
             }
+
+            // 3. All clear — send
             const d = await getDispatcherModule();
             toolResult = await d.sendTaskToMaster(String(master.id), args.task);
             recordTaskDedup(master.id, master.alias, args.task);
@@ -2662,14 +2757,23 @@ export async function runAutonomousCycle(triggerReason = "scheduled") {
                 toolResult = `Мастер "${args.masterNameOrId}" не найден — пропускаю.`;
                 break;
               }
+              // 1. Check quiet hours (don't wake masters at night)
+              const { quiet: isQuiet, localTimeStr } = getMasterQuietStatus(master.city);
+              if (isQuiet) {
+                toolResult = `ТИХИЕ ЧАСЫ: у мастера ${master.alias} сейчас ночь (${localTimeStr}). Пропускаю — напишу утром.`;
+                console.log(`[autonomousAgent] Quiet hours skip: ${master.alias} (${localTimeStr})`);
+                break;
+              }
+              // 2. Check dedup
               const dup = checkTaskDedup(master.id);
               if (dup) {
                 const minsAgo = Math.round((Date.now() - dup.sentAt.getTime()) / 60000);
                 const hoursAgo = minsAgo >= 60 ? `${Math.round(minsAgo / 60)}ч` : `${minsAgo} мин`;
-                toolResult = `ДУБЛЬ: мастеру ${master.alias} уже отправляли задачу ${hoursAgo} назад ("${dup.task}"). Пропускаю чтобы не спамить.`;
+                toolResult = `ДУБЛЬ: мастеру ${master.alias} уже отправляли задачу ${hoursAgo} назад ("${dup.task}"). Пропускаю.`;
                 console.log(`[autonomousAgent] Dedup skip: ${master.alias} (sent ${hoursAgo} ago)`);
                 break;
               }
+              // 3. All clear — send
               const d = await getDispatcherModule();
               toolResult = await d.sendTaskToMaster(String(master.id), args.task);
               recordTaskDedup(master.id, master.alias, args.task);
