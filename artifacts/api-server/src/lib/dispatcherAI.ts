@@ -11,7 +11,7 @@
 
 import OpenAI from "openai";
 import { db, ordersTable, mastersTable, leadsTable, receiptsTable, masterMessagesTable, dispatcherFollowupsTable } from "@workspace/db";
-import { eq, and, isNull, inArray, lte } from "drizzle-orm";
+import { eq, and, isNull, inArray, lte, desc } from "drizzle-orm";
 import { sendMaxMessage } from "../maxBot.js";
 import { sendMsg as sendManagerMsg, getManagerUserId } from "../managerBot.js";
 

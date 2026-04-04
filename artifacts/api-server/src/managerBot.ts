@@ -26,6 +26,28 @@ import {
 } from "@workspace/db";
 import { eq, and, isNull, desc, gte, sql, inArray, lte } from "drizzle-orm";
 import { performBroadcast } from "./lib/broadcastOrder.js";
+import { execFile } from "child_process";
+import { writeFile, readFile, unlink } from "fs/promises";
+import { tmpdir } from "os";
+import { promisify } from "util";
+
+const execFileAsync = promisify(execFile);
+
+// Convert OGG/Opus (sent by Max bot) → WAV (required by gpt-4o-mini-transcribe)
+async function convertOggToWav(buffer: Buffer): Promise<Buffer> {
+  const id = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const inPath = `${tmpdir()}/voice_in_${id}.ogg`;
+  const outPath = `${tmpdir()}/voice_out_${id}.wav`;
+  try {
+    await writeFile(inPath, buffer);
+    await execFileAsync("ffmpeg", ["-y", "-i", inPath, "-ar", "16000", "-ac", "1", "-f", "wav", outPath]);
+    return await readFile(outPath);
+  } finally {
+    unlink(inPath).catch(() => {});
+    unlink(outPath).catch(() => {});
+  }
+}
+
 // dispatcherAI is dynamically imported to avoid circular dependency
 // (dispatcherAI imports sendMsg/getManagerUserId from this file)
 async function getDispatcherModule() {
@@ -149,8 +171,24 @@ async function downloadAudio(url: string): Promise<Buffer | null> {
 
 async function transcribeAudio(buffer: Buffer, mimeType = "audio/ogg"): Promise<string | null> {
   try {
-    const ext = mimeType.includes("ogg") ? "ogg" : mimeType.includes("mp4") ? "mp4" : mimeType.includes("webm") ? "webm" : "ogg";
-    const file = new File([buffer], `voice.${ext}`, { type: mimeType });
+    let audioBuffer = buffer;
+    let fileName = "voice.wav";
+    let fileType = "audio/wav";
+
+    // gpt-4o-mini-transcribe supports: mp3, mp4, mpeg, mpga, m4a, wav, webm
+    // OGG/Opus (sent by Max bot) is NOT supported — convert to WAV via ffmpeg
+    if (mimeType.includes("ogg") || mimeType.includes("opus")) {
+      audioBuffer = await convertOggToWav(buffer);
+      console.log(`[managerBot] Converted OGG to WAV (${buffer.length} → ${audioBuffer.length} bytes)`);
+    } else if (mimeType.includes("webm")) {
+      fileName = "voice.webm"; fileType = "audio/webm";
+    } else if (mimeType.includes("mp4") || mimeType.includes("m4a")) {
+      fileName = "voice.mp4"; fileType = "audio/mp4";
+    } else if (mimeType.includes("mp3")) {
+      fileName = "voice.mp3"; fileType = "audio/mp3";
+    }
+
+    const file = new File([audioBuffer], fileName, { type: fileType });
     const result = await openai.audio.transcriptions.create({
       model: "gpt-4o-mini-transcribe",
       file,
