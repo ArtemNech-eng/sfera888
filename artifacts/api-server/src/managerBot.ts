@@ -368,6 +368,8 @@ async function toolGetTodayLeads() {
 
 /** Smart master suggestion: ranks by historical assignment count for this city+service */
 async function toolGetAvailableMasters(city: string, serviceType?: string) {
+  if (!city) return "Укажите город для поиска мастеров.";
+
   const masters = await db.select().from(mastersTable)
     .where(and(eq(mastersTable.status, "active"), isNull(mastersTable.deletedAt)))
     .orderBy(desc(mastersTable.rating));
@@ -389,7 +391,7 @@ async function toolGetAvailableMasters(city: string, serviceType?: string) {
   const assignmentCounts = new Map<number, number>();
   for (const o of assignedOrders) {
     if (!o.masterId) continue;
-    const svcMatch = !serviceType || o.serviceType.toLowerCase().includes(serviceType.toLowerCase().split(" ")[0]);
+    const svcMatch = !serviceType || (o.serviceType ?? "").toLowerCase().includes(serviceType.toLowerCase().split(" ")[0]);
     if (svcMatch) assignmentCounts.set(o.masterId, (assignmentCounts.get(o.masterId) ?? 0) + 1);
   }
 
@@ -1041,14 +1043,14 @@ async function toolSearchOrders(query: string, statusFilter?: string) {
   const allLeads = await db.select().from(leadsTable).where(isNull(leadsTable.deletedAt));
   const leadMap = new Map(allLeads.map(l => [l.id, l]));
 
-  const q = query.toLowerCase().trim();
+  const q = (query ?? "").toLowerCase().trim();
   const matches = allOrders.filter(o => {
     const lead = leadMap.get(o.leadId);
     if (statusFilter && o.status !== statusFilter) return false;
     return (
       String(o.id) === q ||
-      o.serviceType.toLowerCase().includes(q) ||
-      o.city.toLowerCase().includes(q) ||
+      (o.serviceType ?? "").toLowerCase().includes(q) ||
+      (o.city ?? "").toLowerCase().includes(q) ||
       (o.district ?? "").toLowerCase().includes(q) ||
       (o.operatorNote ?? "").toLowerCase().includes(q) ||
       (lead?.clientName ?? "").toLowerCase().includes(q) ||
@@ -2050,6 +2052,7 @@ export async function handleManagerUpdate(update: unknown) {
         let args: any = {};
         try { args = JSON.parse(tc.function.arguments); } catch {}
 
+        console.log(`[managerBot] tool call: ${fnName}`, JSON.stringify(args));
         let toolResult = "";
 
         switch (fnName) {
@@ -2060,7 +2063,7 @@ export async function handleManagerUpdate(update: unknown) {
             toolResult = await toolGetTodayLeads();
             break;
           case "get_available_masters":
-            toolResult = await toolGetAvailableMasters(args.city, args.serviceType);
+            toolResult = await toolGetAvailableMasters(args.city ?? "", args.serviceType);
             break;
           case "get_report":
             toolResult = await toolGetReport(args.period ?? "week");
