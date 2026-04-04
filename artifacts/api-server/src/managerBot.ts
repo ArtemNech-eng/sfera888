@@ -23,6 +23,7 @@ import {
   mastersTable,
   orderDispatchesTable,
   transactionsTable,
+  receiptsTable,
 } from "@workspace/db";
 import { eq, and, isNull, desc, gte, sql, inArray, lte } from "drizzle-orm";
 import { performBroadcast } from "./lib/broadcastOrder.js";
@@ -406,6 +407,27 @@ async function toolGetMasterStats(masterIdOrName: string) {
   month.setDate(month.getDate() - 30);
   const recent = orders.filter(o => new Date(o.createdAt) >= month);
 
+  // Receipts (сметы)
+  const receipts = await db.select().from(receiptsTable)
+    .where(eq(receiptsTable.masterId, master.id))
+    .orderBy(desc(receiptsTable.createdAt));
+
+  const pendingReceipts = receipts.filter(r => r.prepaymentSubmittedAt && !r.prepaymentSeenAt);
+  const confirmedReceipts = receipts.filter(r => r.prepaymentSeenAt);
+
+  let receiptsInfo = `\n📄 Сметы: всего ${receipts.length}`;
+  if (pendingReceipts.length > 0) {
+    receiptsInfo += `\n  ⏳ Ожидают подтверждения (${pendingReceipts.length}):`;
+    for (const r of pendingReceipts) {
+      const total = Number(r.totalAmount).toLocaleString("ru-RU");
+      const prep = Number(r.prepaymentAmount).toLocaleString("ru-RU");
+      receiptsInfo += `\n    • Смета #${r.id} / Заказ #${r.orderId}: ${r.serviceType}, предоплата ${prep} ₽ (итого ${total} ₽)`;
+    }
+  }
+  if (confirmedReceipts.length > 0) {
+    receiptsInfo += `\n  ✅ Подтверждено: ${confirmedReceipts.length}`;
+  }
+
   return `👷 Мастер **${master.alias}** (#${master.id}):
   📍 Город: ${master.city ?? "не указан"}
   ⭐ Рейтинг: ${master.rating ?? 0}
@@ -416,7 +438,54 @@ async function toolGetMasterStats(masterIdOrName: string) {
   📅 За 30 дней: ${recent.length} заказов
   💸 Долг: ${Number(master.debt ?? 0).toLocaleString("ru-RU")} ₽
   📱 Max: ${master.maxChatId ? "привязан" : "не привязан"}
-  🪪 Паспорт: ${master.passportVerified ? "✅ подтверждён" : "⏳ не подтверждён"}`;
+  🪪 Паспорт: ${master.passportVerified ? "✅ подтверждён" : "⏳ не подтверждён"}${receiptsInfo}`;
+}
+
+async function toolGetPendingReceipts() {
+  const receipts = await db.select().from(receiptsTable)
+    .orderBy(desc(receiptsTable.createdAt));
+
+  const pending = receipts.filter(r => r.prepaymentSubmittedAt && !r.prepaymentSeenAt);
+
+  if (pending.length === 0) return "✅ Смет, ожидающих подтверждения, нет.";
+
+  const masterIds = [...new Set(pending.map(r => r.masterId))];
+  const masters = await db.select().from(mastersTable).where(inArray(mastersTable.id, masterIds));
+  const masterMap = new Map(masters.map(m => [m.id, m.alias]));
+
+  const fmt = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Moscow" });
+
+  let result = `📋 Сметы, ожидающие подтверждения (${pending.length}):\n\n`;
+  for (const r of pending) {
+    const masterName = masterMap.get(r.masterId) ?? `#${r.masterId}`;
+    const total = Number(r.totalAmount).toLocaleString("ru-RU");
+    const prep = Number(r.prepaymentAmount).toLocaleString("ru-RU");
+    const submitted = r.prepaymentSubmittedAt ? fmt.format(new Date(r.prepaymentSubmittedAt)) : "—";
+    result += `• Смета **#${r.id}** — Мастер: ${masterName}, Заказ #${r.orderId}\n`;
+    result += `  Услуга: ${r.serviceType}\n`;
+    result += `  Клиент: ${r.clientName} (${r.clientPhone})\n`;
+    result += `  Предоплата: **${prep} ₽** (итого ${total} ₽)\n`;
+    result += `  Оплачено: ${submitted}\n\n`;
+  }
+  return result.trim();
+}
+
+async function toolConfirmReceipt(receiptId: number) {
+  const rows = await db.select().from(receiptsTable).where(eq(receiptsTable.id, receiptId));
+  const receipt = rows[0];
+  if (!receipt) return `Смета #${receiptId} не найдена.`;
+  if (receipt.prepaymentSeenAt) return `✅ Смета #${receiptId} уже была подтверждена ранее.`;
+  if (!receipt.prepaymentSubmittedAt) return `⚠️ По смете #${receiptId} ещё не поступила предоплата от клиента.`;
+
+  await db.update(receiptsTable)
+    .set({ prepaymentSeenAt: new Date() })
+    .where(eq(receiptsTable.id, receiptId));
+
+  const masters = await db.select().from(mastersTable).where(eq(mastersTable.id, receipt.masterId));
+  const masterName = masters[0]?.alias ?? `#${receipt.masterId}`;
+  const prep = Number(receipt.prepaymentAmount).toLocaleString("ru-RU");
+
+  return `✅ Смета #${receiptId} подтверждена. Мастер: ${masterName}, предоплата ${prep} ₽ по заказу #${receipt.orderId}.`;
 }
 
 async function toolSetOrderStatus(orderId: number, status: string, note?: string) {
@@ -648,6 +717,28 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "get_pending_receipts",
+      description: "Получить список смет, ожидающих подтверждения предоплаты. Используй когда спрашивают про сметы, оплату, предоплату мастеров.",
+      parameters: { type: "object", properties: {}, required: [] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "confirm_receipt",
+      description: "Подтвердить предоплату по смете (отметить как проверенную). Используй когда руководитель говорит 'подтвердить смету', 'принял оплату', 'вижу платёж'.",
+      parameters: {
+        type: "object",
+        properties: {
+          receiptId: { type: "number", description: "ID сметы" },
+        },
+        required: ["receiptId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "propose_lead_creation",
       description: "Предложить создание заявки. Вызывай когда в сообщении есть данные клиента (имя, телефон, тип работ).",
       parameters: {
@@ -818,6 +909,8 @@ const SYSTEM_PROMPT = `Ты — AI-ассистент руководителя �
 - Просматривать переписку диспетчера с мастером (get_master_conversation)
 - Сводный отчёт по активности: кто из мастеров молчит, кто ответил (get_dispatcher_activity)
 - Ставить задачи AI-диспетчеру: написать мастеру конкретное сообщение (send_task_to_dispatcher)
+- Просматривать сметы мастеров: get_master_stats включает сметы, get_pending_receipts — все неподтверждённые
+- Подтверждать предоплату по смете (confirm_receipt)
 
 Правила:
 - Говори кратко и по делу. Ты в мессенджере, не в документе.
@@ -1008,6 +1101,12 @@ export async function handleManagerUpdate(update: unknown) {
             break;
           case "get_pending_passports":
             toolResult = await toolGetPendingPassports();
+            break;
+          case "get_pending_receipts":
+            toolResult = await toolGetPendingReceipts();
+            break;
+          case "confirm_receipt":
+            toolResult = await toolConfirmReceipt(Number(args.receiptId));
             break;
           case "save_preference":
             toolResult = await toolSavePreference(args.key, args.value);
