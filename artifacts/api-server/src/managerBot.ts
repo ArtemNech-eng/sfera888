@@ -244,27 +244,49 @@ export function injectNotification(text: string, ctx: ActiveContext) {
 }
 
 function sanitizeHistory(msgs: Message[]): Message[] {
-  // 1. Remove orphaned "tool" messages at the START (parent assistant was trimmed away)
-  let start = 0;
-  while (start < msgs.length && msgs[start].role === "tool") start++;
-  msgs = msgs.slice(start);
+  // Full-pass validation: remove any assistant+tool_calls group where at least one
+  // tool response is missing, AND remove any orphaned tool messages (no parent call).
+  // Runs iteratively until stable (removing one group may expose another orphan).
+  let changed = true;
+  while (changed) {
+    changed = false;
 
-  // 2. Remove orphaned assistant messages with tool_calls at the END
-  //    (their tool responses were trimmed, or return happened before adding them)
-  while (msgs.length > 0) {
-    const last = msgs[msgs.length - 1];
-    if (last.role === "assistant" && (last as any).tool_calls?.length > 0) {
-      // Check if all tool_call_ids have matching tool responses
-      const tcIds = new Set((last as any).tool_calls.map((tc: any) => tc.id));
-      const hasAllResponses = [...tcIds].every(id =>
-        msgs.some(m => m.role === "tool" && (m as any).tool_call_id === id)
-      );
-      if (!hasAllResponses) {
-        msgs = msgs.slice(0, -1); // Remove unmatched assistant message
-        continue;
+    // Collect tool_call_ids that have a response somewhere in the array
+    const hasResponse = new Set<string>();
+    for (const m of msgs) {
+      if (m.role === "tool" && (m as any).tool_call_id) {
+        hasResponse.add((m as any).tool_call_id);
       }
     }
-    break;
+
+    // Collect valid call IDs: only those whose parent assistant group is complete
+    const validCallIds = new Set<string>();
+    for (const m of msgs) {
+      if (m.role === "assistant" && (m as any).tool_calls?.length > 0) {
+        const allPresent = (m as any).tool_calls.every((tc: any) => hasResponse.has(tc.id));
+        if (allPresent) {
+          for (const tc of (m as any).tool_calls) validCallIds.add(tc.id);
+        }
+      }
+    }
+
+    const filtered = msgs.filter(m => {
+      // Drop assistant+tool_calls where any call lacks a response
+      if (m.role === "assistant" && (m as any).tool_calls?.length > 0) {
+        return (m as any).tool_calls.every((tc: any) => hasResponse.has(tc.id));
+      }
+      // Drop tool messages: orphaned (no parent) or parent is being dropped
+      if (m.role === "tool") {
+        const id = (m as any).tool_call_id;
+        return id && validCallIds.has(id);
+      }
+      return true;
+    });
+
+    if (filtered.length !== msgs.length) {
+      msgs = filtered;
+      changed = true;
+    }
   }
   return msgs;
 }
@@ -2082,6 +2104,10 @@ export async function handleManagerUpdate(update: unknown) {
   }
 
   try {
+    // Always sanitize before sending — guards against orphans that slipped through
+    // without triggering a trim (e.g. when length ≤ MAX_HISTORY but still corrupt)
+    session.messages = sanitizeHistory(session.messages);
+
     const ctxNote = buildContextNote(session.ctx);
     const messages: any[] = [
       { role: "system", content: SYSTEM_PROMPT + ctxNote },
