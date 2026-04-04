@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, receiptsTable, clientSupportMessagesTable, generalSupportMessagesTable, leadsTable, ordersTable, mastersTable } from "@workspace/db";
-import { eq, desc, and, isNull, inArray, like, sql } from "drizzle-orm";
+import { eq, desc, and, isNull, isNotNull, inArray, like, gte, sql } from "drizzle-orm";
 import multer from "multer";
 import { objectStorageClient } from "../lib/objectStorage.js";
 import { performBroadcast } from "../lib/broadcastOrder.js";
@@ -252,16 +252,95 @@ router.post("/estimate", upload.single("photo"), async (req, res) => {
       }];
     }
 
+    // ── Gather live market data from the platform ──────────────────────────────
+    const cityNorm = city.trim();
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+    // 1. Active masters in this city with service prices
+    const mastersWithPrices = await db
+      .select({ servicePrices: mastersTable.servicePrices })
+      .from(mastersTable)
+      .where(and(
+        eq(mastersTable.status, "active"),
+        isNull(mastersTable.deletedAt),
+        isNotNull(mastersTable.servicePrices),
+        sql`lower(${mastersTable.city}) = lower(${cityNorm})`,
+      ));
+
+    const masterPriceMap = new Map<string, number[]>();
+    for (const m of mastersWithPrices) {
+      for (const p of (m.servicePrices ?? [])) {
+        if (p.service && p.priceFrom > 0) {
+          if (!masterPriceMap.has(p.service)) masterPriceMap.set(p.service, []);
+          masterPriceMap.get(p.service)!.push(p.priceFrom);
+        }
+      }
+    }
+
+    // 2. Recent receipts from this city
+    const recentReceipts = await db
+      .select({ lineItems: receiptsTable.lineItems })
+      .from(receiptsTable)
+      .where(and(
+        isNull(receiptsTable.deletedAt),
+        sql`lower(${receiptsTable.city}) = lower(${cityNorm})`,
+        gte(receiptsTable.createdAt, sixMonthsAgo),
+      ))
+      .orderBy(desc(receiptsTable.createdAt))
+      .limit(40);
+
+    const receiptPriceMap = new Map<string, number[]>();
+    for (const r of recentReceipts) {
+      for (const item of (r.lineItems as any[] ?? [])) {
+        const key = String(item.description ?? "").trim();
+        const price = Number(item.price ?? 0);
+        const qty = Number(item.quantity ?? 1);
+        if (key && price > 0 && qty > 0) {
+          const unitPrice = qty > 1 ? price : price; // price is already per-unit in receipts
+          if (!receiptPriceMap.has(key)) receiptPriceMap.set(key, []);
+          receiptPriceMap.get(key)!.push(unitPrice);
+        }
+      }
+    }
+
+    // Build market data context block
+    let marketDataSection = "";
+
+    if (masterPriceMap.size > 0) {
+      const lines: string[] = [];
+      for (const [service, prices] of masterPriceMap.entries()) {
+        const min = Math.min(...prices);
+        const max = Math.max(...prices);
+        const range = prices.length > 1 && max !== min ? `${min.toLocaleString("ru")}–${max.toLocaleString("ru")}` : `${min.toLocaleString("ru")}`;
+        lines.push(`   - ${service}: от ${range} ₽ (${prices.length} мастер${prices.length === 1 ? "" : prices.length < 5 ? "а" : "ов"})`);
+      }
+      marketDataSection += `\nРЕАЛЬНЫЕ ЦЕНЫ МАСТЕРОВ ПЛАТФОРМЫ В ${cityNorm.toUpperCase()} (используй как приоритетный источник):\n${lines.join("\n")}`;
+    }
+
+    if (receiptPriceMap.size > 0) {
+      const lines: string[] = [];
+      for (const [desc, prices] of receiptPriceMap.entries()) {
+        const avg = Math.round(prices.reduce((a, b) => a + b, 0) / prices.length);
+        const cnt = prices.length;
+        lines.push(`   - ${desc}: ~${avg.toLocaleString("ru")} ₽ (${cnt} ${cnt === 1 ? "смета" : cnt < 5 ? "сметы" : "смет"})`);
+      }
+      marketDataSection += `\nФАКТИЧЕСКИЕ ЦЕНЫ ИЗ ЗАКРЫТЫХ СМЕТ ПЛАТФОРМЫ (${cityNorm}):\n${lines.join("\n")}`;
+    }
+
+    const hasPlatformData = marketDataSection.length > 0;
+
     const textPrompt = `Ты — сервис сравнения цен на ремонтные работы в России. Твоя задача — дать клиенту ориентировочные рыночные цены ТОЛЬКО на те работы, которые он описал. Не придумывай лишних позиций.
 
-Город: ${city}${district ? `, ${district}` : ""}
+Город: ${cityNorm}${district ? `, ${district}` : ""}
 Запрос клиента: ${serviceType}${description ? `. ${description}` : ""}
 ${file ? "Клиент прислал фотографию — используй её только для уточнения объёма или площади, если это видно." : ""}
+${marketDataSection}
 
 ПРАВИЛА:
 1. Включай в смету ТОЛЬКО те работы, о которых написал клиент. Не добавляй позиции которые клиент не просил.
 2. Если из описания следует очевидная подготовительная работа (например: нельзя клеить обои без грунтовки) — добавь её, но пометь "(обязательная подготовка)".
-3. Цены — средние рыночные по России для региона клиента. Примеры актуальных рыночных цен:
+3. ${hasPlatformData ? "Используй РЕАЛЬНЫЕ ЦЕНЫ ПЛАТФОРМЫ выше как основу. Они приоритетнее общерыночных. Если данных по конкретной позиции нет — опирайся на рыночные цены:" : "Цены — средние рыночные по России для региона клиента. Примеры актуальных рыночных цен:"}
    - Поклейка обоев без подбора: от 250–350 ₽/м²
    - Грунтовка стен: от 50–80 ₽/м²
    - Укладка плитки (стандартная): от 800–1200 ₽/м²
