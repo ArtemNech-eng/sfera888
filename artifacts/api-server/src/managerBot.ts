@@ -99,19 +99,40 @@ interface PendingConfirmation {
   description: string;
 }
 
+interface ActiveContext {
+  orderId?: number;
+  leadId?: number;
+  masterId?: number;
+  masterAlias?: string;
+  clientName?: string;
+  clientPhone?: string;
+  city?: string;
+  serviceType?: string;
+  description?: string;
+}
+
 interface Session {
   messages: Message[];
   pending: PendingConfirmation | null;
+  ctx: ActiveContext;
 }
 
 const sessions = new Map<number, Session>();
-const MAX_HISTORY = 16;
+const MAX_HISTORY = 20;
 
 function getSession(userId: number): Session {
   if (!sessions.has(userId)) {
-    sessions.set(userId, { messages: [], pending: null });
+    sessions.set(userId, { messages: [], pending: null, ctx: {} });
   }
   return sessions.get(userId)!;
+}
+
+/** Inject context into session: record proactive message as assistant turn + update ctx */
+export function injectNotification(text: string, ctx: ActiveContext) {
+  if (!managerUserId) return;
+  const session = getSession(managerUserId);
+  session.ctx = { ...session.ctx, ...ctx };
+  addMessage(session, { role: "assistant", content: text });
 }
 
 function sanitizeHistory(msgs: Message[]): Message[] {
@@ -1351,9 +1372,26 @@ export async function handleManagerUpdate(update: unknown) {
   // ── Run AI ────────────────────────────────────────────────────────────────
   addMessage(session, { role: "user", content: userText });
 
+  // Build dynamic context note from last known context
+  function buildContextNote(ctx: ActiveContext): string {
+    const parts: string[] = [];
+    if (ctx.orderId) parts.push(`orderId=${ctx.orderId}`);
+    if (ctx.leadId) parts.push(`leadId=${ctx.leadId}`);
+    if (ctx.masterAlias) parts.push(`мастер="${ctx.masterAlias}"`);
+    if (ctx.masterId) parts.push(`masterId=${ctx.masterId}`);
+    if (ctx.clientName) parts.push(`клиент="${ctx.clientName}"`);
+    if (ctx.clientPhone) parts.push(`телефон=${ctx.clientPhone}`);
+    if (ctx.city) parts.push(`город=${ctx.city}`);
+    if (ctx.serviceType) parts.push(`услуга=${ctx.serviceType}`);
+    if (ctx.description) parts.push(`суть="${ctx.description}"`);
+    if (parts.length === 0) return "";
+    return `\n\n[АКТИВНЫЙ КОНТЕКСТ ДИАЛОГА: ${parts.join(", ")}]\nЕсли руководитель использует местоимения ("ему", "его", "эту", "этого", "закрой", "отмени") — они относятся к этому контексту. Используй orderId/leadId/masterAlias напрямую без лишних вопросов.`;
+  }
+
   try {
+    const ctxNote = buildContextNote(session.ctx);
     const messages: any[] = [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: SYSTEM_PROMPT + ctxNote },
       ...session.messages,
     ];
 
@@ -1534,7 +1572,7 @@ export async function handleManagerUpdate(update: unknown) {
       const followUp = await openai.chat.completions.create({
         model: "gpt-4o",
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: SYSTEM_PROMPT + ctxNote },
           ...session.messages,
         ],
         max_tokens: 700,
@@ -1571,10 +1609,9 @@ export async function notifyManagerNewLead(lead: {
 }) {
   if (!managerUserId) return;
   const src = lead.source ? ` (${lead.source})` : "";
-  await sendMsg(
-    managerUserId,
-    `🆕 Новая заявка #${lead.id}${src}\n👤 ${lead.clientName} · ${lead.clientPhone}\n📍 ${lead.city} · ${lead.serviceType}`
-  );
+  const text = `🆕 Новая заявка #${lead.id}${src}\n👤 ${lead.clientName} · ${lead.clientPhone}\n📍 ${lead.city} · ${lead.serviceType}`;
+  await sendMsg(managerUserId, text);
+  injectNotification(text, { leadId: lead.id, clientName: lead.clientName, clientPhone: lead.clientPhone, city: lead.city, serviceType: lead.serviceType });
 }
 
 /** Called when a master responds to an order (from dispatch.ts) */
@@ -1584,17 +1621,11 @@ export async function notifyManagerMasterResponse(
   accepted: boolean,
 ) {
   if (!managerUserId) return;
-  if (accepted) {
-    await sendMsg(
-      managerUserId,
-      `🙋 **${masterAlias}** откликнулся на заказ #${orderId}\n\nНазначить мастера? Откройте CRM → Буфер заказов.`
-    );
-  } else {
-    await sendMsg(
-      managerUserId,
-      `❌ **${masterAlias}** отказался от заказа #${orderId}`
-    );
-  }
+  const text = accepted
+    ? `🙋 **${masterAlias}** откликнулся на заказ #${orderId}\n\nНазначить мастера? Откройте CRM → Буфер заказов.`
+    : `❌ **${masterAlias}** отказался от заказа #${orderId}`;
+  await sendMsg(managerUserId, text);
+  injectNotification(text, { orderId, masterAlias });
 }
 
 /** Morning briefing — called daily at 9:00 MSK */
@@ -1675,10 +1706,12 @@ export async function checkStaleOrders() {
       return `• Заказ #${o.id}: ${o.serviceType}, ${o.city} — **${age} ч**`;
     }).join("\n");
 
-    await sendMsg(
-      managerUserId,
-      `⚠️ Заказы ждут мастера слишком долго (${newStale.length}):\n${lines}\n\nПопробуйте повторную рассылку.`
-    );
+    const staleText = `⚠️ Заказы ждут мастера слишком долго (${newStale.length}):\n${lines}\n\nПопробуйте повторную рассылку.`;
+    await sendMsg(managerUserId, staleText);
+    // Inject context for the most urgent stale order
+    if (newStale[0]) {
+      injectNotification(staleText, { orderId: newStale[0].id, city: newStale[0].city ?? undefined, serviceType: newStale[0].serviceType ?? undefined });
+    }
   } catch (e) {
     console.error("[managerBot] checkStaleOrders error:", e);
   }
@@ -1701,10 +1734,9 @@ export async function notifyManagerReceiptPaid(receipt: {
     const masterStr = receipt.masterAlias ? ` · мастер: ${receipt.masterAlias}` : "";
     const cityStr = receipt.city ? `📍 ${receipt.city}` : "";
     const serviceStr = receipt.serviceType ? ` · ${receipt.serviceType}` : "";
-    await sendMsg(
-      managerUserId,
-      `💰 Клиент оплатил бронь!\n\nСмета #${receipt.id}\n👤 ${receipt.clientName} (${receipt.clientPhone})\n${cityStr}${serviceStr}${masterStr}\n💵 Сумма брони: **${amount} ₽**\n\n_Проверьте скриншот в CRM → Оплаты._`
-    );
+    const text = `💰 Клиент оплатил бронь!\n\nСмета #${receipt.id}\n👤 ${receipt.clientName} (${receipt.clientPhone})\n${cityStr}${serviceStr}${masterStr}\n💵 Сумма брони: **${amount} ₽**\n\n_Проверьте скриншот в CRM → Оплаты._`;
+    await sendMsg(managerUserId, text);
+    injectNotification(text, { clientName: receipt.clientName, clientPhone: receipt.clientPhone, masterAlias: receipt.masterAlias, city: receipt.city, serviceType: receipt.serviceType, description: `Смета #${receipt.id}` });
   } catch (e) {
     console.error("[managerBot] notifyManagerReceiptPaid error:", e);
   }
@@ -1722,10 +1754,9 @@ export async function notifyManagerNewMaster(master: {
   if (!managerUserId) return;
   try {
     const phoneStr = master.phone ? ` · ${master.phone}` : "";
-    await sendMsg(
-      managerUserId,
-      `🆕 Новый мастер зарегистрировался!\n\n👷 **${master.alias}**${phoneStr}\n📍 ${master.city} · ${master.specialization}\n\n_Требует проверки паспорта и подписания договора._\nCRM → Мастера → #${master.id}`
-    );
+    const text = `🆕 Новый мастер зарегистрировался!\n\n👷 **${master.alias}**${phoneStr}\n📍 ${master.city} · ${master.specialization}\n\n_Требует проверки паспорта и подписания договора._\nCRM → Мастера → #${master.id}`;
+    await sendMsg(managerUserId, text);
+    injectNotification(text, { masterId: master.id, masterAlias: master.alias, city: master.city, serviceType: master.specialization });
   } catch (e) {
     console.error("[managerBot] notifyManagerNewMaster error:", e);
   }

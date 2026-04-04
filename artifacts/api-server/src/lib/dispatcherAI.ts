@@ -13,7 +13,7 @@ import OpenAI from "openai";
 import { db, ordersTable, mastersTable, leadsTable, receiptsTable, masterMessagesTable, dispatcherFollowupsTable } from "@workspace/db";
 import { eq, and, isNull, inArray, lte, desc } from "drizzle-orm";
 import { sendMaxMessage } from "../maxBot.js";
-import { sendMsg as sendManagerMsg, getManagerUserId } from "../managerBot.js";
+import { sendMsg as sendManagerMsg, getManagerUserId, injectNotification } from "../managerBot.js";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -144,10 +144,15 @@ async function toolEscalateToManager(message: string, masterId: number, orderId?
   const orderStr = orderId ? ` по заказу #${orderId}` : "";
   const alias = master?.alias ?? `мастер #${masterId}`;
 
-  await sendManagerMsg(
-    managerId,
-    `⚠️ **Проблема от ${alias}**${orderStr}:\n${message}\n\n_Требует вашего внимания._`
-  );
+  const text = `⚠️ **Проблема от ${alias}**${orderStr}:\n${message}\n\n_Требует вашего внимания._`;
+  await sendManagerMsg(managerId, text);
+  // Inject context so manager bot knows who/what we're discussing
+  injectNotification(text, {
+    masterId,
+    masterAlias: alias,
+    ...(orderId ? { orderId } : {}),
+    description: message,
+  });
   return "Эскалация отправлена руководителю.";
 }
 
@@ -320,9 +325,9 @@ export async function handleMasterMessage(
     const managerId = getManagerUserId();
     if (managerId) {
       const elapsed = Math.round((Date.now() - pendingTask.sentAt) / 60000);
-      await sendManagerMsg(managerId,
-        `📩 ${pendingTask.masterAlias} ответил (через ${elapsed} мин):\n\n"${text}"\n\n_Задача была: ${pendingTask.task}_`
-      );
+      const notifText = `📩 **${pendingTask.masterAlias}** ответил (через ${elapsed} мин):\n\n"${text}"\n\n_Задача была: ${pendingTask.task}_`;
+      await sendManagerMsg(managerId, notifText);
+      injectNotification(notifText, { masterAlias: pendingTask.masterAlias });
     }
   }
 
