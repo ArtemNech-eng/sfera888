@@ -468,29 +468,29 @@ async function downloadAudio(url: string): Promise<Buffer | null> {
 
 async function transcribeAudio(buffer: Buffer, mimeType = "audio/ogg"): Promise<string | null> {
   try {
-    // whisper-1 natively supports OGG/Opus, mp3, mp4, m4a, wav, webm
-    // It is battle-tested for Russian and significantly more stable than gpt-4o-mini-transcribe
     let audioBuffer = buffer;
-    let fileName = "voice.ogg";
-    let fileType = "audio/ogg";
+    let fileName = "voice.wav";
+    let fileType = "audio/wav";
 
-    if (mimeType.includes("webm")) {
+    // gpt-4o-mini-transcribe supports: mp3, mp4, mpeg, mpga, m4a, wav, webm
+    // OGG/Opus (sent by Max bot) must be converted to WAV via ffmpeg
+    if (mimeType.includes("ogg") || mimeType.includes("opus")) {
+      audioBuffer = await convertOggToWav(buffer);
+      console.log(`[managerBot] Converted OGG to WAV (${buffer.length} → ${audioBuffer.length} bytes)`);
+    } else if (mimeType.includes("webm")) {
       fileName = "voice.webm"; fileType = "audio/webm";
     } else if (mimeType.includes("mp4") || mimeType.includes("m4a")) {
       fileName = "voice.mp4"; fileType = "audio/mp4";
     } else if (mimeType.includes("mp3")) {
       fileName = "voice.mp3"; fileType = "audio/mp3";
-    } else if (mimeType.includes("wav")) {
-      fileName = "voice.wav"; fileType = "audio/wav";
     }
-    // OGG/Opus → pass directly to whisper-1 (no conversion needed)
 
     const file = new File([audioBuffer], fileName, { type: fileType });
     const result = await openai.audio.transcriptions.create({
-      model: "whisper-1",
+      model: "gpt-4o-mini-transcribe",
       file,
       language: "ru",
-      prompt: "Ремонт, заказы, мастера, сметы, Краснодар, Москва, клиент, оплата, комиссия.",
+      prompt: "Ремонт, заказы, мастера, сметы, клиент, оплата, комиссия, Краснодар, Москва.",
       response_format: "json",
     });
     console.log(`[managerBot] Transcribed (${Math.round(buffer.length / 1024)}KB, ${mimeType}): "${result.text?.slice(0, 60)}"`);
