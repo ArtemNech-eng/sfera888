@@ -1118,10 +1118,16 @@ async function toolSearchOrders(query: string, statusFilter?: string) {
   const allLeads = await db.select().from(leadsTable).where(isNull(leadsTable.deletedAt));
   const leadMap = new Map(allLeads.map(l => [l.id, l]));
 
+  // Load all masters so we can search by master name/alias
+  const allMasters = await db.select().from(mastersTable);
+  const masterMap = new Map(allMasters.map(m => [m.id, m]));
+
   const q = (query ?? "").toLowerCase().trim();
   const matches = allOrders.filter(o => {
     const lead = leadMap.get(o.leadId);
+    const master = o.masterId ? masterMap.get(o.masterId) : undefined;
     if (statusFilter && o.status !== statusFilter) return false;
+    if (!q) return true; // empty query = all (filtered only by status)
     return (
       String(o.id) === q ||
       (o.serviceType ?? "").toLowerCase().includes(q) ||
@@ -1129,7 +1135,9 @@ async function toolSearchOrders(query: string, statusFilter?: string) {
       (o.district ?? "").toLowerCase().includes(q) ||
       (o.operatorNote ?? "").toLowerCase().includes(q) ||
       (lead?.clientName ?? "").toLowerCase().includes(q) ||
-      (lead?.clientPhone ?? "").includes(q)
+      (lead?.clientPhone ?? "").includes(q) ||
+      (master?.alias ?? "").toLowerCase().includes(q) ||   // ← search by master name
+      (master?.phone ?? "").includes(q)
     );
   });
 
@@ -1144,9 +1152,11 @@ async function toolSearchOrders(query: string, statusFilter?: string) {
 
   return `🔍 Найдено заказов: ${matches.length}\n\n` + matches.slice(0, 15).map(o => {
     const lead = leadMap.get(o.leadId);
+    const master = o.masterId ? masterMap.get(o.masterId) : undefined;
     const client = lead ? `${lead.clientName}, ${lead.clientPhone}` : "—";
+    const masterStr = master ? `👷 ${master.alias}` : "мастер не назначен";
     const amount = o.orderAmount ? `${Number(o.orderAmount).toLocaleString("ru-RU")} ₽` : "цена не указана";
-    return `• Заказ **#${o.id}** [${fmt.format(new Date(o.createdAt))}] — ${statusLabels[o.status] ?? o.status}\n  ${o.serviceType}, ${o.city}${o.district ? ` (${o.district})` : ""}, ${o.area} м²\n  Клиент: ${client} | ${amount}`;
+    return `• Заказ **#${o.id}** [${fmt.format(new Date(o.createdAt))}] — ${statusLabels[o.status] ?? o.status}\n  ${o.serviceType}, ${o.city}${o.district ? ` (${o.district})` : ""}, ${o.area} м²\n  👤 Клиент: ${client}\n  ${masterStr} | ${amount}`;
   }).join("\n\n");
 }
 
@@ -1545,7 +1555,7 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "search_orders",
-      description: "Поиск заказов по имени клиента, телефону, городу, типу услуги, ID заказа или ключевому слову. Используй когда спрашивают о конкретном клиенте или заказе.",
+      description: "Поиск заказов по имени клиента, телефону, городу, типу услуги, ID заказа, имени мастера или ключевому слову. Используй когда спрашивают о конкретном клиенте, мастере или заказе. Поиск по имени мастера — просто передай имя мастера как query.",
       parameters: {
         type: "object",
         properties: {
@@ -1883,7 +1893,7 @@ const SYSTEM_PROMPT = `Ты — AI-ассистент и стратегичес�
 🛠️ ЧТО УМЕЕШЬ ДЕЛАТЬ
 ═══════════════════════════════════════
 — Создавать заявки из голосовых/текстовых сообщений
-— Искать заказы: по клиенту, телефону, городу, типу услуги (search_orders)
+— Искать заказы: по клиенту, телефону, городу, типу услуги, **имени мастера** (search_orders)
 — Просматривать полные детали любого заказа (get_order_details)
 — Видеть мастеров с рейтингом, опытом, ценами (get_available_masters)
 — Статистика мастера включая сметы и отзывы (get_master_stats, get_master_reviews)
@@ -1919,6 +1929,11 @@ const SYSTEM_PROMPT = `Ты — AI-ассистент и стратегичес�
 — Если в сообщении есть данные клиента (имя, телефон, тип работ) — сразу вызывай propose_lead_creation
 — Если руководитель спрашивает "кто лучший мастер для X" — сначала get_preference, потом get_available_masters
 — Когда спрашивают о конкретном клиенте или заказе — используй search_orders, потом get_order_details
+— Если спрашивают "заказ у мастера Степана" / "заявка у Степана" — используй search_orders с именем мастера как query
+— СЦЕНАРИЙ "создай новую заявку на основе заказа мастера X":
+  1. search_orders(query="Степан") → найти заказ(ы) этого мастера
+  2. get_order_details(orderId=N) → взять имя и телефон клиента
+  3. propose_lead_creation с данными клиента из шага 2 и новыми услугой/городом
 — При анализе данных всегда сравнивай с целью: "движемся ли мы к миллиарду?"
 — Используй только русский язык
 
