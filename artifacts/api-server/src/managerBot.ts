@@ -88,6 +88,10 @@ interface DedupEntry {
 
 const taskDedup = new Map<number, DedupEntry>(); // key = masterId
 
+// SLA breach dedup: track when each order was last notified — don't spam same order
+const slaNotified = new Map<number, Date>(); // key = orderId, value = last notified time
+const SLA_RENOTIFY_HOURS = 6; // re-notify the same order at most once every 6 hours
+
 function checkTaskDedup(masterId: number): DedupEntry | null {
   const entry = taskDedup.get(masterId);
   if (!entry) return null;
@@ -530,6 +534,7 @@ async function toolGetRevenueStats(period: "day" | "week" | "month") {
   else from.setMonth(now.getMonth() - 1);
 
   try {
+    // ── Commissions (transactions table) ─────────────────────────────────────
     const txRows = await db.select().from(transactionsTable)
       .where(gte(transactionsTable.createdAt, from));
 
@@ -541,13 +546,46 @@ async function toolGetRevenueStats(period: "day" | "week" | "month") {
     const totalPending = pending.reduce((s, t) => s + Number(t.amount ?? 0), 0);
     const totalOverdue = overdue.reduce((s, t) => s + Number(t.amount ?? 0), 0);
 
+    // ── Receipts (prepayments from clients to masters) ────────────────────────
+    const allReceipts = await db.select().from(receiptsTable)
+      .where(gte(receiptsTable.createdAt, from));
+
+    // Confirmed = manager verified money received
+    const confirmedReceipts = allReceipts.filter(r => r.prepaymentSeenAt);
+    // Client paid but manager hasn't confirmed yet
+    const pendingReceipts = allReceipts.filter(r => r.prepaymentSubmittedAt && !r.prepaymentSeenAt);
+    // Not yet paid by client
+    const unpaidReceipts = allReceipts.filter(r => !r.prepaymentSubmittedAt);
+
+    const confirmedPrepay = confirmedReceipts.reduce((s, r) => s + Number(r.prepaymentAmount ?? 0), 0);
+    const pendingPrepay = pendingReceipts.reduce((s, r) => s + Number(r.prepaymentAmount ?? 0), 0);
+
+    // Expected remaining balance = totalAmount - prepaymentAmount for confirmed receipts
+    // (prepayment received → work in progress → client pays remainder on completion)
+    const expectedRemaining = confirmedReceipts
+      .reduce((s, r) => s + Math.max(0, Number(r.totalAmount ?? 0) - Number(r.prepaymentAmount ?? 0)), 0);
+
+    // Total contract value of all receipts in period
+    const totalContractValue = allReceipts.reduce((s, r) => s + Number(r.totalAmount ?? 0), 0);
+
     const periodLabel = period === "day" ? "сегодня" : period === "week" ? "за 7 дней" : "за 30 дней";
 
-    return `💰 Финансы (${periodLabel}):
-  ✅ Оплачено: ${totalPaid.toLocaleString("ru-RU")} ₽ (${paid.length} шт.)
-  ⏳ Ожидают оплаты: ${totalPending.toLocaleString("ru-RU")} ₽ (${pending.length} шт.)
-  🔴 Просроченные: ${totalOverdue.toLocaleString("ru-RU")} ₽ (${overdue.length} шт.)`;
+    let result = `💰 Финансы (${periodLabel}):\n\n`;
+    result += `📋 СМЕТЫ (${allReceipts.length} шт., объём ${totalContractValue.toLocaleString("ru-RU")} ₽):\n`;
+    result += `  ✅ Предоплата подтверждена: ${confirmedPrepay.toLocaleString("ru-RU")} ₽ (${confirmedReceipts.length} смет)\n`;
+    result += `  ⏳ Оплачено клиентом, ждёт подтверждения: ${pendingPrepay.toLocaleString("ru-RU")} ₽ (${pendingReceipts.length} смет)\n`;
+    result += `  📝 Ждут оплаты клиентом: ${unpaidReceipts.length} смет\n`;
+    if (expectedRemaining > 0) {
+      result += `  💡 Ожидаемый остаток после сдачи работ: ~${expectedRemaining.toLocaleString("ru-RU")} ₽\n`;
+    }
+    result += `\n🏦 КОМИССИИ (транзакции):\n`;
+    result += `  ✅ Оплачено: ${totalPaid.toLocaleString("ru-RU")} ₽ (${paid.length} шт.)\n`;
+    result += `  ⏳ Ожидают оплаты: ${totalPending.toLocaleString("ru-RU")} ₽ (${pending.length} шт.)\n`;
+    result += `  🔴 Просроченные: ${totalOverdue.toLocaleString("ru-RU")} ₽ (${overdue.length} шт.)`;
+
+    return result;
   } catch (e) {
+    console.error("[toolGetRevenueStats] error:", e);
     return "Не удалось получить финансовые данные.";
   }
 }
@@ -3078,14 +3116,35 @@ export async function runQuickAutonomousCheck() {
       ));
 
     if (slaBreaches.length > 0) {
-      const lines = slaBreaches.map(o => {
-        const mins = Math.round((now - new Date(o.createdAt).getTime()) / 60000);
-        return `• #${o.id} — ${o.serviceType}, ${o.city} (${mins} мин)`;
+      // Only notify about orders we haven't already notified recently
+      const slaRenotifyMs = SLA_RENOTIFY_HOURS * 60 * 60 * 1000;
+      const newBreaches = slaBreaches.filter(o => {
+        const last = slaNotified.get(o.id);
+        return !last || (now - last.getTime() > slaRenotifyMs);
       });
-      const text = `🚨 _SLA нарушен! ${slaBreaches.length} заказ(а) ждут рассылки >30 мин:_\n${lines.join("\n")}`;
-      await sendMsg(managerUserId, text);
-      injectNotification(text, {});
-      console.log(`[quickCheck] SLA breach: ${slaBreaches.length} orders waiting >30min`);
+
+      if (newBreaches.length > 0) {
+        // Mark as notified
+        for (const o of newBreaches) slaNotified.set(o.id, new Date(now));
+        // Clean up resolved orders from the map
+        for (const [id] of slaNotified) {
+          if (!slaBreaches.find(o => o.id === id)) slaNotified.delete(id);
+        }
+
+        const lines = newBreaches.map(o => {
+          const mins = Math.round((now - new Date(o.createdAt).getTime()) / 60000);
+          return `• #${o.id} — ${o.serviceType}, ${o.city} (${mins} мин)`;
+        });
+        const text = `🚨 _SLA нарушен! ${newBreaches.length} заказ(а) ждут рассылки >30 мин:_\n${lines.join("\n")}`;
+        await sendMsg(managerUserId, text);
+        injectNotification(text, {});
+        console.log(`[quickCheck] SLA breach: ${newBreaches.length} new, ${slaBreaches.length - newBreaches.length} already notified`);
+      } else {
+        console.log(`[quickCheck] SLA breach: ${slaBreaches.length} orders but all already notified`);
+      }
+    } else {
+      // All orders resolved — clear dedup map
+      slaNotified.clear();
     }
 
     // 3. No new leads in 3h → possible site form broken
