@@ -122,14 +122,24 @@ export async function performBroadcast(orderId: number): Promise<BroadcastResult
     return { ok: false, sent: 0, skipped: reachable.length, error: "Нет доступных мастеров для рассылки" };
   }
 
-  const orderType = order.serviceType.toLowerCase().trim();
+  // Split composite service types ("Укладка плитки, Установка дверей") into individual terms
+  const orderTerms = order.serviceType
+    .toLowerCase()
+    .split(/[,;]+/)
+    .map(t => t.trim())
+    .filter(Boolean);
+
   const specialtyEligible = eligible.filter(master => {
     const specs = master.specializations ?? [];
+    // Masters with no specializations listed → accept any order
     if (specs.length === 0) return true;
-    return specs.some(s => {
-      const sp = s.toLowerCase().trim();
-      return sp === orderType || orderType.includes(sp) || sp.includes(orderType);
-    });
+    // Match if master specializes in ANY of the order's service terms
+    return orderTerms.some(term =>
+      specs.some(s => {
+        const sp = s.toLowerCase().trim();
+        return sp === term || term.includes(sp) || sp.includes(term);
+      })
+    );
   });
 
   if (specialtyEligible.length === 0) {
