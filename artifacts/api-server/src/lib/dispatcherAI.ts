@@ -135,8 +135,12 @@ interface PendingOrderContact {
   orderId: number;
   orderSummary: string; // short description for context injection
   sentAt: number;
+  remindedAt?: number;  // timestamp when we sent the one reminder
 }
 const pendingOrderContacts = new Map<number, PendingOrderContact>(); // masterId → order contact
+
+const CONTACT_REMIND_MS = 45 * 60 * 1000;  // 45 min → send reminder
+const CONTACT_EXPIRE_MS = 90 * 60 * 1000;  // 90 min → give up on this master
 
 // ─── Tool implementations ────────────────────────────────────────────────────
 
@@ -816,6 +820,37 @@ export async function runProactiveChecks(): Promise<void> {
       await db.update(dispatcherFollowupsTable)
         .set({ sent: true })
         .where(eq(dispatcherFollowupsTable.id, followup.id));
+    }
+
+    // ── Handle non-responsive masters: reminder at 45min, give up at 90min ──
+    const nowMs = Date.now();
+    for (const [masterId, contact] of pendingOrderContacts) {
+      const elapsed = nowMs - contact.sentAt;
+
+      // 90 min passed → give up, clear the contact
+      if (elapsed >= CONTACT_EXPIRE_MS) {
+        pendingOrderContacts.delete(masterId);
+        console.log(`[dispatcherAI] Contact for order #${contact.orderId} expired (master ${masterId}) — removed from pending`);
+        continue;
+      }
+
+      // 45 min passed, no reminder sent yet → send gentle reminder
+      if (elapsed >= CONTACT_REMIND_MS && !contact.remindedAt) {
+        contact.remindedAt = nowMs;
+        try {
+          const master = await db.select().from(mastersTable)
+            .where(eq(mastersTable.id, masterId))
+            .then(r => r[0]);
+          if (master?.maxChatId) {
+            const reminder = `${master.alias}, напоминаю — по заказу #${contact.orderId} (${contact.orderSummary}) ещё ищем мастера. Сможете взять? 🙏`;
+            await sendMaxMessage(master.maxChatId, reminder);
+            await saveBotReply(master.id, master.maxChatId, reminder);
+            console.log(`[dispatcherAI] Sent order contact reminder to ${master.alias} for order #${contact.orderId}`);
+          }
+        } catch (e) {
+          console.error(`[dispatcherAI] Reminder error for master ${masterId}:`, e);
+        }
+      }
     }
 
     const activeOrders = await db.select().from(ordersTable)
