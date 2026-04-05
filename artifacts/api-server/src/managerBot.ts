@@ -637,10 +637,13 @@ async function toolGetReport(period: "day" | "week" | "month") {
   • Отменены: ${ordersCancelled}${revenueText}`;
 }
 
-async function toolGetRevenueStats(period: "day" | "week" | "month") {
+async function toolGetRevenueStats(period: "day" | "week" | "month" | undefined, days?: number) {
   const now = new Date();
   const from = new Date(now);
-  if (period === "day") from.setHours(0, 0, 0, 0);
+  if (days && days > 0) {
+    from.setDate(now.getDate() - days);
+    from.setHours(0, 0, 0, 0);
+  } else if (period === "day") from.setHours(0, 0, 0, 0);
   else if (period === "week") from.setDate(now.getDate() - 7);
   else from.setMonth(now.getMonth() - 1);
 
@@ -693,7 +696,7 @@ async function toolGetRevenueStats(period: "day" | "week" | "month") {
     const totalCommPending = txPending.reduce((s, t) => s + Number(t.commission ?? 0) - Number(t.prepaymentDeducted ?? 0), 0);
     const totalCommOverdue = txOverdue.reduce((s, t) => s + Number(t.commission ?? 0) - Number(t.prepaymentDeducted ?? 0), 0);
 
-    const periodLabel = period === "day" ? "сегодня" : period === "week" ? "за 7 дней" : "за 30 дней";
+    const periodLabel = (days && days > 0) ? `за ${days} дн.` : period === "day" ? "сегодня" : period === "week" ? "за 7 дней" : "за 30 дней";
 
     let result = `💰 Финансы (${periodLabel}):\n\n`;
 
@@ -1803,13 +1806,13 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "get_revenue_stats",
-      description: "Получить детальную финансовую статистику: оплачено, ожидает, просрочено",
+      description: "Получить детальную финансовую статистику: оплачено, ожидает, просрочено. Используй days для произвольного периода (например days=2 для 'за 2 дня', days=7 для 'за неделю').",
       parameters: {
         type: "object",
         properties: {
-          period: { type: "string", enum: ["day", "week", "month"] },
+          period: { type: "string", enum: ["day", "week", "month"], description: "Стандартный период (day=сегодня, week=7 дней, month=30 дней). Используй вместо days для простых запросов." },
+          days: { type: "number", description: "Произвольное количество дней назад (например 2, 3, 14). Если указан — имеет приоритет над period." },
         },
-        required: ["period"],
       },
     },
   },
@@ -2296,6 +2299,15 @@ const SYSTEM_PROMPT = `Ты — AI-ассистент и стратегичес�
 ВАЖНО: НЕ предлагай настроить то, что уже настроено! Если речь о регулярных проверках, мониторинге, оповещениях мастеров — это УЖЕ РАБОТАЕТ (см. расписание выше).
 
 ═══════════════════════════════════════
+🚫 АБСОЛЮТНЫЙ ЗАПРЕТ — ГАЛЛЮЦИНАЦИИ
+═══════════════════════════════════════
+НИКОГДА НЕ НАЗЫВАЙ конкретные цифры, суммы ₽, ID заказов/смет, имена клиентов или мастеров, даты — БЕЗ вызова инструмента.
+Если инструмент вернул пустой результат или "нет данных" — честно скажи: "Данных нет" или "По базе ничего не найдено".
+ЗАПРЕЩЕНО: "По данным за 2 дня есть 2 сметы на 5 000 ₽ каждая" — если это не пришло из инструмента.
+ПРАВИЛЬНО: "Дай запрошу" → вызов инструмента → показ результата.
+Лучше сказать "ничего не нашёл" и предложить уточнить запрос, чем придумать правдоподобный ответ.
+
+═══════════════════════════════════════
 📐 ПРАВИЛА РАБОТЫ
 ═══════════════════════════════════════
 — Пиши кратко и по делу — ты в мессенджере
@@ -2584,7 +2596,7 @@ export async function handleManagerUpdate(update: unknown) {
             toolResult = await toolGetReport(args.period ?? "week");
             break;
           case "get_revenue_stats":
-            toolResult = await toolGetRevenueStats(args.period ?? "week");
+            toolResult = await toolGetRevenueStats(args.period, args.days);
             break;
           case "get_debt_summary":
             toolResult = await toolGetDebtSummary();
