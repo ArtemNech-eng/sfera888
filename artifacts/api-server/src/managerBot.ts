@@ -1108,13 +1108,17 @@ async function toolGetCommissionSummary(): Promise<string> {
 
 /** Autonomous: ping each master with an active order via dispatcher */
 async function toolPingMastersWithActiveOrders(): Promise<string> {
+  // Only ping about orders updated within last 7 days — older ones need manual review, not auto-spam
+  const cutoffAge = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
   const activeOrders = await db.select().from(ordersTable)
     .where(and(
       inArray(ordersTable.status, ["master_assigned", "in_progress"]),
       isNull(ordersTable.deletedAt),
+      gte(ordersTable.updatedAt, cutoffAge),
     ));
 
-  if (activeOrders.length === 0) return "Нет активных заказов для проверки.";
+  if (activeOrders.length === 0) return "Нет активных заказов для проверки (старше 7 дней пропущены — требуют ручного разбора).";
 
   const masterIds = [...new Set(activeOrders.map(o => o.masterId).filter(Boolean) as number[])];
   if (masterIds.length === 0) return "Нет мастеров на активных заказах.";
