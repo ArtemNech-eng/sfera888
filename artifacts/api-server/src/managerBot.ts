@@ -1456,7 +1456,7 @@ async function toolCreateLeadAndOrder(args: {
     clientName: args.clientName,
     clientPhone: args.clientPhone,
     city: args.city,
-    district: args.district ?? null,
+    district: args.district ?? "",
     serviceType: args.serviceType,
     area: String(args.area ?? 0),
     comment: args.description ?? null,
@@ -1468,7 +1468,7 @@ async function toolCreateLeadAndOrder(args: {
   const [order] = await db.insert(ordersTable).values({
     leadId: lead.id,
     city: args.city,
-    district: args.district ?? null,
+    district: args.district ?? "",
     serviceType: args.serviceType,
     area: String(args.area ?? 0),
     status: "waiting_master",
