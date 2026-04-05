@@ -2902,7 +2902,11 @@ export async function sendMorningBriefing() {
   }
 }
 
-/** Check for orders waiting > 2h without a master — alert manager */
+/**
+ * Check for orders waiting > 2h without a master.
+ * Instead of alerting the manager, automatically contacts masters or re-broadcasts.
+ * Manager is only notified if ALL masters declined or no masters exist in the city.
+ */
 export async function checkStaleOrders() {
   if (!managerUserId) return;
 
@@ -2922,16 +2926,34 @@ export async function checkStaleOrders() {
       staleAlertedOrders.add(o.id);
     }
 
-    const lines = newStale.slice(0, 5).map(o => {
-      const age = Math.round((Date.now() - new Date(o.createdAt).getTime()) / 3600000);
-      return `• Заказ #${o.id}: ${o.serviceType}, ${o.city} — **${age} ч**`;
-    }).join("\n");
+    const { contactMastersAboutOrder } = await import("./lib/dispatcherAI.js");
+    const { performBroadcast } = await import("./lib/broadcastOrder.js");
 
-    const staleText = `⚠️ Заказы ждут мастера слишком долго (${newStale.length}):\n${lines}\n\nПопробуйте повторную рассылку.`;
-    await sendMsg(managerUserId, staleText);
-    // Inject context for the most urgent stale order
-    if (newStale[0]) {
-      injectNotification(staleText, { orderId: newStale[0].id, city: newStale[0].city ?? undefined, serviceType: newStale[0].serviceType ?? undefined });
+    for (const order of newStale) {
+      try {
+        if (order.dispatchStatus === "none") {
+          // Never broadcasted — do it now, silently
+          const result = await performBroadcast(order.id, true);
+          console.log(`[checkStaleOrders] Auto-broadcast order #${order.id} → ${result.sent} masters (was undispatched)`);
+          if (!result.ok && managerUserId) {
+            // Genuinely no masters → escalate
+            await sendMsg(managerUserId, `🚨 Заказ #${order.id} (${order.serviceType}, ${order.city}) — нет доступных мастеров: ${result.error}`);
+          }
+        } else {
+          // Already broadcasted but no response — personally contact each master
+          const result = await contactMastersAboutOrder(order.id);
+          console.log(`[checkStaleOrders] Personally contacting masters for order #${order.id}: ${result.slice(0, 80)}`);
+          // If no one reachable, escalate to manager
+          if (result.includes("нет Max") || result.includes("нет нерассмотренных")) {
+            if (managerUserId) {
+              const age = Math.round((Date.now() - new Date(order.createdAt).getTime()) / 3600000);
+              await sendMsg(managerUserId, `🚨 Заказ #${order.id} (${order.serviceType}, ${order.city}) — **${age} ч** без мастера. Все мастера недоступны в Max, нужно вмешательство.`);
+            }
+          }
+        }
+      } catch (e) {
+        console.error(`[checkStaleOrders] Error handling order #${order.id}:`, e);
+      }
     }
   } catch (e) {
     console.error("[managerBot] checkStaleOrders error:", e);
@@ -3152,9 +3174,9 @@ const AUTONOMOUS_SYSTEM_PROMPT = `Ты — автономный AI-операц�
 16. Бизнес-инсайты (get_business_insights) → общая аналитика
 
 ═══ СТИЛЬ РАБОТЫ ═══
-— СНАЧАЛА вызови инструменты сбора данных (все нужные — приоритет: SLA, заказы, финансы, мастера, аналитика)
+— СНАЧАЛА вызови инструменты сбора данных (приоритет: SLA, заказы, финансы, мастера, аналитика)
 — ЗАТЕМ выполни ВСЕ действия: рассылки, задачи диспетчеру, уведомления об оплатах
-— В КОНЦЕ вызови finish_cycle: краткий отчёт — что сделал ✅, что нашёл ⚠️, что требует руководителя 🚨
+— В КОНЦЕ вызови finish_cycle с кратким отчётом о сделанном
 — Будь конкретным: числа, суммы ₽, ID заказов, имена мастеров
 
 🧠 САМООБУЧЕНИЕ:
@@ -3167,10 +3189,23 @@ const AUTONOMOUS_SYSTEM_PROMPT = `Ты — автономный AI-операц�
 — НЕ отменяй заказы (только руководитель)
 — НЕ создавай заявки автоматически
 — ВСЁ остальное — делай сам без вопросов
-— ЗАКАЗ БЕЗ МАСТЕРА = твоя задача решить, НЕ уведомить! Используй auto_broadcast_order и contact_masters_about_order
-— Руководителя алертить только если ВСЕ мастера отказали или нет мастеров в городе
+— ЗАКАЗ БЕЗ МАСТЕРА = твоя задача РЕШИТЬ, а не уведомить! Используй auto_broadcast_order и contact_masters_about_order
+
+🔕 КОГДА НЕ ТРОГАТЬ РУКОВОДИТЕЛЯ (hasUrgentIssues=false):
+— Разослал заказ мастерам — это НОРМА, не уведомление
+— Написал мастерам лично — это НОРМА, не уведомление
+— Проверил долги, отправил напоминания через диспетчера — НОРМА
+— Всё работает штатно — finish_cycle с hasUrgentIssues=false, без уведомления руководителю
+
+🚨 ТОЛЬКО ЭТО требует руководителя (hasUrgentIssues=true):
+1. Оплата сметы клиентом (alert_submitted_receipts — обязательно!)
+2. ВСЕ мастера отказались от заказа, нет замены
+3. В городе нет ни одного активного мастера для заказа
+4. Аномалия данных: 0 заявок за 3+ часа (возможна поломка сайта)
+5. Критический финансовый показатель: долг мастера >50000₽ без движения >7 дней
+
 — Только русский язык
-— Максимум 16 раундов — используй эффективно, группируй действия`;
+— Максимум 16 раундов — группируй вызовы, не трать раунды попусту`;
 
 const AUTONOMOUS_TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   { type: "function", function: { name: "get_pending_orders", description: "Заказы без мастера", parameters: { type: "object", properties: {} } } },
@@ -3343,10 +3378,8 @@ export async function runAutonomousCycle(triggerReason = "scheduled") {
       messages.push({ role: "assistant", content: assistantMsg.content ?? "", tool_calls: assistantMsg.tool_calls });
 
       if (!assistantMsg.tool_calls || assistantMsg.tool_calls.length === 0) {
-        // No tool calls — just a text reply, treat as done
-        if (assistantMsg.content) {
-          await sendMsg(managerUserId, `🤖 _Автономная проверка завершена:_\n\n${assistantMsg.content}`);
-        }
+        // No tool calls — text reply without finish_cycle, log silently
+        console.log(`[autonomousAgent] Finished without finish_cycle (round ${round}):`, assistantMsg.content?.slice(0, 120));
         finished = true;
         break;
       }
@@ -3482,15 +3515,18 @@ export async function runAutonomousCycle(triggerReason = "scheduled") {
             toolResult = await toolAddOrderNote(args.orderId, args.note);
             break;
           case "finish_cycle": {
-            const icon = args.hasUrgentIssues ? "🚨" : "✅";
-            const prefix = args.hasUrgentIssues
-              ? `${icon} _Автономная проверка — требуется ваше внимание:_\n\n`
-              : `${icon} _Автономная проверка завершена:_\n\n`;
-            await sendMsg(managerUserId, prefix + args.report);
-            // Inject into session so manager can ask follow-up
-            injectNotification(prefix + args.report, {});
-            toolResult = "Отчёт отправлен руководителю.";
             finished = true;
+            if (args.hasUrgentIssues) {
+              // Only send to manager when something truly needs their attention
+              const prefix = `🚨 _Требуется ваше внимание:_\n\n`;
+              await sendMsg(managerUserId, prefix + args.report);
+              injectNotification(prefix + args.report, {});
+              toolResult = "Эскалация отправлена руководителю.";
+            } else {
+              // Routine cycle — log only, no notification
+              console.log(`[autonomousAgent] Cycle OK (silent): ${args.report?.slice(0, 120)}`);
+              toolResult = "Цикл завершён, всё в норме — уведомление не нужно.";
+            }
             break;
           }
           case "save_business_memory":
@@ -3532,22 +3568,28 @@ export async function runQuickAutonomousCheck() {
         lte(ordersTable.createdAt, cutoff1h),
       ));
 
+    // Auto-broadcast undispatched orders silently
+    const { performBroadcast } = await import("./lib/broadcastOrder.js");
+    const { contactMastersAboutOrder } = await import("./lib/dispatcherAI.js");
+
     for (const order of undispatched) {
       try {
-        const { performBroadcast } = await import("./lib/broadcastOrder.js");
         const result = await performBroadcast(order.id);
         if (result.ok && result.sent > 0) {
-          const text = `📢 _Автоматически разослал заказ #${order.id} (${order.serviceType}, ${order.city}) ${result.sent} мастерам — ждал более 1 часа без рассылки._`;
-          await sendMsg(managerUserId, text);
-          injectNotification(text, { orderId: order.id, city: order.city ?? undefined, serviceType: order.serviceType ?? undefined });
-          console.log(`[autonomousAgent] Quick check: auto-broadcast order #${order.id}`);
+          console.log(`[quickCheck] Auto-broadcast order #${order.id} → ${result.sent} masters`);
+        } else if (!result.ok) {
+          console.log(`[quickCheck] Broadcast failed for order #${order.id}: ${result.error}`);
+          // No masters at all → escalate to manager
+          if (managerUserId && (result.error?.includes("Нет активных") || result.error?.includes("мастеров"))) {
+            await sendMsg(managerUserId, `🚨 Заказ #${order.id} (${order.serviceType}, ${order.city}) — ${result.error}. Нужно вмешательство.`);
+          }
         }
       } catch (e) {
-        console.error(`[autonomousAgent] Quick broadcast error for order #${order.id}:`, e);
+        console.error(`[quickCheck] Broadcast error for order #${order.id}:`, e);
       }
     }
 
-    // 2. SLA alert: orders in "waiting_master" status >30 min without dispatch
+    // 2. SLA: orders waiting >30 min → silently contact masters, no manager alert
     const cutoff30m = new Date(now - 30 * 60 * 1000);
     const slaBreaches = await db.select().from(ordersTable)
       .where(and(
@@ -3557,34 +3599,39 @@ export async function runQuickAutonomousCheck() {
       ));
 
     if (slaBreaches.length > 0) {
-      // Only notify about orders we haven't already notified recently
       const slaRenotifyMs = SLA_RENOTIFY_HOURS * 60 * 60 * 1000;
-      const newBreaches = slaBreaches.filter(o => {
+      const toAction = slaBreaches.filter(o => {
         const last = slaNotified.get(o.id);
         return !last || (now - last.getTime() > slaRenotifyMs);
       });
 
-      if (newBreaches.length > 0) {
-        // Mark as notified
-        for (const o of newBreaches) slaNotified.set(o.id, new Date(now));
-        // Clean up resolved orders from the map
-        for (const [id] of slaNotified) {
-          if (!slaBreaches.find(o => o.id === id)) slaNotified.delete(id);
+      for (const o of toAction) {
+        slaNotified.set(o.id, new Date(now));
+        try {
+          if (o.dispatchStatus === "none") {
+            // Never sent → broadcast
+            const r = await performBroadcast(o.id);
+            console.log(`[quickCheck] SLA auto-broadcast #${o.id} → ${r.sent} masters`);
+          } else {
+            // Dispatched but no answer → personally contact
+            const result = await contactMastersAboutOrder(o.id);
+            console.log(`[quickCheck] SLA personal contact #${o.id}: ${result.slice(0, 60)}`);
+            // Only escalate if truly stuck (no Max, no dispatches)
+            if (managerUserId && (result.includes("нет Max") || result.includes("нет нерассмотренных рассылок"))) {
+              const mins = Math.round((now - new Date(o.createdAt).getTime()) / 60000);
+              await sendMsg(managerUserId, `🚨 Заказ #${o.id} (${o.serviceType}, ${o.city}, ${mins} мин) — все мастера недоступны. Нужно вмешательство.`);
+            }
+          }
+        } catch (e) {
+          console.error(`[quickCheck] SLA action error for order #${o.id}:`, e);
         }
-
-        const lines = newBreaches.map(o => {
-          const mins = Math.round((now - new Date(o.createdAt).getTime()) / 60000);
-          return `• #${o.id} — ${o.serviceType}, ${o.city} (${mins} мин)`;
-        });
-        const text = `🚨 _SLA нарушен! ${newBreaches.length} заказ(а) ждут рассылки >30 мин:_\n${lines.join("\n")}`;
-        await sendMsg(managerUserId, text);
-        injectNotification(text, {});
-        console.log(`[quickCheck] SLA breach: ${newBreaches.length} new, ${slaBreaches.length - newBreaches.length} already notified`);
-      } else {
-        console.log(`[quickCheck] SLA breach: ${slaBreaches.length} orders but all already notified`);
       }
+
+      for (const [id] of slaNotified) {
+        if (!slaBreaches.find(o => o.id === id)) slaNotified.delete(id);
+      }
+      console.log(`[quickCheck] SLA: ${slaBreaches.length} orders, acted on ${toAction.length}`);
     } else {
-      // All orders resolved — clear dedup map
       slaNotified.clear();
     }
 
