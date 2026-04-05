@@ -28,8 +28,9 @@ import {
   orderStatusLogsTable,
   masterCheckinsTable,
   masterMessagesTable,
+  botMemoryTable,
 } from "@workspace/db";
-import { eq, and, isNull, desc, gte, sql, inArray, lte, or } from "drizzle-orm";
+import { eq, and, isNull, desc, gte, sql, inArray, lte, or, ilike } from "drizzle-orm";
 import { performBroadcast } from "./lib/broadcastOrder.js";
 import { getMasterTrustScore } from "./lib/dispatcherAI.js";
 import { execFile } from "child_process";
@@ -195,6 +196,73 @@ export function getManagerUserId(): number | null { return managerUserId; }
 // Preferences survive per-session; for true persistence use DB-backed store
 
 const preferences = new Map<string, string>();
+
+// ─── Business memory (DB-backed, survives restarts) ───────────────────────────
+// masterId = NULL means global business memory (not tied to any specific master)
+
+const BUSINESS_MEMORY_CATEGORIES = [
+  "правило",          // e.g. "Всегда назначай Даниила на плитку"
+  "предпочтение",     // e.g. "Руководитель предпочитает краткие отчёты"
+  "наблюдение",       // e.g. "По выходным заявок вдвое больше"
+  "стратегия",        // e.g. "Сначала заполнить Казань, потом Уфу"
+  "предупреждение",   // e.g. "Клиент Иванов — конфликтный, требует осторожности"
+  "прочее",
+] as const;
+
+async function loadBusinessMemories(): Promise<string> {
+  const rows = await db
+    .select()
+    .from(botMemoryTable)
+    .where(isNull(botMemoryTable.masterId))
+    .orderBy(botMemoryTable.updatedAt);
+  if (rows.length === 0) return "";
+  const grouped: Record<string, string[]> = {};
+  for (const r of rows) {
+    if (!grouped[r.category]) grouped[r.category] = [];
+    grouped[r.category].push(r.content);
+  }
+  const lines = Object.entries(grouped)
+    .map(([cat, items]) => `  [${cat}]\n` + items.map(i => `  • ${i}`).join("\n"))
+    .join("\n");
+  return `\n\n═══════════════════════════════════════\n🧠 ПАМЯТЬ РУКОВОДИТЕЛЯ (сохранённые факты)\n═══════════════════════════════════════\n${lines}\n\nЭти факты ты узнал из предыдущих разговоров. Используй их при принятии решений.`;
+}
+
+async function saveBusinessMemory(category: string, content: string): Promise<string> {
+  const cat = BUSINESS_MEMORY_CATEGORIES.includes(category as any) ? category : "прочее";
+  // Upsert: if identical content already exists — skip
+  const existing = await db
+    .select()
+    .from(botMemoryTable)
+    .where(and(isNull(botMemoryTable.masterId), ilike(botMemoryTable.content, content)));
+  if (existing.length > 0) {
+    await db
+      .update(botMemoryTable)
+      .set({ updatedAt: new Date() })
+      .where(eq(botMemoryTable.id, existing[0].id));
+    return `Память обновлена: [${cat}] ${content}`;
+  }
+  await db.insert(botMemoryTable).values({ masterId: null, category: cat, content });
+  return `Запомнил: [${cat}] ${content}`;
+}
+
+async function getBusinessMemoriesList(): Promise<string> {
+  const rows = await db
+    .select()
+    .from(botMemoryTable)
+    .where(isNull(botMemoryTable.masterId))
+    .orderBy(botMemoryTable.category, botMemoryTable.updatedAt);
+  if (rows.length === 0) return "Пока ничего не сохранено в памяти.";
+  return rows
+    .map(r => `#${r.id} [${r.category}] ${r.content}`)
+    .join("\n");
+}
+
+async function forgetBusinessMemory(memoryId: number): Promise<string> {
+  const deleted = await db.delete(botMemoryTable).where(
+    and(eq(botMemoryTable.id, memoryId), isNull(botMemoryTable.masterId))
+  );
+  return `Запись #${memoryId} удалена из памяти.`;
+}
 
 // ─── Conversation context ─────────────────────────────────────────────────────
 
@@ -1832,6 +1900,50 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "save_business_memory",
+      description: "Сохранить важный факт, правило или наблюдение в долгосрочную память. Используй когда руководитель говорит что-то важное о стратегии, правилах работы, предпочтениях, предупреждениях о клиентах/мастерах. Также используй сам, когда замечаешь паттерн в данных.",
+      parameters: {
+        type: "object",
+        properties: {
+          category: {
+            type: "string",
+            enum: ["правило", "предпочтение", "наблюдение", "стратегия", "предупреждение", "прочее"],
+            description: "Категория: правило (бизнес-правило), предпочтение (стиль работы руководителя), наблюдение (замеченный паттерн), стратегия (приоритеты развития), предупреждение (предупреждения о клиентах/мастерах)",
+          },
+          content: {
+            type: "string",
+            description: "Конкретный факт одной фразой, максимально точно. Например: 'Даниила назначать на плитку в первую очередь' или 'По воскресеньям заявок в 2 раза больше — готовить мастеров заранее'",
+          },
+        },
+        required: ["category", "content"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_business_memories",
+      description: "Посмотреть всё что сохранено в долгосрочной памяти. Используй когда руководитель спрашивает 'что ты помнишь', 'покажи мою память' или перед важными решениями.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "forget_business_memory",
+      description: "Удалить запись из долгосрочной памяти (если устарела или неверна)",
+      parameters: {
+        type: "object",
+        properties: {
+          memoryId: { type: "number", description: "ID записи из get_business_memories" },
+        },
+        required: ["memoryId"],
+      },
+    },
+  },
 ];
 
 const SYSTEM_PROMPT = `Ты — AI-ассистент и стратегический советник руководителя ремонтного сервиса "Честный мастер".
@@ -2006,7 +2118,32 @@ const SYSTEM_PROMPT = `Ты — AI-ассистент и стратегичес�
 ПОИСК ЗАКАЗА ПО НОМЕРУ ЗАЯВКИ:
   Если менеджер называет "заявка #N" — сначала search_orders с запросом по этому номеру,
   получи orderId из результата, затем используй этот orderId для действий.
-  Если orderId не найден — сообщи, что заявка не найдена.`;
+  Если orderId не найден — сообщи, что заявка не найдена.
+
+═══════════════════════════════════════
+🧠 САМООБУЧЕНИЕ — ДОЛГОСРОЧНАЯ ПАМЯТЬ
+═══════════════════════════════════════
+У тебя есть долгосрочная память (save_business_memory / get_business_memories / forget_business_memory).
+Она сохраняется в базе данных и доступна в КАЖДОМ разговоре — даже после перезапуска сервера.
+
+КОГДА СОХРАНЯТЬ — делай это НЕМЕДЛЕННО, не откладывая:
+— Руководитель назвал правило или предпочтение: "Даниила на плитку в первую очередь", "не беспокоить мастеров по воскресеньям", "отчёты нужны покороче"
+— Руководитель указал стратегию: "Сначала заполним Казань, потом Уфу", "фокус на сантехнике в этом квартале"
+— Замечена аномалия или паттерн: "В пятницу вечером заявок втрое больше", "Мастер Ибрагим регулярно берёт только крупные заказы"
+— Важное предупреждение: "Клиент Сидоров — сложный, требует особого внимания"
+— Любой факт который может пригодиться в будущих разговорах
+
+КАК ИСПОЛЬЗОВАТЬ ПАМЯТЬ:
+— В начале каждого разговора память уже загружена в контекст (раздел "ПАМЯТЬ РУКОВОДИТЕЛЯ")
+— Принимая решения — всегда проверяй сохранённые правила и стратегии
+— Если руководитель спрашивает "что ты помнишь" или "что ты знаешь" — вызови get_business_memories
+
+КАТЕГОРИИ:
+  правило — бизнес-правило ("плитку всегда Даниил")
+  предпочтение — стиль работы ("краткие отчёты")
+  наблюдение — паттерн в данных ("пятничный всплеск")
+  стратегия — приоритеты развития ("сначала Казань")
+  предупреждение — предупреждения о людях/ситуациях`;
 
 // ─── Main update handler ──────────────────────────────────────────────────────
 
@@ -2190,8 +2327,9 @@ export async function handleManagerUpdate(update: unknown) {
     session.messages = sanitizeHistory(session.messages);
 
     const ctxNote = buildContextNote(session.ctx);
+    const memoryBlock = await loadBusinessMemories();
     const messages: any[] = [
-      { role: "system", content: SYSTEM_PROMPT + ctxNote },
+      { role: "system", content: SYSTEM_PROMPT + memoryBlock + ctxNote },
       ...session.messages,
     ];
 
@@ -2288,6 +2426,15 @@ export async function handleManagerUpdate(update: unknown) {
             toolResult = "Запускаю полную проверку системы. Отчёт придёт отдельным сообщением через ~30 секунд.";
             break;
           }
+          case "save_business_memory":
+            toolResult = await saveBusinessMemory(args.category ?? "прочее", args.content ?? "");
+            break;
+          case "get_business_memories":
+            toolResult = await getBusinessMemoriesList();
+            break;
+          case "forget_business_memory":
+            toolResult = await forgetBusinessMemory(Number(args.memoryId));
+            break;
           case "send_task_to_dispatcher": {
             const master = await resolveMasterByNameOrId(args.masterNameOrId);
             if (!master) {
@@ -2784,6 +2931,11 @@ const AUTONOMOUS_SYSTEM_PROMPT = `Ты — автономный AI-операц�
 — В КОНЦЕ вызови finish_cycle: краткий отчёт — что сделал ✅, что нашёл ⚠️, что требует руководителя 🚨
 — Будь конкретным: числа, суммы ₽, ID заказов, имена мастеров
 
+🧠 САМООБУЧЕНИЕ:
+— Заметил важный паттерн, аномалию или тенденцию? → СРАЗУ сохрани через save_business_memory
+— Примеры: резкий рост отмен в городе, дефицит мастеров по услуге, аномально высокая нагрузка
+— Сохраняй конкретно: числа, города, услуги, даты — не обобщения
+
 ═══ КРИТИЧЕСКИЕ ПРАВИЛА ═══
 — НЕ подтверждай оплату смет — только вызови alert_submitted_receipts
 — НЕ отменяй заказы (только руководитель)
@@ -2870,6 +3022,21 @@ const AUTONOMOUS_TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "save_business_memory",
+      description: "Сохранить наблюдение или паттерн в долгосрочную память (например: аномалия в отменах, дефицит мастеров в городе, рост спроса на услугу)",
+      parameters: {
+        type: "object",
+        properties: {
+          category: { type: "string", enum: ["правило", "предпочтение", "наблюдение", "стратегия", "предупреждение", "прочее"] },
+          content: { type: "string" },
+        },
+        required: ["category", "content"],
+      },
+    },
+  },
 ];
 
 async function toolGetActiveOrdersStatus(): Promise<string> {
@@ -2907,8 +3074,9 @@ export async function runAutonomousCycle(triggerReason = "scheduled") {
   console.log(`[autonomousAgent] Starting cycle (reason: ${triggerReason})`);
 
   try {
+    const autoMemoryBlock = await loadBusinessMemories();
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-      { role: "system", content: AUTONOMOUS_SYSTEM_PROMPT },
+      { role: "system", content: AUTONOMOUS_SYSTEM_PROMPT + autoMemoryBlock },
       { role: "user", content: `Выполни плановую проверку системы. Причина запуска: ${triggerReason}. Сейчас: ${new Date().toLocaleString("ru-RU", { timeZone: "Europe/Moscow" })} МСК.` },
     ];
 
@@ -3072,6 +3240,10 @@ export async function runAutonomousCycle(triggerReason = "scheduled") {
             finished = true;
             break;
           }
+          case "save_business_memory":
+            toolResult = await saveBusinessMemory(args.category ?? "наблюдение", args.content ?? "");
+            console.log(`[autonomousAgent] Memory saved: [${args.category}] ${args.content}`);
+            break;
           default:
             toolResult = "Функция не найдена.";
         }
