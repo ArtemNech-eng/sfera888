@@ -993,7 +993,9 @@ export async function getDispatcherActivityReport(): Promise<string> {
 
     if (activeOrders.length === 0) return "Нет активных заказов.";
 
-    const masterIds = [...new Set(activeOrders.map(o => o.masterId).filter(Boolean))] as number[];
+    const masterIds = [...new Set(activeOrders.map(o => o.masterId).filter((id): id is number => id != null))];
+    if (masterIds.length === 0) return "Активные заказы есть, но мастера не назначены.";
+
     const masters = await db.select().from(mastersTable)
       .where(inArray(mastersTable.id, masterIds));
 

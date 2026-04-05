@@ -1704,6 +1704,51 @@ async function toolBroadcastOrder(orderId: number) {
   return `❌ Ошибка рассылки: ${result.error ?? "неизвестная ошибка"}`;
 }
 
+async function toolGetOrderDispatches(orderId: number): Promise<string> {
+  try {
+    const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
+    const order = orderRows[0];
+    if (!order) return `Заказ #${orderId} не найден.`;
+
+    const dispatches = await db.select().from(orderDispatchesTable)
+      .where(eq(orderDispatchesTable.orderId, orderId))
+      .orderBy(orderDispatchesTable.createdAt);
+
+    if (dispatches.length === 0) {
+      return `📋 Заказ #${orderId} (${order.serviceType}, ${order.city})\n\nРассылка не проводилась — мастера ещё не получали этот заказ.`;
+    }
+
+    const masterIds = [...new Set(dispatches.map(d => d.masterId))];
+    const masters = masterIds.length > 0
+      ? await db.select().from(mastersTable).where(inArray(mastersTable.id, masterIds))
+      : [];
+    const masterMap = new Map(masters.map(m => [m.id, m]));
+
+    const statusIcon = (s: string) => s === "responded" ? "✅" : s === "assigned" ? "🏆" : s === "rejected" ? "❌" : "📨";
+    const statusLabel = (s: string) => s === "responded" ? "откликнулся" : s === "assigned" ? "назначен" : s === "rejected" ? "отказался" : "отправлено";
+
+    const fmt = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+
+    let result = `📋 Заказ #${orderId} — ${order.serviceType}, ${order.city}\n`;
+    result += `Статус заказа: ${order.status} | dispatchStatus: ${order.dispatchStatus}\n`;
+    result += `\nРазослано мастерам (${dispatches.length}):\n`;
+
+    for (const d of dispatches) {
+      const master = masterMap.get(d.masterId);
+      const name = master?.alias ?? `Мастер #${d.masterId}`;
+      const time = fmt.format(new Date(d.createdAt));
+      result += `${statusIcon(d.status)} ${name} — ${statusLabel(d.status)} (${time})\n`;
+      if (d.rejectionReason) result += `   Причина отказа: ${d.rejectionReason}\n`;
+      if (d.responseNote) result += `   Примечание: ${d.responseNote}\n`;
+    }
+
+    return result;
+  } catch (e) {
+    console.error("[toolGetOrderDispatches] error:", e);
+    return `Ошибка получения данных рассылки заказа #${orderId}.`;
+  }
+}
+
 // ─── GPT-4o tool definitions ──────────────────────────────────────────────────
 
 const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
@@ -2012,6 +2057,20 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
           masterNameOrId: { type: "string", description: "Имя мастера, часть имени или ID" },
         },
         required: ["masterNameOrId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_order_dispatches",
+      description: "Показать кому конкретно был разослан заказ: список мастеров, статус (получил/откликнулся/отказался), время рассылки. Используй когда спрашивают 'кому разослали заказ #X', 'по каким мастерам', 'кто получил этот заказ'.",
+      parameters: {
+        type: "object",
+        properties: {
+          orderId: { type: "number", description: "Номер заказа" },
+        },
+        required: ["orderId"],
       },
     },
   },
@@ -2571,6 +2630,10 @@ export async function handleManagerUpdate(update: unknown) {
           case "get_master_conversation": {
             const d = await getDispatcherModule();
             toolResult = await d.getMasterConversationReport(args.masterNameOrId);
+            break;
+          }
+          case "get_order_dispatches": {
+            toolResult = await toolGetOrderDispatches(Number(args.orderId));
             break;
           }
           case "get_dispatcher_activity": {
