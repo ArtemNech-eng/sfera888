@@ -11,7 +11,7 @@
 
 import OpenAI from "openai";
 import { db, ordersTable, mastersTable, leadsTable, receiptsTable, masterMessagesTable, dispatcherFollowupsTable, botMemoryTable } from "@workspace/db";
-import { eq, and, isNull, inArray, lte, desc, gte, ilike } from "drizzle-orm";
+import { eq, and, isNull, inArray, lte, desc, gte, ilike, sql } from "drizzle-orm";
 import { sendMaxMessage } from "../maxBot.js";
 import { sendMsg as sendManagerMsg, getManagerUserId, injectNotification } from "../managerBot.js";
 
@@ -32,6 +32,7 @@ interface ChatMessage {
 
 const masterSessions = new Map<number, ChatMessage[]>();
 const MAX_HISTORY = 14;
+const sessionDbLoaded = new Set<number>();
 
 function getHistory(masterId: number): ChatMessage[] {
   if (!masterSessions.has(masterId)) masterSessions.set(masterId, []);
@@ -54,6 +55,37 @@ function addToHistory(masterId: number, msg: ChatMessage) {
   if (h.length > MAX_HISTORY) {
     masterSessions.set(masterId, sanitizeHistory(h.slice(-MAX_HISTORY)));
   }
+}
+
+async function ensureSessionFromDb(masterId: number): Promise<void> {
+  if (sessionDbLoaded.has(masterId)) return;
+  sessionDbLoaded.add(masterId);
+  try {
+    const res = await db.execute(sql`
+      SELECT session_data FROM bot_sessions WHERE bot_type = 'dispatcher' AND user_id = ${masterId} LIMIT 1
+    `);
+    if (res.rows.length > 0) {
+      const data = res.rows[0].session_data as any;
+      if (Array.isArray(data?.messages)) {
+        masterSessions.set(masterId, data.messages);
+        console.log(`[dispatcherAI] Session restored for master ${masterId} (${data.messages.length} msgs)`);
+      }
+    }
+  } catch (e) {
+    console.error("[dispatcherAI] Failed to load session:", e);
+  }
+}
+
+function persistSession(masterId: number): void {
+  const messages = masterSessions.get(masterId);
+  if (!messages) return;
+  const payload = JSON.stringify({ messages });
+  db.execute(sql`
+    INSERT INTO bot_sessions (bot_type, user_id, session_data, updated_at)
+    VALUES ('dispatcher', ${masterId}, ${payload}::jsonb, NOW())
+    ON CONFLICT (bot_type, user_id)
+    DO UPDATE SET session_data = ${payload}::jsonb, updated_at = NOW()
+  `).catch(e => console.error("[dispatcherAI] Failed to persist session:", e));
 }
 
 // ─── Follow-up / dormant constants ───────────────────────────────────────────
@@ -549,6 +581,7 @@ ${context}
 - Если мастер написал что-то важное — сначала сохрани через tool, потом ответь
 - При schedule_followup: пиши question от имени диспетчера, конкретно, со ссылкой на обещание мастера`;
 
+  await ensureSessionFromDb(masterId);
   addToHistory(masterId, { role: "user", content: text });
 
   try {
@@ -621,6 +654,8 @@ ${context}
   } catch (e) {
     console.error("[dispatcherAI] AI error:", e);
     await sendMaxMessage(maxChatId, "Принял, передам оператору. Если срочно — позвоните нам.");
+  } finally {
+    persistSession(masterId);
   }
 }
 

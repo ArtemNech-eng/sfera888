@@ -300,12 +300,52 @@ interface Session {
 
 const sessions = new Map<number, Session>();
 const MAX_HISTORY = 20;
+const sessionDbLoaded = new Set<number>();
 
 function getSession(userId: number): Session {
   if (!sessions.has(userId)) {
     sessions.set(userId, { messages: [], pending: null, ctx: {} });
   }
   return sessions.get(userId)!;
+}
+
+async function ensureSessionFromDb(userId: number): Promise<void> {
+  if (sessionDbLoaded.has(userId)) return;
+  sessionDbLoaded.add(userId);
+  try {
+    const res = await db.execute(sql`
+      SELECT session_data FROM bot_sessions WHERE bot_type = 'manager' AND user_id = ${userId} LIMIT 1
+    `);
+    if (res.rows.length > 0) {
+      const data = res.rows[0].session_data as any;
+      if (data && typeof data === "object") {
+        sessions.set(userId, {
+          messages: Array.isArray(data.messages) ? data.messages : [],
+          pending: data.pending ?? null,
+          ctx: data.ctx ?? {},
+        });
+        console.log(`[managerBot] Session restored from DB for user ${userId} (${(data.messages ?? []).length} msgs)`);
+      }
+    }
+  } catch (e) {
+    console.error("[managerBot] Failed to load session from DB:", e);
+  }
+}
+
+function persistSession(userId: number): void {
+  const session = sessions.get(userId);
+  if (!session) return;
+  const payload = JSON.stringify({
+    messages: session.messages,
+    pending: session.pending,
+    ctx: session.ctx,
+  });
+  db.execute(sql`
+    INSERT INTO bot_sessions (bot_type, user_id, session_data, updated_at)
+    VALUES ('manager', ${userId}, ${payload}::jsonb, NOW())
+    ON CONFLICT (bot_type, user_id)
+    DO UPDATE SET session_data = ${payload}::jsonb, updated_at = NOW()
+  `).catch(e => console.error("[managerBot] Failed to persist session:", e));
 }
 
 /** Inject context into session: record proactive message as assistant turn + update ctx */
@@ -2159,6 +2199,7 @@ export async function handleManagerUpdate(update: unknown) {
     if (!userId) return;
 
     if (userId) managerUserId = userId;
+    await ensureSessionFromDb(userId);
 
     const session = getSession(userId);
 
@@ -2206,6 +2247,7 @@ export async function handleManagerUpdate(update: unknown) {
       if (actionResult) {
         addMessage(session, { role: "assistant", content: `✅ Действие выполнено: ${actionResult}` });
       }
+      persistSession(userId);
       return;
     }
 
@@ -2213,6 +2255,7 @@ export async function handleManagerUpdate(update: unknown) {
       session.pending = null;
       addMessage(session, { role: "assistant", content: "❌ Действие отменено пользователем." });
       await sendMsg(userId, "❌ Отменено. Что-то ещё?");
+      persistSession(userId);
       return;
     }
 
@@ -2270,6 +2313,7 @@ export async function handleManagerUpdate(update: unknown) {
 
   // Track manager user ID
   managerUserId = userId;
+  await ensureSessionFromDb(userId);
 
   const session = getSession(userId);
 
@@ -2591,6 +2635,8 @@ export async function handleManagerUpdate(update: unknown) {
   } catch (e) {
     console.error("[managerBot] AI error:", e);
     await sendMsg(userId, "⚠️ Ошибка при обработке запроса. Попробуйте ещё раз.");
+  } finally {
+    persistSession(userId);
   }
 }
 

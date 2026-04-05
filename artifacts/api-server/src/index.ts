@@ -119,6 +119,16 @@ async function runMigrations() {
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS bot_sessions (
+      id SERIAL PRIMARY KEY,
+      bot_type VARCHAR(20) NOT NULL,
+      user_id BIGINT NOT NULL,
+      session_data JSONB NOT NULL DEFAULT '{}',
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      UNIQUE (bot_type, user_id)
+    )
+  `);
   console.log("[startup] Migrations applied");
 }
 
