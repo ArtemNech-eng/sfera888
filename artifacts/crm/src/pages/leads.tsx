@@ -121,7 +121,7 @@ export default function Leads() {
         setConfirmSendLead(null);
         toast({
           title: "Заявка отправлена в работу",
-          description: data?.id ? `Создан заказ #${data.id}` : "Заказ создан",
+          description: data?.id ? `Создан заказ #${data.leadId ?? data.id}` : "Заказ создан",
         });
       },
       onError: () => {

@@ -272,7 +272,7 @@ router.post("/:id/send-to-buffer", allLeadRoles, async (req, res) => {
   const order = orderResult[0];
 
   const userAlias = (req.session as any)?.user?.name ?? (req.session as any)?.user?.login ?? "оператор";
-  await logLeadEvent(id, "sent_to_work", `Заявка отправлена в работу. Создан заказ #${order.id}`, userAlias);
+  await logLeadEvent(id, "sent_to_work", `Заявка отправлена в работу. Создан заказ #${order.leadId ?? order.id}`, userAlias);
 
   res.json({
     id: order.id,
