@@ -10,7 +10,7 @@
  */
 
 import OpenAI from "openai";
-import { db, ordersTable, mastersTable, leadsTable, receiptsTable, masterMessagesTable, dispatcherFollowupsTable } from "@workspace/db";
+import { db, ordersTable, mastersTable, leadsTable, receiptsTable, masterMessagesTable, dispatcherFollowupsTable, botMemoryTable } from "@workspace/db";
 import { eq, and, isNull, inArray, lte, desc, gte, ilike } from "drizzle-orm";
 import { sendMaxMessage } from "../maxBot.js";
 import { sendMsg as sendManagerMsg, getManagerUserId, injectNotification } from "../managerBot.js";
@@ -196,6 +196,21 @@ async function toolScheduleFollowup(
   return `Запланировано: ${fmt.format(followupAt)} напишу мастеру: "${question}"`;
 }
 
+async function toolSaveMemory(masterId: number, category: string, content: string): Promise<string> {
+  // Avoid exact duplicates
+  const existing = await db.select().from(botMemoryTable)
+    .where(and(eq(botMemoryTable.masterId, masterId), ilike(botMemoryTable.content, content)));
+  if (existing.length > 0) return "Этот факт уже сохранён в памяти.";
+
+  await db.insert(botMemoryTable).values({
+    masterId,
+    category,
+    content,
+  });
+  console.log(`[dispatcherAI] Memory saved for master ${masterId} [${category}]: ${content}`);
+  return `Запомнено [${category}]: ${content}`;
+}
+
 // ─── Build context summary for system prompt ─────────────────────────────────
 
 async function buildMasterContext(masterId: number): Promise<string> {
@@ -230,6 +245,15 @@ async function buildMasterContext(masterId: number): Promise<string> {
     const fmt = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Moscow" });
     const lines2 = pendingFollowups.map(f => `  • ${fmt.format(new Date(f.followupAt))}: "${f.question}"${f.context ? ` [обещал: ${f.context}]` : ""}`);
     result += `\n\nЗапланированные уточнения (${pendingFollowups.length}):\n${lines2.join("\n")}`;
+  }
+
+  // Persistent memory about this master — learned from past interactions
+  const memories = await db.select().from(botMemoryTable)
+    .where(eq(botMemoryTable.masterId, masterId))
+    .orderBy(botMemoryTable.updatedAt);
+  if (memories.length > 0) {
+    const memLines = memories.map(m => `  [${m.category}] ${m.content}`);
+    result += `\n\nЧто я знаю об этом мастере (усвоено из прошлых разговоров):\n${memLines.join("\n")}`;
   }
 
   return result;
@@ -313,6 +337,28 @@ const DISPATCHER_TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "save_memory",
+      description: "Запомнить важный факт о мастере для использования в будущих разговорах. Используй когда узнаёшь что-то устойчивое о его характере, привычках, предпочтениях, специализации или паттернах поведения. Не дублируй уже известное.",
+      parameters: {
+        type: "object",
+        properties: {
+          category: {
+            type: "string",
+            description: "Категория факта",
+            enum: ["характер", "предпочтения", "специализация", "паттерн_поведения", "контакт", "прочее"],
+          },
+          content: {
+            type: "string",
+            description: "Сам факт — одно чёткое предложение. Например: 'Предпочитает созваниваться утром до 10:00', 'Всегда берёт предоплату за материалы вперёд', 'Работает только в Прикубанском районе'.",
+          },
+        },
+        required: ["category", "content"],
+      },
+    },
+  },
 ];
 
 // ─── Main AI response function ────────────────────────────────────────────────
@@ -354,6 +400,7 @@ ${context}
 - При СЕРЬЁЗНЫХ проблемах (конфликт с клиентом, повреждение имущества, травма) — немедленно вызывать escalate_to_manager
 - Если мастер называет КОНКРЕТНЫЙ срок ("закончу через 3 дня", "сдам в пятницу", "приеду завтра") — ВСЕГДА вызывай schedule_followup чтобы бот уточнил в нужный момент
 - Если мастер сообщает о результатах звонка с клиентом (созвонились, договорились о времени, согласовали дату) — ОБЯЗАТЕЛЬНО сохрани это через add_order_note с пометкой "Созвон с клиентом: [что договорились]"
+- Если из разговора становится ясно что-то УСТОЙЧИВОЕ о мастере (привычки, предпочтения, характер, паттерны) — сохрани через save_memory. Примеры: "не берёт трубку в первой половине дня", "всегда опаздывает с фото выполненных работ", "специализируется на ванных комнатах", "предпочитает объяснять ситуацию голосовыми"
 
 Правила:
 - Пиши коротко — ты в мессенджере
@@ -401,6 +448,8 @@ ${context}
           toolResult = await toolEscalateToManager(args.message, masterId, args.orderId);
         } else if (fnName === "schedule_followup") {
           toolResult = await toolScheduleFollowup(masterId, args.orderId, args.hoursFromNow, args.question, args.context);
+        } else if (fnName === "save_memory") {
+          toolResult = await toolSaveMemory(masterId, args.category, args.content);
         }
 
         addToHistory(masterId, { role: "tool", content: toolResult, tool_call_id: tc.id, name: fnName });
