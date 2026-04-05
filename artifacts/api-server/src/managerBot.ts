@@ -929,6 +929,79 @@ async function toolGetPendingReceipts() {
   return result.trim();
 }
 
+async function toolFilterReceipts(params: {
+  prepaymentSubmitted?: boolean;   // true = клиент оплатил (prepayment_submitted_at NOT NULL); false = не платил; undefined = любые
+  minTotal?: number;               // минимальная итоговая сумма сметы
+  maxTotal?: number;               // максимальная итоговая сумма сметы
+  includeCompleted?: boolean;      // включать заказы со статусом completed (default: false)
+  includeCancelled?: boolean;      // включать отменённые заказы (default: false)
+}) {
+  const receipts = await db.select().from(receiptsTable).orderBy(desc(receiptsTable.createdAt));
+  if (receipts.length === 0) return "Смет в базе нет.";
+
+  const orderIds = [...new Set(receipts.map(r => r.orderId).filter(Boolean))] as number[];
+  const orders = orderIds.length > 0
+    ? await db.select({ id: ordersTable.id, status: ordersTable.status }).from(ordersTable).where(inArray(ordersTable.id, orderIds))
+    : [];
+  const orderStatusMap = new Map(orders.map(o => [o.id, o.status]));
+
+  let filtered = receipts.filter(r => {
+    const orderStatus = orderStatusMap.get(r.orderId);
+    if (!orderStatus) return false;
+    if (!params.includeCancelled && orderStatus === "cancelled") return false;
+    if (!params.includeCompleted && orderStatus === "completed") return false;
+    if (params.prepaymentSubmitted === true && !r.prepaymentSubmittedAt) return false;
+    if (params.prepaymentSubmitted === false && r.prepaymentSubmittedAt) return false;
+    if (params.minTotal !== undefined && Number(r.totalAmount) < params.minTotal) return false;
+    if (params.maxTotal !== undefined && Number(r.totalAmount) > params.maxTotal) return false;
+    return true;
+  });
+
+  const paramDesc: string[] = [];
+  if (params.prepaymentSubmitted === true) paramDesc.push("клиент внёс предоплату");
+  if (params.prepaymentSubmitted === false) paramDesc.push("предоплата НЕ внесена");
+  if (params.minTotal) paramDesc.push(`сумма > ${params.minTotal.toLocaleString("ru-RU")} ₽`);
+  if (params.maxTotal) paramDesc.push(`сумма < ${params.maxTotal.toLocaleString("ru-RU")} ₽`);
+  if (!params.includeCompleted) paramDesc.push("заказ не завершён");
+  if (!params.includeCancelled) paramDesc.push("заказ не отменён");
+
+  if (filtered.length === 0) {
+    return `По фильтру (${paramDesc.join(", ")}) — смет не найдено.`;
+  }
+
+  const masterIds = [...new Set(filtered.map(r => r.masterId))];
+  const masters = masterIds.length > 0
+    ? await db.select().from(mastersTable).where(inArray(mastersTable.id, masterIds))
+    : [];
+  const masterMap = new Map(masters.map(m => [m.id, m.alias]));
+
+  let result = `📊 Сметы по фильтру (${paramDesc.join(", ")}): найдено ${filtered.length}\n\n`;
+  let totalWaiting = 0;
+
+  for (const r of filtered) {
+    const orderStatus = orderStatusMap.get(r.orderId) ?? "?";
+    const masterName = masterMap.get(r.masterId) ?? `#${r.masterId}`;
+    const total = Number(r.totalAmount);
+    const prep = Number(r.prepaymentAmount);
+    const rest = total - prep;
+    totalWaiting += rest;
+
+    const payStatus = r.prepaymentSeenAt
+      ? "✅ предоплата подтверждена"
+      : r.prepaymentSubmittedAt
+        ? "🔴 оплачено клиентом, ждёт подтверждения"
+        : "🟡 клиент ещё не платил";
+
+    result += `• Смета #${r.id} / Заказ #${r.orderId} [${orderStatus}]\n`;
+    result += `  👷 ${masterName} | 👤 ${r.clientName}\n`;
+    result += `  💰 Итого: ${total.toLocaleString("ru-RU")} ₽ | Предоплата: ${prep.toLocaleString("ru-RU")} ₽ | Остаток: ${rest.toLocaleString("ru-RU")} ₽\n`;
+    result += `  ${payStatus}\n\n`;
+  }
+
+  result += `💼 Итого остатков к получению: ${totalWaiting.toLocaleString("ru-RU")} ₽`;
+  return result.trim();
+}
+
 async function toolConfirmReceipt(receiptId: number) {
   const rows = await db.select().from(receiptsTable).where(eq(receiptsTable.id, receiptId));
   const receipt = rows[0];
@@ -1891,8 +1964,41 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "get_pending_receipts",
-      description: "Получить список смет, ожидающих подтверждения предоплаты. Используй когда спрашивают про сметы, оплату, предоплату мастеров.",
+      description: "Получить полный список всех активных смет (не отменённые заказы). Используй для общего обзора смет.",
       parameters: { type: "object", properties: {}, required: [] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "filter_receipts",
+      description: "Фильтрация смет по критериям. Используй ВМЕСТО get_pending_receipts когда нужен конкретный срез: сметы с предоплатой, сметы дороже N рублей, сметы без оплаты, ждём остаток комиссии и т.п. ОБЯЗАТЕЛЬНО используй этот инструмент для любых вопросов вида 'сколько смет с предоплатой', 'суммы больше X', 'ждём оплату'. НЕ пытайся самостоятельно фильтровать результаты get_pending_receipts — всегда вызывай этот инструмент с нужными параметрами.",
+      parameters: {
+        type: "object",
+        properties: {
+          prepaymentSubmitted: {
+            type: "boolean",
+            description: "true — клиент внёс предоплату (prepayment_submitted_at IS NOT NULL); false — клиент ещё не платил; не передавай — любые",
+          },
+          minTotal: {
+            type: "number",
+            description: "Минимальная итоговая сумма сметы в рублях (например 50000)",
+          },
+          maxTotal: {
+            type: "number",
+            description: "Максимальная итоговая сумма сметы в рублях",
+          },
+          includeCompleted: {
+            type: "boolean",
+            description: "Включать завершённые заказы (default: false — только активные)",
+          },
+          includeCancelled: {
+            type: "boolean",
+            description: "Включать отменённые заказы (default: false)",
+          },
+        },
+        required: [],
+      },
     },
   },
   {
@@ -2656,6 +2762,15 @@ export async function handleManagerUpdate(update: unknown) {
           case "get_pending_receipts":
             toolResult = await toolGetPendingReceipts();
             break;
+          case "filter_receipts":
+            toolResult = await toolFilterReceipts({
+              prepaymentSubmitted: args.prepaymentSubmitted,
+              minTotal: args.minTotal ? Number(args.minTotal) : undefined,
+              maxTotal: args.maxTotal ? Number(args.maxTotal) : undefined,
+              includeCompleted: args.includeCompleted,
+              includeCancelled: args.includeCancelled,
+            });
+            break;
           case "confirm_receipt":
             toolResult = await toolConfirmReceipt(Number(args.receiptId));
             break;
@@ -3273,7 +3388,25 @@ const AUTONOMOUS_TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   { type: "function", function: { name: "get_debt_summary", description: "Долги мастеров", parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "get_commission_summary", description: "Остатки комиссий мастеров (pending/overdue)", parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "get_business_insights", description: "Бизнес-аналитика", parameters: { type: "object", properties: {} } } },
-  { type: "function", function: { name: "get_pending_receipts", description: "Сметы на проверке (полный список)", parameters: { type: "object", properties: {} } } },
+  { type: "function", function: { name: "get_pending_receipts", description: "Все активные сметы (общий обзор)", parameters: { type: "object", properties: {} } } },
+  {
+    type: "function",
+    function: {
+      name: "filter_receipts",
+      description: "Фильтрация смет по критериям. ОБЯЗАТЕЛЬНО используй вместо get_pending_receipts когда нужно: сметы с внесённой предоплатой, сметы дороже N рублей, ждём остаток. НЕ фильтруй вручную.",
+      parameters: {
+        type: "object",
+        properties: {
+          prepaymentSubmitted: { type: "boolean", description: "true = предоплата внесена клиентом; false = не внесена" },
+          minTotal: { type: "number", description: "Минимальная итоговая сумма сметы (руб)" },
+          maxTotal: { type: "number", description: "Максимальная итоговая сумма сметы (руб)" },
+          includeCompleted: { type: "boolean", description: "Включать завершённые заказы (default: false)" },
+          includeCancelled: { type: "boolean", description: "Включать отменённые заказы (default: false)" },
+        },
+        required: [],
+      },
+    },
+  },
   { type: "function", function: { name: "get_active_orders_status", description: "Статус активных заказов (назначен мастер / в работе)", parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "ping_masters_with_active_orders", description: "Проверить каждого мастера с активным заказом через диспетчера — уточнить статус, прогресс, проблемы", parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "alert_submitted_receipts", description: "Найти сметы, по которым клиент уже оплатил, и отправить руководителю уведомление с кнопкой подтверждения", parameters: { type: "object", properties: {} } } },
@@ -3467,6 +3600,15 @@ export async function runAutonomousCycle(triggerReason = "scheduled") {
             break;
           case "get_pending_receipts":
             toolResult = await toolGetPendingReceipts();
+            break;
+          case "filter_receipts":
+            toolResult = await toolFilterReceipts({
+              prepaymentSubmitted: args.prepaymentSubmitted,
+              minTotal: args.minTotal ? Number(args.minTotal) : undefined,
+              maxTotal: args.maxTotal ? Number(args.maxTotal) : undefined,
+              includeCompleted: args.includeCompleted,
+              includeCancelled: args.includeCancelled,
+            });
             break;
           case "get_commission_summary":
             toolResult = await toolGetCommissionSummary();
