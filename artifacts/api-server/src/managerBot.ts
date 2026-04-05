@@ -847,7 +847,7 @@ async function toolConfirmReceipt(receiptId: number) {
   const receipt = rows[0];
   if (!receipt) return `Смета #${receiptId} не найдена.`;
   if (receipt.prepaymentSeenAt) return `✅ Смета #${receiptId} уже была подтверждена ранее.`;
-  if (!receipt.prepaymentSubmittedAt) return `⚠️ По смете #${receiptId} ещё не поступила предоплата от клиента.`;
+  if (!receipt.prepaymentSubmittedAt) return `⚠️ По смете #${receiptId} ещё не поступила предоплата от клиента. Если оплата пришла через мастера — используй confirm_prepayment_manual.`;
 
   await db.update(receiptsTable)
     .set({ prepaymentSeenAt: new Date() })
@@ -858,6 +858,55 @@ async function toolConfirmReceipt(receiptId: number) {
   const prep = Number(receipt.prepaymentAmount).toLocaleString("ru-RU");
 
   return `✅ Смета #${receiptId} подтверждена. Мастер: ${masterName}, предоплата ${prep} ₽ по заказу #${receipt.orderId}.`;
+}
+
+/**
+ * Manual confirmation when the client sent the payment screenshot directly to the master
+ * and the manager received it through another channel (e.g. forwarded in Max).
+ * Accepts receiptId OR orderId — resolves either way.
+ */
+async function toolConfirmReceiptManual(args: {
+  receiptId?: number;
+  orderId?: number;
+  via?: string;
+}): Promise<string> {
+  let receipt: typeof receiptsTable.$inferSelect | undefined;
+
+  if (args.receiptId) {
+    const rows = await db.select().from(receiptsTable).where(eq(receiptsTable.id, args.receiptId));
+    receipt = rows[0];
+  } else if (args.orderId) {
+    const rows = await db.select().from(receiptsTable)
+      .where(eq(receiptsTable.orderId, args.orderId))
+      .orderBy(desc(receiptsTable.id))
+      .limit(1);
+    receipt = rows[0];
+  }
+
+  if (!receipt) {
+    return `Смета не найдена. Проверьте ID сметы или заказа.`;
+  }
+  if (receipt.prepaymentSeenAt) {
+    return `✅ Смета #${receipt.id} уже была подтверждена ранее (${receipt.prepaymentSeenAt.toLocaleDateString("ru-RU")}).`;
+  }
+
+  const now = new Date();
+  const viaNote = args.via ? ` (${args.via})` : " (скриншот получен через мастера)";
+
+  await db.update(receiptsTable).set({
+    prepaymentSubmittedAt: receipt.prepaymentSubmittedAt ?? now,
+    prepaymentSeenAt: now,
+  }).where(eq(receiptsTable.id, receipt.id));
+
+  // Add a note to the order so there's a paper trail
+  const noteText = `Предоплата ${Number(receipt.prepaymentAmount).toLocaleString("ru-RU")} ₽ подтверждена вручную руководителем${viaNote}`;
+  await toolAddOrderNote(receipt.orderId, noteText);
+
+  const masters = await db.select().from(mastersTable).where(eq(mastersTable.id, receipt.masterId));
+  const masterName = masters[0]?.alias ?? `#${receipt.masterId}`;
+  const prep = Number(receipt.prepaymentAmount).toLocaleString("ru-RU");
+
+  return `✅ Смета #${receipt.id} подтверждена вручную.\nМастер: ${masterName} | Предоплата: ${prep} ₽ | Заказ #${receipt.orderId}\n📝 Заметка к заказу добавлена.`;
 }
 
 async function toolGetCommissionSummary(): Promise<string> {
@@ -1768,13 +1817,28 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "confirm_receipt",
-      description: "Подтвердить предоплату по смете (отметить как проверенную). Используй когда руководитель говорит 'подтвердить смету', 'принял оплату', 'вижу платёж'.",
+      description: "Подтвердить предоплату по смете (отметить как проверенную). Используй когда руководитель говорит 'подтвердить смету', 'принял оплату', 'вижу платёж'. Работает только если клиент уже загрузил скриншот через приложение.",
       parameters: {
         type: "object",
         properties: {
           receiptId: { type: "number", description: "ID сметы" },
         },
         required: ["receiptId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "confirm_prepayment_manual",
+      description: "Подтвердить предоплату вручную — когда клиент прислал скриншот напрямую мастеру (в обход приложения) и мастер переслал руководителю. Работает даже если клиент не загружал скриншот в систему. Принимает receiptId ИЛИ orderId — можно использовать любой.",
+      parameters: {
+        type: "object",
+        properties: {
+          receiptId: { type: "number", description: "ID сметы (если известен)" },
+          orderId: { type: "number", description: "ID заказа (если известен, но не знаем ID сметы)" },
+          via: { type: "string", description: "Как получена оплата, например: 'скриншот прислал мастер Даниил', 'клиент перевёл напрямую'" },
+        },
       },
     },
   },
@@ -2109,6 +2173,7 @@ const SYSTEM_PROMPT = `Ты — AI-ассистент и стратегичес�
 — Финансовые отчёты: выручка, долги, конверсия (get_report, get_revenue_stats, get_debt_summary)
 — Бизнес-аналитика с идеями для роста (get_business_insights)
 — Сметы: просмотр и подтверждение (get_pending_receipts, confirm_receipt)
+— Если клиент прислал оплату мастеру напрямую / в обход приложения — используй confirm_prepayment_manual (принимает orderId ИЛИ receiptId)
 — Паспорта мастеров (get_pending_passports, approve_master_passport)
 — Переписка с мастерами через диспетчера (get_master_conversation, get_dispatcher_activity)
 — Постановка задач диспетчеру (send_task_to_dispatcher)
@@ -2432,6 +2497,13 @@ export async function handleManagerUpdate(update: unknown) {
             break;
           case "confirm_receipt":
             toolResult = await toolConfirmReceipt(Number(args.receiptId));
+            break;
+          case "confirm_prepayment_manual":
+            toolResult = await toolConfirmReceiptManual({
+              receiptId: args.receiptId ? Number(args.receiptId) : undefined,
+              orderId: args.orderId ? Number(args.orderId) : undefined,
+              via: args.via,
+            });
             break;
           case "search_orders":
             toolResult = await toolSearchOrders(args.query, args.statusFilter);
