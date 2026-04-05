@@ -11,7 +11,7 @@
 
 import OpenAI from "openai";
 import { db, ordersTable, mastersTable, leadsTable, receiptsTable, masterMessagesTable, dispatcherFollowupsTable } from "@workspace/db";
-import { eq, and, isNull, inArray, lte, desc } from "drizzle-orm";
+import { eq, and, isNull, inArray, lte, desc, gte, ilike } from "drizzle-orm";
 import { sendMaxMessage } from "../maxBot.js";
 import { sendMsg as sendManagerMsg, getManagerUserId, injectNotification } from "../managerBot.js";
 
@@ -56,27 +56,35 @@ function addToHistory(masterId: number, msg: ChatMessage) {
   }
 }
 
-// ─── Proactive message tracking (in-memory) ──────────────────────────────────
-// Tracks which events we've already fired to avoid duplicates on restart
-
-const greetedOrders = new Set<number>();       // assignment greeting sent
-const checkinOrders = new Set<number>();        // 24h check-in sent
-const estimateReminders = new Set<number>();    // estimate reminder sent
-const preDayReminders = new Set<number>();      // day-before reminder sent
-
-// ─── Follow-up tracking ───────────────────────────────────────────────────────
-// If bot sends a message and master doesn't reply within 5h → send a follow-up
-
-const lastBotMessageAt = new Map<number, number>();    // masterId → timestamp
-const lastMasterReplyAt = new Map<number, number>();   // masterId → timestamp
-const followupSentAt = new Map<number, number>();      // masterId → timestamp (last follow-up)
+// ─── Follow-up / dormant constants ───────────────────────────────────────────
 const FOLLOWUP_DELAY_H = 5;    // hours before sending follow-up
 const FOLLOWUP_COOLDOWN_H = 20; // min hours between follow-ups
-
-// ─── Dormant master tracking ──────────────────────────────────────────────────
-// High-rating masters with no orders for 7+ days get a proactive ping
-const dormantMasterPingedAt = new Map<number, number>(); // masterId → timestamp
 const DORMANT_PING_COOLDOWN_DAYS = 7;
+
+// ─── DB-based deduplication helper ───────────────────────────────────────────
+// Checks whether the bot already sent a message containing `fragment` to this
+// master within the last `withinHours` hours (or ever, if withinHours omitted).
+// Replaces all in-memory Sets/Maps so dedup survives server restarts.
+async function alreadySentBotMessage(
+  masterId: number,
+  fragment: string,
+  withinHours?: number,
+): Promise<boolean> {
+  const conditions: ReturnType<typeof eq>[] = [
+    eq(masterMessagesTable.masterId, masterId),
+    eq(masterMessagesTable.fromMaster, false),
+    ilike(masterMessagesTable.text, `%${fragment}%`),
+  ];
+  if (withinHours !== undefined) {
+    const since = new Date(Date.now() - withinHours * 3600_000);
+    conditions.push(gte(masterMessagesTable.createdAt, since));
+  }
+  const rows = await db.select({ id: masterMessagesTable.id })
+    .from(masterMessagesTable)
+    .where(and(...conditions))
+    .limit(1);
+  return rows.length > 0;
+}
 
 // ─── Manager task pending notifications ───────────────────────────────────────
 // When manager sends a task via send_task_to_dispatcher, track it so the manager
@@ -450,8 +458,7 @@ export async function sendAssignmentGreeting(
   maxChatId: string,
   orderId: number,
 ) {
-  if (greetedOrders.has(orderId)) return;
-  greetedOrders.add(orderId);
+  if (await alreadySentBotMessage(masterId, `назначены на заказ #${orderId}`)) return;
 
   const data = await getOrderWithLead(orderId);
   if (!data) return;
@@ -481,8 +488,7 @@ export async function sendDailyCheckin(
   maxChatId: string,
   orderId: number,
 ) {
-  if (checkinOrders.has(orderId)) return;
-  checkinOrders.add(orderId);
+  if (await alreadySentBotMessage(masterId, `объекте по заказу #${orderId}`)) return;
 
   await sendMaxMessage(
     maxChatId,
@@ -500,8 +506,8 @@ export async function sendEstimateReminder(
   maxChatId: string,
   orderId: number,
 ) {
-  if (estimateReminders.has(orderId)) return;
-  estimateReminders.add(orderId);
+  // Don't re-send if already reminded in the last 48h
+  if (await alreadySentBotMessage(masterId, `заказу #${orderId} смета ещё не отправлена`, 48)) return;
 
   const msg = `${masterAlias}, напомни — по заказу #${orderId} смета ещё не отправлена. Не забудь оформить её в приложении, чтобы клиент мог согласовать стоимость работ. 📋`;
   await sendMaxMessage(maxChatId, msg);
@@ -516,8 +522,7 @@ export async function sendPreDayReminder(
   maxChatId: string,
   orderId: number,
 ) {
-  if (preDayReminders.has(orderId)) return;
-  preDayReminders.add(orderId);
+  if (await alreadySentBotMessage(masterId, `завтра выезд на объект по заказу #${orderId}`)) return;
 
   const msg = `${masterAlias}, завтра выезд на объект по заказу #${orderId}. Всё готово? Клиент ждёт, подтвердите что будете в срок. 🔧`;
   await sendMaxMessage(maxChatId, msg);
@@ -608,28 +613,39 @@ export async function runProactiveChecks(): Promise<void> {
     }
 
     // ── Follow-up for ignored messages ──────────────────────────────────────
-    // For each master with active orders that has been messaged but hasn't replied
+    // For each master with active orders that has been messaged but hasn't replied.
+    // All timestamps come from the DB so dedup survives restarts.
     for (const master of masters) {
       if (!master.maxChatId) continue;
-      const lastBot = lastBotMessageAt.get(master.id);
-      if (!lastBot) continue;
 
-      const lastMaster = lastMasterReplyAt.get(master.id) ?? 0;
-      if (lastMaster >= lastBot) continue; // master already replied after our message
+      // Last bot message to this master
+      const lastBotRow = await db.select({ createdAt: masterMessagesTable.createdAt })
+        .from(masterMessagesTable)
+        .where(and(eq(masterMessagesTable.masterId, master.id), eq(masterMessagesTable.fromMaster, false)))
+        .orderBy(desc(masterMessagesTable.createdAt))
+        .limit(1);
+      if (lastBotRow.length === 0) continue;
+      const lastBot = lastBotRow[0].createdAt.getTime();
+
+      // Last master reply
+      const lastMasterRow = await db.select({ createdAt: masterMessagesTable.createdAt })
+        .from(masterMessagesTable)
+        .where(and(eq(masterMessagesTable.masterId, master.id), eq(masterMessagesTable.fromMaster, true)))
+        .orderBy(desc(masterMessagesTable.createdAt))
+        .limit(1);
+      const lastMaster = lastMasterRow.length > 0 ? lastMasterRow[0].createdAt.getTime() : 0;
+      if (lastMaster >= lastBot) continue; // master already replied
 
       const hoursSinceBot = (now - lastBot) / 3600000;
       if (hoursSinceBot < FOLLOWUP_DELAY_H) continue; // too soon
 
-      const lastFollowup = followupSentAt.get(master.id) ?? 0;
-      if (lastFollowup > lastBot) continue; // already sent follow-up for this cycle
-      const hoursSinceFollowup = (now - lastFollowup) / 3600000;
-      if (lastFollowup > 0 && hoursSinceFollowup < FOLLOWUP_COOLDOWN_H) continue;
+      // Skip if we already sent a follow-up recently
+      if (await alreadySentBotMessage(master.id, "вы получили наше сообщение", FOLLOWUP_COOLDOWN_H)) continue;
 
       // Send a gentle follow-up
       const msg = `${master.alias}, вы получили наше сообщение? Пожалуйста, ответьте — это важно для координации работ. Если есть вопросы, мы готовы помочь! 🙏`;
       await sendMaxMessage(master.maxChatId, msg);
       await saveBotReply(master.id, master.maxChatId, msg);
-      followupSentAt.set(master.id, now);
       console.log(`[dispatcherAI] Sent follow-up to ${master.alias} (no reply for ${Math.round(hoursSinceBot)}h)`);
     }
 
@@ -637,7 +653,6 @@ export async function runProactiveChecks(): Promise<void> {
     // Find active masters with rating >= 4.0 that have no current active orders
     // and haven't been pinged in the last 7 days → send a warm check-in
     const activeMasterIds = new Set(masterIds);
-    const cooldownMs = DORMANT_PING_COOLDOWN_DAYS * 24 * 3600000;
 
     const topFreeMasters = await db.select().from(mastersTable)
       .where(and(eq(mastersTable.status, "active"), isNull(mastersTable.deletedAt)));
@@ -647,14 +662,20 @@ export async function runProactiveChecks(): Promise<void> {
       if (activeMasterIds.has(m.id)) continue; // already has active orders
       if (Number(m.rating ?? 0) < 4.0) continue; // only top-rated
 
-      const lastPing = dormantMasterPingedAt.get(m.id) ?? 0;
-      if (now - lastPing < cooldownMs) continue;
+      // Skip if already pinged within cooldown window (DB-based, survives restarts)
+      if (await alreadySentBotMessage(m.id, "Давно не было заказов", DORMANT_PING_COOLDOWN_DAYS * 24)) continue;
 
-      const lastReply = lastMasterReplyAt.get(m.id) ?? 0;
-      const daysSinceReply = (now - lastReply) / (24 * 3600000);
-      if (daysSinceReply < 7 && lastReply > 0) continue; // was active recently
+      // Skip if master wrote to us recently (was active)
+      const lastMasterRow = await db.select({ createdAt: masterMessagesTable.createdAt })
+        .from(masterMessagesTable)
+        .where(and(eq(masterMessagesTable.masterId, m.id), eq(masterMessagesTable.fromMaster, true)))
+        .orderBy(desc(masterMessagesTable.createdAt))
+        .limit(1);
+      if (lastMasterRow.length > 0) {
+        const daysSinceReply = (now - lastMasterRow[0].createdAt.getTime()) / (24 * 3600000);
+        if (daysSinceReply < 7) continue; // was active recently
+      }
 
-      dormantMasterPingedAt.set(m.id, now);
       const greeting = `${m.alias}, добрый день! Давно не было заказов — хотим убедиться, что всё в порядке и вы готовы к работе. Если есть вопросы или пожелания — напишите нам, мы всегда на связи. 🙌`;
       await sendMaxMessage(m.maxChatId, greeting);
       await saveBotReply(m.id, m.maxChatId, greeting);
