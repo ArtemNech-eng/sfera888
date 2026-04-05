@@ -353,6 +353,7 @@ ${context}
 - Сохранять важные детали (проблемы, сроки, договорённости) через add_order_note
 - При СЕРЬЁЗНЫХ проблемах (конфликт с клиентом, повреждение имущества, травма) — немедленно вызывать escalate_to_manager
 - Если мастер называет КОНКРЕТНЫЙ срок ("закончу через 3 дня", "сдам в пятницу", "приеду завтра") — ВСЕГДА вызывай schedule_followup чтобы бот уточнил в нужный момент
+- Если мастер сообщает о результатах звонка с клиентом (созвонились, договорились о времени, согласовали дату) — ОБЯЗАТЕЛЬНО сохрани это через add_order_note с пометкой "Созвон с клиентом: [что договорились]"
 
 Правила:
 - Пиши коротко — ты в мессенджере
@@ -515,6 +516,21 @@ export async function sendEstimateReminder(
   console.log(`[dispatcherAI] Sent estimate reminder to ${masterAlias} for order #${orderId}`);
 }
 
+/** 15-min post-assignment: did you call the client? */
+export async function sendClientCallCheckin(
+  masterId: number,
+  masterAlias: string,
+  maxChatId: string,
+  orderId: number,
+) {
+  if (await alreadySentBotMessage(masterId, `созвонились с клиентом по заказу #${orderId}`)) return;
+
+  const msg = `${masterAlias}, вы уже созвонились с клиентом по заказу #${orderId}? Напишите — о чём договорились, на какое время согласовали визит. Это важно для координации работ. 📞`;
+  await sendMaxMessage(maxChatId, msg);
+  await saveBotReply(masterId, maxChatId, msg);
+  console.log(`[dispatcherAI] Sent client call check-in to ${masterAlias} for order #${orderId}`);
+}
+
 /** Reminder the day before scheduledAt */
 export async function sendPreDayReminder(
   masterId: number,
@@ -582,11 +598,17 @@ export async function runProactiveChecks(): Promise<void> {
       const assignedAt = order.assignedAt ? new Date(order.assignedAt).getTime() : new Date(order.createdAt).getTime();
       const hoursAssigned = (now - assignedAt) / 3600000;
 
-      // 1. Assignment greeting (first 2h)
-      if (hoursAssigned < 2) {
+      // 1. Assignment greeting (first 15 min only → don't pile on subsequent cycles)
+      if (hoursAssigned < 0.25) {
         await sendAssignmentGreeting(master.id, master.alias, master.maxChatId, order.id);
-        continue; // Don't pile messages on fresh assignment
+        continue; // Too fresh — wait before next message
       }
+
+      // Always ensure greeting was sent (in case scheduler missed the first window)
+      await sendAssignmentGreeting(master.id, master.alias, master.maxChatId, order.id);
+
+      // 1b. Client call check-in (15 min after assignment, once ever)
+      await sendClientCallCheckin(master.id, master.alias, master.maxChatId, order.id);
 
       // 2. 24h check-in
       if (hoursAssigned >= 23 && hoursAssigned < 25) {
