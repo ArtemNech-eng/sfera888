@@ -835,53 +835,94 @@ async function toolGetMasterStats(masterIdOrName: string) {
 }
 
 async function toolGetPendingReceipts() {
+  // Fetch receipts with their order status in one go
   const receipts = await db.select().from(receiptsTable)
     .orderBy(desc(receiptsTable.createdAt));
 
-  // Не подтверждённые = все сметы где prepaymentSeenAt IS NULL
-  const active = receipts.filter(r => !r.prepaymentSeenAt);
-  // Из них: ждут подтверждения руководителя (клиент уже оплатил)
-  const waitingConfirm = active.filter(r => r.prepaymentSubmittedAt);
-  // Из них: клиент ещё не оплатил
-  const unpaid = active.filter(r => !r.prepaymentSubmittedAt);
+  if (receipts.length === 0) return "✅ Сметы отсутствуют.";
 
-  if (active.length === 0) return "✅ Все сметы закрыты — неоплаченных и неподтверждённых нет.";
+  // Load orders to get their statuses
+  const orderIds = [...new Set(receipts.map(r => r.orderId).filter(Boolean))] as number[];
+  const orders = orderIds.length > 0
+    ? await db.select({ id: ordersTable.id, status: ordersTable.status }).from(ordersTable).where(inArray(ordersTable.id, orderIds))
+    : [];
+  const orderStatusMap = new Map(orders.map(o => [o.id, o.status]));
 
-  const masterIds = [...new Set(active.map(r => r.masterId))];
-  const masters = await db.select().from(mastersTable).where(inArray(mastersTable.id, masterIds));
+  // Only show receipts attached to NON-cancelled orders
+  const EXCLUDED_STATUSES = ["cancelled"];
+  const activeReceipts = receipts.filter(r => {
+    const orderStatus = orderStatusMap.get(r.orderId);
+    return orderStatus && !EXCLUDED_STATUSES.includes(orderStatus);
+  });
+
+  // Group by payment state
+  // 🔴 Client paid screenshot uploaded, awaiting manager confirmation
+  const waitingConfirm = activeReceipts.filter(r => r.prepaymentSubmittedAt && !r.prepaymentSeenAt);
+  // ✅ Confirmed by manager
+  const confirmed = activeReceipts.filter(r => r.prepaymentSeenAt);
+  // 🟡 Receipt issued, client has NOT yet paid
+  const unpaid = activeReceipts.filter(r => !r.prepaymentSubmittedAt && !r.prepaymentSeenAt);
+
+  // Also track how many were skipped due to cancelled orders
+  const skippedCancelled = receipts.length - activeReceipts.length;
+
+  if (activeReceipts.length === 0) {
+    const note = skippedCancelled > 0 ? ` (${skippedCancelled} смет по отменённым заказам — не показаны)` : "";
+    return `✅ Нет активных смет${note}.`;
+  }
+
+  const masterIds = [...new Set(activeReceipts.map(r => r.masterId))];
+  const masters = masterIds.length > 0
+    ? await db.select().from(mastersTable).where(inArray(mastersTable.id, masterIds))
+    : [];
   const masterMap = new Map(masters.map(m => [m.id, m.alias]));
 
   const fmt = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Moscow" });
 
-  let result = `📋 Активные сметы (${active.length} всего):\n`;
+  let result = `📋 Активные сметы (${activeReceipts.length})`;
+  if (skippedCancelled > 0) result += ` | Пропущено по отменённым заказам: ${skippedCancelled}`;
+  result += ":\n";
 
   if (waitingConfirm.length > 0) {
-    result += `\n🔴 Клиент ОПЛАТИЛ — нужно подтверждение (${waitingConfirm.length}):\n`;
+    result += `\n🔴 ТРЕБУЕТ ВАШЕГО ПОДТВЕРЖДЕНИЯ — клиент оплатил (${waitingConfirm.length}):\n`;
     for (const r of waitingConfirm) {
       const masterName = masterMap.get(r.masterId) ?? `#${r.masterId}`;
       const total = Number(r.totalAmount).toLocaleString("ru-RU");
       const prep = Number(r.prepaymentAmount).toLocaleString("ru-RU");
       const submitted = fmt.format(new Date(r.prepaymentSubmittedAt!));
-      result += `• Смета **#${r.id}** | Заказ #${r.orderId}\n`;
-      result += `  👷 Мастер: ${masterName}\n`;
-      result += `  👤 Клиент: ${r.clientName} (${r.clientPhone})\n`;
-      result += `  🔧 ${r.serviceType} | Предоплата: **${prep} ₽** (итого ${total} ₽)\n`;
-      result += `  Оплачено клиентом: ${submitted}\n`;
+      const orderStatus = orderStatusMap.get(r.orderId) ?? "?";
+      result += `• Смета #${r.id} / Заказ #${r.orderId} [${orderStatus}]\n`;
+      result += `  👷 ${masterName} | 👤 ${r.clientName} (${r.clientPhone})\n`;
+      result += `  🔧 ${r.serviceType} | Предоплата: ${prep} ₽ / Итого: ${total} ₽\n`;
+      result += `  📅 Оплата поступила: ${submitted} — ждёт подтверждения\n`;
+    }
+  }
+
+  if (confirmed.length > 0) {
+    result += `\n✅ Подтверждены, заказ в работе (${confirmed.length}):\n`;
+    for (const r of confirmed) {
+      const masterName = masterMap.get(r.masterId) ?? `#${r.masterId}`;
+      const total = Number(r.totalAmount).toLocaleString("ru-RU");
+      const prep = Number(r.prepaymentAmount).toLocaleString("ru-RU");
+      const orderStatus = orderStatusMap.get(r.orderId) ?? "?";
+      result += `• Смета #${r.id} / Заказ #${r.orderId} [${orderStatus}]\n`;
+      result += `  👷 ${masterName} | 👤 ${r.clientName}\n`;
+      result += `  🔧 ${r.serviceType} | Предоплата: ${prep} ₽ / Итого: ${total} ₽\n`;
     }
   }
 
   if (unpaid.length > 0) {
-    result += `\n🟡 Ожидают оплаты от клиента (${unpaid.length}):\n`;
+    result += `\n🟡 Выставлены мастером, клиент НЕ платил (${unpaid.length}):\n`;
     for (const r of unpaid) {
       const masterName = masterMap.get(r.masterId) ?? `#${r.masterId}`;
       const total = Number(r.totalAmount).toLocaleString("ru-RU");
       const prep = Number(r.prepaymentAmount).toLocaleString("ru-RU");
-      const age = Math.round((Date.now() - new Date(r.createdAt).getTime()) / 3600000);
-      result += `• Смета **#${r.id}** | Заказ #${r.orderId}\n`;
-      result += `  👷 Мастер: ${masterName}\n`;
-      result += `  👤 Клиент: ${r.clientName} (${r.clientPhone})\n`;
-      result += `  🔧 ${r.serviceType} | Предоплата: **${prep} ₽** (итого ${total} ₽)\n`;
-      result += `  Выставлена ${age}ч назад\n`;
+      const ageH = Math.round((Date.now() - new Date(r.createdAt).getTime()) / 3600000);
+      const orderStatus = orderStatusMap.get(r.orderId) ?? "?";
+      result += `• Смета #${r.id} / Заказ #${r.orderId} [${orderStatus}]\n`;
+      result += `  👷 ${masterName} | 👤 ${r.clientName} (${r.clientPhone})\n`;
+      result += `  🔧 ${r.serviceType} | Предоплата: ${prep} ₽ / Итого: ${total} ₽\n`;
+      result += `  ⏱ Выставлена ${ageH}ч назад — предоплата НЕ поступала\n`;
     }
   }
 
