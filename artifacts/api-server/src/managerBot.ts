@@ -31,6 +31,7 @@ import {
 } from "@workspace/db";
 import { eq, and, isNull, desc, gte, sql, inArray, lte, or } from "drizzle-orm";
 import { performBroadcast } from "./lib/broadcastOrder.js";
+import { getMasterTrustScore } from "./lib/dispatcherAI.js";
 import { execFile } from "child_process";
 import { writeFile, readFile, unlink } from "fs/promises";
 import { tmpdir } from "os";
@@ -651,9 +652,24 @@ async function toolGetMasterStats(masterIdOrName: string) {
     receiptsInfo += `\n  ✅ Подтверждено: ${confirmedReceipts.length}`;
   }
 
+  const trust = await getMasterTrustScore(master.id);
+
+  // Show suspicious behavior memories if any
+  let trustDetails = "";
+  if (trust.ghostFlags > 0) {
+    const { botMemoryTable } = await import("@workspace/db");
+    const { ilike } = await import("drizzle-orm");
+    const ghostMems = await db.select().from(botMemoryTable)
+      .where(and(eq(botMemoryTable.masterId, master.id), ilike(botMemoryTable.category, "подозрительное_поведение")));
+    if (ghostMems.length > 0) {
+      trustDetails = "\n\n⚠️ **Инциденты:**\n" + ghostMems.map(m => `  • ${m.content}`).join("\n");
+    }
+  }
+
   return `👷 Мастер **${master.alias}** (#${master.id}):
   📍 Город: ${master.city ?? "не указан"}
   ⭐ Рейтинг: ${master.rating ?? 0}
+  🛡 Доверие: ${trust.label} (${trust.score}% успешных, ${trust.suspiciousCancels} подозрит. отмен)
   📋 Всего заказов: ${master.totalOrders ?? 0}
   ✅ Завершено: ${completed}
   🔧 Активных: ${active}
@@ -661,7 +677,7 @@ async function toolGetMasterStats(masterIdOrName: string) {
   📅 За 30 дней: ${recent.length} заказов
   💸 Долг: ${Number(master.debt ?? 0).toLocaleString("ru-RU")} ₽
   📱 Max: ${master.maxChatId ? "привязан" : "не привязан"}
-  🪪 Паспорт: ${master.passportVerified ? "✅ подтверждён" : "⏳ не подтверждён"}${receiptsInfo}`;
+  🪪 Паспорт: ${master.passportVerified ? "✅ подтверждён" : "⏳ не подтверждён"}${receiptsInfo}${trustDetails}`;
 }
 
 async function toolGetPendingReceipts() {

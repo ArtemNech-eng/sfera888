@@ -196,6 +196,146 @@ async function toolScheduleFollowup(
   return `Запланировано: ${fmt.format(followupAt)} напишу мастеру: "${question}"`;
 }
 
+/** Calculate trust score for a master: ratio of clean completions vs suspicious cancellations */
+export async function getMasterTrustScore(masterId: number): Promise<{
+  score: number; label: string; totalOrders: number; suspiciousCancels: number; ghostFlags: number;
+}> {
+  const allOrders = await db.select({
+    id: ordersTable.id, status: ordersTable.status, cancelType: ordersTable.cancelType,
+    assignedAt: ordersTable.assignedAt,
+  }).from(ordersTable).where(and(eq(ordersTable.masterId, masterId), isNull(ordersTable.deletedAt)));
+
+  const totalOrders = allOrders.length;
+  const completed = allOrders.filter(o => o.status === "completed").length;
+  const clientRefused = allOrders.filter(o => o.status === "cancelled" && o.cancelType === "client_refused").length;
+
+  // Count ghost flags saved in memory
+  const ghostMems = await db.select({ id: botMemoryTable.id }).from(botMemoryTable)
+    .where(and(eq(botMemoryTable.masterId, masterId), ilike(botMemoryTable.category, "подозрительное_поведение")));
+  const ghostFlags = ghostMems.length;
+
+  const suspiciousCancels = clientRefused; // client_refused cancels after silence
+  const risk = totalOrders > 0 ? Math.round(((completed) / totalOrders) * 100) : 100;
+
+  let label = "✅ Надёжный";
+  if (ghostFlags >= 2 || (clientRefused >= 2 && totalOrders <= 6)) label = "🔴 Высокий риск";
+  else if (ghostFlags === 1 || clientRefused >= 2) label = "🟡 Под наблюдением";
+  else if (risk < 60) label = "🟠 Требует внимания";
+
+  return { score: risk, label, totalOrders, suspiciousCancels, ghostFlags };
+}
+
+/** Ghost master detection: assigned 12+ hours, bot messaged, master never replied → alert manager */
+async function detectGhostMaster(
+  master: { id: number; alias: string; maxChatId: string | null },
+  orderId: number,
+  hoursAssigned: number,
+) {
+  // Check if master has replied at all since assignment
+  const assignedAt = await db.select({ assignedAt: ordersTable.assignedAt })
+    .from(ordersTable).where(eq(ordersTable.id, orderId)).then(r => r[0]?.assignedAt);
+  if (!assignedAt) return;
+
+  const masterReplyAfterAssignment = await db.select({ id: masterMessagesTable.id })
+    .from(masterMessagesTable)
+    .where(and(
+      eq(masterMessagesTable.masterId, master.id),
+      eq(masterMessagesTable.fromMaster, true),
+      gte(masterMessagesTable.createdAt, new Date(assignedAt)),
+    ))
+    .limit(1);
+
+  if (masterReplyAfterAssignment.length > 0) return; // Master replied — not a ghost
+
+  // Check if we already sent a ghost alert for this order (dedup by checking memory)
+  const alreadyFlagged = await db.select({ id: botMemoryTable.id }).from(botMemoryTable)
+    .where(and(
+      eq(botMemoryTable.masterId, master.id),
+      ilike(botMemoryTable.content, `%заказ #${orderId}%`),
+      ilike(botMemoryTable.category, "подозрительное_поведение"),
+    ))
+    .limit(1);
+  if (alreadyFlagged.length > 0) return;
+
+  // Also dedup via manager notification (don't spam manager)
+  if (await alreadySentBotMessage(master.id, `молчит по заказу #${orderId}`, 24)) return;
+
+  // Save to memory
+  await db.insert(botMemoryTable).values({
+    masterId: master.id,
+    category: "подозрительное_поведение",
+    content: `Заказ #${orderId}: не ответил ни разу за ${Math.round(hoursAssigned)} часов после назначения. Все сообщения бота проигнорированы.`,
+  });
+
+  // Alert manager
+  const managerId = getManagerUserId();
+  if (managerId) {
+    const trust = await getMasterTrustScore(master.id);
+    const alert = `⚠️ **Мастер-призрак** | ${master.alias}\n\nНазначен на заказ **#${orderId}** ${Math.round(hoursAssigned)} часов назад — не ответил ни на одно сообщение бота.\n\nИстория доверия: ${trust.label} | Заказов: ${trust.totalOrders} | Подозрит. отмен: ${trust.suspiciousCancels} | Предупреждений: ${trust.ghostFlags}`;
+    await sendManagerMsg(managerId, alert);
+    injectNotification(alert, { masterAlias: master.alias });
+  }
+
+  console.log(`[dispatcherAI] Ghost master alert: ${master.alias} has not replied to order #${orderId} in ${Math.round(hoursAssigned)}h`);
+}
+
+/** Called from orders route when an order is cancelled — analyse if cancellation looks suspicious */
+export async function analyseOrderCancellation(
+  orderId: number,
+  masterId: number,
+  masterAlias: string,
+  cancelType: string | null,
+) {
+  try {
+    const order = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId)).then(r => r[0]);
+    if (!order) return;
+
+    const assignedAt = order.assignedAt;
+    if (!assignedAt) return; // Never had a master
+
+    const hoursAssigned = (Date.now() - new Date(assignedAt).getTime()) / 3600000;
+
+    // Check if master ever replied after assignment
+    const masterReplied = await db.select({ id: masterMessagesTable.id })
+      .from(masterMessagesTable)
+      .where(and(
+        eq(masterMessagesTable.masterId, masterId),
+        eq(masterMessagesTable.fromMaster, true),
+        gte(masterMessagesTable.createdAt, new Date(assignedAt)),
+      ))
+      .limit(1);
+
+    const wasGhost = masterReplied.length === 0;
+    const clientRefused = cancelType === "client_refused";
+    const suspicious = wasGhost && hoursAssigned >= 6; // Was silent AND order lasted 6+ hours
+
+    if (!suspicious) return; // Nothing unusual
+
+    const reason = clientRefused ? "заявил «клиент отказался»" : "заказ отменён";
+    const memory = `Заказ #${orderId}: пропал на ${Math.round(hoursAssigned)} ч после назначения, не отвечал боту, затем ${reason}. ПОДОЗРИТЕЛЬНО.`;
+
+    // Save to master memory
+    await db.insert(botMemoryTable).values({
+      masterId,
+      category: "подозрительное_поведение",
+      content: memory,
+    });
+
+    // Alert manager
+    const managerId = getManagerUserId();
+    if (managerId) {
+      const trust = await getMasterTrustScore(masterId);
+      const alert = `🚨 **Подозрительная отмена** | ${masterAlias}\n\nЗаказ **#${orderId}** отменён после ${Math.round(hoursAssigned)} ч молчания мастера.\n📋 Причина: ${order.cancelReason ?? cancelType ?? "не указана"}\n\nВ этот период мастер **не отвечал ни разу** на сообщения бота — контакт с клиентом не подтверждён.\n\n📊 Рейтинг доверия: ${trust.label} | Всего заказов: ${trust.totalOrders} | Подозрит. случаев: ${trust.ghostFlags}`;
+      await sendManagerMsg(managerId, alert);
+      injectNotification(alert, { masterAlias });
+    }
+
+    console.log(`[dispatcherAI] Suspicious cancellation flagged for master ${masterAlias} on order #${orderId}`);
+  } catch (e) {
+    console.error("[dispatcherAI] analyseOrderCancellation error:", e);
+  }
+}
+
 async function toolSaveMemory(masterId: number, category: string, content: string): Promise<string> {
   // Avoid exact duplicates
   const existing = await db.select().from(botMemoryTable)
@@ -348,7 +488,7 @@ const DISPATCHER_TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
           category: {
             type: "string",
             description: "Категория факта",
-            enum: ["характер", "предпочтения", "специализация", "паттерн_поведения", "контакт", "прочее"],
+            enum: ["характер", "предпочтения", "специализация", "паттерн_поведения", "подозрительное_поведение", "контакт", "прочее"],
           },
           content: {
             type: "string",
@@ -680,6 +820,11 @@ export async function runProactiveChecks(): Promise<void> {
         if (hoursToScheduled >= 20 && hoursToScheduled <= 28) {
           await sendPreDayReminder(master.id, master.alias, master.maxChatId, order.id);
         }
+      }
+
+      // 5. Ghost master detection: assigned 12+ hours, bot messaged, master NEVER replied
+      if (hoursAssigned >= 12) {
+        await detectGhostMaster(master, order.id, hoursAssigned);
       }
     }
 

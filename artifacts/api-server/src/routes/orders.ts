@@ -8,6 +8,7 @@ import { recalcMasterColumn } from "../lib/masterColumn.js";
 import { performBroadcast } from "../lib/broadcastOrder.js";
 import { sendPushToMaster } from "../lib/push.js";
 import { sendMaxMessage } from "../maxBot.js";
+import { analyseOrderCancellation } from "../lib/dispatcherAI.js";
 
 const TELEGRAM_API = `https://api.telegram.org/bot${process.env["TELEGRAM_BOT_TOKEN"]}`;
 
@@ -522,6 +523,19 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
         .set({ dispatchStatus: "dispatching", updatedAt: new Date() })
         .where(eq(ordersTable.id, id));
     }
+  }
+
+  // Async analysis of suspicious cancellations — fire and forget
+  if ((approveCancellation || updates.status === "cancelled") && current.masterId) {
+    const cancelledMasterId = current.masterId;
+    db.select({ alias: mastersTable.alias }).from(mastersTable)
+      .where(eq(mastersTable.id, cancelledMasterId))
+      .then(rows => {
+        if (rows[0]) {
+          analyseOrderCancellation(id, cancelledMasterId, rows[0].alias, (current as any).cancelType ?? null)
+            .catch(e => console.error("[orders] analyseOrderCancellation error:", e));
+        }
+      }).catch(() => {});
   }
 
   let masterName: string | null = null;
