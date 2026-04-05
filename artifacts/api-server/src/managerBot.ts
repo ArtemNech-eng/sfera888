@@ -3124,9 +3124,12 @@ const AUTONOMOUS_SYSTEM_PROMPT = `Ты — автономный AI-операц�
 
 ═══ ПОЛНЫЙ СПИСОК ОБЯЗАННОСТЕЙ (выполняй ВСЁ за один цикл) ═══
 
-📦 ЗАКАЗЫ:
-1. Заказы без мастера (get_pending_orders) → разошли каждый (auto_broadcast_order)
-2. Нарушения SLA (get_sla_breaches) → заказ >30 мин без рассылки → срочно разошли
+📦 ЗАКАЗЫ (КРИТИЧЕСКИ ВАЖНО — обрабатывай в первую очередь):
+1. Заказы без мастера (get_pending_orders) — для КАЖДОГО:
+   → Если ещё не разослан: auto_broadcast_order
+   → Если разослан, но никто не откликнулся: contact_masters_about_order (лично пишет каждому мастеру "можешь взять?")
+   → НЕ просто алерт руководителю — СНАЧАЛА исчерпай все возможности сам!
+2. Нарушения SLA (get_sla_breaches) → заказ >30 мин без рассылки → срочно: auto_broadcast_order + contact_masters_about_order
 3. Зависшие заказы (get_stuck_orders) → master_assigned >48ч → поставь задачу диспетчеру
 4. Статус активных заказов (get_active_orders_status) + проверь мастеров (ping_masters_with_active_orders)
 5. Уровень отмен (get_cancellation_rate) → если >20% — включи в отчёт как аномалию
@@ -3164,6 +3167,8 @@ const AUTONOMOUS_SYSTEM_PROMPT = `Ты — автономный AI-операц�
 — НЕ отменяй заказы (только руководитель)
 — НЕ создавай заявки автоматически
 — ВСЁ остальное — делай сам без вопросов
+— ЗАКАЗ БЕЗ МАСТЕРА = твоя задача решить, НЕ уведомить! Используй auto_broadcast_order и contact_masters_about_order
+— Руководителя алертить только если ВСЕ мастера отказали или нет мастеров в городе
 — Только русский язык
 — Максимум 16 раундов — используй эффективно, группируй действия`;
 
@@ -3242,6 +3247,20 @@ const AUTONOMOUS_TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           hasUrgentIssues: { type: "boolean", description: "true если есть срочные проблемы требующие внимания руководителя" },
         },
         required: ["report", "hasUrgentIssues"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "contact_masters_about_order",
+      description: "Лично написать каждому мастеру из рассылки заказа и спросить: «Можешь взять этот заказ?». Используй когда заказ уже был разослан, но никто не откликнулся. Диспетчер напишет лично, получит ответы «да/нет», и уведомит руководителя о первом согласившемся. Это АКТИВНЫЙ поиск мастера — используй вместо повторной рассылки.",
+      parameters: {
+        type: "object",
+        properties: {
+          orderId: { type: "number", description: "ID заказа без мастера" },
+        },
+        required: ["orderId"],
       },
     },
   },
@@ -3414,6 +3433,16 @@ export async function runAutonomousCycle(triggerReason = "scheduled") {
               }
             } catch (e) {
               toolResult = `Ошибка рассылки: ${String(e)}`;
+            }
+            break;
+          }
+          case "contact_masters_about_order": {
+            try {
+              const { contactMastersAboutOrder } = await import("./lib/dispatcherAI.js");
+              toolResult = await contactMastersAboutOrder(Number(args.orderId));
+              console.log(`[autonomousAgent] contact_masters_about_order #${args.orderId}: ${toolResult.slice(0, 80)}`);
+            } catch (e) {
+              toolResult = `Ошибка личного обращения к мастерам: ${String(e)}`;
             }
             break;
           }

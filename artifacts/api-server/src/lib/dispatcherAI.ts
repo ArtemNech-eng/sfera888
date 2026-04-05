@@ -10,7 +10,7 @@
  */
 
 import OpenAI from "openai";
-import { db, ordersTable, mastersTable, leadsTable, receiptsTable, masterMessagesTable, dispatcherFollowupsTable, botMemoryTable } from "@workspace/db";
+import { db, ordersTable, mastersTable, leadsTable, receiptsTable, masterMessagesTable, dispatcherFollowupsTable, botMemoryTable, orderDispatchesTable } from "@workspace/db";
 import { eq, and, isNull, inArray, lte, desc, gte, ilike, sql } from "drizzle-orm";
 import { sendMaxMessage } from "../maxBot.js";
 import { sendMsg as sendManagerMsg, getManagerUserId, injectNotification } from "../managerBot.js";
@@ -127,6 +127,16 @@ interface PendingManagerTask {
   sentAt: number;
 }
 const pendingManagerTasks = new Map<number, PendingManagerTask>(); // masterId → task
+
+// ─── Pending order contacts ────────────────────────────────────────────────────
+// When dispatcher personally asks a master "can you take order #X?",
+// track it so that when the master replies "yes/no", we handle it correctly.
+interface PendingOrderContact {
+  orderId: number;
+  orderSummary: string; // short description for context injection
+  sentAt: number;
+}
+const pendingOrderContacts = new Map<number, PendingOrderContact>(); // masterId → order contact
 
 // ─── Tool implementations ────────────────────────────────────────────────────
 
@@ -558,10 +568,20 @@ export async function handleMasterMessage(
   }
 
   const context = await buildMasterContext(masterId);
+
+  // Inject pending order contact context if we're waiting for a yes/no on a specific order
+  const pendingContact = pendingOrderContacts.get(masterId);
+  const pendingOrderSection = pendingContact
+    ? `\n\n⚠️ ОЖИДАЕМ ОТВЕТ ПО ЗАКАЗУ: ты уже написал этому мастеру по заказу #${pendingContact.orderId} (${pendingContact.orderSummary}) и ждёшь подтверждения.
+Если мастер отвечает ДА (готов, могу, берусь, приеду, ок и т.п.) — вызови escalate_to_manager с текстом "МАСТЕР ГОТОВ ВЗЯТЬ ЗАКАЗ #${pendingContact.orderId}: ${masterAlias} подтвердил готовность."
+Если мастер отвечает НЕТ (не могу, занят, не получится) — поблагодари, больше не предлагай этот заказ (запоминать через save_memory не нужно, система сама обновит статус).
+Не задавай лишних вопросов — определи из ответа: согласен или нет.`
+    : "";
+
   const systemPrompt = `Ты — AI-диспетчер ремонтного сервиса «Честный мастер». Ты общаешься с мастером ${masterAlias} от лица компании.
 
 Текущее состояние мастера:
-${context}
+${context}${pendingOrderSection}
 
 Твои задачи:
 - Поддерживать дружелюбный, профессиональный диалог
@@ -1034,6 +1054,96 @@ export async function getDispatcherActivityReport(): Promise<string> {
     console.error("[dispatcherAI] getDispatcherActivityReport error:", e);
     return "Ошибка получения отчёта.";
   }
+}
+
+/**
+ * Proactively contacts all masters who received this order dispatch but haven't responded.
+ * Sends a personal message asking "can you take this order?" via Max.
+ * Called by the autonomous agent when SLA is violated and no one answered the broadcast.
+ */
+export async function contactMastersAboutOrder(orderId: number): Promise<string> {
+  try {
+    const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
+    const order = orderRows[0];
+    if (!order) return `Заказ #${orderId} не найден.`;
+    if (order.status !== "waiting_master") {
+      return `Заказ #${orderId} уже в статусе ${order.status} — мастер найден или заказ закрыт.`;
+    }
+
+    // Get all dispatches with status "sent" (not responded or rejected)
+    const dispatches = await db.select().from(orderDispatchesTable)
+      .where(and(
+        eq(orderDispatchesTable.orderId, orderId),
+        eq(orderDispatchesTable.status, "sent"),
+      ));
+
+    if (dispatches.length === 0) {
+      return `По заказу #${orderId} нет нерассмотренных рассылок. Возможно, все мастера уже ответили. Попробуй разослать заново (auto_broadcast_order).`;
+    }
+
+    const masterIds = dispatches.map(d => d.masterId);
+    const masters = await db.select().from(mastersTable)
+      .where(inArray(mastersTable.id, masterIds));
+
+    const reachable = masters.filter(m => m.maxChatId);
+    if (reachable.length === 0) {
+      return `Мастера получили рассылку, но ни у кого нет Max — не могу написать лично. Попробуй связаться вручную.`;
+    }
+
+    const date = order.scheduledAt
+      ? new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(order.scheduledAt))
+      : "дата не указана";
+    const orderSummary = `${order.serviceType}, ${order.city}${order.district ? ", " + order.district : ""}, ${order.area} м²`;
+
+    let contacted = 0;
+    const skippedAlready: string[] = [];
+
+    for (const master of reachable) {
+      // Dedup: don't ask the same master about the same order within 3 hours
+      const fragment = `заказ #${orderId}`;
+      const alreadyAsked = await alreadySentBotMessage(master.id, fragment, 3);
+      if (alreadyAsked) {
+        skippedAlready.push(master.alias);
+        continue;
+      }
+
+      const msg = `${master.alias}, привет! 👋 По заказу #${orderId} всё ещё ищем мастера:
+
+🔧 ${order.serviceType}
+📍 ${order.city}${order.district ? ", " + order.district : ""}
+📐 ${order.area} м²
+📅 ${date}${order.comment ? "\n💬 " + order.comment : ""}
+
+Сможешь взять? Ответь «да» или «не могу» 🙏`;
+
+      await sendMaxMessage(master.maxChatId!, msg);
+      await saveBotReply(master.id, master.maxChatId!, msg);
+
+      // Track that we're waiting for a yes/no from this master about this order
+      pendingOrderContacts.set(master.id, {
+        orderId,
+        orderSummary,
+        sentAt: Date.now(),
+      });
+
+      contacted++;
+    }
+
+    const parts: string[] = [];
+    if (contacted > 0) parts.push(`✅ Лично написал ${contacted} мастерам с вопросом "можете взять заказ #${orderId}?"`);
+    if (skippedAlready.length > 0) parts.push(`⏭️ Пропустил (уже спрашивал недавно): ${skippedAlready.join(", ")}`);
+    parts.push(`Жду ответов. Как только кто-то подтвердит — сообщу руководителю.`);
+
+    return parts.join("\n");
+  } catch (e) {
+    console.error("[dispatcherAI] contactMastersAboutOrder error:", e);
+    return `Ошибка при личном обращении к мастерам по заказу #${orderId}.`;
+  }
+}
+
+/** Called when a master's pending order contact is resolved (yes or no) */
+export function clearPendingOrderContact(masterId: number): void {
+  pendingOrderContacts.delete(masterId);
 }
 
 /** Manager instructs the AI dispatcher to send a message/task to a master */
