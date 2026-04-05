@@ -612,10 +612,10 @@ async function toolGetReport(period: "day" | "week" | "month") {
     const txRows = await db.select().from(transactionsTable)
       .where(and(
         gte(transactionsTable.createdAt, from),
-        eq(transactionsTable.status, "paid"),
+        eq(transactionsTable.paymentStatus, "paid"),
       ));
-    const total = txRows.reduce((s, t) => s + Number(t.amount ?? 0), 0);
-    revenueText = `\n💰 Выручка: **${total.toLocaleString("ru-RU")} ₽** (${txRows.length} транзакций)`;
+    const total = txRows.reduce((s, t) => s + Number(t.commission ?? 0), 0);
+    revenueText = `\n💰 Комиссий получено: **${total.toLocaleString("ru-RU")} ₽** (${txRows.length} транзакций)`;
   } catch {}
 
   return `📊 Отчёт ${periodLabel}:
@@ -643,54 +643,95 @@ async function toolGetRevenueStats(period: "day" | "week" | "month") {
   else from.setMonth(now.getMonth() - 1);
 
   try {
-    // ── Commissions (transactions table) ─────────────────────────────────────
-    const txRows = await db.select().from(transactionsTable)
-      .where(gte(transactionsTable.createdAt, from));
+    const { calculateCommission: calcC, getCommissionSettings } = await import("./lib/commission.js");
+    const commSettings = await getCommissionSettings();
 
-    const paid = txRows.filter(t => t.status === "paid");
-    const pending = txRows.filter(t => t.status === "pending");
-    const overdue = txRows.filter(t => t.status === "overdue");
+    // ── Confirmed prepayments: filter by CONFIRMATION date, not creation date ─
+    // This is the key fix: a receipt created last month but confirmed TODAY
+    // should appear in today's / this week's confirmed stats.
+    const allReceipts = await db.select().from(receiptsTable);
 
-    const totalPaid = paid.reduce((s, t) => s + Number(t.amount ?? 0), 0);
-    const totalPending = pending.reduce((s, t) => s + Number(t.amount ?? 0), 0);
-    const totalOverdue = overdue.reduce((s, t) => s + Number(t.amount ?? 0), 0);
+    // Confirmed IN the period (by prepaymentSeenAt)
+    const confirmedInPeriod = allReceipts.filter(r =>
+      r.prepaymentSeenAt && r.prepaymentSeenAt >= from
+    );
 
-    // ── Receipts (prepayments from clients to masters) ────────────────────────
-    const allReceipts = await db.select().from(receiptsTable)
-      .where(gte(receiptsTable.createdAt, from));
+    // Still pending: client paid but manager hasn't confirmed (any date)
+    const waitingConfirm = allReceipts.filter(r =>
+      r.prepaymentSubmittedAt && !r.prepaymentSeenAt
+    );
 
-    // Confirmed = manager verified money received
-    const confirmedReceipts = allReceipts.filter(r => r.prepaymentSeenAt);
-    // Client paid but manager hasn't confirmed yet
-    const pendingReceipts = allReceipts.filter(r => r.prepaymentSubmittedAt && !r.prepaymentSeenAt);
-    // Not yet paid by client
-    const unpaidReceipts = allReceipts.filter(r => !r.prepaymentSubmittedAt);
+    // Unpaid: no client payment yet (active smetы only — exclude old/completed orders)
+    const unpaidActive = allReceipts.filter(r => !r.prepaymentSubmittedAt && !r.prepaymentSeenAt);
 
-    const confirmedPrepay = confirmedReceipts.reduce((s, r) => s + Number(r.prepaymentAmount ?? 0), 0);
-    const pendingPrepay = pendingReceipts.reduce((s, r) => s + Number(r.prepaymentAmount ?? 0), 0);
+    // Totals
+    const confirmedPrepay = confirmedInPeriod.reduce((s, r) => s + Number(r.prepaymentAmount ?? 0), 0);
+    const waitingPrepay = waitingConfirm.reduce((s, r) => s + Number(r.prepaymentAmount ?? 0), 0);
 
-    // Expected remaining balance = totalAmount - prepaymentAmount for confirmed receipts
-    // (prepayment received → work in progress → client pays remainder on completion)
-    const expectedRemaining = confirmedReceipts
-      .reduce((s, r) => s + Math.max(0, Number(r.totalAmount ?? 0) - Number(r.prepaymentAmount ?? 0)), 0);
+    // Expected commission from confirmed smetы (using full totalAmount for commission base)
+    const expectedCommissionFromConfirmed = confirmedInPeriod.reduce((s, r) => {
+      const total = Number(r.totalAmount ?? 0);
+      return s + (total > 0 ? calcC(total, commSettings) : 0);
+    }, 0);
 
-    // Total contract value of all receipts in period
-    const totalContractValue = allReceipts.reduce((s, r) => s + Number(r.totalAmount ?? 0), 0);
+    // Remaining client balance (total - prepayment) for confirmed smetы
+    const expectedRemaining = confirmedInPeriod.reduce((s, r) =>
+      s + Math.max(0, Number(r.totalAmount ?? 0) - Number(r.prepaymentAmount ?? 0)), 0
+    );
+
+    // ── Transactions (actual paid/pending commissions from completed orders) ───
+    const txRows = await db.select().from(transactionsTable);
+    const txPaid = txRows.filter(t => t.paymentStatus === "paid");
+    const txPending = txRows.filter(t => t.paymentStatus === "pending");
+    const txOverdue = txRows.filter(t => t.paymentStatus === "overdue");
+
+    const txPaidInPeriod = txPaid.filter(t => t.paidAt && t.paidAt >= from);
+
+    const totalCommPaid = txPaidInPeriod.reduce((s, t) => s + Number(t.commission ?? 0), 0);
+    const totalCommPending = txPending.reduce((s, t) => s + Number(t.commission ?? 0) - Number(t.prepaymentDeducted ?? 0), 0);
+    const totalCommOverdue = txOverdue.reduce((s, t) => s + Number(t.commission ?? 0) - Number(t.prepaymentDeducted ?? 0), 0);
 
     const periodLabel = period === "day" ? "сегодня" : period === "week" ? "за 7 дней" : "за 30 дней";
 
     let result = `💰 Финансы (${periodLabel}):\n\n`;
-    result += `📋 СМЕТЫ (${allReceipts.length} шт., объём ${totalContractValue.toLocaleString("ru-RU")} ₽):\n`;
-    result += `  ✅ Предоплата подтверждена: ${confirmedPrepay.toLocaleString("ru-RU")} ₽ (${confirmedReceipts.length} смет)\n`;
-    result += `  ⏳ Оплачено клиентом, ждёт подтверждения: ${pendingPrepay.toLocaleString("ru-RU")} ₽ (${pendingReceipts.length} смет)\n`;
-    result += `  📝 Ждут оплаты клиентом: ${unpaidReceipts.length} смет\n`;
-    if (expectedRemaining > 0) {
-      result += `  💡 Ожидаемый остаток после сдачи работ: ~${expectedRemaining.toLocaleString("ru-RU")} ₽\n`;
+
+    result += `📋 ПРЕДОПЛАТЫ — подтверждены ${periodLabel} (${confirmedInPeriod.length} смет):\n`;
+    if (confirmedInPeriod.length > 0) {
+      result += `  ✅ Получено предоплат: **${confirmedPrepay.toLocaleString("ru-RU")} ₽**\n`;
+      result += `  🔶 Ожидаемая комиссия с этих смет: ~${expectedCommissionFromConfirmed.toLocaleString("ru-RU")} ₽\n`;
+      result += `  💡 Остаток клиентов после сдачи работ: ~${expectedRemaining.toLocaleString("ru-RU")} ₽\n`;
+      // List confirmed receipts for the period
+      for (const r of confirmedInPeriod.slice(0, 5)) {
+        const confirmedDate = r.prepaymentSeenAt ? new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(r.prepaymentSeenAt) : "—";
+        const prep = Number(r.prepaymentAmount).toLocaleString("ru-RU");
+        const total = Number(r.totalAmount).toLocaleString("ru-RU");
+        const comm = calcC(Number(r.totalAmount ?? 0), commSettings).toLocaleString("ru-RU");
+        result += `  • Смета #${r.id} / Заказ #${r.orderId}: предоплата ${prep} ₽ / итого ${total} ₽ → комиссия ~${comm} ₽ (${confirmedDate})\n`;
+      }
+      if (confirmedInPeriod.length > 5) result += `  ...и ещё ${confirmedInPeriod.length - 5} смет\n`;
+    } else {
+      result += `  Нет подтверждённых предоплат за этот период\n`;
     }
-    result += `\n🏦 КОМИССИИ (транзакции):\n`;
-    result += `  ✅ Оплачено: ${totalPaid.toLocaleString("ru-RU")} ₽ (${paid.length} шт.)\n`;
-    result += `  ⏳ Ожидают оплаты: ${totalPending.toLocaleString("ru-RU")} ₽ (${pending.length} шт.)\n`;
-    result += `  🔴 Просроченные: ${totalOverdue.toLocaleString("ru-RU")} ₽ (${overdue.length} шт.)`;
+
+    result += `\n⏳ ЖДУТ ПОДТВЕРЖДЕНИЯ (${waitingConfirm.length} смет):\n`;
+    if (waitingConfirm.length > 0) {
+      result += `  Клиент оплатил, но руководитель не подтвердил: **${waitingPrepay.toLocaleString("ru-RU")} ₽**\n`;
+      for (const r of waitingConfirm) {
+        const prep = Number(r.prepaymentAmount).toLocaleString("ru-RU");
+        result += `  • Смета #${r.id} / Заказ #${r.orderId}: ${prep} ₽ — ожидает вашего подтверждения\n`;
+      }
+    } else {
+      result += `  Нет смет, ожидающих подтверждения\n`;
+    }
+
+    result += `\n📝 Не оплачены клиентом: ${unpaidActive.length} смет\n`;
+
+    result += `\n🏦 КОМИССИИ (фактические транзакции):\n`;
+    result += `  ✅ Оплачено мастерами ${periodLabel}: ${totalCommPaid.toLocaleString("ru-RU")} ₽ (${txPaidInPeriod.length} шт.)\n`;
+    result += `  ⏳ Ожидают оплаты: ${Math.max(0, totalCommPending).toLocaleString("ru-RU")} ₽ (${txPending.length} шт.)\n`;
+    if (totalCommOverdue > 0) {
+      result += `  🔴 Просроченные: ${Math.max(0, totalCommOverdue).toLocaleString("ru-RU")} ₽ (${txOverdue.length} шт.)\n`;
+    }
 
     return result;
   } catch (e) {
@@ -1485,10 +1526,10 @@ async function toolGetBusinessInsights() {
   const conversionRate = totalLeads > 0 ? Math.round(convertedLeads / totalLeads * 100) : 0;
 
   // Revenue
-  const totalRevenue = allTransactions.filter(t => t.status === "paid")
-    .reduce((s, t) => s + Number(t.amount ?? 0), 0);
-  const monthRevenue = allTransactions.filter(t => t.status === "paid" && new Date(t.createdAt) >= month)
-    .reduce((s, t) => s + Number(t.amount ?? 0), 0);
+  const totalRevenue = allTransactions.filter(t => t.paymentStatus === "paid")
+    .reduce((s, t) => s + Number(t.commission ?? 0), 0);
+  const monthRevenue = allTransactions.filter(t => t.paymentStatus === "paid" && new Date(t.createdAt) >= month)
+    .reduce((s, t) => s + Number(t.commission ?? 0), 0);
 
   // Cities
   const cityCount = new Map<string, number>();
