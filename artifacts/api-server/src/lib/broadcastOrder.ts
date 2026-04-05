@@ -80,18 +80,31 @@ export interface BroadcastResult {
   error?: string;
 }
 
-export async function performBroadcast(orderId: number): Promise<BroadcastResult> {
+export async function performBroadcast(orderId: number, force = false): Promise<BroadcastResult> {
   const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
   const order = orderRows[0];
   if (!order) return { ok: false, sent: 0, skipped: 0, error: "Order not found" };
 
-  if (order.dispatchStatus !== "none") {
+  if (order.dispatchStatus !== "none" && !force) {
     return { ok: false, sent: 0, skipped: 0, error: "Already dispatched" };
+  }
+
+  // Force re-broadcast: delete old "sent" (unanswered) dispatches so masters get a fresh notification.
+  // Keep "rejected" records so explicitly refused masters are still excluded.
+  if (force && order.dispatchStatus !== "none") {
+    await db.delete(orderDispatchesTable)
+      .where(and(
+        eq(orderDispatchesTable.orderId, orderId),
+        eq(orderDispatchesTable.status, "sent"),
+      ));
+    await db.update(ordersTable)
+      .set({ dispatchStatus: "none", updatedAt: new Date() })
+      .where(eq(ordersTable.id, orderId));
   }
 
   const allMasters = await db.select().from(mastersTable)
     .where(and(eq(mastersTable.status, "active"), eq(mastersTable.city, order.city)));
-  const reachable = allMasters.filter(m => m.telegramId || m.pwaLogin);
+  const reachable = allMasters.filter(m => m.telegramId || m.pwaLogin || m.maxChatId);
 
   if (reachable.length === 0) {
     return { ok: false, sent: 0, skipped: 0, error: `Нет активных мастеров в городе «${order.city}»` };

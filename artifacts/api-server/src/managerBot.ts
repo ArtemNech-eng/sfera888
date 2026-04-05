@@ -1696,11 +1696,12 @@ async function toolCreateLeadAndOrder(args: {
 }
 
 async function toolBroadcastOrder(orderId: number) {
-  const result = await performBroadcast(orderId);
+  // force=true: manager explicitly requests broadcast, even if already dispatched before (re-broadcast)
+  const result = await performBroadcast(orderId, true);
   if (result.ok) {
-    return `Рассылка отправлена ${result.sent} мастерам.`;
+    return `✅ Рассылка отправлена ${result.sent} мастерам.${result.skipped > 0 ? ` Пропущено ${result.skipped} (недоступны/нет специализации).` : ""}`;
   }
-  return `Ошибка рассылки: ${result.error ?? "неизвестная ошибка"}`;
+  return `❌ Ошибка рассылки: ${result.error ?? "неизвестная ошибка"}`;
 }
 
 // ─── GPT-4o tool definitions ──────────────────────────────────────────────────
@@ -3340,9 +3341,10 @@ export async function runAutonomousCycle(triggerReason = "scheduled") {
           case "auto_broadcast_order": {
             try {
               const { performBroadcast } = await import("./lib/broadcastOrder.js");
-              const result = await performBroadcast(args.orderId);
+              // force=true: autonomous agent may re-broadcast SLA-violating orders already dispatched
+              const result = await performBroadcast(args.orderId, true);
               if (result.ok) {
-                toolResult = `✅ Заказ #${args.orderId} разослан ${result.sent} мастерам.`;
+                toolResult = `✅ Заказ #${args.orderId} разослан ${result.sent} мастерам.${result.skipped > 0 ? ` Пропущено: ${result.skipped}.` : ""}`;
                 console.log(`[autonomousAgent] Broadcast order #${args.orderId} → ${result.sent} masters`);
               } else {
                 toolResult = `⚠️ Рассылка заказа #${args.orderId}: ${result.error ?? "нет мастеров"}`;
