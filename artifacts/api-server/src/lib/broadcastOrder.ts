@@ -165,21 +165,26 @@ export async function performBroadcast(
   // Specialty filter — can be bypassed with skipSpecialtyFilter
   let specialtyEligible = eligible;
   if (!skipSpecialtyFilter) {
+    // Normalize: replace ё→е for fuzzy matching (prevents "шпаклевка" vs "шпаклёвка" misses)
+    const normalizeRu = (s: string) => s.toLowerCase().replace(/ё/g, "е");
+
     const orderTerms = order.serviceType
-      .toLowerCase()
       .split(/[,;]+/)
-      .map(t => t.trim())
+      .map(t => normalizeRu(t.trim()))
       .filter(Boolean);
+
+    // "Комплексный ремонт" is a wildcard — master can accept any type of order
+    const WILDCARD_SPECS = ["комплексный ремонт", "комплексная отделка"];
 
     specialtyEligible = eligible.filter(master => {
       const specs = master.specializations ?? [];
       // Masters with no specializations listed → accept any order
       if (specs.length === 0) return true;
+      const specsNorm = specs.map(s => normalizeRu(s.trim()));
+      // Wildcard specialization → always match
+      if (specsNorm.some(sp => WILDCARD_SPECS.includes(sp))) return true;
       const matches = orderTerms.some(term =>
-        specs.some(s => {
-          const sp = s.toLowerCase().trim();
-          return sp === term || term.includes(sp) || sp.includes(term);
-        })
+        specsNorm.some(sp => sp === term || term.includes(sp) || sp.includes(term))
       );
       if (!matches) skipStats.wrongSpecialty++;
       return matches;
