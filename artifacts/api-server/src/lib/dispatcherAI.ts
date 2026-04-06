@@ -695,7 +695,9 @@ async function saveBotReply(masterId: number, chatId: string, text: string) {
       senderName: "Диспетчер",
       isRead: true,
     });
-  } catch {}
+  } catch (e) {
+    console.error(`[dispatcherAI] saveBotReply failed for master ${masterId}:`, e);
+  }
 }
 
 // ─── Proactive messages ──────────────────────────────────────────────────────
