@@ -363,8 +363,7 @@ setInterval(() => checkOverdueTransactions().catch(console.error), 6 * 60 * 60 *
 setInterval(() => autoExpireDispatches().catch(console.error), 60 * 60 * 1000);
 // Auto-broadcast scheduled orders 2–4h before scheduledAt
 setInterval(() => autoScheduledOrderBroadcast().catch(console.error), 15 * 60 * 1000);
-// Auto re-broadcast orders with no responses after 30 min
-setInterval(() => autoReBroadcastNoResponse().catch(console.error), 5 * 60 * 1000);
+// autoReBroadcastNoResponse removed — per user request
 // AI dispatcher: only post-assignment flow (greeting → call check-in → scheduled follow-ups)
 setInterval(() => runProactiveChecks().catch(console.error), 30 * 60 * 1000);
 // runQuickAutonomousCheck removed — caused spam to masters
