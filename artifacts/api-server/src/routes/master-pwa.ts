@@ -5,7 +5,7 @@ import { verifyPassword, hashPassword } from "../lib/auth.js";
 import { getMasterEligibility, getOverdueMasterIds, countActiveMasterOrders, getColumnIdForActiveCount } from "../lib/orderEligibility.js";
 import multer from "multer";
 import { objectStorageClient } from "../lib/objectStorage.js";
-import { getBotLink } from "../maxBot.js";
+import { getBotLink, sendOnboardingMemo } from "../maxBot.js";
 import { notifyManagerMasterResponse, notifyManagerNewMaster } from "../managerBot.js";
 
 const avatarUpload = multer({
@@ -538,6 +538,11 @@ router.post("/orders/:id/accept", requireMasterPwa, async (req, res) => {
       commission: "0",
       paymentStatus: "pending",
     });
+  }
+
+  // First order ever → send onboarding memo via Max after short delay
+  if (master.acceptedOrders === 0 && master.maxChatId) {
+    setTimeout(() => sendOnboardingMemo(master.maxChatId!).catch(() => {}), 10_000);
   }
 
   res.json({ success: true });
