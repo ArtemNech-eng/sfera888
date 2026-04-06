@@ -2883,6 +2883,7 @@ export async function handleManagerUpdate(update: unknown) {
               session.pending = { type: "send_task_force", data: pendingData, description: nightText };
               pushRaw(session, { role: "tool", content: "pending_quiet_hours_confirmation", tool_call_id: tc.id, name: fnName });
               flushSession(session);
+              persistSession(userId); // ← persist NOW so button press survives restarts
               await sendWithButtons(userId, nightText, [[
                 { text: "🌙 Да, отправить", payload: "confirm:yes" },
                 { text: "⏰ Утром", payload: "confirm:no" },
@@ -2899,6 +2900,7 @@ export async function handleManagerUpdate(update: unknown) {
               session.pending = { type: "send_task_force", data: pendingData, description: dupText };
               pushRaw(session, { role: "tool", content: "pending_duplicate_confirmation", tool_call_id: tc.id, name: fnName });
               flushSession(session);
+              persistSession(userId); // ← persist NOW so button press survives restarts
               await sendWithButtons(userId, dupText, [[
                 { text: "✅ Да, отправить", payload: "confirm:yes" },
                 { text: "❌ Не надо", payload: "confirm:no" },

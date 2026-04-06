@@ -1197,13 +1197,14 @@ export function clearPendingOrderContact(masterId: number): void {
 /** Manager instructs the AI dispatcher to send a message/task to a master */
 export async function sendTaskToMaster(masterNameOrId: string, task: string): Promise<string> {
   try {
-    const allMasters = await db.select().from(mastersTable);
+    const allMasters = await db.select().from(mastersTable).where(isNull(mastersTable.deletedAt));
     const lower = masterNameOrId.toLowerCase();
-    const master = allMasters.find(m =>
-      String(m.id) === masterNameOrId ||
-      m.alias.toLowerCase().includes(lower) ||
-      (m.phone ?? "").includes(masterNameOrId),
-    );
+    // Prefer exact ID match first, then alias, then phone
+    const master =
+      allMasters.find(m => String(m.id) === masterNameOrId) ??
+      allMasters.find(m => m.alias.toLowerCase().includes(lower)) ??
+      allMasters.find(m => (m.phone ?? "").includes(masterNameOrId));
+    console.log(`[dispatcherAI] sendTaskToMaster lookup "${masterNameOrId}" → ${master ? `#${master.id} ${master.alias} maxChatId=${master.maxChatId}` : "not found"}`);
     if (!master) return `Мастер "${masterNameOrId}" не найден.`;
     if (!master.maxChatId) return `У мастера ${master.alias} нет подключённого Max — сообщение не отправить.`;
 
