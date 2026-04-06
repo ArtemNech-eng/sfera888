@@ -134,16 +134,8 @@ router.get("/auth/me", async (req, res) => {
   const masterId = (req.session as any).masterId;
   if (!masterId) return res.status(401).json({ error: "Не авторизован" });
 
-  let master = await getMasterById(masterId);
+  const master = await getMasterById(masterId);
   if (!master || master.deletedAt) return res.status(401).json({ error: "Мастер не найден" });
-
-  // Safety: auto-activate if contractSignedAt is set but status still pending_contract
-  if (master.contractSignedAt && master.status === "pending_contract") {
-    await db.update(mastersTable)
-      .set({ status: "active" })
-      .where(eq(mastersTable.id, master.id));
-    master = { ...master, status: "active" };
-  }
 
   const maxBotLink = await getBotLink();
 

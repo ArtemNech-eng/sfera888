@@ -32,10 +32,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refresh = async () => {
     try {
-      const m = await api.auth.me();
+      const res = await fetch("/api/master-pwa/auth/me", { credentials: "include" });
+      if (res.status === 401) {
+        setMaster(null);
+        return;
+      }
+      if (!res.ok) return; // server/network error — keep current session state
+      const m = await res.json();
       setMaster(m);
     } catch {
-      setMaster(null);
+      // network error — keep current session state, don't log out
     }
   };
 

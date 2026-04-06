@@ -205,9 +205,29 @@ const inputCls = "w-full h-11 px-4 rounded-xl border border-input bg-background 
 const STEPS: Step[] = ["read", "data", "passport", "confirm", "done"];
 const STEP_LABELS = ["Договор", "Данные", "Паспорт", "Подписание", "Готово"];
 
+const SESSION_KEY = "pending_contract_state";
+
+function loadSavedState(): { step: Step; data: PassportData } | null {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function saveState(step: Step, data: PassportData) {
+  try {
+    if (step === "done") { sessionStorage.removeItem(SESSION_KEY); return; }
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify({ step, data }));
+  } catch {}
+}
+
 export default function PendingContractPage() {
   const { master, logout, refresh } = useAuth();
-  const [step, setStep] = useState<Step>("read");
+  const saved = loadSavedState();
+  const [step, setStepRaw] = useState<Step>(saved?.step ?? "read");
   const [contractExpanded, setContractExpanded] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [passportFile, setPassportFile] = useState<File | null>(null);
@@ -217,11 +237,16 @@ export default function PendingContractPage() {
   const [signing, setSigning] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(master?.customAvatarUrl ?? null);
-  const [data, setData] = useState<PassportData>({
+  const [data, setData] = useState<PassportData>(saved?.data ?? {
     fullName: "", passportNumber: "", passportDate: "",
     passportIssuer: "", address: "",
   });
   const [dataErrors, setDataErrors] = useState<Partial<PassportData>>({});
+
+  const setStep = (s: Step) => {
+    setStepRaw(s);
+    saveState(s, data);
+  };
 
   const passportInputRef = useRef<HTMLInputElement>(null);
   const passportRegInputRef = useRef<HTMLInputElement>(null);
@@ -230,13 +255,25 @@ export default function PendingContractPage() {
   const contractDone = !!(master as any)?.contractSignedAt;
   useEffect(() => { if (contractDone) setStep("done"); }, [contractDone]);
 
-  // Poll /auth/me every 8 seconds so the PWA detects admin activation (OkiDoki/paper)
-  // App.tsx routing will auto-redirect to "/" when status becomes non-pending_contract
+  // If restored to "confirm" step but files were lost (page reload), go back to passport step
   useEffect(() => {
-    if (step === "done") return;
+    if (step === "confirm" && !passportFile && !passportRegFile) {
+      setStep("passport");
+      toast("Загрузите фото паспорта заново — страница обновилась");
+    }
+  }, []); // run once on mount only
+
+  // Persist data changes to sessionStorage so iOS camera page-reload doesn't reset the form
+  useEffect(() => {
+    if (step !== "done") saveState(step, data);
+  }, [data, step]);
+
+  // Poll /auth/me every 8 seconds so the PWA detects admin activation.
+  // Continues on "done" step so auto-redirect to "/" fires as soon as admin activates.
+  useEffect(() => {
     const interval = setInterval(() => { refresh(); }, 8_000);
     return () => clearInterval(interval);
-  }, [step, refresh]);
+  }, [refresh]);
 
   const contractText = buildContractText(data, master?.phone ?? "", master?.id ?? 0);
 
@@ -536,7 +573,7 @@ export default function PendingContractPage() {
                   <span className="text-xs text-muted-foreground">JPG, PNG — до 15 МБ</span>
                 </button>
               )}
-              <input ref={passportInputRef} type="file" accept="image/*" capture="environment"
+              <input ref={passportInputRef} type="file" accept="image/*"
                 className="hidden" onChange={handlePassportSelect} />
             </div>
 
@@ -568,7 +605,7 @@ export default function PendingContractPage() {
                   <span className="text-xs text-muted-foreground">JPG, PNG — до 15 МБ</span>
                 </button>
               )}
-              <input ref={passportRegInputRef} type="file" accept="image/*" capture="environment"
+              <input ref={passportRegInputRef} type="file" accept="image/*"
                 className="hidden" onChange={handlePassportRegSelect} />
             </div>
 
@@ -662,7 +699,7 @@ export default function PendingContractPage() {
               <h3 className="font-bold text-lg text-emerald-700">Договор подписан!</h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
                 Ваши данные и фото паспорта переданы на проверку администратору.
-                После подтверждения вы получите уведомление в Telegram и сможете принимать заявки.
+                После подтверждения вы автоматически получите доступ к заявкам — страница обновится сама.
               </p>
             </div>
             <button onClick={refresh} className="w-full h-12 bg-primary text-white font-semibold rounded-xl active:opacity-80">
