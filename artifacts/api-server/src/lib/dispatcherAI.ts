@@ -563,6 +563,9 @@ export async function handleMasterMessage(
   // Track that master replied — used by follow-up logic
   lastMasterReplyAt.set(masterId, Date.now());
 
+  // Restore conversation history from DB on first contact after server restart
+  await ensureSessionFromDb(masterId);
+
   // If manager asked dispatcher to contact this master — notify manager of the reply
   const pendingTask = pendingManagerTasks.get(masterId);
   if (pendingTask) {
