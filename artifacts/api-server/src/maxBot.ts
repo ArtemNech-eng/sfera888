@@ -311,9 +311,22 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
 
         // AI-диспетчер отвечает вместо "Сообщение передано оператору"
         const { handleMasterMessage } = await import("./lib/dispatcherAI.js");
-        handleMasterMessage(linkedMaster.id, linkedMaster.alias, String(userId), text).catch(e => {
+        handleMasterMessage(linkedMaster.id, linkedMaster.alias, String(userId), text).catch(async e => {
           console.error("[maxBot] dispatcherAI error:", e);
-          sendMaxMessage(userId, "Принял! Если что-то срочное — операторы перезвонят.").catch(() => {});
+          const fallback = "Принял! Если что-то срочное — операторы перезвонят.";
+          await sendMaxMessage(userId, fallback).catch(() => {});
+          // Сохраняем fallback-сообщение в CRM чтобы оно отображалось в диалоге
+          try {
+            const { db: dbInner, masterMessagesTable: mmTable } = await import("@workspace/db");
+            await dbInner.insert(mmTable).values({
+              masterId: linkedMaster.id,
+              telegramChatId: `max_${userId}`,
+              text: fallback,
+              fromMaster: false,
+              senderName: "Диспетчер",
+              isRead: true,
+            });
+          } catch {}
         });
         return;
       }
