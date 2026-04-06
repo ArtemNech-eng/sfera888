@@ -155,22 +155,43 @@ export async function sendMaxWithButtons(
 
 // ─── Webhook handler ──────────────────────────────────────────────────────────
 
-// ── Dedup: Max sometimes delivers the same webhook twice ──────────────────────
+// ── Dedup: Max sometimes delivers the same webhook twice (with delays up to 10+ min) ─────
 const _processedMaxMids = new Set<string>();
-function isMaxDuplicate(update: Record<string, unknown>): boolean {
+function isMaxDuplicateMemory(update: Record<string, unknown>): boolean {
   const mid = (update as any).message?.body?.mid ?? (update as any).callback?.message?.body?.mid;
   if (!mid) return false;
   if (_processedMaxMids.has(mid)) {
-    console.log(`[maxBot] duplicate mid ignored: ${mid}`);
+    console.log(`[maxBot] duplicate mid ignored (memory): ${mid}`);
     return true;
   }
   _processedMaxMids.add(mid);
-  setTimeout(() => _processedMaxMids.delete(mid), 2 * 60 * 1000);
+  // 15-minute TTL — covers Max's worst-case webhook retry window
+  setTimeout(() => _processedMaxMids.delete(mid), 15 * 60 * 1000);
+  return false;
+}
+
+// DB-level dedup: survives server restarts. Returns true if mid already stored in master_messages.
+async function isMaxDuplicateDb(mid: string): Promise<boolean> {
+  try {
+    const { db, masterMessagesTable } = await import("@workspace/db");
+    const { eq } = await import("drizzle-orm");
+    const rows = await db.select({ id: masterMessagesTable.id })
+      .from(masterMessagesTable)
+      .where(eq(masterMessagesTable.maxMid, mid))
+      .limit(1);
+    if (rows.length > 0) {
+      console.log(`[maxBot] duplicate mid ignored (db): ${mid}`);
+      return true;
+    }
+  } catch (e) {
+    console.error("[maxBot] db dedup check failed:", e);
+  }
   return false;
 }
 
 export async function handleMaxUpdate(update: Record<string, unknown>): Promise<void> {
-  if (isMaxDuplicate(update)) return;
+  // Fast in-memory dedup (15-min TTL, cleared on restart)
+  if (isMaxDuplicateMemory(update)) return;
   try {
     const updateType = update.update_type as string;
     console.log("[maxBot] incoming update:", JSON.stringify(update).slice(0, 500));
@@ -277,8 +298,12 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
 
     const userId: number = msg.sender?.user_id;
     const text: string = (msg.body?.text ?? "").trim();
+    const mid: string | undefined = msg.body?.mid;
 
     if (!userId || !text) return;
+
+    // DB-level dedup: check if this mid was already processed (survives server restarts)
+    if (mid && await isMaxDuplicateDb(mid)) return;
 
     const { db, mastersTable, masterMessagesTable } = await import("@workspace/db");
     const { eq, isNotNull } = await import("drizzle-orm");
@@ -312,7 +337,7 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
           return;
         }
 
-        // Сохраняем сообщение мастера в CRM чат
+        // Сохраняем сообщение мастера в CRM чат (maxMid нужен для DB-дедупликации)
         await db.insert(masterMessagesTable).values({
           masterId: linkedMaster.id,
           telegramChatId: `max_${userId}`,
@@ -320,6 +345,7 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
           fromMaster: true,
           senderName: linkedMaster.alias,
           isRead: false,
+          ...(mid ? { maxMid: mid } : {}),
         });
 
         console.log(`[maxBot] message from master ${linkedMaster.alias} → AI dispatcher`);
