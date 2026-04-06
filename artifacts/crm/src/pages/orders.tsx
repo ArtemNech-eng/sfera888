@@ -1220,8 +1220,8 @@ export default function Orders() {
                                 ? new Date(openOrder.scheduledAt).toLocaleDateString("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })
                                 : null;
                               const text = openOrder.status === "master_assigned"
-                                ? `Здравствуйте! Мастер ${master} назначен на вашу заявку (${service}${city ? `, ${city}` : ""}).${scheduled ? ` Дата визита: ${scheduled}.` : ""} По вопросам пишите или звоните — честный-мастер.рф`
-                                : `Здравствуйте! Ваша заявка (${service}${city ? `, ${city}` : ""}) принята в обработку. Мы свяжемся с вами в ближайшее время — честный-мастер.рф`;
+                                ? `Здравствуйте! Мастер ${master} назначен на вашу заявку (${service}${city ? `, ${city}` : ""}).${scheduled ? ` Дата визита: ${scheduled}.` : ""} По вопросам пишите или звоните — sfera-master.ru`
+                                : `Здравствуйте! Ваша заявка (${service}${city ? `, ${city}` : ""}) принята в обработку. Мы свяжемся с вами в ближайшее время — sfera-master.ru`;
                               navigator.clipboard.writeText(text).then(() => {
                                 setNotifCopied(true);
                                 setTimeout(() => setNotifCopied(false), 2500);

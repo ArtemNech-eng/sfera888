@@ -430,7 +430,7 @@ app.get("/api/receipt/:token", async (req, res) => {
         <div class="about-sub">ИНН 262409599800</div>
       </div>
     </div>
-    <div class="about-stamp">Смета №${receipt.id} · ${date} · sfera-project.digital</div>
+    <div class="about-stamp">Смета №${receipt.id} · ${date} · sfera-master.ru</div>
   </div>
 
   ${!isClientSubmitted ? `
@@ -714,7 +714,7 @@ app.get("/", (_req, res) => {
 });
 
 // ── Register Max Bot Webhooks on startup ──────────────────────────────────────
-const PROD_HOST = "https://sfera-project.digital";
+const PROD_HOST = "https://sfera-master.ru";
 registerWebhook(`${PROD_HOST}/api/max-webhook`);
 registerManagerWebhook();
 

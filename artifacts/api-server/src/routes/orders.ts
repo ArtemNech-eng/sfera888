@@ -633,7 +633,7 @@ router.post("/:id/assign-master", allOrderRoles, async (req, res) => {
       : "не указана";
     sendMaxMessage(
       master.maxChatId,
-      `✅ Вам назначена заявка #${id}\n\n🔧 ${o.serviceType}\n📍 ${o.city}${o.district ? ", " + o.district : ""}\n📐 ${o.area} м²\n📅 ${amDate}${o.comment ? "\n💬 " + o.comment : ""}${amLeadRow ? `\n\n📞 ${amLeadRow.clientName}\n${amLeadRow.clientPhone}` : ""}\n\n👉 Подробности в приложении:\nhttps://sfera-project.digital/master-pwa/orders`
+      `✅ Вам назначена заявка #${id}\n\n🔧 ${o.serviceType}\n📍 ${o.city}${o.district ? ", " + o.district : ""}\n📐 ${o.area} м²\n📅 ${amDate}${o.comment ? "\n💬 " + o.comment : ""}${amLeadRow ? `\n\n📞 ${amLeadRow.clientName}\n${amLeadRow.clientPhone}` : ""}\n\n👉 Подробности в приложении:\nhttps://sfera-master.ru/master-pwa/orders`
     ).catch(() => {});
   }
 
@@ -845,7 +845,7 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
       : "не указана";
     sendMaxMessage(
       master.maxChatId,
-      `✅ Вам назначена заявка #${orderId}\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${maDate}${order.comment ? "\n💬 " + order.comment : ""}${lead ? `\n\n📞 ${lead.clientName}\n${lead.clientPhone}` : ""}\n\n👉 Подробности в приложении:\nhttps://sfera-project.digital/master-pwa/orders`
+      `✅ Вам назначена заявка #${orderId}\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${maDate}${order.comment ? "\n💬 " + order.comment : ""}${lead ? `\n\n📞 ${lead.clientName}\n${lead.clientPhone}` : ""}\n\n👉 Подробности в приложении:\nhttps://sfera-master.ru/master-pwa/orders`
     ).catch(() => {});
   }
 

@@ -1,4 +1,4 @@
-const CACHE = "chestniy-master-v5";
+const CACHE = "sfera-master-v1";
 const PRECACHE = ["/client/", "/client/index.html"];
 
 self.addEventListener("install", (e) => {

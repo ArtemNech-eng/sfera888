@@ -290,7 +290,7 @@ function Home() {
           ))}
         </div>
 
-        <p style={{ textAlign: "center", fontSize: 10, color: "#d1d5db", marginTop: 14 }}>sfera-project.digital</p>
+        <p style={{ textAlign: "center", fontSize: 10, color: "#d1d5db", marginTop: 14 }}>sfera-master.ru</p>
       </div>
 
       <BottomNav active="home" staticMode supportPhone={storedPhone ?? undefined} />

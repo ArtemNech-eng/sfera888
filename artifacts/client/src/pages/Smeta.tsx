@@ -389,7 +389,7 @@ export default function Smeta() {
           </div>
           <div style={{ padding: "0 14px 10px" }}>
             <div style={{ fontSize: 10, color: "#d1d5db" }}>
-              Смета №{data.id} · {date} · sfera-project.digital
+              Смета №{data.id} · {date} · sfera-master.ru
             </div>
           </div>
         </SectionCard>

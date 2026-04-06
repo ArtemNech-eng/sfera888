@@ -242,7 +242,7 @@ router.post("/test-order", ops, async (req, res) => {
       : "не указана";
     sendMaxMessage(
       master.maxChatId,
-      `📋 Тестовая заявка #${order.id}\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${tDate}${order.comment ? "\n💬 " + order.comment : ""}\n\n👉 Откликнитесь в приложении:\nhttps://sfera-project.digital/master-pwa/orders`
+      `📋 Тестовая заявка #${order.id}\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${tDate}${order.comment ? "\n💬 " + order.comment : ""}\n\n👉 Откликнитесь в приложении:\nhttps://sfera-master.ru/master-pwa/orders`
     ).catch(() => {});
   }
 
