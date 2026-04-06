@@ -4,6 +4,7 @@ import { eq, desc, inArray, isNull, isNotNull, ne, count, gte, avg, sql, and } f
 import { requireRole } from "../middlewares/requireAuth.js";
 import { notifyMasterActivated } from "../telegram-notify.js";
 import { logMaxEvent } from "../maxBot.js";
+import { hashPassword } from "../lib/auth.js";
 import multer from "multer";
 import { objectStorageClient, ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage.js";
 
@@ -538,6 +539,27 @@ router.post("/:id/reset-pwa", allMasterRoles, async (req, res) => {
     .where(eq(mastersTable.id, masterId));
 
   res.json({ success: true });
+});
+
+// POST /api/masters/reset-all-passwords — admin only: reset every master's password to their phone (pwaLogin)
+router.post("/reset-all-passwords", requireRole("admin"), async (req, res) => {
+  const masters = await db.select({ id: mastersTable.id, alias: mastersTable.alias, pwaLogin: mastersTable.pwaLogin })
+    .from(mastersTable)
+    .where(and(isNotNull(mastersTable.pwaLogin), isNull(mastersTable.deletedAt)));
+
+  const results: { id: number; alias: string; login: string }[] = [];
+
+  for (const m of masters) {
+    if (!m.pwaLogin) continue;
+    const hash = await hashPassword(m.pwaLogin);
+    await db.update(mastersTable)
+      .set({ pwaPasswordHash: hash })
+      .where(eq(mastersTable.id, m.id));
+    results.push({ id: m.id, alias: m.alias ?? "—", login: m.pwaLogin });
+  }
+
+  console.log(`[admin] reset-all-passwords: ${results.length} мастеров`);
+  res.json({ success: true, count: results.length, masters: results });
 });
 
 // DELETE /api/masters/:id/max-link — CRM operator unlinks Max account
