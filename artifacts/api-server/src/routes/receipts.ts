@@ -1,5 +1,5 @@
 import { Router, type Request } from "express";
-import { db, receiptsTable, ordersTable, mastersTable, leadsTable } from "@workspace/db";
+import { db, receiptsTable, ordersTable, mastersTable, leadsTable, transactionsTable } from "@workspace/db";
 import { sendMaxMessage } from "../maxBot.js";
 import { eq, and, isNull, isNotNull, desc } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
