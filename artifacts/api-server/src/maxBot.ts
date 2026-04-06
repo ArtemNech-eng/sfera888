@@ -155,7 +155,22 @@ export async function sendMaxWithButtons(
 
 // ─── Webhook handler ──────────────────────────────────────────────────────────
 
+// ── Dedup: Max sometimes delivers the same webhook twice ──────────────────────
+const _processedMaxMids = new Set<string>();
+function isMaxDuplicate(update: Record<string, unknown>): boolean {
+  const mid = (update as any).message?.body?.mid ?? (update as any).callback?.message?.body?.mid;
+  if (!mid) return false;
+  if (_processedMaxMids.has(mid)) {
+    console.log(`[maxBot] duplicate mid ignored: ${mid}`);
+    return true;
+  }
+  _processedMaxMids.add(mid);
+  setTimeout(() => _processedMaxMids.delete(mid), 2 * 60 * 1000);
+  return false;
+}
+
 export async function handleMaxUpdate(update: Record<string, unknown>): Promise<void> {
+  if (isMaxDuplicate(update)) return;
   try {
     const updateType = update.update_type as string;
     console.log("[maxBot] incoming update:", JSON.stringify(update).slice(0, 500));

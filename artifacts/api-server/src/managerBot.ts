@@ -2523,8 +2523,24 @@ const SYSTEM_PROMPT = `Ты — AI-ассистент и стратегичес�
 
 // ─── Main update handler ──────────────────────────────────────────────────────
 
+// ── Dedup: Max sometimes delivers the same webhook event twice ────────────────
+const _processedMids = new Set<string>();
+function isDuplicateUpdate(u: any): boolean {
+  const mid = u.message?.body?.mid ?? u.callback?.message?.body?.mid;
+  if (!mid) return false;
+  if (_processedMids.has(mid)) {
+    console.log(`[managerBot] duplicate mid ignored: ${mid}`);
+    return true;
+  }
+  _processedMids.add(mid);
+  // Clean up after 2 minutes to avoid memory leak
+  setTimeout(() => _processedMids.delete(mid), 2 * 60 * 1000);
+  return false;
+}
+
 export async function handleManagerUpdate(update: unknown) {
   const u = update as any;
+  if (isDuplicateUpdate(u)) return;
   console.log("[managerBot] update type:", u.update_type ?? "unknown");
 
   // ── Callback (button press) ───────────────────────────────────────────────
