@@ -80,7 +80,19 @@ export interface BroadcastResult {
   error?: string;
 }
 
-export async function performBroadcast(orderId: number, force = false): Promise<BroadcastResult> {
+export interface BroadcastSkipStats {
+  notReachable: number;
+  rejected: number;
+  notEligible: number;
+  wrongSpecialty: number;
+  notReady: number;
+}
+
+export async function performBroadcast(
+  orderId: number,
+  force = false,
+  skipSpecialtyFilter = false,
+): Promise<BroadcastResult & { skipStats?: BroadcastSkipStats }> {
   const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
   const order = orderRows[0];
   if (!order) return { ok: false, sent: 0, skipped: 0, error: "Order not found" };
@@ -104,13 +116,22 @@ export async function performBroadcast(orderId: number, force = false): Promise<
 
   const allMasters = await db.select().from(mastersTable)
     .where(and(eq(mastersTable.status, "active"), eq(mastersTable.city, order.city)));
-  const reachable = allMasters.filter(m => m.telegramId || m.pwaLogin || m.maxChatId);
+
+  const skipStats: BroadcastSkipStats = {
+    notReachable: 0, rejected: 0, notEligible: 0, wrongSpecialty: 0, notReady: 0,
+  };
+
+  const reachable = allMasters.filter(m => {
+    if (m.telegramId || m.pwaLogin || m.maxChatId) return true;
+    skipStats.notReachable++;
+    return false;
+  });
 
   if (reachable.length === 0) {
     return { ok: false, sent: 0, skipped: 0, error: `Нет активных мастеров в городе «${order.city}»` };
   }
 
-  // Load existing "rejected" dispatch records for this order — exclude those masters (previously unassigned or expired)
+  // Load existing "rejected" dispatch records for this order — exclude those masters
   const existingRejected = await db.select({ masterId: orderDispatchesTable.masterId })
     .from(orderDispatchesTable)
     .where(and(
@@ -119,7 +140,11 @@ export async function performBroadcast(orderId: number, force = false): Promise<
     ));
   const excludedMasterIds = new Set(existingRejected.map(r => r.masterId));
 
-  const reachableFiltered = reachable.filter(m => !excludedMasterIds.has(m.id));
+  const reachableFiltered = reachable.filter(m => {
+    if (!excludedMasterIds.has(m.id)) return true;
+    skipStats.rejected++;
+    return false;
+  });
 
   const activeOrders = await db.select().from(ordersTable)
     .where(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
@@ -128,38 +153,45 @@ export async function performBroadcast(orderId: number, force = false): Promise<
 
   const eligible = reachableFiltered.filter(master => {
     const myActiveCount = activeOrders.filter(o => o.masterId === master.id).length;
-    return getMasterEligibility(master, myActiveCount, overdueMasterIds).canAccept;
+    if (getMasterEligibility(master, myActiveCount, overdueMasterIds).canAccept) return true;
+    skipStats.notEligible++;
+    return false;
   });
 
   if (eligible.length === 0) {
-    return { ok: false, sent: 0, skipped: reachable.length, error: "Нет доступных мастеров для рассылки" };
+    return { ok: false, sent: 0, skipped: reachable.length, error: "Нет доступных мастеров для рассылки", skipStats };
   }
 
-  // Split composite service types ("Укладка плитки, Установка дверей") into individual terms
-  const orderTerms = order.serviceType
-    .toLowerCase()
-    .split(/[,;]+/)
-    .map(t => t.trim())
-    .filter(Boolean);
+  // Specialty filter — can be bypassed with skipSpecialtyFilter
+  let specialtyEligible = eligible;
+  if (!skipSpecialtyFilter) {
+    const orderTerms = order.serviceType
+      .toLowerCase()
+      .split(/[,;]+/)
+      .map(t => t.trim())
+      .filter(Boolean);
 
-  const specialtyEligible = eligible.filter(master => {
-    const specs = master.specializations ?? [];
-    // Masters with no specializations listed → accept any order
-    if (specs.length === 0) return true;
-    // Match if master specializes in ANY of the order's service terms
-    return orderTerms.some(term =>
-      specs.some(s => {
-        const sp = s.toLowerCase().trim();
-        return sp === term || term.includes(sp) || sp.includes(term);
-      })
-    );
-  });
+    specialtyEligible = eligible.filter(master => {
+      const specs = master.specializations ?? [];
+      // Masters with no specializations listed → accept any order
+      if (specs.length === 0) return true;
+      const matches = orderTerms.some(term =>
+        specs.some(s => {
+          const sp = s.toLowerCase().trim();
+          return sp === term || term.includes(sp) || sp.includes(term);
+        })
+      );
+      if (!matches) skipStats.wrongSpecialty++;
+      return matches;
+    });
 
-  if (specialtyEligible.length === 0) {
-    return {
-      ok: false, sent: 0, skipped: reachable.length,
-      error: `Нет мастеров с нужной специализацией «${order.serviceType}»`,
-    };
+    if (specialtyEligible.length === 0) {
+      return {
+        ok: false, sent: 0, skipped: reachable.length,
+        error: `Нет мастеров с нужной специализацией «${order.serviceType}». Используйте «разошли всем без фильтра специализации».`,
+        skipStats,
+      };
+    }
   }
 
   // Filter out masters who said "not ready" in today's morning checkin
@@ -172,12 +204,17 @@ export async function performBroadcast(orderId: number, force = false): Promise<
       eq(masterCheckinsTable.isAvailable, false),
     ));
   const notReadyIds = new Set(notReadyRows.map(r => r.masterId));
-  const availableEligible = specialtyEligible.filter(m => !notReadyIds.has(m.id));
+  const availableEligible = specialtyEligible.filter(m => {
+    if (!notReadyIds.has(m.id)) return true;
+    skipStats.notReady++;
+    return false;
+  });
 
   if (availableEligible.length === 0) {
     return {
       ok: false, sent: 0, skipped: reachable.length,
       error: "Все подходящие мастера отметились как «не готов» сегодня",
+      skipStats,
     };
   }
 

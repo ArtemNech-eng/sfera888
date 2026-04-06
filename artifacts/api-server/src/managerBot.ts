@@ -1818,11 +1818,25 @@ async function toolCreateLeadAndOrder(args: {
   return { leadId: lead.id, orderId: order.id };
 }
 
-async function toolBroadcastOrder(orderId: number) {
+async function toolBroadcastOrder(orderId: number, forceAll = false) {
   // force=true: manager explicitly requests broadcast, even if already dispatched before (re-broadcast)
-  const result = await performBroadcast(orderId, true);
+  // forceAll=true: skip specialization filter — send to all eligible available masters
+  const result = await performBroadcast(orderId, true, forceAll);
   if (result.ok) {
-    return `✅ Рассылка отправлена ${result.sent} мастерам.${result.skipped > 0 ? ` Пропущено ${result.skipped} (недоступны/нет специализации).` : ""}`;
+    const stats = result.skipStats;
+    const skipParts: string[] = [];
+    if (stats) {
+      if (stats.notReachable > 0) skipParts.push(`${stats.notReachable} без канала связи`);
+      if (stats.rejected > 0) skipParts.push(`${stats.rejected} отказались ранее`);
+      if (stats.notEligible > 0) skipParts.push(`${stats.notEligible} с долгами/перегружены`);
+      if (stats.wrongSpecialty > 0) skipParts.push(`${stats.wrongSpecialty} другая специализация`);
+      if (stats.notReady > 0) skipParts.push(`${stats.notReady} не готовы сегодня`);
+    }
+    const skipNote = skipParts.length > 0
+      ? ` Пропущено ${result.skipped}: ${skipParts.join(", ")}.`
+      : "";
+    const forceNote = forceAll ? " (без фильтра специализации)" : "";
+    return `✅ Рассылка отправлена ${result.sent} мастерам${forceNote}.${skipNote}`;
   }
   return `❌ Ошибка рассылки: ${result.error ?? "неизвестная ошибка"}`;
 }
@@ -2110,11 +2124,12 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "propose_broadcast",
-      description: "Предложить разослать заказ мастерам города",
+      description: "Предложить разослать заказ мастерам города. Используй force_all=true если руководитель явно сказал 'всем', 'всем мастерам', 'разошли всем без фильтра' — чтобы игнорировать фильтр специализации.",
       parameters: {
         type: "object",
         properties: {
           orderId: { type: "number" },
+          force_all: { type: "boolean", description: "true = отправить всем активным доступным мастерам, игнорируя специализацию" },
         },
         required: ["orderId"],
       },
@@ -2565,6 +2580,8 @@ export async function handleManagerUpdate(update: unknown) {
         try {
           const { leadId, orderId } = await toolCreateLeadAndOrder(data);
           actionResult = `Заявка #${leadId} создана → Заказ #${orderId}`;
+          // Update context so GPT knows which order is active in this conversation
+          session.ctx = { ...session.ctx, orderId, leadId };
           await sendWithButtons(
             userId,
             `✅ ${actionResult}\n\nРазослать мастерам сейчас?`,
@@ -2580,7 +2597,7 @@ export async function handleManagerUpdate(update: unknown) {
         }
       } else if (type === "broadcast_order") {
         await sendMsg(userId, "⏳ Отправляю рассылку...");
-        actionResult = await toolBroadcastOrder(data.orderId);
+        actionResult = await toolBroadcastOrder(data.orderId, !!data.forceAll);
         await sendMsg(userId, `📢 ${actionResult}`);
       } else if (type === "set_order_status") {
         actionResult = await toolSetOrderStatus(data.orderId, data.status, data.note);
@@ -2923,12 +2940,19 @@ export async function handleManagerUpdate(update: unknown) {
             return;
           }
           case "propose_broadcast": {
-            session.pending = { type: "broadcast_order", data: { orderId: args.orderId }, description: `Заказ #${args.orderId}` };
+            const forceAll = !!args.force_all;
+            session.pending = {
+              type: "broadcast_order",
+              data: { orderId: args.orderId, forceAll },
+              description: `Заказ #${args.orderId}${forceAll ? " (всем без фильтра)" : ""}`,
+            };
             pushRaw(session, { role: "tool", content: "pending_confirmation", tool_call_id: tc.id, name: fnName });
             flushSession(session);
             await sendWithButtons(
               userId,
-              `Разослать заказ #${args.orderId} всем мастерам города?`,
+              forceAll
+                ? `Разослать заказ #${args.orderId} ВСЕМ активным мастерам города (без фильтра специализации)?`
+                : `Разослать заказ #${args.orderId} мастерам с подходящей специализацией?`,
               [[
                 { text: "📢 Разослать", payload: "confirm:yes" },
                 { text: "❌ Отмена", payload: "confirm:no" },
