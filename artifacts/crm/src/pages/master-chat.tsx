@@ -629,9 +629,12 @@ export default function MasterChat() {
                 )}
                 {filteredThreads.map(t => {
                   const online = isOnline(t.lastSeenAt);
+                  const stripDispatcher = (text: string) => text.replace(/^\[ИИ-диспетчер\]:\s*/, "");
                   const lastMsgPreview = t.lastFromMaster
                     ? t.lastMessage
-                    : `Вы: ${t.lastMessage}`;
+                    : t.lastMessage.startsWith("[ИИ-диспетчер]:")
+                      ? `Диспетчер: ${stripDispatcher(t.lastMessage)}`
+                      : `Вы: ${t.lastMessage}`;
                   return (
                     <div
                       key={t.masterId}
@@ -1072,7 +1075,7 @@ export default function MasterChat() {
                                   </div>
                                 </div>
                               ) : (
-                                msg.text && <p className="text-sm leading-relaxed">{msg.text}</p>
+                                msg.text && <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text.replace(/^\[ИИ-диспетчер\]:\s*/, "")}</p>
                               )}
                               <div className={`flex items-center gap-1 mt-1 ${isMaster ? "justify-start" : "justify-end"}`}>
                                 <span className={`text-[10px] ${isMaster ? "text-gray-400" : "text-blue-100"}`}>{timeStamp(msg.createdAt)}</span>
