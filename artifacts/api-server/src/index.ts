@@ -365,8 +365,7 @@ setInterval(() => autoExpireDispatches().catch(console.error), 60 * 60 * 1000);
 setInterval(() => autoScheduledOrderBroadcast().catch(console.error), 15 * 60 * 1000);
 // Auto re-broadcast orders with no responses after 30 min
 setInterval(() => autoReBroadcastNoResponse().catch(console.error), 5 * 60 * 1000);
-// Check for stale orders (waiting > 2h) every 30 min
-setInterval(() => checkStaleOrders().catch(console.error), 30 * 60 * 1000);
+// checkStaleOrders removed — runQuickAutonomousCheck covers the same logic (avoids duplicate contactMasters calls)
 // AI dispatcher proactive checks every 30 min
 setInterval(() => runProactiveChecks().catch(console.error), 30 * 60 * 1000);
 // Quick autonomous check: auto-broadcast undispatched orders waiting > 1h

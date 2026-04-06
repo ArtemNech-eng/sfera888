@@ -1109,7 +1109,15 @@ export async function getDispatcherActivityReport(): Promise<string> {
  * Sends a personal message asking "can you take this order?" via Max.
  * Called by the autonomous agent when SLA is violated and no one answered the broadcast.
  */
+// Process-level lock: prevent simultaneous contactMasters calls for the same order
+const _contactingOrders = new Set<number>();
+
 export async function contactMastersAboutOrder(orderId: number): Promise<string> {
+  if (_contactingOrders.has(orderId)) {
+    console.log(`[dispatcherAI] contactMastersAboutOrder #${orderId} already in progress — skipping`);
+    return `Заказ #${orderId} уже обрабатывается.`;
+  }
+  _contactingOrders.add(orderId);
   try {
     const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
     const order = orderRows[0];
@@ -1186,6 +1194,8 @@ export async function contactMastersAboutOrder(orderId: number): Promise<string>
   } catch (e) {
     console.error("[dispatcherAI] contactMastersAboutOrder error:", e);
     return `Ошибка при личном обращении к мастерам по заказу #${orderId}.`;
+  } finally {
+    _contactingOrders.delete(orderId);
   }
 }
 
