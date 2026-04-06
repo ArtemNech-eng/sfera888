@@ -34,6 +34,11 @@ const masterSessions = new Map<number, ChatMessage[]>();
 const MAX_HISTORY = 14;
 const sessionDbLoaded = new Set<number>();
 
+/** Timestamp of the last message the bot sent to each master (in-memory cooldown) */
+const lastBotMessageAt = new Map<number, number>();
+/** Timestamp of the last message received from each master (in-memory) */
+const lastMasterReplyAt = new Map<number, number>();
+
 function getHistory(masterId: number): ChatMessage[] {
   if (!masterSessions.has(masterId)) masterSessions.set(masterId, []);
   return masterSessions.get(masterId)!;
