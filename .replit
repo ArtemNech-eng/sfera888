@@ -33,7 +33,7 @@ expertMode = true
 [userenv.shared]
 VAPID_PUBLIC_KEY = "BEsTKPbpLdg3SuDxyu9m3xFFr6MUHpBROPKhWgfddaf4D2gp0GbiH0pv1Nv4WBXO_Yk9O4jKgxyxm0VJidHtd9Q"
 VAPID_PRIVATE_KEY = "PlPmqNhWM4ioOIikpRw3WXAgQWuHFbbqlZL_GTyvQdk"
-VAPID_EMAIL = "mailto:admin@chestniy-master.ru"
+VAPID_EMAIL = "mailto:admin@sfera-master.ru"
 VITE_YANDEX_MAPS_KEY = "7a61bf5a-2a4f-497e-92b6-899908af56f8"
 ADMIN_PASSWORD = "admin2026"
 
