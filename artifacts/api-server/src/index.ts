@@ -365,17 +365,10 @@ setInterval(() => autoExpireDispatches().catch(console.error), 60 * 60 * 1000);
 setInterval(() => autoScheduledOrderBroadcast().catch(console.error), 15 * 60 * 1000);
 // Auto re-broadcast orders with no responses after 30 min
 setInterval(() => autoReBroadcastNoResponse().catch(console.error), 5 * 60 * 1000);
-// checkStaleOrders removed — runQuickAutonomousCheck covers the same logic (avoids duplicate contactMasters calls)
-// AI dispatcher proactive checks every 30 min
+// AI dispatcher: only post-assignment flow (greeting → call check-in → scheduled follow-ups)
 setInterval(() => runProactiveChecks().catch(console.error), 30 * 60 * 1000);
-// Quick autonomous check: auto-broadcast undispatched orders waiting > 1h
-setInterval(() => runQuickAutonomousCheck().catch(console.error), 30 * 60 * 1000);
-// New market detector: check every 6 hours
-setInterval(() => checkNewMarkets().catch(console.error), 6 * 60 * 60 * 1000);
-// Run market detector on startup too
-checkNewMarkets().catch(console.error);
-// Autonomous AI agent: full cycle every 2 hours
-setInterval(() => runAutonomousCycle("плановая проверка каждые 2 часа").catch(console.error), 2 * 60 * 60 * 1000);
+// runQuickAutonomousCheck removed — caused spam to masters
+// runAutonomousCycle removed — caused spam to masters
 
 // ─── Checkin broadcast scheduler ─────────────────────────────────────────────
 // Reads broadcast + reminder times from DB every minute and fires if needed.
