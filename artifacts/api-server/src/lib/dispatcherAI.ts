@@ -581,12 +581,44 @@ export async function handleMasterMessage(
 
   const context = await buildMasterContext(masterId);
 
-  // Inject pending order contact context if we're waiting for a yes/no on a specific order
+  // ── Pending order contact: detect YES / NO before calling GPT ──────────────
   const pendingContact = pendingOrderContacts.get(masterId);
-  const pendingOrderSection = pendingContact
-    ? `\n\n⚠️ ОЖИДАЕМ ОТВЕТ ПО ЗАКАЗУ: ты уже написал этому мастеру по заказу #${pendingContact.orderId} (${pendingContact.orderSummary}) и ждёшь подтверждения.
-Если мастер отвечает ДА (готов, могу, берусь, приеду, ок и т.п.) — вызови escalate_to_manager с текстом "МАСТЕР ГОТОВ ВЗЯТЬ ЗАКАЗ #${pendingContact.orderId}: ${masterAlias} подтвердил готовность."
-Если мастер отвечает НЕТ (не могу, занят, не получится) — поблагодари, больше не предлагай этот заказ (запоминать через save_memory не нужно, система сама обновит статус).
+
+  if (pendingContact) {
+    const lower = text.toLowerCase();
+    // Check rejection first — "не могу" contains "могу", so order matters
+    const isNo = /не могу|не смогу|занят|не получится|далеко|не подойд|откажусь|отказываюсь|не возьму|не берусь|нет|пас/.test(lower);
+    // Only consider as Yes if it's NOT also a No (prevents "не могу" triggering acceptance)
+    const isYes = !isNo && /берусь|возьму|готов|могу|приеду|окей|хорошо|согласен|согласна|подтверждаю|(^|\s)ок(\s|$|,)|(^|\s)да(\s|$|,)/.test(lower);
+
+    if (isNo) {
+      // Master declined — clear pending immediately so no reminder fires
+      pendingOrderContacts.delete(masterId);
+      console.log(`[dispatcherAI] Master ${masterAlias} declined order #${pendingContact.orderId} — cleared pending contact`);
+      // Mark dispatch as rejected in DB
+      try {
+        await db.update(orderDispatchesTable)
+          .set({ status: "rejected", respondedAt: new Date() })
+          .where(and(
+            eq(orderDispatchesTable.orderId, pendingContact.orderId),
+            eq(orderDispatchesTable.masterId, masterId),
+          ));
+      } catch (e) {
+        console.error("[dispatcherAI] Failed to mark dispatch rejected:", e);
+      }
+    } else if (isYes && !isNo) {
+      // Master accepted — the escalate_to_manager tool call will handle assignment,
+      // but clear pending here too so no duplicate reminder fires if GPT doesn't call the tool
+      pendingOrderContacts.delete(masterId);
+      console.log(`[dispatcherAI] Master ${masterAlias} accepted order #${pendingContact.orderId} — cleared pending contact`);
+    }
+  }
+
+  const stillPending = pendingOrderContacts.get(masterId); // may have been cleared above
+  const pendingOrderSection = stillPending
+    ? `\n\n⚠️ ОЖИДАЕМ ОТВЕТ ПО ЗАКАЗУ: ты уже написал этому мастеру по заказу #${stillPending.orderId} (${stillPending.orderSummary}) и ждёшь подтверждения.
+Если мастер отвечает ДА (готов, могу, берусь, приеду, ок и т.п.) — вызови escalate_to_manager с текстом "МАСТЕР ГОТОВ ВЗЯТЬ ЗАКАЗ #${stillPending.orderId}: ${masterAlias} подтвердил готовность."
+Если мастер отвечает НЕТ (не могу, занят, не получится) — поблагодари, больше не предлагай этот заказ.
 Не задавай лишних вопросов — определи из ответа: согласен или нет.`
     : "";
 
