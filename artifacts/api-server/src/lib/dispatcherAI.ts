@@ -557,7 +557,7 @@ const DISPATCHER_TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
 export async function handleMasterMessage(
   masterId: number,
   masterAlias: string,
-  maxChatId: string,
+  maxChatId: string | null,
   text: string,
 ): Promise<void> {
   // Track that master replied — used by follow-up logic
@@ -669,32 +669,35 @@ ${context}${pendingOrderSection}
       const reply = followUp.choices[0]?.message?.content ?? "";
       if (reply) {
         addToHistory(masterId, { role: "assistant", content: reply });
-        await sendMaxMessage(maxChatId, reply);
+        if (maxChatId) await sendMaxMessage(maxChatId, reply);
         await saveBotReply(masterId, maxChatId, reply);
       }
     } else {
       const reply = assistantMsg.content ?? "";
       if (reply) {
         addToHistory(masterId, { role: "assistant", content: reply });
-        await sendMaxMessage(maxChatId, reply);
+        if (maxChatId) await sendMaxMessage(maxChatId, reply);
         await saveBotReply(masterId, maxChatId, reply);
       }
     }
   } catch (e) {
     console.error("[dispatcherAI] AI error:", e);
-    await sendMaxMessage(maxChatId, "Принял, передам оператору. Если срочно — позвоните нам.");
+    const fallback = "Принял, передам оператору. Если срочно — позвоните нам.";
+    if (maxChatId) await sendMaxMessage(maxChatId, fallback);
+    await saveBotReply(masterId, maxChatId, fallback);
   } finally {
     persistSession(masterId);
   }
 }
 
 // Save bot reply to CRM chat for visibility + track timing for follow-ups
-async function saveBotReply(masterId: number, chatId: string, text: string) {
+async function saveBotReply(masterId: number, maxChatId: string | null, text: string) {
   lastBotMessageAt.set(masterId, Date.now());
+  const telegramChatId = maxChatId ? `max_${maxChatId}` : `pwa_${masterId}`;
   try {
     await db.insert(masterMessagesTable).values({
       masterId,
-      telegramChatId: `max_${chatId}`,
+      telegramChatId,
       text: `[ИИ-диспетчер]: ${text}`,
       fromMaster: false,
       senderName: "Диспетчер",

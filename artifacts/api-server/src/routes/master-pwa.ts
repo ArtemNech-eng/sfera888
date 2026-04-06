@@ -1045,6 +1045,20 @@ router.post("/chat", requireMasterPwa, async (req, res) => {
     photoUrl: msg.photoUrl ?? null,
     createdAt: msg.createdAt,
   });
+
+  // Let the AI dispatcher respond asynchronously (works for both Max and PWA masters)
+  if (text?.trim()) {
+    import("../lib/dispatcherAI.js")
+      .then(({ handleMasterMessage }) =>
+        handleMasterMessage(
+          masterId,
+          master.alias,
+          master.maxChatId ?? null,
+          text.trim(),
+        )
+      )
+      .catch((e) => console.error("[pwa-chat] dispatcherAI error:", e));
+  }
 });
 
 router.get("/chat/unread", requireMasterPwa, async (req, res) => {
