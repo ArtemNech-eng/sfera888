@@ -59,19 +59,29 @@ class BrowserAgentService {
   // User input waiting mechanism
   private inputResolve: ((value: string) => void) | null = null;
   private pendingInputPrompt: string = "";
+  private queuedInput: string | null = null; // input sent while agent is running
 
   getStatus(): AgentStatus { return this.status; }
   getLastScreenshot(): string | null { return this.lastScreenshot; }
   getPendingInputPrompt(): string { return this.pendingInputPrompt; }
 
   provideInput(value: string): boolean {
-    if (!this.inputResolve) return false;
-    this.inputResolve(value);
-    this.inputResolve = null;
-    this.pendingInputPrompt = "";
-    this.status = "running";
-    this.log("info", `Получен ввод от пользователя: ${value}`);
-    return true;
+    if (this.inputResolve) {
+      // Agent is actively waiting — deliver immediately
+      this.inputResolve(value);
+      this.inputResolve = null;
+      this.pendingInputPrompt = "";
+      this.status = "running";
+      this.log("info", `Получен ввод от пользователя: ${value}`);
+      return true;
+    }
+    if (this.status === "running" || this.status === "starting") {
+      // Agent is busy — queue the input so it's used on next request_input call
+      this.queuedInput = value;
+      this.log("info", `Ввод сохранён в очередь, будет использован при следующем запросе: ${value}`);
+      return true;
+    }
+    return false;
   }
   getCurrentTask(): string { return this.currentTask; }
   getSessionId(): string { return this.sessionId; }
@@ -236,15 +246,26 @@ class BrowserAgentService {
       case "request_input": {
         const prompt = String(p.prompt ?? "Введите данные");
         this.pendingInputPrompt = prompt;
-        this.status = "waiting_input";
-        this.log("info", `⏸ Ожидание ввода: ${prompt}`);
-        const value = await new Promise<string>((resolve, reject) => {
-          this.inputResolve = resolve;
-          // Auto-reject after 10 minutes if no input
-          setTimeout(() => reject(new Error("Время ожидания ввода истекло (10 мин)")), 600_000);
-        });
+
+        let value: string;
+        if (this.queuedInput !== null) {
+          // User pre-sent the value while agent was running — use it immediately
+          value = this.queuedInput;
+          this.queuedInput = null;
+          this.log("info", `✅ Использован предварительно введённый код: ${"*".repeat(value.length)}`);
+        } else {
+          this.status = "waiting_input";
+          this.log("info", `⏸ Ожидание ввода: ${prompt}`);
+          value = await new Promise<string>((resolve, reject) => {
+            this.inputResolve = resolve;
+            // Auto-reject after 10 minutes if no input
+            setTimeout(() => reject(new Error("Время ожидания ввода истекло (10 мин)")), 600_000);
+          });
+          this.log("info", `✅ Получен код: ${"*".repeat(value.length)}`);
+        }
+
+        this.pendingInputPrompt = "";
         this.status = "running";
-        this.log("info", `✅ Получен код: ${"*".repeat(value.length)}`);
         await this.page!.keyboard.type(value, { delay: 80 });
         await this.page!.waitForTimeout(500);
         break;
@@ -257,6 +278,7 @@ class BrowserAgentService {
     if (!this.browser) await this.launch();
 
     this.abortFlag = false;
+    this.queuedInput = null;
     this.status = "running";
     this.currentTask = task;
     this.sessionId = `ses_${Date.now()}`;
@@ -327,9 +349,10 @@ ${historyText}${credentialsContext}
 - Координаты точные — смотри на скриншот внимательно
 - После ввода данных нажимай Enter или кликай кнопку
 - Если нужно войти — используй сохранённые учётные данные для этого сайта (см. выше)
-- Если учётных данных для этого сайта НЕТ в списке выше — action: "done", result: "Нужны учётные данные для входа на [название сайта]. Добавьте логин и пароль в разделе «Учётные данные» и запустите задачу снова."
+- Если учётных данных для этого сайта НЕТ в списке выше — action: "request_input", params: { "prompt": "Введите номер телефона для входа на [сайт]" } — запроси у пользователя
 - Если нужно ввести SMS-код, код из письма или любой одноразовый код — action: "request_input", params: { "prompt": "Введите SMS-код, отправленный на номер +7XXXXXX" }
-- Дождись ввода кода пользователем, затем продолжи задачу
+- Если видишь поле «Номер телефона» для входа и телефон не сохранён в учётных данных — action: "request_input", params: { "prompt": "Введите номер телефона для входа" }
+- Дождись ввода от пользователя, затем продолжи задачу
 - Если видишь капчу — action: "done", result: "Обнаружена капча, требуется ручная верификация"
 - Если залогинился — сразу переходи к основной задаче
 - Если задача выполнена — action: "done"`;
@@ -393,6 +416,7 @@ ${historyText}${credentialsContext}
 
   abort(): void {
     this.abortFlag = true;
+    this.queuedInput = null;
     // Unblock any pending input wait
     if (this.inputResolve) {
       this.inputResolve("__aborted__");

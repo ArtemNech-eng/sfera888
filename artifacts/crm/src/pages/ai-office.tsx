@@ -633,18 +633,17 @@ export default function AiOfficePage() {
           toast({ title: "Ошибка", description: "Агент не ожидает ввода", variant: "destructive" });
         }
       } else if (status === "running" || status === "starting") {
-        // Agent is busy — queue a note that will appear in next input request
+        // Agent is busy — queue the value, it will be used on next request_input call
         const res = await fetch(`${BASE}/api/browser-agent/input`, {
           method: "POST", credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ value: msg }),
         });
-        if (!res.ok) {
-          // Not waiting, treat as new task to run after current
-          toast({ title: "Агент занят", description: "Сообщение будет учтено когда агент остановится" });
-        } else {
+        if (res.ok) {
           setUserInputValue("");
-          toast({ title: "Отправлено агенту" });
+          toast({ title: "Сохранено в очередь", description: "Агент подставит значение когда дойдёт до ввода" });
+        } else {
+          toast({ title: "Ошибка отправки", variant: "destructive" });
         }
       } else {
         // Agent is idle/done — treat as a new task
