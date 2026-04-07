@@ -231,6 +231,20 @@ class BrowserAgentService {
     this.sessionId = `ses_${Date.now()}`;
     this.log("info", `Новая задача: ${task}`);
 
+    // Load saved credentials to inject into the prompt
+    let credentialsContext = "";
+    try {
+      const creds = await db.execute(sql`
+        SELECT site, login, password_enc FROM browser_agent_credentials ORDER BY site
+      `);
+      if (creds.rows.length > 0) {
+        const lines = (creds.rows as any[]).map(r =>
+          `  - ${r.site}: логин="${r.login}", пароль="${Buffer.from(r.password_enc, "base64").toString()}"`
+        ).join("\n");
+        credentialsContext = `\nСохранённые учётные данные (используй их для входа):\n${lines}`;
+      }
+    } catch {}
+
     const actionHistory: string[] = [];
     let stepLimitReached = true;
 
@@ -257,7 +271,7 @@ class BrowserAgentService {
       const systemPrompt = `Ты RPA+AI агент который управляет реальным браузером Chrome 1280×720px.
 Задача: ${task}
 Текущий URL: ${currentUrl}
-${historyText}
+${historyText}${credentialsContext}
 
 Посмотри на скриншот и выбери ОДНО следующее действие.
 Отвечай СТРОГО в формате JSON (без markdown):
@@ -281,6 +295,8 @@ ${historyText}
 Правила:
 - Координаты точные — смотри на скриншот внимательно
 - После ввода данных нажимай Enter или кликай кнопку
+- Если нужно войти — используй сохранённые учётные данные для этого сайта (см. выше)
+- Если учётных данных для этого сайта НЕТ в списке выше — action: "done", result: "Нужны учётные данные для входа на [название сайта]. Добавьте логин и пароль в разделе «Учётные данные» и запустите задачу снова."
 - Если видишь капчу — action: "done", result: "Обнаружена капча, требуется ручная верификация"
 - Если залогинился — сразу переходи к основной задаче
 - Если задача выполнена — action: "done"`;
