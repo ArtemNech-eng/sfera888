@@ -2,6 +2,11 @@ import OpenAI from "openai";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { browserAgent } from "./browserAgent.js";
+import {
+  extractAndSaveMemories,
+  retrieveRelevantMemories,
+  buildMemoryContext,
+} from "./agentMemory.js";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -43,12 +48,11 @@ const activeSessions = new Map<number, { cancelled: boolean }>();
 // ─── Plan decomposition ────────────────────────────────────────────────────
 
 async function planGoal(goal: string): Promise<StepPlan[]> {
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o",
-    messages: [
-      {
-        role: "system",
-        content: `Ты опытный менеджер проекта и оркестратор ИИ-агентов. 
+  // Load relevant memories to inform planning
+  const memories = await retrieveRelevantMemories(goal, 15);
+  const memoryContext = buildMemoryContext(memories);
+
+  const systemPrompt = `Ты опытный менеджер проекта и оркестратор ИИ-агентов. 
 Тебе дают высокоуровневую цель. Твоя задача — разбить её на 5-10 конкретных последовательных шагов для браузер-агента.
 
 Каждый шаг — конкретное действие в браузере или анализ информации:
@@ -61,22 +65,29 @@ async function planGoal(goal: string): Promise<StepPlan[]> {
 
 ВАЖНО: Каждый шаг должен быть выполнимым браузер-агентом (работает с реальным браузером, может кликать, читать, заполнять формы, делать скриншоты).
 
-Верни JSON массив шагов:
-[
-  {
-    "index": 0,
-    "title": "Краткое название шага (3-5 слов)",
-    "description": "Что будет сделано на этом шаге (1-2 предложения)",
-    "task": "Полная инструкция для браузер-агента. Конкретно что открыть, что сделать, что найти и что записать в результате."
-  }
-]
+Если из памяти уже известны нужные данные — не трать шаги на их повторный поиск, используй их сразу.
 
-Возвращай ТОЛЬКО JSON, без пояснений.`,
-      },
-      {
-        role: "user",
-        content: `Цель: ${goal}`,
-      },
+Верни JSON массив шагов:
+{
+  "steps": [
+    {
+      "index": 0,
+      "title": "Краткое название шага (3-5 слов)",
+      "description": "Что будет сделано на этом шаге (1-2 предложения)",
+      "task": "Полная инструкция для браузер-агента. Конкретно что открыть, что сделать, что найти и что записать в результате."
+    }
+  ]
+}`;
+
+  const userContent = memoryContext
+    ? `Цель: ${goal}\n\n${memoryContext}`
+    : `Цель: ${goal}`;
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userContent },
     ],
     temperature: 0.3,
     response_format: { type: "json_object" },
@@ -234,6 +245,15 @@ async function runSession(sessionId: number, goal: string, plan: StepPlan[]) {
         const report = await extractStepReport(goal, steps[i], logs);
         steps[i].status = "done";
         steps[i].report = report;
+
+        // Save learnings to persistent memory
+        extractAndSaveMemories({
+          sessionId,
+          goal,
+          stepTitle: steps[i].title,
+          stepReport: report,
+          logs,
+        }).catch(e => console.error("[autonomousAgent] Memory save error:", e));
       } catch (e) {
         steps[i].status = "error";
         steps[i].report = `Ошибка: ${String(e)}`;

@@ -96,6 +96,32 @@ interface AutoSessionDetail extends AutoSession {
   steps: AutoStepResult[];
 }
 
+// ─── Memory Types ──────────────────────────────────────────────────────────
+
+interface MemEntry {
+  id: number;
+  agent: string;
+  category: string;
+  title: string;
+  content: string;
+  sourceUrl: string | null;
+  sessionId: number | null;
+  importance: number;
+  createdAt: string;
+  expiresAt: string | null;
+}
+
+interface MemCategoryInfo { key: string; label: string; emoji: string }
+
+const IMP_LABEL: Record<number, string> = { 5: "Критично", 4: "Важно", 3: "Средне", 2: "Низкое", 1: "Минимально" };
+const IMP_COLOR: Record<number, string> = {
+  5: "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400",
+  4: "bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-400",
+  3: "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400",
+  2: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
+  1: "bg-gray-50 text-gray-400 dark:bg-gray-900 dark:text-gray-500",
+};
+
 const STATUS_COLOR: Record<string, string> = {
   planning: "text-yellow-600 bg-yellow-50 dark:bg-yellow-950/30 dark:text-yellow-400",
   running:  "text-blue-600 bg-blue-50 dark:bg-blue-950/30 dark:text-blue-400",
@@ -247,9 +273,20 @@ function EmployeeCard({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function AiOfficePage() {
-  const [tab, setTab] = useState<"employees" | "browser" | "scenarios" | "autonomous">("employees");
+  const [tab, setTab] = useState<"employees" | "browser" | "scenarios" | "autonomous" | "memory">("employees");
   const [stats, setStats] = useState<OfficeStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
+
+  // Memory state
+  const [memEntries, setMemEntries] = useState<MemEntry[]>([]);
+  const [memTotal, setMemTotal] = useState(0);
+  const [memCategories, setMemCategories] = useState<MemCategoryInfo[]>([]);
+  const [memCatCounts, setMemCatCounts] = useState<Record<string, number>>({});
+  const [memFilter, setMemFilter] = useState<string>("all");
+  const [memLoading, setMemLoading] = useState(false);
+  const [memSearch, setMemSearch] = useState("");
+  const [addingMem, setAddingMem] = useState(false);
+  const [newMem, setNewMem] = useState({ category: "general", title: "", content: "", importance: 3 });
 
   // Autonomous agent state
   const [autoGoal, setAutoGoal] = useState("");
@@ -366,6 +403,62 @@ export default function AiOfficePage() {
     fetchScenarios();
     toast({ title: "Сценарий удалён" });
   }
+
+  // ── Memory ─────────────────────────────────────────────────────────────────
+
+  const fetchMemory = useCallback(async (category?: string) => {
+    setMemLoading(true);
+    try {
+      const [dataRes, catRes] = await Promise.all([
+        fetch(`${BASE}/api/agent-memory${category && category !== "all" ? `?category=${category}` : ""}`, { credentials: "include" }),
+        fetch(`${BASE}/api/agent-memory/categories`, { credentials: "include" }),
+      ]);
+      if (dataRes.ok) {
+        const d = await dataRes.json();
+        setMemEntries(d.entries ?? []);
+        setMemTotal(d.total ?? 0);
+        setMemCategories(d.categories ?? []);
+      }
+      if (catRes.ok) {
+        const d = await catRes.json();
+        const counts: Record<string, number> = {};
+        ((d.counts ?? []) as any[]).forEach((r: any) => { counts[r.category] = Number(r.count); });
+        setMemCatCounts(counts);
+        if (!memCategories.length) setMemCategories(d.categories ?? []);
+      }
+    } catch {} finally { setMemLoading(false); }
+  }, [memCategories.length]);
+
+  async function handleAddMemory() {
+    if (!newMem.title || !newMem.content) return;
+    await fetch(`${BASE}/api/agent-memory`, {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(newMem),
+    });
+    setNewMem({ category: "general", title: "", content: "", importance: 3 });
+    setAddingMem(false);
+    fetchMemory(memFilter === "all" ? undefined : memFilter);
+    toast({ title: "Запись добавлена" });
+  }
+
+  async function handleDeleteMem(id: number) {
+    await fetch(`${BASE}/api/agent-memory/${id}`, { method: "DELETE", credentials: "include" });
+    setMemEntries(p => p.filter(e => e.id !== id));
+    setMemTotal(p => p - 1);
+    toast({ title: "Запись удалена" });
+  }
+
+  async function handleClearCategory(category?: string) {
+    const url = category ? `${BASE}/api/agent-memory?category=${category}` : `${BASE}/api/agent-memory`;
+    await fetch(url, { method: "DELETE", credentials: "include" });
+    fetchMemory();
+    toast({ title: category ? `Категория «${category}» очищена` : "Память очищена" });
+  }
+
+  useEffect(() => {
+    if (tab === "memory") fetchMemory(memFilter === "all" ? undefined : memFilter);
+  }, [tab, memFilter, fetchMemory]);
 
   // ── Autonomous agent ────────────────────────────────────────────────────────
 
@@ -614,6 +707,22 @@ export default function AiOfficePage() {
                 <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
               )}
             </button>
+            <button
+              onClick={() => setTab("memory")}
+              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+                tab === "memory"
+                  ? "bg-background shadow-sm text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <BookOpen className="w-4 h-4" />
+              Память
+              {memTotal > 0 && (
+                <span className="text-xs bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 rounded-full px-1.5 py-0.5 font-semibold">
+                  {memTotal}
+                </span>
+              )}
+            </button>
           </div>
 
           <Button variant="outline" size="sm" className="gap-2" onClick={fetchStats}>
@@ -724,6 +833,170 @@ export default function AiOfficePage() {
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Memory tab ── */}
+        {tab === "memory" && (
+          <div className="flex-1 overflow-hidden flex">
+
+            {/* Left: category filter */}
+            <div className="w-56 flex flex-col border-r border-border overflow-hidden shrink-0 bg-muted/20">
+              <div className="px-3 py-3 border-b border-border">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Категории</p>
+              </div>
+              <div className="flex-1 overflow-y-auto py-1">
+                <button
+                  onClick={() => setMemFilter("all")}
+                  className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between hover:bg-muted/60 transition-colors ${memFilter === "all" ? "bg-muted font-medium" : ""}`}
+                >
+                  <span className="flex items-center gap-2">📋 Все записи</span>
+                  <span className="text-xs text-muted-foreground">{memTotal}</span>
+                </button>
+                {memCategories.map(cat => (
+                  <button
+                    key={cat.key}
+                    onClick={() => setMemFilter(cat.key)}
+                    className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between hover:bg-muted/60 transition-colors ${memFilter === cat.key ? "bg-muted font-medium" : ""}`}
+                  >
+                    <span className="flex items-center gap-2">{cat.emoji} {cat.label}</span>
+                    {memCatCounts[cat.key] > 0 && (
+                      <span className="text-xs text-muted-foreground">{memCatCounts[cat.key]}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+              <div className="p-3 border-t border-border space-y-1.5">
+                <Button size="sm" variant="outline" className="w-full gap-1.5 text-xs h-7"
+                  onClick={() => setAddingMem(true)}>
+                  <Plus className="w-3 h-3" /> Добавить вручную
+                </Button>
+                <Button size="sm" variant="outline"
+                  className="w-full gap-1.5 text-xs h-7 text-red-500 hover:text-red-600 border-red-200 hover:border-red-300"
+                  onClick={() => handleClearCategory(memFilter === "all" ? undefined : memFilter)}>
+                  <Trash2 className="w-3 h-3" />
+                  {memFilter === "all" ? "Очистить всё" : "Очистить категорию"}
+                </Button>
+              </div>
+            </div>
+
+            {/* Right: entries */}
+            <div className="flex-1 flex flex-col overflow-hidden">
+              {/* Toolbar */}
+              <div className="px-4 py-3 border-b border-border flex items-center gap-3 shrink-0">
+                <div className="flex-1 relative">
+                  <Input
+                    placeholder="Поиск по памяти..."
+                    value={memSearch}
+                    onChange={e => setMemSearch(e.target.value)}
+                    className="text-sm h-8 pl-8"
+                  />
+                  <Globe className="w-3.5 h-3.5 text-muted-foreground absolute left-2.5 top-2" />
+                </div>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => fetchMemory(memFilter === "all" ? undefined : memFilter)}>
+                  <RefreshCw className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+
+              {/* Add memory form */}
+              {addingMem && (
+                <div className="mx-4 my-3 p-4 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/10 space-y-3 shrink-0">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold">Новая запись в памяти</p>
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setAddingMem(false)}>
+                      <X className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label className="text-xs mb-1 block">Категория</Label>
+                      <select
+                        value={newMem.category}
+                        onChange={e => setNewMem(p => ({ ...p, category: e.target.value }))}
+                        className="w-full h-8 text-xs rounded-md border border-input bg-background px-2"
+                      >
+                        {memCategories.map(c => <option key={c.key} value={c.key}>{c.emoji} {c.label}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <Label className="text-xs mb-1 block">Важность (1-5)</Label>
+                      <Input type="number" min={1} max={5} value={newMem.importance}
+                        onChange={e => setNewMem(p => ({ ...p, importance: Number(e.target.value) }))}
+                        className="h-8 text-xs" />
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-xs mb-1 block">Заголовок *</Label>
+                    <Input placeholder="Цена конкурента на шпаклёвку" value={newMem.title}
+                      onChange={e => setNewMem(p => ({ ...p, title: e.target.value }))} className="text-sm h-8" />
+                  </div>
+                  <div>
+                    <Label className="text-xs mb-1 block">Содержание *</Label>
+                    <Textarea placeholder="Компания «СтройПро» берёт 350 руб/м² за шпаклёвку..."
+                      value={newMem.content} onChange={e => setNewMem(p => ({ ...p, content: e.target.value }))}
+                      className="text-sm resize-none min-h-[60px]" />
+                  </div>
+                  <Button size="sm" className="gap-1.5" onClick={handleAddMemory}
+                    disabled={!newMem.title || !newMem.content}>
+                    <Plus className="w-3 h-3" /> Сохранить
+                  </Button>
+                </div>
+              )}
+
+              {/* Entries */}
+              <div className="flex-1 overflow-y-auto p-4">
+                {memLoading ? (
+                  <div className="flex items-center justify-center py-20">
+                    <Loader2 className="w-6 h-6 animate-spin text-muted-foreground/40" />
+                  </div>
+                ) : memEntries.length === 0 ? (
+                  <div className="text-center py-20 space-y-3">
+                    <div className="w-14 h-14 rounded-2xl bg-muted/50 flex items-center justify-center mx-auto">
+                      <BookOpen className="w-7 h-7 text-muted-foreground/30" />
+                    </div>
+                    <p className="text-muted-foreground text-sm">Памяти пока нет</p>
+                    <p className="text-xs text-muted-foreground/60">
+                      Агенты будут накапливать знания после каждого выполненного задания
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {memEntries
+                      .filter(e => !memSearch || e.title.toLowerCase().includes(memSearch.toLowerCase()) || e.content.toLowerCase().includes(memSearch.toLowerCase()))
+                      .map(e => {
+                        const catInfo = memCategories.find(c => c.key === e.category);
+                        return (
+                          <div key={e.id} className="group rounded-xl border border-border bg-card hover:shadow-sm transition-shadow p-3.5">
+                            <div className="flex items-start gap-3">
+                              <div className="text-lg shrink-0 mt-0.5">{catInfo?.emoji ?? "📝"}</div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-start justify-between gap-2">
+                                  <p className="font-medium text-sm">{e.title}</p>
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${IMP_COLOR[e.importance] ?? IMP_COLOR[3]}`}>
+                                      {IMP_LABEL[e.importance] ?? "Средне"}
+                                    </span>
+                                    <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                                      onClick={() => handleDeleteMem(e.id)}>
+                                      <Trash2 className="w-3 h-3 text-red-400" />
+                                    </Button>
+                                  </div>
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{e.content}</p>
+                                <div className="flex items-center gap-2 mt-2 text-[10px] text-muted-foreground/50">
+                                  {catInfo && <span className="bg-muted/60 px-1.5 py-0.5 rounded">{catInfo.label}</span>}
+                                  {e.sourceUrl && <span className="truncate max-w-[150px]">🔗 {e.sourceUrl}</span>}
+                                  <span>{new Date(e.createdAt).toLocaleDateString("ru-RU")}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}

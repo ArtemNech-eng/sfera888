@@ -28,6 +28,7 @@ import avitoRouter from "./avito.js";
 import browserAgentRouter from "./browser-agent.js";
 import aiOfficeRouter from "./ai-office.js";
 import autonomousRouter from "./autonomous.js";
+import memoryRouter from "./memory.js";
 
 const router = Router();
 
@@ -59,6 +60,7 @@ router.use("/avito", avitoRouter);
 router.use("/browser-agent", browserAgentRouter);
 router.use("/ai-office", aiOfficeRouter);
 router.use("/autonomous", autonomousRouter);
+router.use("/agent-memory", memoryRouter);
 
 // Seed popular repair services on startup (INSERT ... ON CONFLICT DO NOTHING)
 async function seedServices() {
