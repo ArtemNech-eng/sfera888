@@ -414,11 +414,10 @@ router.get("/items-with-stats", async (req, res) => {
       const self = await avitoGet(`/core/v1/accounts/self`, token) as any;
       const freshId = String(self.id ?? "");
       if (freshId && freshId !== userId) {
-        // Update stored userId so it's correct next time
+        // Silently update stored userId if it changed
         await db.update(avitoSettingsTable)
           .set({ avitoUserId: freshId, avitoUserName: self.name ?? null, updatedAt: new Date() })
           .where(eq(avitoSettingsTable.id, (await getSettings())!.id));
-        console.log(`[avito] updated avitoUserId: ${userId} → ${freshId}`);
         return freshId;
       }
     } catch {}
