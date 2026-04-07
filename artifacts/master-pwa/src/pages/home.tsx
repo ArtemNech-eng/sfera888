@@ -224,35 +224,29 @@ function parseServices(raw: string | null): ServiceLine[] | null {
 function YandexMapEmbed({ city, district }: { city: string; district: string | null }) {
   const address = `${city}${district ? ` ${district}` : ""}`;
   const query = encodeURIComponent(address);
-  const apiKey = import.meta.env.VITE_YANDEX_MAPS_KEY ?? "";
-  const staticSrc = `https://static-maps.yandex.ru/1.x/?apikey=${apiKey}&geocode=${query}&z=14&size=600,200&l=map&lang=ru_RU`;
   const mapsUrl = `https://yandex.ru/maps/?text=${query}`;
-  const [imgError, setImgError] = useState(false);
 
   return (
     <div className="mt-3 rounded-2xl overflow-hidden border border-border">
-      {!imgError ? (
-        <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="block relative">
-          <img
-            src={staticSrc}
-            alt="Карта"
-            className="w-full object-cover block"
-            style={{ height: 180 }}
-            onError={() => setImgError(true)}
-          />
-          <div className="absolute inset-0 flex items-end justify-center pb-3 pointer-events-none">
-            <span className="bg-black/50 text-white text-xs rounded-full px-3 py-1">
-              Открыть в Яндекс Картах ↗
-            </span>
-          </div>
-        </a>
-      ) : (
-        <a href={mapsUrl} target="_blank" rel="noopener noreferrer"
-          className="flex items-center justify-center gap-2 h-16 bg-muted text-muted-foreground text-sm hover:bg-accent transition-colors">
-          <MapPin size={15} />
-          {address} — открыть карту ↗
-        </a>
-      )}
+      <iframe
+        src={`https://yandex.ru/map-widget/v1/?text=${query}&z=14&lang=ru_RU`}
+        width="100%"
+        height="180"
+        frameBorder="0"
+        allowFullScreen
+        title={address}
+        className="block"
+        loading="lazy"
+      />
+      <a
+        href={mapsUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center justify-center gap-2 h-10 bg-muted/50 text-muted-foreground text-xs hover:bg-accent transition-colors border-t border-border"
+      >
+        <MapPin size={12} />
+        {address} — открыть в Яндекс Картах ↗
+      </a>
     </div>
   );
 }
