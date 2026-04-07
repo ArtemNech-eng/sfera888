@@ -91,12 +91,29 @@ class BrowserAgentService {
   }
 
   async loadMemory(): Promise<string> {
+    const parts: string[] = [];
     try {
+      // Load browser agent-specific memory (key-value facts)
       const rows = await db.select().from(browserAgentMemoryTable).orderBy(browserAgentMemoryTable.updatedAt);
-      if (!rows.length) return "";
-      return "\n\nПАМЯТЬ (факты, которые я знаю о вас и ваших задачах):\n" +
-        rows.map(r => `- ${r.key}: ${r.value}${r.context ? ` [${r.context}]` : ""}`).join("\n");
-    } catch { return ""; }
+      if (rows.length) {
+        parts.push("Сохранённые факты о пользователе и задачах:\n" +
+          rows.map(r => `- ${r.key}: ${r.value}${r.context ? ` [${r.context}]` : ""}`).join("\n"));
+      }
+    } catch {}
+    try {
+      // Also load autonomous agent memory (researched data, competitors, contacts, etc.)
+      const agentMem = await db.execute(sql`
+        SELECT category, title, content FROM agent_memory
+        WHERE expires_at IS NULL OR expires_at > NOW()
+        ORDER BY importance DESC, created_at DESC LIMIT 30
+      `);
+      if (agentMem.rows.length) {
+        parts.push("Исследовательская память агента (результаты прошлых задач):\n" +
+          (agentMem.rows as any[]).map(r => `- [${r.category}] ${r.title}: ${String(r.content).slice(0, 200)}`).join("\n"));
+      }
+    } catch {}
+    if (!parts.length) return "";
+    return "\n\nПАМЯТЬ АГЕНТА:\n" + parts.join("\n\n");
   }
 
   async saveMemory(key: string, value: string, context?: string): Promise<void> {
@@ -404,13 +421,29 @@ class BrowserAgentService {
       }
 
       const currentUrl = this.page!.url();
+
+      // ── Loop detection ──────────────────────────────────────────────────────
+      // If the last 3 actions are similar clicks/same area → agent is looping
+      const recentActions = actionHistory.slice(-4);
+      const loopDetected = recentActions.length >= 3 && (() => {
+        const clickPattern = recentActions.filter(a => a.toLowerCase().includes("клик") || a.toLowerCase().includes("click"));
+        if (clickPattern.length < 3) return false;
+        // Extract coordinates from "Клик (X, Y)" pattern
+        const coords = clickPattern.map(a => { const m = a.match(/\((\d+),\s*(\d+)\)/); return m ? `${Math.round(Number(m[1])/100)},${Math.round(Number(m[2])/100)}` : ""; });
+        return coords.length >= 3 && new Set(coords).size <= 2; // same ~area clicked 3+ times
+      })();
+
+      const loopWarning = loopDetected
+        ? "\n\n⚠️ ПРЕДУПРЕЖДЕНИЕ: ты кликаешь в одно и то же место несколько раз — это ПЕТЛЯ. НЕМЕДЛЕННО прекрати клики. Используй ask_user чтобы спросить пользователя что делать, или done чтобы завершить с объяснением."
+        : "";
+
       const historyText = actionHistory.length > 0
-        ? `\nИстория действий (последние ${actionHistory.length}):\n${actionHistory.slice(-8).map((a, i) => `${i + 1}. ${a}`).join("\n")}`
+        ? `\nИстория действий (последние ${actionHistory.length}):\n${actionHistory.slice(-8).map((a, i) => `${i + 1}. ${a}`).join("\n")}${loopWarning}`
         : "";
 
       const systemPrompt = `Ты RPA+AI агент который управляет реальным браузером Chrome 1280×720px.
 Ты умеешь учиться: запоминаешь факты которые сообщает пользователь, и используешь их в будущем.
-Если не знаешь что-то нужное — спрашивай у пользователя через ask_user, не сдавайся.
+Если не знаешь что-то нужное — ВСЕГДА спрашивай через ask_user. Никогда не сдавайся и не петляй.
 
 Задача: ${task}
 Текущий URL: ${currentUrl}
@@ -440,15 +473,17 @@ ${historyText}${credentialsContext}${memoryContext}
 Правила:
 - Координаты точные — смотри на скриншот внимательно
 - После ввода данных нажимай Enter или кликай кнопку
-- Если нужно войти — используй сохранённые учётные данные для этого сайта (см. выше)
-- Если учётных данных для этого сайта НЕТ в списке — используй ask_user: { question: "Какой номер телефона / логин использовать для входа на [сайт]?" }
-- После ответа пользователя — сохрани через memorize: { key: "телефон для [сайт]", value: ответ }
+- АВТОРИЗАЦИЯ: Если видишь экран входа, форму логина, кнопку "Войти", "Вход и регистрация" или поле телефона:
+  1. СНАЧАЛА проверь список учётных данных выше — есть ли данные для этого сайта?
+  2. ЕСЛИ ЕСТЬ — используй их немедленно: введи логин/пароль/телефон
+  3. ЕСЛИ НЕТ — action: "ask_user", params: { "question": "Введите логин и пароль для [название сайта]" }
+  4. После получения ответа — сохрани через memorize и ИСПОЛЬЗУЙ для входа
+- ЗАПРЕТ ПЕТЕЛЬ: Если ты уже кликал на один и тот же элемент 2+ раз подряд — СТОП. Это петля. Используй ask_user.
 - Если нужно ввести SMS-код или одноразовый код — action: "request_input", params: { "prompt": "Введите SMS-код" }
-- НИКОГДА не сдавайся с ошибкой "нет данных" — сначала спроси пользователя через ask_user
-- Если узнал что-то новое от пользователя (телефон, логин, настройки, предпочтения) — всегда сохраняй через memorize
-- Если задача предполагает регулярное повторение — спроси как часто делать это, и запомни
+- Если узнал что-то важное от пользователя — сохрани через memorize для следующих задач
 - Если видишь капчу — action: "done", result: "Обнаружена капча, требуется ручная верификация"
 - Если залогинился — сразу переходи к основной задаче
+- НИКОГДА не повторяй одно действие более 2 раз — это петля, остановись и спроси пользователя
 - Если задача выполнена — action: "done"`;
 
       let parsed: AgentAction | null = null;

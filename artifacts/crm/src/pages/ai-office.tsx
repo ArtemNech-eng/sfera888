@@ -578,6 +578,15 @@ export default function AiOfficePage() {
     return () => { if (screenshotPollRef.current) clearInterval(screenshotPollRef.current); };
   }, [launched, refreshScreenshot]);
 
+  // Auto-detect when browser is launched by the autonomous agent
+  useEffect(() => {
+    const isActive = browserStatus?.status === "running" || browserStatus?.status === "starting" || browserStatus?.status === "waiting_input";
+    if (isActive && !launched) {
+      setLaunched(true);
+      setTimeout(refreshScreenshot, 800);
+    }
+  }, [browserStatus?.status, launched, refreshScreenshot]);
+
   useEffect(() => {
     const isActive = browserStatus?.status === "running" || browserStatus?.status === "starting";
     if (isActive && logsContainerRef.current) {

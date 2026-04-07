@@ -229,7 +229,18 @@ async function runSession(sessionId: number, goal: string, plan: StepPlan[]) {
       `);
 
       try {
-        await browserAgent.runTask(steps[i].task);
+        // Inject credentials context so browser agent knows what's available
+        let taskWithContext = steps[i].task;
+        try {
+          const creds = await db.execute(sql`SELECT site, login FROM browser_agent_credentials ORDER BY site`);
+          if (creds.rows.length > 0) {
+            const credList = (creds.rows as any[]).map(r => `  - ${r.site}: логин="${r.login}" (пароль сохранён)`).join("\n");
+            taskWithContext += `\n\n[КОНТЕКСТ ДЛЯ АГЕНТА] Сохранённые учётные данные:\n${credList}\nЕсли сайт есть в списке — входи с ними. Если нет — спроси пользователя через ask_user.`;
+          } else {
+            taskWithContext += `\n\n[КОНТЕКСТ ДЛЯ АГЕНТА] Учётных данных не сохранено. Если нужна авторизация — спроси пользователя через ask_user: { question: "Введите логин и пароль для [сайт]" }`;
+          }
+        } catch {}
+        await browserAgent.runTask(taskWithContext);
 
         // Wait for agent to finish (including waiting_input pauses)
         let waited = 0;
