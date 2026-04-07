@@ -420,7 +420,7 @@ export default function AiOfficePage() {
 
   // ── Memory ─────────────────────────────────────────────────────────────────
 
-  const fetchMemory = useCallback(async (category?: string) => {
+  const fetchAgentMemory = useCallback(async (category?: string) => {
     setMemLoading(true);
     try {
       const [dataRes, catRes] = await Promise.all([
@@ -452,7 +452,7 @@ export default function AiOfficePage() {
     });
     setNewMem({ category: "general", title: "", content: "", importance: 3 });
     setAddingMem(false);
-    fetchMemory(memFilter === "all" ? undefined : memFilter);
+    fetchAgentMemory(memFilter === "all" ? undefined : memFilter);
     toast({ title: "Запись добавлена" });
   }
 
@@ -466,13 +466,13 @@ export default function AiOfficePage() {
   async function handleClearCategory(category?: string) {
     const url = category ? `${BASE}/api/agent-memory?category=${category}` : `${BASE}/api/agent-memory`;
     await fetch(url, { method: "DELETE", credentials: "include" });
-    fetchMemory();
+    fetchAgentMemory();
     toast({ title: category ? `Категория «${category}» очищена` : "Память очищена" });
   }
 
   useEffect(() => {
-    if (tab === "memory") fetchMemory(memFilter === "all" ? undefined : memFilter);
-  }, [tab, memFilter, fetchMemory]);
+    if (tab === "memory") fetchAgentMemory(memFilter === "all" ? undefined : memFilter);
+  }, [tab, memFilter, fetchAgentMemory]);
 
   // ── Autonomous agent ────────────────────────────────────────────────────────
 
@@ -990,7 +990,7 @@ export default function AiOfficePage() {
                   />
                   <Globe className="w-3.5 h-3.5 text-muted-foreground absolute left-2.5 top-2" />
                 </div>
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => fetchMemory(memFilter === "all" ? undefined : memFilter)}>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => fetchAgentMemory(memFilter === "all" ? undefined : memFilter)}>
                   <RefreshCw className="w-3.5 h-3.5" />
                 </Button>
               </div>

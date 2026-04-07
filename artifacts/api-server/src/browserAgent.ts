@@ -26,7 +26,7 @@ function findChromium(): string {
 const CHROMIUM_PATH = findChromium();
 const VIEWPORT = { width: 1280, height: 720 };
 const MAX_STEPS = 50;
-const STEP_DELAY_MS = 1200;
+const STEP_DELAY_MS = 200;       // ms between GPT calls (reduced from 1200)
 
 export type AgentStatus = "idle" | "starting" | "running" | "done" | "error" | "stopped" | "waiting_input";
 
