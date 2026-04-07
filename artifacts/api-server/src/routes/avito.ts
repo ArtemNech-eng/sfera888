@@ -19,6 +19,9 @@ async function getSettings() {
   return rows[0] ?? null;
 }
 
+// All scopes we need — Avito ignores unknown scopes, so safe to request all
+const AVITO_SCOPES = "items:info messenger:read messenger:write user:read stats:read autouploading:read";
+
 async function fetchToken(clientId: string, clientSecret: string) {
   const res = await fetch(`${AVITO_API}/token`, {
     method: "POST",
@@ -27,13 +30,15 @@ async function fetchToken(clientId: string, clientSecret: string) {
       grant_type: "client_credentials",
       client_id: clientId,
       client_secret: clientSecret,
+      scope: AVITO_SCOPES,
     }),
   });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Авито токен: ${res.status} — ${text}`);
   }
-  const data = await res.json() as { access_token: string; expires_in: number };
+  const data = await res.json() as { access_token: string; expires_in: number; scope?: string };
+  console.log(`[avito:token] obtained, scope="${data.scope ?? "not returned"}"`);
   return data;
 }
 
