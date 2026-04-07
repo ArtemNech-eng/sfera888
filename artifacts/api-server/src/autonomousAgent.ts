@@ -1325,12 +1325,14 @@ export const autonomousAgent = {
     return sessionId;
   },
 
-  async runScenario(scenarioId: string): Promise<number> {
+  async runScenario(scenarioId: string, opts?: { days?: number }): Promise<number> {
     const scenario = PREDEFINED_SCENARIOS.find(s => s.id === scenarioId);
     if (!scenario) throw new Error(`Unknown scenario: ${scenarioId}`);
 
+    const days = Math.min(14, Math.max(1, Math.round(opts?.days ?? 7)));
+
     // Specialized scenarios have their own executors (not AI planning pipeline)
-    const SPECIALIZED: Record<string, (id: number) => Promise<void>> = {
+    const SPECIALIZED: Record<string, (id: number, days?: number) => Promise<void>> = {
       masters_city_outreach: runMastersOutreachScenario,
       master_followup:       runMasterFollowupScenario,
       al_diagnostics:        runALDiagnosticsScenario,
@@ -1343,7 +1345,7 @@ export const autonomousAgent = {
         RETURNING id
       `);
       const sessionId = Number((res.rows[0] as any).id);
-      SPECIALIZED[scenarioId](sessionId).catch(e => {
+      SPECIALIZED[scenarioId](sessionId, days).catch(e => {
         console.error(`[autonomousAgent] Scenario ${scenarioId} error:`, e);
         db.execute(sql`
           UPDATE autonomous_sessions

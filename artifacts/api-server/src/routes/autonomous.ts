@@ -35,7 +35,8 @@ router.get("/scenarios", (_req, res) => {
 // POST /api/autonomous/scenarios/:id/run — run a predefined scenario immediately
 router.post("/scenarios/:id/run", async (req, res) => {
   try {
-    const sessionId = await autonomousAgent.runScenario(req.params.id);
+    const { days } = req.body as { days?: number };
+    const sessionId = await autonomousAgent.runScenario(req.params.id, { days });
     res.json({ ok: true, sessionId });
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -75,8 +76,10 @@ router.put("/schedules", async (req, res) => {
 // Returns: count of affected masters, cities, total amount (no AI, fast)
 router.get("/scenarios/:id/preview", async (req, res) => {
   try {
+    const days = Math.min(14, Math.max(1, Number(req.query.days) || 7));
+
     if (req.params.id === "master_followup") {
-      const { critical, warning } = await computeAtRiskMasters();
+      const { critical, warning } = await computeAtRiskMasters(days);
       const targets = [...critical, ...warning].filter(m => m.maxChatId);
       const totalAmount = targets.reduce((s, m) => s + m.totalAmount, 0);
       const cities = [...new Set(targets.map(m => m.city))].slice(0, 8);
@@ -86,6 +89,7 @@ router.get("/scenarios/:id/preview", async (req, res) => {
         totalTargets:  targets.length,
         totalAmount,
         cities,
+        days,
         masters: targets.slice(0, 20).map(m => ({
           alias: m.alias,
           city: m.city,
@@ -98,6 +102,20 @@ router.get("/scenarios/:id/preview", async (req, res) => {
       });
       return;
     }
+
+    if (req.params.id === "al_diagnostics") {
+      const { critical, warning, ok, totalAmount, orderCount } = await computeAtRiskMasters(days);
+      res.json({
+        criticalCount: critical.length,
+        warningCount:  warning.length,
+        okCount:       ok.length,
+        totalAmount,
+        orderCount,
+        days,
+      });
+      return;
+    }
+
     res.status(404).json({ error: "No preview for this scenario" });
   } catch (e) {
     res.status(500).json({ error: String(e) });

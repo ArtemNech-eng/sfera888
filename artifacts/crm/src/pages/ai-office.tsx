@@ -330,6 +330,9 @@ export default function AiOfficePage() {
   });
   const [runningScenarios, setRunningScenarios] = useState<Set<string>>(new Set());
   const [openSchedule, setOpenSchedule] = useState<string | null>(null);
+  const [scenarioDays, setScenarioDays] = useState<Record<string, number>>(() => {
+    try { return JSON.parse(localStorage.getItem("scenarioDays") ?? "{}"); } catch { return {}; }
+  });
 
   const { toast } = useToast();
 
@@ -412,13 +415,17 @@ export default function AiOfficePage() {
     } catch {}
   }, []);
 
-  async function executeRunScenario(scenarioId: string) {
+  async function executeRunScenario(scenarioId: string, days?: number) {
     setRunningScenarios(prev => new Set([...prev, scenarioId]));
     setConfirmScenario(null);
     setConfirmPreview(null);
     try {
+      const body: Record<string, unknown> = {};
+      if (days !== undefined) body.days = days;
       const res = await fetch(`${BASE}/api/autonomous/scenarios/${scenarioId}/run`, {
         method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -434,10 +441,11 @@ export default function AiOfficePage() {
     }
   }
 
-  async function handleRunScenario(scenario: PredefinedScenario) {
+  async function handleRunScenario(scenario: PredefinedScenario, days?: number) {
+    const effectiveDays = days ?? scenarioDays[scenario.id] ?? 7;
     // Skip confirmation if user checked "don't ask again" or scenario doesn't require it
     if (!scenario.requiresConfirmation || skipConfirmMap[scenario.id]) {
-      await executeRunScenario(scenario.id);
+      await executeRunScenario(scenario.id, effectiveDays);
       return;
     }
     // Load preview and show confirmation modal
@@ -445,7 +453,7 @@ export default function AiOfficePage() {
     setConfirmPreview(null);
     setConfirmPreviewLoading(true);
     try {
-      const res = await fetch(`${BASE}/api/autonomous/scenarios/${scenario.id}/preview`, { credentials: "include" });
+      const res = await fetch(`${BASE}/api/autonomous/scenarios/${scenario.id}/preview?days=${effectiveDays}`, { credentials: "include" });
       if (res.ok) setConfirmPreview(await res.json());
     } catch {}
     setConfirmPreviewLoading(false);
@@ -985,6 +993,48 @@ export default function AiOfficePage() {
                                   Запускается по: {schedule.days.map(d => DAY_LABELS[d]).join(", ")}
                                 </p>
                               )}
+                            </div>
+                          )}
+
+                          {/* Days interval selector — only for al_diagnostics */}
+                          {scenario.id === "al_diagnostics" && (
+                            <div className="px-3 pb-2 flex items-center gap-2">
+                              <span className="text-[10px] text-muted-foreground shrink-0">Период:</span>
+                              <div className="flex items-center gap-1 flex-1">
+                                <button
+                                  onClick={() => {
+                                    const cur = scenarioDays["al_diagnostics"] ?? 7;
+                                    if (cur > 1) {
+                                      const updated = { ...scenarioDays, al_diagnostics: cur - 1 };
+                                      setScenarioDays(updated);
+                                      localStorage.setItem("scenarioDays", JSON.stringify(updated));
+                                    }
+                                  }}
+                                  className="w-5 h-5 rounded flex items-center justify-center bg-muted hover:bg-muted/70 text-muted-foreground text-xs font-bold transition-colors"
+                                  disabled={(scenarioDays["al_diagnostics"] ?? 7) <= 1}
+                                >−</button>
+                                <div className="flex-1 relative h-1.5 bg-muted rounded-full overflow-hidden">
+                                  <div
+                                    className="absolute inset-y-0 left-0 bg-orange-500 rounded-full transition-all"
+                                    style={{ width: `${((scenarioDays["al_diagnostics"] ?? 7) - 1) / 13 * 100}%` }}
+                                  />
+                                </div>
+                                <button
+                                  onClick={() => {
+                                    const cur = scenarioDays["al_diagnostics"] ?? 7;
+                                    if (cur < 14) {
+                                      const updated = { ...scenarioDays, al_diagnostics: cur + 1 };
+                                      setScenarioDays(updated);
+                                      localStorage.setItem("scenarioDays", JSON.stringify(updated));
+                                    }
+                                  }}
+                                  className="w-5 h-5 rounded flex items-center justify-center bg-muted hover:bg-muted/70 text-muted-foreground text-xs font-bold transition-colors"
+                                  disabled={(scenarioDays["al_diagnostics"] ?? 7) >= 14}
+                                >+</button>
+                                <span className="text-[10px] font-semibold text-orange-600 dark:text-orange-400 w-10 text-right shrink-0">
+                                  {scenarioDays["al_diagnostics"] ?? 7} дн.
+                                </span>
+                              </div>
                             </div>
                           )}
 
