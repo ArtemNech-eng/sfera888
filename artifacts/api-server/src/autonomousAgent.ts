@@ -19,6 +19,7 @@ export interface PredefinedScenario {
   goal: string;
   estimatedMinutes: number;
   category: "pricing" | "analytics" | "content" | "marketing" | "operations";
+  requiresConfirmation?: boolean;
 }
 
 export const PREDEFINED_SCENARIOS: PredefinedScenario[] = [
@@ -32,6 +33,18 @@ export const PREDEFINED_SCENARIOS: PredefinedScenario[] = [
     estimatedMinutes: 3,
     category: "operations",
     goal: "masters_city_outreach",
+  },
+  {
+    id: "master_followup",
+    title: "Связаться с мастерами по зависшим заказам",
+    shortDescription: "Пишет мастерам из зоны риска: узнаёт как дела, почему завис заказ и когда ждать оплату",
+    description: "Берёт мастеров с критичными и требующими внимания заказами (из АЛ-Диагностики), составляет персональные сообщения через GPT-4o и реально отправляет в Max Messenger. Каждое сообщение — адресное: упоминает конкретный заказ, деликатно уточняет статус и сроки оплаты.",
+    icon: "users",
+    color: "red",
+    estimatedMinutes: 4,
+    category: "operations",
+    goal: "master_followup",
+    requiresConfirmation: true,
   },
   {
     id: "al_diagnostics",
@@ -463,6 +476,314 @@ async function runMastersOutreachScenario(sessionId: number): Promise<void> {
         final_report=${finalReport},
         completed_at=NOW()
     WHERE id=${sessionId}
+  `);
+}
+
+// ─── Shared: compute at-risk masters (used by AL-Diagnostics + Followup) ─────
+
+export interface AtRiskMaster {
+  masterId: number;
+  alias: string;
+  city: string;
+  phone: string;
+  maxChatId: string | null;
+  orders: { id: number; serviceType: string; status: string; amount: number; assignedAt: Date | null; daysSinceAssigned?: number }[];
+  totalAmount: number;
+  lastContactAt: Date | null;
+  daysSinceContact: number;
+  risk: "critical" | "warning" | "ok";
+  riskReasons: string[];
+}
+
+export async function computeAtRiskMasters(): Promise<{
+  critical: AtRiskMaster[];
+  warning: AtRiskMaster[];
+  ok: AtRiskMaster[];
+  all: AtRiskMaster[];
+  totalAmount: number;
+  orderCount: number;
+}> {
+  const ordersRes = await db.execute(sql`
+    SELECT
+      o.id, o.service_type, o.city, o.status,
+      COALESCE(o.order_amount, o.proposed_amount, 0)::numeric AS amount,
+      o.assigned_at, o.updated_at, o.created_at,
+      m.id AS master_id, m.alias AS master_alias,
+      m.city AS master_city, m.phone AS master_phone,
+      m.max_chat_id AS master_max_chat_id
+    FROM orders o
+    JOIN masters m ON m.id = o.master_id
+    WHERE o.status IN ('master_assigned', 'in_progress')
+      AND o.deleted_at IS NULL
+      AND o.master_id IS NOT NULL
+      AND o.created_at >= NOW() - INTERVAL '7 days'
+    ORDER BY o.updated_at ASC
+  `);
+  const orders = ordersRes.rows as any[];
+  const masterIds = [...new Set(orders.map(o => Number(o.master_id)))];
+
+  const lastContactMap = new Map<number, Date>();
+  if (masterIds.length > 0) {
+    const contactRes = await db.execute(sql`
+      SELECT m_id, MAX(last_touch) AS last_contact_at
+      FROM (
+        SELECT master_id AS m_id, MAX(created_at) AS last_touch FROM master_messages
+          WHERE master_id = ANY(${masterIds}::int[]) GROUP BY master_id
+        UNION ALL
+        SELECT master_id AS m_id, MAX(created_at) AS last_touch FROM master_tasks
+          WHERE master_id = ANY(${masterIds}::int[]) GROUP BY master_id
+        UNION ALL
+        SELECT master_id AS m_id, MAX(created_at) AS last_touch FROM order_dispatches
+          WHERE master_id = ANY(${masterIds}::int[]) GROUP BY master_id
+      ) t GROUP BY m_id
+    `);
+    for (const row of contactRes.rows as any[]) {
+      lastContactMap.set(Number(row.m_id), new Date(row.last_contact_at));
+    }
+  }
+
+  const now = Date.now();
+  const DAY_MS = 86_400_000;
+  const masterMap = new Map<number, AtRiskMaster>();
+
+  for (const o of orders) {
+    const mid = Number(o.master_id);
+    if (!masterMap.has(mid)) {
+      const lastContact = lastContactMap.get(mid) ?? null;
+      masterMap.set(mid, {
+        masterId: mid,
+        alias: o.master_alias,
+        city: o.master_city,
+        phone: o.master_phone,
+        maxChatId: o.master_max_chat_id,
+        orders: [],
+        totalAmount: 0,
+        lastContactAt: lastContact,
+        daysSinceContact: lastContact ? (now - lastContact.getTime()) / DAY_MS : 999,
+        risk: "ok",
+        riskReasons: [],
+      });
+    }
+    const entry = masterMap.get(mid)!;
+    const assignedAt = o.assigned_at ? new Date(o.assigned_at) : null;
+    entry.orders.push({
+      id: Number(o.id), serviceType: o.service_type ?? "Ремонт",
+      status: o.status, amount: Number(o.amount) || 0,
+      assignedAt,
+      daysSinceAssigned: assignedAt ? (now - assignedAt.getTime()) / DAY_MS : undefined,
+    });
+    entry.totalAmount += Number(o.amount) || 0;
+  }
+
+  for (const e of masterMap.values()) {
+    const reasons: string[] = [];
+    const d = e.daysSinceContact;
+    const inProgress = e.orders.filter(o => o.status === "in_progress");
+    const assigned   = e.orders.filter(o => o.status === "master_assigned");
+
+    if (inProgress.length > 0 && d > 3) reasons.push(`в работе, контакта нет ${Math.floor(d)} дн.`);
+    if (assigned.some(o => (o.daysSinceAssigned ?? 0) > 4)) reasons.push(`назначен >4 дней, не начал`);
+    if (e.totalAmount > 0 && d > 4) reasons.push(`зависла сумма ${e.totalAmount.toLocaleString("ru-RU")} ₽`);
+
+    if (reasons.length > 0) { e.risk = "critical"; e.riskReasons = reasons; continue; }
+
+    if (d > 1.5) reasons.push(`${Math.floor(d)} дн. без контакта`);
+    if (assigned.some(o => (o.daysSinceAssigned ?? 0) > 2)) reasons.push(`назначен >2 дней`);
+
+    if (reasons.length > 0) { e.risk = "warning"; e.riskReasons = reasons; }
+  }
+
+  const all     = [...masterMap.values()];
+  const critical = all.filter(e => e.risk === "critical").sort((a,b) => b.daysSinceContact - a.daysSinceContact);
+  const warning  = all.filter(e => e.risk === "warning").sort((a,b) => b.daysSinceContact - a.daysSinceContact);
+  const ok       = all.filter(e => e.risk === "ok");
+  const totalAmount = all.reduce((s, e) => s + e.totalAmount, 0);
+
+  return { critical, warning, ok, all, totalAmount, orderCount: orders.length };
+}
+
+// ─── Master followup scenario (write to stalled masters) ──────────────────
+// Takes at-risk masters (critical + warning), generates personalized check-in
+// messages via GPT-4o, sends via Max. Requires confirmation before sending.
+
+async function runMasterFollowupScenario(sessionId: number): Promise<void> {
+  const plan: StepPlan[] = [
+    { index: 0, title: "Загрузка зоны риска",  description: "Мастера с зависшими заказами из АЛ-Диагностики", task: "" },
+    { index: 1, title: "Составление сообщений", description: "GPT-4o пишет персональные follow-up по каждому заказу", task: "" },
+    { index: 2, title: "Отправка в Max",         description: "Сообщения уходят мастерам", task: "" },
+    { index: 3, title: "Сохранение в память",    description: "Итоги записываются в постоянную память агента", task: "" },
+  ];
+  const steps: StepResult[] = plan.map(p => ({ ...p, status: "pending" as const, report: "", startedAt: undefined, completedAt: undefined, durationMs: undefined }));
+  const upd = async (step: number) =>
+    db.execute(sql`UPDATE autonomous_sessions SET steps=${JSON.stringify(steps)}::jsonb, current_step=${step} WHERE id=${sessionId}`);
+
+  await db.execute(sql`
+    UPDATE autonomous_sessions SET status='running', steps=${JSON.stringify(steps)}::jsonb, plan=${JSON.stringify(plan)}::jsonb WHERE id=${sessionId}
+  `);
+
+  // ── Step 0: Load at-risk masters ────────────────────────────────────────
+  steps[0].status = "running"; steps[0].startedAt = new Date().toISOString();
+  await upd(0);
+  const t0 = Date.now();
+
+  const { critical, warning, all } = await computeAtRiskMasters();
+  const targets = [...critical, ...warning].filter(m => m.maxChatId);
+
+  steps[0].status = "done";
+  steps[0].report =
+    `🔴 Критично: **${critical.length}** | 🟡 Внимание: **${warning.length}**\n` +
+    `Мастеров с Max Messenger (получат сообщение): **${targets.length}**`;
+  steps[0].completedAt = new Date().toISOString();
+  steps[0].durationMs = Date.now() - t0;
+  await upd(1);
+
+  if (targets.length === 0) {
+    const report = "# Рассылка отменена\n\nНет мастеров в зоне риска с привязанным Max Messenger.";
+    await db.execute(sql`UPDATE autonomous_sessions SET status='done', steps=${JSON.stringify(steps)}::jsonb, final_report=${report}, completed_at=NOW() WHERE id=${sessionId}`);
+    return;
+  }
+
+  // ── Step 1: Generate follow-up messages ─────────────────────────────────
+  steps[1].status = "running"; steps[1].startedAt = new Date().toISOString();
+  await upd(1);
+  const t1 = Date.now();
+
+  const fmt = (n: number) => n > 0 ? `${n.toLocaleString("ru-RU")} ₽` : "";
+  const riskLabel = (r: string) => r === "critical" ? "🔴 критично" : "🟡 внимание";
+
+  const mastersBlock = targets.map((m, i) => {
+    const contactStr = m.lastContactAt
+      ? `${Math.floor(m.daysSinceContact)} дн. назад`
+      : "контакта не было";
+    const orderLines = m.orders.map(o => {
+      const since = o.daysSinceAssigned ? `${Math.floor(o.daysSinceAssigned)} дн.` : "";
+      const st = o.status === "in_progress" ? "в работе" : "назначен";
+      return `${o.serviceType} [${st}${since ? " " + since : ""}]${o.amount > 0 ? " — " + fmt(o.amount) : ""}`;
+    }).join("; ");
+    return `[${i+1}] ${m.alias} | ${m.city} | ${riskLabel(m.risk)} | контакт: ${contactStr} | заказы: ${orderLines} | причина: ${m.riskReasons.join(", ")}`;
+  }).join("\n");
+
+  let generatedMessages: string[] = [];
+  try {
+    const gptRes = await openai.chat.completions.create({
+      model: "gpt-4o",
+      temperature: 0.55,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: `Ты — диспетчер сервиса «Честный мастер». Твоя задача: написать мастерам, у которых зависли заказы — деликатно уточнить статус.
+
+═══ ЦЕЛЬ СООБЩЕНИЯ ═══
+Узнать: что происходит с заказом, есть ли сложности, когда планируется завершение и когда ожидать оплату.
+
+═══ СТРУКТУРА (строго) ═══
+1. Имя мастера (без «Привет» и «Добрый день» — сразу к делу)
+2. Напомни о конкретном заказе (тип работ, статус, сколько дней)
+3. Задай вопрос: как дела, есть ли сложности или что-то нужно с нашей стороны?
+4. Уточни: когда планируется завершение и когда ждать закрытия?
+5. Короткое предложение помощи: «Если что-то нужно — пиши, поможем»
+
+═══ ТОНАЛЬНОСТЬ ═══
+— Коллегиально, не как начальник к подчинённому
+— Беспокойство, а не давление: мы заботимся, не наезжаем
+— Конкретно: упомяни тип работ и статус, не «у тебя есть заказ»
+— Каждое сообщение уникально — не повторяй одни и те же фразы
+— Без HTML и markdown, только обычный текст
+— Длина: 5–8 строк
+
+═══ ПРИМЕР ═══
+«Алексей, у тебя в работе ремонт ванной комнаты — уже 5 дней. Как всё идёт? Есть какие-то сложности или что-то нужно с нашей стороны? Когда планируешь завершить и когда клиент закроет оплату? Если что-то нужно — пиши, разберёмся.»
+
+Верни строго JSON: {"messages": ["текст1", "текст2", ...]}, по одному на каждого мастера в том же порядке.`,
+        },
+        {
+          role: "user",
+          content: `Составь follow-up сообщения для ${targets.length} мастеров:\n\n${mastersBlock}`,
+        },
+      ],
+    });
+    const parsed = JSON.parse(gptRes.choices[0].message.content ?? "{}");
+    generatedMessages = Array.isArray(parsed.messages) ? parsed.messages : [];
+  } catch (e) {
+    console.error("[masterFollowup] GPT error:", e);
+  }
+
+  steps[1].status = "done";
+  steps[1].report = `Сгенерировано: **${generatedMessages.filter(Boolean).length}** из ${targets.length} сообщений`;
+  steps[1].completedAt = new Date().toISOString();
+  steps[1].durationMs = Date.now() - t1;
+  await upd(2);
+
+  // ── Step 2: Send messages ────────────────────────────────────────────────
+  steps[2].status = "running"; steps[2].startedAt = new Date().toISOString();
+  await upd(2);
+  const t2 = Date.now();
+
+  const { sendMaxMessage } = await import("./maxBot.js");
+  let sent = 0;
+  const sendLog: string[] = [];
+
+  for (let i = 0; i < targets.length; i++) {
+    const m = targets[i];
+    const msg = generatedMessages[i];
+    if (!msg || !m.maxChatId) { sendLog.push(`${m.alias}: пропущен (нет сообщения или Max ID)`); continue; }
+    if (isMasterCityQuietNow(m.city)) { sendLog.push(`${m.alias}: пропущен — тихие часы`); continue; }
+    try {
+      await sendMaxMessage(m.maxChatId, msg);
+      sent++;
+      sendLog.push(`${m.alias} (${m.city}): ✅ ${riskLabel(m.risk)} — ${m.orders.length} заказ${m.orders.length === 1 ? "" : "а"}`);
+      await new Promise(r => setTimeout(r, 400));
+    } catch {
+      sendLog.push(`${m.alias}: ⚠️ ошибка отправки`);
+    }
+  }
+
+  steps[2].status = "done";
+  steps[2].report = `Отправлено: **${sent}** из ${targets.length}\n\n${sendLog.join("\n")}`;
+  steps[2].completedAt = new Date().toISOString();
+  steps[2].durationMs = Date.now() - t2;
+  await upd(3);
+
+  // ── Step 3: Save to memory ──────────────────────────────────────────────
+  steps[3].status = "running"; steps[3].startedAt = new Date().toISOString();
+  await upd(3);
+
+  const dateStr = new Date().toLocaleDateString("ru-RU");
+  const critMasters = critical.filter(m => m.maxChatId);
+  const warnMasters = warning.filter(m => m.maxChatId);
+
+  const memorySummary =
+    `Follow-up рассылка мастерам (${dateStr}): отправлено ${sent}/${targets.length} сообщений.\n` +
+    `🔴 Критичных: ${critMasters.length} | 🟡 Внимание: ${warnMasters.length}\n` +
+    (critMasters.length > 0
+      ? `Топ критичных: ${critMasters.slice(0,5).map(m => `${m.alias} (${Math.floor(m.daysSinceContact)}дн., ${fmt(m.totalAmount)})`).join("; ")}`
+      : "");
+
+  await extractAndSaveMemories({
+    sessionId,
+    goal: `Follow-up по зависшим заказам — ${dateStr}`,
+    stepTitle: `Follow-up ${dateStr}: 🔴${critMasters.length} 🟡${warnMasters.length} — отправлено ${sent}`,
+    stepReport: memorySummary,
+    logs: [],
+  }).catch(e => console.error("[masterFollowup] Memory save error:", e));
+
+  steps[3].status = "done";
+  steps[3].report = "Результаты сохранены в постоянную память агента.";
+  steps[3].completedAt = new Date().toISOString();
+
+  const finalReport =
+    `# Follow-up по зависшим заказам — ${dateStr}\n\n` +
+    `## Результат\nОтправлено **${sent}** сообщений мастерам в зоне риска.\n` +
+    `🔴 Критично: ${critical.length} | 🟡 Внимание: ${warning.length}\n\n` +
+    `## Детали\n${sendLog.join("\n")}\n\n` +
+    `## Следующие шаги\n` +
+    `— Проверить ответы мастеров через 2–3 часа\n` +
+    `— Не ответившим — позвонить или эскалировать\n` +
+    `— Запустить АЛ-Диагностику завтра для сравнения`;
+
+  await db.execute(sql`
+    UPDATE autonomous_sessions SET status='done', steps=${JSON.stringify(steps)}::jsonb, current_step=4, final_report=${finalReport}, completed_at=NOW() WHERE id=${sessionId}
   `);
 }
 
@@ -1168,6 +1489,7 @@ export const autonomousAgent = {
     // Specialized scenarios have their own executors (not AI planning pipeline)
     const SPECIALIZED: Record<string, (id: number) => Promise<void>> = {
       masters_city_outreach: runMastersOutreachScenario,
+      master_followup:       runMasterFollowupScenario,
       al_diagnostics:        runALDiagnosticsScenario,
     };
 

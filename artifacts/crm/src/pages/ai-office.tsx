@@ -12,6 +12,7 @@ import {
   Users, ClipboardList, Bot, Cpu, Radio, RefreshCw,
   BookOpen, Pencil, X, ChevronDown, ChevronUp, Rocket,
   BarChart2, Train, ScrollText, Calendar, Clock, CheckSquare,
+  Info, ShieldAlert,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -82,6 +83,24 @@ interface PredefinedScenario {
   color: string;
   estimatedMinutes: number;
   category: string;
+  requiresConfirmation?: boolean;
+}
+
+interface ScenarioPreview {
+  criticalCount: number;
+  warningCount: number;
+  totalTargets: number;
+  totalAmount: number;
+  cities: string[];
+  masters: {
+    alias: string;
+    city: string;
+    risk: string;
+    daysSinceContact: number;
+    totalAmount: number;
+    orderCount: number;
+    riskReasons: string[];
+  }[];
 }
 
 interface ScenarioSchedule {
@@ -302,6 +321,13 @@ export default function AiOfficePage() {
   // Scenarios state
   const [scenarios, setScenarios] = useState<PredefinedScenario[]>([]);
   const [schedules, setSchedules] = useState<Schedules>({});
+  // Confirmation modal state
+  const [confirmScenario, setConfirmScenario] = useState<PredefinedScenario | null>(null);
+  const [confirmPreview, setConfirmPreview] = useState<ScenarioPreview | null>(null);
+  const [confirmPreviewLoading, setConfirmPreviewLoading] = useState(false);
+  const [skipConfirmMap, setSkipConfirmMap] = useState<Record<string, boolean>>(() => {
+    try { return JSON.parse(localStorage.getItem("skipConfirmScenarios") ?? "{}"); } catch { return {}; }
+  });
   const [runningScenarios, setRunningScenarios] = useState<Set<string>>(new Set());
   const [openSchedule, setOpenSchedule] = useState<string | null>(null);
 
@@ -386,8 +412,10 @@ export default function AiOfficePage() {
     } catch {}
   }, []);
 
-  async function handleRunScenario(scenarioId: string) {
+  async function executeRunScenario(scenarioId: string) {
     setRunningScenarios(prev => new Set([...prev, scenarioId]));
+    setConfirmScenario(null);
+    setConfirmPreview(null);
     try {
       const res = await fetch(`${BASE}/api/autonomous/scenarios/${scenarioId}/run`, {
         method: "POST", credentials: "include",
@@ -404,6 +432,29 @@ export default function AiOfficePage() {
     } finally {
       setRunningScenarios(prev => { const s = new Set(prev); s.delete(scenarioId); return s; });
     }
+  }
+
+  async function handleRunScenario(scenario: PredefinedScenario) {
+    // Skip confirmation if user checked "don't ask again" or scenario doesn't require it
+    if (!scenario.requiresConfirmation || skipConfirmMap[scenario.id]) {
+      await executeRunScenario(scenario.id);
+      return;
+    }
+    // Load preview and show confirmation modal
+    setConfirmScenario(scenario);
+    setConfirmPreview(null);
+    setConfirmPreviewLoading(true);
+    try {
+      const res = await fetch(`${BASE}/api/autonomous/scenarios/${scenario.id}/preview`, { credentials: "include" });
+      if (res.ok) setConfirmPreview(await res.json());
+    } catch {}
+    setConfirmPreviewLoading(false);
+  }
+
+  function toggleSkipConfirm(scenarioId: string, skip: boolean) {
+    const updated = { ...skipConfirmMap, [scenarioId]: skip };
+    setSkipConfirmMap(updated);
+    localStorage.setItem("skipConfirmScenarios", JSON.stringify(updated));
   }
 
   async function saveSchedule(scenarioId: string, schedule: ScenarioSchedule) {
@@ -942,12 +993,14 @@ export default function AiOfficePage() {
                             <Button
                               size="sm"
                               className="gap-1.5 h-7 text-xs bg-gradient-to-r from-violet-600 to-indigo-600 hover:opacity-90 text-white flex-1"
-                              onClick={() => handleRunScenario(scenario.id)}
+                              onClick={() => handleRunScenario(scenario)}
                               disabled={isRunning}
                             >
                               {isRunning
                                 ? <><Loader2 className="w-3 h-3 animate-spin" /> Запускаю...</>
-                                : <><Play className="w-3 h-3" /> Запустить</>
+                                : scenario.requiresConfirmation
+                                  ? <><ShieldAlert className="w-3 h-3" /> Запустить</>
+                                  : <><Play className="w-3 h-3" /> Запустить</>
                               }
                             </Button>
                             <button
@@ -1169,12 +1222,179 @@ export default function AiOfficePage() {
                       </div>
                     </div>
                   )}
+
+                  {/* Action button: launch followup from AL-diagnostics results */}
+                  {activeSession.status === "done" &&
+                   activeSession.goal === "АЛ-Диагностика: пульс пайплайна" && (
+                    <div className="rounded-xl border border-orange-200 dark:border-orange-800 bg-orange-50/40 dark:bg-orange-950/10 p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center text-white shrink-0">
+                          <Users className="w-4 h-4" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-semibold text-sm">Следующий шаг</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Написать мастерам из зоны риска — уточнить статус зависших заказов
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        className="mt-3 w-full gap-1.5 h-8 text-xs bg-gradient-to-r from-red-500 to-orange-600 hover:opacity-90 text-white"
+                        onClick={() => {
+                          const followupScenario = scenarios.find(s => s.id === "master_followup");
+                          if (followupScenario) handleRunScenario(followupScenario);
+                        }}
+                        disabled={runningScenarios.has("master_followup")}
+                      >
+                        {runningScenarios.has("master_followup")
+                          ? <><Loader2 className="w-3 h-3 animate-spin" /> Запускаю...</>
+                          : <><ShieldAlert className="w-3 h-3" /> Написать мастерам из зоны риска</>
+                        }
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           </div>
         )}
       </div>
+
+      {/* ── Confirmation Modal ────────────────────────────────────────────── */}
+      {confirmScenario && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl overflow-hidden">
+            {/* Header */}
+            <div className="px-5 py-4 border-b border-border flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center text-white shrink-0">
+                  <ShieldAlert className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="font-bold text-sm">{confirmScenario.title}</p>
+                  <p className="text-xs text-muted-foreground">Требует подтверждения перед запуском</p>
+                </div>
+              </div>
+              <button onClick={() => { setConfirmScenario(null); setConfirmPreview(null); }}
+                className="text-muted-foreground hover:text-foreground transition-colors mt-0.5">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Preview body */}
+            <div className="px-5 py-4 space-y-3">
+              {confirmPreviewLoading && (
+                <div className="flex items-center justify-center gap-2 py-6 text-muted-foreground text-sm">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Загружаем данные...
+                </div>
+              )}
+
+              {!confirmPreviewLoading && confirmPreview && (
+                <>
+                  {/* Summary cards */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 p-2.5 text-center">
+                      <p className="text-xl font-bold text-red-600 dark:text-red-400">{confirmPreview.criticalCount}</p>
+                      <p className="text-[10px] text-red-600/70 dark:text-red-400/70 font-medium">🔴 Критично</p>
+                    </div>
+                    <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-2.5 text-center">
+                      <p className="text-xl font-bold text-amber-600 dark:text-amber-400">{confirmPreview.warningCount}</p>
+                      <p className="text-[10px] text-amber-600/70 dark:text-amber-400/70 font-medium">🟡 Внимание</p>
+                    </div>
+                    <div className="rounded-lg bg-muted p-2.5 text-center">
+                      <p className="text-xl font-bold">{confirmPreview.totalTargets}</p>
+                      <p className="text-[10px] text-muted-foreground font-medium">Получат сообщ.</p>
+                    </div>
+                  </div>
+
+                  {confirmPreview.totalAmount > 0 && (
+                    <div className="rounded-lg bg-muted/50 px-3 py-2 flex items-center gap-2">
+                      <Info className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      <p className="text-xs text-muted-foreground">
+                        Общая сумма зависших заказов:{" "}
+                        <span className="font-semibold text-foreground">{confirmPreview.totalAmount.toLocaleString("ru-RU")} ₽</span>
+                      </p>
+                    </div>
+                  )}
+
+                  {confirmPreview.masters.length > 0 && (
+                    <div className="rounded-lg border border-border overflow-hidden">
+                      <div className="px-3 py-1.5 bg-muted/40 border-b border-border">
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+                          Мастера в зоне риска
+                        </p>
+                      </div>
+                      <div className="max-h-36 overflow-y-auto divide-y divide-border">
+                        {confirmPreview.masters.map((m, i) => (
+                          <div key={i} className="px-3 py-1.5 flex items-center gap-2 text-xs">
+                            <span>{m.risk === "critical" ? "🔴" : "🟡"}</span>
+                            <span className="font-medium min-w-0 truncate">{m.alias}</span>
+                            <span className="text-muted-foreground shrink-0">{m.city}</span>
+                            <span className="text-muted-foreground shrink-0 ml-auto">{m.daysSinceContact}д.</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {confirmPreview.cities.length > 0 && (
+                    <p className="text-[11px] text-muted-foreground">
+                      Города: {confirmPreview.cities.join(", ")}
+                    </p>
+                  )}
+
+                  {confirmPreview.totalTargets === 0 && (
+                    <div className="text-center py-4 text-sm text-muted-foreground">
+                      <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-emerald-500" />
+                      Нет мастеров в зоне риска — рассылка не нужна
+                    </div>
+                  )}
+                </>
+              )}
+
+              {!confirmPreviewLoading && !confirmPreview && (
+                <div className="py-3 text-center text-sm text-muted-foreground">
+                  Не удалось загрузить предпросмотр. Можно запустить без него.
+                </div>
+              )}
+
+              {/* Skip confirmation checkbox */}
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  className="rounded"
+                  checked={!!skipConfirmMap[confirmScenario.id]}
+                  onChange={e => toggleSkipConfirm(confirmScenario.id, e.target.checked)}
+                />
+                <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors">
+                  Не запрашивать подтверждение в следующий раз
+                </span>
+              </label>
+            </div>
+
+            {/* Footer buttons */}
+            <div className="px-5 py-4 border-t border-border flex gap-2">
+              <Button variant="outline" size="sm" className="flex-1 h-9"
+                onClick={() => { setConfirmScenario(null); setConfirmPreview(null); }}>
+                Отмена
+              </Button>
+              <Button
+                size="sm"
+                className="flex-1 h-9 gap-1.5 bg-gradient-to-r from-red-500 to-orange-600 hover:opacity-90 text-white"
+                disabled={runningScenarios.has(confirmScenario.id) || (confirmPreview?.totalTargets === 0)}
+                onClick={() => executeRunScenario(confirmScenario.id)}
+              >
+                {runningScenarios.has(confirmScenario.id)
+                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Запускаю...</>
+                  : <><Play className="w-3.5 h-3.5" /> Запустить</>
+                }
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </AppLayout>
   );
 }
