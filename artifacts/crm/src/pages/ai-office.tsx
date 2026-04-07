@@ -42,20 +42,6 @@ interface AgentLog {
   text: string;
 }
 
-interface BrowserStatus {
-  status: "idle" | "starting" | "running" | "done" | "error" | "stopped" | "waiting_input";
-  task: string;
-  hasScreenshot: boolean;
-  logs: AgentLog[];
-  pendingInputPrompt: string | null;
-}
-
-interface Credential {
-  site: string;
-  login: string;
-  last_login_at: string | null;
-}
-
 interface Scenario {
   id: number;
   name: string;
@@ -274,7 +260,7 @@ function EmployeeCard({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function AiOfficePage() {
-  const [tab, setTab] = useState<"employees" | "browser" | "scenarios" | "autonomous" | "memory">("employees");
+  const [tab, setTab] = useState<"employees" | "scenarios" | "autonomous" | "memory">("employees");
   const [stats, setStats] = useState<OfficeStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
 
@@ -304,24 +290,6 @@ export default function AiOfficePage() {
   const [expandedScenario, setExpandedScenario] = useState<number | null>(null);
   const [runningScenario, setRunningScenario] = useState<number | null>(null);
 
-  // Browser agent state
-  const [browserStatus, setBrowserStatus] = useState<BrowserStatus | null>(null);
-  const [task, setTask] = useState("");
-  const [navUrl, setNavUrl] = useState("");
-  const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
-  const [credentials, setCredentials] = useState<Credential[]>([]);
-  const [newCred, setNewCred] = useState({ site: "", login: "", password: "" });
-  const [showPasswords, setShowPasswords] = useState(false);
-  const [launchLoading, setLaunchLoading] = useState(false);
-  const [launched, setLaunched] = useState(false);
-  const [userInputValue, setUserInputValue] = useState("");
-  const [userInputLoading, setUserInputLoading] = useState(false);
-  const [agentMemory, setAgentMemory] = useState<{ key: string; value: string; context: string | null; updatedAt: string }[]>([]);
-  const [memoryAddKey, setMemoryAddKey] = useState("");
-  const [memoryAddValue, setMemoryAddValue] = useState("");
-  const logsEndRef = useRef<HTMLDivElement>(null);
-  const logsContainerRef = useRef<HTMLDivElement>(null);
-  const screenshotPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { toast } = useToast();
 
   // ── Stats polling ──────────────────────────────────────────────────────────
@@ -332,28 +300,6 @@ export default function AiOfficePage() {
     } catch {} finally {
       setStatsLoading(false);
     }
-  }, []);
-
-  // ── Browser agent polling ──────────────────────────────────────────────────
-  const fetchBrowserStatus = useCallback(async () => {
-    try {
-      const res = await fetch(`${BASE}/api/browser-agent/status`, { credentials: "include" });
-      if (res.ok) setBrowserStatus(await res.json());
-    } catch {}
-  }, []);
-
-  const fetchBrowserMemory = useCallback(async () => {
-    try {
-      const res = await fetch(`${BASE}/api/browser-agent/memory`, { credentials: "include" });
-      if (res.ok) setAgentMemory(await res.json());
-    } catch {}
-  }, []);
-
-  const fetchCredentials = useCallback(async () => {
-    try {
-      const res = await fetch(`${BASE}/api/browser-agent/credentials`, { credentials: "include" });
-      if (res.ok) setCredentials(await res.json());
-    } catch {}
   }, []);
 
   const fetchScenarios = useCallback(async () => {
@@ -372,10 +318,9 @@ export default function AiOfficePage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      toast({ title: "Сценарий запущен", description: "Переключитесь на вкладку «Браузер-агент» для наблюдения" });
+      toast({ title: "Сценарий запущен", description: "Переключитесь на вкладку «Авто-агент» для наблюдения" });
       fetchScenarios();
-      setTab("browser");
-      if (!launched) { setLaunched(true); setTimeout(refreshScreenshot, 1500); }
+      setTab("autonomous");
     } catch (e) {
       toast({ title: "Ошибка запуска", description: String(e), variant: "destructive" });
     } finally { setRunningScenario(null); }
@@ -542,193 +487,19 @@ export default function AiOfficePage() {
     toast({ title: "Задание отменено" });
   }
 
+  // ── Init ────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    fetchStats();
+    fetchScenarios();
+    const statsInterval = setInterval(fetchStats, 30000);
+    return () => { clearInterval(statsInterval); };
+  }, [fetchStats, fetchScenarios]);
+
   useEffect(() => {
     if (tab === "autonomous") fetchAutoSessions();
     return () => { if (autoPollingRef.current) clearInterval(autoPollingRef.current); };
   }, [tab, fetchAutoSessions]);
 
-  const refreshScreenshot = useCallback(async () => {
-    try {
-      const url = `${BASE}/api/browser-agent/screenshot?t=${Date.now()}`;
-      const res = await fetch(url, { credentials: "include" });
-      if (res.ok && res.status !== 204) {
-        const blob = await res.blob();
-        const objUrl = URL.createObjectURL(blob);
-        setScreenshotUrl(prev => { if (prev) URL.revokeObjectURL(prev); return objUrl; });
-      }
-    } catch {}
-  }, []);
-
-  useEffect(() => {
-    fetchStats();
-    fetchBrowserStatus();
-    fetchCredentials();
-    fetchScenarios();
-    fetchBrowserMemory();
-    const statsInterval = setInterval(fetchStats, 30000);
-    const browserInterval = setInterval(fetchBrowserStatus, 2500);
-    const memoryInterval = setInterval(fetchBrowserMemory, 15000);
-    return () => { clearInterval(statsInterval); clearInterval(browserInterval); clearInterval(memoryInterval); };
-  }, [fetchStats, fetchBrowserStatus, fetchCredentials, fetchScenarios, fetchBrowserMemory]);
-
-  useEffect(() => {
-    if (launched) {
-      screenshotPollRef.current = setInterval(refreshScreenshot, 2000);
-    }
-    return () => { if (screenshotPollRef.current) clearInterval(screenshotPollRef.current); };
-  }, [launched, refreshScreenshot]);
-
-  // Auto-detect when browser is launched by the autonomous agent
-  useEffect(() => {
-    const isActive = browserStatus?.status === "running" || browserStatus?.status === "starting" || browserStatus?.status === "waiting_input";
-    if (isActive && !launched) {
-      setLaunched(true);
-      setTimeout(refreshScreenshot, 800);
-    }
-  }, [browserStatus?.status, launched, refreshScreenshot]);
-
-  useEffect(() => {
-    const isActive = browserStatus?.status === "running" || browserStatus?.status === "starting";
-    if (isActive && logsContainerRef.current) {
-      const el = logsContainerRef.current;
-      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-    }
-  }, [browserStatus?.logs, browserStatus?.status]);
-
-  const isRunning = browserStatus?.status === "running" || browserStatus?.status === "starting";
-  const isAgentActive = isRunning || browserStatus?.status === "waiting_input";
-
-  async function handleAbortTask() {
-    await fetch(`${BASE}/api/browser-agent/abort`, { method: "POST", credentials: "include" });
-    // If waiting for input, unblock it
-    if (browserStatus?.status === "waiting_input") {
-      await fetch(`${BASE}/api/browser-agent/input`, {
-        method: "POST", credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ value: "__aborted__" }),
-      });
-    }
-  }
-
-  // ── Browser actions ────────────────────────────────────────────────────────
-  async function handleLaunch() {
-    setLaunchLoading(true);
-    try {
-      const res = await fetch(`${BASE}/api/browser-agent/launch`, { method: "POST", credentials: "include" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setLaunched(true);
-      setTimeout(refreshScreenshot, 1500);
-      toast({ title: "Браузер запущен" });
-    } catch (e) {
-      toast({ title: "Ошибка запуска", description: String(e), variant: "destructive" });
-    } finally {
-      setLaunchLoading(false);
-    }
-  }
-
-  async function handleStop() {
-    await fetch(`${BASE}/api/browser-agent/stop`, { method: "POST", credentials: "include" });
-    setLaunched(false);
-    setScreenshotUrl(null);
-    toast({ title: "Браузер остановлен" });
-  }
-
-  async function handleAgentMessage() {
-    const msg = userInputValue.trim();
-    if (!msg) return;
-    setUserInputLoading(true);
-    try {
-      const status = browserStatus?.status;
-      if (status === "waiting_input") {
-        // Agent is paused waiting for a code/data — send directly
-        const res = await fetch(`${BASE}/api/browser-agent/input`, {
-          method: "POST", credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ value: msg }),
-        });
-        if (res.ok) {
-          setUserInputValue("");
-          toast({ title: "Отправлено агенту" });
-        } else {
-          toast({ title: "Ошибка", description: "Агент не ожидает ввода", variant: "destructive" });
-        }
-      } else if (status === "running" || status === "starting") {
-        // Agent is busy — queue the value, it will be used on next request_input call
-        const res = await fetch(`${BASE}/api/browser-agent/input`, {
-          method: "POST", credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ value: msg }),
-        });
-        if (res.ok) {
-          setUserInputValue("");
-          toast({ title: "Сохранено в очередь", description: "Агент подставит значение когда дойдёт до ввода" });
-        } else {
-          toast({ title: "Ошибка отправки", variant: "destructive" });
-        }
-      } else {
-        // Agent is idle/done — treat as a new task
-        const res = await fetch(`${BASE}/api/browser-agent/task`, {
-          method: "POST", credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ task: msg }),
-        });
-        if (res.ok) {
-          setUserInputValue("");
-          if (!launched) { setLaunched(true); setTimeout(refreshScreenshot, 1500); }
-          toast({ title: "Задача отправлена" });
-        } else {
-          toast({ title: "Ошибка", description: "Не удалось отправить задачу", variant: "destructive" });
-        }
-      }
-    } catch {
-      toast({ title: "Ошибка отправки", variant: "destructive" });
-    } finally {
-      setUserInputLoading(false);
-    }
-  }
-
-  async function handleSendTask() {
-    if (!task.trim()) return;
-    const res = await fetch(`${BASE}/api/browser-agent/task`, {
-      method: "POST", credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ task: task.trim() }),
-    });
-    if (res.ok) toast({ title: "Задача отправлена" });
-  }
-
-  async function handleNavigate() {
-    let url = navUrl.trim();
-    if (!url) return;
-    if (!url.startsWith("http")) url = "https://" + url;
-    await fetch(`${BASE}/api/browser-agent/navigate`, {
-      method: "POST", credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url }),
-    });
-    setTimeout(refreshScreenshot, 1500);
-  }
-
-  async function handleSaveCred() {
-    const { site, login, password } = newCred;
-    if (!site || !login || !password) return;
-    await fetch(`${BASE}/api/browser-agent/credentials`, {
-      method: "POST", credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ site, login, password }),
-    });
-    setNewCred({ site: "", login: "", password: "" });
-    fetchCredentials();
-    toast({ title: "Аккаунт сохранён" });
-  }
-
-  async function handleDeleteCred(site: string) {
-    await fetch(`${BASE}/api/browser-agent/credentials/${encodeURIComponent(site)}`, {
-      method: "DELETE", credentials: "include",
-    });
-    fetchCredentials();
-  }
 
   return (
     <AppLayout>
@@ -742,7 +513,7 @@ export default function AiOfficePage() {
             </div>
             <div>
               <h1 className="font-bold text-lg">ИИ Офис</h1>
-              <p className="text-xs text-muted-foreground">Цифровые сотрудники и браузер-агент</p>
+              <p className="text-xs text-muted-foreground">Цифровые сотрудники и авто-агент</p>
             </div>
           </div>
 
@@ -758,20 +529,6 @@ export default function AiOfficePage() {
             >
               <Users className="w-4 h-4" />
               Сотрудники
-            </button>
-            <button
-              onClick={() => setTab("browser")}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
-                tab === "browser"
-                  ? "bg-background shadow-sm text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Monitor className="w-4 h-4" />
-              Браузер-агент
-              {browserStatus?.status === "running" && (
-                <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-              )}
             </button>
             <button
               onClick={() => setTab("scenarios")}
@@ -892,44 +649,6 @@ export default function AiOfficePage() {
               />
             </div>
 
-            {/* Browser agent status card (compact) */}
-            <div
-              className="border border-border rounded-2xl overflow-hidden cursor-pointer hover:border-primary/50 transition-colors"
-              onClick={() => setTab("browser")}
-            >
-              <div className="bg-gradient-to-r from-gray-900 to-slate-900 p-5 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shrink-0">
-                  <Monitor className="w-6 h-6 text-white" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-bold text-white">Браузер-агент</h3>
-                  <p className="text-white/50 text-sm">RPA + ИИ — ходит по сайтам как живой человек</p>
-                </div>
-                <div className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
-                  browserStatus?.status === "running"
-                    ? "bg-blue-500/20 text-blue-300 border border-blue-400/30"
-                    : browserStatus?.status === "idle" && launched
-                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-400/30"
-                      : "bg-gray-500/20 text-gray-400 border border-gray-400/20"
-                }`}>
-                  {browserStatus?.status === "running" ? "🔄 Работает" :
-                   launched ? "✅ Готов" : "⏸ Остановлен"}
-                </div>
-                <ChevronRight className="w-5 h-5 text-white/30" />
-              </div>
-              {(stats?.browser.recentLogs?.length ?? 0) > 0 && (
-                <div className="px-5 py-3 border-t border-white/5 space-y-1">
-                  {stats!.browser.recentLogs.slice(0, 2).map((l, i) => (
-                    <div key={i} className="text-xs text-muted-foreground flex gap-2">
-                      <span className="text-muted-foreground/40 shrink-0">
-                        {new Date(l.ts).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
-                      </span>
-                      <span className="line-clamp-1">{l.text}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
         )}
 
@@ -1550,267 +1269,6 @@ export default function AiOfficePage() {
                   )}
                 </div>
               )}
-            </div>
-          </div>
-        )}
-
-        {/* ── Browser Agent tab ── */}
-        {tab === "browser" && (
-          <div className="flex-1 overflow-hidden flex">
-
-            {/* Left: screenshot */}
-            <div className="flex-1 flex flex-col overflow-hidden border-r border-border">
-              {/* URL bar */}
-              {launched && (
-                <div className="px-4 py-3 border-b border-border flex gap-2 shrink-0 bg-muted/30">
-                  <Globe className="w-4 h-4 text-muted-foreground mt-2.5 shrink-0" />
-                  <Input
-                    placeholder="Введите URL и нажмите Enter..."
-                    value={navUrl}
-                    onChange={e => setNavUrl(e.target.value)}
-                    onKeyDown={e => e.key === "Enter" && handleNavigate()}
-                    className="font-mono text-sm"
-                  />
-                  <Button size="sm" variant="outline" onClick={handleNavigate}>
-                    <Link2 className="w-3.5 h-3.5" />
-                  </Button>
-                  <Button variant="destructive" size="sm" onClick={handleStop} className="gap-1.5 shrink-0">
-                    <Square className="w-3.5 h-3.5" /> Стоп
-                  </Button>
-                </div>
-              )}
-
-              {/* Screenshot */}
-              <div className="flex-1 overflow-auto flex items-center justify-center bg-gray-950 relative">
-                {!launched ? (
-                  <div className="text-center space-y-5">
-                    <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-600/20 flex items-center justify-center mx-auto border border-emerald-500/20">
-                      <Monitor className="w-12 h-12 text-emerald-400/60" />
-                    </div>
-                    <div className="text-center">
-                      <p className="font-semibold text-white/70 text-lg">Браузер не запущен</p>
-                      <p className="text-white/30 text-sm mt-1">Нажмите кнопку чтобы запустить Chromium</p>
-                    </div>
-                    <Button onClick={handleLaunch} disabled={launchLoading} className="gap-2 bg-emerald-600 hover:bg-emerald-700">
-                      {launchLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-                      Запустить браузер
-                    </Button>
-                  </div>
-                ) : screenshotUrl ? (
-                  <div className="relative w-full h-full flex items-center justify-center">
-                    <img
-                      src={screenshotUrl}
-                      alt="Браузер"
-                      className="max-w-full max-h-full object-contain"
-                    />
-                    {isRunning && (
-                      <div className="absolute top-3 right-3 bg-blue-600 text-white text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow-lg">
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                        Агент работает...
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-center text-white/40 space-y-2">
-                    <Loader2 className="w-8 h-8 mx-auto animate-spin opacity-40" />
-                    <p className="text-sm">Загрузка скриншота...</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Right: logs + input */}
-            <div className="w-96 flex flex-col overflow-hidden bg-background">
-
-              {/* Agent status bar */}
-              <div className={`px-4 py-2.5 flex items-center gap-2 shrink-0 border-b ${
-                browserStatus?.status === "waiting_input"
-                  ? "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800"
-                  : isRunning
-                  ? "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800"
-                  : "bg-muted/30 border-border"
-              }`}>
-                <div className={`w-2 h-2 rounded-full shrink-0 ${
-                  browserStatus?.status === "waiting_input" ? "bg-amber-500" :
-                  isRunning ? "bg-blue-500 animate-pulse" :
-                  browserStatus?.status === "done" ? "bg-emerald-500" :
-                  "bg-muted-foreground/30"
-                }`} />
-                <span className="text-xs font-medium flex-1 truncate">
-                  {browserStatus?.status === "waiting_input" ? "Ожидает ввода" :
-                   browserStatus?.status === "starting" ? "Запускается..." :
-                   browserStatus?.status === "running"
-                     ? `Выполняет: ${(browserStatus.task ?? "").slice(0, 35)}${(browserStatus.task ?? "").length > 35 ? "…" : ""}`
-                     : browserStatus?.status === "done" ? "Задача выполнена"
-                     : "Готов к работе"}
-                </span>
-                {isAgentActive && (
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={handleAbortTask}
-                    className="h-7 px-2.5 gap-1.5 text-xs shrink-0"
-                  >
-                    <Square className="w-3 h-3" />
-                    Остановить
-                  </Button>
-                )}
-              </div>
-
-              {/* Memory panel */}
-              <div className="shrink-0 border-t border-border">
-                <details className="group">
-                  <summary className="flex items-center justify-between px-4 py-2.5 cursor-pointer select-none hover:bg-muted/40 transition-colors">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                      <span>🧠</span>
-                      <span>Память агента</span>
-                      {agentMemory.length > 0 && (
-                        <span className="bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 rounded-full px-1.5 py-0.5 text-[10px] font-bold">{agentMemory.length}</span>
-                      )}
-                    </div>
-                    <span className="text-muted-foreground text-xs group-open:rotate-180 transition-transform">▾</span>
-                  </summary>
-                  <div className="px-4 pb-3 space-y-2 max-h-48 overflow-y-auto">
-                    {agentMemory.length === 0 ? (
-                      <p className="text-xs text-muted-foreground/60 py-2 text-center">Агент ещё ничего не запомнил. Он учится в процессе работы.</p>
-                    ) : (
-                      agentMemory.map(m => (
-                        <div key={m.key} className="flex items-start gap-2 group/mem text-xs bg-violet-50/50 dark:bg-violet-950/10 rounded-lg px-2.5 py-2 border border-violet-100 dark:border-violet-900/30">
-                          <div className="flex-1 min-w-0">
-                            <span className="font-medium text-violet-700 dark:text-violet-300 block truncate">{m.key}</span>
-                            <span className="text-foreground/70 break-words">{m.value}</span>
-                            {m.context && <span className="text-muted-foreground/50 text-[10px] block">{m.context}</span>}
-                          </div>
-                          <button
-                            className="shrink-0 opacity-0 group-hover/mem:opacity-100 transition-opacity text-red-400 hover:text-red-600"
-                            title="Забыть"
-                            onClick={async () => {
-                              await fetch(`${BASE}/api/browser-agent/memory/${encodeURIComponent(m.key)}`, { method: "DELETE", credentials: "include" });
-                              fetchBrowserMemory();
-                            }}
-                          >×</button>
-                        </div>
-                      ))
-                    )}
-                    {/* Add memory manually */}
-                    <div className="flex gap-1.5 pt-1">
-                      <input
-                        className="flex-1 text-xs border border-border rounded px-2 py-1 bg-background placeholder:text-muted-foreground/50 min-w-0"
-                        placeholder="Что запомнить…"
-                        value={memoryAddKey}
-                        onChange={e => setMemoryAddKey(e.target.value)}
-                      />
-                      <input
-                        className="flex-1 text-xs border border-border rounded px-2 py-1 bg-background placeholder:text-muted-foreground/50 min-w-0"
-                        placeholder="Значение"
-                        value={memoryAddValue}
-                        onChange={e => setMemoryAddValue(e.target.value)}
-                        onKeyDown={async e => {
-                          if (e.key === "Enter" && memoryAddKey.trim() && memoryAddValue.trim()) {
-                            await fetch(`${BASE}/api/browser-agent/memory`, {
-                              method: "POST", credentials: "include",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ key: memoryAddKey.trim(), value: memoryAddValue.trim() }),
-                            });
-                            setMemoryAddKey(""); setMemoryAddValue("");
-                            fetchBrowserMemory();
-                          }
-                        }}
-                      />
-                      <button
-                        className="text-xs px-2 py-1 bg-violet-600 text-white rounded hover:bg-violet-700 shrink-0"
-                        onClick={async () => {
-                          if (!memoryAddKey.trim() || !memoryAddValue.trim()) return;
-                          await fetch(`${BASE}/api/browser-agent/memory`, {
-                            method: "POST", credentials: "include",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ key: memoryAddKey.trim(), value: memoryAddValue.trim() }),
-                          });
-                          setMemoryAddKey(""); setMemoryAddValue("");
-                          fetchBrowserMemory();
-                        }}
-                      >+</button>
-                    </div>
-                  </div>
-                </details>
-              </div>
-
-              {/* Logs */}
-              <div ref={logsContainerRef} className="flex-1 overflow-y-auto p-4 space-y-1 min-h-0">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Лог действий</p>
-                {!browserStatus?.logs?.length ? (
-                  <div className="text-center py-8 text-muted-foreground/50">
-                    <Bot className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                    <p className="text-xs">Лог появится когда агент начнёт работу</p>
-                  </div>
-                ) : (
-                  browserStatus.logs.map(log => (
-                    <div key={log.id} className={`flex gap-2 text-xs py-1.5 px-2.5 rounded-lg ${
-                      log.type === "error"  ? "bg-red-50 dark:bg-red-950/20" :
-                      log.type === "result" ? "bg-emerald-50 dark:bg-emerald-950/20" :
-                      log.type === "thought"? "bg-blue-50/60 dark:bg-blue-950/20" : "bg-muted/30"
-                    }`}>
-                      {LOG_ICON[log.type]}
-                      <div className="flex-1 min-w-0">
-                        <span className="break-words leading-relaxed">{log.text}</span>
-                        <span className="block text-muted-foreground/40 text-[10px] mt-0.5">
-                          {new Date(log.ts).toLocaleTimeString("ru-RU")}
-                        </span>
-                      </div>
-                    </div>
-                  ))
-                )}
-                <div ref={logsEndRef} />
-              </div>
-
-              {/* Waiting input banner — just info, input is in the bottom box */}
-              {browserStatus?.status === "waiting_input" && browserStatus.pendingInputPrompt && (
-                <div className="mx-3 mb-1 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 flex items-start gap-2 shrink-0">
-                  <AlertCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-                  <p className="text-xs text-amber-800 dark:text-amber-300 leading-snug">
-                    <span className="font-semibold">Агент ждёт: </span>
-                    {browserStatus.pendingInputPrompt}
-                  </p>
-                </div>
-              )}
-
-              {/* Universal agent chat input */}
-              <div className="border-t border-border p-3 shrink-0 bg-muted/10">
-                <div className="flex items-start gap-2">
-                  <Textarea
-                    value={userInputValue}
-                    onChange={e => setUserInputValue(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        handleAgentMessage();
-                      }
-                    }}
-                    placeholder={
-                      browserStatus?.status === "waiting_input"
-                        ? (browserStatus.pendingInputPrompt ?? "Введите код или данные...")
-                        : isRunning
-                        ? "Напишите агенту — код, данные, уточнение..."
-                        : "Напишите задачу для агента..."
-                    }
-                    rows={2}
-                    className="text-sm flex-1 resize-none min-h-0"
-                  />
-                  <Button
-                    size="icon"
-                    onClick={handleAgentMessage}
-                    disabled={userInputLoading || !userInputValue.trim()}
-                    className={`shrink-0 ${browserStatus?.status === "waiting_input" ? "bg-amber-600 hover:bg-amber-700" : ""}`}
-                  >
-                    {userInputLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                  </Button>
-                </div>
-                <p className="text-[10px] text-muted-foreground mt-1.5 pl-0.5">
-                  {browserStatus?.status === "waiting_input"
-                    ? "⏸ Агент ждёт ввода — Enter для отправки"
-                    : "Enter — отправить · Shift+Enter — новая строка"}
-                </p>
-              </div>
             </div>
           </div>
         )}
