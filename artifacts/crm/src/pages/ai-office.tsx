@@ -67,6 +67,47 @@ interface Scenario {
   created_at: string;
 }
 
+// ─── Autonomous Types ──────────────────────────────────────────────────────
+
+interface AutoSession {
+  id: number;
+  goal: string;
+  status: "planning" | "running" | "done" | "error" | "cancelled";
+  currentStep: number;
+  startedAt: string;
+  completedAt: string | null;
+  finalReport: string | null;
+}
+
+interface AutoStepResult {
+  index: number;
+  title: string;
+  description: string;
+  task: string;
+  status: "pending" | "running" | "done" | "error";
+  report: string;
+  startedAt?: string;
+  completedAt?: string;
+  durationMs?: number;
+}
+
+interface AutoSessionDetail extends AutoSession {
+  plan: { index: number; title: string; description: string }[];
+  steps: AutoStepResult[];
+}
+
+const STATUS_COLOR: Record<string, string> = {
+  planning: "text-yellow-600 bg-yellow-50 dark:bg-yellow-950/30 dark:text-yellow-400",
+  running:  "text-blue-600 bg-blue-50 dark:bg-blue-950/30 dark:text-blue-400",
+  done:     "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/30 dark:text-emerald-400",
+  error:    "text-red-600 bg-red-50 dark:bg-red-950/30 dark:text-red-400",
+  cancelled:"text-gray-500 bg-gray-100 dark:bg-gray-800 dark:text-gray-400",
+};
+const STATUS_LABEL: Record<string, string> = {
+  planning: "Планирование", running: "Выполняется",
+  done: "Готово", error: "Ошибка", cancelled: "Отменено",
+};
+
 const SCENARIO_ICON_MAP: Record<string, React.ReactNode> = {
   message:  <MessageSquare className="w-5 h-5" />,
   users:    <Users className="w-5 h-5" />,
@@ -206,9 +247,16 @@ function EmployeeCard({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function AiOfficePage() {
-  const [tab, setTab] = useState<"employees" | "browser" | "scenarios">("employees");
+  const [tab, setTab] = useState<"employees" | "browser" | "scenarios" | "autonomous">("employees");
   const [stats, setStats] = useState<OfficeStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
+
+  // Autonomous agent state
+  const [autoGoal, setAutoGoal] = useState("");
+  const [autoSessions, setAutoSessions] = useState<AutoSession[]>([]);
+  const [activeSession, setActiveSession] = useState<AutoSessionDetail | null>(null);
+  const [autoStarting, setAutoStarting] = useState(false);
+  const autoPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Scenarios state
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
@@ -318,6 +366,79 @@ export default function AiOfficePage() {
     fetchScenarios();
     toast({ title: "Сценарий удалён" });
   }
+
+  // ── Autonomous agent ────────────────────────────────────────────────────────
+
+  const fetchAutoSessions = useCallback(async () => {
+    try {
+      const res = await fetch(`${BASE}/api/autonomous`, { credentials: "include" });
+      if (res.ok) setAutoSessions(await res.json());
+    } catch {}
+  }, []);
+
+  const pollActiveSession = useCallback(async (id: number) => {
+    try {
+      const res = await fetch(`${BASE}/api/autonomous/${id}`, { credentials: "include" });
+      if (res.ok) {
+        const data: AutoSessionDetail = await res.json();
+        setActiveSession(data);
+        if (data.status === "done" || data.status === "error" || data.status === "cancelled") {
+          if (autoPollingRef.current) { clearInterval(autoPollingRef.current); autoPollingRef.current = null; }
+          fetchAutoSessions();
+        }
+      }
+    } catch {}
+  }, [fetchAutoSessions]);
+
+  async function handleStartAutonomous() {
+    if (!autoGoal.trim()) return;
+    setAutoStarting(true);
+    try {
+      const res = await fetch(`${BASE}/api/autonomous`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ goal: autoGoal.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast({ title: "Агент запущен", description: "Планирую шаги..." });
+      setAutoGoal("");
+      fetchAutoSessions();
+      // Start polling this session
+      if (autoPollingRef.current) clearInterval(autoPollingRef.current);
+      autoPollingRef.current = setInterval(() => pollActiveSession(data.sessionId), 3000);
+      pollActiveSession(data.sessionId);
+    } catch (e) {
+      toast({ title: "Ошибка", description: String(e), variant: "destructive" });
+    } finally {
+      setAutoStarting(false);
+    }
+  }
+
+  async function handleOpenSession(id: number) {
+    const res = await fetch(`${BASE}/api/autonomous/${id}`, { credentials: "include" });
+    if (res.ok) {
+      const data: AutoSessionDetail = await res.json();
+      setActiveSession(data);
+      // Poll if still running
+      if (data.status === "running" || data.status === "planning") {
+        if (autoPollingRef.current) clearInterval(autoPollingRef.current);
+        autoPollingRef.current = setInterval(() => pollActiveSession(id), 3000);
+      }
+    }
+  }
+
+  async function handleCancelSession(id: number) {
+    await fetch(`${BASE}/api/autonomous/${id}/cancel`, { method: "POST", credentials: "include" });
+    if (autoPollingRef.current) { clearInterval(autoPollingRef.current); autoPollingRef.current = null; }
+    pollActiveSession(id);
+    toast({ title: "Задание отменено" });
+  }
+
+  useEffect(() => {
+    if (tab === "autonomous") fetchAutoSessions();
+    return () => { if (autoPollingRef.current) clearInterval(autoPollingRef.current); };
+  }, [tab, fetchAutoSessions]);
 
   const refreshScreenshot = useCallback(async () => {
     try {
@@ -477,6 +598,20 @@ export default function AiOfficePage() {
                 <span className="text-xs bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 rounded-full px-1.5 py-0.5 font-semibold">
                   {scenarios.length}
                 </span>
+              )}
+            </button>
+            <button
+              onClick={() => setTab("autonomous")}
+              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+                tab === "autonomous"
+                  ? "bg-background shadow-sm text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Rocket className="w-4 h-4" />
+              Авто-агент
+              {autoSessions.some(s => s.status === "running" || s.status === "planning") && (
+                <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
               )}
             </button>
           </div>
@@ -791,6 +926,262 @@ export default function AiOfficePage() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* ── Autonomous Agent tab ── */}
+        {tab === "autonomous" && (
+          <div className="flex-1 overflow-hidden flex">
+
+            {/* Left: session list + goal input */}
+            <div className="w-80 flex flex-col border-r border-border overflow-hidden shrink-0">
+              {/* New goal */}
+              <div className="p-4 border-b border-border space-y-3 shrink-0 bg-gradient-to-b from-violet-50/50 dark:from-violet-950/10 to-transparent">
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center">
+                    <Rocket className="w-3.5 h-3.5 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold">Автономный агент</p>
+                    <p className="text-xs text-muted-foreground">GPT-4o планирует + браузер выполняет</p>
+                  </div>
+                </div>
+                <Textarea
+                  placeholder="Создай лендинг для услуги укладки плитки. Изучи конкурентов, напиши продающий текст..."
+                  value={autoGoal}
+                  onChange={e => setAutoGoal(e.target.value)}
+                  className="resize-none text-sm min-h-[90px]"
+                  disabled={autoStarting}
+                />
+                <Button
+                  className="w-full gap-2 bg-gradient-to-r from-violet-600 to-indigo-600 hover:opacity-90 text-white"
+                  onClick={handleStartAutonomous}
+                  disabled={!autoGoal.trim() || autoStarting}
+                >
+                  {autoStarting
+                    ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Планирование...</>
+                    : <><Rocket className="w-3.5 h-3.5" /> Запустить задание</>
+                  }
+                </Button>
+
+                {/* Quick goals */}
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground font-medium">Примеры заданий:</p>
+                  {[
+                    "Изучи конкурентов по ремонту квартир в Краснодаре: найди их цены, УТП и контакты",
+                    "Найди 5 лучших поставщиков плитки оптом, сравни цены и условия доставки",
+                    "Проверь отзывы на нас на Авито и Яндекс Услугах, составь отчёт",
+                    "Напиши продающий текст объявления на Авито для услуги шпаклёвки",
+                  ].map((g, i) => (
+                    <button key={i} onClick={() => setAutoGoal(g)}
+                      className="w-full text-left text-xs px-2.5 py-2 rounded-lg bg-muted/50 hover:bg-muted transition-colors text-muted-foreground hover:text-foreground leading-snug">
+                      {g}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Sessions list */}
+              <div className="flex-1 overflow-y-auto min-h-0">
+                <div className="px-4 py-2 flex items-center justify-between sticky top-0 bg-background/95 backdrop-blur-sm z-10 border-b border-border">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">История заданий</p>
+                  <button onClick={fetchAutoSessions} className="text-muted-foreground hover:text-foreground">
+                    <RefreshCw className="w-3 h-3" />
+                  </button>
+                </div>
+                {autoSessions.length === 0 ? (
+                  <div className="text-center py-10 text-muted-foreground/50">
+                    <ScrollText className="w-6 h-6 mx-auto mb-2 opacity-30" />
+                    <p className="text-xs">Заданий ещё нет</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-border">
+                    {autoSessions.map(s => (
+                      <button
+                        key={s.id}
+                        onClick={() => handleOpenSession(s.id)}
+                        className={`w-full text-left px-4 py-3 hover:bg-muted/40 transition-colors ${
+                          activeSession?.id === s.id ? "bg-muted/60" : ""
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-xs font-medium line-clamp-2 flex-1">{s.goal}</p>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0 ${STATUS_COLOR[s.status]}`}>
+                            {STATUS_LABEL[s.status]}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground mt-1">
+                          {new Date(s.startedAt).toLocaleString("ru-RU", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" })}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right: session detail */}
+            <div className="flex-1 flex flex-col overflow-hidden">
+              {!activeSession ? (
+                <div className="flex-1 flex items-center justify-center text-center p-8">
+                  <div className="space-y-4 max-w-sm">
+                    <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-violet-500/10 to-indigo-600/10 border border-violet-200 dark:border-violet-800 flex items-center justify-center mx-auto">
+                      <Rocket className="w-10 h-10 text-violet-400/60" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-lg">Автономный агент</p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Введите высокоуровневую цель — ИИ сам разберётся что нужно сделать и выполнит каждый шаг
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3 text-center text-xs text-muted-foreground">
+                      {[
+                        { icon: <Zap className="w-4 h-4 text-yellow-500 mx-auto mb-1" />, text: "GPT-4o планирует шаги" },
+                        { icon: <Monitor className="w-4 h-4 text-blue-500 mx-auto mb-1" />, text: "Браузер выполняет каждый" },
+                        { icon: <ClipboardList className="w-4 h-4 text-emerald-500 mx-auto mb-1" />, text: "Отчёт по каждому шагу" },
+                      ].map((f, i) => (
+                        <div key={i} className="rounded-xl bg-muted/40 p-3">
+                          {f.icon}
+                          {f.text}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex-1 overflow-y-auto p-6 space-y-5">
+                  {/* Session header */}
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[activeSession.status]}`}>
+                          {activeSession.status === "running" && <Loader2 className="w-3 h-3 animate-spin inline mr-1" />}
+                          {STATUS_LABEL[activeSession.status]}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(activeSession.startedAt).toLocaleString("ru-RU")}
+                        </span>
+                      </div>
+                      <h2 className="font-bold text-base">{activeSession.goal}</h2>
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      {(activeSession.status === "running" || activeSession.status === "planning") && (
+                        <Button variant="destructive" size="sm" className="gap-1.5"
+                          onClick={() => handleCancelSession(activeSession.id)}>
+                          <Square className="w-3 h-3" /> Отменить
+                        </Button>
+                      )}
+                      {activeSession.finalReport && activeSession.finalReport !== "available" && (
+                        <Button variant="outline" size="sm" className="gap-1.5"
+                          onClick={() => navigator.clipboard.writeText(activeSession.finalReport ?? "").then(() => toast({ title: "Скопировано" }))}>
+                          <ClipboardList className="w-3.5 h-3.5" /> Копировать
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Progress bar */}
+                  {activeSession.steps.length > 0 && (
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>Прогресс</span>
+                        <span>{activeSession.steps.filter(s => s.status === "done").length} / {activeSession.steps.length} шагов</span>
+                      </div>
+                      <div className="h-2 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-violet-500 to-indigo-500 rounded-full transition-all duration-1000"
+                          style={{ width: `${(activeSession.steps.filter(s => s.status === "done").length / activeSession.steps.length) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Planning state */}
+                  {activeSession.status === "planning" && (
+                    <div className="rounded-xl border border-yellow-200 dark:border-yellow-800 bg-yellow-50/50 dark:bg-yellow-950/20 p-4 flex items-center gap-3">
+                      <Loader2 className="w-5 h-5 animate-spin text-yellow-500 shrink-0" />
+                      <div>
+                        <p className="font-medium text-sm">GPT-4o анализирует задачу...</p>
+                        <p className="text-xs text-muted-foreground">Составляет план из шагов</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Steps */}
+                  {activeSession.steps.length > 0 && (
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                        Шаги выполнения
+                      </p>
+                      {activeSession.steps.map((step, i) => (
+                        <div key={i} className={`rounded-xl border overflow-hidden ${
+                          step.status === "running" ? "border-blue-300 dark:border-blue-700" :
+                          step.status === "done"    ? "border-emerald-200 dark:border-emerald-800" :
+                          step.status === "error"   ? "border-red-200 dark:border-red-800" :
+                          "border-border"
+                        }`}>
+                          {/* Step header */}
+                          <div className={`px-4 py-3 flex items-center gap-3 ${
+                            step.status === "running" ? "bg-blue-50/60 dark:bg-blue-950/20" :
+                            step.status === "done"    ? "bg-emerald-50/40 dark:bg-emerald-950/10" :
+                            step.status === "error"   ? "bg-red-50/40 dark:bg-red-950/10" :
+                            "bg-muted/20"
+                          }`}>
+                            {/* Icon */}
+                            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                              step.status === "running" ? "bg-blue-500 text-white" :
+                              step.status === "done"    ? "bg-emerald-500 text-white" :
+                              step.status === "error"   ? "bg-red-500 text-white" :
+                              "bg-muted text-muted-foreground"
+                            }`}>
+                              {step.status === "running" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> :
+                               step.status === "done"    ? <CheckCircle2 className="w-3.5 h-3.5" /> :
+                               step.status === "error"   ? <XCircle className="w-3.5 h-3.5" /> :
+                               i + 1}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-semibold text-sm">{step.title}</p>
+                              <p className="text-xs text-muted-foreground">{step.description}</p>
+                            </div>
+                            {step.durationMs && (
+                              <span className="text-xs text-muted-foreground shrink-0">
+                                {Math.round(step.durationMs / 1000)}с
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Step report */}
+                          {step.report && (
+                            <div className="px-4 py-3 border-t border-border/50 bg-background text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
+                              {step.report}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Final report */}
+                  {activeSession.finalReport && activeSession.finalReport !== "available" && (
+                    <div className="rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50/50 dark:bg-violet-950/10 overflow-hidden">
+                      <div className="px-4 py-3 border-b border-violet-200 dark:border-violet-800 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <ClipboardList className="w-4 h-4 text-violet-600" />
+                          <p className="font-semibold text-sm text-violet-800 dark:text-violet-300">Итоговый отчёт</p>
+                        </div>
+                        <Button variant="ghost" size="sm" className="gap-1.5 text-xs text-violet-700 dark:text-violet-300 h-7"
+                          onClick={() => navigator.clipboard.writeText(activeSession.finalReport ?? "").then(() => toast({ title: "Скопировано" }))}>
+                          <ClipboardList className="w-3 h-3" /> Копировать
+                        </Button>
+                      </div>
+                      <div className="p-4 text-sm leading-relaxed whitespace-pre-wrap text-foreground/80">
+                        {activeSession.finalReport}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
