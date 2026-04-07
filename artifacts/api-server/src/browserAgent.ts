@@ -329,37 +329,7 @@ class BrowserAgentService {
         break;
       }
       case "ask_user": {
-        // Ask user a question and wait for answer, then remember it
-        const question = String(p.question ?? "Уточните данные");
-        this.pendingInputPrompt = question;
-
-        let answer: string;
-        if (this.queuedInput !== null) {
-          answer = this.queuedInput;
-          this.queuedInput = null;
-          this.log("info", `✅ Использован предварительно введённый ответ: ${answer}`);
-        } else {
-          this.status = "waiting_input";
-          this.log("info", `❓ Вопрос пользователю: ${question}`);
-          answer = await new Promise<string>((resolve, reject) => {
-            this.inputResolve = resolve;
-            setTimeout(() => reject(new Error("Время ожидания ответа истекло (10 мин)")), 600_000);
-          });
-          this.log("info", `💬 Получен ответ: ${answer}`);
-        }
-
-        this.pendingInputPrompt = "";
-        this.status = "running";
-
-        // Auto-save non-OTP answers to memory (OTP is all-digits short string)
-        const isOtp = /^\d{4,8}$/.test(answer.trim());
-        if (!isOtp && answer.trim().length > 1) {
-          const memKey = question.length > 80 ? question.slice(0, 77) + "…" : question;
-          await this.saveMemory(memKey, answer.trim());
-        }
-
-        // Store answer for GPT to use in next step (inject into history)
-        actionHistory.push(`ask_user("${question}") → ответ: "${answer}"`);
+        // Handled in runTask main loop — should not reach here
         break;
       }
       case "memorize": {
@@ -565,6 +535,45 @@ ${historyText}${credentialsContext}${memoryContext}
         await this.executeAction(parsed);
         this.status = "done";
         return;
+      }
+
+      // ── ask_user handled here (needs access to actionHistory) ────────────────
+      if (parsed.action === "ask_user") {
+        const question = String(parsed.params?.question ?? "Уточните данные");
+        this.pendingInputPrompt = question;
+
+        let answer: string;
+        if (this.queuedInput !== null) {
+          answer = this.queuedInput;
+          this.queuedInput = null;
+          this.log("info", `✅ Использован предварительно введённый ответ: ${answer}`);
+        } else {
+          this.status = "waiting_input";
+          this.log("info", `❓ Вопрос пользователю: ${question}`);
+          answer = await new Promise<string>((resolve, reject) => {
+            this.inputResolve = resolve;
+            setTimeout(() => reject(new Error("Время ожидания ответа истекло (10 мин)")), 600_000);
+          });
+          this.log("info", `💬 Получен ответ: ${answer}`);
+        }
+
+        this.pendingInputPrompt = "";
+        this.status = "running";
+
+        // Auto-save to memory with a meaningful key (not the full question text)
+        const isOtp = /^\d{4,8}$/.test(answer.trim());
+        if (!isOtp && answer.trim().length > 1) {
+          // Extract site name from question for a clean memory key
+          const siteMatch = question.match(/(?:для|for|на|on)\s+([a-zа-яёА-ЯЁA-Z0-9\-\.]+(?:\.[a-z]{2,})?)/i);
+          const memKey = siteMatch
+            ? `логин для ${siteMatch[1].toLowerCase()}`
+            : question.slice(0, 50).replace(/[?!]/g, "").trim();
+          await this.saveMemory(memKey, answer.trim());
+        }
+
+        // ⚡ Inject into actionHistory so GPT sees the answer next step
+        actionHistory.push(`ask_user("${question}") → ответ: "${answer}"`);
+        continue; // re-take screenshot and let GPT use the answer
       }
 
       try {
