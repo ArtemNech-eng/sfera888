@@ -25,7 +25,7 @@ function findChromium(): string {
 
 const CHROMIUM_PATH = findChromium();
 const VIEWPORT = { width: 1280, height: 720 };
-const MAX_STEPS = 30;
+const MAX_STEPS = 50;
 const STEP_DELAY_MS = 1200;
 
 export type AgentStatus = "idle" | "starting" | "running" | "done" | "error" | "stopped";
@@ -86,13 +86,16 @@ class BrowserAgentService {
 
   private async takeScreenshot(): Promise<string | null> {
     if (!this.page) return null;
-    try {
-      const buf = await this.page.screenshot({ type: "jpeg", quality: 75 });
-      this.lastScreenshot = buf.toString("base64");
-      return this.lastScreenshot;
-    } catch {
-      return null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const buf = await this.page.screenshot({ type: "jpeg", quality: 75 });
+        this.lastScreenshot = buf.toString("base64");
+        return this.lastScreenshot;
+      } catch {
+        if (attempt < 2) await new Promise(r => setTimeout(r, 1000));
+      }
     }
+    return null;
   }
 
   async launch(): Promise<void> {
@@ -118,7 +121,10 @@ class BrowserAgentService {
         "--disable-setuid-sandbox",
         "--disable-dev-shm-usage",
         "--disable-gpu",
-        "--disable-software-rasterizer",
+        "--use-gl=swiftshader",
+        "--use-angle=swiftshader",
+        "--enable-webgl",
+        "--ignore-gpu-blocklist",
         "--lang=ru-RU,ru",
       ],
     });
@@ -226,17 +232,20 @@ class BrowserAgentService {
     this.log("info", `Новая задача: ${task}`);
 
     const actionHistory: string[] = [];
+    let stepLimitReached = true;
 
     for (let step = 0; step < MAX_STEPS; step++) {
       if (this.abortFlag) {
         this.log("info", "Задача прервана пользователем");
         this.status = "idle";
+        stepLimitReached = false;
         return;
       }
 
       const screenshot = await this.takeScreenshot();
       if (!screenshot) {
-        this.log("error", "Не удалось получить скриншот");
+        this.log("error", "Не удалось получить скриншот — страница недоступна");
+        stepLimitReached = false;
         break;
       }
 
@@ -327,7 +336,9 @@ ${historyText}
       await new Promise(r => setTimeout(r, STEP_DELAY_MS));
     }
 
-    this.log("error", "Превышен лимит шагов (30)");
+    if (stepLimitReached) {
+      this.log("error", `Превышен лимит шагов (${MAX_STEPS}) — задача слишком сложная или агент застрял`);
+    }
     this.status = "idle";
   }
 
