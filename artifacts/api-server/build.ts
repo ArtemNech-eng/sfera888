@@ -9,7 +9,9 @@ const __dirname = path.dirname(__filename);
 // Packages that cannot be bundled (e.g. native modules, packages with
 // dynamic require patterns that esbuild can't resolve at build time).
 // Everything in `dependencies` is bundled unless listed here.
-const bundleBlocklist: string[] = [];
+const bundleBlocklist: string[] = [
+  "playwright-core", // has dynamic internal deps (chromium-bidi, ws) that esbuild cannot resolve
+];
 
 async function buildAll() {
   const distDir = path.resolve(__dirname, "dist");
@@ -27,7 +29,11 @@ async function buildAll() {
       !bundleBlocklist.includes(dep),
   );
   const devDeps = Object.keys(pkg.devDependencies || {});
-  const externals = devDeps.filter((dep) => !runtimeDeps.includes(dep));
+  // externals = devDeps not being bundled + explicitly blocklisted runtime deps
+  const externals = [
+    ...devDeps.filter((dep) => !runtimeDeps.includes(dep)),
+    ...bundleBlocklist,
+  ];
 
   console.log("bundling:", runtimeDeps.join(", "));
   console.log("external:", externals.join(", "));
