@@ -20,3 +20,4 @@ export * from "./max-bot-logs";
 export * from "./master-checkins";
 export * from "./dispatcher-followups";
 export * from "./bot-memory";
+export * from "./avito";

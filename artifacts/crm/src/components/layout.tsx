@@ -17,6 +17,9 @@ import {
   ClipboardList,
   MessageCircle,
   CalendarCheck,
+  TrendingUp,
+  Tag,
+  ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect, useRef } from "react";
@@ -30,6 +33,9 @@ export function Layout({ children }: LayoutProps) {
   const { user, logout } = useAuth();
   const [location] = useLocation();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [trafficOpen, setTrafficOpen] = useState(false);
+
+  const isTrafficActive = location.startsWith("/avito");
 
   const userPerms: string[] = (user as any)?.permissions ?? [];
   const canSeeChat = user?.role === 'admin' || userPerms.includes('master-chat');
@@ -89,6 +95,7 @@ export function Layout({ children }: LayoutProps) {
     { href: "/masters",     label: "Мастера",              icon: Users,           permKey: "masters" },
     { href: "/checkins",    label: "Готовность",           icon: CalendarCheck,   permKey: "masters" },
     { href: "/tasks",       label: "Задачи",               icon: ClipboardList,   permKey: "tasks",       badge: openTasksCount > 0 ? openTasksCount : null },
+    { href: "__traffic__",  label: "__group__",            icon: TrendingUp,      permKey: "leads" },
     { href: "/finance",     label: "Финансы",              icon: Wallet,          permKey: "finance" },
     { href: "/analytics",   label: "Аналитика",            icon: BarChart3,       permKey: "analytics" },
     { href: "/trash",       label: "Корзина",              icon: Trash2,          permKey: "trash" },
@@ -115,6 +122,53 @@ export function Layout({ children }: LayoutProps) {
         </div>
         <div className="flex-1 py-6 px-4 space-y-1 overflow-y-auto">
           {filteredNav.map((item) => {
+            // ── Traffic sources group ──────────────────────────────────────
+            if (item.href === "__traffic__") {
+              return (
+                <div
+                  key="traffic-group"
+                  className="relative"
+                  onMouseEnter={() => setTrafficOpen(true)}
+                  onMouseLeave={() => setTrafficOpen(false)}
+                >
+                  <button
+                    className={cn(
+                      "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200",
+                      isTrafficActive
+                        ? "bg-primary/10 text-primary"
+                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                    )}
+                  >
+                    <TrendingUp className={cn("w-5 h-5 shrink-0", isTrafficActive ? "text-primary" : "text-sidebar-foreground/50")} />
+                    <span className="flex-1 text-left truncate">Источники трафика</span>
+                    <ChevronDown className={cn(
+                      "w-4 h-4 shrink-0 transition-transform duration-200",
+                      trafficOpen ? "rotate-180" : ""
+                    )} />
+                  </button>
+
+                  {/* Dropdown sub-menu */}
+                  {trafficOpen && (
+                    <div className="mt-1 ml-3 pl-4 border-l-2 border-sidebar-border space-y-0.5 pb-1">
+                      <Link
+                        href="/avito"
+                        className={cn(
+                          "flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150",
+                          location === "/avito"
+                            ? "bg-primary/10 text-primary"
+                            : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                        )}
+                      >
+                        <Tag className={cn("w-4 h-4 shrink-0", location === "/avito" ? "text-primary" : "text-sidebar-foreground/50")} />
+                        Авито
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            // ── Regular nav item ───────────────────────────────────────────
             const isActive = location === item.href;
             return (
               <Link 
@@ -178,6 +232,27 @@ export function Layout({ children }: LayoutProps) {
           <div className="md:hidden fixed inset-0 z-10 bg-background/95 backdrop-blur-sm pt-20 px-4 pb-4 flex flex-col">
             <div className="flex-1 space-y-2">
               {filteredNav.map((item) => {
+                // Traffic group in mobile menu
+                if (item.href === "__traffic__") {
+                  return (
+                    <div key="traffic-mobile">
+                      <div className="flex items-center gap-3 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        <TrendingUp className="w-4 h-4" /> Источники трафика
+                      </div>
+                      <Link
+                        href="/avito"
+                        onClick={() => setIsMobileOpen(false)}
+                        className={cn(
+                          "flex items-center gap-3 px-4 py-3 rounded-xl text-base font-medium ml-4",
+                          location === "/avito" ? "bg-primary text-primary-foreground" : "bg-card text-foreground"
+                        )}
+                      >
+                        <Tag className="w-5 h-5 shrink-0" />
+                        <span>Авито</span>
+                      </Link>
+                    </div>
+                  );
+                }
                 const isActive = location === item.href;
                 return (
                   <Link 
