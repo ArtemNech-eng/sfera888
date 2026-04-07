@@ -19,11 +19,19 @@ import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
 
+class ApiError extends Error {
+  code?: string;
+  constructor(message: string, code?: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
 async function apiFetch(path: string, opts?: RequestInit) {
   const r = await fetch(`${BASE}${path}`, { credentials: "include", ...opts });
   if (!r.ok) {
     const j = await r.json().catch(() => ({})) as any;
-    throw new Error(j.error ?? `HTTP ${r.status}`);
+    throw new ApiError(j.error ?? `HTTP ${r.status}`, j.code);
   }
   return r.json();
 }
@@ -704,15 +712,40 @@ export default function AvitoPage() {
                       <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" /> Загрузка объявлений и статистики...
                     </div>
                   ) : itemsError ? (
-                    <div className="py-12 text-center">
-                      <AlertCircle className="w-8 h-8 mx-auto mb-2 text-red-500" />
-                      <p className="text-sm font-medium text-red-600">Ошибка загрузки объявлений</p>
-                      <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
-                        {(itemsError as Error).message}
-                      </p>
-                      <Button size="sm" variant="outline" className="mt-3" onClick={() => refetchItems()}>
-                        Повторить запрос
-                      </Button>
+                    <div className="py-10 text-center px-6">
+                      {(itemsError as ApiError).code === "NO_ITEMS_PERMISSION" ? (
+                        <>
+                          <div className="w-12 h-12 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center mx-auto mb-3">
+                            <AlertCircle className="w-6 h-6 text-amber-500" />
+                          </div>
+                          <p className="text-sm font-semibold">Нет доступа к объявлениям</p>
+                          <p className="text-xs text-muted-foreground mt-2 max-w-sm mx-auto leading-relaxed">
+                            Ваше Авито-приложение подключено только с доступом к <strong>Messenger</strong>. 
+                            Для просмотра объявлений нужно добавить разрешение <strong>Items API</strong>.
+                          </p>
+                          <div className="mt-4 bg-muted/50 rounded-xl p-4 text-left text-xs space-y-1.5 max-w-sm mx-auto">
+                            <p className="font-medium text-sm mb-2">Как включить:</p>
+                            <p>1. Откройте <a href="https://developers.avito.ru" target="_blank" rel="noreferrer" className="text-primary underline inline-flex items-center gap-0.5">developers.avito.ru <ExternalLink className="w-3 h-3" /></a></p>
+                            <p>2. Перейдите в ваше приложение → <strong>Разрешения</strong></p>
+                            <p>3. Включите доступ к <strong>«Объявления» (Items)</strong></p>
+                            <p>4. Вернитесь сюда → нажмите «Отключить», затем переподключите заново</p>
+                          </div>
+                          <Button size="sm" variant="outline" className="mt-4" onClick={() => refetchItems()}>
+                            <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Попробовать снова
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <AlertCircle className="w-8 h-8 mx-auto mb-2 text-red-500" />
+                          <p className="text-sm font-medium text-red-600">Ошибка загрузки объявлений</p>
+                          <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
+                            {(itemsError as Error).message}
+                          </p>
+                          <Button size="sm" variant="outline" className="mt-3" onClick={() => refetchItems()}>
+                            Повторить запрос
+                          </Button>
+                        </>
+                      )}
                     </div>
                   ) : filteredItems.length === 0 ? (
                     <div className="py-12 text-center text-muted-foreground">

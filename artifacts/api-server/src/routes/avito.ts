@@ -56,13 +56,20 @@ async function getValidToken(): Promise<string | null> {
   return tokenData.access_token;
 }
 
+class AvitoApiError extends Error {
+  constructor(public statusCode: number, message: string) {
+    super(message);
+    this.name = "AvitoApiError";
+  }
+}
+
 async function avitoGet(path: string, token: string) {
   const res = await fetch(`${AVITO_API}${path}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Авито API ${res.status}: ${text}`);
+    throw new AvitoApiError(res.status, `Авито API ${res.status}: ${text}`);
   }
   return res.json();
 }
@@ -75,7 +82,7 @@ async function avitoPost(path: string, token: string, body: object) {
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Авито API ${res.status}: ${text}`);
+    throw new AvitoApiError(res.status, `Авито API ${res.status}: ${text}`);
   }
   return res.json();
 }
@@ -357,21 +364,60 @@ router.get("/items-with-stats", async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page as string) || 1);
   const perPage = Math.min(100, parseInt(req.query.per_page as string) || 50);
 
+  // Helper: fetch items with fallback URL strategies
+  async function fetchItems(): Promise<{ items: any[]; meta: any }> {
+    // Strategy 1: standard v1 with page/per_page
+    const urls = [
+      `/core/v1/accounts/${userId}/items?page=${page}&per_page=${perPage}`,
+      `/core/v2/accounts/${userId}/items?page=${page}&per_page=${perPage}`,
+      `/core/v1/accounts/${userId}/items`,
+    ];
+
+    let lastError: AvitoApiError | Error | null = null;
+    for (const url of urls) {
+      try {
+        const data = await avitoGet(url, token) as any;
+        return {
+          items: data.resources ?? data.items ?? data.result ?? [],
+          meta: data.meta ?? {},
+        };
+      } catch (e: any) {
+        lastError = e;
+        // Only continue trying if it's a 404/routing issue — not auth errors
+        if (e instanceof AvitoApiError && e.statusCode !== 404 && e.statusCode !== 422) {
+          throw e;
+        }
+      }
+    }
+
+    // All URLs failed — check if it's a permission error
+    if (lastError instanceof AvitoApiError && lastError.statusCode === 404) {
+      const permErr = new Error(
+        "У вашего Авито-приложения нет доступа к разделу «Объявления». " +
+        "Добавьте разрешение Items API в developers.avito.ru, затем переподключите Авито."
+      ) as any;
+      permErr.code = "NO_ITEMS_PERMISSION";
+      throw permErr;
+    }
+    throw lastError ?? new Error("Не удалось загрузить объявления");
+  }
+
   // 1. Fetch items
   let items: any[] = [];
   let meta: any = {};
   try {
-    const data = await avitoGet(
-      `/core/v1/accounts/${userId}/items?page=${page}&per_page=${perPage}`,
-      token
-    ) as any;
-    items = data.resources ?? [];
-    meta = data.meta ?? {};
+    const result = await fetchItems();
+    items = result.items;
+    meta = result.meta;
   } catch (e: any) {
-    return res.status(500).json({ error: `Объявления: ${e.message}` });
+    const isPermission = e.code === "NO_ITEMS_PERMISSION";
+    return res.status(isPermission ? 403 : 500).json({
+      error: e.message,
+      code: isPermission ? "NO_ITEMS_PERMISSION" : undefined,
+    });
   }
 
-  // 2. Fetch stats for these items (last 30 days)
+  // 2. Fetch stats for these items (last 30 days) — optional, never fails the request
   let statsMap: Record<number, any> = {};
   if (items.length > 0) {
     const now = new Date();
@@ -391,7 +437,7 @@ router.get("/items-with-stats", async (req, res) => {
         statsMap[s.itemId] = s.fields ?? {};
       }
     } catch {
-      // Stats are optional — don't fail the whole request
+      // Stats are optional — items still shown without stats
     }
   }
 
