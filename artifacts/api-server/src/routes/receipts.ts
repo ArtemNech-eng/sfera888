@@ -3,6 +3,7 @@ import { db, receiptsTable, ordersTable, mastersTable, leadsTable, transactionsT
 import { sendMaxMessage } from "../maxBot.js";
 import { eq, and, isNull, isNotNull, desc } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
+import { calculateCommission, getCommissionSettings } from "../lib/commission.js";
 import crypto from "crypto";
 
 const router = Router();
@@ -66,6 +67,75 @@ function parseLineItems(items: any[]): Array<{ description: string; unit?: strin
 
 function lineTotal(item: { price: number; quantity?: number }) {
   return (item.quantity ?? 1) * item.price;
+}
+
+// ─── Helper: create/update transaction from confirmed receipt ─────────────────
+
+async function ensureReceiptTransaction(receipt: typeof receiptsTable.$inferSelect): Promise<void> {
+  const totalAmount = Number(receipt.totalAmount);
+  const prepayAmount = Number(receipt.prepaymentAmount);
+  const commSettings = await getCommissionSettings();
+  const commission = calculateCommission(totalAmount, commSettings);
+  const prepaymentDeducted = Math.min(prepayAmount, commission);
+  const netPayable = Math.max(0, commission - prepaymentDeducted);
+  const paymentStatus = netPayable === 0 ? "paid" : "pending";
+
+  const existingTxRows = await db.select().from(transactionsTable)
+    .where(eq(transactionsTable.orderId, receipt.orderId));
+
+  if (existingTxRows.length > 0) {
+    const tx = existingTxRows[0];
+    // Only update if it came from a receipt (don't override order-based transactions)
+    if (tx.sourceType === "receipt") {
+      await db.update(transactionsTable).set({
+        orderAmount: String(totalAmount),
+        commission: String(commission),
+        prepaymentDeducted: String(prepaymentDeducted),
+        paymentStatus,
+        ...(paymentStatus === "paid" && !tx.paidAt ? { paidAt: new Date() } : {}),
+      }).where(eq(transactionsTable.id, tx.id));
+    }
+    // If existing tx is from an order (source_type != "receipt"), leave it alone
+    return;
+  }
+
+  await db.insert(transactionsTable).values({
+    orderId: receipt.orderId,
+    masterId: receipt.masterId,
+    orderAmount: String(totalAmount),
+    commission: String(commission),
+    prepaymentDeducted: String(prepaymentDeducted),
+    paymentStatus,
+    sourceType: "receipt",
+    ...(paymentStatus === "paid" ? { paidAt: new Date() } : {}),
+  } as any);
+
+  // Add to master's debt only if netPayable > 0
+  if (netPayable > 0) {
+    const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, receipt.masterId));
+    if (master) {
+      const newDebt = Number(master.debt ?? 0) + netPayable;
+      await db.update(mastersTable).set({ debt: String(newDebt) }).where(eq(mastersTable.id, receipt.masterId));
+    }
+  }
+}
+
+// ─── Exported: backfill transactions for old confirmed receipts ───────────────
+
+export async function backfillReceiptTransactions(): Promise<number> {
+  const confirmed = await db.select().from(receiptsTable)
+    .where(isNotNull(receiptsTable.prepaymentSubmittedAt));
+
+  let created = 0;
+  for (const receipt of confirmed) {
+    const existingTxRows = await db.select().from(transactionsTable)
+      .where(eq(transactionsTable.orderId, receipt.orderId));
+    if (existingTxRows.length === 0) {
+      await ensureReceiptTransaction(receipt);
+      created++;
+    }
+  }
+  return created;
 }
 
 // ─── CRM: GET /api/receipts/order/:orderId ────────────────────────────────────
@@ -148,6 +218,10 @@ router.patch("/:id/confirm", requireRole("admin", "master_operator"), async (req
       `✅ Оплата подтверждена оператором!\n\nСмета #${updated.id}\nКлиент: ${updated.clientSubmittedName || "—"}\nСумма: ${amount}\n\n👉 Перейти в приложение:\nhttps://sfera-master.ru/master-pwa/`
     ).catch(() => {});
   }
+
+  // Create or update finance transaction for this receipt
+  ensureReceiptTransaction(updated).catch(e => console.error("[receipts/confirm] tx error:", e));
+
   res.json(await buildReceiptResponse(updated, master, req));
 });
 

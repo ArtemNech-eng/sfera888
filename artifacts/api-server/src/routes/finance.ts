@@ -34,6 +34,7 @@ router.get("/transactions", opsAndAdmin, async (req, res) => {
       prepaymentDeducted,
       netPayable: Math.max(0, Number(t.commission) - prepaymentDeducted),
       paymentStatus: t.paymentStatus,
+      sourceType: t.sourceType ?? null,
       createdAt: t.createdAt,
       paidAt: t.paidAt ?? null,
     };
@@ -124,6 +125,7 @@ router.patch("/transactions/:id", opsAndAdmin, async (req, res) => {
     prepaymentDeducted,
     netPayable: Math.max(0, Number(t.commission) - prepaymentDeducted),
     paymentStatus: t.paymentStatus,
+    sourceType: t.sourceType ?? null,
     createdAt: t.createdAt,
     paidAt: t.paidAt ?? null,
   });

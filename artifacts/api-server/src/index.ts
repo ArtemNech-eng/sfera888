@@ -9,6 +9,7 @@ import { broadcastCheckin, broadcastCheckinReminder } from "./lib/checkinBroadca
 import { systemSettingsTable } from "@workspace/db";
 import { sendMorningBriefing, checkStaleOrders, sendWeeklyReport, checkNewMarkets, runAutonomousCycle, runQuickAutonomousCheck } from "./managerBot.js";
 import { runProactiveChecks } from "./lib/dispatcherAI.js";
+import { backfillReceiptTransactions } from "./routes/receipts.js";
 
 const port = Number(process.env["PORT"] || "8080");
 
@@ -128,6 +129,10 @@ async function runMigrations() {
       updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
       UNIQUE (bot_type, user_id)
     )
+  `);
+  await db.execute(sql`
+    ALTER TABLE transactions
+      ADD COLUMN IF NOT EXISTS source_type TEXT
   `);
   console.log("[startup] Migrations applied");
 }
@@ -354,6 +359,9 @@ runMigrations()
     checkOverdueTransactions().catch(console.error);
     autoExpireDispatches().catch(console.error);
     initCheckinScheduler().catch(console.error);
+    backfillReceiptTransactions()
+      .then(n => { if (n > 0) console.log(`[backfill] Created ${n} receipt transactions`); })
+      .catch(e => console.error("[backfill] Receipt transactions error:", e));
   })
   .catch(console.error);
 

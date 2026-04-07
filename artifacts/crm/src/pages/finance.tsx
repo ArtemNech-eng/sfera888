@@ -387,12 +387,15 @@ export default function Finance() {
                       const isPlaceholder = tx.commission === 0 && tx.orderAmount === 0;
                       const hasPrepay = (tx.prepaymentDeducted ?? 0) > 0;
                       const netPayable = tx.netPayable ?? tx.commission;
+                      const isFromReceipt = (tx as any).sourceType === "receipt";
+                      const isLargeReceipt = isFromReceipt && tx.orderAmount > 50000;
                       return (
                         <tr key={tx.id} className={`hover:bg-slate-50/50 transition-colors ${isPlaceholder ? "opacity-70" : ""}`}>
                           <td className="px-6 py-4">
                             <span className="font-medium text-foreground">TX-{tx.id}</span>
                             <div className="text-xs text-muted-foreground mt-1">{formatDate(tx.createdAt)}</div>
                             {isPlaceholder && <div className="text-[10px] text-amber-500 font-medium mt-0.5">На объекте</div>}
+                            {isFromReceipt && <div className="text-[10px] text-violet-600 font-medium mt-0.5">📋 Из сметы</div>}
                           </td>
                           <td className="px-6 py-4 font-medium">{tx.masterAlias}</td>
                           <td className="px-6 py-4">{isPlaceholder ? <span className="text-muted-foreground italic text-xs">Неизвестна</span> : formatCurrency(tx.orderAmount)}</td>
@@ -405,6 +408,11 @@ export default function Finance() {
                                 {hasPrepay && (
                                   <div className="text-xs text-emerald-600 mt-0.5">
                                     −{formatCurrency(tx.prepaymentDeducted)} предоплата
+                                  </div>
+                                )}
+                                {isLargeReceipt && netPayable > 0 && (
+                                  <div className="text-xs text-amber-600 mt-0.5 font-medium">
+                                    ожидается: {formatCurrency(netPayable)}
                                   </div>
                                 )}
                               </div>

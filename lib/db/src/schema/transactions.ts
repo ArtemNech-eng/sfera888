@@ -14,6 +14,7 @@ export const transactionsTable = pgTable("transactions", {
   commission: numeric("commission", { precision: 12, scale: 2 }).notNull(),
   prepaymentDeducted: numeric("prepayment_deducted", { precision: 12, scale: 2 }).notNull().default("0"),
   paymentStatus: paymentStatusEnum("payment_status").notNull().default("pending"),
+  sourceType: text("source_type"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   paidAt: timestamp("paid_at"),
 });
