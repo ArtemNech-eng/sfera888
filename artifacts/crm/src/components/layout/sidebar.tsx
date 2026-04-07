@@ -41,7 +41,7 @@ export function Sidebar() {
     { href: "/finance",     label: "Финансы",          icon: Wallet,          permKey: "finance" },
     { href: "/analytics",   label: "Аналитика",        icon: BarChart3,       permKey: "analytics" },
     { href: "/trash",          label: "Корзина",          icon: Trash2,          permKey: "trash" },
-    { href: "/ai-office",     label: "ИИ Офис",          icon: Bot,             permKey: null as null },
+    { href: "/ai-office",     label: "ИИ Офис",          icon: Bot,             permKey: "ai-office" },
     { href: "/settings",      label: "Настройки",       icon: Settings,        permKey: null as null },
     { href: "/users",         label: "Пользователи",    icon: UserCog,         permKey: null as null },
   ];
@@ -58,7 +58,7 @@ export function Sidebar() {
         <div className="w-8 h-8 rounded-lg bg-sidebar-primary flex items-center justify-center text-sidebar-primary-foreground shadow-lg shadow-sidebar-primary/20">
           <Wrench className="w-4 h-4" />
         </div>
-        <span className="font-display font-bold text-xl tracking-tight">FixCRM</span>
+        <span className="font-display font-bold text-xl tracking-tight">Честный мастер</span>
       </div>
 
       <div className="flex-1 py-6 px-4 space-y-1 overflow-y-auto">
