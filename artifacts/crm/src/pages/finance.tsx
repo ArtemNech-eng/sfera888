@@ -6,8 +6,9 @@ import { StatusBadge } from "@/components/status-badge";
 import { formatDate, formatCurrency } from "@/lib/utils";
 import {
   Loader2, CheckCircle2, TrendingDown, TrendingUp, AlertCircle, Search, X,
-  RefreshCw, ShieldAlert, MessageSquare, ThumbsUp, ThumbsDown, Minus,
+  RefreshCw, ShieldAlert, ThumbsUp, ThumbsDown, Minus,
   BarChart3, ReceiptText, MapPin, Phone, Award, Clock,
+  ChevronLeft, ChevronRight, Calendar,
 } from "lucide-react";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -17,8 +18,9 @@ import { ru } from "date-fns/locale";
 type StatusFilter = "all" | "pending" | "overdue" | "paid";
 type Sentiment = "positive" | "negative" | "neutral";
 type PageTab = "transactions" | "by-master";
-
 type Period = "today" | "week" | "month" | "quarter" | "year" | "all" | "custom";
+
+const PAGE_SIZE_OPTIONS = [10, 20, 30, 40, 50];
 
 interface PendingReviewInfo {
   masterId: number;
@@ -58,16 +60,16 @@ const PERIODS: { key: Period; label: string }[] = [
   { key: "custom",  label: "Диапазон" },
 ];
 
-function getPeriodRange(period: Period, customFrom: string, customTo: string): { from?: string; to?: string } {
+function getPeriodRange(period: Period, customFrom: string, customTo: string): { from?: Date; to?: Date } {
   const now = new Date();
-  if (period === "today")   return { from: startOfDay(now).toISOString(),     to: endOfDay(now).toISOString() };
-  if (period === "week")    return { from: startOfWeek(now, { locale: ru }).toISOString(), to: endOfDay(now).toISOString() };
-  if (period === "month")   return { from: startOfMonth(now).toISOString(),   to: endOfDay(now).toISOString() };
-  if (period === "quarter") return { from: startOfQuarter(now).toISOString(), to: endOfDay(now).toISOString() };
-  if (period === "year")    return { from: startOfYear(now).toISOString(),    to: endOfDay(now).toISOString() };
+  if (period === "today")   return { from: startOfDay(now),                              to: endOfDay(now) };
+  if (period === "week")    return { from: startOfWeek(now, { locale: ru }),             to: endOfDay(now) };
+  if (period === "month")   return { from: startOfMonth(now),                            to: endOfDay(now) };
+  if (period === "quarter") return { from: startOfQuarter(now),                          to: endOfDay(now) };
+  if (period === "year")    return { from: startOfYear(now),                             to: endOfDay(now) };
   if (period === "custom")  return {
-    from: customFrom ? new Date(customFrom).toISOString() : undefined,
-    to:   customTo   ? endOfDay(new Date(customTo)).toISOString()   : undefined,
+    from: customFrom ? startOfDay(new Date(customFrom)) : undefined,
+    to:   customTo   ? endOfDay(new Date(customTo))     : undefined,
   };
   return {};
 }
@@ -96,12 +98,25 @@ export default function Finance() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [pageTab, setPageTab] = useState<PageTab>("transactions");
 
-  // ── Master stats state ───────────────────────────────────────────────────
-  const [period, setPeriod] = useState<Period>("month");
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
+  // ── Transactions date filter ─────────────────────────────────────────────
+  const [txPeriod, setTxPeriod]       = useState<Period>("all");
+  const [txCustomFrom, setTxCustomFrom] = useState("");
+  const [txCustomTo, setTxCustomTo]     = useState("");
 
-  const range = getPeriodRange(period, customFrom, customTo);
+  // ── Transactions pagination ──────────────────────────────────────────────
+  const [pageSize, setPageSize]   = useState(20);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // ── Master stats state ───────────────────────────────────────────────────
+  const [period, setPeriod]       = useState<Period>("month");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo]     = useState("");
+
+  const range = useMemo(() => {
+    const r = getPeriodRange(period, customFrom, customTo);
+    return { from: r.from?.toISOString(), to: r.to?.toISOString() };
+  }, [period, customFrom, customTo]);
+
   const masterStatsParams = new URLSearchParams();
   if (range.from) masterStatsParams.set("from", range.from);
   if (range.to)   masterStatsParams.set("to",   range.to);
@@ -176,9 +191,12 @@ export default function Finance() {
     }
   };
 
+  // ── Filtered list (status + search + date) ───────────────────────────────
+  const txDateRange = useMemo(() => getPeriodRange(txPeriod, txCustomFrom, txCustomTo), [txPeriod, txCustomFrom, txCustomTo]);
+
   const filtered = useMemo(() => {
     if (!transactions) return [];
-    let list = [...transactions];
+    let list = [...transactions].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     if (statusFilter !== "all") list = list.filter(t => t.paymentStatus === statusFilter);
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -188,8 +206,24 @@ export default function Finance() {
         String(t.orderId).includes(q)
       );
     }
+    if (txDateRange.from || txDateRange.to) {
+      list = list.filter(t => {
+        const d = new Date(t.createdAt);
+        if (txDateRange.from && d < txDateRange.from) return false;
+        if (txDateRange.to   && d > txDateRange.to)   return false;
+        return true;
+      });
+    }
     return list;
-  }, [transactions, statusFilter, search]);
+  }, [transactions, statusFilter, search, txDateRange]);
+
+  // Reset to page 1 when filters change
+  const resetPage = () => setCurrentPage(1);
+
+  // ── Paginated slice ──────────────────────────────────────────────────────
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage   = Math.min(currentPage, totalPages);
+  const paginated  = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   const STATUS_TABS: { key: StatusFilter; label: string }[] = [
     { key: "all",     label: "Все" },
@@ -307,6 +341,45 @@ export default function Finance() {
           {/* ════════════════════ TAB: TRANSACTIONS ══════════════════════ */}
           {pageTab === "transactions" && (
             <div className="bg-card rounded-2xl border border-border/50 shadow-sm overflow-hidden">
+
+              {/* ── Date period filter row ─────────────────────────────── */}
+              <div className="px-4 pt-4 pb-3 border-b border-border/50">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Calendar className="w-4 h-4 text-muted-foreground shrink-0" />
+                  {PERIODS.map(p => (
+                    <button
+                      key={p.key}
+                      onClick={() => { setTxPeriod(p.key); resetPage(); }}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all ${
+                        txPeriod === p.key
+                          ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                          : "bg-background border-border/60 text-muted-foreground hover:text-foreground hover:border-border"
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                  {txPeriod === "custom" && (
+                    <div className="flex items-center gap-1.5 ml-1">
+                      <input
+                        type="date"
+                        value={txCustomFrom}
+                        onChange={e => { setTxCustomFrom(e.target.value); resetPage(); }}
+                        className="text-xs border border-border/60 rounded-xl px-2.5 py-1.5 bg-background outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                      <span className="text-muted-foreground text-xs">—</span>
+                      <input
+                        type="date"
+                        value={txCustomTo}
+                        onChange={e => { setTxCustomTo(e.target.value); resetPage(); }}
+                        className="text-xs border border-border/60 rounded-xl px-2.5 py-1.5 bg-background outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* ── Search + status filter row ─────────────────────────── */}
               <div className="p-4 border-b border-border/50 flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
                 <div className="flex items-center gap-3">
                   <h3 className="font-display font-semibold text-lg">Транзакции</h3>
@@ -330,12 +403,12 @@ export default function Finance() {
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                     <input
                       value={search}
-                      onChange={e => setSearch(e.target.value)}
+                      onChange={e => { setSearch(e.target.value); resetPage(); }}
                       placeholder="Мастер, TX-ID, заказ..."
                       className="w-full pl-9 pr-8 py-2 text-sm bg-background border border-border/60 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30"
                     />
                     {search && (
-                      <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                      <button onClick={() => { setSearch(""); resetPage(); }} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                         <X className="w-3.5 h-3.5" />
                       </button>
                     )}
@@ -344,7 +417,7 @@ export default function Finance() {
                     {STATUS_TABS.map(tab => (
                       <button
                         key={tab.key}
-                        onClick={() => setStatusFilter(tab.key)}
+                        onClick={() => { setStatusFilter(tab.key); resetPage(); }}
                         className={`px-3 py-2 font-medium transition-colors ${
                           statusFilter === tab.key
                             ? "bg-primary text-primary-foreground"
@@ -377,13 +450,13 @@ export default function Finance() {
                           <Loader2 className="w-6 h-6 animate-spin text-primary mx-auto" />
                         </td>
                       </tr>
-                    ) : filtered.length === 0 ? (
+                    ) : paginated.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="px-6 py-12 text-center text-muted-foreground text-sm">
-                          {search || statusFilter !== "all" ? "Ничего не найдено" : "Нет транзакций"}
+                          {search || statusFilter !== "all" || txPeriod !== "all" ? "Ничего не найдено" : "Нет транзакций"}
                         </td>
                       </tr>
-                    ) : filtered.map((tx) => {
+                    ) : paginated.map((tx) => {
                       const isPlaceholder = tx.commission === 0 && tx.orderAmount === 0;
                       const hasPrepay = (tx.prepaymentDeducted ?? 0) > 0;
                       const netPayable = tx.netPayable ?? tx.commission;
@@ -439,9 +512,79 @@ export default function Finance() {
                 </table>
               </div>
 
-              {!isLoading && filtered.length > 0 && (
-                <div className="px-6 py-3 border-t border-border/50 text-xs text-muted-foreground">
-                  Показано {filtered.length} из {transactions?.length ?? 0} транзакций
+              {/* ── Footer: count info + page size + pagination ─────────── */}
+              {!isLoading && (
+                <div className="px-4 py-3 border-t border-border/50 flex flex-col sm:flex-row items-center justify-between gap-3">
+                  {/* Left: total count + page size selector */}
+                  <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                    <span>
+                      {filtered.length === 0
+                        ? "Нет транзакций"
+                        : `${(safePage - 1) * pageSize + 1}–${Math.min(safePage * pageSize, filtered.length)} из ${filtered.length}`}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs">По</span>
+                      <div className="flex rounded-lg border border-border/60 overflow-hidden">
+                        {PAGE_SIZE_OPTIONS.map(size => (
+                          <button
+                            key={size}
+                            onClick={() => { setPageSize(size); setCurrentPage(1); }}
+                            className={`px-2.5 py-1 text-xs font-medium transition-colors ${
+                              pageSize === size
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-background text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                            }`}
+                          >
+                            {size}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right: prev / page indicator / next */}
+                  {totalPages > 1 && (
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                        disabled={safePage === 1}
+                        className="p-1.5 rounded-lg border border-border/60 bg-background text-muted-foreground hover:text-foreground hover:bg-muted/50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                      {Array.from({ length: totalPages }, (_, i) => i + 1)
+                        .filter(p => p === 1 || p === totalPages || Math.abs(p - safePage) <= 2)
+                        .reduce<(number | "…")[]>((acc, p, idx, arr) => {
+                          if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push("…");
+                          acc.push(p);
+                          return acc;
+                        }, [])
+                        .map((p, idx) =>
+                          p === "…" ? (
+                            <span key={`dots-${idx}`} className="px-2 text-muted-foreground text-sm">…</span>
+                          ) : (
+                            <button
+                              key={p}
+                              onClick={() => setCurrentPage(p as number)}
+                              className={`min-w-[32px] h-8 px-2 rounded-lg text-sm font-medium transition-colors ${
+                                safePage === p
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-background border border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                              }`}
+                            >
+                              {p}
+                            </button>
+                          )
+                        )}
+                      <button
+                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                        disabled={safePage === totalPages}
+                        className="p-1.5 rounded-lg border border-border/60 bg-background text-muted-foreground hover:text-foreground hover:bg-muted/50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -506,165 +649,136 @@ export default function Finance() {
                 </div>
                 <div className="bg-card border border-border/50 rounded-2xl p-4 shadow-sm">
                   <p className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-1.5">
-                    <BarChart3 className="w-3.5 h-3.5 text-blue-500" /> Оборот заказов
+                    <Award className="w-3.5 h-3.5 text-violet-500" /> Оборот мастеров
                   </p>
-                  <p className="text-xl font-bold text-blue-600">{formatCurrency(statsSummary.totalOrderAmount)}</p>
+                  <p className="text-xl font-bold text-violet-600">{formatCurrency(statsSummary.totalOrderAmount)}</p>
                 </div>
               </div>
 
-              {/* Master ranking table */}
+              {/* Master stats table */}
               <div className="bg-card rounded-2xl border border-border/50 shadow-sm overflow-hidden">
-                <div className="px-5 py-4 border-b border-border/50 flex items-center gap-2">
-                  <Award className="w-5 h-5 text-amber-500" />
-                  <h3 className="font-display font-semibold text-lg">Рейтинг мастеров по выручке</h3>
-                  {statsLoading && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground ml-auto" />}
+                <div className="p-4 border-b border-border/50">
+                  <h3 className="font-display font-semibold text-lg">Статистика по мастерам</h3>
                 </div>
-
-                {statsLoading ? (
-                  <div className="py-16 flex justify-center">
-                    <Loader2 className="w-8 h-8 animate-spin text-primary/40" />
-                  </div>
-                ) : !masterStats || masterStats.length === 0 ? (
-                  <div className="py-16 text-center text-muted-foreground text-sm">
-                    Нет данных за выбранный период
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead className="bg-slate-50/50 text-muted-foreground font-medium border-b border-border/50 text-left">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-slate-50/50 text-muted-foreground font-medium border-b border-border/50">
+                      <tr>
+                        <th className="px-6 py-4">Мастер</th>
+                        <th className="px-6 py-4">Город</th>
+                        <th className="px-6 py-4">Заказов</th>
+                        <th className="px-6 py-4">Оборот</th>
+                        <th className="px-6 py-4">Оплачено</th>
+                        <th className="px-6 py-4">Ожидает</th>
+                        <th className="px-6 py-4">Просрочено</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/50">
+                      {statsLoading ? (
                         <tr>
-                          <th className="px-5 py-3.5 w-10">#</th>
-                          <th className="px-5 py-3.5">Мастер</th>
-                          <th className="px-5 py-3.5 text-right">Заказов</th>
-                          <th className="px-5 py-3.5 text-right">Оборот</th>
-                          <th className="px-5 py-3.5 text-right">В кассу ✓</th>
-                          <th className="px-5 py-3.5 text-right">Ожидает</th>
-                          <th className="px-5 py-3.5 text-right">Просрочено</th>
+                          <td colSpan={7} className="px-6 py-12 text-center">
+                            <Loader2 className="w-6 h-6 animate-spin text-primary mx-auto" />
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border/40">
-                        {masterStats.map((m, i) => {
-                          const totalBilled = m.paidCommission + m.pendingCommission + m.overdueCommission;
-                          const paidPct = totalBilled > 0 ? (m.paidCommission / totalBilled) * 100 : 0;
-                          const isTop = i === 0;
-                          return (
-                            <tr key={m.masterId} className={`hover:bg-slate-50/50 transition-colors ${isTop ? "bg-emerald-50/40" : ""}`}>
-                              <td className="px-5 py-4">
-                                {i === 0 && <span className="text-lg">🥇</span>}
-                                {i === 1 && <span className="text-lg">🥈</span>}
-                                {i === 2 && <span className="text-lg">🥉</span>}
-                                {i > 2 && <span className="text-muted-foreground font-medium">{i + 1}</span>}
-                              </td>
-                              <td className="px-5 py-4">
-                                <div className="font-semibold text-foreground">{m.alias}</div>
-                                <div className="text-xs text-muted-foreground flex items-center gap-2 mt-0.5">
-                                  <span className="flex items-center gap-0.5"><MapPin className="w-2.5 h-2.5" />{m.city}</span>
-                                  {m.phone && <span className="flex items-center gap-0.5"><Phone className="w-2.5 h-2.5" />{m.phone}</span>}
-                                </div>
-                                {/* Payment progress bar */}
-                                {totalBilled > 0 && (
-                                  <div className="mt-1.5 h-1 bg-gray-100 rounded-full overflow-hidden w-32">
-                                    <div
-                                      className="h-full bg-emerald-400 rounded-full transition-all"
-                                      style={{ width: `${paidPct}%` }}
-                                    />
-                                  </div>
-                                )}
-                              </td>
-                              <td className="px-5 py-4 text-right font-medium">{m.orderCount}</td>
-                              <td className="px-5 py-4 text-right text-muted-foreground">{formatCurrency(m.totalOrderAmount)}</td>
-                              <td className="px-5 py-4 text-right">
-                                <span className={`font-bold ${m.paidCommission > 0 ? "text-emerald-600" : "text-muted-foreground"}`}>
-                                  {formatCurrency(m.paidCommission)}
-                                </span>
-                                {m.paidCount > 0 && <div className="text-[10px] text-emerald-500">{m.paidCount} оплачено</div>}
-                              </td>
-                              <td className="px-5 py-4 text-right">
-                                {m.pendingCommission > 0
-                                  ? <span className="font-medium text-amber-600">{formatCurrency(m.pendingCommission)}</span>
-                                  : <span className="text-muted-foreground/40">—</span>}
-                              </td>
-                              <td className="px-5 py-4 text-right">
-                                {m.overdueCommission > 0
-                                  ? <span className="font-bold text-red-600">{formatCurrency(m.overdueCommission)}</span>
-                                  : <span className="text-muted-foreground/40">—</span>}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                      ) : !masterStats || masterStats.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="px-6 py-12 text-center text-muted-foreground text-sm">
+                            Нет данных за выбранный период
+                          </td>
+                        </tr>
+                      ) : masterStats.map(m => (
+                        <tr key={m.masterId} className="hover:bg-slate-50/50 transition-colors">
+                          <td className="px-6 py-4">
+                            <div className="font-medium text-foreground">{m.alias}</div>
+                            {m.phone && (
+                              <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                                <Phone className="w-3 h-3" />{m.phone}
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-1 text-muted-foreground">
+                              <MapPin className="w-3.5 h-3.5" />{m.city}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 font-medium">{m.orderCount}</td>
+                          <td className="px-6 py-4">{formatCurrency(m.totalOrderAmount)}</td>
+                          <td className="px-6 py-4">
+                            {m.paidCommission > 0 ? (
+                              <div>
+                                <span className="text-emerald-700 font-medium">{formatCurrency(m.paidCommission)}</span>
+                                <div className="text-[10px] text-muted-foreground">{m.paidCount} транз.</div>
+                              </div>
+                            ) : <span className="text-muted-foreground">—</span>}
+                          </td>
+                          <td className="px-6 py-4">
+                            {m.pendingCommission > 0 ? (
+                              <div>
+                                <span className="text-amber-700 font-medium">{formatCurrency(m.pendingCommission)}</span>
+                                <div className="text-[10px] text-muted-foreground">{m.pendingCount} транз.</div>
+                              </div>
+                            ) : <span className="text-muted-foreground">—</span>}
+                          </td>
+                          <td className="px-6 py-4">
+                            {m.overdueCommission > 0 ? (
+                              <div>
+                                <span className="text-red-700 font-bold">{formatCurrency(m.overdueCommission)}</span>
+                                <div className="text-[10px] text-muted-foreground">{m.overdueCount} транз.</div>
+                              </div>
+                            ) : <span className="text-muted-foreground">—</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
         </div>
 
-        {/* ── Review prompt modal ────────────────────────────────────────── */}
+        {/* ── Review modal ─────────────────────────────────────────────────── */}
         {pendingReviewInfo && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-              <div className="bg-gradient-to-r from-blue-500 to-indigo-600 px-6 py-5 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
-                  <MessageSquare className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <p className="font-semibold text-white">Оставить отзыв о мастере</p>
-                  <p className="text-blue-100 text-sm mt-0.5">{pendingReviewInfo.masterAlias}</p>
-                </div>
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-5">
+              <div>
+                <h3 className="text-lg font-display font-semibold">Оставить отзыв</h3>
+                <p className="text-sm text-muted-foreground mt-1">Мастер: <strong>{pendingReviewInfo.masterAlias}</strong></p>
               </div>
-
-              <div className="p-6 space-y-5">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-700">Общее впечатление</label>
-                  <div className="flex gap-2">
-                    {SENTIMENTS.map(s => (
-                      <button
-                        key={s.value}
-                        type="button"
-                        onClick={() => setReviewSentiment(s.value)}
-                        className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border text-sm font-medium transition-all ${
-                          reviewSentiment === s.value
-                            ? s.activeClass
-                            : "bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100"
-                        }`}
-                      >
-                        {s.icon}
-                        <span className="hidden sm:inline">{s.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-700">Комментарий</label>
-                  <textarea
-                    value={reviewText}
-                    onChange={e => setReviewText(e.target.value)}
-                    placeholder="Качество работы, соблюдение сроков, общение с клиентом..."
-                    rows={4}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 resize-none"
-                    autoFocus
-                  />
-                </div>
-
-                <div className="flex gap-3 pt-1">
+              <div className="flex gap-2">
+                {SENTIMENTS.map(s => (
                   <button
-                    onClick={() => setPendingReviewInfo(null)}
-                    className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+                    key={s.value}
+                    onClick={() => setReviewSentiment(s.value)}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-medium border transition-all ${
+                      reviewSentiment === s.value ? s.activeClass : "bg-background border-border text-muted-foreground hover:text-foreground"
+                    }`}
                   >
-                    Пропустить
+                    {s.icon}{s.label}
                   </button>
-                  <button
-                    onClick={submitReview}
-                    disabled={savingReview || !reviewText.trim()}
-                    className="flex-1 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                  >
-                    {savingReview ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                    Сохранить отзыв
-                  </button>
-                </div>
+                ))}
+              </div>
+              <textarea
+                value={reviewText}
+                onChange={e => setReviewText(e.target.value)}
+                placeholder="Комментарий о мастере (необязательно)..."
+                rows={3}
+                className="w-full text-sm border border-border/60 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-primary/30 resize-none"
+              />
+              <div className="flex gap-3 pt-1">
+                <button
+                  onClick={() => setPendingReviewInfo(null)}
+                  className="flex-1 py-2.5 rounded-xl border border-border text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                >
+                  Пропустить
+                </button>
+                <button
+                  onClick={submitReview}
+                  disabled={savingReview || !reviewText.trim()}
+                  className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                >
+                  {savingReview ? "Сохранение..." : "Сохранить"}
+                </button>
               </div>
             </div>
           </div>
