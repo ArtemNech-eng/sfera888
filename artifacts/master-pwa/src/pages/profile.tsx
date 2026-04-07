@@ -7,10 +7,13 @@ import {
   TrendingUp, ShieldCheck, LogOut, ExternalLink,
   BadgeCheck, Camera, Pencil, Check, X, Loader2,
   BarChart2, Clock, Filter, ChevronDown, Plus, Download,
+  DollarSign,
 } from "lucide-react";
 import { useInstallPrompt } from "@/lib/useInstallPrompt";
 
 interface WorkingHours { start: string; end: string; days: number[]; }
+
+interface ServicePrice { service: string; priceFrom: number; }
 
 interface ProfileData {
   id: number;
@@ -30,6 +33,7 @@ interface ProfileData {
   workingHours: WorkingHours | null;
   preferredDistricts: string[];
   minArea: number;
+  servicePrices: ServicePrice[];
   stats: {
     conversionRate: number;
     paymentRate: number;
@@ -402,6 +406,93 @@ function OrderFiltersSection({ data, onSave }: { data: ProfileData; onSave: (u: 
   );
 }
 
+// ─── Service Prices Section ───────────────────────────────────────────────────
+
+function ServicePricesSection({ data, onSave }: { data: ProfileData; onSave: (u: Partial<ProfileData>) => void }) {
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState<{ service: string; priceFrom: string }[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  const prices = data.servicePrices ?? [];
+
+  const startEdit = () => {
+    setRows(prices.length > 0
+      ? prices.map(p => ({ service: p.service, priceFrom: String(p.priceFrom) }))
+      : [{ service: "", priceFrom: "" }]
+    );
+    setOpen(true);
+  };
+
+  const save = async () => {
+    const servicePrices = rows
+      .filter(r => r.service.trim() && Number(r.priceFrom) > 0)
+      .map(r => ({ service: r.service.trim(), priceFrom: Number(r.priceFrom) }));
+    setSaving(true);
+    try {
+      await api.updateProfile({ servicePrices });
+      onSave({ servicePrices });
+      toast.success("Цены сохранены");
+      setOpen(false);
+    } catch (e: any) { toast.error(e.message ?? "Ошибка"); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="bg-card border border-border rounded-2xl overflow-hidden">
+      <button onClick={() => open ? setOpen(false) : startEdit()}
+        className="w-full flex items-center justify-between px-4 py-3.5">
+        <div className="flex items-center gap-2 font-semibold text-sm">
+          <DollarSign size={15} className="text-primary" /> Мои цены на услуги
+          {prices.length > 0
+            ? <span className="text-xs text-primary font-normal">({prices.length} позиц.)</span>
+            : <span className="text-xs text-muted-foreground font-normal">(не указаны)</span>}
+        </div>
+        <ChevronDown size={16} className={`text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 border-t border-border pt-3 space-y-3">
+          <p className="text-xs text-muted-foreground">Укажите стартовую цену для каждой услуги. Это помогает клиентам оценить стоимость.</p>
+
+          {rows.map((row, i) => (
+            <div key={i} className="flex gap-2 items-center">
+              <input
+                value={row.service}
+                onChange={e => setRows(r => r.map((x, j) => j === i ? { ...x, service: e.target.value } : x))}
+                placeholder="Название услуги"
+                className="flex-1 h-10 px-3 rounded-xl border border-border bg-muted/40 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+              <input
+                value={row.priceFrom}
+                onChange={e => setRows(r => r.map((x, j) => j === i ? { ...x, priceFrom: e.target.value.replace(/\D/g, "") } : x))}
+                placeholder="от ₽"
+                className="w-24 h-10 px-3 rounded-xl border border-border bg-muted/40 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+              <button onClick={() => setRows(r => r.filter((_, j) => j !== i))}
+                className="text-muted-foreground hover:text-destructive transition-colors">
+                <X size={16} />
+              </button>
+            </div>
+          ))}
+
+          <button onClick={() => setRows(r => [...r, { service: "", priceFrom: "" }])}
+            className="flex items-center gap-1.5 text-xs text-primary font-medium">
+            <Plus size={13} /> Добавить услугу
+          </button>
+
+          <button onClick={save} disabled={saving}
+            className="w-full h-11 rounded-xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-60 flex items-center justify-center gap-2">
+            {saving
+              ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              : <Check size={15} />}
+            Сохранить цены
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Working Hours Section ────────────────────────────────────────────────────
 
 const DAY_LABELS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
@@ -680,6 +771,9 @@ export default function ProfilePage() {
 
       {/* Working hours */}
       <WorkingHoursSection data={data} onSave={updated => setData(d => d ? { ...d, ...updated } : d)} />
+
+      {/* Service prices */}
+      <ServicePricesSection data={data} onSave={updated => setData(d => d ? { ...d, ...updated } : d)} />
 
       {data.contractLink && (
         <a

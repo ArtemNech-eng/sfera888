@@ -815,7 +815,7 @@ router.post("/balance/payment-proof", requireMasterPwa, async (req, res) => {
 // Update profile
 router.patch("/profile", requireMasterPwa, async (req, res) => {
   const masterId = (req.session as any).masterId;
-  const { alias, city, phone, specializations, workingHours, preferredDistricts, minArea } = req.body;
+  const { alias, city, phone, specializations, workingHours, preferredDistricts, minArea, servicePrices } = req.body;
 
   const updates: any = {};
   if (alias?.trim()) updates.alias = alias.trim();
@@ -828,6 +828,9 @@ router.patch("/profile", requireMasterPwa, async (req, res) => {
   if (workingHours !== undefined) updates.workingHours = workingHours;
   if (Array.isArray(preferredDistricts)) updates.preferredDistricts = preferredDistricts;
   if (minArea !== undefined) updates.minArea = Math.max(0, parseInt(String(minArea)) || 0);
+  if (servicePrices !== undefined) updates.servicePrices = Array.isArray(servicePrices)
+    ? servicePrices.filter((p: any) => p.service && typeof p.priceFrom === "number" && p.priceFrom > 0)
+    : null;
 
   await db.update(mastersTable).set(updates).where(eq(mastersTable.id, masterId));
   res.json({ success: true });
@@ -869,6 +872,7 @@ router.get("/profile", requireMasterPwa, async (req, res) => {
     workingHours: master.workingHours ?? null,
     preferredDistricts: master.preferredDistricts ?? [],
     minArea: master.minArea ?? 0,
+    servicePrices: master.servicePrices ?? [],
     stats: {
       conversionRate,
       paymentRate,

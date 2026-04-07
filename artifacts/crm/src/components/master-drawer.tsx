@@ -325,6 +325,10 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
 
   const [pwaLogin, setPwaLogin] = useState(master.pwaLogin ?? "");
   const [pwaPassword, setPwaPassword] = useState("");
+
+  const [editingPrices, setEditingPrices] = useState(false);
+  const [priceRows, setPriceRows] = useState<{ service: string; priceFrom: string }[]>([]);
+  const [savingPrices, setSavingPrices] = useState(false);
   const [showPwaPass, setShowPwaPass] = useState(false);
   const [savingPwa, setSavingPwa] = useState(false);
   const [resettingPwa, setResettingPwa] = useState(false);
@@ -852,19 +856,103 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                 </div>
               )}
 
-              {master.servicePrices && master.servicePrices.length > 0 && (
-                <div>
-                  <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Цены на услуги</p>
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Цены на услуги</p>
+                  {!editingPrices && (
+                    <button
+                      onClick={() => {
+                        const rows = (master.servicePrices ?? []).map(p => ({ service: p.service, priceFrom: String(p.priceFrom) }));
+                        setPriceRows(rows.length > 0 ? rows : [{ service: "", priceFrom: "" }]);
+                        setEditingPrices(true);
+                      }}
+                      className="text-[11px] text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      {(master.servicePrices ?? []).length > 0 ? "Изменить" : "+ Добавить цены"}
+                    </button>
+                  )}
+                </div>
+
+                {editingPrices ? (
+                  <div className="space-y-2">
+                    {priceRows.map((row, i) => (
+                      <div key={i} className="flex gap-2 items-center">
+                        <input
+                          value={row.service}
+                          onChange={e => setPriceRows(r => r.map((x, j) => j === i ? { ...x, service: e.target.value } : x))}
+                          placeholder="Услуга"
+                          className="flex-1 h-8 px-2.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        />
+                        <input
+                          value={row.priceFrom}
+                          onChange={e => setPriceRows(r => r.map((x, j) => j === i ? { ...x, priceFrom: e.target.value.replace(/\D/g, "") } : x))}
+                          placeholder="от ₽"
+                          className="w-24 h-8 px-2.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        />
+                        <button
+                          onClick={() => setPriceRows(r => r.filter((_, j) => j !== i))}
+                          className="text-gray-400 hover:text-red-500"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      onClick={() => setPriceRows(r => [...r, { service: "", priceFrom: "" }])}
+                      className="text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
+                    >
+                      <Plus className="w-3 h-3" /> Добавить строку
+                    </button>
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        disabled={savingPrices}
+                        onClick={async () => {
+                          setSavingPrices(true);
+                          const servicePrices = priceRows
+                            .filter(r => r.service.trim() && Number(r.priceFrom) > 0)
+                            .map(r => ({ service: r.service.trim(), priceFrom: Number(r.priceFrom) }));
+                          try {
+                            const res = await fetch(`/api/masters/${master.id}`, {
+                              method: "PATCH",
+                              headers: { "Content-Type": "application/json" },
+                              credentials: "include",
+                              body: JSON.stringify({ servicePrices }),
+                            });
+                            if (!res.ok) throw new Error();
+                            onMasterUpdate(master.id, { servicePrices });
+                            setEditingPrices(false);
+                          } catch {
+                            alert("Ошибка сохранения");
+                          } finally {
+                            setSavingPrices(false);
+                          }
+                        }}
+                        className="h-7 px-3 bg-blue-600 text-white text-xs font-medium rounded-lg disabled:opacity-50 flex items-center gap-1"
+                      >
+                        {savingPrices ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                        Сохранить
+                      </button>
+                      <button
+                        onClick={() => setEditingPrices(false)}
+                        className="h-7 px-3 bg-gray-100 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-200"
+                      >
+                        Отмена
+                      </button>
+                    </div>
+                  </div>
+                ) : (master.servicePrices ?? []).length > 0 ? (
                   <div className="space-y-1.5">
-                    {master.servicePrices.map(p => (
+                    {(master.servicePrices ?? []).map(p => (
                       <div key={p.service} className="flex items-center justify-between px-3 py-1.5 bg-gray-50 rounded-lg">
                         <span className="text-xs text-gray-700">{p.service}</span>
                         <span className="text-xs font-semibold text-gray-900">от {p.priceFrom.toLocaleString("ru")} ₽</span>
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
+                ) : (
+                  <p className="text-xs text-gray-400 italic">Цены не указаны</p>
+                )}
+              </div>
 
               <div>
                 <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1">
