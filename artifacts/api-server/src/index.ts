@@ -134,6 +134,31 @@ async function runMigrations() {
     ALTER TABLE transactions
       ADD COLUMN IF NOT EXISTS source_type TEXT
   `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS browser_agent_credentials (
+      id SERIAL PRIMARY KEY,
+      site TEXT NOT NULL UNIQUE,
+      login TEXT NOT NULL,
+      password_enc TEXT NOT NULL,
+      cookies JSONB,
+      last_login_at TIMESTAMP,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS browser_agent_logs (
+      id SERIAL PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      action_type TEXT NOT NULL,
+      description TEXT NOT NULL,
+      screenshot_b64 TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS browser_agent_logs_session_idx ON browser_agent_logs(session_id)
+  `);
   console.log("[startup] Migrations applied");
 }
 

@@ -25,6 +25,7 @@ import masterPwaRouter from "./master-pwa.js";
 import contractRouter from "./contract.js";
 import clientRouter from "./client.js";
 import avitoRouter from "./avito.js";
+import browserAgentRouter from "./browser-agent.js";
 
 const router = Router();
 
@@ -53,6 +54,7 @@ router.use("/master-pwa", masterPwaRouter);
 router.use("/contract", contractRouter);
 router.use("/client", clientRouter);
 router.use("/avito", avitoRouter);
+router.use("/browser-agent", browserAgentRouter);
 
 // Seed popular repair services on startup (INSERT ... ON CONFLICT DO NOTHING)
 async function seedServices() {
