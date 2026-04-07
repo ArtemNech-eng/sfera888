@@ -563,8 +563,11 @@ export default function AiOfficePage() {
   }, [launched, refreshScreenshot]);
 
   useEffect(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [browserStatus?.logs]);
+    const isActive = browserStatus?.status === "running" || browserStatus?.status === "starting";
+    if (isActive) {
+      logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [browserStatus?.logs, browserStatus?.status]);
 
   const isRunning = browserStatus?.status === "running" || browserStatus?.status === "starting";
 
