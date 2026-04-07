@@ -39,7 +39,7 @@ export interface AgentLog {
 
 interface AgentAction {
   thought: string;
-  action: "click" | "type" | "navigate" | "scroll" | "press_key" | "wait" | "clear" | "done" | "request_input" | "memorize" | "ask_user";
+  action: "click" | "click_text" | "type" | "fill" | "navigate" | "scroll" | "press_key" | "wait" | "clear" | "done" | "request_input" | "memorize" | "ask_user";
   params: Record<string, any>;
   done: boolean;
 }
@@ -258,6 +258,43 @@ class BrowserAgentService {
         await this.page.waitForTimeout(1200); // wait for modals/animations
         break;
       }
+      case "click_text": {
+        // Click by visible button/link text — much more reliable than coordinates
+        const text = String(p.text ?? "");
+        this.log("action", `Клик по тексту: "${text}"`);
+        try {
+          const loc = this.page.getByText(text, { exact: false }).first();
+          await loc.click({ timeout: 5000 });
+        } catch {
+          // Fallback to coordinate click if text not found
+          if (p.x !== undefined && p.y !== undefined) {
+            await this.page.mouse.click(Number(p.x), Number(p.y));
+          } else {
+            this.log("error", `Текст "${text}" не найден на странице`);
+          }
+        }
+        await this.page.waitForTimeout(1200);
+        break;
+      }
+      case "fill": {
+        // Fill a field by its label/placeholder text — reliable alternative to click+type
+        const selector = String(p.selector ?? "");
+        const value = String(p.value ?? "");
+        this.log("action", `Заполнение поля "${selector}": "${value.slice(0, 40)}"`);
+        try {
+          if (selector.startsWith("//") || selector.startsWith("css=")) {
+            await this.page.locator(selector).first().fill(value, { timeout: 5000 });
+          } else {
+            // Try by placeholder, label, or aria-label
+            const loc = this.page.locator(`[placeholder*="${selector}"], [aria-label*="${selector}"], input[name*="${selector}"]`).first();
+            await loc.fill(value, { timeout: 5000 });
+          }
+        } catch {
+          this.log("error", `Поле "${selector}" не найдено — используй click+type`);
+        }
+        await this.page.waitForTimeout(300);
+        break;
+      }
       case "type": {
         const text = String(p.text ?? "");
         this.log("action", `Ввод текста: "${text.slice(0, 60)}"`);
@@ -457,44 +494,55 @@ ${historyText}${credentialsContext}${memoryContext}
 }
 
 Доступные действия и их params:
-- click: { x: number, y: number, description: string }
-- type: { text: string }  (сначала кликни на поле, потом type)
+- click_text: { text: string }  ⭐ ПРЕДПОЧТИТЕЛЬНЫЙ способ кликнуть кнопку/ссылку по её тексту
+- click: { x: number, y: number, description: string }  (только если click_text не подходит)
+- fill: { selector: string, value: string }  (заполнить поле по placeholder/aria-label/name)
+- type: { text: string }  (ввод с клавиатуры в активное поле)
 - clear: {}  (очистить выделенное поле)
 - navigate: { url: string }
 - scroll: { direction: "up"|"down", amount: 300-1000 }
 - press_key: { key: "Enter"|"Tab"|"Escape"|"Backspace" }
-- wait: { ms: 1000-3000 }
+- wait: { ms: 1000-5000 }
 - done: { result: string }
-- memorize: { key: string, value: string, context?: string }  (сохранить факт в долгосрочную память)
-- ask_user: { question: string }  (задать вопрос пользователю и получить ответ — используй когда нужна любая информация)
+- memorize: { key: string, value: string }
+- ask_user: { question: string }
 
 ПРАВИЛА (обязательные):
 
-1. ДУМАЙ ПЕРЕД ДЕЙСТВИЕМ: в поле "thought" напиши подробно что ты видишь на скриншоте, что уже сделано (из истории), и почему выбираешь именно это действие.
+1. ДУМАЙ ПЕРЕД ДЕЙСТВИЕМ: в "thought" напиши что видишь и почему выбираешь это действие.
 
-2. АВТОРИЗАЦИЯ — строгий порядок:
-   a) Если на странице есть ТОЛЬКО кнопка "Войти"/"Вход и регистрация" в хедере — НЕ кликай её дважды. Вместо этого сразу используй navigate к прямой странице входа:
+2. ДЛЯ КНОПОК — всегда используй click_text, НЕ координаты:
+   - "Продолжить" → click_text: { text: "Продолжить" }
+   - "Войти" → click_text: { text: "Войти" }
+   - "Отправить код" → click_text: { text: "Отправить код" }
+   Координатный click — только для кликов на изображения, карты, места без текста.
+
+3. ДЛЯ ПОЛЕЙ ВВОДА — используй fill:
+   - fill: { selector: "телефон", value: "89001234567" }
+   - fill: { selector: "Пароль", value: "mypassword" }
+
+4. IP-БЛОКИРОВКА / КАПЧА (страница "Доступ ограничен" или "проблема с IP"):
+   - Если видишь кнопку "Продолжить" → click_text: { text: "Продолжить" }
+   - После клика жди 3 секунды → wait: { ms: 3000 }
+   - Если после ожидания появилась капча → request_input: { prompt: "Виден тест/капча. Опишите что нужно сделать или решите вручную и напишите 'готово'" }
+
+5. АВТОРИЗАЦИЯ — строгий порядок:
+   a) Кнопка "Войти" в хедере — используй navigate к прямой странице:
       - avito.ru → navigate: { url: "https://www.avito.ru/profile/login" }
-      - любой другой сайт → попробуй /login, /signin, /auth или /account/login
-   b) Нет данных → ask_user: { "question": "Введите телефон/логин и пароль для [сайт]" }
-   c) Данные есть в истории ("⚡ ПОЛУЧЕНЫ ДАННЫЕ") → введи их прямо сейчас
-   d) После нажатия "Войти" → ОБЯЗАТЕЛЬНО используй: request_input: { "prompt": "Введите SMS-код если он пришёл, или напишите 'нет кода'" }
-   e) Не нажимай "Войти" повторно, не вводи данные снова — жди SMS
+      - другие сайты → /login, /signin, /auth
+   b) На странице формы входа → ask_user: { question: "Введите телефон и пароль для [сайт]" }
+   c) После "⚡ ПОЛУЧЕНЫ ДАННЫЕ" → заполни поля через fill, нажми кнопку через click_text
+   d) После нажатия "Войти" → request_input: { prompt: "Введите SMS-код или напишите 'нет кода'" }
 
-3. ОШИБКА АВТОРИЗАЦИИ — если видишь на экране:
-   - Красный текст, текст с "ошибка", "неверн", "не найден", "попробуйте снова", "incorrect", "invalid", "wrong"
-   - Или ты уже нажал "Войти" но страница НЕ изменилась
-   → НЕМЕДЛЕННО: ask_user: { "question": "Авторизация не удалась — сайт показал ошибку. Проверь логин и пароль и отправь заново, или опиши что делать." }
+6. ОШИБКА АВТОРИЗАЦИИ — если видишь красный текст, "ошибка", "неверный", "не найден":
+   → ask_user: { question: "Авторизация не удалась — ошибка на сайте. Проверь данные и отправь заново." }
    → НЕ пытайся войти снова самостоятельно
 
-4. ПОСЛЕ ask_user — В ИСТОРИИ будет строка "⚡ ПОЛУЧЕНЫ ДАННЫЕ". Прочитай ответ и используй НЕМЕДЛЕННО.
+7. ПОСЛЕ ask_user — строка "⚡ ПОЛУЧЕНЫ ДАННЫЕ" в истории. Используй данные НЕМЕДЛЕННО.
 
-5. SMS / 2FA: Если видишь поле для кода, цифр, "подтверждение", "код" → request_input: { "prompt": "Введите SMS-код" }. НЕ КЛИКАЙ на это поле сам.
+8. ЗАПРЕТ ПЕТЕЛЬ: Одно и то же действие максимум 2 раза → ask_user.
 
-6. ЗАПРЕТ ПЕТЕЛЬ: Одно и то же действие максимум 2 раза → ask_user.
-
-7. Капча → done: { "result": "Обнаружена капча" }
-8. Задача выполнена → done: { "result": "описание результата" }`;
+9. Задача выполнена → done: { result: "описание результата" }`;
 
       let parsed: AgentAction | null = null;
       try {
