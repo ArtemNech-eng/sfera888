@@ -34,6 +34,17 @@ export const PREDEFINED_SCENARIOS: PredefinedScenario[] = [
     goal: "masters_city_outreach",
   },
   {
+    id: "al_diagnostics",
+    title: "АЛ-Диагностика: пульс пайплайна",
+    shortDescription: "Рентген активных заказов: кто из мастеров давно без контакта, сколько денег «висит» и кому писать сегодня",
+    description: "Агент анализирует все заказы в статусах «мастер назначен» и «в работе» за последние 7 дней. Вычисляет дни без контакта для каждого мастера, группирует по уровню риска (🔴 критично / 🟡 внимание / 🟢 норма), оценивает сумму ожидаемых оплат и формирует чёткий план действий на сегодня. Работает даже с 1000+ мастерами.",
+    icon: "zap",
+    color: "orange",
+    estimatedMinutes: 4,
+    category: "analytics",
+    goal: "al_diagnostics",
+  },
+  {
     id: "market_pricing_analysis",
     title: "Анализ рыночных цен",
     shortDescription: "Изучает сметы и прайсы мастеров, формирует актуальный прайс-лист средних рыночных цен",
@@ -455,6 +466,371 @@ async function runMastersOutreachScenario(sessionId: number): Promise<void> {
   `);
 }
 
+// ─── AL-Diagnostics scenario (pipeline health monitoring) ─────────────────
+// Scans active orders, computes days-without-contact per master, risk-groups,
+// and produces a prioritized action plan. Scales to 1000+ masters.
+
+async function runALDiagnosticsScenario(sessionId: number): Promise<void> {
+  const plan: StepPlan[] = [
+    { index: 0, title: "Загрузка пайплайна",      description: "Активные заказы + даты последнего контакта по каждому мастеру", task: "" },
+    { index: 1, title: "Классификация рисков",     description: "Расчёт дней без контакта, группировка 🔴/🟡/🟢", task: "" },
+    { index: 2, title: "Анализ и план действий",   description: "GPT-4o формирует исполнительный отчёт и приоритеты на сегодня", task: "" },
+    { index: 3, title: "Сохранение в память",      description: "Отчёт записывается в постоянную память агента", task: "" },
+  ];
+  const steps: StepResult[] = plan.map(p => ({ ...p, status: "pending" as const, report: "", startedAt: undefined, completedAt: undefined, durationMs: undefined }));
+
+  const upd = async (step: number) =>
+    db.execute(sql`UPDATE autonomous_sessions SET steps=${JSON.stringify(steps)}::jsonb, current_step=${step} WHERE id=${sessionId}`);
+
+  await db.execute(sql`
+    UPDATE autonomous_sessions
+    SET status='running', steps=${JSON.stringify(steps)}::jsonb, plan=${JSON.stringify(plan)}::jsonb
+    WHERE id=${sessionId}
+  `);
+
+  // ── Step 0: Load pipeline data ─────────────────────────────────────────
+  steps[0].status = "running"; steps[0].startedAt = new Date().toISOString();
+  await upd(0);
+  const t0 = Date.now();
+
+  // Active orders (last 7 days, not deleted, has a master)
+  const ordersRes = await db.execute(sql`
+    SELECT
+      o.id,
+      o.service_type,
+      o.city,
+      o.status,
+      COALESCE(o.order_amount, o.proposed_amount, 0)::numeric AS amount,
+      o.assigned_at,
+      o.updated_at,
+      o.created_at,
+      m.id          AS master_id,
+      m.alias       AS master_alias,
+      m.city        AS master_city,
+      m.phone       AS master_phone,
+      m.max_chat_id AS master_max_chat_id
+    FROM orders o
+    JOIN masters m ON m.id = o.master_id
+    WHERE o.status IN ('master_assigned', 'in_progress')
+      AND o.deleted_at IS NULL
+      AND o.master_id IS NOT NULL
+      AND o.created_at >= NOW() - INTERVAL '7 days'
+    ORDER BY o.updated_at ASC
+  `);
+  const orders = ordersRes.rows as any[];
+
+  // Last contact per master = MAX across all touch-points
+  const masterIds = [...new Set(orders.map(o => Number(o.master_id)))];
+  let lastContactMap: Map<number, Date> = new Map();
+
+  if (masterIds.length > 0) {
+    const contactRes = await db.execute(sql`
+      SELECT
+        m_id,
+        MAX(last_touch) AS last_contact_at
+      FROM (
+        SELECT master_id AS m_id, MAX(created_at) AS last_touch
+        FROM master_messages
+        WHERE master_id = ANY(${masterIds}::int[])
+        GROUP BY master_id
+
+        UNION ALL
+
+        SELECT master_id AS m_id, MAX(created_at) AS last_touch
+        FROM master_tasks
+        WHERE master_id = ANY(${masterIds}::int[])
+        GROUP BY master_id
+
+        UNION ALL
+
+        SELECT master_id AS m_id, MAX(created_at) AS last_touch
+        FROM order_dispatches
+        WHERE master_id = ANY(${masterIds}::int[])
+        GROUP BY master_id
+      ) t
+      GROUP BY m_id
+    `);
+    for (const row of contactRes.rows as any[]) {
+      lastContactMap.set(Number(row.m_id), new Date(row.last_contact_at));
+    }
+  }
+
+  steps[0].status = "done";
+  steps[0].report = `Активных заказов: **${orders.length}** у **${masterIds.length}** мастеров за последние 7 дней`;
+  steps[0].completedAt = new Date().toISOString();
+  steps[0].durationMs = Date.now() - t0;
+  await upd(1);
+
+  // ── Step 1: Risk classification ────────────────────────────────────────
+  steps[1].status = "running"; steps[1].startedAt = new Date().toISOString();
+  await upd(1);
+  const t1 = Date.now();
+
+  const now = Date.now();
+  const DAY_MS = 86_400_000;
+
+  // Aggregate per master
+  interface MasterPipelineEntry {
+    masterId: number;
+    alias: string;
+    city: string;
+    phone: string;
+    maxChatId: string | null;
+    orders: { id: number; serviceType: string; status: string; amount: number; assignedAt: Date | null }[];
+    totalAmount: number;
+    lastContactAt: Date | null;
+    daysSinceContact: number;
+    lastOrderUpdate: Date;
+    risk: "critical" | "warning" | "ok";
+    riskReasons: string[];
+  }
+
+  const masterMap = new Map<number, MasterPipelineEntry>();
+
+  for (const o of orders) {
+    const mid = Number(o.master_id);
+    if (!masterMap.has(mid)) {
+      masterMap.set(mid, {
+        masterId: mid,
+        alias: o.master_alias,
+        city: o.master_city,
+        phone: o.master_phone,
+        maxChatId: o.master_max_chat_id,
+        orders: [],
+        totalAmount: 0,
+        lastContactAt: lastContactMap.get(mid) ?? null,
+        daysSinceContact: lastContactMap.has(mid)
+          ? (now - lastContactMap.get(mid)!.getTime()) / DAY_MS
+          : 999,
+        lastOrderUpdate: new Date(o.updated_at),
+        risk: "ok",
+        riskReasons: [],
+      });
+    }
+    const entry = masterMap.get(mid)!;
+    entry.orders.push({
+      id: Number(o.id),
+      serviceType: o.service_type ?? "Ремонт",
+      status: o.status,
+      amount: Number(o.amount) || 0,
+      assignedAt: o.assigned_at ? new Date(o.assigned_at) : null,
+    });
+    entry.totalAmount += Number(o.amount) || 0;
+    if (new Date(o.updated_at) > entry.lastOrderUpdate) {
+      entry.lastOrderUpdate = new Date(o.updated_at);
+    }
+  }
+
+  // Compute risk per master
+  const allEntries = [...masterMap.values()];
+  for (const e of allEntries) {
+    const reasons: string[] = [];
+    const inProgress = e.orders.filter(o => o.status === "in_progress");
+    const assigned   = e.orders.filter(o => o.status === "master_assigned");
+    const daysNoContact = e.daysSinceContact;
+    const daysSinceUpdate = (now - e.lastOrderUpdate.getTime()) / DAY_MS;
+
+    // CRITICAL triggers
+    if (inProgress.length > 0 && daysNoContact > 3)
+      reasons.push(`заказ в работе, контакта нет ${Math.floor(daysNoContact)} дн.`);
+    if (assigned.length > 0 && assigned.some(o => o.assignedAt && (now - o.assignedAt.getTime()) / DAY_MS > 4))
+      reasons.push(`назначен >4 дней, к работе не приступил`);
+    if (e.totalAmount > 0 && daysNoContact > 4)
+      reasons.push(`зависла сумма ${e.totalAmount.toLocaleString("ru-RU")} ₽ без контакта`);
+
+    if (reasons.length > 0) {
+      e.risk = "critical";
+      e.riskReasons = reasons;
+      continue;
+    }
+
+    // WARNING triggers
+    if (daysNoContact > 1.5)
+      reasons.push(`${Math.floor(daysNoContact)} дн. без контакта`);
+    if (daysSinceUpdate > 1.5 && inProgress.length > 0)
+      reasons.push(`нет обновления заказа ${Math.floor(daysSinceUpdate)} дн.`);
+    if (assigned.length > 0 && assigned.some(o => o.assignedAt && (now - o.assignedAt.getTime()) / DAY_MS > 2))
+      reasons.push(`назначен >2 дней, не начал`);
+
+    if (reasons.length > 0) {
+      e.risk = "warning";
+      e.riskReasons = reasons;
+    }
+  }
+
+  const critical = allEntries.filter(e => e.risk === "critical").sort((a,b) => b.daysSinceContact - a.daysSinceContact);
+  const warning  = allEntries.filter(e => e.risk === "warning").sort((a,b) => b.daysSinceContact - a.daysSinceContact);
+  const ok       = allEntries.filter(e => e.risk === "ok");
+
+  const totalAmount    = allEntries.reduce((s, e) => s + e.totalAmount, 0);
+  const criticalAmount = critical.reduce((s, e) => s + e.totalAmount, 0);
+  const warningAmount  = warning.reduce((s, e) => s + e.totalAmount, 0);
+  const okAmount       = ok.reduce((s, e) => s + e.totalAmount, 0);
+
+  const fmt = (n: number) => n.toLocaleString("ru-RU") + " ₽";
+
+  steps[1].status = "done";
+  steps[1].report =
+    `🔴 Критично: **${critical.length}** мастеров / ${fmt(criticalAmount)}\n` +
+    `🟡 Внимание: **${warning.length}** мастеров / ${fmt(warningAmount)}\n` +
+    `🟢 Норма:    **${ok.length}** мастеров / ${fmt(okAmount)}\n\n` +
+    `Итого ожидаемые оплаты: **${fmt(totalAmount)}**`;
+  steps[1].completedAt = new Date().toISOString();
+  steps[1].durationMs = Date.now() - t1;
+  await upd(2);
+
+  // ── Step 2: GPT analysis & action plan ────────────────────────────────
+  steps[2].status = "running"; steps[2].startedAt = new Date().toISOString();
+  await upd(2);
+  const t2 = Date.now();
+
+  // Build compact data block for GPT (scalable — groups, not rows)
+  const formatEntry = (e: MasterPipelineEntry) => {
+    const contactStr = e.lastContactAt
+      ? `${Math.floor(e.daysSinceContact)} дн. назад (${e.lastContactAt.toLocaleDateString("ru-RU")})`
+      : "никогда";
+    const ordersSummary = e.orders.map(o =>
+      `#${o.id} ${o.serviceType} [${o.status === "in_progress" ? "в работе" : "назначен"}]${o.amount > 0 ? ` ${o.amount.toLocaleString("ru-RU")} ₽` : ""}`
+    ).join("; ");
+    return `• ${e.alias} (${e.city}) — ${e.orders.length} заказ${e.orders.length > 1 ? "а" : ""}, ${fmt(e.totalAmount)}, контакт: ${contactStr} | ${e.riskReasons.join(", ")} | ${ordersSummary}`;
+  };
+
+  const criticalBlock = critical.slice(0, 50).map(formatEntry).join("\n") || "—";
+  const warningBlock  = warning.slice(0, 30).map(formatEntry).join("\n") || "—";
+  const okSummary     = ok.length > 0
+    ? `${ok.length} мастеров, суммарно ${fmt(okAmount)} — без нареканий`
+    : "—";
+
+  const dateStr = new Date().toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+
+  const gptInput = `
+ДАТА ДИАГНОСТИКИ: ${dateStr}
+
+═══ СВОДКА ═══
+Всего мастеров с активными заказами: ${allEntries.length}
+Заказов: ${orders.length} | Ожидаемые оплаты: ${fmt(totalAmount)}
+🔴 Критично: ${critical.length} мастеров / ${fmt(criticalAmount)}
+🟡 Внимание: ${warning.length} мастеров / ${fmt(warningAmount)}
+🟢 Норма: ${ok.length} мастеров / ${fmt(okAmount)}
+
+═══ 🔴 КРИТИЧНО (писать сегодня) ═══
+${criticalBlock}
+
+═══ 🟡 ВНИМАНИЕ (мониторить) ═══
+${warningBlock}
+
+═══ 🟢 НОРМА ═══
+${okSummary}
+`.trim();
+
+  let finalReport = "";
+  try {
+    const gptRes = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: `Ты — аналитик сервиса «Честный мастер». Твоя задача: превратить сырые данные о пайплайне мастеров в чёткий исполнительный отчёт для руководителя.
+
+СТРУКТУРА ОТЧЁТА (строго соблюдай):
+
+# АЛ-Диагностика: пульс пайплайна — [дата]
+
+## Итог одной строкой
+[одно предложение: ключевое состояние пайплайна сегодня]
+
+## Финансовый пайплайн
+- Ожидаемые оплаты: [сумма]
+- Из них под риском: [критично + внимание суммы]
+- В норме: [сумма]
+
+## 🔴 Критично — действовать СЕГОДНЯ ([N мастеров)
+[для каждого мастера в группе критично:]
+**Имя (город)** — [X заказов, сумма]
+- Причина: [причина риска]
+- Заказы: [список]
+- Контакт: [когда]
+- ✍️ Действие: [конкретная рекомендация — написать/позвонить/уточнить что именно]
+
+## 🟡 Внимание — мониторинг ([N мастеров)
+[аналогично, но компактнее — 1-2 строки на мастера]
+
+## 🟢 Норма ([N мастеров / сумма)
+[одна строка итога — без детализации по каждому]
+
+## 📋 План на сегодня
+[нумерованный список конкретных действий, отсортированных по приоритету]
+1. ...
+2. ...
+
+ТОНАЛЬНОСТЬ:
+— Деловая, конкретная, без воды
+— Каждая рекомендация — чёткое действие, не общая фраза
+— Числа в формате 25 000 ₽ (не "25000руб")
+— Если критичных мастеров > 10 — выдели топ-10 по риску/сумме, остальных укажи счётчиком
+— Язык: русский`,
+        },
+        {
+          role: "user",
+          content: gptInput,
+        },
+      ],
+      temperature: 0.3,
+    });
+    finalReport = gptRes.choices[0].message.content ?? "";
+  } catch (e) {
+    console.error("[alDiagnostics] GPT error:", e);
+    finalReport =
+      `# АЛ-Диагностика — ${dateStr}\n\n` +
+      `## Сводка\nАктивных мастеров: ${allEntries.length} | Ожидаемые оплаты: ${fmt(totalAmount)}\n\n` +
+      `## 🔴 Критично (${critical.length})\n${criticalBlock}\n\n` +
+      `## 🟡 Внимание (${warning.length})\n${warningBlock}\n\n` +
+      `## 🟢 Норма: ${okSummary}`;
+  }
+
+  steps[2].status = "done";
+  steps[2].report = `Отчёт сформирован. 🔴 ${critical.length} / 🟡 ${warning.length} / 🟢 ${ok.length}`;
+  steps[2].completedAt = new Date().toISOString();
+  steps[2].durationMs = Date.now() - t2;
+  await upd(3);
+
+  // ── Step 3: Save to persistent memory ─────────────────────────────────
+  steps[3].status = "running"; steps[3].startedAt = new Date().toISOString();
+  await upd(3);
+
+  const memorySummary =
+    `АЛ-Диагностика ${dateStr}: ` +
+    `${allEntries.length} мастеров, ${orders.length} заказов, ${fmt(totalAmount)}. ` +
+    `Критично: ${critical.length} (${fmt(criticalAmount)}), ` +
+    `Внимание: ${warning.length} (${fmt(warningAmount)}), ` +
+    `Норма: ${ok.length} (${fmt(okAmount)}). ` +
+    (critical.length > 0
+      ? `Топ-риск: ${critical.slice(0,3).map(e => `${e.alias} (${Math.floor(e.daysSinceContact)}дн. без контакта, ${fmt(e.totalAmount)})`).join("; ")}`
+      : "Критичных нет.");
+
+  await extractAndSaveMemories({
+    sessionId,
+    goal: `АЛ-Диагностика пайплайна — ${dateStr}`,
+    stepTitle: `Диагностика ${dateStr}: 🔴${critical.length} / 🟡${warning.length} / 🟢${ok.length}`,
+    stepReport: memorySummary,
+    logs: [],
+  }).catch(e => console.error("[alDiagnostics] Memory save error:", e));
+
+  steps[3].status = "done";
+  steps[3].report = "Диагностика сохранена в постоянную память агента.";
+  steps[3].completedAt = new Date().toISOString();
+
+  await db.execute(sql`
+    UPDATE autonomous_sessions
+    SET status='done',
+        steps=${JSON.stringify(steps)}::jsonb,
+        current_step=4,
+        final_report=${finalReport},
+        completed_at=NOW()
+    WHERE id=${sessionId}
+  `);
+}
+
 // ─── Context loader dispatcher ─────────────────────────────────────────────
 
 async function loadContextForScenario(scenarioId: string): Promise<string> {
@@ -790,16 +1166,20 @@ export const autonomousAgent = {
     if (!scenario) throw new Error(`Unknown scenario: ${scenarioId}`);
 
     // Specialized scenarios have their own executors (not AI planning pipeline)
-    if (scenarioId === "masters_city_outreach") {
+    const SPECIALIZED: Record<string, (id: number) => Promise<void>> = {
+      masters_city_outreach: runMastersOutreachScenario,
+      al_diagnostics:        runALDiagnosticsScenario,
+    };
+
+    if (SPECIALIZED[scenarioId]) {
       const res = await db.execute(sql`
         INSERT INTO autonomous_sessions (goal, status)
         VALUES (${scenario.title}, 'planning')
         RETURNING id
       `);
       const sessionId = Number((res.rows[0] as any).id);
-      // Run async — client polls for progress
-      runMastersOutreachScenario(sessionId).catch(e => {
-        console.error("[autonomousAgent] Outreach scenario error:", e);
+      SPECIALIZED[scenarioId](sessionId).catch(e => {
+        console.error(`[autonomousAgent] Scenario ${scenarioId} error:`, e);
         db.execute(sql`
           UPDATE autonomous_sessions
           SET status='error', error=${String(e)}, completed_at=NOW()
