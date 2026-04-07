@@ -495,14 +495,16 @@ export interface AtRiskMaster {
   riskReasons: string[];
 }
 
-export async function computeAtRiskMasters(): Promise<{
+export async function computeAtRiskMasters(days = 7): Promise<{
   critical: AtRiskMaster[];
   warning: AtRiskMaster[];
   ok: AtRiskMaster[];
   all: AtRiskMaster[];
   totalAmount: number;
   orderCount: number;
+  days: number;
 }> {
+  const safedays = Math.min(14, Math.max(1, Math.round(days)));
   const ordersRes = await db.execute(sql`
     SELECT
       o.id, o.service_type, o.city, o.status,
@@ -516,7 +518,7 @@ export async function computeAtRiskMasters(): Promise<{
     WHERE o.status IN ('master_assigned', 'in_progress')
       AND o.deleted_at IS NULL
       AND o.master_id IS NOT NULL
-      AND o.created_at >= NOW() - INTERVAL '7 days'
+      AND o.created_at >= NOW() - (${safedays} || ' days')::interval
     ORDER BY o.updated_at ASC
   `);
   const orders = ordersRes.rows as any[];
@@ -599,7 +601,7 @@ export async function computeAtRiskMasters(): Promise<{
   const ok       = all.filter(e => e.risk === "ok");
   const totalAmount = all.reduce((s, e) => s + e.totalAmount, 0);
 
-  return { critical, warning, ok, all, totalAmount, orderCount: orders.length };
+  return { critical, warning, ok, all, totalAmount, orderCount: orders.length, days: safedays };
 }
 
 // ─── Master followup scenario (write to stalled masters) ──────────────────
@@ -791,9 +793,9 @@ async function runMasterFollowupScenario(sessionId: number): Promise<void> {
 // Scans active orders, computes days-without-contact per master, risk-groups,
 // and produces a prioritized action plan. Scales to 1000+ masters.
 
-async function runALDiagnosticsScenario(sessionId: number): Promise<void> {
+async function runALDiagnosticsScenario(sessionId: number, days = 7): Promise<void> {
   const plan: StepPlan[] = [
-    { index: 0, title: "Загрузка пайплайна",      description: "Активные заказы + даты последнего контакта по каждому мастеру", task: "" },
+    { index: 0, title: "Загрузка пайплайна",      description: `Активные заказы за ${days} дн. + даты последнего контакта`, task: "" },
     { index: 1, title: "Классификация рисков",     description: "Расчёт дней без контакта, группировка 🔴/🟡/🟢", task: "" },
     { index: 2, title: "Анализ и план действий",   description: "GPT-4o формирует исполнительный отчёт и приоритеты на сегодня", task: "" },
     { index: 3, title: "Сохранение в память",      description: "Отчёт записывается в постоянную память агента", task: "" },
@@ -809,186 +811,27 @@ async function runALDiagnosticsScenario(sessionId: number): Promise<void> {
     WHERE id=${sessionId}
   `);
 
-  // ── Step 0: Load pipeline data ─────────────────────────────────────────
+  // ── Steps 0+1: Load data and classify risk (shared helper) ─────────────
   steps[0].status = "running"; steps[0].startedAt = new Date().toISOString();
   await upd(0);
   const t0 = Date.now();
 
-  // Active orders (last 7 days, not deleted, has a master)
-  const ordersRes = await db.execute(sql`
-    SELECT
-      o.id,
-      o.service_type,
-      o.city,
-      o.status,
-      COALESCE(o.order_amount, o.proposed_amount, 0)::numeric AS amount,
-      o.assigned_at,
-      o.updated_at,
-      o.created_at,
-      m.id          AS master_id,
-      m.alias       AS master_alias,
-      m.city        AS master_city,
-      m.phone       AS master_phone,
-      m.max_chat_id AS master_max_chat_id
-    FROM orders o
-    JOIN masters m ON m.id = o.master_id
-    WHERE o.status IN ('master_assigned', 'in_progress')
-      AND o.deleted_at IS NULL
-      AND o.master_id IS NOT NULL
-      AND o.created_at >= NOW() - INTERVAL '7 days'
-    ORDER BY o.updated_at ASC
-  `);
-  const orders = ordersRes.rows as any[];
-
-  // Last contact per master = MAX across all touch-points
-  const masterIds = [...new Set(orders.map(o => Number(o.master_id)))];
-  let lastContactMap: Map<number, Date> = new Map();
-
-  if (masterIds.length > 0) {
-    const contactRes = await db.execute(sql`
-      SELECT
-        m_id,
-        MAX(last_touch) AS last_contact_at
-      FROM (
-        SELECT master_id AS m_id, MAX(created_at) AS last_touch
-        FROM master_messages
-        WHERE master_id = ANY(${masterIds}::int[])
-        GROUP BY master_id
-
-        UNION ALL
-
-        SELECT master_id AS m_id, MAX(created_at) AS last_touch
-        FROM master_tasks
-        WHERE master_id = ANY(${masterIds}::int[])
-        GROUP BY master_id
-
-        UNION ALL
-
-        SELECT master_id AS m_id, MAX(created_at) AS last_touch
-        FROM order_dispatches
-        WHERE master_id = ANY(${masterIds}::int[])
-        GROUP BY master_id
-      ) t
-      GROUP BY m_id
-    `);
-    for (const row of contactRes.rows as any[]) {
-      lastContactMap.set(Number(row.m_id), new Date(row.last_contact_at));
-    }
-  }
+  const { critical, warning, ok, all: allEntries, totalAmount, orderCount } = await computeAtRiskMasters(days);
 
   steps[0].status = "done";
-  steps[0].report = `Активных заказов: **${orders.length}** у **${masterIds.length}** мастеров за последние 7 дней`;
+  steps[0].report = `Активных заказов: **${orderCount}** у **${allEntries.length}** мастеров за последние **${days} дн.**`;
   steps[0].completedAt = new Date().toISOString();
   steps[0].durationMs = Date.now() - t0;
   await upd(1);
 
-  // ── Step 1: Risk classification ────────────────────────────────────────
   steps[1].status = "running"; steps[1].startedAt = new Date().toISOString();
   await upd(1);
   const t1 = Date.now();
 
-  const now = Date.now();
-  const DAY_MS = 86_400_000;
-
-  // Aggregate per master
-  interface MasterPipelineEntry {
-    masterId: number;
-    alias: string;
-    city: string;
-    phone: string;
-    maxChatId: string | null;
-    orders: { id: number; serviceType: string; status: string; amount: number; assignedAt: Date | null }[];
-    totalAmount: number;
-    lastContactAt: Date | null;
-    daysSinceContact: number;
-    lastOrderUpdate: Date;
-    risk: "critical" | "warning" | "ok";
-    riskReasons: string[];
-  }
-
-  const masterMap = new Map<number, MasterPipelineEntry>();
-
-  for (const o of orders) {
-    const mid = Number(o.master_id);
-    if (!masterMap.has(mid)) {
-      masterMap.set(mid, {
-        masterId: mid,
-        alias: o.master_alias,
-        city: o.master_city,
-        phone: o.master_phone,
-        maxChatId: o.master_max_chat_id,
-        orders: [],
-        totalAmount: 0,
-        lastContactAt: lastContactMap.get(mid) ?? null,
-        daysSinceContact: lastContactMap.has(mid)
-          ? (now - lastContactMap.get(mid)!.getTime()) / DAY_MS
-          : 999,
-        lastOrderUpdate: new Date(o.updated_at),
-        risk: "ok",
-        riskReasons: [],
-      });
-    }
-    const entry = masterMap.get(mid)!;
-    entry.orders.push({
-      id: Number(o.id),
-      serviceType: o.service_type ?? "Ремонт",
-      status: o.status,
-      amount: Number(o.amount) || 0,
-      assignedAt: o.assigned_at ? new Date(o.assigned_at) : null,
-    });
-    entry.totalAmount += Number(o.amount) || 0;
-    if (new Date(o.updated_at) > entry.lastOrderUpdate) {
-      entry.lastOrderUpdate = new Date(o.updated_at);
-    }
-  }
-
-  // Compute risk per master
-  const allEntries = [...masterMap.values()];
-  for (const e of allEntries) {
-    const reasons: string[] = [];
-    const inProgress = e.orders.filter(o => o.status === "in_progress");
-    const assigned   = e.orders.filter(o => o.status === "master_assigned");
-    const daysNoContact = e.daysSinceContact;
-    const daysSinceUpdate = (now - e.lastOrderUpdate.getTime()) / DAY_MS;
-
-    // CRITICAL triggers
-    if (inProgress.length > 0 && daysNoContact > 3)
-      reasons.push(`заказ в работе, контакта нет ${Math.floor(daysNoContact)} дн.`);
-    if (assigned.length > 0 && assigned.some(o => o.assignedAt && (now - o.assignedAt.getTime()) / DAY_MS > 4))
-      reasons.push(`назначен >4 дней, к работе не приступил`);
-    if (e.totalAmount > 0 && daysNoContact > 4)
-      reasons.push(`зависла сумма ${e.totalAmount.toLocaleString("ru-RU")} ₽ без контакта`);
-
-    if (reasons.length > 0) {
-      e.risk = "critical";
-      e.riskReasons = reasons;
-      continue;
-    }
-
-    // WARNING triggers
-    if (daysNoContact > 1.5)
-      reasons.push(`${Math.floor(daysNoContact)} дн. без контакта`);
-    if (daysSinceUpdate > 1.5 && inProgress.length > 0)
-      reasons.push(`нет обновления заказа ${Math.floor(daysSinceUpdate)} дн.`);
-    if (assigned.length > 0 && assigned.some(o => o.assignedAt && (now - o.assignedAt.getTime()) / DAY_MS > 2))
-      reasons.push(`назначен >2 дней, не начал`);
-
-    if (reasons.length > 0) {
-      e.risk = "warning";
-      e.riskReasons = reasons;
-    }
-  }
-
-  const critical = allEntries.filter(e => e.risk === "critical").sort((a,b) => b.daysSinceContact - a.daysSinceContact);
-  const warning  = allEntries.filter(e => e.risk === "warning").sort((a,b) => b.daysSinceContact - a.daysSinceContact);
-  const ok       = allEntries.filter(e => e.risk === "ok");
-
-  const totalAmount    = allEntries.reduce((s, e) => s + e.totalAmount, 0);
+  const fmt = (n: number) => n.toLocaleString("ru-RU") + " ₽";
   const criticalAmount = critical.reduce((s, e) => s + e.totalAmount, 0);
   const warningAmount  = warning.reduce((s, e) => s + e.totalAmount, 0);
   const okAmount       = ok.reduce((s, e) => s + e.totalAmount, 0);
-
-  const fmt = (n: number) => n.toLocaleString("ru-RU") + " ₽";
 
   steps[1].status = "done";
   steps[1].report =
