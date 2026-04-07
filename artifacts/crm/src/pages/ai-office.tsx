@@ -316,6 +316,9 @@ export default function AiOfficePage() {
   const [launched, setLaunched] = useState(false);
   const [userInputValue, setUserInputValue] = useState("");
   const [userInputLoading, setUserInputLoading] = useState(false);
+  const [agentMemory, setAgentMemory] = useState<{ key: string; value: string; context: string | null; updatedAt: string }[]>([]);
+  const [memoryAddKey, setMemoryAddKey] = useState("");
+  const [memoryAddValue, setMemoryAddValue] = useState("");
   const logsEndRef = useRef<HTMLDivElement>(null);
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const screenshotPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -336,6 +339,13 @@ export default function AiOfficePage() {
     try {
       const res = await fetch(`${BASE}/api/browser-agent/status`, { credentials: "include" });
       if (res.ok) setBrowserStatus(await res.json());
+    } catch {}
+  }, []);
+
+  const fetchBrowserMemory = useCallback(async () => {
+    try {
+      const res = await fetch(`${BASE}/api/browser-agent/memory`, { credentials: "include" });
+      if (res.ok) setAgentMemory(await res.json());
     } catch {}
   }, []);
 
@@ -554,10 +564,12 @@ export default function AiOfficePage() {
     fetchBrowserStatus();
     fetchCredentials();
     fetchScenarios();
+    fetchBrowserMemory();
     const statsInterval = setInterval(fetchStats, 30000);
     const browserInterval = setInterval(fetchBrowserStatus, 2500);
-    return () => { clearInterval(statsInterval); clearInterval(browserInterval); };
-  }, [fetchStats, fetchBrowserStatus, fetchCredentials, fetchScenarios]);
+    const memoryInterval = setInterval(fetchBrowserMemory, 15000);
+    return () => { clearInterval(statsInterval); clearInterval(browserInterval); clearInterval(memoryInterval); };
+  }, [fetchStats, fetchBrowserStatus, fetchCredentials, fetchScenarios, fetchBrowserMemory]);
 
   useEffect(() => {
     if (launched) {
@@ -1634,6 +1646,84 @@ export default function AiOfficePage() {
                     Остановить
                   </Button>
                 )}
+              </div>
+
+              {/* Memory panel */}
+              <div className="shrink-0 border-t border-border">
+                <details className="group">
+                  <summary className="flex items-center justify-between px-4 py-2.5 cursor-pointer select-none hover:bg-muted/40 transition-colors">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      <span>🧠</span>
+                      <span>Память агента</span>
+                      {agentMemory.length > 0 && (
+                        <span className="bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 rounded-full px-1.5 py-0.5 text-[10px] font-bold">{agentMemory.length}</span>
+                      )}
+                    </div>
+                    <span className="text-muted-foreground text-xs group-open:rotate-180 transition-transform">▾</span>
+                  </summary>
+                  <div className="px-4 pb-3 space-y-2 max-h-48 overflow-y-auto">
+                    {agentMemory.length === 0 ? (
+                      <p className="text-xs text-muted-foreground/60 py-2 text-center">Агент ещё ничего не запомнил. Он учится в процессе работы.</p>
+                    ) : (
+                      agentMemory.map(m => (
+                        <div key={m.key} className="flex items-start gap-2 group/mem text-xs bg-violet-50/50 dark:bg-violet-950/10 rounded-lg px-2.5 py-2 border border-violet-100 dark:border-violet-900/30">
+                          <div className="flex-1 min-w-0">
+                            <span className="font-medium text-violet-700 dark:text-violet-300 block truncate">{m.key}</span>
+                            <span className="text-foreground/70 break-words">{m.value}</span>
+                            {m.context && <span className="text-muted-foreground/50 text-[10px] block">{m.context}</span>}
+                          </div>
+                          <button
+                            className="shrink-0 opacity-0 group-hover/mem:opacity-100 transition-opacity text-red-400 hover:text-red-600"
+                            title="Забыть"
+                            onClick={async () => {
+                              await fetch(`${BASE}/api/browser-agent/memory/${encodeURIComponent(m.key)}`, { method: "DELETE", credentials: "include" });
+                              fetchBrowserMemory();
+                            }}
+                          >×</button>
+                        </div>
+                      ))
+                    )}
+                    {/* Add memory manually */}
+                    <div className="flex gap-1.5 pt-1">
+                      <input
+                        className="flex-1 text-xs border border-border rounded px-2 py-1 bg-background placeholder:text-muted-foreground/50 min-w-0"
+                        placeholder="Что запомнить…"
+                        value={memoryAddKey}
+                        onChange={e => setMemoryAddKey(e.target.value)}
+                      />
+                      <input
+                        className="flex-1 text-xs border border-border rounded px-2 py-1 bg-background placeholder:text-muted-foreground/50 min-w-0"
+                        placeholder="Значение"
+                        value={memoryAddValue}
+                        onChange={e => setMemoryAddValue(e.target.value)}
+                        onKeyDown={async e => {
+                          if (e.key === "Enter" && memoryAddKey.trim() && memoryAddValue.trim()) {
+                            await fetch(`${BASE}/api/browser-agent/memory`, {
+                              method: "POST", credentials: "include",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ key: memoryAddKey.trim(), value: memoryAddValue.trim() }),
+                            });
+                            setMemoryAddKey(""); setMemoryAddValue("");
+                            fetchBrowserMemory();
+                          }
+                        }}
+                      />
+                      <button
+                        className="text-xs px-2 py-1 bg-violet-600 text-white rounded hover:bg-violet-700 shrink-0"
+                        onClick={async () => {
+                          if (!memoryAddKey.trim() || !memoryAddValue.trim()) return;
+                          await fetch(`${BASE}/api/browser-agent/memory`, {
+                            method: "POST", credentials: "include",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ key: memoryAddKey.trim(), value: memoryAddValue.trim() }),
+                          });
+                          setMemoryAddKey(""); setMemoryAddValue("");
+                          fetchBrowserMemory();
+                        }}
+                      >+</button>
+                    </div>
+                  </div>
+                </details>
               </div>
 
               {/* Logs */}

@@ -7,8 +7,8 @@
 import type { Browser, BrowserContext, Page } from "playwright-core";
 import OpenAI from "openai";
 import { execSync } from "child_process";
-import { db } from "@workspace/db";
-import { sql } from "drizzle-orm";
+import { db, browserAgentMemoryTable } from "@workspace/db";
+import { sql, eq } from "drizzle-orm";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -39,7 +39,7 @@ export interface AgentLog {
 
 interface AgentAction {
   thought: string;
-  action: "click" | "type" | "navigate" | "scroll" | "press_key" | "wait" | "clear" | "done" | "request_input";
+  action: "click" | "type" | "navigate" | "scroll" | "press_key" | "wait" | "clear" | "done" | "request_input" | "memorize" | "ask_user";
   params: Record<string, any>;
   done: boolean;
 }
@@ -88,6 +88,47 @@ class BrowserAgentService {
 
   getLogs(limit = 50): AgentLog[] {
     return this.logs.slice(-limit);
+  }
+
+  async loadMemory(): Promise<string> {
+    try {
+      const rows = await db.select().from(browserAgentMemoryTable).orderBy(browserAgentMemoryTable.updatedAt);
+      if (!rows.length) return "";
+      return "\n\nПАМЯТЬ (факты, которые я знаю о вас и ваших задачах):\n" +
+        rows.map(r => `- ${r.key}: ${r.value}${r.context ? ` [${r.context}]` : ""}`).join("\n");
+    } catch { return ""; }
+  }
+
+  async saveMemory(key: string, value: string, context?: string): Promise<void> {
+    try {
+      const existing = await db.select({ id: browserAgentMemoryTable.id })
+        .from(browserAgentMemoryTable)
+        .where(eq(browserAgentMemoryTable.key, key))
+        .limit(1);
+      if (existing.length) {
+        await db.update(browserAgentMemoryTable)
+          .set({ value, context, updatedAt: new Date() })
+          .where(eq(browserAgentMemoryTable.key, key));
+      } else {
+        await db.insert(browserAgentMemoryTable).values({ key, value, context });
+      }
+      this.log("info", `🧠 Запомнено: ${key} = ${value}`);
+    } catch (e) {
+      console.error("[browserAgent] saveMemory error:", e);
+    }
+  }
+
+  async getAllMemory(): Promise<{ key: string; value: string; context: string | null; updatedAt: Date }[]> {
+    return db.select({
+      key: browserAgentMemoryTable.key,
+      value: browserAgentMemoryTable.value,
+      context: browserAgentMemoryTable.context,
+      updatedAt: browserAgentMemoryTable.updatedAt,
+    }).from(browserAgentMemoryTable).orderBy(browserAgentMemoryTable.updatedAt);
+  }
+
+  async deleteMemory(key: string): Promise<void> {
+    await db.delete(browserAgentMemoryTable).where(eq(browserAgentMemoryTable.key, key));
   }
 
   private log(type: AgentLog["type"], text: string) {
@@ -270,6 +311,49 @@ class BrowserAgentService {
         await this.page!.waitForTimeout(500);
         break;
       }
+      case "ask_user": {
+        // Ask user a question and wait for answer, then remember it
+        const question = String(p.question ?? "Уточните данные");
+        this.pendingInputPrompt = question;
+
+        let answer: string;
+        if (this.queuedInput !== null) {
+          answer = this.queuedInput;
+          this.queuedInput = null;
+          this.log("info", `✅ Использован предварительно введённый ответ: ${answer}`);
+        } else {
+          this.status = "waiting_input";
+          this.log("info", `❓ Вопрос пользователю: ${question}`);
+          answer = await new Promise<string>((resolve, reject) => {
+            this.inputResolve = resolve;
+            setTimeout(() => reject(new Error("Время ожидания ответа истекло (10 мин)")), 600_000);
+          });
+          this.log("info", `💬 Получен ответ: ${answer}`);
+        }
+
+        this.pendingInputPrompt = "";
+        this.status = "running";
+
+        // Auto-save non-OTP answers to memory (OTP is all-digits short string)
+        const isOtp = /^\d{4,8}$/.test(answer.trim());
+        if (!isOtp && answer.trim().length > 1) {
+          const memKey = question.length > 80 ? question.slice(0, 77) + "…" : question;
+          await this.saveMemory(memKey, answer.trim());
+        }
+
+        // Store answer for GPT to use in next step (inject into history)
+        actionHistory.push(`ask_user("${question}") → ответ: "${answer}"`);
+        break;
+      }
+      case "memorize": {
+        const key = String(p.key ?? "факт");
+        const value = String(p.value ?? "");
+        const context = p.context ? String(p.context) : undefined;
+        if (key && value) {
+          await this.saveMemory(key, value, context);
+        }
+        break;
+      }
     }
   }
 
@@ -298,6 +382,9 @@ class BrowserAgentService {
       }
     } catch {}
 
+    // Load persistent memory
+    const memoryContext = await this.loadMemory();
+
     const actionHistory: string[] = [];
     let stepLimitReached = true;
 
@@ -322,15 +409,18 @@ class BrowserAgentService {
         : "";
 
       const systemPrompt = `Ты RPA+AI агент который управляет реальным браузером Chrome 1280×720px.
+Ты умеешь учиться: запоминаешь факты которые сообщает пользователь, и используешь их в будущем.
+Если не знаешь что-то нужное — спрашивай у пользователя через ask_user, не сдавайся.
+
 Задача: ${task}
 Текущий URL: ${currentUrl}
-${historyText}${credentialsContext}
+${historyText}${credentialsContext}${memoryContext}
 
 Посмотри на скриншот и выбери ОДНО следующее действие.
 Отвечай СТРОГО в формате JSON (без markdown):
 {
   "thought": "что вижу и что нужно сделать",
-  "action": "click|type|navigate|scroll|press_key|wait|clear|done",
+  "action": "click|type|navigate|scroll|press_key|wait|clear|done|request_input|ask_user|memorize",
   "params": { ... },
   "done": false
 }
@@ -344,15 +434,19 @@ ${historyText}${credentialsContext}
 - press_key: { key: "Enter"|"Tab"|"Escape"|"Backspace" }
 - wait: { ms: 1000-3000 }
 - done: { result: string }
+- memorize: { key: string, value: string, context?: string }  (сохранить факт в долгосрочную память)
+- ask_user: { question: string }  (задать вопрос пользователю и получить ответ — используй когда нужна любая информация)
 
 Правила:
 - Координаты точные — смотри на скриншот внимательно
 - После ввода данных нажимай Enter или кликай кнопку
 - Если нужно войти — используй сохранённые учётные данные для этого сайта (см. выше)
-- Если учётных данных для этого сайта НЕТ в списке выше — action: "request_input", params: { "prompt": "Введите номер телефона для входа на [сайт]" } — запроси у пользователя
-- Если нужно ввести SMS-код, код из письма или любой одноразовый код — action: "request_input", params: { "prompt": "Введите SMS-код, отправленный на номер +7XXXXXX" }
-- Если видишь поле «Номер телефона» для входа и телефон не сохранён в учётных данных — action: "request_input", params: { "prompt": "Введите номер телефона для входа" }
-- Дождись ввода от пользователя, затем продолжи задачу
+- Если учётных данных для этого сайта НЕТ в списке — используй ask_user: { question: "Какой номер телефона / логин использовать для входа на [сайт]?" }
+- После ответа пользователя — сохрани через memorize: { key: "телефон для [сайт]", value: ответ }
+- Если нужно ввести SMS-код или одноразовый код — action: "request_input", params: { "prompt": "Введите SMS-код" }
+- НИКОГДА не сдавайся с ошибкой "нет данных" — сначала спроси пользователя через ask_user
+- Если узнал что-то новое от пользователя (телефон, логин, настройки, предпочтения) — всегда сохраняй через memorize
+- Если задача предполагает регулярное повторение — спроси как часто делать это, и запомни
 - Если видишь капчу — action: "done", result: "Обнаружена капча, требуется ручная верификация"
 - Если залогинился — сразу переходи к основной задаче
 - Если задача выполнена — action: "done"`;

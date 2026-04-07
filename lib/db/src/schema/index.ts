@@ -21,3 +21,4 @@ export * from "./master-checkins";
 export * from "./dispatcher-followups";
 export * from "./bot-memory";
 export * from "./avito";
+export * from "./browser-agent-memory";

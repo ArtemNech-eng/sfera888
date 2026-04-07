@@ -122,6 +122,40 @@ router.delete("/credentials/:site", async (req, res) => {
   }
 });
 
+// ─── Memory ────────────────────────────────────────────────────────────────────
+
+// GET /api/browser-agent/memory
+router.get("/memory", async (_req, res) => {
+  try {
+    const rows = await browserAgent.getAllMemory();
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// POST /api/browser-agent/memory — manually save a fact
+router.post("/memory", async (req, res) => {
+  const { key, value, context } = req.body as { key?: string; value?: string; context?: string };
+  if (!key?.trim() || !value?.trim()) return res.status(400).json({ error: "key and value required" });
+  try {
+    await browserAgent.saveMemory(key.trim(), value.trim(), context?.trim());
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// DELETE /api/browser-agent/memory/:key — forget a fact
+router.delete("/memory/:key", async (req, res) => {
+  try {
+    await browserAgent.deleteMemory(decodeURIComponent(req.params.key));
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
 // ─── Scenarios ────────────────────────────────────────────────────────────────
 
 const DEFAULT_SCENARIOS = [
