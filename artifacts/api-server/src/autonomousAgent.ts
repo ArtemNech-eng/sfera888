@@ -23,6 +23,17 @@ export interface PredefinedScenario {
 
 export const PREDEFINED_SCENARIOS: PredefinedScenario[] = [
   {
+    id: "masters_city_outreach",
+    title: "Рассылка мастерам об открытых заказах",
+    shortDescription: "Находит все заказы в поиске мастера и пишет каждому мастеру в его городе персональное сообщение",
+    description: "Агент ищет все открытые заказы со статусом «ищем мастера», группирует по городам, составляет персональные сообщения для каждого мастера через GPT-4o и реально отправляет их в Max Messenger. Результаты сохраняются в память.",
+    icon: "message",
+    color: "blue",
+    estimatedMinutes: 3,
+    category: "operations",
+    goal: "masters_city_outreach",
+  },
+  {
     id: "market_pricing_analysis",
     title: "Анализ рыночных цен",
     shortDescription: "Изучает сметы и прайсы мастеров, формирует актуальный прайс-лист средних рыночных цен",
@@ -176,6 +187,272 @@ async function loadPricingContext(): Promise<string> {
     console.error("[loadPricingContext] error:", e);
     return "=== ОШИБКА ЗАГРУЗКИ ДАННЫХ О ЦЕНАХ ===";
   }
+}
+
+// ─── Quiet hours helper ────────────────────────────────────────────────────
+
+function isMasterCityQuietNow(city?: string | null): boolean {
+  const offsetHours = 3; // all cities assumed MSK±0 for simplicity
+  const localHour = new Date(Date.now() + offsetHours * 3600_000).getUTCHours();
+  return localHour < 8 || localHour >= 22;
+}
+
+// ─── Masters outreach scenario (specialized executor) ─────────────────────
+// Sends real Max Messenger messages to masters about waiting orders
+
+async function runMastersOutreachScenario(sessionId: number): Promise<void> {
+  const plan: StepPlan[] = [
+    { index: 0, title: "Загрузка данных", description: "Поиск открытых заказов и активных мастеров", task: "" },
+    { index: 1, title: "Генерация сообщений", description: "GPT-4o составляет персональные тексты", task: "" },
+    { index: 2, title: "Отправка в Max", description: "Сообщения отправляются мастерам", task: "" },
+    { index: 3, title: "Сохранение результатов", description: "Итоги записываются в постоянную память", task: "" },
+  ];
+  const steps: StepResult[] = plan.map(p => ({ ...p, status: "pending" as const, report: "", startedAt: undefined, completedAt: undefined, durationMs: undefined }));
+
+  const updateSteps = async (currentStep: number) =>
+    db.execute(sql`UPDATE autonomous_sessions SET steps=${JSON.stringify(steps)}::jsonb, current_step=${currentStep} WHERE id=${sessionId}`);
+
+  await db.execute(sql`
+    UPDATE autonomous_sessions
+    SET status='running', steps=${JSON.stringify(steps)}::jsonb, plan=${JSON.stringify(plan)}::jsonb
+    WHERE id=${sessionId}
+  `);
+
+  // ── Step 0: Load data ──────────────────────────────────────────────────
+  steps[0].status = "running"; steps[0].startedAt = new Date().toISOString();
+  await updateSteps(0);
+  const t0 = Date.now();
+
+  const [waitingOrdersRes, mastersRes] = await Promise.all([
+    db.execute(sql`
+      SELECT o.id, o.city, o.district, o.service_type, o.area, o.scheduled_at, o.comment,
+             l.client_name
+      FROM orders o
+      LEFT JOIN leads l ON l.id = o.lead_id
+      WHERE o.status = 'waiting_master'
+        AND o.deleted_at IS NULL
+      ORDER BY o.created_at DESC
+      LIMIT 200
+    `),
+    db.execute(sql`
+      SELECT id, alias, city, specialization, specializations, max_chat_id, status
+      FROM masters
+      WHERE status = 'active'
+        AND max_chat_id IS NOT NULL
+        AND max_chat_id != ''
+        AND deleted_at IS NULL
+    `),
+  ]);
+
+  const waitingOrders = waitingOrdersRes.rows as any[];
+  const masters = mastersRes.rows as any[];
+
+  const ordersByCity = new Map<string, any[]>();
+  for (const o of waitingOrders) {
+    const city = (o.city ?? "").trim();
+    if (!city) continue;
+    if (!ordersByCity.has(city)) ordersByCity.set(city, []);
+    ordersByCity.get(city)!.push(o);
+  }
+
+  const mastersWithOrders = masters.filter(m => ordersByCity.has((m.city ?? "").trim()));
+
+  steps[0].status = "done";
+  steps[0].report =
+    `Открытых заказов (ищем мастера): **${waitingOrders.length}** в ${ordersByCity.size} городах\n` +
+    `Активных мастеров с Max Messenger: **${masters.length}** (в городах с заказами: **${mastersWithOrders.length}**)`;
+  steps[0].completedAt = new Date().toISOString();
+  steps[0].durationMs = Date.now() - t0;
+  await updateSteps(1);
+
+  if (mastersWithOrders.length === 0) {
+    const finalReport =
+      "# Рассылка отменена\n\nНет активных мастеров с Max Messenger в городах, где есть открытые заказы.";
+    await db.execute(sql`
+      UPDATE autonomous_sessions
+      SET status='done', steps=${JSON.stringify(steps)}::jsonb, final_report=${finalReport}, completed_at=NOW()
+      WHERE id=${sessionId}
+    `);
+    return;
+  }
+
+  // ── Step 1: Generate messages with GPT-4o ──────────────────────────────
+  steps[1].status = "running"; steps[1].startedAt = new Date().toISOString();
+  await updateSteps(1);
+  const t1 = Date.now();
+
+  // Build per-master context for batch GPT call
+  const masterContexts = mastersWithOrders.map(m => {
+    const cityOrders = ordersByCity.get((m.city ?? "").trim()) ?? [];
+    // Prefer orders matching master's specialization
+    let relevant = cityOrders;
+    if (Array.isArray(m.specializations) && m.specializations.length > 0) {
+      const filtered = cityOrders.filter(o =>
+        (m.specializations as string[]).some(s =>
+          (o.service_type ?? "").toLowerCase().includes(s.toLowerCase())
+        )
+      );
+      if (filtered.length > 0) relevant = filtered;
+    }
+    const orderLines = relevant.slice(0, 5).map(o => {
+      const parts: string[] = [o.service_type ?? "Ремонт"];
+      if (o.district) parts.push(o.district);
+      if (o.area) parts.push(`${o.area} м²`);
+      if (o.scheduled_at) parts.push(new Date(o.scheduled_at).toLocaleDateString("ru-RU"));
+      return `• ${parts.join(" · ")}`;
+    }).join("\n");
+    return {
+      master: m,
+      cityOrders: relevant,
+      contextText: `Мастер: ${m.alias} | Город: ${m.city} | Специализация: ${m.specialization ?? "разные работы"}\nЗаказов в городе: ${cityOrders.length} (подходящих: ${relevant.length})\nЗаказы:\n${orderLines}`,
+    };
+  });
+
+  const masterContextBatch = masterContexts.map((mc, i) => `[${i + 1}] ${mc.contextText}`).join("\n\n---\n\n");
+
+  let generatedMessages: string[] = [];
+  try {
+    const gptRes = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: `Ты составляешь персональные сообщения мастерам строительно-ремонтного сервиса «Честный мастер».
+Цель: уведомить мастера об открытых заказах в его городе и побудить взяться за один из них.
+
+═══ СТРУКТУРА СООБЩЕНИЯ ═══
+
+1. ОТКРЫТИЕ — имя + количество заказов (строго эту конструкцию):
+   Одиночный: «Алексей, у нас есть 1 открытый заказ, по которому система ищет мастера.»
+   Несколько: «Алексей, у нас сейчас 3 открытых заказа, по которым система ищет мастера.»
+
+2. ПЕРЕЧИСЛЕНИЕ — кратко 2–4 заказа, каждый в отдельной строке:
+   Включи: тип работ • район/улица (если есть) • площадь (если есть) • дата (если есть)
+   Примеры строк:
+   — Поклейка обоев, Центральный р-н, ~45 м²
+   — Замена электропроводки, ул. Ленина, 10 апреля
+   — Укладка плитки в санузле, ориентировочно на следующей неделе
+
+3. ЗАВЕРШЕНИЕ — вопрос о готовности. Варьируй фразы между мастерами:
+   «Готовы взять?» / «Есть интерес к кому-то из них?» / «Берёте один?» / «Готовы рассмотреть?»
+
+═══ ТОНАЛЬНОСТЬ ═══
+— Дружелюбно, по-деловому, как сообщение от диспетчера коллеге
+— Никакого официоза, никаких вступительных слов («Добрый день» и т.п.)
+— Уважительно: мастер — профессионал, не соискатель
+
+═══ ТЕХНИЧЕСКИЕ ТРЕБОВАНИЯ ═══
+— Длина: 5–9 строк, не длиннее
+— Только обычный текст, никакого HTML и markdown
+— Каждое сообщение уникально по формулировкам — не копируй шаблоны между мастерами
+— Язык: русский
+
+Верни строго JSON: {"messages": ["текст1", "текст2", ...]}, по одному сообщению для каждого мастера в том же порядке.`,
+        },
+        {
+          role: "user",
+          content: `Составь сообщения для ${masterContexts.length} мастеров:\n\n${masterContextBatch}`,
+        },
+      ],
+      temperature: 0.65,
+      response_format: { type: "json_object" },
+    });
+    const parsed = JSON.parse(gptRes.choices[0].message.content ?? "{}");
+    generatedMessages = Array.isArray(parsed.messages) ? parsed.messages : [];
+  } catch (e) {
+    console.error("[mastersOutreach] GPT error:", e);
+  }
+
+  // Attach generated messages back to master contexts
+  masterContexts.forEach((mc, i) => {
+    (mc as any).message = generatedMessages[i] ?? null;
+  });
+
+  steps[1].status = "done";
+  steps[1].report = `Сгенерировано сообщений: **${generatedMessages.filter(Boolean).length}** из ${masterContexts.length}`;
+  steps[1].completedAt = new Date().toISOString();
+  steps[1].durationMs = Date.now() - t1;
+  await updateSteps(2);
+
+  // ── Step 2: Send messages ──────────────────────────────────────────────
+  steps[2].status = "running"; steps[2].startedAt = new Date().toISOString();
+  await updateSteps(2);
+  const t2 = Date.now();
+
+  const { sendMaxMessage } = await import("./maxBot.js");
+
+  let sent = 0;
+  const sendLog: string[] = [];
+
+  for (const mc of masterContexts) {
+    const msg: string | null = (mc as any).message;
+    if (!msg || !mc.master.max_chat_id) {
+      sendLog.push(`${mc.master.alias}: пропущен (нет сообщения или Max ID)`);
+      continue;
+    }
+    if (isMasterCityQuietNow(mc.master.city)) {
+      sendLog.push(`${mc.master.alias}: пропущен — тихие часы`);
+      continue;
+    }
+    try {
+      await sendMaxMessage(mc.master.max_chat_id, msg);
+      sent++;
+      sendLog.push(`${mc.master.alias} (${mc.master.city}): ✅ — ${mc.cityOrders.length} заказ${mc.cityOrders.length === 1 ? "" : "ов"}`);
+      await new Promise(r => setTimeout(r, 400)); // rate limit
+    } catch {
+      sendLog.push(`${mc.master.alias}: ⚠️ ошибка отправки`);
+    }
+  }
+
+  steps[2].status = "done";
+  steps[2].report = `Отправлено: **${sent}** из ${mastersWithOrders.length}\n\n${sendLog.join("\n")}`;
+  steps[2].completedAt = new Date().toISOString();
+  steps[2].durationMs = Date.now() - t2;
+  await updateSteps(3);
+
+  // ── Step 3: Save to persistent memory ─────────────────────────────────
+  steps[3].status = "running"; steps[3].startedAt = new Date().toISOString();
+  await updateSteps(3);
+
+  const dateStr = new Date().toLocaleDateString("ru-RU");
+  const memorySummary =
+    `Рассылка мастерам об открытых заказах (${dateStr})\n` +
+    `Отправлено: ${sent} мастерам\n` +
+    `Открытых заказов в системе: ${waitingOrders.length}\n` +
+    `Города с заказами: ${[...ordersByCity.keys()].join(", ")}\n\n` +
+    sendLog.slice(0, 30).join("\n");
+
+  await extractAndSaveMemories({
+    sessionId,
+    goal: `Рассылка мастерам об открытых заказах — ${dateStr}`,
+    stepTitle: `Рассылка ${dateStr}: ${sent} мастеров`,
+    stepReport: memorySummary,
+    logs: [],
+  }).catch(e => console.error("[mastersOutreach] Memory save error:", e));
+
+  steps[3].status = "done";
+  steps[3].report = "Итоги сохранены в постоянную память агента.";
+  steps[3].completedAt = new Date().toISOString();
+
+  const finalReport =
+    `# Рассылка мастерам — ${dateStr}\n\n` +
+    `## Результат\nОтправлено **${sent}** сообщений мастерам в ${ordersByCity.size} городах.\n\n` +
+    `## Открытые заказы\nВсего: ${waitingOrders.length} заказов в статусе «ищем мастера»\n` +
+    `Города: ${[...ordersByCity.keys()].join(", ")}\n\n` +
+    `## Детали отправки\n${sendLog.join("\n")}\n\n` +
+    `## Следующие шаги\n` +
+    `— Проверить отклики мастеров через 1–2 часа\n` +
+    `— Заказы без откликов — рассмотреть вручную или запустить сценарий повторно`;
+
+  await db.execute(sql`
+    UPDATE autonomous_sessions
+    SET status='done',
+        steps=${JSON.stringify(steps)}::jsonb,
+        current_step=4,
+        final_report=${finalReport},
+        completed_at=NOW()
+    WHERE id=${sessionId}
+  `);
 }
 
 // ─── Context loader dispatcher ─────────────────────────────────────────────
@@ -511,6 +788,27 @@ export const autonomousAgent = {
   async runScenario(scenarioId: string): Promise<number> {
     const scenario = PREDEFINED_SCENARIOS.find(s => s.id === scenarioId);
     if (!scenario) throw new Error(`Unknown scenario: ${scenarioId}`);
+
+    // Specialized scenarios have their own executors (not AI planning pipeline)
+    if (scenarioId === "masters_city_outreach") {
+      const res = await db.execute(sql`
+        INSERT INTO autonomous_sessions (goal, status)
+        VALUES (${scenario.title}, 'planning')
+        RETURNING id
+      `);
+      const sessionId = Number((res.rows[0] as any).id);
+      // Run async — client polls for progress
+      runMastersOutreachScenario(sessionId).catch(e => {
+        console.error("[autonomousAgent] Outreach scenario error:", e);
+        db.execute(sql`
+          UPDATE autonomous_sessions
+          SET status='error', error=${String(e)}, completed_at=NOW()
+          WHERE id=${sessionId}
+        `).catch(() => {});
+      });
+      return sessionId;
+    }
+
     return this.start(scenario.goal, scenarioId);
   },
 
