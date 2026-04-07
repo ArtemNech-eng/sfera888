@@ -573,6 +573,19 @@ export default function AiOfficePage() {
   }, [browserStatus?.logs, browserStatus?.status]);
 
   const isRunning = browserStatus?.status === "running" || browserStatus?.status === "starting";
+  const isAgentActive = isRunning || browserStatus?.status === "waiting_input";
+
+  async function handleAbortTask() {
+    await fetch(`${BASE}/api/browser-agent/abort`, { method: "POST", credentials: "include" });
+    // If waiting for input, unblock it
+    if (browserStatus?.status === "waiting_input") {
+      await fetch(`${BASE}/api/browser-agent/input`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: "__aborted__" }),
+      });
+    }
+  }
 
   // ── Browser actions ────────────────────────────────────────────────────────
   async function handleLaunch() {
@@ -1586,6 +1599,42 @@ export default function AiOfficePage() {
 
             {/* Right: logs + input */}
             <div className="w-96 flex flex-col overflow-hidden bg-background">
+
+              {/* Agent status bar */}
+              <div className={`px-4 py-2.5 flex items-center gap-2 shrink-0 border-b ${
+                browserStatus?.status === "waiting_input"
+                  ? "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800"
+                  : isRunning
+                  ? "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800"
+                  : "bg-muted/30 border-border"
+              }`}>
+                <div className={`w-2 h-2 rounded-full shrink-0 ${
+                  browserStatus?.status === "waiting_input" ? "bg-amber-500" :
+                  isRunning ? "bg-blue-500 animate-pulse" :
+                  browserStatus?.status === "done" ? "bg-emerald-500" :
+                  "bg-muted-foreground/30"
+                }`} />
+                <span className="text-xs font-medium flex-1 truncate">
+                  {browserStatus?.status === "waiting_input" ? "Ожидает ввода" :
+                   browserStatus?.status === "starting" ? "Запускается..." :
+                   browserStatus?.status === "running"
+                     ? `Выполняет: ${(browserStatus.task ?? "").slice(0, 35)}${(browserStatus.task ?? "").length > 35 ? "…" : ""}`
+                     : browserStatus?.status === "done" ? "Задача выполнена"
+                     : "Готов к работе"}
+                </span>
+                {isAgentActive && (
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={handleAbortTask}
+                    className="h-7 px-2.5 gap-1.5 text-xs shrink-0"
+                  >
+                    <Square className="w-3 h-3" />
+                    Остановить
+                  </Button>
+                )}
+              </div>
+
               {/* Logs */}
               <div className="flex-1 overflow-y-auto p-4 space-y-1 min-h-0">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Лог действий</p>
@@ -1647,26 +1696,14 @@ export default function AiOfficePage() {
                     rows={2}
                     className="text-sm flex-1 resize-none min-h-0"
                   />
-                  <div className="flex flex-col gap-1.5 shrink-0">
-                    <Button
-                      size="icon"
-                      onClick={handleAgentMessage}
-                      disabled={userInputLoading || !userInputValue.trim()}
-                      className={browserStatus?.status === "waiting_input" ? "bg-amber-600 hover:bg-amber-700" : ""}
-                    >
-                      {userInputLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                    </Button>
-                    {isRunning && (
-                      <Button
-                        size="icon"
-                        variant="destructive"
-                        title="Остановить"
-                        onClick={() => fetch(`${BASE}/api/browser-agent/abort`, { method: "POST", credentials: "include" })}
-                      >
-                        <Square className="w-4 h-4" />
-                      </Button>
-                    )}
-                  </div>
+                  <Button
+                    size="icon"
+                    onClick={handleAgentMessage}
+                    disabled={userInputLoading || !userInputValue.trim()}
+                    className={`shrink-0 ${browserStatus?.status === "waiting_input" ? "bg-amber-600 hover:bg-amber-700" : ""}`}
+                  >
+                    {userInputLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  </Button>
                 </div>
                 <p className="text-[10px] text-muted-foreground mt-1.5 pl-0.5">
                   {browserStatus?.status === "waiting_input"
