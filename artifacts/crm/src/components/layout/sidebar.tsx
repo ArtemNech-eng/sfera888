@@ -41,7 +41,7 @@ export function Sidebar() {
     { href: "/finance",     label: "Финансы",          icon: Wallet,          permKey: "finance" },
     { href: "/analytics",   label: "Аналитика",        icon: BarChart3,       permKey: "analytics" },
     { href: "/trash",          label: "Корзина",          icon: Trash2,          permKey: "trash" },
-    { href: "/browser-agent", label: "Браузер-агент",   icon: Bot,             permKey: null as null },
+    { href: "/ai-office",     label: "ИИ Офис",          icon: Bot,             permKey: null as null },
     { href: "/settings",      label: "Настройки",       icon: Settings,        permKey: null as null },
     { href: "/users",         label: "Пользователи",    icon: UserCog,         permKey: null as null },
   ];

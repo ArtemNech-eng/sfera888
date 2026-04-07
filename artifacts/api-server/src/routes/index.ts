@@ -26,6 +26,7 @@ import contractRouter from "./contract.js";
 import clientRouter from "./client.js";
 import avitoRouter from "./avito.js";
 import browserAgentRouter from "./browser-agent.js";
+import aiOfficeRouter from "./ai-office.js";
 
 const router = Router();
 
@@ -55,6 +56,7 @@ router.use("/contract", contractRouter);
 router.use("/client", clientRouter);
 router.use("/avito", avitoRouter);
 router.use("/browser-agent", browserAgentRouter);
+router.use("/ai-office", aiOfficeRouter);
 
 // Seed popular repair services on startup (INSERT ... ON CONFLICT DO NOTHING)
 async function seedServices() {
