@@ -1,5 +1,7 @@
 import { Router } from "express";
 import { browserAgent } from "../browserAgent.js";
+import { db } from "@workspace/db";
+import { sql } from "drizzle-orm";
 
 const router = Router();
 
@@ -105,6 +107,154 @@ router.delete("/credentials/:site", async (req, res) => {
   try {
     await browserAgent.deleteCredentials(req.params.site);
     res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ─── Scenarios ────────────────────────────────────────────────────────────────
+
+const DEFAULT_SCENARIOS = [
+  {
+    name: "Проверить сообщения на Авито",
+    description: "Авторизоваться и прочитать последние диалоги",
+    task_template: "Зайди на avito.ru, авторизуйся используя сохранённые учётные данные для avito.ru, открой раздел «Сообщения» и покажи последние 5 диалогов — с кем переписка, что спрашивают.",
+    icon: "message",
+    color: "blue",
+  },
+  {
+    name: "Написать конкурентам на Авито",
+    description: "Найти конкурентов по ремонту и написать им",
+    task_template: "Зайди на avito.ru, найди объявления по запросу «ремонт квартиры» в Краснодаре. Открой первые 3 объявления конкурентов и напиши каждому: «Здравствуйте! Рассматриваете ли вы сотрудничество или партнёрство?»",
+    icon: "users",
+    color: "orange",
+  },
+  {
+    name: "Мониторинг цен конкурентов",
+    description: "Проверить расценки на укладку плитки в городе",
+    task_template: "Зайди на avito.ru, найди объявления «укладка плитки» в Краснодаре. Посмотри цены первых 5 объявлений и составь краткий отчёт: минимальная цена, максимальная цена, средняя цена за м².",
+    icon: "chart",
+    color: "green",
+  },
+  {
+    name: "Разместить объявление",
+    description: "Создать новое объявление на Авито",
+    task_template: "Зайди на avito.ru, авторизуйся используя сохранённые данные для avito.ru. Нажми «Разместить объявление», выбери категорию «Ремонт и строительство → Отделочные работы». Заполни: заголовок «Укладка плитки профессионально», описание «Профессиональная укладка плитки. Опыт 10 лет. Гарантия качества. Бесплатный замер», цена «от 800 руб за м²». Нажми «Опубликовать».",
+    icon: "plus",
+    color: "purple",
+  },
+  {
+    name: "Проверить объявления",
+    description: "Посмотреть статистику своих объявлений",
+    task_template: "Зайди на avito.ru, авторизуйся используя сохранённые данные. Открой раздел «Мои объявления». Запиши количество просмотров и звонков по каждому активному объявлению.",
+    icon: "eye",
+    color: "teal",
+  },
+  {
+    name: "Найти и заказать билеты",
+    description: "Найти билеты на конкретный маршрут",
+    task_template: "Зайди на rzd.ru (РЖД) и найди билеты на поезд из [откуда] в [куда] на [дата]. Покажи доступные варианты с ценами и временем отправления.",
+    icon: "train",
+    color: "red",
+  },
+];
+
+// Seed default scenarios once
+async function seedDefaultScenarios() {
+  try {
+    const existing = await db.execute(sql`SELECT COUNT(*) as count FROM browser_agent_scenarios`);
+    if (Number((existing.rows[0] as any)?.count ?? 0) > 0) return;
+    for (const s of DEFAULT_SCENARIOS) {
+      await db.execute(sql`
+        INSERT INTO browser_agent_scenarios (name, description, task_template, icon, color)
+        VALUES (${s.name}, ${s.description}, ${s.task_template}, ${s.icon}, ${s.color})
+        ON CONFLICT DO NOTHING
+      `);
+    }
+    console.log("[browser-agent] Seeded default scenarios");
+  } catch (e) {
+    console.error("[browser-agent] Seed scenarios error:", e);
+  }
+}
+seedDefaultScenarios();
+
+// GET /api/browser-agent/scenarios
+router.get("/scenarios", async (_req, res) => {
+  try {
+    const rows = await db.execute(sql`
+      SELECT id, name, description, task_template, icon, color, run_count, last_run_at, created_at
+      FROM browser_agent_scenarios ORDER BY created_at
+    `);
+    res.json(rows.rows);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// POST /api/browser-agent/scenarios
+router.post("/scenarios", async (req, res) => {
+  const { name, description, task_template, icon, color } = req.body as any;
+  if (!name || !task_template) return res.status(400).json({ error: "name and task_template required" });
+  try {
+    const row = await db.execute(sql`
+      INSERT INTO browser_agent_scenarios (name, description, task_template, icon, color)
+      VALUES (${name}, ${description ?? ""}, ${task_template}, ${icon ?? "globe"}, ${color ?? "blue"})
+      RETURNING *
+    `);
+    res.json(row.rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// PATCH /api/browser-agent/scenarios/:id
+router.patch("/scenarios/:id", async (req, res) => {
+  const { name, description, task_template, icon, color } = req.body as any;
+  try {
+    await db.execute(sql`
+      UPDATE browser_agent_scenarios
+      SET name=${name}, description=${description}, task_template=${task_template},
+          icon=${icon}, color=${color}, updated_at=NOW()
+      WHERE id=${Number(req.params.id)}
+    `);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// DELETE /api/browser-agent/scenarios/:id
+router.delete("/scenarios/:id", async (req, res) => {
+  try {
+    await db.execute(sql`DELETE FROM browser_agent_scenarios WHERE id=${Number(req.params.id)}`);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// POST /api/browser-agent/scenarios/:id/run — run a scenario
+router.post("/scenarios/:id/run", async (req, res) => {
+  try {
+    const rows = await db.execute(sql`
+      SELECT * FROM browser_agent_scenarios WHERE id=${Number(req.params.id)} LIMIT 1
+    `);
+    const scenario = rows.rows[0] as any;
+    if (!scenario) return res.status(404).json({ error: "Scenario not found" });
+
+    // Update stats
+    await db.execute(sql`
+      UPDATE browser_agent_scenarios
+      SET run_count=run_count+1, last_run_at=NOW()
+      WHERE id=${Number(req.params.id)}
+    `);
+
+    res.json({ ok: true, task: scenario.task_template });
+
+    // Run the task
+    browserAgent.runTask(scenario.task_template).catch(e => {
+      console.error("[browser-agent] scenario run error:", e);
+    });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
