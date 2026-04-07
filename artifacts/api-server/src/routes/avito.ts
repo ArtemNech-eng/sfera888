@@ -31,7 +31,7 @@ async function fetchToken(clientId: string, clientSecret: string) {
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Авито токен: ${res.status} ${text}`);
+    throw new Error(`Авито токен: ${res.status} — ${text}`);
   }
   const data = await res.json() as { access_token: string; expires_in: number };
   return data;
@@ -42,7 +42,8 @@ async function getValidToken(): Promise<string | null> {
   if (!settings || !settings.enabled || !settings.clientId || !settings.clientSecret) return null;
 
   const now = new Date();
-  if (settings.accessToken && settings.tokenExpiresAt && settings.tokenExpiresAt > now) {
+  // Refresh 60 seconds early to avoid edge-case expiry during request
+  if (settings.accessToken && settings.tokenExpiresAt && settings.tokenExpiresAt > new Date(now.getTime() + 60_000)) {
     return settings.accessToken;
   }
 
@@ -91,6 +92,7 @@ router.get("/settings", async (_req, res) => {
     avitoUserId: s.avitoUserId,
     avitoUserName: s.avitoUserName,
     enabled: s.enabled,
+    tokenExpiresAt: s.tokenExpiresAt,
   });
 });
 
@@ -99,7 +101,6 @@ router.post("/settings", async (req, res) => {
   const { clientId, clientSecret } = req.body as { clientId: string; clientSecret: string };
   if (!clientId || !clientSecret) return res.status(400).json({ error: "Нужны client_id и client_secret" });
 
-  // Test credentials
   let tokenData: { access_token: string; expires_in: number };
   try {
     tokenData = await fetchToken(clientId, clientSecret);
@@ -109,7 +110,6 @@ router.post("/settings", async (req, res) => {
 
   const expiresAt = new Date(Date.now() + tokenData.expires_in * 1000);
 
-  // Get Avito user info
   let avitoUserId: string | null = null;
   let avitoUserName: string | null = null;
   try {
@@ -180,7 +180,7 @@ router.get("/chats/:chatId/messages", async (req, res) => {
 
   try {
     const data = await avitoGet(
-      `/messenger/v3/accounts/${userId}/chats/${req.params.chatId}/messages/?limit=50`,
+      `/messenger/v3/accounts/${userId}/chats/${req.params.chatId}/messages/?limit=100`,
       token
     ) as any;
     res.json(data);
@@ -215,9 +215,7 @@ router.post("/chats/:chatId/reply", async (req, res) => {
 
 // POST /api/avito/leads — создать заявку из чата
 router.post("/leads", async (req, res) => {
-  const {
-    chatId, clientName, clientPhone, itemTitle,
-  } = req.body as {
+  const { chatId, clientName, clientPhone, itemTitle } = req.body as {
     chatId: string; clientName?: string; clientPhone?: string; itemTitle?: string;
   };
 
@@ -237,7 +235,7 @@ router.post("/leads", async (req, res) => {
   res.json({ ok: true, leadId: lead.id });
 });
 
-// GET /api/avito/ping — поддержание онлайн-статуса (вызывается каждые 2 мин)
+// GET /api/avito/ping — поддержание онлайн-статуса
 router.get("/ping", async (_req, res) => {
   const token = await getValidToken();
   if (!token) return res.json({ online: false });
@@ -247,7 +245,6 @@ router.get("/ping", async (_req, res) => {
   if (!userId) return res.json({ online: false });
 
   try {
-    // Лёгкий запрос — просто обращаемся к API, авито видит нас активными
     await avitoGet(`/core/v1/accounts/self`, token);
     res.json({ online: true, ts: Date.now() });
   } catch {
@@ -256,6 +253,8 @@ router.get("/ping", async (_req, res) => {
 });
 
 // GET /api/avito/items — список объявлений
+// Avito API v1: GET /core/v1/accounts/{user_id}/items
+// Status filter uses comma-encoded param — but safer to fetch all without filter
 router.get("/items", async (req, res) => {
   const token = await getValidToken();
   if (!token) return res.status(403).json({ error: "Авито не подключён" });
@@ -264,22 +263,43 @@ router.get("/items", async (req, res) => {
   const userId = settings?.avitoUserId;
   if (!userId) return res.status(400).json({ error: "Нет ID пользователя Авито" });
 
-  const page = parseInt(req.query.page as string) || 1;
-  const perPage = parseInt(req.query.per_page as string) || 50;
+  const page = Math.max(1, parseInt(req.query.page as string) || 1);
+  const perPage = Math.min(100, Math.max(1, parseInt(req.query.per_page as string) || 50));
+  const statusFilter = req.query.status as string | undefined;
+
+  // Build URL — Avito accepts status as comma-separated: status=active,old
+  // Must be URL-encoded to avoid parse issues on some proxies
+  const params = new URLSearchParams({
+    page: String(page),
+    per_page: String(perPage),
+  });
+  if (statusFilter) {
+    // e.g. "active" or "active,old"
+    params.set("status", statusFilter);
+  }
 
   try {
     const data = await avitoGet(
-      `/core/v1/accounts/${userId}/items?status=active,old&page=${page}&per_page=${perPage}`,
+      `/core/v1/accounts/${userId}/items?${params.toString()}`,
       token
     ) as any;
     res.json(data);
   } catch (e: any) {
-    res.status(500).json({ error: e.message });
+    // Fallback: try without status param if API rejected it
+    try {
+      const data = await avitoGet(
+        `/core/v1/accounts/${userId}/items?page=${page}&per_page=${perPage}`,
+        token
+      ) as any;
+      res.json(data);
+    } catch (e2: any) {
+      res.status(500).json({ error: e2.message });
+    }
   }
 });
 
-// GET /api/avito/stats — статистика просмотров/контактов/избранного за 30 дней
-router.get("/stats", async (_req, res) => {
+// GET /api/avito/stats — статистика просмотров/контактов/избранного за N дней
+router.get("/stats", async (req, res) => {
   const token = await getValidToken();
   if (!token) return res.status(403).json({ error: "Авито не подключён" });
 
@@ -287,22 +307,24 @@ router.get("/stats", async (_req, res) => {
   const userId = settings?.avitoUserId;
   if (!userId) return res.status(400).json({ error: "Нет ID пользователя Авито" });
 
-  // Получаем список объявлений для stat запроса
+  const days = Math.min(90, Math.max(1, parseInt(req.query.days as string) || 30));
+
+  // Fetch all active items first
   let itemIds: number[] = [];
   try {
     const items = await avitoGet(
-      `/core/v1/accounts/${userId}/items?status=active,old&per_page=100`,
+      `/core/v1/accounts/${userId}/items?per_page=100`,
       token
     ) as any;
-    itemIds = (items.resources ?? []).map((r: any) => r.id);
+    itemIds = (items.resources ?? []).map((r: any) => Number(r.id)).filter(Boolean);
   } catch (e: any) {
-    return res.status(500).json({ error: e.message });
+    return res.status(500).json({ error: `Не удалось загрузить объявления: ${e.message}` });
   }
 
   if (itemIds.length === 0) return res.json({ result: { items: [] } });
 
   const now = new Date();
-  const from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const from = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
   const dateFrom = from.toISOString().split("T")[0];
   const dateTo = now.toISOString().split("T")[0];
 
@@ -314,13 +336,72 @@ router.get("/stats", async (_req, res) => {
         dateFrom,
         dateTo,
         fields: ["uniqViews", "uniqContacts", "uniqFavorites"],
-        itemIds,
+        itemIds: itemIds.slice(0, 200),
       }
     ) as any;
     res.json(data);
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// GET /api/avito/items+stats — combined: items list WITH stats in one request
+router.get("/items-with-stats", async (req, res) => {
+  const token = await getValidToken();
+  if (!token) return res.status(403).json({ error: "Авито не подключён" });
+
+  const settings = await getSettings();
+  const userId = settings?.avitoUserId;
+  if (!userId) return res.status(400).json({ error: "Нет ID пользователя Авито" });
+
+  const page = Math.max(1, parseInt(req.query.page as string) || 1);
+  const perPage = Math.min(100, parseInt(req.query.per_page as string) || 50);
+
+  // 1. Fetch items
+  let items: any[] = [];
+  let meta: any = {};
+  try {
+    const data = await avitoGet(
+      `/core/v1/accounts/${userId}/items?page=${page}&per_page=${perPage}`,
+      token
+    ) as any;
+    items = data.resources ?? [];
+    meta = data.meta ?? {};
+  } catch (e: any) {
+    return res.status(500).json({ error: `Объявления: ${e.message}` });
+  }
+
+  // 2. Fetch stats for these items (last 30 days)
+  let statsMap: Record<number, any> = {};
+  if (items.length > 0) {
+    const now = new Date();
+    const from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    try {
+      const statsData = await avitoPost(
+        `/stats/v1/accounts/${userId}/items`,
+        token,
+        {
+          dateFrom: from.toISOString().split("T")[0],
+          dateTo: now.toISOString().split("T")[0],
+          fields: ["uniqViews", "uniqContacts", "uniqFavorites"],
+          itemIds: items.map((i: any) => Number(i.id)),
+        }
+      ) as any;
+      for (const s of (statsData.result?.items ?? [])) {
+        statsMap[s.itemId] = s.fields ?? {};
+      }
+    } catch {
+      // Stats are optional — don't fail the whole request
+    }
+  }
+
+  // 3. Merge stats into items
+  const enriched = items.map((item: any) => ({
+    ...item,
+    stats: statsMap[item.id] ?? { uniqViews: 0, uniqContacts: 0, uniqFavorites: 0 },
+  }));
+
+  res.json({ resources: enriched, meta });
 });
 
 // POST /api/avito/ai-analyze — AI-анализ объявлений и рекомендации
@@ -332,13 +413,12 @@ router.post("/ai-analyze", async (_req, res) => {
   const userId = settings?.avitoUserId;
   if (!userId) return res.status(400).json({ error: "Нет ID пользователя Авито" });
 
-  // Получаем объявления и статистику
   let items: any[] = [];
   let statsMap: Record<number, any> = {};
 
   try {
     const itemsData = await avitoGet(
-      `/core/v1/accounts/${userId}/items?status=active,old&per_page=50`,
+      `/core/v1/accounts/${userId}/items?per_page=100`,
       token
     ) as any;
     items = itemsData.resources ?? [];
@@ -357,7 +437,7 @@ router.post("/ai-analyze", async (_req, res) => {
           dateFrom: from.toISOString().split("T")[0],
           dateTo: now.toISOString().split("T")[0],
           fields: ["uniqViews", "uniqContacts", "uniqFavorites"],
-          itemIds: items.slice(0, 50).map((i: any) => i.id),
+          itemIds: items.slice(0, 200).map((i: any) => Number(i.id)),
         }
       ) as any;
       for (const item of (statsData.result?.items ?? [])) {
@@ -366,7 +446,6 @@ router.post("/ai-analyze", async (_req, res) => {
     } catch {}
   }
 
-  // Формируем данные для AI
   const itemsSummary = items.slice(0, 20).map((item: any) => {
     const stats = statsMap[item.id] ?? {};
     return {
@@ -378,24 +457,24 @@ router.post("/ai-analyze", async (_req, res) => {
       views: stats.uniqViews ?? 0,
       contacts: stats.uniqContacts ?? 0,
       favorites: stats.uniqFavorites ?? 0,
-      conversionRate: stats.uniqViews > 0
-        ? ((stats.uniqContacts ?? 0) / stats.uniqViews * 100).toFixed(1) + "%"
+      conversionRate: (stats.uniqViews ?? 0) > 0
+        ? (((stats.uniqContacts ?? 0) / stats.uniqViews) * 100).toFixed(1) + "%"
         : "0%",
     };
   });
 
-  const prompt = `Ты эксперт по маркетингу на Авито. Проанализируй следующие объявления компании по ремонту квартир и дай конкретные рекомендации для улучшения эффективности.
+  const prompt = `Ты эксперт по маркетингу на Авито. Проанализируй объявления компании по ремонту квартир и дай конкретные рекомендации.
 
 Объявления (данные за последние 30 дней):
 ${JSON.stringify(itemsSummary, null, 2)}
 
-Дай анализ по каждому объявлению и общие рекомендации:
-1. Какие объявления работают хорошо и почему
-2. Какие объявления нужно улучшить (низкая конверсия = контакты/просмотры)
-3. Конкретные рекомендации: заголовок, описание, цена, фото
-4. Общие советы по продвижению на Авито для ремонтного бизнеса
+Дай анализ:
+1. Какие объявления работают хорошо (высокая конверсия контакты/просмотры)
+2. Какие объявления нужно улучшить (низкая конверсия или мало просмотров)
+3. Конкретные рекомендации: заголовок, описание, цена, фото, теги
+4. Общие советы по продвижению для ремонтного бизнеса
 
-Отвечай на русском языке. Используй конкретные данные из статистики. Форматируй ответ с разделами.`;
+Отвечай на русском. Используй конкретные данные. Форматируй с разделами и эмодзи для наглядности.`;
 
   try {
     const response = await openai.chat.completions.create({
@@ -412,6 +491,20 @@ ${JSON.stringify(itemsSummary, null, 2)}
   } catch (e: any) {
     res.status(500).json({ error: "AI анализ недоступен: " + e.message });
   }
+});
+
+// POST /api/avito/webhook — принимать сообщения от Авито в реальном времени
+// Авито шлёт POST-запросы при новых сообщениях
+router.post("/webhook", async (req, res) => {
+  // Авито ожидает 200 ответ быстро
+  res.json({ ok: true });
+
+  const event = req.body as any;
+  if (!event || event.name !== "message") return;
+
+  // Логируем для отладки
+  console.log("[avitoWebhook] incoming message event:", JSON.stringify(event).slice(0, 200));
+  // TODO: можно добавить создание уведомления или обработку автоответа
 });
 
 export default router;
