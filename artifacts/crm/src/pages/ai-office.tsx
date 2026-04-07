@@ -598,20 +598,53 @@ export default function AiOfficePage() {
     toast({ title: "Браузер остановлен" });
   }
 
-  async function handleProvideInput() {
-    if (!userInputValue.trim()) return;
+  async function handleAgentMessage() {
+    const msg = userInputValue.trim();
+    if (!msg) return;
     setUserInputLoading(true);
     try {
-      const res = await fetch(`${BASE}/api/browser-agent/input`, {
-        method: "POST", credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ value: userInputValue.trim() }),
-      });
-      if (res.ok) {
-        setUserInputValue("");
-        toast({ title: "Код отправлен агенту" });
+      const status = browserStatus?.status;
+      if (status === "waiting_input") {
+        // Agent is paused waiting for a code/data — send directly
+        const res = await fetch(`${BASE}/api/browser-agent/input`, {
+          method: "POST", credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ value: msg }),
+        });
+        if (res.ok) {
+          setUserInputValue("");
+          toast({ title: "Отправлено агенту" });
+        } else {
+          toast({ title: "Ошибка", description: "Агент не ожидает ввода", variant: "destructive" });
+        }
+      } else if (status === "running" || status === "starting") {
+        // Agent is busy — queue a note that will appear in next input request
+        const res = await fetch(`${BASE}/api/browser-agent/input`, {
+          method: "POST", credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ value: msg }),
+        });
+        if (!res.ok) {
+          // Not waiting, treat as new task to run after current
+          toast({ title: "Агент занят", description: "Сообщение будет учтено когда агент остановится" });
+        } else {
+          setUserInputValue("");
+          toast({ title: "Отправлено агенту" });
+        }
       } else {
-        toast({ title: "Ошибка", description: "Агент не ожидает ввода", variant: "destructive" });
+        // Agent is idle/done — treat as a new task
+        const res = await fetch(`${BASE}/api/browser-agent/task`, {
+          method: "POST", credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ task: msg }),
+        });
+        if (res.ok) {
+          setUserInputValue("");
+          if (!launched) { setLaunched(true); setTimeout(refreshScreenshot, 1500); }
+          toast({ title: "Задача отправлена" });
+        } else {
+          toast({ title: "Ошибка", description: "Не удалось отправить задачу", variant: "destructive" });
+        }
       }
     } catch {
       toast({ title: "Ошибка отправки", variant: "destructive" });
@@ -1630,76 +1663,53 @@ export default function AiOfficePage() {
                 <div ref={logsEndRef} />
               </div>
 
-              {/* User input request — shown when agent is waiting for OTP/code */}
+              {/* Waiting input banner — just info, input is in the bottom box */}
               {browserStatus?.status === "waiting_input" && browserStatus.pendingInputPrompt && (
-                <div className="border-t border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 p-4 shrink-0 space-y-2">
-                  <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
-                    <AlertCircle className="w-4 h-4 shrink-0" />
-                    <p className="text-sm font-semibold">Агент ожидает ввода</p>
-                  </div>
-                  <p className="text-xs text-amber-800 dark:text-amber-300 pl-6">
+                <div className="mx-3 mb-1 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 flex items-start gap-2 shrink-0">
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-800 dark:text-amber-300 leading-snug">
+                    <span className="font-semibold">Агент ждёт: </span>
                     {browserStatus.pendingInputPrompt}
                   </p>
-                  <div className="flex gap-2 pl-6">
-                    <Input
-                      value={userInputValue}
-                      onChange={e => setUserInputValue(e.target.value)}
-                      onKeyDown={e => e.key === "Enter" && handleProvideInput()}
-                      placeholder="Введите код..."
-                      className="h-8 text-sm flex-1"
-                      autoFocus
-                    />
-                    <Button
-                      size="sm"
-                      onClick={handleProvideInput}
-                      disabled={userInputLoading || !userInputValue.trim()}
-                      className="gap-1.5 bg-amber-600 hover:bg-amber-700 text-white"
-                    >
-                      {userInputLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                      Отправить
-                    </Button>
-                  </div>
                 </div>
               )}
 
-              {/* Credentials */}
-              <div className="border-t border-border p-4 space-y-3 shrink-0 bg-muted/20">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-                    <Lock className="w-3.5 h-3.5" /> Сохранённые аккаунты
-                  </p>
-                  <Button variant="ghost" size="icon" className="h-6 w-6"
-                    onClick={() => setShowPasswords(!showPasswords)}>
-                    {showPasswords ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              {/* Universal agent chat input */}
+              <div className="border-t border-border p-3 shrink-0 bg-muted/10">
+                <div className="flex items-start gap-2">
+                  <Textarea
+                    value={userInputValue}
+                    onChange={e => setUserInputValue(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleAgentMessage();
+                      }
+                    }}
+                    placeholder={
+                      browserStatus?.status === "waiting_input"
+                        ? (browserStatus.pendingInputPrompt ?? "Введите код или данные...")
+                        : browserStatus?.status === "running"
+                        ? "Напишите агенту — код, данные, уточнение..."
+                        : "Напишите задачу или данные для агента..."
+                    }
+                    rows={2}
+                    className="text-sm flex-1 resize-none min-h-0"
+                  />
+                  <Button
+                    size="icon"
+                    onClick={handleAgentMessage}
+                    disabled={userInputLoading || !userInputValue.trim()}
+                    className={`shrink-0 mt-0.5 ${browserStatus?.status === "waiting_input" ? "bg-amber-600 hover:bg-amber-700" : "bg-primary"}`}
+                  >
+                    {userInputLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                   </Button>
                 </div>
-                {credentials.length > 0 && (
-                  <div className="space-y-1.5 max-h-28 overflow-y-auto">
-                    {credentials.map(c => (
-                      <div key={c.site} className="flex items-center gap-2 text-xs bg-background rounded-lg px-2.5 py-1.5">
-                        <Globe className="w-3 h-3 text-muted-foreground shrink-0" />
-                        <span className="font-medium truncate flex-1">{c.site}</span>
-                        <span className="text-muted-foreground truncate">{c.login}</span>
-                        <Button variant="ghost" size="icon" className="h-5 w-5 shrink-0"
-                          onClick={() => handleDeleteCred(c.site)}>
-                          <Trash2 className="w-3 h-3 text-red-400" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div className="grid grid-cols-2 gap-1.5">
-                  <Input placeholder="Сайт (avito.ru)" value={newCred.site}
-                    onChange={e => setNewCred(p => ({ ...p, site: e.target.value }))} className="text-xs h-7" />
-                  <Input placeholder="Логин / email" value={newCred.login}
-                    onChange={e => setNewCred(p => ({ ...p, login: e.target.value }))} className="text-xs h-7" />
-                  <Input placeholder="Пароль" type={showPasswords ? "text" : "password"} value={newCred.password}
-                    onChange={e => setNewCred(p => ({ ...p, password: e.target.value }))} className="text-xs h-7 col-span-2" />
-                  <Button size="sm" variant="outline" className="col-span-2 h-7 gap-1.5 text-xs"
-                    onClick={handleSaveCred} disabled={!newCred.site || !newCred.login || !newCred.password}>
-                    <Plus className="w-3 h-3" /> Сохранить аккаунт
-                  </Button>
-                </div>
+                <p className="text-[10px] text-muted-foreground mt-1.5 pl-0.5">
+                  {browserStatus?.status === "waiting_input"
+                    ? "⏸ Агент ждёт ввода — Enter для отправки"
+                    : "Enter — отправить · Shift+Enter — новая строка"}
+                </p>
               </div>
             </div>
           </div>
