@@ -20,7 +20,6 @@ import TasksPage from "@/pages/tasks";
 import DialogsPage from "@/pages/dialogs";
 import CheckinsPage from "@/pages/checkins";
 import AvitoPage from "@/pages/avito";
-import BrowserAgentPage from "@/pages/browser-agent";
 import AiOfficePage from "@/pages/ai-office";
 import NotFound from "@/pages/not-found";
 
@@ -47,7 +46,6 @@ function Router() {
       <Route path="/dialogs" component={DialogsPage} />
       <Route path="/checkins" component={CheckinsPage} />
       <Route path="/avito" component={AvitoPage} />
-      <Route path="/browser-agent" component={BrowserAgentPage} />
       <Route path="/ai-office" component={AiOfficePage} />
       <Route component={NotFound} />
     </Switch>

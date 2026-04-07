@@ -1,7 +1,6 @@
 import OpenAI from "openai";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
-import { browserAgent } from "./browserAgent.js";
 import {
   extractAndSaveMemories,
   retrieveRelevantMemories,
@@ -45,36 +44,79 @@ export interface AutonomousSession {
 
 const activeSessions = new Map<number, { cancelled: boolean }>();
 
+// ─── CRM data loader ───────────────────────────────────────────────────────
+
+async function loadCrmContext(): Promise<string> {
+  try {
+    const [orders, masters, leads] = await Promise.all([
+      db.execute(sql`
+        SELECT status, COUNT(*) as cnt, AVG(total_price) as avg_price
+        FROM orders GROUP BY status ORDER BY cnt DESC LIMIT 10
+      `),
+      db.execute(sql`
+        SELECT name, specialty, rating, completed_orders, status
+        FROM masters ORDER BY completed_orders DESC NULLS LAST LIMIT 15
+      `),
+      db.execute(sql`
+        SELECT status, COUNT(*) as cnt FROM leads GROUP BY status ORDER BY cnt DESC
+      `),
+    ]);
+
+    const lines: string[] = ["=== ДАННЫЕ CRM ==="];
+
+    if (orders.rows.length > 0) {
+      lines.push("\nЗаказы по статусам:");
+      (orders.rows as any[]).forEach(r => {
+        lines.push(`  ${r.status}: ${r.cnt} шт${r.avg_price ? `, ср. цена ${Math.round(r.avg_price)} руб` : ""}`);
+      });
+    }
+
+    if (masters.rows.length > 0) {
+      lines.push("\nМастера:");
+      (masters.rows as any[]).forEach(r => {
+        lines.push(`  ${r.name} (${r.specialty ?? "—"}) | рейтинг: ${r.rating ?? "—"} | заказов: ${r.completed_orders ?? 0} | статус: ${r.status}`);
+      });
+    }
+
+    if (leads.rows.length > 0) {
+      lines.push("\nЛиды по статусам:");
+      (leads.rows as any[]).forEach(r => {
+        lines.push(`  ${r.status}: ${r.cnt}`);
+      });
+    }
+
+    return lines.join("\n");
+  } catch {
+    return "";
+  }
+}
+
 // ─── Plan decomposition ────────────────────────────────────────────────────
 
 async function planGoal(goal: string): Promise<StepPlan[]> {
-  // Load relevant memories to inform planning
   const memories = await retrieveRelevantMemories(goal, 15);
   const memoryContext = buildMemoryContext(memories);
 
-  const systemPrompt = `Ты опытный менеджер проекта и оркестратор ИИ-агентов. 
-Тебе дают высокоуровневую цель. Твоя задача — разбить её на 5-10 конкретных последовательных шагов для браузер-агента.
+  const systemPrompt = `Ты опытный ИИ-ассистент и руководитель проектов для сервиса ремонта "Честный мастер".
+Тебе дают высокоуровневую цель. Разбей её на 3-7 конкретных последовательных шагов.
 
-Каждый шаг — конкретное действие в браузере или анализ информации:
-- Поиск информации в интернете
-- Просмотр сайтов конкурентов
-- Сбор данных / цен / контактов
-- Написание сообщений / текстов
-- Создание структуры документа
-- Публикация / отправка
+Каждый шаг — это задание для ИИ-агента, который умеет:
+- Анализировать данные CRM (заказы, мастера, лиды, финансы)
+- Создавать тексты, скрипты продаж, шаблоны сообщений
+- Разрабатывать стратегии и планы
+- Давать рекомендации на основе данных
+- Составлять отчёты и инструкции
 
-ВАЖНО: Каждый шаг должен быть выполнимым браузер-агентом (работает с реальным браузером, может кликать, читать, заполнять формы, делать скриншоты).
+Если из памяти уже известны нужные данные — не трать шаги на их повторный анализ.
 
-Если из памяти уже известны нужные данные — не трать шаги на их повторный поиск, используй их сразу.
-
-Верни JSON массив шагов:
+Верни JSON:
 {
   "steps": [
     {
       "index": 0,
-      "title": "Краткое название шага (3-5 слов)",
-      "description": "Что будет сделано на этом шаге (1-2 предложения)",
-      "task": "Полная инструкция для браузер-агента. Конкретно что открыть, что сделать, что найти и что записать в результате."
+      "title": "Краткое название (3-5 слов)",
+      "description": "Что будет сделано (1-2 предложения)",
+      "task": "Подробное задание для ИИ-агента. Что именно проанализировать, написать, разработать."
     }
   ]
 }`;
@@ -96,44 +138,51 @@ async function planGoal(goal: string): Promise<StepPlan[]> {
   const content = response.choices[0].message.content ?? "{}";
   const parsed = JSON.parse(content);
   const steps: StepPlan[] = Array.isArray(parsed) ? parsed : (parsed.steps ?? parsed.plan ?? []);
-  return steps.slice(0, 10).map((s, i) => ({ ...s, index: i }));
+  return steps.slice(0, 7).map((s, i) => ({ ...s, index: i }));
 }
 
-// ─── Extract result from browser logs ─────────────────────────────────────
+// ─── Execute one step with AI ──────────────────────────────────────────────
 
-async function extractStepReport(
+async function executeStep(
   goal: string,
   step: StepPlan,
-  logs: { type: string; text: string }[],
+  previousResults: { title: string; report: string }[],
+  crmContext: string,
 ): Promise<string> {
-  const logText = logs
-    .filter(l => l.type !== "thought")
-    .map(l => `[${l.type}] ${l.text}`)
-    .join("\n")
-    .slice(0, 6000);
+  const prevContext = previousResults.length > 0
+    ? "\n\nРезультаты предыдущих шагов:\n" +
+      previousResults.map(r => `### ${r.title}\n${r.report}`).join("\n\n")
+    : "";
+
+  const memories = await retrieveRelevantMemories(step.task, 8);
+  const memoryContext = buildMemoryContext(memories);
+
+  const systemPrompt = `Ты ИИ-ассистент для строительно-ремонтного сервиса "Честный мастер" (Россия).
+У тебя есть доступ к данным CRM и предыдущим результатам. Выполни поставленный шаг качественно и детально.
+
+Правила:
+- Используй данные CRM если они релевантны задаче
+- Пиши конкретно, с числами и примерами там где уместно
+- Используй Markdown для структуры
+- Пиши на русском
+- Максимум 400 слов на отчёт
+
+${crmContext}${memoryContext ? "\n\n" + memoryContext : ""}${prevContext}`;
 
   const response = await openai.chat.completions.create({
     model: "gpt-4o",
     messages: [
-      {
-        role: "system",
-        content: `Ты аналитик. На основе лога действий браузер-агента напиши краткий отчёт по выполненному шагу.
-Отчёт должен содержать:
-- Что было сделано
-- Что найдено / собрано / написано (конкретные данные, цены, тексты, ссылки)
-- Ключевые выводы
-
-Пиши ёмко, информативно, на русском. Максимум 200 слов. Используй списки и цифры где уместно.`,
-      },
+      { role: "system", content: systemPrompt },
       {
         role: "user",
-        content: `Цель всего задания: ${goal}\n\nШаг: ${step.title}\nЗадача шага: ${step.task}\n\nЛог агента:\n${logText}`,
+        content: `Общая цель: ${goal}\n\nТекущий шаг: ${step.title}\nЗадание: ${step.task}\n\nВыполни этот шаг и предоставь подробный результат.`,
       },
     ],
-    temperature: 0.2,
+    temperature: 0.4,
+    max_tokens: 1200,
   });
 
-  return response.choices[0].message.content ?? "Нет данных";
+  return response.choices[0].message.content ?? "Нет результата";
 }
 
 // ─── Final summary report ──────────────────────────────────────────────────
@@ -143,9 +192,8 @@ async function generateFinalReport(
   steps: StepResult[],
 ): Promise<string> {
   const stepsText = steps
-    .map(
-      (s, i) =>
-        `## Шаг ${i + 1}: ${s.title}\n${s.status === "error" ? "❌ Ошибка выполнения" : s.report}`,
+    .map((s, i) =>
+      `## Шаг ${i + 1}: ${s.title}\n${s.status === "error" ? "❌ Ошибка выполнения" : s.report}`,
     )
     .join("\n\n");
 
@@ -154,24 +202,24 @@ async function generateFinalReport(
     messages: [
       {
         role: "system",
-        content: `Ты аналитик. Напиши итоговый отчёт по выполненному автономному заданию.
+        content: `Ты аналитик. Напиши итоговый отчёт по выполненному заданию.
 
-Структура отчёта:
-# Итоговый отчёт: [название задания]
+Структура:
+# Итоговый отчёт: [название]
 
 ## Резюме
-(2-3 предложения о том что было сделано и к какому результату пришли)
+(2-3 предложения о результате)
 
-## Ключевые находки
-(самые важные данные: цены, контакты, тексты, ссылки — всё что нашёл агент)
+## Ключевые результаты
+(самые важные данные, тексты, рекомендации)
 
-## Результат
-(конкретный итог — что создано, написано, найдено)
+## Итог
+(конкретный результат — что создано, написано, разработано)
 
 ## Следующие шаги
 (рекомендации что делать дальше)
 
-Пиши информативно, используй структуру и списки. Форматирование Markdown.`,
+Форматирование Markdown. Пиши на русском.`,
       },
       {
         role: "user",
@@ -196,19 +244,17 @@ async function runSession(sessionId: number, goal: string, plan: StepPlan[]) {
     report: "",
   }));
 
-  // Save initial steps to DB
   await db.execute(sql`
     UPDATE autonomous_sessions
     SET status='running', steps=${JSON.stringify(steps)}::jsonb, plan=${JSON.stringify(plan)}::jsonb
     WHERE id=${sessionId}
   `);
 
+  // Load CRM context once for all steps
+  const crmContext = await loadCrmContext();
+
   try {
-    // Ensure browser is running
-    if (browserAgent.getStatus() === "idle" || browserAgent.getStatus() === "stopped") {
-      await browserAgent.launch();
-      await new Promise(r => setTimeout(r, 2000));
-    }
+    const completedResults: { title: string; report: string }[] = [];
 
     for (let i = 0; i < steps.length; i++) {
       if (ctrl.cancelled) {
@@ -221,7 +267,6 @@ async function runSession(sessionId: number, goal: string, plan: StepPlan[]) {
       steps[i].startedAt = new Date().toISOString();
       const t0 = Date.now();
 
-      // Update DB with running step
       await db.execute(sql`
         UPDATE autonomous_sessions
         SET steps=${JSON.stringify(steps)}::jsonb, current_step=${i}
@@ -229,37 +274,10 @@ async function runSession(sessionId: number, goal: string, plan: StepPlan[]) {
       `);
 
       try {
-        // Inject credentials context so browser agent knows what's available
-        let taskWithContext = steps[i].task;
-        try {
-          const creds = await db.execute(sql`SELECT site, login FROM browser_agent_credentials ORDER BY site`);
-          if (creds.rows.length > 0) {
-            const credList = (creds.rows as any[]).map(r => `  - ${r.site}: логин="${r.login}" (пароль сохранён)`).join("\n");
-            taskWithContext += `\n\n[КОНТЕКСТ ДЛЯ АГЕНТА] Сохранённые учётные данные:\n${credList}\nЕсли сайт есть в списке — входи с ними. Если нет — спроси пользователя через ask_user.`;
-          } else {
-            taskWithContext += `\n\n[КОНТЕКСТ ДЛЯ АГЕНТА] Учётных данных не сохранено. Если нужна авторизация — спроси пользователя через ask_user: { question: "Введите логин и пароль для [сайт]" }`;
-          }
-        } catch {}
-        await browserAgent.runTask(taskWithContext);
-
-        // Wait for agent to finish (including waiting_input pauses)
-        let waited = 0;
-        while (
-          browserAgent.getStatus() === "running" ||
-          browserAgent.getStatus() === "starting" ||
-          browserAgent.getStatus() === "waiting_input"
-        ) {
-          await new Promise(r => setTimeout(r, 1500));
-          waited += 1500;
-          if (waited > 600_000) break; // 10 min max per step (allows time for user input)
-          if (ctrl.cancelled) break;
-        }
-
-        // Collect logs and generate step report
-        const logs = browserAgent.getLogs(100);
-        const report = await extractStepReport(goal, steps[i], logs);
+        const report = await executeStep(goal, steps[i], completedResults, crmContext);
         steps[i].status = "done";
         steps[i].report = report;
+        completedResults.push({ title: steps[i].title, report });
 
         // Save learnings to persistent memory
         extractAndSaveMemories({
@@ -267,7 +285,7 @@ async function runSession(sessionId: number, goal: string, plan: StepPlan[]) {
           goal,
           stepTitle: steps[i].title,
           stepReport: report,
-          logs,
+          logs: [],
         }).catch(e => console.error("[autonomousAgent] Memory save error:", e));
       } catch (e) {
         steps[i].status = "error";
@@ -277,20 +295,17 @@ async function runSession(sessionId: number, goal: string, plan: StepPlan[]) {
       steps[i].completedAt = new Date().toISOString();
       steps[i].durationMs = Date.now() - t0;
 
-      // Save progress
       await db.execute(sql`
         UPDATE autonomous_sessions
         SET steps=${JSON.stringify(steps)}::jsonb, current_step=${i + 1}
         WHERE id=${sessionId}
       `);
 
-      // Small pause between steps
       if (i < steps.length - 1 && !ctrl.cancelled) {
-        await new Promise(r => setTimeout(r, 3000));
+        await new Promise(r => setTimeout(r, 1000));
       }
     }
 
-    // Generate final report
     const finalReport = ctrl.cancelled
       ? `# Задание отменено\n\nВыполнено ${steps.filter(s => s.status === "done").length} из ${steps.length} шагов.`
       : await generateFinalReport(goal, steps);
@@ -320,7 +335,6 @@ async function runSession(sessionId: number, goal: string, plan: StepPlan[]) {
 
 export const autonomousAgent = {
   async start(goal: string): Promise<number> {
-    // Create session record
     const res = await db.execute(sql`
       INSERT INTO autonomous_sessions (goal, status)
       VALUES (${goal}, 'planning')
@@ -328,7 +342,6 @@ export const autonomousAgent = {
     `);
     const sessionId = Number((res.rows[0] as any).id);
 
-    // Plan in background
     (async () => {
       try {
         const plan = await planGoal(goal);
@@ -348,11 +361,7 @@ export const autonomousAgent = {
 
   async cancel(sessionId: number): Promise<void> {
     const ctrl = activeSessions.get(sessionId);
-    if (ctrl) {
-      ctrl.cancelled = true;
-      browserAgent.abort();
-    }
-    // Also mark in DB if not running
+    if (ctrl) ctrl.cancelled = true;
     await db.execute(sql`
       UPDATE autonomous_sessions
       SET status='cancelled', completed_at=NOW()
