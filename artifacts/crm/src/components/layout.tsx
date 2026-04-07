@@ -20,6 +20,7 @@ import {
   TrendingUp,
   Tag,
   ChevronDown,
+  Bot,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect, useRef } from "react";
@@ -99,6 +100,7 @@ export function Layout({ children }: LayoutProps) {
     { href: "/finance",     label: "Финансы",              icon: Wallet,          permKey: "finance" },
     { href: "/analytics",   label: "Аналитика",            icon: BarChart3,       permKey: "analytics" },
     { href: "/trash",       label: "Корзина",              icon: Trash2,          permKey: "trash" },
+    { href: "/ai-office",   label: "ИИ Офис",              icon: Bot,             permKey: "ai-office" },
     { href: "/settings",    label: "Настройки",            icon: Settings,        permKey: null as null },
     { href: "/users",       label: "Пользователи",         icon: UserCog,         permKey: null as null },
   ];
