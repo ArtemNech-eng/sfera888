@@ -26,7 +26,7 @@ function findChromium(): string {
 const CHROMIUM_PATH = findChromium();
 const VIEWPORT = { width: 1280, height: 720 };
 const MAX_STEPS = 50;
-const STEP_DELAY_MS = 200;       // ms between GPT calls (reduced from 1200)
+const STEP_DELAY_MS = 600;       // ms between steps (give page time to react)
 
 export type AgentStatus = "idle" | "starting" | "running" | "done" | "error" | "stopped" | "waiting_input";
 
@@ -255,7 +255,7 @@ class BrowserAgentService {
         const y = Number(p.y ?? 0);
         this.log("action", `Клик (${x}, ${y}) — ${p.description ?? ""}`);
         await this.page.mouse.click(x, y);
-        await this.page.waitForTimeout(600);
+        await this.page.waitForTimeout(1200); // wait for modals/animations
         break;
       }
       case "type": {
@@ -473,7 +473,9 @@ ${historyText}${credentialsContext}${memoryContext}
 1. ДУМАЙ ПЕРЕД ДЕЙСТВИЕМ: в поле "thought" напиши подробно что ты видишь на скриншоте, что уже сделано (из истории), и почему выбираешь именно это действие.
 
 2. АВТОРИЗАЦИЯ — строгий порядок:
-   a) Видишь форму входа → проверь историю: уже ли вводил данные?
+   a) Если на странице есть ТОЛЬКО кнопка "Войти"/"Вход и регистрация" в хедере — НЕ кликай её дважды. Вместо этого сразу используй navigate к прямой странице входа:
+      - avito.ru → navigate: { url: "https://www.avito.ru/profile/login" }
+      - любой другой сайт → попробуй /login, /signin, /auth или /account/login
    b) Нет данных → ask_user: { "question": "Введите телефон/логин и пароль для [сайт]" }
    c) Данные есть в истории ("⚡ ПОЛУЧЕНЫ ДАННЫЕ") → введи их прямо сейчас
    d) После нажатия "Войти" → ОБЯЗАТЕЛЬНО используй: request_input: { "prompt": "Введите SMS-код если он пришёл, или напишите 'нет кода'" }
