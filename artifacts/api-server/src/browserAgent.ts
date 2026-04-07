@@ -423,18 +423,39 @@ class BrowserAgentService {
       const currentUrl = this.page!.url();
 
       // ── Loop detection ──────────────────────────────────────────────────────
-      // If the last 3 actions are similar clicks/same area → agent is looping
-      const recentActions = actionHistory.slice(-4);
-      const loopDetected = recentActions.length >= 3 && (() => {
+      const recentActions = actionHistory.slice(-6);
+
+      // 1. Coordinate-based loop: same area clicked 3+ times
+      const coordLoop = recentActions.length >= 3 && (() => {
         const clickPattern = recentActions.filter(a => a.toLowerCase().includes("клик") || a.toLowerCase().includes("click"));
         if (clickPattern.length < 3) return false;
-        // Extract coordinates from "Клик (X, Y)" pattern
         const coords = clickPattern.map(a => { const m = a.match(/\((\d+),\s*(\d+)\)/); return m ? `${Math.round(Number(m[1])/100)},${Math.round(Number(m[2])/100)}` : ""; });
-        return coords.length >= 3 && new Set(coords).size <= 2; // same ~area clicked 3+ times
+        return coords.length >= 3 && new Set(coords).size <= 2;
       })();
 
+      // 2. Auth-stuck loop: credentials were entered but URL is still a login page
+      const loginKeywords = ["login", "auth", "sign", "вход", "signin", "account/login", "авторизация"];
+      const isLoginPage = loginKeywords.some(k => currentUrl.toLowerCase().includes(k));
+      const recentHasCredentials = recentActions.some(a =>
+        a.includes("ask_user(") && a.includes("→ ответ:") ||
+        a.includes("Ввод текста") // type action was executed
+      );
+      const authLoop = isLoginPage && recentHasCredentials && recentActions.filter(a =>
+        a.toLowerCase().includes("клик") || a.toLowerCase().includes("ввод")
+      ).length >= 3;
+
+      // 3. Type-loop: same text typed multiple times
+      const typedTexts = recentActions.filter(a => a.includes("Ввод текста:")).map(a => a.replace(/.*Ввод текста: /, "").slice(0, 30));
+      const typeLoop = typedTexts.length >= 3 && new Set(typedTexts).size <= 1;
+
+      const loopDetected = coordLoop || authLoop || typeLoop;
+
       const loopWarning = loopDetected
-        ? "\n\n⚠️ ПРЕДУПРЕЖДЕНИЕ: ты кликаешь в одно и то же место несколько раз — это ПЕТЛЯ. НЕМЕДЛЕННО прекрати клики. Используй ask_user чтобы спросить пользователя что делать, или done чтобы завершить с объяснением."
+        ? (() => {
+            if (authLoop) return "\n\n🚨 КРИТИЧНО: ТЫ ЗАСТРЯЛ НА СТРАНИЦЕ ВХОДА. Ты уже вводил данные, но страница не изменилась — это означает ОШИБКУ АВТОРИЗАЦИИ. НЕМЕДЛЕННО: 1) Используй ask_user с вопросом 'Авторизация не удалась. Что делать дальше? Может быть неверный логин/пароль или требуется другое действие.' 2) НЕ КЛИКАЙ больше на форму.";
+            if (typeLoop) return "\n\n⚠️ ПЕТЛЯ: ты вводишь одинаковый текст несколько раз. СТОП. Используй ask_user.";
+            return "\n\n⚠️ ПЕТЛЯ: ты кликаешь в одно и то же место несколько раз. СТОП. Используй ask_user чтобы спросить что делать.";
+          })()
         : "";
 
       // Highlight ask_user answers prominently so GPT sees them
@@ -482,22 +503,26 @@ ${historyText}${credentialsContext}${memoryContext}
 1. ДУМАЙ ПЕРЕД ДЕЙСТВИЕМ: в поле "thought" напиши подробно что ты видишь на скриншоте, что уже сделано (из истории), и почему выбираешь именно это действие.
 
 2. АВТОРИЗАЦИЯ — строгий порядок:
-   a) Видишь форму входа → проверь историю действий: уже ли ты вводил логин/пароль?
-   b) Если НЕТ данных в памяти и не спрашивал — используй ask_user: { "question": "Введите телефон/логин и пароль для [сайт]" }
-   c) Если данные ЕСТЬ — введи их (сначала клик на поле, потом type)
-   d) После нажатия "Войти" — СРАЗУ жди: сайт МОЖЕТ прислать SMS-код. Используй: request_input: { "prompt": "Введите SMS-код который пришёл на телефон" }
-   e) Если видишь поле для кода/OTP/SMS — это подтверждение: request_input немедленно
+   a) Видишь форму входа → проверь историю: уже ли вводил данные?
+   b) Нет данных → ask_user: { "question": "Введите телефон/логин и пароль для [сайт]" }
+   c) Данные есть в истории ("⚡ ПОЛУЧЕНЫ ДАННЫЕ") → введи их прямо сейчас
+   d) После нажатия "Войти" → ОБЯЗАТЕЛЬНО используй: request_input: { "prompt": "Введите SMS-код если он пришёл, или напишите 'нет кода'" }
+   e) Не нажимай "Войти" повторно, не вводи данные снова — жди SMS
 
-3. ПОСЛЕ ask_user — ОБЯЗАТЕЛЬНО перечитай ответ из истории действий и используй его. Не игнорируй полученные данные.
+3. ОШИБКА АВТОРИЗАЦИИ — если видишь на экране:
+   - Красный текст, текст с "ошибка", "неверн", "не найден", "попробуйте снова", "incorrect", "invalid", "wrong"
+   - Или ты уже нажал "Войти" но страница НЕ изменилась
+   → НЕМЕДЛЕННО: ask_user: { "question": "Авторизация не удалась — сайт показал ошибку. Проверь логин и пароль и отправь заново, или опиши что делать." }
+   → НЕ пытайся войти снова самостоятельно
 
-4. SMS / 2FA / ПОДТВЕРЖДЕНИЕ:
-   - Если после нажатия "Войти" появилось поле для кода, цифр, или текст про "код", "SMS", "подтверждение" → action: "request_input", params: { "prompt": "Введите SMS-код" }
-   - НИКОГДА не кликай вслепую если видишь поле для кода — жди ввода от пользователя
+4. ПОСЛЕ ask_user — В ИСТОРИИ будет строка "⚡ ПОЛУЧЕНЫ ДАННЫЕ". Прочитай ответ и используй НЕМЕДЛЕННО.
 
-5. ЗАПРЕТ ПЕТЕЛЬ: Одно и то же действие максимум 2 раза. Если не получается — ask_user.
+5. SMS / 2FA: Если видишь поле для кода, цифр, "подтверждение", "код" → request_input: { "prompt": "Введите SMS-код" }. НЕ КЛИКАЙ на это поле сам.
 
-6. Капча → done: { "result": "Обнаружена капча" }
-7. Задача выполнена → done: { "result": "описание результата" }`;
+6. ЗАПРЕТ ПЕТЕЛЬ: Одно и то же действие максимум 2 раза → ask_user.
+
+7. Капча → done: { "result": "Обнаружена капча" }
+8. Задача выполнена → done: { "result": "описание результата" }`;
 
       let parsed: AgentAction | null = null;
       try {
