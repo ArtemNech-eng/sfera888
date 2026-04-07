@@ -6,7 +6,7 @@ import { Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 export function AppLayout({ children }: { children: ReactNode }) {
-  const { isAuthenticated, isLoading, user } = useAuth();
+  const { user, isLoading } = useAuth();
   const [location] = useLocation();
 
   if (isLoading) {
@@ -17,9 +17,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!isAuthenticated && location !== "/login") {
-    // Redirection is handled in App.tsx or useAuth conceptually, 
-    // but just in case, we render nothing while redirecting
+  if (!user && location !== "/login") {
     return null;
   }
 
