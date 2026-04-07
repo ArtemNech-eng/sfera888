@@ -106,14 +106,6 @@ export default function Finance() {
   const [reviewSentiment, setReviewSentiment] = useState<Sentiment>("positive");
   const [savingReview, setSavingReview]   = useState(false);
 
-  // ── Derive API params from period state ───────────────────────────────────
-  // These are plain ISO strings → become query-string params on the server.
-  // Changing them changes the React-Query key → triggers a fresh fetch.
-  const txApiParams = useMemo(
-    () => getPeriodRange(txPeriod, txCustomFrom, txCustomTo),
-    [txPeriod, txCustomFrom, txCustomTo],
-  );
-
   const statsRange = useMemo(
     () => getPeriodRange(statsPeriod, statsCustomFrom, statsCustomTo),
     [statsPeriod, statsCustomFrom, statsCustomTo],
@@ -122,8 +114,8 @@ export default function Finance() {
   // ── Data fetching ─────────────────────────────────────────────────────────
   const { data: summary } = useGetFinanceSummary();
 
-  // Server filters by date; client filters by status + search text.
-  const { data: transactions, isLoading } = useGetTransactions(txApiParams);
+  // Load ALL transactions — client filters by date / status / search.
+  const { data: transactions, isLoading } = useGetTransactions();
 
   const { data: overdueMasters } = useQuery<{ masterId: number; alias: string; totalOverdue: number; count: number }[]>({
     queryKey: ["/api/finance/overdue-masters"],
@@ -178,11 +170,13 @@ export default function Finance() {
     }), { totalPaid: 0, totalPending: 0, totalOverdue: 0, totalOrderAmount: 0 });
   }, [masterStats]);
 
-  // Client-side: only search + status filter (date already handled by server)
+  // Client-side filtering: status + search + date period
   const filtered = useMemo(() => {
     if (!transactions) return [];
-    let list = [...transactions].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    let list = [...transactions].sort((a, b) => new Date(b.createdAt as string).getTime() - new Date(a.createdAt as string).getTime());
+
     if (statusFilter !== "all") list = list.filter(t => t.paymentStatus === statusFilter);
+
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(t =>
@@ -191,8 +185,20 @@ export default function Finance() {
         String(t.orderId).includes(q)
       );
     }
+
+    // Date filter — convert everything to ms for reliable comparison
+    const dateRange = getPeriodRange(txPeriod, txCustomFrom, txCustomTo);
+    const fromMs = dateRange.from ? new Date(dateRange.from).getTime() : -Infinity;
+    const toMs   = dateRange.to   ? new Date(dateRange.to).getTime()   :  Infinity;
+    if (fromMs !== -Infinity || toMs !== Infinity) {
+      list = list.filter(t => {
+        const ms = new Date(t.createdAt as string).getTime();
+        return ms >= fromMs && ms <= toMs;
+      });
+    }
+
     return list;
-  }, [transactions, statusFilter, search]);
+  }, [transactions, statusFilter, search, txPeriod, txCustomFrom, txCustomTo]);
 
   // ── Pagination ────────────────────────────────────────────────────────────
   const resetPage = () => setCurrentPage(1);
