@@ -380,12 +380,15 @@ router.get("/items-with-stats", async (req, res) => {
     let lastError: AvitoApiError | Error | null = null;
     for (const url of urls) {
       try {
+        console.log(`[avito:items] trying: GET ${AVITO_API}${url}`);
         const data = await avitoGet(url, token) as any;
+        console.log(`[avito:items] success, keys=${Object.keys(data).join(",")}, count=${(data.resources ?? data.items ?? []).length}`);
         return {
           items: data.resources ?? data.items ?? data.result ?? [],
           meta: data.meta ?? {},
         };
       } catch (e: any) {
+        console.log(`[avito:items] failed: ${e.message}`);
         lastError = e;
         // Only retry on routing errors; propagate auth / rate-limit errors immediately
         if (e instanceof AvitoApiError && e.statusCode !== 404 && e.statusCode !== 422) {
