@@ -123,6 +123,38 @@ async function alreadySentBotMessage(
   return rows.length > 0;
 }
 
+/**
+ * Returns true if the master has sent any message AFTER the given timestamp.
+ * Used to skip proactive messages when master is already actively responding.
+ */
+async function masterRepliedAfter(masterId: number, sinceMs: number): Promise<boolean> {
+  const since = new Date(sinceMs);
+  const rows = await db.select({ id: masterMessagesTable.id })
+    .from(masterMessagesTable)
+    .where(and(
+      eq(masterMessagesTable.masterId, masterId),
+      eq(masterMessagesTable.fromMaster, true),
+      gte(masterMessagesTable.createdAt, since),
+    ))
+    .limit(1);
+  return rows.length > 0;
+}
+
+/**
+ * Returns the timestamp of the last bot message sent to this master, or null.
+ */
+async function lastBotMessageTimestamp(masterId: number): Promise<number | null> {
+  const rows = await db.select({ createdAt: masterMessagesTable.createdAt })
+    .from(masterMessagesTable)
+    .where(and(
+      eq(masterMessagesTable.masterId, masterId),
+      eq(masterMessagesTable.fromMaster, false),
+    ))
+    .orderBy(desc(masterMessagesTable.createdAt))
+    .limit(1);
+  return rows.length > 0 ? new Date(rows[0].createdAt).getTime() : null;
+}
+
 // ─── Manager task pending notifications ───────────────────────────────────────
 // When manager sends a task via send_task_to_dispatcher, track it so the manager
 // gets notified when the master replies with the result.
@@ -752,18 +784,19 @@ ${context}${pendingOrderSection}
 async function saveBotReply(masterId: number, maxChatId: string | null, text: string) {
   lastBotMessageAt.set(masterId, Date.now());
   const telegramChatId = maxChatId ? `max_${maxChatId}` : `pwa_${masterId}`;
-  try {
-    await db.insert(masterMessagesTable).values({
-      masterId,
-      telegramChatId,
-      text: `[ИИ-диспетчер]: ${text}`,
-      fromMaster: false,
-      senderName: "Диспетчер",
-      isRead: true,
-    });
-  } catch (e) {
-    console.error(`[dispatcherAI] saveBotReply failed for master ${masterId}:`, e);
-  }
+  // Do NOT silently swallow errors — if we can't save, the dedup guard won't work
+  // on the next proactive check cycle and the message will be re-sent.
+  await db.insert(masterMessagesTable).values({
+    masterId,
+    telegramChatId,
+    text: `[ИИ-диспетчер]: ${text}`,
+    fromMaster: false,
+    senderName: "Диспетчер",
+    isRead: true,
+  }).catch((e) => {
+    console.error(`[dispatcherAI] saveBotReply FAILED for master ${masterId} — message was sent but NOT recorded, guard will re-send next cycle:`, e);
+    throw e; // Re-throw so the caller knows the save failed
+  });
 }
 
 // ─── Proactive messages ──────────────────────────────────────────────────────
@@ -793,9 +826,13 @@ export async function sendAssignmentGreeting(
   if (lead) msg += `\n📞 Клиент: ${lead.clientName} · ${lead.clientPhone}`;
   msg += `\n\nВсё понятно? Подтвердите получение или задайте вопрос.`;
 
-  await sendMaxMessage(maxChatId, msg);
-  await saveBotReply(masterId, maxChatId, msg);
-  console.log(`[dispatcherAI] Sent assignment greeting to ${masterAlias} for order #${orderId}`);
+  try {
+    await sendMaxMessage(maxChatId, msg);
+    await saveBotReply(masterId, maxChatId, msg);
+    console.log(`[dispatcherAI] Sent assignment greeting to ${masterAlias} for order #${orderId}`);
+  } catch (e) {
+    console.error(`[dispatcherAI] Failed to send/save assignment greeting for order #${orderId}:`, e);
+  }
 }
 
 /** 24h check-in after assignment */
@@ -807,13 +844,14 @@ export async function sendDailyCheckin(
 ) {
   if (await alreadySentBotMessage(masterId, `объекте по заказу #${orderId}`)) return;
 
-  await sendMaxMessage(
-    maxChatId,
-    `Привет, ${masterAlias}! Как дела на объекте по заказу #${orderId}? Всё идёт по плану? 😊`
-  );
   const msg = `Привет, ${masterAlias}! Как дела на объекте по заказу #${orderId}? Всё идёт по плану? 😊`;
-  await saveBotReply(masterId, maxChatId, msg);
-  console.log(`[dispatcherAI] Sent 24h check-in to ${masterAlias} for order #${orderId}`);
+  try {
+    await sendMaxMessage(maxChatId, msg);
+    await saveBotReply(masterId, maxChatId, msg);
+    console.log(`[dispatcherAI] Sent 24h check-in to ${masterAlias} for order #${orderId}`);
+  } catch (e) {
+    console.error(`[dispatcherAI] Failed to send/save daily check-in for order #${orderId}:`, e);
+  }
 }
 
 /** Estimate reminder */
@@ -827,9 +865,13 @@ export async function sendEstimateReminder(
   if (await alreadySentBotMessage(masterId, `заказу #${orderId} смета ещё не отправлена`, 48)) return;
 
   const msg = `${masterAlias}, напомни — по заказу #${orderId} смета ещё не отправлена. Не забудь оформить её в приложении, чтобы клиент мог согласовать стоимость работ. 📋`;
-  await sendMaxMessage(maxChatId, msg);
-  await saveBotReply(masterId, maxChatId, msg);
-  console.log(`[dispatcherAI] Sent estimate reminder to ${masterAlias} for order #${orderId}`);
+  try {
+    await sendMaxMessage(maxChatId, msg);
+    await saveBotReply(masterId, maxChatId, msg);
+    console.log(`[dispatcherAI] Sent estimate reminder to ${masterAlias} for order #${orderId}`);
+  } catch (e) {
+    console.error(`[dispatcherAI] Failed to send/save estimate reminder for order #${orderId}:`, e);
+  }
 }
 
 /** 15-min post-assignment: did you call the client? */
@@ -839,12 +881,24 @@ export async function sendClientCallCheckin(
   maxChatId: string,
   orderId: number,
 ) {
+  // Guard 1: already sent this exact question → skip
   if (await alreadySentBotMessage(masterId, `созвонились с клиентом по заказу #${orderId}`)) return;
 
+  // Guard 2: master has already replied to a bot message → they're in active dialogue, skip
+  const lastBotMs = await lastBotMessageTimestamp(masterId);
+  if (lastBotMs && await masterRepliedAfter(masterId, lastBotMs)) {
+    console.log(`[dispatcherAI] Skipping check-in for order #${orderId} — master ${masterAlias} already replied to bot`);
+    return;
+  }
+
   const msg = `${masterAlias}, вы уже созвонились с клиентом по заказу #${orderId}? Напишите — о чём договорились, на какое время согласовали визит. Это важно для координации работ. 📞`;
-  await sendMaxMessage(maxChatId, msg);
-  await saveBotReply(masterId, maxChatId, msg);
-  console.log(`[dispatcherAI] Sent client call check-in to ${masterAlias} for order #${orderId}`);
+  try {
+    await sendMaxMessage(maxChatId, msg);
+    await saveBotReply(masterId, maxChatId, msg);
+    console.log(`[dispatcherAI] Sent client call check-in to ${masterAlias} for order #${orderId}`);
+  } catch (e) {
+    console.error(`[dispatcherAI] Failed to send/save check-in for order #${orderId}:`, e);
+  }
 }
 
 /** Reminder the day before scheduledAt */
@@ -857,9 +911,13 @@ export async function sendPreDayReminder(
   if (await alreadySentBotMessage(masterId, `завтра выезд на объект по заказу #${orderId}`)) return;
 
   const msg = `${masterAlias}, завтра выезд на объект по заказу #${orderId}. Всё готово? Клиент ждёт, подтвердите что будете в срок. 🔧`;
-  await sendMaxMessage(maxChatId, msg);
-  await saveBotReply(masterId, maxChatId, msg);
-  console.log(`[dispatcherAI] Sent pre-day reminder to ${masterAlias} for order #${orderId}`);
+  try {
+    await sendMaxMessage(maxChatId, msg);
+    await saveBotReply(masterId, maxChatId, msg);
+    console.log(`[dispatcherAI] Sent pre-day reminder to ${masterAlias} for order #${orderId}`);
+  } catch (e) {
+    console.error(`[dispatcherAI] Failed to send/save pre-day reminder for order #${orderId}:`, e);
+  }
 }
 
 // ─── Scheduler: run checks for all active orders ─────────────────────────────
@@ -874,20 +932,36 @@ export async function runProactiveChecks(): Promise<void> {
       ));
 
     for (const followup of dueFollowups) {
+      // Mark as sent FIRST (prevents race condition if scheduler fires twice before DB write)
+      await db.update(dispatcherFollowupsTable)
+        .set({ sent: true })
+        .where(eq(dispatcherFollowupsTable.id, followup.id));
+
       const master = await db.select().from(mastersTable)
         .where(eq(mastersTable.id, followup.masterId))
         .then(r => r[0]);
 
-      if (master?.maxChatId) {
+      if (!master?.maxChatId) {
+        console.log(`[dispatcherAI] Skipping follow-up #${followup.id} — master has no Max account`);
+        continue;
+      }
+
+      // Skip if master has already replied to the bot since this follow-up was scheduled
+      // (means they've already addressed the topic through the active dialogue)
+      const followupCreatedMs = new Date(followup.createdAt ?? followup.followupAt).getTime();
+      if (await masterRepliedAfter(master.id, followupCreatedMs)) {
+        console.log(`[dispatcherAI] Skipping follow-up #${followup.id} — master ${master.alias} already replied since follow-up was scheduled`);
+        continue;
+      }
+
+      try {
         await sendMaxMessage(master.maxChatId, followup.question);
         await saveBotReply(master.id, master.maxChatId, followup.question);
         console.log(`[dispatcherAI] Sent scheduled follow-up #${followup.id} to ${master.alias}`);
+      } catch (e) {
+        console.error(`[dispatcherAI] Failed to send follow-up #${followup.id} to ${master.alias}:`, e);
+        // Already marked as sent — won't retry automatically. Log for manual review.
       }
-
-      // Mark as sent regardless (master may not have Max)
-      await db.update(dispatcherFollowupsTable)
-        .set({ sent: true })
-        .where(eq(dispatcherFollowupsTable.id, followup.id));
     }
 
     // ── Handle non-responsive masters: reminder at 45min, give up at 90min ──
