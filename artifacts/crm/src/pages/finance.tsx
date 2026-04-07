@@ -60,24 +60,70 @@ const PERIODS: { key: Period; label: string }[] = [
   { key: "custom",  label: "Диапазон" },
 ];
 
-function getPeriodRange(period: Period, customFrom: string, customTo: string): { from?: Date; to?: Date } {
+/** Returns ISO-string bounds for the given period, or undefined if no bound. */
+function getPeriodRange(period: Period, customFrom: string, customTo: string): { from?: string; to?: string } {
   const now = new Date();
-  if (period === "today")   return { from: startOfDay(now),                              to: endOfDay(now) };
-  if (period === "week")    return { from: startOfWeek(now, { locale: ru }),             to: endOfDay(now) };
-  if (period === "month")   return { from: startOfMonth(now),                            to: endOfDay(now) };
-  if (period === "quarter") return { from: startOfQuarter(now),                          to: endOfDay(now) };
-  if (period === "year")    return { from: startOfYear(now),                             to: endOfDay(now) };
-  if (period === "custom")  return {
-    from: customFrom ? startOfDay(new Date(customFrom)) : undefined,
-    to:   customTo   ? endOfDay(new Date(customTo))     : undefined,
-  };
-  return {};
+  switch (period) {
+    case "today":   return { from: startOfDay(now).toISOString(),                              to: endOfDay(now).toISOString() };
+    case "week":    return { from: startOfWeek(now, { locale: ru }).toISOString(),             to: endOfDay(now).toISOString() };
+    case "month":   return { from: startOfMonth(now).toISOString(),                            to: endOfDay(now).toISOString() };
+    case "quarter": return { from: startOfQuarter(now).toISOString(),                          to: endOfDay(now).toISOString() };
+    case "year":    return { from: startOfYear(now).toISOString(),                             to: endOfDay(now).toISOString() };
+    case "custom":  return {
+      from: customFrom ? startOfDay(new Date(customFrom)).toISOString() : undefined,
+      to:   customTo   ? endOfDay(new Date(customTo)).toISOString()     : undefined,
+    };
+    default: return {};
+  }
 }
 
 export default function Finance() {
   const queryClient = useQueryClient();
+
+  // ── UI state ──────────────────────────────────────────────────────────────
+  const [search, setSearch]       = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [pageTab, setPageTab]     = useState<PageTab>("transactions");
+
+  // ── Transactions date filter ──────────────────────────────────────────────
+  const [txPeriod, setTxPeriod]           = useState<Period>("all");
+  const [txCustomFrom, setTxCustomFrom]   = useState("");
+  const [txCustomTo, setTxCustomTo]       = useState("");
+
+  // ── Pagination ────────────────────────────────────────────────────────────
+  const [pageSize, setPageSize]       = useState(20);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // ── Master-stats period ───────────────────────────────────────────────────
+  const [statsPeriod, setStatsPeriod]       = useState<Period>("month");
+  const [statsCustomFrom, setStatsCustomFrom] = useState("");
+  const [statsCustomTo, setStatsCustomTo]     = useState("");
+
+  // ── Review modal ──────────────────────────────────────────────────────────
+  const pendingTxRef = useRef<PendingReviewInfo | null>(null);
+  const [pendingReviewInfo, setPendingReviewInfo] = useState<PendingReviewInfo | null>(null);
+  const [reviewText, setReviewText]       = useState("");
+  const [reviewSentiment, setReviewSentiment] = useState<Sentiment>("positive");
+  const [savingReview, setSavingReview]   = useState(false);
+
+  // ── Derive API params from period state ───────────────────────────────────
+  // These are plain ISO strings → become query-string params on the server.
+  // Changing them changes the React-Query key → triggers a fresh fetch.
+  const txApiParams = useMemo(
+    () => getPeriodRange(txPeriod, txCustomFrom, txCustomTo),
+    [txPeriod, txCustomFrom, txCustomTo],
+  );
+
+  const statsRange = useMemo(
+    () => getPeriodRange(statsPeriod, statsCustomFrom, statsCustomTo),
+    [statsPeriod, statsCustomFrom, statsCustomTo],
+  );
+
+  // ── Data fetching ─────────────────────────────────────────────────────────
   const { data: summary } = useGetFinanceSummary();
-  const { data: transactions, isLoading } = useGetTransactions();
+
+  // Server filters by date; client filters by status + search text.
+  const { data: transactions, isLoading } = useGetTransactions(txApiParams);
 
   const { data: overdueMasters } = useQuery<{ masterId: number; alias: string; totalOverdue: number; count: number }[]>({
     queryKey: ["/api/finance/overdue-masters"],
@@ -85,6 +131,18 @@ export default function Finance() {
     refetchInterval: 60_000,
   });
 
+  const statsParams = new URLSearchParams();
+  if (statsRange.from) statsParams.set("from", statsRange.from);
+  if (statsRange.to)   statsParams.set("to",   statsRange.to);
+
+  const { data: masterStats, isLoading: statsLoading } = useQuery<MasterStat[]>({
+    queryKey: ["/api/finance/master-stats", statsRange.from, statsRange.to],
+    queryFn: () => fetch(`/api/finance/master-stats?${statsParams}`, { credentials: "include" }).then(r => r.json()),
+    enabled: pageTab === "by-master",
+    staleTime: 30_000,
+  });
+
+  // ── Mutations ─────────────────────────────────────────────────────────────
   const overdueCheckMutation = useMutation({
     mutationFn: () => fetch("/api/finance/check-overdue", { method: "POST", credentials: "include" }).then(r => r.json()),
     onSuccess: () => {
@@ -93,57 +151,6 @@ export default function Finance() {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/transactions"] });
     },
   });
-
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [pageTab, setPageTab] = useState<PageTab>("transactions");
-
-  // ── Transactions date filter ─────────────────────────────────────────────
-  const [txPeriod, setTxPeriod]       = useState<Period>("all");
-  const [txCustomFrom, setTxCustomFrom] = useState("");
-  const [txCustomTo, setTxCustomTo]     = useState("");
-
-  // ── Transactions pagination ──────────────────────────────────────────────
-  const [pageSize, setPageSize]   = useState(20);
-  const [currentPage, setCurrentPage] = useState(1);
-
-  // ── Master stats state ───────────────────────────────────────────────────
-  const [period, setPeriod]       = useState<Period>("month");
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo]     = useState("");
-
-  const range = useMemo(() => {
-    const r = getPeriodRange(period, customFrom, customTo);
-    return { from: r.from?.toISOString(), to: r.to?.toISOString() };
-  }, [period, customFrom, customTo]);
-
-  const masterStatsParams = new URLSearchParams();
-  if (range.from) masterStatsParams.set("from", range.from);
-  if (range.to)   masterStatsParams.set("to",   range.to);
-
-  const { data: masterStats, isLoading: statsLoading } = useQuery<MasterStat[]>({
-    queryKey: ["/api/finance/master-stats", range.from, range.to],
-    queryFn: () => fetch(`/api/finance/master-stats?${masterStatsParams}`, { credentials: "include" }).then(r => r.json()),
-    enabled: pageTab === "by-master",
-    staleTime: 30_000,
-  });
-
-  const statsSummary = useMemo(() => {
-    if (!masterStats) return { totalPaid: 0, totalPending: 0, totalOverdue: 0, totalOrderAmount: 0 };
-    return masterStats.reduce((acc, m) => ({
-      totalPaid:        acc.totalPaid        + m.paidCommission,
-      totalPending:     acc.totalPending     + m.pendingCommission,
-      totalOverdue:     acc.totalOverdue     + m.overdueCommission,
-      totalOrderAmount: acc.totalOrderAmount + m.totalOrderAmount,
-    }), { totalPaid: 0, totalPending: 0, totalOverdue: 0, totalOrderAmount: 0 });
-  }, [masterStats]);
-
-  // ── Review modal state ───────────────────────────────────────────────────
-  const pendingTxRef = useRef<PendingReviewInfo | null>(null);
-  const [pendingReviewInfo, setPendingReviewInfo] = useState<PendingReviewInfo | null>(null);
-  const [reviewText, setReviewText] = useState("");
-  const [reviewSentiment, setReviewSentiment] = useState<Sentiment>("positive");
-  const [savingReview, setSavingReview] = useState(false);
 
   const updateMutation = useUpdateTransaction({
     mutation: {
@@ -156,10 +163,44 @@ export default function Finance() {
           setReviewSentiment("positive");
           pendingTxRef.current = null;
         }
-      }
-    }
+      },
+    },
   });
 
+  // ── Derived data ──────────────────────────────────────────────────────────
+  const statsSummary = useMemo(() => {
+    if (!masterStats) return { totalPaid: 0, totalPending: 0, totalOverdue: 0, totalOrderAmount: 0 };
+    return masterStats.reduce((acc, m) => ({
+      totalPaid:        acc.totalPaid        + m.paidCommission,
+      totalPending:     acc.totalPending     + m.pendingCommission,
+      totalOverdue:     acc.totalOverdue     + m.overdueCommission,
+      totalOrderAmount: acc.totalOrderAmount + m.totalOrderAmount,
+    }), { totalPaid: 0, totalPending: 0, totalOverdue: 0, totalOrderAmount: 0 });
+  }, [masterStats]);
+
+  // Client-side: only search + status filter (date already handled by server)
+  const filtered = useMemo(() => {
+    if (!transactions) return [];
+    let list = [...transactions].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    if (statusFilter !== "all") list = list.filter(t => t.paymentStatus === statusFilter);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(t =>
+        t.masterAlias.toLowerCase().includes(q) ||
+        `tx-${t.id}`.includes(q) ||
+        String(t.orderId).includes(q)
+      );
+    }
+    return list;
+  }, [transactions, statusFilter, search]);
+
+  // ── Pagination ────────────────────────────────────────────────────────────
+  const resetPage = () => setCurrentPage(1);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage   = Math.min(currentPage, totalPages);
+  const paginated  = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  // ── Handlers ──────────────────────────────────────────────────────────────
   const handleMarkPaid = (tx: { id: number; masterId: number; masterAlias: string; orderId: number | null }) => {
     pendingTxRef.current = { masterId: tx.masterId, masterAlias: tx.masterAlias, orderId: tx.orderId };
     updateMutation.mutate({ id: tx.id, data: { paymentStatus: TransactionPaymentStatus.paid } });
@@ -191,40 +232,6 @@ export default function Finance() {
     }
   };
 
-  // ── Filtered list (status + search + date) ───────────────────────────────
-  const txDateRange = useMemo(() => getPeriodRange(txPeriod, txCustomFrom, txCustomTo), [txPeriod, txCustomFrom, txCustomTo]);
-
-  const filtered = useMemo(() => {
-    if (!transactions) return [];
-    let list = [...transactions].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    if (statusFilter !== "all") list = list.filter(t => t.paymentStatus === statusFilter);
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      list = list.filter(t =>
-        t.masterAlias.toLowerCase().includes(q) ||
-        `tx-${t.id}`.includes(q) ||
-        String(t.orderId).includes(q)
-      );
-    }
-    if (txDateRange.from || txDateRange.to) {
-      list = list.filter(t => {
-        const d = new Date(t.createdAt);
-        if (txDateRange.from && d < txDateRange.from) return false;
-        if (txDateRange.to   && d > txDateRange.to)   return false;
-        return true;
-      });
-    }
-    return list;
-  }, [transactions, statusFilter, search, txDateRange]);
-
-  // Reset to page 1 when filters change
-  const resetPage = () => setCurrentPage(1);
-
-  // ── Paginated slice ──────────────────────────────────────────────────────
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const safePage   = Math.min(currentPage, totalPages);
-  const paginated  = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
-
   const STATUS_TABS: { key: StatusFilter; label: string }[] = [
     { key: "all",     label: "Все" },
     { key: "pending", label: "Ожидают" },
@@ -241,7 +248,7 @@ export default function Finance() {
             <p className="text-muted-foreground mt-1">Управление комиссиями и выплатами</p>
           </div>
 
-          {/* ── Global summary cards ─────────────────────────────────────── */}
+          {/* ── Summary cards ─────────────────────────────────────────────── */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl p-6 text-white shadow-lg shadow-emerald-500/20">
               <div className="flex justify-between items-start mb-4">
@@ -288,7 +295,7 @@ export default function Finance() {
             </div>
           </div>
 
-          {/* ── Overdue warning block ─────────────────────────────────────── */}
+          {/* ── Overdue masters alert ─────────────────────────────────────── */}
           {overdueMasters && overdueMasters.length > 0 && (
             <div className="bg-red-50 border border-red-200 rounded-2xl p-5">
               <div className="flex items-center justify-between mb-3">
@@ -312,37 +319,31 @@ export default function Finance() {
             </div>
           )}
 
-          {/* ── Page tab bar ─────────────────────────────────────────────── */}
+          {/* ── Tab bar ───────────────────────────────────────────────────── */}
           <div className="flex rounded-2xl border border-border/50 bg-muted/30 p-1 gap-1 w-fit">
-            <button
-              onClick={() => setPageTab("transactions")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-                pageTab === "transactions"
-                  ? "bg-white shadow-sm text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <ReceiptText className="w-4 h-4" />
-              Транзакции
-            </button>
-            <button
-              onClick={() => setPageTab("by-master")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-                pageTab === "by-master"
-                  ? "bg-white shadow-sm text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <BarChart3 className="w-4 h-4" />
-              По мастерам
-            </button>
+            {([
+              { key: "transactions", label: "Транзакции", icon: <ReceiptText className="w-4 h-4" /> },
+              { key: "by-master",    label: "По мастерам", icon: <BarChart3 className="w-4 h-4" /> },
+            ] as const).map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => setPageTab(tab.key)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+                  pageTab === tab.key
+                    ? "bg-white shadow-sm text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {tab.icon}{tab.label}
+              </button>
+            ))}
           </div>
 
-          {/* ════════════════════ TAB: TRANSACTIONS ══════════════════════ */}
+          {/* ════════════ TAB: TRANSACTIONS ════════════════════════════════ */}
           {pageTab === "transactions" && (
             <div className="bg-card rounded-2xl border border-border/50 shadow-sm overflow-hidden">
 
-              {/* ── Date period filter row ─────────────────────────────── */}
+              {/* Date period filter */}
               <div className="px-4 pt-4 pb-3 border-b border-border/50">
                 <div className="flex flex-wrap items-center gap-2">
                   <Calendar className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -379,7 +380,7 @@ export default function Finance() {
                 </div>
               </div>
 
-              {/* ── Search + status filter row ─────────────────────────── */}
+              {/* Search + status filter */}
               <div className="p-4 border-b border-border/50 flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
                 <div className="flex items-center gap-3">
                   <h3 className="font-display font-semibold text-lg">Транзакции</h3>
@@ -389,15 +390,14 @@ export default function Finance() {
                     title="Отметить просроченные (старше 7 дней)"
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border border-border bg-background hover:bg-slate-50 text-muted-foreground hover:text-foreground transition-all disabled:opacity-50"
                   >
-                    {overdueCheckMutation.isPending
-                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      : <RefreshCw className="w-3.5 h-3.5" />}
+                    {overdueCheckMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
                     Проверить просрочку
                   </button>
                   {overdueCheckMutation.isSuccess && (
                     <span className="text-xs text-emerald-600">Отмечено: {(overdueCheckMutation.data as any)?.marked ?? 0}</span>
                   )}
                 </div>
+
                 <div className="flex gap-2 flex-wrap w-full sm:w-auto">
                   <div className="relative flex-1 sm:flex-none sm:w-56">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
@@ -431,6 +431,7 @@ export default function Finance() {
                 </div>
               </div>
 
+              {/* Table */}
               <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left">
                   <thead className="bg-slate-50/50 text-muted-foreground font-medium border-b border-border/50">
@@ -453,25 +454,31 @@ export default function Finance() {
                     ) : paginated.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="px-6 py-12 text-center text-muted-foreground text-sm">
-                          {search || statusFilter !== "all" || txPeriod !== "all" ? "Ничего не найдено" : "Нет транзакций"}
+                          {search || statusFilter !== "all" || txPeriod !== "all"
+                            ? "Ничего не найдено за выбранный период"
+                            : "Нет транзакций"}
                         </td>
                       </tr>
-                    ) : paginated.map((tx) => {
-                      const isPlaceholder = tx.commission === 0 && tx.orderAmount === 0;
-                      const hasPrepay = (tx.prepaymentDeducted ?? 0) > 0;
-                      const netPayable = tx.netPayable ?? tx.commission;
-                      const isFromReceipt = (tx as any).sourceType === "receipt";
-                      const isLargeReceipt = isFromReceipt && tx.orderAmount > 50000;
+                    ) : paginated.map(tx => {
+                      const isPlaceholder  = tx.commission === 0 && tx.orderAmount === 0;
+                      const hasPrepay      = (tx.prepaymentDeducted ?? 0) > 0;
+                      const netPayable     = tx.netPayable ?? tx.commission;
+                      const isFromReceipt  = (tx as any).sourceType === "receipt";
+                      const isLargeReceipt = isFromReceipt && tx.orderAmount > 50_000;
                       return (
                         <tr key={tx.id} className={`hover:bg-slate-50/50 transition-colors ${isPlaceholder ? "opacity-70" : ""}`}>
                           <td className="px-6 py-4">
                             <span className="font-medium text-foreground">TX-{tx.id}</span>
                             <div className="text-xs text-muted-foreground mt-1">{formatDate(tx.createdAt)}</div>
-                            {isPlaceholder && <div className="text-[10px] text-amber-500 font-medium mt-0.5">На объекте</div>}
-                            {isFromReceipt && <div className="text-[10px] text-violet-600 font-medium mt-0.5">📋 Из сметы</div>}
+                            {isPlaceholder  && <div className="text-[10px] text-amber-500 font-medium mt-0.5">На объекте</div>}
+                            {isFromReceipt  && <div className="text-[10px] text-violet-600 font-medium mt-0.5">📋 Из сметы</div>}
                           </td>
                           <td className="px-6 py-4 font-medium">{tx.masterAlias}</td>
-                          <td className="px-6 py-4">{isPlaceholder ? <span className="text-muted-foreground italic text-xs">Неизвестна</span> : formatCurrency(tx.orderAmount)}</td>
+                          <td className="px-6 py-4">
+                            {isPlaceholder
+                              ? <span className="text-muted-foreground italic text-xs">Неизвестна</span>
+                              : formatCurrency(tx.orderAmount)}
+                          </td>
                           <td className="px-6 py-4">
                             {isPlaceholder ? (
                               <span className="text-muted-foreground italic text-xs">Неизвестна</span>
@@ -495,9 +502,15 @@ export default function Finance() {
                             <StatusBadge status={tx.paymentStatus} type="payment" />
                           </td>
                           <td className="px-6 py-4 text-right">
-                            {!isPlaceholder && (tx.paymentStatus === TransactionPaymentStatus.pending || tx.paymentStatus === TransactionPaymentStatus.overdue) && (
+                            {!isPlaceholder && (
+                              tx.paymentStatus === TransactionPaymentStatus.pending ||
+                              tx.paymentStatus === TransactionPaymentStatus.overdue
+                            ) && (
                               <button
-                                onClick={() => handleMarkPaid({ id: tx.id, masterId: tx.masterId, masterAlias: tx.masterAlias, orderId: tx.orderId })}
+                                onClick={() => handleMarkPaid({
+                                  id: tx.id, masterId: tx.masterId,
+                                  masterAlias: tx.masterAlias, orderId: tx.orderId,
+                                })}
                                 disabled={updateMutation.isPending}
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-100 text-emerald-700 hover:bg-emerald-600 hover:text-white rounded-lg font-medium text-xs transition-colors"
                               >
@@ -512,10 +525,9 @@ export default function Finance() {
                 </table>
               </div>
 
-              {/* ── Footer: count info + page size + pagination ─────────── */}
+              {/* Footer: counter + page-size + pagination */}
               {!isLoading && (
                 <div className="px-4 py-3 border-t border-border/50 flex flex-col sm:flex-row items-center justify-between gap-3">
-                  {/* Left: total count + page size selector */}
                   <div className="flex items-center gap-3 text-sm text-muted-foreground">
                     <span>
                       {filtered.length === 0
@@ -542,7 +554,6 @@ export default function Finance() {
                     </div>
                   </div>
 
-                  {/* Right: prev / page indicator / next */}
                   {totalPages > 1 && (
                     <div className="flex items-center gap-1">
                       <button
@@ -590,7 +601,7 @@ export default function Finance() {
             </div>
           )}
 
-          {/* ════════════════════ TAB: BY MASTER ═══════════════════════ */}
+          {/* ════════════ TAB: BY MASTER ════════════════════════════════════ */}
           {pageTab === "by-master" && (
             <div className="space-y-5">
               {/* Period selector */}
@@ -598,9 +609,9 @@ export default function Finance() {
                 {PERIODS.map(p => (
                   <button
                     key={p.key}
-                    onClick={() => setPeriod(p.key)}
+                    onClick={() => setStatsPeriod(p.key)}
                     className={`px-3.5 py-1.5 rounded-xl text-sm font-medium border transition-all ${
-                      period === p.key
+                      statsPeriod === p.key
                         ? "bg-primary text-primary-foreground border-primary shadow-sm"
                         : "bg-background border-border/60 text-muted-foreground hover:text-foreground hover:border-border"
                     }`}
@@ -608,51 +619,40 @@ export default function Finance() {
                     {p.label}
                   </button>
                 ))}
-                {period === "custom" && (
+                {statsPeriod === "custom" && (
                   <div className="flex items-center gap-2 ml-2">
                     <input
                       type="date"
-                      value={customFrom}
-                      onChange={e => setCustomFrom(e.target.value)}
+                      value={statsCustomFrom}
+                      onChange={e => setStatsCustomFrom(e.target.value)}
                       className="text-sm border border-border/60 rounded-xl px-3 py-1.5 bg-background outline-none focus:ring-2 focus:ring-primary/30"
                     />
                     <span className="text-muted-foreground text-sm">—</span>
                     <input
                       type="date"
-                      value={customTo}
-                      onChange={e => setCustomTo(e.target.value)}
+                      value={statsCustomTo}
+                      onChange={e => setStatsCustomTo(e.target.value)}
                       className="text-sm border border-border/60 rounded-xl px-3 py-1.5 bg-background outline-none focus:ring-2 focus:ring-primary/30"
                     />
                   </div>
                 )}
               </div>
 
-              {/* Period summary mini-cards */}
+              {/* Mini-cards */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-card border border-border/50 rounded-2xl p-4 shadow-sm">
-                  <p className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-1.5">
-                    <TrendingUp className="w-3.5 h-3.5 text-emerald-500" /> Поступило в кассу
-                  </p>
-                  <p className="text-xl font-bold text-emerald-600">{formatCurrency(statsSummary.totalPaid)}</p>
-                </div>
-                <div className="bg-card border border-border/50 rounded-2xl p-4 shadow-sm">
-                  <p className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-amber-500" /> Ожидает оплаты
-                  </p>
-                  <p className="text-xl font-bold text-amber-600">{formatCurrency(statsSummary.totalPending)}</p>
-                </div>
-                <div className="bg-card border border-border/50 rounded-2xl p-4 shadow-sm">
-                  <p className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-1.5">
-                    <AlertCircle className="w-3.5 h-3.5 text-red-500" /> Просрочено
-                  </p>
-                  <p className="text-xl font-bold text-red-600">{formatCurrency(statsSummary.totalOverdue)}</p>
-                </div>
-                <div className="bg-card border border-border/50 rounded-2xl p-4 shadow-sm">
-                  <p className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-1.5">
-                    <Award className="w-3.5 h-3.5 text-violet-500" /> Оборот мастеров
-                  </p>
-                  <p className="text-xl font-bold text-violet-600">{formatCurrency(statsSummary.totalOrderAmount)}</p>
-                </div>
+                {[
+                  { label: "Поступило в кассу",  value: statsSummary.totalPaid,        color: "emerald", icon: <TrendingUp className="w-3.5 h-3.5 text-emerald-500" /> },
+                  { label: "Ожидает оплаты",      value: statsSummary.totalPending,     color: "amber",   icon: <Clock className="w-3.5 h-3.5 text-amber-500" /> },
+                  { label: "Просрочено",           value: statsSummary.totalOverdue,     color: "red",     icon: <AlertCircle className="w-3.5 h-3.5 text-red-500" /> },
+                  { label: "Оборот мастеров",     value: statsSummary.totalOrderAmount, color: "violet",  icon: <Award className="w-3.5 h-3.5 text-violet-500" /> },
+                ].map(card => (
+                  <div key={card.label} className="bg-card border border-border/50 rounded-2xl p-4 shadow-sm">
+                    <p className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-1.5">
+                      {card.icon}{card.label}
+                    </p>
+                    <p className={`text-xl font-bold text-${card.color}-600`}>{formatCurrency(card.value)}</p>
+                  </div>
+                ))}
               </div>
 
               {/* Master stats table */}
@@ -737,7 +737,7 @@ export default function Finance() {
           )}
         </div>
 
-        {/* ── Review modal ─────────────────────────────────────────────────── */}
+        {/* ── Review modal ──────────────────────────────────────────────────── */}
         {pendingReviewInfo && (
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-5">
@@ -761,7 +761,7 @@ export default function Finance() {
               <textarea
                 value={reviewText}
                 onChange={e => setReviewText(e.target.value)}
-                placeholder="Комментарий о мастере (необязательно)..."
+                placeholder="Комментарий о мастере..."
                 rows={3}
                 className="w-full text-sm border border-border/60 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-primary/30 resize-none"
               />
