@@ -317,6 +317,7 @@ export default function AiOfficePage() {
   const [userInputValue, setUserInputValue] = useState("");
   const [userInputLoading, setUserInputLoading] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
+  const logsContainerRef = useRef<HTMLDivElement>(null);
   const screenshotPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { toast } = useToast();
 
@@ -567,8 +568,9 @@ export default function AiOfficePage() {
 
   useEffect(() => {
     const isActive = browserStatus?.status === "running" || browserStatus?.status === "starting";
-    if (isActive) {
-      logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (isActive && logsContainerRef.current) {
+      const el = logsContainerRef.current;
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
     }
   }, [browserStatus?.logs, browserStatus?.status]);
 
@@ -1636,7 +1638,7 @@ export default function AiOfficePage() {
               </div>
 
               {/* Logs */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-1 min-h-0">
+              <div ref={logsContainerRef} className="flex-1 overflow-y-auto p-4 space-y-1 min-h-0">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Лог действий</p>
                 {!browserStatus?.logs?.length ? (
                   <div className="text-center py-8 text-muted-foreground/50">
