@@ -14,7 +14,17 @@ router.get("/status", (_req, res) => {
     sessionId: browserAgent.getSessionId(),
     hasScreenshot: !!screenshot,
     logs: browserAgent.getLogs(30),
+    pendingInputPrompt: browserAgent.getPendingInputPrompt() || null,
   });
+});
+
+// POST /api/browser-agent/input — provide user input (e.g. SMS code)
+router.post("/input", (req, res) => {
+  const { value } = req.body as { value?: string };
+  if (!value?.trim()) return res.status(400).json({ error: "value required" });
+  const ok = browserAgent.provideInput(value.trim());
+  if (!ok) return res.status(409).json({ error: "Агент не ожидает ввода" });
+  res.json({ ok: true });
 });
 
 // GET /api/browser-agent/screenshot

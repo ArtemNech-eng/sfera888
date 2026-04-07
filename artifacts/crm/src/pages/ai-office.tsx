@@ -43,10 +43,11 @@ interface AgentLog {
 }
 
 interface BrowserStatus {
-  status: "idle" | "starting" | "running" | "done" | "error" | "stopped";
+  status: "idle" | "starting" | "running" | "done" | "error" | "stopped" | "waiting_input";
   task: string;
   hasScreenshot: boolean;
   logs: AgentLog[];
+  pendingInputPrompt: string | null;
 }
 
 interface Credential {
@@ -313,6 +314,8 @@ export default function AiOfficePage() {
   const [showPasswords, setShowPasswords] = useState(false);
   const [launchLoading, setLaunchLoading] = useState(false);
   const [launched, setLaunched] = useState(false);
+  const [userInputValue, setUserInputValue] = useState("");
+  const [userInputLoading, setUserInputLoading] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const screenshotPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { toast } = useToast();
@@ -593,6 +596,28 @@ export default function AiOfficePage() {
     setLaunched(false);
     setScreenshotUrl(null);
     toast({ title: "Браузер остановлен" });
+  }
+
+  async function handleProvideInput() {
+    if (!userInputValue.trim()) return;
+    setUserInputLoading(true);
+    try {
+      const res = await fetch(`${BASE}/api/browser-agent/input`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: userInputValue.trim() }),
+      });
+      if (res.ok) {
+        setUserInputValue("");
+        toast({ title: "Код отправлен агенту" });
+      } else {
+        toast({ title: "Ошибка", description: "Агент не ожидает ввода", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Ошибка отправки", variant: "destructive" });
+    } finally {
+      setUserInputLoading(false);
+    }
   }
 
   async function handleSendTask() {
@@ -1604,6 +1629,38 @@ export default function AiOfficePage() {
                 )}
                 <div ref={logsEndRef} />
               </div>
+
+              {/* User input request — shown when agent is waiting for OTP/code */}
+              {browserStatus?.status === "waiting_input" && browserStatus.pendingInputPrompt && (
+                <div className="border-t border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 p-4 shrink-0 space-y-2">
+                  <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <p className="text-sm font-semibold">Агент ожидает ввода</p>
+                  </div>
+                  <p className="text-xs text-amber-800 dark:text-amber-300 pl-6">
+                    {browserStatus.pendingInputPrompt}
+                  </p>
+                  <div className="flex gap-2 pl-6">
+                    <Input
+                      value={userInputValue}
+                      onChange={e => setUserInputValue(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && handleProvideInput()}
+                      placeholder="Введите код..."
+                      className="h-8 text-sm flex-1"
+                      autoFocus
+                    />
+                    <Button
+                      size="sm"
+                      onClick={handleProvideInput}
+                      disabled={userInputLoading || !userInputValue.trim()}
+                      className="gap-1.5 bg-amber-600 hover:bg-amber-700 text-white"
+                    >
+                      {userInputLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                      Отправить
+                    </Button>
+                  </div>
+                </div>
+              )}
 
               {/* Credentials */}
               <div className="border-t border-border p-4 space-y-3 shrink-0 bg-muted/20">

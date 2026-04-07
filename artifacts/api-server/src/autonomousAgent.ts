@@ -231,12 +231,16 @@ async function runSession(sessionId: number, goal: string, plan: StepPlan[]) {
       try {
         await browserAgent.runTask(steps[i].task);
 
-        // Wait for agent to finish
+        // Wait for agent to finish (including waiting_input pauses)
         let waited = 0;
-        while (browserAgent.getStatus() === "running" || browserAgent.getStatus() === "starting") {
+        while (
+          browserAgent.getStatus() === "running" ||
+          browserAgent.getStatus() === "starting" ||
+          browserAgent.getStatus() === "waiting_input"
+        ) {
           await new Promise(r => setTimeout(r, 1500));
           waited += 1500;
-          if (waited > 300_000) break; // 5 min max per step
+          if (waited > 600_000) break; // 10 min max per step (allows time for user input)
           if (ctrl.cancelled) break;
         }
 

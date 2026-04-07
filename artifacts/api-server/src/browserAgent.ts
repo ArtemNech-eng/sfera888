@@ -28,7 +28,7 @@ const VIEWPORT = { width: 1280, height: 720 };
 const MAX_STEPS = 50;
 const STEP_DELAY_MS = 1200;
 
-export type AgentStatus = "idle" | "starting" | "running" | "done" | "error" | "stopped";
+export type AgentStatus = "idle" | "starting" | "running" | "done" | "error" | "stopped" | "waiting_input";
 
 export interface AgentLog {
   id: string;
@@ -39,7 +39,7 @@ export interface AgentLog {
 
 interface AgentAction {
   thought: string;
-  action: "click" | "type" | "navigate" | "scroll" | "press_key" | "wait" | "clear" | "done";
+  action: "click" | "type" | "navigate" | "scroll" | "press_key" | "wait" | "clear" | "done" | "request_input";
   params: Record<string, any>;
   done: boolean;
 }
@@ -56,8 +56,23 @@ class BrowserAgentService {
   private currentTask: string = "";
   private abortFlag = false;
 
+  // User input waiting mechanism
+  private inputResolve: ((value: string) => void) | null = null;
+  private pendingInputPrompt: string = "";
+
   getStatus(): AgentStatus { return this.status; }
   getLastScreenshot(): string | null { return this.lastScreenshot; }
+  getPendingInputPrompt(): string { return this.pendingInputPrompt; }
+
+  provideInput(value: string): boolean {
+    if (!this.inputResolve) return false;
+    this.inputResolve(value);
+    this.inputResolve = null;
+    this.pendingInputPrompt = "";
+    this.status = "running";
+    this.log("info", `Получен ввод от пользователя: ${value}`);
+    return true;
+  }
   getCurrentTask(): string { return this.currentTask; }
   getSessionId(): string { return this.sessionId; }
 
@@ -218,6 +233,22 @@ class BrowserAgentService {
         this.log("result", `Задача выполнена: ${p.result ?? "готово"}`);
         break;
       }
+      case "request_input": {
+        const prompt = String(p.prompt ?? "Введите данные");
+        this.pendingInputPrompt = prompt;
+        this.status = "waiting_input";
+        this.log("info", `⏸ Ожидание ввода: ${prompt}`);
+        const value = await new Promise<string>((resolve, reject) => {
+          this.inputResolve = resolve;
+          // Auto-reject after 10 minutes if no input
+          setTimeout(() => reject(new Error("Время ожидания ввода истекло (10 мин)")), 600_000);
+        });
+        this.status = "running";
+        this.log("info", `✅ Получен код: ${"*".repeat(value.length)}`);
+        await this.page!.keyboard.type(value, { delay: 80 });
+        await this.page!.waitForTimeout(500);
+        break;
+      }
     }
   }
 
@@ -297,6 +328,8 @@ ${historyText}${credentialsContext}
 - После ввода данных нажимай Enter или кликай кнопку
 - Если нужно войти — используй сохранённые учётные данные для этого сайта (см. выше)
 - Если учётных данных для этого сайта НЕТ в списке выше — action: "done", result: "Нужны учётные данные для входа на [название сайта]. Добавьте логин и пароль в разделе «Учётные данные» и запустите задачу снова."
+- Если нужно ввести SMS-код, код из письма или любой одноразовый код — action: "request_input", params: { "prompt": "Введите SMS-код, отправленный на номер +7XXXXXX" }
+- Дождись ввода кода пользователем, затем продолжи задачу
 - Если видишь капчу — action: "done", result: "Обнаружена капча, требуется ручная верификация"
 - Если залогинился — сразу переходи к основной задаче
 - Если задача выполнена — action: "done"`;
@@ -360,6 +393,12 @@ ${historyText}${credentialsContext}
 
   abort(): void {
     this.abortFlag = true;
+    // Unblock any pending input wait
+    if (this.inputResolve) {
+      this.inputResolve("__aborted__");
+      this.inputResolve = null;
+      this.pendingInputPrompt = "";
+    }
   }
 
   async getCredentials(): Promise<{ site: string; login: string; last_login_at: string | null }[]> {
