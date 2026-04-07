@@ -12,8 +12,6 @@ import {
 } from "lucide-react";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { startOfDay, startOfWeek, startOfMonth, startOfQuarter, startOfYear, endOfDay } from "date-fns";
-import { ru } from "date-fns/locale";
 
 type StatusFilter = "all" | "pending" | "overdue" | "paid";
 type Sentiment = "positive" | "negative" | "neutral";
@@ -60,20 +58,48 @@ const PERIODS: { key: Period; label: string }[] = [
   { key: "custom",  label: "Диапазон" },
 ];
 
-/** Returns ISO-string bounds for the given period, or undefined if no bound. */
-function getPeriodRange(period: Period, customFrom: string, customTo: string): { from?: string; to?: string } {
+/** Returns ms-timestamp bounds for the given period. Uses local browser time. */
+function getPeriodRange(period: Period, customFrom: string, customTo: string): { from?: number; to?: number } {
   const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const d = now.getDate();
+
+  // Start / end of today in LOCAL time
+  const todayStart = new Date(y, m, d, 0, 0, 0, 0).getTime();
+  const todayEnd   = new Date(y, m, d, 23, 59, 59, 999).getTime();
+
   switch (period) {
-    case "today":   return { from: startOfDay(now).toISOString(),                              to: endOfDay(now).toISOString() };
-    case "week":    return { from: startOfWeek(now, { locale: ru }).toISOString(),             to: endOfDay(now).toISOString() };
-    case "month":   return { from: startOfMonth(now).toISOString(),                            to: endOfDay(now).toISOString() };
-    case "quarter": return { from: startOfQuarter(now).toISOString(),                          to: endOfDay(now).toISOString() };
-    case "year":    return { from: startOfYear(now).toISOString(),                             to: endOfDay(now).toISOString() };
-    case "custom":  return {
-      from: customFrom ? startOfDay(new Date(customFrom)).toISOString() : undefined,
-      to:   customTo   ? endOfDay(new Date(customTo)).toISOString()     : undefined,
-    };
-    default: return {};
+    case "today":
+      return { from: todayStart, to: todayEnd };
+
+    case "week": {
+      // Monday-based week (Russian calendar)
+      const dow = now.getDay(); // 0=Sun … 6=Sat
+      const daysToMon = dow === 0 ? -6 : 1 - dow;
+      const monDate = new Date(y, m, d + daysToMon, 0, 0, 0, 0);
+      return { from: monDate.getTime(), to: todayEnd };
+    }
+
+    case "month":
+      return { from: new Date(y, m, 1, 0, 0, 0, 0).getTime(), to: todayEnd };
+
+    case "quarter": {
+      const q = Math.floor(m / 3);
+      return { from: new Date(y, q * 3, 1, 0, 0, 0, 0).getTime(), to: todayEnd };
+    }
+
+    case "year":
+      return { from: new Date(y, 0, 1, 0, 0, 0, 0).getTime(), to: todayEnd };
+
+    case "custom":
+      return {
+        from: customFrom ? new Date(customFrom + "T00:00:00").getTime() : undefined,
+        to:   customTo   ? new Date(customTo   + "T23:59:59.999").getTime() : undefined,
+      };
+
+    default:
+      return {};
   }
 }
 
@@ -124,8 +150,8 @@ export default function Finance() {
   });
 
   const statsParams = new URLSearchParams();
-  if (statsRange.from) statsParams.set("from", statsRange.from);
-  if (statsRange.to)   statsParams.set("to",   statsRange.to);
+  if (statsRange.from) statsParams.set("from", new Date(statsRange.from).toISOString());
+  if (statsRange.to)   statsParams.set("to",   new Date(statsRange.to).toISOString());
 
   const { data: masterStats, isLoading: statsLoading } = useQuery<MasterStat[]>({
     queryKey: ["/api/finance/master-stats", statsRange.from, statsRange.to],
@@ -186,14 +212,16 @@ export default function Finance() {
       );
     }
 
-    // Date filter — convert everything to ms for reliable comparison
-    const dateRange = getPeriodRange(txPeriod, txCustomFrom, txCustomTo);
-    const fromMs = dateRange.from ? new Date(dateRange.from).getTime() : -Infinity;
-    const toMs   = dateRange.to   ? new Date(dateRange.to).getTime()   :  Infinity;
-    if (fromMs !== -Infinity || toMs !== Infinity) {
+    // Date filter — compare in ms (local browser time)
+    const { from: fromMs, to: toMs } = getPeriodRange(txPeriod, txCustomFrom, txCustomTo);
+    if (fromMs !== undefined || toMs !== undefined) {
       list = list.filter(t => {
+        if (!t.createdAt) return false;
         const ms = new Date(t.createdAt as string).getTime();
-        return ms >= fromMs && ms <= toMs;
+        if (isNaN(ms)) return false;
+        if (fromMs !== undefined && ms < fromMs) return false;
+        if (toMs   !== undefined && ms > toMs)   return false;
+        return true;
       });
     }
 
@@ -469,7 +497,7 @@ export default function Finance() {
                       const isPlaceholder  = tx.commission === 0 && tx.orderAmount === 0;
                       const hasPrepay      = (tx.prepaymentDeducted ?? 0) > 0;
                       const netPayable     = tx.netPayable ?? tx.commission;
-                      const isFromReceipt  = (tx as any).sourceType === "receipt";
+                      const isFromReceipt  = tx.sourceType === "receipt";
                       const isLargeReceipt = isFromReceipt && tx.orderAmount > 50_000;
                       return (
                         <tr key={tx.id} className={`hover:bg-slate-50/50 transition-colors ${isPlaceholder ? "opacity-70" : ""}`}>
