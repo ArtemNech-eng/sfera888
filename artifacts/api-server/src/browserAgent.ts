@@ -4,7 +4,7 @@
  * and execute tasks described in natural language.
  */
 
-import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
+import type { Browser, BrowserContext, Page } from "playwright-core";
 import OpenAI from "openai";
 import { execSync } from "child_process";
 import { db } from "@workspace/db";
@@ -98,6 +98,17 @@ class BrowserAgentService {
   async launch(): Promise<void> {
     if (this.browser) return;
     this.status = "starting";
+
+    let chromium: import("playwright-core").BrowserType;
+    try {
+      const pw = await import("playwright-core");
+      chromium = pw.chromium;
+    } catch {
+      this.status = "error";
+      this.log("error", "playwright-core недоступен в данной среде. Браузер-агент работает только при наличии Chromium.");
+      throw new Error("Браузер-агент недоступен: playwright-core не установлен");
+    }
+
     this.log("info", `Запуск браузера (${CHROMIUM_PATH})`);
     this.browser = await chromium.launch({
       executablePath: CHROMIUM_PATH,
