@@ -8,6 +8,7 @@ import { performBroadcast } from "./lib/broadcastOrder.js";
 import { broadcastCheckin, broadcastCheckinReminder } from "./lib/checkinBroadcast.js";
 import { systemSettingsTable } from "@workspace/db";
 import { sendMorningBriefing, checkStaleOrders, sendWeeklyReport, checkNewMarkets, runAutonomousCycle, runQuickAutonomousCheck } from "./managerBot.js";
+import { autonomousAgent } from "./autonomousAgent.js";
 import { runProactiveChecks } from "./lib/dispatcherAI.js";
 import { backfillReceiptTransactions } from "./routes/receipts.js";
 
@@ -479,6 +480,28 @@ setInterval(async () => {
       reminderFiredDate = today;
       console.log(`[checkin] Firing reminder at ${hhmm} MSK`);
       broadcastCheckinReminder().catch(console.error);
+    }
+
+    // Scheduled scenario runner — check every morning at 09:00 MSK
+    if (hhmm === "09:00") {
+      (async () => {
+        try {
+          const result = await db.execute(sql`SELECT value FROM system_settings WHERE key = 'scenario_schedules' LIMIT 1`);
+          const row = (result.rows[0] as any);
+          if (row) {
+            const schedules: Record<string, { enabled: boolean; days: number[] }> = JSON.parse(row.value);
+            const nowMskDay = new Date(Date.now() + 3 * 60 * 60 * 1000).getUTCDay();
+            for (const [scenarioId, cfg] of Object.entries(schedules)) {
+              if (cfg.enabled && cfg.days.includes(nowMskDay)) {
+                console.log(`[autonomousAgent] Running scheduled scenario: ${scenarioId}`);
+                autonomousAgent.runScenario(scenarioId).catch(e => console.error(`[autonomousAgent] Scheduled scenario error (${scenarioId}):`, e));
+              }
+            }
+          }
+        } catch (e) {
+          console.error("[autonomousAgent] Schedule check error:", e);
+        }
+      })();
     }
 
     // Morning briefing to manager bot at 09:00 MSK

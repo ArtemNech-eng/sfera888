@@ -7,6 +7,70 @@ import {
   buildMemoryContext,
 } from "./agentMemory.js";
 
+// ─── Predefined Scenarios ──────────────────────────────────────────────────
+
+export interface PredefinedScenario {
+  id: string;
+  title: string;
+  shortDescription: string;
+  description: string;
+  icon: string;
+  color: string;
+  goal: string;
+  estimatedMinutes: number;
+  category: "pricing" | "analytics" | "content" | "marketing" | "operations";
+}
+
+export const PREDEFINED_SCENARIOS: PredefinedScenario[] = [
+  {
+    id: "market_pricing_analysis",
+    title: "Анализ рыночных цен",
+    shortDescription: "Изучает сметы и прайсы мастеров, формирует актуальный прайс-лист средних рыночных цен",
+    description: "Агент анализирует все сметы (оплаченные и неоплаченные) и прайс-листы мастеров. Группирует услуги, считает средние цены, выявляет аномалии. Итоговый прайс-лист сохраняется в постоянную память и доступен другим агентам.",
+    icon: "chart",
+    color: "green",
+    estimatedMinutes: 6,
+    category: "pricing",
+    goal: `Проведи комплексный анализ рыночного ценообразования для строительно-ремонтного сервиса «Честный мастер».
+
+ЗАДАЧА: используя реальные данные из смет и прайс-листов мастеров (уже загружены в контекст), определи средние рыночные цены по каждой услуге, выяви закономерности и аномалии, сформируй актуальный прайс-лист.
+
+ШАГ 1 — АНАЛИЗ СМЕТ (оплаченных и неоплаченных):
+Изучи каждую позицию из всех смет. Сгруппируй похожие/одинаковые названия услуг (например, «укладка плитки», «плитка укладка» и «монтаж плитки» — одна группа). Для каждой группы вычисли:
+• Среднюю цену за единицу
+• Минимальную и максимальную цену (диапазон)
+• Количество упоминаний в сметах (частота)
+• Типичную единицу измерения (м², п.м., шт, ч, кг и т.д.)
+Отдельно выдели статистику по оплаченным сметам — они достовернее отражают принятые рынком цены.
+
+ШАГ 2 — АНАЛИЗ ПРАЙС-ЛИСТОВ МАСТЕРОВ:
+Изучи цены, которые мастера указали в своих профилях. Для каждой услуги сравни прайс мастера с реальными ценами из смет:
+• Где мастера систематически занижают цены в прайсе (теряют деньги)
+• Где мастера завышают цены в прайсе (проигрывают конкурентам)
+• Услуги, которые есть в сметах, но отсутствуют в прайсах
+• Услуги в прайсах, не встречающиеся в сметах
+
+ШАГ 3 — ИТОГОВЫЙ ПРАЙС-ЛИСТ РЫНОЧНЫХ ЦЕН:
+Составь таблицу топ-30 самых востребованных услуг по формату:
+Услуга | Ср. цена | Мин | Макс | Ед. изм. | Кол-во в сметах
+Отсортируй по убыванию частоты. Это будет официальный прайс-ориентир бизнеса.
+
+ШАГ 4 — АНАЛИТИКА И РЕКОМЕНДАЦИИ:
+• Услуги с наибольшим разбросом цен — где нужен единый стандарт
+• Самые маржинальные услуги (высокие цены + высокая частота)
+• Рекомендации: какие цены скорректировать мастерам, какие услуги продвигать
+
+ОБЯЗАТЕЛЬНО — СОХРАНИ В ПОСТОЯННУЮ ПАМЯТЬ:
+После завершения анализа обязательно сохрани итоговый прайс-лист и ключевые выводы в постоянную память агента:
+- Категория: pricing
+- Заголовок: «Рыночный прайс-лист [месяц и год анализа]»
+- Важность: 5 (критично)
+- Содержание: полная таблица с ценами + топ-5 выводов
+
+Эти данные будут автоматически использоваться для: проверки смет клиентов, ценовых подсказок мастерам, ответов на вопросы о стоимости работ, настройки алертов на аномальные цены в сметах.`,
+  },
+];
+
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
@@ -43,6 +107,85 @@ export interface AutonomousSession {
 // ─── Active sessions map (in-memory for cancellation) ──────────────────────
 
 const activeSessions = new Map<number, { cancelled: boolean }>();
+
+// ─── Pricing context loader (specialized for market_pricing_analysis) ──────
+
+async function loadPricingContext(): Promise<string> {
+  try {
+    const [receipts, masters] = await Promise.all([
+      db.execute(sql`
+        SELECT r.id, r.service_type, r.total_amount, r.city, r.district,
+               r.line_items, r.prepayment_submitted_at, r.created_at,
+               m.alias AS master_alias
+        FROM receipts r
+        LEFT JOIN masters m ON m.id = r.master_id
+        WHERE jsonb_array_length(r.line_items) > 0
+        ORDER BY r.created_at DESC
+        LIMIT 400
+      `),
+      db.execute(sql`
+        SELECT alias, city, specialization, service_prices
+        FROM masters
+        WHERE service_prices IS NOT NULL
+          AND service_prices != 'null'::jsonb
+          AND deleted_at IS NULL
+        ORDER BY created_at DESC
+        LIMIT 120
+      `),
+    ]);
+
+    const receiptRows = receipts.rows as any[];
+    const masterRows = masters.rows as any[];
+    const lines: string[] = ["=== ДАННЫЕ ДЛЯ АНАЛИЗА ЦЕН ==="];
+
+    lines.push(`\n📋 СМЕТЫ (всего ${receiptRows.length} шт с позициями):`);
+    for (const r of receiptRows) {
+      const items: any[] = Array.isArray(r.line_items) ? r.line_items : [];
+      if (items.length === 0) continue;
+      const isPaid = !!r.prepayment_submitted_at;
+      lines.push(
+        `\n[Смета #${r.id}] ${r.service_type} | ${r.city}${r.district ? `, ${r.district}` : ""} | ` +
+        `${isPaid ? "✅ оплачена" : "📝 не оплачена"} | итого: ${r.total_amount} руб | ` +
+        `мастер: ${r.master_alias ?? "неизвестен"} | ` +
+        `дата: ${new Date(r.created_at).toLocaleDateString("ru-RU")}`
+      );
+      for (const item of items) {
+        const qty = item.quantity
+          ? ` × ${item.quantity}${item.unit ? ` ${item.unit}` : ""}`
+          : item.unit ? ` (${item.unit})` : "";
+        lines.push(`  • ${item.description}${qty}: ${item.price} руб`);
+      }
+    }
+
+    lines.push(`\n\n👷 ПРАЙС-ЛИСТЫ МАСТЕРОВ (${masterRows.length} мастеров с ценами):`);
+    for (const m of masterRows) {
+      let prices: any[] = [];
+      if (Array.isArray(m.service_prices)) prices = m.service_prices;
+      else if (typeof m.service_prices === "string") {
+        try { prices = JSON.parse(m.service_prices); } catch {}
+      }
+      if (prices.length === 0) continue;
+      lines.push(`\n${m.alias} | ${m.city} | ${m.specialization ?? "без специализации"}:`);
+      for (const p of prices.slice(0, 30)) {
+        lines.push(`  • ${p.service}: ${p.price} руб${p.unit ? ` / ${p.unit}` : ""}`);
+      }
+    }
+
+    return lines.join("\n");
+  } catch (e) {
+    console.error("[loadPricingContext] error:", e);
+    return "=== ОШИБКА ЗАГРУЗКИ ДАННЫХ О ЦЕНАХ ===";
+  }
+}
+
+// ─── Context loader dispatcher ─────────────────────────────────────────────
+
+async function loadContextForScenario(scenarioId: string): Promise<string> {
+  switch (scenarioId) {
+    case "market_pricing_analysis": return loadPricingContext();
+    default: return loadCrmContext();
+  }
+}
 
 // ─── CRM data loader ───────────────────────────────────────────────────────
 
@@ -234,7 +377,7 @@ async function generateFinalReport(
 
 // ─── Main runner ───────────────────────────────────────────────────────────
 
-async function runSession(sessionId: number, goal: string, plan: StepPlan[]) {
+async function runSession(sessionId: number, goal: string, plan: StepPlan[], scenarioId?: string) {
   const ctrl = activeSessions.get(sessionId) ?? { cancelled: false };
   activeSessions.set(sessionId, ctrl);
 
@@ -250,8 +393,10 @@ async function runSession(sessionId: number, goal: string, plan: StepPlan[]) {
     WHERE id=${sessionId}
   `);
 
-  // Load CRM context once for all steps
-  const crmContext = await loadCrmContext();
+  // Load context: specialized loader for known scenarios, generic CRM context otherwise
+  const crmContext = scenarioId
+    ? await loadContextForScenario(scenarioId)
+    : await loadCrmContext();
 
   try {
     const completedResults: { title: string; report: string }[] = [];
@@ -334,7 +479,11 @@ async function runSession(sessionId: number, goal: string, plan: StepPlan[]) {
 // ─── Public API ────────────────────────────────────────────────────────────
 
 export const autonomousAgent = {
-  async start(goal: string): Promise<number> {
+  getScenarios(): PredefinedScenario[] {
+    return PREDEFINED_SCENARIOS.map(s => ({ ...s, goal: s.goal.slice(0, 200) + "..." }));
+  },
+
+  async start(goal: string, scenarioId?: string): Promise<number> {
     const res = await db.execute(sql`
       INSERT INTO autonomous_sessions (goal, status)
       VALUES (${goal}, 'planning')
@@ -345,7 +494,7 @@ export const autonomousAgent = {
     (async () => {
       try {
         const plan = await planGoal(goal);
-        await runSession(sessionId, goal, plan);
+        await runSession(sessionId, goal, plan, scenarioId);
       } catch (e) {
         console.error("[autonomousAgent] Plan error:", e);
         await db.execute(sql`
@@ -357,6 +506,12 @@ export const autonomousAgent = {
     })();
 
     return sessionId;
+  },
+
+  async runScenario(scenarioId: string): Promise<number> {
+    const scenario = PREDEFINED_SCENARIOS.find(s => s.id === scenarioId);
+    if (!scenario) throw new Error(`Unknown scenario: ${scenarioId}`);
+    return this.start(scenario.goal, scenarioId);
   },
 
   async cancel(sessionId: number): Promise<void> {
