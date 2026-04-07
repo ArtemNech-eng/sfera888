@@ -365,12 +365,16 @@ router.get("/items-with-stats", async (req, res) => {
   const perPage = Math.min(100, parseInt(req.query.per_page as string) || 50);
 
   // Helper: fetch items with fallback URL strategies
-  async function fetchItems(): Promise<{ items: any[]; meta: any }> {
-    // Strategy 1: standard v1 with page/per_page
+  // Supports both regular apps (userId) and personal auth apps (self)
+  async function fetchItems(uid: string): Promise<{ items: any[]; meta: any }> {
+    const qs = `?page=${page}&per_page=${perPage}`;
     const urls = [
-      `/core/v1/accounts/${userId}/items?page=${page}&per_page=${perPage}`,
-      `/core/v2/accounts/${userId}/items?page=${page}&per_page=${perPage}`,
-      `/core/v1/accounts/${userId}/items`,
+      `/core/v1/accounts/${uid}/items${qs}`,
+      `/core/v1/accounts/self/items${qs}`,   // personal auth: "self" alias
+      `/core/v2/accounts/${uid}/items${qs}`,
+      `/core/v2/accounts/self/items${qs}`,
+      `/core/v1/accounts/${uid}/items`,
+      `/core/v1/accounts/self/items`,
     ];
 
     let lastError: AvitoApiError | Error | null = null;
@@ -383,18 +387,20 @@ router.get("/items-with-stats", async (req, res) => {
         };
       } catch (e: any) {
         lastError = e;
-        // Only continue trying if it's a 404/routing issue — not auth errors
+        // Only retry on routing errors; propagate auth / rate-limit errors immediately
         if (e instanceof AvitoApiError && e.statusCode !== 404 && e.statusCode !== 422) {
           throw e;
         }
       }
     }
 
-    // All URLs failed — check if it's a permission error
+    // All URLs failed — distinguish "no route" (wrong uid or missing scope) from others
     if (lastError instanceof AvitoApiError && lastError.statusCode === 404) {
       const permErr = new Error(
-        "У вашего Авито-приложения нет доступа к разделу «Объявления». " +
-        "Добавьте разрешение Items API в developers.avito.ru, затем переподключите Авито."
+        "Авито API не нашёл маршрут для объявлений (404). " +
+        "Возможные причины: приложение не имеет доступа к Items API, " +
+        "или сохранённый ID аккаунта неверен. " +
+        "Попробуйте переподключить Авито — нажмите «Отключить» и введите ключи заново."
       ) as any;
       permErr.code = "NO_ITEMS_PERMISSION";
       throw permErr;
@@ -402,11 +408,31 @@ router.get("/items-with-stats", async (req, res) => {
     throw lastError ?? new Error("Не удалось загрузить объявления");
   }
 
-  // 1. Fetch items
+  // Resolve current userId (may have changed or been stored incorrectly)
+  async function resolveUserId(): Promise<string> {
+    try {
+      const self = await avitoGet(`/core/v1/accounts/self`, token) as any;
+      const freshId = String(self.id ?? "");
+      if (freshId && freshId !== userId) {
+        // Update stored userId so it's correct next time
+        await db.update(avitoSettingsTable)
+          .set({ avitoUserId: freshId, avitoUserName: self.name ?? null, updatedAt: new Date() })
+          .where(eq(avitoSettingsTable.id, (await getSettings())!.id));
+        console.log(`[avito] updated avitoUserId: ${userId} → ${freshId}`);
+        return freshId;
+      }
+    } catch {}
+    return userId!;
+  }
+
+  // 1. Resolve userId (refresh from Avito if stored value is stale/wrong)
+  const resolvedUid = await resolveUserId();
+
+  // 2. Fetch items
   let items: any[] = [];
   let meta: any = {};
   try {
-    const result = await fetchItems();
+    const result = await fetchItems(resolvedUid);
     items = result.items;
     meta = result.meta;
   } catch (e: any) {
