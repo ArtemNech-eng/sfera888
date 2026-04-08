@@ -160,6 +160,32 @@ async function masterRepliedAfter(masterId: number, sinceMs: number): Promise<bo
 }
 
 /**
+ * Returns true if the master already mentioned a topic (by keyword) in their
+ * messages within the last `withinHours` hours.
+ * Used to skip proactive reminders when the master already addressed the topic.
+ */
+async function masterAlreadyMentioned(
+  masterId: number,
+  keywords: string[],
+  withinHours: number,
+): Promise<boolean> {
+  const since = new Date(Date.now() - withinHours * 3600_000);
+  for (const kw of keywords) {
+    const rows = await db.select({ id: masterMessagesTable.id })
+      .from(masterMessagesTable)
+      .where(and(
+        eq(masterMessagesTable.masterId, masterId),
+        eq(masterMessagesTable.fromMaster, true),
+        gte(masterMessagesTable.createdAt, since),
+        ilike(masterMessagesTable.text, `%${kw}%`),
+      ))
+      .limit(1);
+    if (rows.length > 0) return true;
+  }
+  return false;
+}
+
+/**
  * Returns the timestamp of the last bot message sent to this master, or null.
  */
 async function lastBotMessageTimestamp(masterId: number): Promise<number | null> {
@@ -821,17 +847,27 @@ export async function handleMasterMessage(
 ═══ ДАННЫЕ МАСТЕРА ═══
 ${context}${pendingOrderSection}
 
-═══ КАК ТЫ РАБОТАЕШЬ ═══
-1. Читаешь сообщение мастера.
-2. Сверяешь с данными выше (заказы, заметки, переписка).
-3. Если нужно — вызываешь tool (сначала tool, потом ответ).
-4. Пишешь КОРОТКИЙ ответ по существу (1–3 предложения, не длиннее).
+═══ КАК ТЫ РАБОТАЕШЬ (ОБЯЗАТЕЛЬНО ВЫПОЛНЯЙ ПЕРЕД КАЖДЫМ ОТВЕТОМ) ═══
+
+Перед тем как ответить — мысленно пройди 4 шага:
+
+ШАГ 1 — Что написал мастер?
+Сформулируй одним предложением суть его сообщения.
+
+ШАГ 2 — Мастер уже отвечал на этот вопрос?
+Посмотри на «Переписка за последние 48ч» выше. Если мастер уже писал об этом — НЕ спрашивай снова, подтверди что услышал.
+
+ШАГ 3 — Какой сценарий? (СЦ-1 ... СЦ-8 или "другое")
+Найди подходящий сценарий из раздела СЦЕНАРИИ ниже.
+
+ШАГ 4 — Нужен tool?
+Если да — вызови tool ПЕРВЫМ. Ответ пиши только после.
 
 ЗАПРЕЩЕНО:
-❌ Задавать «Уточните, о чём вы?» — контекст есть в данных выше, используй его.
-❌ Писать длинные инструкции — мастер в полях, не за компьютером.
-❌ Предполагать ошибку в адресе без проверки через search_order_by_query.
-❌ Отвечать на да/нет без привязки к предыдущему диалогу из истории переписки.
+❌ «Уточните, о чём вы?» — контекст есть в данных выше, используй его.
+❌ Длинные тексты — мастер работает руками, не за компьютером. 1–3 предложения.
+❌ «Возможно ошибка в адресе» — сначала search_order_by_query, потом вывод.
+❌ Повторять вопрос если мастер уже ответил — проверь переписку за 48ч.
 
 ═══ СЦЕНАРИИ ═══
 
@@ -1059,6 +1095,11 @@ export async function sendEstimateReminder(
   return withSendLock(`estimate:${masterId}:${orderId}`, async () => {
     // Don't re-send if already reminded in the last 48h
     if (await alreadySentBotMessage(masterId, `заказу #${orderId} смета ещё не отправлена`, 48)) return;
+    // Skip if master already mentioned the estimate in the last 72h
+    if (await masterAlreadyMentioned(masterId, ["смета", "отправил смет", "скинул смет", "счёт отправил", "смету скинул", "смет"], 72)) {
+      console.log(`[dispatcherAI] Skipping estimate reminder for ${masterAlias} order #${orderId} — master already mentioned estimate`);
+      return;
+    }
 
     const msg = `${masterAlias}, напомни — по заказу #${orderId} смета ещё не отправлена. Не забудь оформить её в приложении, чтобы клиент мог согласовать стоимость работ. 📋`;
     try {
@@ -1089,6 +1130,12 @@ export async function sendClientCallCheckin(
       return;
     }
 
+    // Guard 3: master already wrote about calling/agreeing in last 24h → skip
+    if (await masterAlreadyMentioned(masterId, ["созвонился", "созвонились", "договорился", "договорились", "не берёт", "не отвечает", "недоступен", "дозвонился", "звонил", "перезвоню"], 24)) {
+      console.log(`[dispatcherAI] Skipping call check-in for ${masterAlias} order #${orderId} — master already mentioned call status`);
+      return;
+    }
+
     const msg = `${masterAlias}, вы уже созвонились с клиентом по заказу #${orderId}? Напишите — о чём договорились, на какое время согласовали визит. Это важно для координации работ. 📞`;
     try {
       await sendMaxMessage(maxChatId, msg);
@@ -1109,6 +1156,11 @@ export async function sendCompletionCheck(
 ) {
   return withSendLock(`completion:${masterId}:${orderId}`, async () => {
     if (await alreadySentBotMessage(masterId, `заказу #${orderId} завершены?`, 48)) return;
+    // Skip if master already said work is done / mentioned completion
+    if (await masterAlreadyMentioned(masterId, ["завершил", "завершили", "закончил", "закончили", "сделали", "всё готово", "готово", "работы выполнены", "выполнил", "закончено", "завершено"], 72)) {
+      console.log(`[dispatcherAI] Skipping completion check for ${masterAlias} order #${orderId} — master already mentioned completion`);
+      return;
+    }
 
     const msg = `${masterAlias}, как прошли работы по заказу #${orderId}? Всё завершено? Если да — отметьте заказ как выполненный в приложении и не забудьте попросить клиента оставить отзыв. 🏁`;
     try {
@@ -1151,6 +1203,11 @@ export async function sendPreDayReminder(
 ) {
   return withSendLock(`preday:${masterId}:${orderId}`, async () => {
     if (await alreadySentBotMessage(masterId, `завтра выезд на объект по заказу #${orderId}`)) return;
+    // Skip if master was already active in the last 12h (they're on top of it)
+    if (await masterAlreadyMentioned(masterId, ["готов", "буду", "подтверждаю", "всё готово", "приеду", "едем", "выезжаем", "ок", "хорошо", "понял"], 12)) {
+      console.log(`[dispatcherAI] Skipping pre-day reminder for ${masterAlias} order #${orderId} — master recently confirmed`);
+      return;
+    }
 
     const msg = `${masterAlias}, завтра выезд на объект по заказу #${orderId}. Всё готово? Клиент ждёт, подтвердите что будете в срок. 🔧`;
     try {
