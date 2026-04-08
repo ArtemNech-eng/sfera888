@@ -39,6 +39,25 @@ const lastBotMessageAt = new Map<number, number>();
 /** Timestamp of the last message received from each master (in-memory) */
 const lastMasterReplyAt = new Map<number, number>();
 
+/**
+ * In-memory send locks — prevents race conditions when the scheduler fires
+ * while a previous cycle is still awaiting sendMaxMessage / saveBotReply.
+ * Key format: "<type>:<masterId>:<orderId>"
+ */
+const sendLocks = new Set<string>();
+
+function withSendLock(key: string, fn: () => Promise<void>): Promise<void> {
+  if (sendLocks.has(key)) {
+    console.log(`[dispatcherAI] Lock active for "${key}" — skipping concurrent send`);
+    return Promise.resolve();
+  }
+  sendLocks.add(key);
+  return fn().finally(() => sendLocks.delete(key));
+}
+
+/** Prevents overlapping proactive check cycles */
+let proactiveChecksRunning = false;
+
 function getHistory(masterId: number): ChatMessage[] {
   if (!masterSessions.has(masterId)) masterSessions.set(masterId, []);
   return masterSessions.get(masterId)!;
@@ -883,31 +902,33 @@ export async function sendAssignmentGreeting(
   maxChatId: string,
   orderId: number,
 ) {
-  if (await alreadySentBotMessage(masterId, `назначены на заказ #${orderId}`)) return;
+  return withSendLock(`greeting:${masterId}:${orderId}`, async () => {
+    if (await alreadySentBotMessage(masterId, `назначены на заказ #${orderId}`)) return;
 
-  const data = await getOrderWithLead(orderId);
-  if (!data) return;
-  const { order, lead } = data;
+    const data = await getOrderWithLead(orderId);
+    if (!data) return;
+    const { order, lead } = data;
 
-  const scheduledStr = order.scheduledAt
-    ? new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(order.scheduledAt))
-    : "уточните с клиентом";
+    const scheduledStr = order.scheduledAt
+      ? new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(order.scheduledAt))
+      : "уточните с клиентом";
 
-  let msg = `👋 ${masterAlias}, вы назначены на заказ #${orderId}!\n\n`;
-  msg += `🔧 ${order.serviceType}\n`;
-  msg += `📍 ${order.city}${order.district ? ", " + order.district : ""}\n`;
-  msg += `📐 ${order.area} м²\n`;
-  msg += `📅 Дата: ${scheduledStr}`;
-  if (lead) msg += `\n📞 Клиент: ${lead.clientName} · ${lead.clientPhone}`;
-  msg += `\n\nВсё понятно? Подтвердите получение или задайте вопрос.`;
+    let msg = `👋 ${masterAlias}, вы назначены на заказ #${orderId}!\n\n`;
+    msg += `🔧 ${order.serviceType}\n`;
+    msg += `📍 ${order.city}${order.district ? ", " + order.district : ""}\n`;
+    msg += `📐 ${order.area} м²\n`;
+    msg += `📅 Дата: ${scheduledStr}`;
+    if (lead) msg += `\n📞 Клиент: ${lead.clientName} · ${lead.clientPhone}`;
+    msg += `\n\nВсё понятно? Подтвердите получение или задайте вопрос.`;
 
-  try {
-    await sendMaxMessage(maxChatId, msg);
-    await saveBotReply(masterId, maxChatId, msg);
-    console.log(`[dispatcherAI] Sent assignment greeting to ${masterAlias} for order #${orderId}`);
-  } catch (e) {
-    console.error(`[dispatcherAI] Failed to send/save assignment greeting for order #${orderId}:`, e);
-  }
+    try {
+      await sendMaxMessage(maxChatId, msg);
+      await saveBotReply(masterId, maxChatId, msg);
+      console.log(`[dispatcherAI] Sent assignment greeting to ${masterAlias} for order #${orderId}`);
+    } catch (e) {
+      console.error(`[dispatcherAI] Failed to send/save assignment greeting for order #${orderId}:`, e);
+    }
+  });
 }
 
 /** 24h check-in after assignment */
@@ -917,16 +938,18 @@ export async function sendDailyCheckin(
   maxChatId: string,
   orderId: number,
 ) {
-  if (await alreadySentBotMessage(masterId, `объекте по заказу #${orderId}`)) return;
+  return withSendLock(`checkin:${masterId}:${orderId}`, async () => {
+    if (await alreadySentBotMessage(masterId, `объекте по заказу #${orderId}`)) return;
 
-  const msg = `Привет, ${masterAlias}! Как дела на объекте по заказу #${orderId}? Всё идёт по плану? 😊`;
-  try {
-    await sendMaxMessage(maxChatId, msg);
-    await saveBotReply(masterId, maxChatId, msg);
-    console.log(`[dispatcherAI] Sent 24h check-in to ${masterAlias} for order #${orderId}`);
-  } catch (e) {
-    console.error(`[dispatcherAI] Failed to send/save daily check-in for order #${orderId}:`, e);
-  }
+    const msg = `Привет, ${masterAlias}! Как дела на объекте по заказу #${orderId}? Всё идёт по плану? 😊`;
+    try {
+      await sendMaxMessage(maxChatId, msg);
+      await saveBotReply(masterId, maxChatId, msg);
+      console.log(`[dispatcherAI] Sent 24h check-in to ${masterAlias} for order #${orderId}`);
+    } catch (e) {
+      console.error(`[dispatcherAI] Failed to send/save daily check-in for order #${orderId}:`, e);
+    }
+  });
 }
 
 /** Estimate reminder */
@@ -936,17 +959,19 @@ export async function sendEstimateReminder(
   maxChatId: string,
   orderId: number,
 ) {
-  // Don't re-send if already reminded in the last 48h
-  if (await alreadySentBotMessage(masterId, `заказу #${orderId} смета ещё не отправлена`, 48)) return;
+  return withSendLock(`estimate:${masterId}:${orderId}`, async () => {
+    // Don't re-send if already reminded in the last 48h
+    if (await alreadySentBotMessage(masterId, `заказу #${orderId} смета ещё не отправлена`, 48)) return;
 
-  const msg = `${masterAlias}, напомни — по заказу #${orderId} смета ещё не отправлена. Не забудь оформить её в приложении, чтобы клиент мог согласовать стоимость работ. 📋`;
-  try {
-    await sendMaxMessage(maxChatId, msg);
-    await saveBotReply(masterId, maxChatId, msg);
-    console.log(`[dispatcherAI] Sent estimate reminder to ${masterAlias} for order #${orderId}`);
-  } catch (e) {
-    console.error(`[dispatcherAI] Failed to send/save estimate reminder for order #${orderId}:`, e);
-  }
+    const msg = `${masterAlias}, напомни — по заказу #${orderId} смета ещё не отправлена. Не забудь оформить её в приложении, чтобы клиент мог согласовать стоимость работ. 📋`;
+    try {
+      await sendMaxMessage(maxChatId, msg);
+      await saveBotReply(masterId, maxChatId, msg);
+      console.log(`[dispatcherAI] Sent estimate reminder to ${masterAlias} for order #${orderId}`);
+    } catch (e) {
+      console.error(`[dispatcherAI] Failed to send/save estimate reminder for order #${orderId}:`, e);
+    }
+  });
 }
 
 /** 15-min post-assignment: did you call the client? */
@@ -956,24 +981,26 @@ export async function sendClientCallCheckin(
   maxChatId: string,
   orderId: number,
 ) {
-  // Guard 1: already sent this exact question → skip
-  if (await alreadySentBotMessage(masterId, `созвонились с клиентом по заказу #${orderId}`)) return;
+  return withSendLock(`callcheckin:${masterId}:${orderId}`, async () => {
+    // Guard 1: already sent this exact question → skip
+    if (await alreadySentBotMessage(masterId, `созвонились с клиентом по заказу #${orderId}`)) return;
 
-  // Guard 2: master has already replied to a bot message → they're in active dialogue, skip
-  const lastBotMs = await lastBotMessageTimestamp(masterId);
-  if (lastBotMs && await masterRepliedAfter(masterId, lastBotMs)) {
-    console.log(`[dispatcherAI] Skipping check-in for order #${orderId} — master ${masterAlias} already replied to bot`);
-    return;
-  }
+    // Guard 2: master has already replied to a bot message → they're in active dialogue, skip
+    const lastBotMs = await lastBotMessageTimestamp(masterId);
+    if (lastBotMs && await masterRepliedAfter(masterId, lastBotMs)) {
+      console.log(`[dispatcherAI] Skipping check-in for order #${orderId} — master ${masterAlias} already replied to bot`);
+      return;
+    }
 
-  const msg = `${masterAlias}, вы уже созвонились с клиентом по заказу #${orderId}? Напишите — о чём договорились, на какое время согласовали визит. Это важно для координации работ. 📞`;
-  try {
-    await sendMaxMessage(maxChatId, msg);
-    await saveBotReply(masterId, maxChatId, msg);
-    console.log(`[dispatcherAI] Sent client call check-in to ${masterAlias} for order #${orderId}`);
-  } catch (e) {
-    console.error(`[dispatcherAI] Failed to send/save check-in for order #${orderId}:`, e);
-  }
+    const msg = `${masterAlias}, вы уже созвонились с клиентом по заказу #${orderId}? Напишите — о чём договорились, на какое время согласовали визит. Это важно для координации работ. 📞`;
+    try {
+      await sendMaxMessage(maxChatId, msg);
+      await saveBotReply(masterId, maxChatId, msg);
+      console.log(`[dispatcherAI] Sent client call check-in to ${masterAlias} for order #${orderId}`);
+    } catch (e) {
+      console.error(`[dispatcherAI] Failed to send/save check-in for order #${orderId}:`, e);
+    }
+  });
 }
 
 /** Ask if work is completed — sent 6h after scheduledAt if still in_progress */
@@ -983,16 +1010,18 @@ export async function sendCompletionCheck(
   maxChatId: string,
   orderId: number,
 ) {
-  if (await alreadySentBotMessage(masterId, `заказу #${orderId} завершены?`, 48)) return;
+  return withSendLock(`completion:${masterId}:${orderId}`, async () => {
+    if (await alreadySentBotMessage(masterId, `заказу #${orderId} завершены?`, 48)) return;
 
-  const msg = `${masterAlias}, как прошли работы по заказу #${orderId}? Всё завершено? Если да — отметьте заказ как выполненный в приложении и не забудьте попросить клиента оставить отзыв. 🏁`;
-  try {
-    await sendMaxMessage(maxChatId, msg);
-    await saveBotReply(masterId, maxChatId, msg);
-    console.log(`[dispatcherAI] Sent completion check to ${masterAlias} for order #${orderId}`);
-  } catch (e) {
-    console.error(`[dispatcherAI] Failed to send/save completion check for order #${orderId}:`, e);
-  }
+    const msg = `${masterAlias}, как прошли работы по заказу #${orderId}? Всё завершено? Если да — отметьте заказ как выполненный в приложении и не забудьте попросить клиента оставить отзыв. 🏁`;
+    try {
+      await sendMaxMessage(maxChatId, msg);
+      await saveBotReply(masterId, maxChatId, msg);
+      console.log(`[dispatcherAI] Sent completion check to ${masterAlias} for order #${orderId}`);
+    } catch (e) {
+      console.error(`[dispatcherAI] Failed to send/save completion check for order #${orderId}:`, e);
+    }
+  });
 }
 
 /** Ask master to collect client feedback after order is marked completed */
@@ -1002,16 +1031,18 @@ export async function sendFeedbackRequest(
   maxChatId: string,
   orderId: number,
 ) {
-  if (await alreadySentBotMessage(masterId, `отзыв по заказу #${orderId}`)) return;
+  return withSendLock(`feedback:${masterId}:${orderId}`, async () => {
+    if (await alreadySentBotMessage(masterId, `отзыв по заказу #${orderId}`)) return;
 
-  const msg = `Отлично, ${masterAlias}! Заказ #${orderId} завершён. 🎉\n\nПожалуйста, попросите клиента оставить короткий отзыв — это помогает вам получать больше заказов. Можно просто сфотографировать результат и попросить написать пару слов.\n\nСпасибо за работу! 👏`;
-  try {
-    await sendMaxMessage(maxChatId, msg);
-    await saveBotReply(masterId, maxChatId, msg);
-    console.log(`[dispatcherAI] Sent feedback request to ${masterAlias} for order #${orderId}`);
-  } catch (e) {
-    console.error(`[dispatcherAI] Failed to send/save feedback request for order #${orderId}:`, e);
-  }
+    const msg = `Отлично, ${masterAlias}! Заказ #${orderId} завершён. 🎉\n\nПожалуйста, попросите клиента оставить короткий отзыв — это помогает вам получать больше заказов. Можно просто сфотографировать результат и попросить написать пару слов.\n\nСпасибо за работу! 👏`;
+    try {
+      await sendMaxMessage(maxChatId, msg);
+      await saveBotReply(masterId, maxChatId, msg);
+      console.log(`[dispatcherAI] Sent feedback request to ${masterAlias} for order #${orderId}`);
+    } catch (e) {
+      console.error(`[dispatcherAI] Failed to send/save feedback request for order #${orderId}:`, e);
+    }
+  });
 }
 
 /** Reminder the day before scheduledAt */
@@ -1021,21 +1052,28 @@ export async function sendPreDayReminder(
   maxChatId: string,
   orderId: number,
 ) {
-  if (await alreadySentBotMessage(masterId, `завтра выезд на объект по заказу #${orderId}`)) return;
+  return withSendLock(`preday:${masterId}:${orderId}`, async () => {
+    if (await alreadySentBotMessage(masterId, `завтра выезд на объект по заказу #${orderId}`)) return;
 
-  const msg = `${masterAlias}, завтра выезд на объект по заказу #${orderId}. Всё готово? Клиент ждёт, подтвердите что будете в срок. 🔧`;
-  try {
-    await sendMaxMessage(maxChatId, msg);
-    await saveBotReply(masterId, maxChatId, msg);
-    console.log(`[dispatcherAI] Sent pre-day reminder to ${masterAlias} for order #${orderId}`);
-  } catch (e) {
-    console.error(`[dispatcherAI] Failed to send/save pre-day reminder for order #${orderId}:`, e);
-  }
+    const msg = `${masterAlias}, завтра выезд на объект по заказу #${orderId}. Всё готово? Клиент ждёт, подтвердите что будете в срок. 🔧`;
+    try {
+      await sendMaxMessage(maxChatId, msg);
+      await saveBotReply(masterId, maxChatId, msg);
+      console.log(`[dispatcherAI] Sent pre-day reminder to ${masterAlias} for order #${orderId}`);
+    } catch (e) {
+      console.error(`[dispatcherAI] Failed to send/save pre-day reminder for order #${orderId}:`, e);
+    }
+  });
 }
 
 // ─── Scheduler: run checks for all active orders ─────────────────────────────
 
 export async function runProactiveChecks(): Promise<void> {
+  if (proactiveChecksRunning) {
+    console.log("[dispatcherAI] Proactive checks already running — skipping this cycle to prevent duplicates");
+    return;
+  }
+  proactiveChecksRunning = true;
   try {
     // ── Scheduled follow-ups (master commitments) ─────────────────────────
     const dueFollowups = await db.select().from(dispatcherFollowupsTable)
@@ -1185,6 +1223,8 @@ export async function runProactiveChecks(): Promise<void> {
     }
   } catch (e) {
     console.error("[dispatcherAI] proactive checks error:", e);
+  } finally {
+    proactiveChecksRunning = false;
   }
 }
 
