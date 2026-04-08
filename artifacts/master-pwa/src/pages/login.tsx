@@ -168,6 +168,33 @@ export default function LoginPage() {
   const [form, setForm] = useState({ login: "", password: "" });
   const [showPass, setShowPass] = useState(false);
 
+  // Forgot password
+  const [forgotView, setForgotView] = useState(false);
+  const [forgotPhone, setForgotPhone] = useState("");
+  const [forgotDone, setForgotDone] = useState<string | null>(null); // stores the login after reset
+  const [forgotLoading, setForgotLoading] = useState(false);
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotPhone) { toast.error("Введите номер телефона"); return; }
+    setForgotLoading(true);
+    try {
+      const res = await fetch("/api/master-pwa/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: forgotPhone }),
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Ошибка");
+      setForgotDone(data.login ?? forgotPhone.replace(/\D/g, ""));
+    } catch (err: any) {
+      toast.error(err.message ?? "Ошибка сброса пароля");
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
   // Register form — specs separated to avoid full re-render on each toggle
   const [reg, setReg] = useState({ alias: "", phone: "", city: "", password: "" });
   const [specs, setSpecs] = useState<string[]>([]);
@@ -298,6 +325,82 @@ export default function LoginPage() {
           <p className="text-sm text-muted-foreground">Приложение для мастеров</p>
         </div>
 
+        {/* Forgot password view */}
+        {forgotView ? (
+          forgotDone ? (
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-green-200 bg-green-50 dark:bg-green-950/30 dark:border-green-800 p-5 text-center space-y-3">
+                <div className="flex items-center justify-center w-12 h-12 rounded-full bg-green-100 dark:bg-green-900/50 mx-auto">
+                  <svg className="text-green-600 dark:text-green-400" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+                <div>
+                  <p className="font-semibold text-green-800 dark:text-green-300 text-base">Пароль сброшен!</p>
+                  <p className="text-sm text-green-700 dark:text-green-400 mt-1">Теперь войдите с этими данными:</p>
+                </div>
+                <div className="bg-white dark:bg-card rounded-xl p-3 text-left space-y-1 border border-green-200 dark:border-green-800">
+                  <p className="text-xs text-muted-foreground">Логин</p>
+                  <p className="font-mono font-semibold text-sm text-foreground">{forgotDone}</p>
+                  <p className="text-xs text-muted-foreground mt-2">Пароль</p>
+                  <p className="font-mono font-semibold text-sm text-foreground">{forgotDone}</p>
+                </div>
+                <p className="text-xs text-muted-foreground">Логин и пароль — ваш номер телефона в формате 79XXXXXXXXXX</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setForm(f => ({ ...f, login: forgotDone }));
+                  setForgotView(false);
+                  setForgotDone(null);
+                  setTab("login");
+                }}
+                style={{ minHeight: 52 }}
+                className="w-full bg-primary text-white font-semibold text-base rounded-xl transition-opacity active:opacity-80 flex items-center justify-center gap-2"
+              >
+                Войти
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleForgotPassword} className="space-y-4">
+              <div className="text-center space-y-1 pb-1">
+                <p className="font-semibold text-base">Восстановление доступа</p>
+                <p className="text-xs text-muted-foreground">Введите ваш номер телефона. Пароль будет сброшен к номеру телефона.</p>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-foreground">Номер телефона</label>
+                <input
+                  type="tel"
+                  autoComplete="tel"
+                  value={forgotPhone}
+                  onChange={e => {
+                    const v = e.target.value;
+                    const isPhone = /^[\d+8]/.test(v);
+                    setForgotPhone(isPhone ? formatPhoneInput(v) : v);
+                  }}
+                  placeholder="+7 (___) ___-__-__"
+                  className="flex h-12 w-full rounded-xl border border-input bg-background px-3 py-2 text-base ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={forgotLoading}
+                style={{ minHeight: 52 }}
+                className="w-full bg-primary text-white font-semibold text-base rounded-xl disabled:opacity-50 transition-opacity active:opacity-80 flex items-center justify-center gap-2"
+              >
+                {forgotLoading
+                  ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  : "Сбросить пароль"}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setForgotView(false); setForgotPhone(""); setForgotDone(null); }}
+                className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-1"
+              >
+                ← Назад ко входу
+              </button>
+            </form>
+          )
+        ) : (
+        <>
         {/* Tabs — hidden on prices step */}
         {regStep === "info" && (
           <div className="flex rounded-xl bg-muted p-1 gap-1">
@@ -363,9 +466,18 @@ export default function LoginPage() {
                 : "Войти"}
             </button>
 
-            <p className="text-center text-xs text-muted-foreground">
-              Обратитесь к менеджеру, если нет аккаунта
-            </p>
+            <div className="flex flex-col items-center gap-1">
+              <button
+                type="button"
+                onClick={() => { setForgotView(true); setForgotPhone(form.login); setForgotDone(null); }}
+                className="text-xs text-primary/70 hover:text-primary underline underline-offset-2 transition-colors"
+              >
+                Не помню пароль
+              </button>
+              <p className="text-center text-xs text-muted-foreground">
+                Обратитесь к менеджеру, если нет аккаунта
+              </p>
+            </div>
           </form>
         ) : regStep === "prices" ? (
           <PricesStep
@@ -483,6 +595,8 @@ export default function LoginPage() {
               После регистрации менеджер свяжется с вами
             </p>
           </form>
+        )}
+        </>
         )}
       </div>
     </div>

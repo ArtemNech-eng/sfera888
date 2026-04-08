@@ -125,6 +125,44 @@ router.post("/auth/login", async (req, res) => {
   });
 });
 
+// POST /api/master-pwa/auth/forgot-password
+// Self-service: master enters phone → password resets to phone number
+router.post("/auth/forgot-password", async (req, res) => {
+  const { phone } = req.body;
+  if (!phone) return res.status(400).json({ error: "Введите номер телефона" });
+
+  const normalized = normalizeLoginInput(phone);
+  if (normalized.length < 7) return res.status(400).json({ error: "Введите корректный номер телефона" });
+
+  // 1. Look up by pwaLogin (most common: master registered with phone)
+  const allMasters = await db.select({
+    id: mastersTable.id, alias: mastersTable.alias,
+    status: mastersTable.status, phone: mastersTable.phone, pwaLogin: mastersTable.pwaLogin,
+  }).from(mastersTable).where(isNull(mastersTable.deletedAt));
+
+  const master = allMasters.find(m =>
+    normalizeLoginInput(m.pwaLogin ?? "") === normalized ||
+    (m.phone && normalizeLoginInput(m.phone) === normalized)
+  ) ?? null;
+
+  // Always return "success" even if not found — prevents phone enumeration
+  if (!master) {
+    return res.json({ success: true, login: normalized });
+  }
+
+  if (master.status === "suspended") {
+    return res.status(403).json({ error: "Аккаунт заблокирован. Обратитесь к менеджеру." });
+  }
+
+  const hash = await hashPassword(normalized);
+  await db.update(mastersTable)
+    .set({ pwaLogin: normalized, pwaPasswordHash: hash })
+    .where(eq(mastersTable.id, master.id));
+
+  console.log(`[auth] forgot-password: master ${master.id} (${master.alias}) reset password to phone ${normalized}`);
+  res.json({ success: true, login: normalized });
+});
+
 router.post("/auth/logout", (req, res) => {
   (req.session as any).masterId = null;
   res.json({ success: true });
