@@ -995,6 +995,123 @@ ${okSummary}
   `);
 }
 
+// ─── Market pricing analysis scenario (specialized executor) ─────────────────
+
+async function runMarketPricingScenario(sessionId: number): Promise<void> {
+  const plan: StepPlan[] = [
+    { index: 0, title: "Загрузка данных",           description: "Сметы и прайс-листы мастеров из базы данных", task: "" },
+    { index: 1, title: "Анализ цен (GPT-4o)",       description: "Группировка услуг, расчёт средних, аномалии, топ-30 прайс", task: "" },
+    { index: 2, title: "Сохранение в память",       description: "Прайс-лист записывается в постоянную память агента", task: "" },
+  ];
+  const steps: StepResult[] = plan.map(p => ({ ...p, status: "pending" as const, report: "", startedAt: undefined, completedAt: undefined, durationMs: undefined }));
+
+  const upd = async (step: number) =>
+    db.execute(sql`UPDATE autonomous_sessions SET steps=${JSON.stringify(steps)}::jsonb, current_step=${step} WHERE id=${sessionId}`);
+
+  await db.execute(sql`
+    UPDATE autonomous_sessions
+    SET status='running', steps=${JSON.stringify(steps)}::jsonb, plan=${JSON.stringify(plan)}::jsonb
+    WHERE id=${sessionId}
+  `);
+
+  // ── Step 0: Load pricing data ─────────────────────────────────────────────
+  steps[0].status = "running"; steps[0].startedAt = new Date().toISOString();
+  await upd(0);
+  const t0 = Date.now();
+
+  const pricingData = await loadPricingContext();
+
+  steps[0].status = "done";
+  const receiptMatch = pricingData.match(/СМЕТЫ \(всего (\d+) шт/);
+  const masterMatch  = pricingData.match(/ПРАЙС-ЛИСТЫ МАСТЕРОВ \((\d+) мастеров/);
+  steps[0].report =
+    `Загружено: **${receiptMatch?.[1] ?? "?"} смет** и **${masterMatch?.[1] ?? "?"} прайс-листов** мастеров.`;
+  steps[0].completedAt = new Date().toISOString();
+  steps[0].durationMs  = Date.now() - t0;
+  await upd(1);
+
+  // ── Step 1: GPT-4o analysis ───────────────────────────────────────────────
+  steps[1].status = "running"; steps[1].startedAt = new Date().toISOString();
+  await upd(1);
+  const t1 = Date.now();
+
+  const dateStr = new Date().toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
+
+  let finalReport = "";
+  try {
+    const gptRes = await openai.chat.completions.create({
+      model: "gpt-4o",
+      max_tokens: 3000,
+      messages: [
+        {
+          role: "system",
+          content:
+            `Ты — аналитик сервиса «Честный мастер». Проведи анализ рыночных цен на основе реальных данных из смет и прайсов мастеров.
+
+СТРУКТУРА ОТЧЁТА (строго соблюдай):
+
+# Рыночный прайс-лист — ${dateStr}
+
+## Топ-30 услуг по востребованности
+Таблица: Услуга | Ср. цена | Мин | Макс | Ед. изм. | Упоминаний
+
+## Аномалии и несоответствия
+Где мастера занижают/завышают цены vs сметы.
+
+## Маржинальные услуги
+Топ-5 самых прибыльных направлений.
+
+## Рекомендации
+Конкретные действия: какие цены скорректировать, какие услуги продвигать.
+
+Будь конкретен, используй числа из данных. Отвечай по-русски.`,
+        },
+        {
+          role: "user",
+          content: pricingData.slice(0, 28000), // safety limit
+        },
+      ],
+    });
+
+    finalReport = gptRes.choices[0]?.message?.content?.trim() ?? "Анализ недоступен";
+  } catch (e) {
+    finalReport = `Ошибка GPT-4o: ${String(e)}`;
+    console.error("[marketPricing] GPT error:", e);
+  }
+
+  steps[1].status    = "done";
+  steps[1].report    = finalReport;
+  steps[1].completedAt = new Date().toISOString();
+  steps[1].durationMs  = Date.now() - t1;
+  await upd(2);
+
+  // ── Step 2: Save to persistent memory ────────────────────────────────────
+  steps[2].status = "running"; steps[2].startedAt = new Date().toISOString();
+  await upd(2);
+
+  await extractAndSaveMemories({
+    sessionId,
+    goal: `Анализ рыночных цен — ${dateStr}`,
+    stepTitle: `Рыночный прайс-лист ${dateStr}`,
+    stepReport: finalReport,
+    logs: [],
+  }).catch(e => console.error("[marketPricing] Memory save error:", e));
+
+  steps[2].status    = "done";
+  steps[2].report    = `Рыночный прайс-лист за ${dateStr} сохранён в постоянную память агента.`;
+  steps[2].completedAt = new Date().toISOString();
+
+  await db.execute(sql`
+    UPDATE autonomous_sessions
+    SET status='done',
+        steps=${JSON.stringify(steps)}::jsonb,
+        current_step=3,
+        final_report=${finalReport},
+        completed_at=NOW()
+    WHERE id=${sessionId}
+  `);
+}
+
 // ─── Context loader dispatcher ─────────────────────────────────────────────
 
 async function loadContextForScenario(scenarioId: string): Promise<string> {
@@ -1333,9 +1450,10 @@ export const autonomousAgent = {
 
     // Specialized scenarios have their own executors (not AI planning pipeline)
     const SPECIALIZED: Record<string, (id: number, days?: number) => Promise<void>> = {
-      masters_city_outreach: runMastersOutreachScenario,
-      master_followup:       runMasterFollowupScenario,
-      al_diagnostics:        runALDiagnosticsScenario,
+      masters_city_outreach:   runMastersOutreachScenario,
+      master_followup:         runMasterFollowupScenario,
+      al_diagnostics:          runALDiagnosticsScenario,
+      market_pricing_analysis: (id) => runMarketPricingScenario(id),
     };
 
     if (SPECIALIZED[scenarioId]) {
