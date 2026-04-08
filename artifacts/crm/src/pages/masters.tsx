@@ -8,7 +8,7 @@ import {
   FileSignature, Trash2, Smartphone, ChevronDown, Tag, ArrowUpDown, XCircle,
   LayoutList, Columns, Settings, ArrowRight, Edit2, Banknote, User,
   ChevronUp, RefreshCw, AlertCircle, Clock, Check, UserCheck, SlidersHorizontal, CheckCircle2,
-  Bot,
+  Bot, KeyRound,
 } from "lucide-react";
 import { Avatar, MasterDrawer, OnlineBadge } from "@/components/master-drawer";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
@@ -637,6 +637,7 @@ export default function Masters() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const isAdmin = user?.role === "admin";
+  const [issuingCredentials, setIssuingCredentials] = useState(false);
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -917,6 +918,33 @@ export default function Masters() {
                   className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors shadow-sm">
                   <Settings className="w-4 h-4" />
                   <span className="hidden sm:inline">Колонки</span>
+                </button>
+              )}
+              {isAdmin && (
+                <button
+                  onClick={async () => {
+                    const noAccess = masters.filter(m => !m.pwaLogin);
+                    if (noAccess.length === 0) { alert("Все активные мастера уже имеют доступ к приложению."); return; }
+                    if (!confirm(`Выдать доступ к приложению ${noAccess.length} мастерам без учётных данных?\nЛогин и пароль = номер телефона мастера.`)) return;
+                    setIssuingCredentials(true);
+                    try {
+                      const r = await fetch("/api/masters/auto-issue-credentials", { method: "POST", credentials: "include" });
+                      const d = await r.json();
+                      if (!r.ok) throw new Error(d.error ?? "Ошибка");
+                      alert(`Готово! Выдан доступ: ${d.issued} мастерам.\nПропущено (нет телефона): ${d.skipped}`);
+                      queryClient.invalidateQueries({ queryKey: ["masters"] });
+                    } catch (e: any) {
+                      alert(e.message ?? "Ошибка");
+                    } finally {
+                      setIssuingCredentials(false);
+                    }
+                  }}
+                  disabled={issuingCredentials}
+                  title="Выдать доступ к МастерApp всем мастерам без учётных данных (логин = телефон)"
+                  className="px-3 py-2 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl text-sm font-medium flex items-center gap-1.5 hover:bg-amber-100 transition-colors shadow-sm disabled:opacity-50"
+                >
+                  {issuingCredentials ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+                  <span className="hidden sm:inline">Выдать доступ</span>
                 </button>
               )}
               <button onClick={() => setIsCreateOpen(true)}

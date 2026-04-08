@@ -21,6 +21,34 @@ const avatarUpload = multer({
 
 const GCS_AVATAR_PREFIX = "avatars/";
 
+// ─── Auto-credential helper ─────────────────────────────────────────────────
+// When a master is activated and has no pwaLogin yet, auto-assign phone as login+password
+function normalizePhoneForLogin(phone: string | null): string | null {
+  if (!phone) return null;
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length === 10) return "7" + digits;
+  if (digits.length === 11 && digits[0] === "8") return "7" + digits.slice(1);
+  if (digits.length === 11 && digits[0] === "7") return digits;
+  return digits.length >= 7 ? digits : null;
+}
+
+async function autoSetPwaCredentials(masterId: number, phone: string | null) {
+  const login = normalizePhoneForLogin(phone);
+  if (!login) return;
+  const [existing] = await db.select({ pwaLogin: mastersTable.pwaLogin })
+    .from(mastersTable).where(eq(mastersTable.id, masterId));
+  if (existing?.pwaLogin) return; // already has credentials
+  // Check uniqueness
+  const taken = await db.select({ id: mastersTable.id })
+    .from(mastersTable).where(eq(mastersTable.pwaLogin, login));
+  if (taken.length > 0 && taken[0].id !== masterId) return; // login taken by another master
+  const hash = await hashPassword(login);
+  await db.update(mastersTable)
+    .set({ pwaLogin: login, pwaPasswordHash: hash })
+    .where(eq(mastersTable.id, masterId));
+  console.log(`[masters] Auto-issued PWA credentials to master ${masterId} (login=${login})`);
+}
+
 async function uploadAvatarToGCS(masterId: number, buffer: Buffer, mimetype: string): Promise<string> {
   const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
   if (!bucketId) throw new Error("Object storage not configured");
@@ -269,6 +297,11 @@ router.patch("/:id", requireRole("admin", "master_operator"), async (req, res) =
     await db.update(mastersTable)
       .set({ contractLink: null, voronkaColumnId: busyCol?.id ?? null })
       .where(eq(mastersTable.id, id));
+    autoSetPwaCredentials(id, result[0]?.phone ?? null).catch(() => {});
+  }
+  // On unsuspend: also ensure credentials exist
+  if (status === "active" && oldStatus === "suspended") {
+    autoSetPwaCredentials(id, result[0]?.phone ?? null).catch(() => {});
   }
 
   // On suspend: move master to "Отстраненные" column
@@ -342,6 +375,8 @@ router.post("/:id/mark-contract-external", requireRole("admin"), async (req, res
     notifyMasterActivated(chatId, master.alias).catch(() => {});
   }
 
+  autoSetPwaCredentials(id, master.phone ?? null).catch(() => {});
+
   const [updated] = await db.select().from(mastersTable).where(eq(mastersTable.id, id));
   res.json(formatMaster(updated));
 });
@@ -375,6 +410,9 @@ router.patch("/:id/verify-passport", requireRole("admin"), async (req, res) => {
   }
 
   await db.update(mastersTable).set(updates).where(eq(mastersTable.id, id));
+  if (updates.status === "active") {
+    autoSetPwaCredentials(id, master.phone ?? null).catch(() => {});
+  }
   const [updated] = await db.select().from(mastersTable).where(eq(mastersTable.id, id));
   res.json(formatMaster(updated));
 });
@@ -563,6 +601,35 @@ router.post("/reset-all-passwords", requireRole("admin"), async (req, res) => {
 
   console.log(`[admin] reset-all-passwords: ${results.length} мастеров`);
   res.json({ success: true, count: results.length, masters: results });
+});
+
+// POST /api/masters/auto-issue-credentials — auto-assign phone-based credentials to all active masters without pwaLogin
+router.post("/auto-issue-credentials", requireRole("admin"), async (req, res) => {
+  const masters = await db.select({
+    id: mastersTable.id,
+    alias: mastersTable.alias,
+    phone: mastersTable.phone,
+    pwaLogin: mastersTable.pwaLogin,
+  })
+    .from(mastersTable)
+    .where(and(isNull(mastersTable.pwaLogin), isNull(mastersTable.deletedAt), eq(mastersTable.status, "active")));
+
+  const results: { id: number; alias: string; login: string }[] = [];
+  const skipped: { id: number; alias: string; reason: string }[] = [];
+
+  for (const m of masters) {
+    const login = normalizePhoneForLogin(m.phone);
+    if (!login) { skipped.push({ id: m.id, alias: m.alias ?? "—", reason: "no phone" }); continue; }
+    // Check uniqueness
+    const taken = await db.select({ id: mastersTable.id }).from(mastersTable).where(eq(mastersTable.pwaLogin, login));
+    if (taken.length > 0 && taken[0].id !== m.id) { skipped.push({ id: m.id, alias: m.alias ?? "—", reason: `login taken by #${taken[0].id}` }); continue; }
+    const hash = await hashPassword(login);
+    await db.update(mastersTable).set({ pwaLogin: login, pwaPasswordHash: hash }).where(eq(mastersTable.id, m.id));
+    results.push({ id: m.id, alias: m.alias ?? "—", login });
+  }
+
+  console.log(`[admin] auto-issue-credentials: выдано ${results.length}, пропущено ${skipped.length}`);
+  res.json({ success: true, issued: results.length, skipped: skipped.length, masters: results, skippedMasters: skipped });
 });
 
 // DELETE /api/masters/:id/max-link — CRM operator unlinks Max account
