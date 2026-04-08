@@ -126,15 +126,21 @@ router.post("/auth/login", async (req, res) => {
 });
 
 // POST /api/master-pwa/auth/forgot-password
-// Self-service: master enters phone → password resets to phone number
+// Self-service: master enters phone + new password → password updated
+// If newPassword is omitted, resets to phone number (backwards compat)
 router.post("/auth/forgot-password", async (req, res) => {
-  const { phone } = req.body;
+  const { phone, newPassword } = req.body;
   if (!phone) return res.status(400).json({ error: "Введите номер телефона" });
 
   const normalized = normalizeLoginInput(phone);
   if (normalized.length < 7) return res.status(400).json({ error: "Введите корректный номер телефона" });
 
-  // 1. Look up by pwaLogin (most common: master registered with phone)
+  if (newPassword !== undefined && newPassword !== null && newPassword !== "") {
+    if (typeof newPassword !== "string" || newPassword.length < 4) {
+      return res.status(400).json({ error: "Пароль должен быть не короче 4 символов" });
+    }
+  }
+
   const allMasters = await db.select({
     id: mastersTable.id, alias: mastersTable.alias,
     status: mastersTable.status, phone: mastersTable.phone, pwaLogin: mastersTable.pwaLogin,
@@ -154,12 +160,13 @@ router.post("/auth/forgot-password", async (req, res) => {
     return res.status(403).json({ error: "Аккаунт заблокирован. Обратитесь к менеджеру." });
   }
 
-  const hash = await hashPassword(normalized);
+  const passwordToSet = (newPassword && newPassword.trim()) ? newPassword.trim() : normalized;
+  const hash = await hashPassword(passwordToSet);
   await db.update(mastersTable)
     .set({ pwaLogin: normalized, pwaPasswordHash: hash })
     .where(eq(mastersTable.id, master.id));
 
-  console.log(`[auth] forgot-password: master ${master.id} (${master.alias}) reset password to phone ${normalized}`);
+  console.log(`[auth] forgot-password: master ${master.id} (${master.alias}) set new password (custom=${!!newPassword})`);
   res.json({ success: true, login: normalized });
 });
 

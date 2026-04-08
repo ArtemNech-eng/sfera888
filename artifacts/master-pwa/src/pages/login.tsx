@@ -171,23 +171,28 @@ export default function LoginPage() {
   // Forgot password
   const [forgotView, setForgotView] = useState(false);
   const [forgotPhone, setForgotPhone] = useState("");
-  const [forgotDone, setForgotDone] = useState<string | null>(null); // stores the login after reset
+  const [forgotNewPass, setForgotNewPass] = useState("");
+  const [forgotNewPassConfirm, setForgotNewPassConfirm] = useState("");
+  const [showForgotPass, setShowForgotPass] = useState(false);
+  const [forgotDone, setForgotDone] = useState<{ login: string; customPass: boolean } | null>(null);
   const [forgotLoading, setForgotLoading] = useState(false);
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!forgotPhone) { toast.error("Введите номер телефона"); return; }
+    if (forgotNewPass && forgotNewPass.length < 4) { toast.error("Пароль должен быть не короче 4 символов"); return; }
+    if (forgotNewPass && forgotNewPass !== forgotNewPassConfirm) { toast.error("Пароли не совпадают"); return; }
     setForgotLoading(true);
     try {
       const res = await fetch("/api/master-pwa/auth/forgot-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: forgotPhone }),
+        body: JSON.stringify({ phone: forgotPhone, newPassword: forgotNewPass || undefined }),
         credentials: "include",
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Ошибка");
-      setForgotDone(data.login ?? forgotPhone.replace(/\D/g, ""));
+      setForgotDone({ login: data.login, customPass: !!forgotNewPass });
     } catch (err: any) {
       toast.error(err.message ?? "Ошибка сброса пароля");
     } finally {
@@ -334,23 +339,29 @@ export default function LoginPage() {
                   <svg className="text-green-600 dark:text-green-400" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                 </div>
                 <div>
-                  <p className="font-semibold text-green-800 dark:text-green-300 text-base">Пароль сброшен!</p>
-                  <p className="text-sm text-green-700 dark:text-green-400 mt-1">Теперь войдите с этими данными:</p>
+                  <p className="font-semibold text-green-800 dark:text-green-300 text-base">Пароль изменён!</p>
+                  <p className="text-sm text-green-700 dark:text-green-400 mt-1">Войдите с этими данными:</p>
                 </div>
                 <div className="bg-white dark:bg-card rounded-xl p-3 text-left space-y-1 border border-green-200 dark:border-green-800">
                   <p className="text-xs text-muted-foreground">Логин</p>
-                  <p className="font-mono font-semibold text-sm text-foreground">{forgotDone}</p>
+                  <p className="font-mono font-semibold text-sm text-foreground">{forgotDone.login}</p>
                   <p className="text-xs text-muted-foreground mt-2">Пароль</p>
-                  <p className="font-mono font-semibold text-sm text-foreground">{forgotDone}</p>
+                  <p className="font-mono font-semibold text-sm text-foreground">
+                    {forgotDone.customPass ? "••••••••  (тот, что вы задали)" : forgotDone.login}
+                  </p>
                 </div>
-                <p className="text-xs text-muted-foreground">Логин и пароль — ваш номер телефона в формате 79XXXXXXXXXX</p>
+                {!forgotDone.customPass && (
+                  <p className="text-xs text-muted-foreground">Логин и пароль — ваш номер телефона (79XXXXXXXXXX)</p>
+                )}
               </div>
               <button
                 type="button"
                 onClick={() => {
-                  setForm(f => ({ ...f, login: forgotDone }));
+                  setForm(f => ({ ...f, login: forgotDone!.login }));
                   setForgotView(false);
                   setForgotDone(null);
+                  setForgotNewPass("");
+                  setForgotNewPassConfirm("");
                   setTab("login");
                 }}
                 style={{ minHeight: 52 }}
@@ -362,9 +373,10 @@ export default function LoginPage() {
           ) : (
             <form onSubmit={handleForgotPassword} className="space-y-4">
               <div className="text-center space-y-1 pb-1">
-                <p className="font-semibold text-base">Восстановление доступа</p>
-                <p className="text-xs text-muted-foreground">Введите ваш номер телефона. Пароль будет сброшен к номеру телефона.</p>
+                <p className="font-semibold text-base">Смена пароля</p>
+                <p className="text-xs text-muted-foreground">Введите номер телефона и придумайте новый пароль</p>
               </div>
+
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-foreground">Номер телефона</label>
                 <input
@@ -377,22 +389,65 @@ export default function LoginPage() {
                     setForgotPhone(isPhone ? formatPhoneInput(v) : v);
                   }}
                   placeholder="+7 (___) ___-__-__"
-                  className="flex h-12 w-full rounded-xl border border-input bg-background px-3 py-2 text-base ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className={inputCls}
                 />
               </div>
+
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-foreground">Новый пароль</label>
+                <div className="relative">
+                  <input
+                    type={showForgotPass ? "text" : "password"}
+                    autoComplete="new-password"
+                    value={forgotNewPass}
+                    onChange={e => setForgotNewPass(e.target.value)}
+                    placeholder="Минимум 4 символа"
+                    className={`${inputCls} pr-11`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotPass(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    tabIndex={-1}
+                  >
+                    {showForgotPass
+                      ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                      : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    }
+                  </button>
+                </div>
+              </div>
+
+              {forgotNewPass.length > 0 && (
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-foreground">Повторите пароль</label>
+                  <input
+                    type={showForgotPass ? "text" : "password"}
+                    autoComplete="new-password"
+                    value={forgotNewPassConfirm}
+                    onChange={e => setForgotNewPassConfirm(e.target.value)}
+                    placeholder="Ещё раз новый пароль"
+                    className={`${inputCls} ${forgotNewPassConfirm && forgotNewPass !== forgotNewPassConfirm ? "border-red-400 ring-1 ring-red-400" : ""}`}
+                  />
+                  {forgotNewPassConfirm && forgotNewPass !== forgotNewPassConfirm && (
+                    <p className="text-xs text-red-500 font-medium">Пароли не совпадают</p>
+                  )}
+                </div>
+              )}
+
               <button
                 type="submit"
-                disabled={forgotLoading}
+                disabled={forgotLoading || (forgotNewPass.length > 0 && forgotNewPass !== forgotNewPassConfirm)}
                 style={{ minHeight: 52 }}
                 className="w-full bg-primary text-white font-semibold text-base rounded-xl disabled:opacity-50 transition-opacity active:opacity-80 flex items-center justify-center gap-2"
               >
                 {forgotLoading
                   ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  : "Сбросить пароль"}
+                  : "Сохранить пароль"}
               </button>
               <button
                 type="button"
-                onClick={() => { setForgotView(false); setForgotPhone(""); setForgotDone(null); }}
+                onClick={() => { setForgotView(false); setForgotPhone(""); setForgotNewPass(""); setForgotNewPassConfirm(""); setForgotDone(null); }}
                 className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-1"
               >
                 ← Назад ко входу
