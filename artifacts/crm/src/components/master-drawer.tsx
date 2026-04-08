@@ -439,9 +439,12 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error ?? "Ошибка");
-      onMasterUpdate(master.id, { pwaLogin: pwaLogin.trim() });
+      // Server normalizes the login (e.g. +7 (918)... → 79184...), use the actual stored value
+      const savedLogin = data.login ?? pwaLogin.trim();
+      onMasterUpdate(master.id, { pwaLogin: savedLogin });
+      setPwaLogin(savedLogin);
       setPwaPassword("");
-      alert("Доступ к МастерApp сохранён");
+      alert(`Доступ к МастерApp сохранён.\nЛогин: ${savedLogin}`);
     } catch (e: any) {
       alert(e.message ?? "Ошибка");
     } finally {

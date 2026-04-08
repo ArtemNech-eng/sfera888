@@ -927,8 +927,11 @@ router.post("/auth/register", async (req, res) => {
   const specText = specialization || specs.join(", ");
   if (password.length < 6) return res.status(400).json({ error: "Пароль минимум 6 символов" });
 
+  // Normalize login before storing (same normalization used at login time)
+  const normalizedLogin = normalizeLoginInput(login);
+
   // Check login uniqueness
-  const existing = await db.select().from(mastersTable).where(and(eq(mastersTable.pwaLogin, login), isNull(mastersTable.deletedAt)));
+  const existing = await db.select().from(mastersTable).where(and(eq(mastersTable.pwaLogin, normalizedLogin), isNull(mastersTable.deletedAt)));
   if (existing.length > 0) {
     const m = existing[0];
     if (m.status === "pending_contract") {
@@ -950,7 +953,7 @@ router.post("/auth/register", async (req, res) => {
     specialization: specText,
     specializations: specs,
     servicePrices,
-    pwaLogin: login,
+    pwaLogin: normalizedLogin,
     pwaPasswordHash: passwordHash,
     voronkaColumnId: firstCol?.id ?? null,
     status: "pending_contract",
@@ -1278,19 +1281,23 @@ router.post("/admin/set-credentials/:masterId", async (req: any, res: any) => {
   if (!login || !password) return res.status(400).json({ error: "login и password обязательны" });
 
   const targetId = parseInt(req.params.masterId);
+
+  // Normalize login exactly as the login endpoint does — prevents mismatch between stored and queried login
+  const normalizedLogin = normalizeLoginInput(login);
+
   const passwordHash = await hashPassword(password);
 
   // Check login uniqueness
   const existing = await db.select().from(mastersTable)
-    .where(and(eq(mastersTable.pwaLogin, login)));
+    .where(and(eq(mastersTable.pwaLogin, normalizedLogin)));
   if (existing.length > 0 && existing[0].id !== targetId) {
     return res.status(400).json({ error: "Этот логин уже занят" });
   }
 
-  await db.update(mastersTable).set({ pwaLogin: login, pwaPasswordHash: passwordHash })
+  await db.update(mastersTable).set({ pwaLogin: normalizedLogin, pwaPasswordHash: passwordHash })
     .where(eq(mastersTable.id, targetId));
 
-  res.json({ success: true });
+  res.json({ success: true, login: normalizedLogin });
 });
 
 export default router;
