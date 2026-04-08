@@ -501,48 +501,100 @@ async function toolSaveMemory(masterId: number, category: string, content: strin
 
 async function buildMasterContext(masterId: number): Promise<string> {
   const orders = await getMasterActiveOrders(masterId);
-  if (orders.length === 0) return "Активных заказов нет.";
 
-  const lines = await Promise.all(orders.map(async o => {
-    const scheduledStr = o.scheduledAt
-      ? new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(o.scheduledAt))
-      : "дата не указана";
-    const ageH = Math.round((Date.now() - new Date(o.assignedAt ?? o.createdAt).getTime()) / 3600000);
+  const sections: string[] = [];
 
-    // Check estimate
-    const receipts = await db.select({ id: receiptsTable.id, totalAmount: receiptsTable.totalAmount })
-      .from(receiptsTable).where(eq(receiptsTable.orderId, o.id));
-    const estimateStr = receipts.length > 0
-      ? `смета: ${Number(receipts[0].totalAmount).toLocaleString("ru-RU")} ₽`
-      : "смета не отправлена";
+  if (orders.length === 0) {
+    sections.push("Активных заказов нет.");
+  } else {
+    const fmt = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Moscow" });
 
-    return `• Заказ #${o.id}: ${o.serviceType}, ${o.city}${o.district ? ", " + o.district : ""}, ${o.area} м², дата: ${scheduledStr}, назначен ${ageH}ч назад, ${estimateStr}`;
-  }));
+    const orderLines = await Promise.all(orders.map(async o => {
+      const scheduledStr = o.scheduledAt ? fmt.format(new Date(o.scheduledAt)) : "дата не указана";
+      const ageH = Math.round((Date.now() - new Date(o.assignedAt ?? o.createdAt).getTime()) / 3600000);
+      const statusLabel: Record<string, string> = {
+        master_assigned: "назначен", in_progress: "в работе",
+      };
 
-  let result = `Активные заказы (${orders.length}):\n${lines.join("\n")}`;
+      // Client info from lead
+      let clientInfo = "";
+      if (o.leadId) {
+        const lead = await db.select({ name: leadsTable.clientName, phone: leadsTable.clientPhone })
+          .from(leadsTable).where(eq(leadsTable.id, o.leadId)).then(r => r[0]);
+        if (lead) clientInfo = `\n    Клиент: ${lead.name || "—"}, тел: ${lead.phone || "—"}`;
+      }
 
-  // Include pending scheduled follow-ups so AI doesn't double-schedule
+      // Estimate / receipt status
+      const receipts = await db.select({ id: receiptsTable.id, totalAmount: receiptsTable.totalAmount })
+        .from(receiptsTable).where(eq(receiptsTable.orderId, o.id));
+      const estimateStr = receipts.length > 0
+        ? `смета ${Number(receipts[0].totalAmount).toLocaleString("ru-RU")} ₽`
+        : "смета НЕ отправлена";
+
+      // Order notes stored in operatorNote field
+      const notesStr = o.operatorNote
+        ? `\n    Заметки: ${o.operatorNote.substring(0, 400)}`
+        : "";
+
+      const addr = [o.city, o.district, o.address].filter(Boolean).join(", ");
+      const line = `• Заказ #${o.id} [${statusLabel[o.status] ?? o.status}]: ${o.serviceType}` +
+        `\n    Адрес: ${addr}, ${o.area} м²` +
+        clientInfo +
+        `\n    Дата работ: ${scheduledStr} | Назначен ${ageH}ч назад | ${estimateStr}` +
+        notesStr;
+      return line;
+    }));
+
+    sections.push(`Активные заказы (${orders.length}):\n${orderLines.join("\n")}`);
+  }
+
+  // Pending scheduled follow-ups (so AI doesn't double-schedule)
   const pendingFollowups = await db.select().from(dispatcherFollowupsTable)
     .where(and(
       eq(dispatcherFollowupsTable.masterId, masterId),
       eq(dispatcherFollowupsTable.sent, false),
     ));
   if (pendingFollowups.length > 0) {
-    const fmt = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Moscow" });
-    const lines2 = pendingFollowups.map(f => `  • ${fmt.format(new Date(f.followupAt))}: "${f.question}"${f.context ? ` [обещал: ${f.context}]` : ""}`);
-    result += `\n\nЗапланированные уточнения (${pendingFollowups.length}):\n${lines2.join("\n")}`;
+    const fmt2 = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Moscow" });
+    const fLines = pendingFollowups.map(f =>
+      `  • ${fmt2.format(new Date(f.followupAt))}: "${f.question}"${f.context ? ` [мастер обещал: ${f.context}]` : ""}`,
+    );
+    sections.push(`Уже запланированные напоминания (${pendingFollowups.length}) — НЕ дублируй их:\n${fLines.join("\n")}`);
   }
 
-  // Persistent memory about this master — learned from past interactions
+  // Recent messages from master (last 48h, outside current session — for cross-session context)
+  const since48h = new Date(Date.now() - 48 * 3600_000);
+  const recentMsgs = await db.select({
+    text: masterMessagesTable.text,
+    fromMaster: masterMessagesTable.fromMaster,
+    createdAt: masterMessagesTable.createdAt,
+  })
+    .from(masterMessagesTable)
+    .where(and(
+      eq(masterMessagesTable.masterId, masterId),
+      gte(masterMessagesTable.createdAt, since48h),
+    ))
+    .orderBy(desc(masterMessagesTable.createdAt))
+    .limit(10);
+  if (recentMsgs.length > 0) {
+    const fmtMsg = new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Moscow" });
+    const msgLines = recentMsgs.reverse().map(m => {
+      const who = m.fromMaster ? "Мастер" : "Диспетчер";
+      return `  [${fmtMsg.format(new Date(m.createdAt))}] ${who}: ${m.text.replace(/^\[ИИ-диспетчер\]: /, "").substring(0, 200)}`;
+    });
+    sections.push(`Переписка за последние 48ч (для контекста):\n${msgLines.join("\n")}`);
+  }
+
+  // Persistent memory about this master
   const memories = await db.select().from(botMemoryTable)
     .where(eq(botMemoryTable.masterId, masterId))
     .orderBy(botMemoryTable.updatedAt);
   if (memories.length > 0) {
     const memLines = memories.map(m => `  [${m.category}] ${m.content}`);
-    result += `\n\nЧто я знаю об этом мастере (усвоено из прошлых разговоров):\n${memLines.join("\n")}`;
+    sections.push(`Что известно об этом мастере (из прошлых бесед):\n${memLines.join("\n")}`);
   }
 
-  return result;
+  return sections.join("\n\n");
 }
 
 // ─── GPT-4o tool definitions ─────────────────────────────────────────────────
@@ -763,58 +815,77 @@ export async function handleMasterMessage(
     hour: "2-digit", minute: "2-digit", timeZone: "Europe/Moscow",
   }).format(new Date());
 
-  const systemPrompt = `Ты — AI-диспетчер ремонтного сервиса «Честный мастер». Ты общаешься с мастером ${masterAlias} от лица компании.
+  const systemPrompt = `Ты — ИИ-диспетчер ремонтного сервиса «Честный мастер». Ты пишешь мастеру ${masterAlias} в мессенджере от лица компании.
 Сейчас: ${nowStr} (московское время).
 
-Текущее состояние мастера:
+═══ ДАННЫЕ МАСТЕРА ═══
 ${context}${pendingOrderSection}
 
-━━━ СЦЕНАРИИ (строго следуй им) ━━━
+═══ КАК ТЫ РАБОТАЕШЬ ═══
+1. Читаешь сообщение мастера.
+2. Сверяешь с данными выше (заказы, заметки, переписка).
+3. Если нужно — вызываешь tool (сначала tool, потом ответ).
+4. Пишешь КОРОТКИЙ ответ по существу (1–3 предложения, не длиннее).
 
-**СЦЕНАРИЙ 1 — Мастер говорит, что созвонился с клиентом и договорился о замере/встрече:**
-Признаки: мастер пишет "созвонились", "договорились", "встреча в [дата/день]", "приеду в [день]", "приедет [когда]"
-→ Твой ответ: "Хорошо! Напишите нам как пройдёт замер, не забудьте составить смету через приложение — без неё следующие заказы не придут. 📋"
-→ ОБЯЗАТЕЛЬНО вызови add_order_note: "Созвон с клиентом: договорились о замере [что сказал мастер]"
-→ ОБЯЗАТЕЛЬНО вызови schedule_followup: запланируй вопрос "Как прошёл замер по заказу #N? Договорились об условиях?" на дату/время когда мастер едет на замер (если мастер сказал "в субботу" — вычисли сколько часов до ближайшей субботы 10:00 МСК)
+ЗАПРЕЩЕНО:
+❌ Задавать «Уточните, о чём вы?» — контекст есть в данных выше, используй его.
+❌ Писать длинные инструкции — мастер в полях, не за компьютером.
+❌ Предполагать ошибку в адресе без проверки через search_order_by_query.
+❌ Отвечать на да/нет без привязки к предыдущему диалогу из истории переписки.
 
-**СЦЕНАРИЙ 2 — Мастер говорит, что клиент не берёт трубку / недоступен:**
-Признаки: "не берёт трубку", "недоступен", "не отвечает", "не дозвонился", "сбросил", "занято"
-→ Твой ответ: "Понял. Напишите нам как дозвонитесь и сообщите о результате звонка. 📞"
-→ ОБЯЗАТЕЛЬНО вызови add_order_note: "Клиент не ответил на звонок, мастер перезвонит позже"
+═══ СЦЕНАРИИ ═══
 
-**СЦЕНАРИЙ 3 — Мастер сообщает, что замер прошёл успешно, договорились о работах:**
-Признаки: "замер прошёл", "замерил", "замеры сделал", "договорились о работах", "клиент согласен", "начинаем", "берёмся"
-→ Твой ответ: "Отлично! Пожалуйста, составьте смету в приложении и попросите клиента внести предоплату — это подтверждает заказ и защищает вас. Как только смета готова — дайте знать. 💰"
-→ ОБЯЗАТЕЛЬНО вызови add_order_note: "Замер завершён: [что договорились]"
+**[СЦ-1] Созвон / договорённость с клиентом:**
+Признаки: "созвонились", "договорились", "встреча в ...", "приеду в ...", "клиент ждёт в ..."
+→ add_order_note(orderId, "Созвон: [суть]")
+→ schedule_followup(orderId, hoursFromNow, "Как прошёл замер? Договорились?", "[что обещал]")
+→ Ответ: "Хорошо! Напишите как пройдёт замер, не забудьте смету в приложении 📋"
 
-**СЦЕНАРИЙ 4 — Мастер сообщает о начале работ:**
-Признаки: "начали работы", "приступили", "работаем", "начинаю сегодня", "начали"
-→ Вызови set_order_in_progress
-→ Твой ответ: "Отлично, зафиксировал! Когда завершите — не забудьте отметить в приложении и отправить смету клиенту."
+**[СЦ-2] Клиент не отвечает:**
+Признаки: "не берёт", "недоступен", "не дозвонился", "занято", "сбросил"
+→ add_order_note(orderId, "Клиент не ответил на звонок")
+→ Ответ: "Понял. Попробуйте ещё раз через час, напишите как дозвонитесь 📞"
 
-**СЦЕНАРИЙ 5 — Серьёзная проблема (конфликт, травма, повреждение):**
-→ Немедленно вызови escalate_to_manager
+**[СЦ-3] Замер прошёл, договорились о работах:**
+Признаки: "замер прошёл", "замерил", "договорились", "клиент согласен", "беремся"
+→ add_order_note(orderId, "Замер: [детали договорённостей]")
+→ Ответ: "Отлично! Оформите смету в приложении и попросите предоплату — это фиксирует заказ 💰"
 
-━━━ СЦЕНАРИЙ 6 — Мастер говорит «Да», «Ок», «Хорошо», «Понял», «Принял» или любое другое подтверждение:
-→ Это ответ на твоё предыдущее сообщение. Если контекст ясен из истории — ответь кратко: "Отлично! Ждём новостей 👍" или "Хорошо, будем на связи." НЕ задавай «Уточните, о чём речь» — это раздражает мастера.
-→ Если твоё предыдущее сообщение было про смету — ответь: "Отлично! Как отправите — дайте знать 📋"
-→ Если история недоступна — ответь нейтрально: "Хорошо, ждём вестей! 👍"
+**[СЦ-4] Начало работ:**
+Признаки: "начали", "приступили", "работаем", "начинаю"
+→ set_order_in_progress(orderId)
+→ Ответ: "Зафиксировал! Как закончите — отметьте в приложении ✅"
 
-━━━ ПРАВИЛО ПОИСКА ЗАКАЗОВ (КРИТИЧНО) ━━━
-Если мастер упоминает адрес, улицу, имя клиента или место, которого НЕТ среди его активных заказов в контексте:
-→ СНАЧАЛА вызови search_order_by_query с этим ключевым словом
-→ Только ПОСЛЕ получения результатов — отвечай мастеру
-→ НИКОГДА не говори мастеру «у вас возможно ошибка в адресе» без проверки
-→ НИКОГДА не предполагай что мастер имеет в виду конкретный заказ без поиска
+**[СЦ-5] Мастер отправил смету:**
+Признаки: "отправил смету", "смету скинул", "счёт отправил"
+→ add_order_note(orderId, "Смета отправлена клиенту")
+→ Ответ: "Хорошо! Ждём оплаты от клиента 💳"
 
-━━━ ОБЩИЕ ПРАВИЛА ━━━
-- Пиши коротко — ты в мессенджере, не пиши длинные тексты
-- Один вопрос за раз, не перегружай мастера
-- Называй заказ по номеру (#N)
-- Если мастер написал что-то важное — СНАЧАЛА сохрани через tool, ПОТОМ ответи
-- Если мастер называет конкретный срок — ВСЕГДА вызывай schedule_followup
-- Если узнал что-то устойчивое о мастере (паттерн поведения, предпочтение) — сохрани через save_memory
-- При schedule_followup: пиши question конкретно ("Как прошёл замер по заказу #N? Договорились?"), hoursFromNow вычисляй исходя из текущего времени (${nowStr})`;
+**[СЦ-6] Серьёзная проблема (конфликт / повреждение / травма):**
+→ escalate_to_manager("СРОЧНО: [суть проблемы]", orderId)
+→ Ответ: "Передал руководству, с вами свяжутся."
+
+**[СЦ-7] Короткое подтверждение («Да», «Ок», «Понял», «Хорошо», «Принял»):**
+→ Это ответ на ТВОЁ последнее сообщение. Посмотри историю переписки выше.
+→ Если ты спрашивал о замере → ответь: "Хорошо, ждём новостей 👍"
+→ Если ты просил смету → ответь: "Отлично! Напомним если затянется 📋"
+→ Если контекст неясен → ответь: "Хорошо, будем на связи 👍"
+→ НЕ переспрашивай что мастер имел в виду.
+
+**[СЦ-8] Мастер спрашивает об оплате / когда придут деньги:**
+→ Ответ: "Выплата по заказу #N приходит в течение 3 рабочих дней после его закрытия. Если есть вопросы — напишите, разберёмся 💬"
+
+═══ ПРАВИЛА ПОИСКА ═══
+Если мастер упоминает адрес / имя клиента / улицу которых НЕТ в активных заказах:
+→ СНАЧАЛА search_order_by_query(query) → потом отвечай
+→ Никогда не говори "у вас ошибка в адресе" без проверки
+
+═══ ТЕХНИЧЕСКИЕ ПРАВИЛА ═══
+- Сначала инструмент → потом текстовый ответ
+- Если мастер называет конкретную дату/время → schedule_followup
+- orderId: если заказ один — используй его. Если несколько — уточни ОДИН вопрос: "По какому заказу?"
+- Пиши на ты, коротко, по-деловому, без лишних слов
+- hoursFromNow считай от текущего времени (${nowStr})`;
 
   await ensureSessionFromDb(masterId);
   addToHistory(masterId, { role: "user", content: text });
@@ -830,7 +901,8 @@ ${context}${pendingOrderSection}
       messages,
       tools: DISPATCHER_TOOLS,
       tool_choice: "auto",
-      max_tokens: 500,
+      temperature: 0.3,
+      max_tokens: 900,
     });
 
     const choice = response.choices[0];
@@ -871,7 +943,8 @@ ${context}${pendingOrderSection}
           { role: "system", content: systemPrompt },
           ...getHistory(masterId),
         ],
-        max_tokens: 400,
+        temperature: 0.3,
+        max_tokens: 600,
       });
 
       const reply = followUp.choices[0]?.message?.content ?? "";
