@@ -921,159 +921,180 @@ export default function AiOfficePage() {
               {/* ── Scenarios section ── */}
               {scenarios.length > 0 && (
                 <div className="border-b border-border shrink-0">
-                  <div className="px-4 py-2.5 flex items-center justify-between bg-muted/20">
-                    <div className="flex items-center gap-2">
-                      <CheckSquare className="w-3.5 h-3.5 text-violet-500" />
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Сценарии</p>
-                    </div>
+                  {/* Section header */}
+                  <div className="px-4 pt-3 pb-1 flex items-center justify-between">
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Сценарии</p>
                   </div>
-                  <div className="px-3 pb-3 space-y-2">
+
+                  {/* 2×2 icon grid */}
+                  <div className="px-3 pb-2 grid grid-cols-2 gap-2">
                     {scenarios.map(scenario => {
                       const isRunning = runningScenarios.has(scenario.id);
                       const schedule = schedules[scenario.id];
                       const hasSchedule = schedule?.enabled && schedule.days.length > 0;
-                      const catInfo = CATEGORY_LABELS[scenario.category];
                       const colorClass = SCENARIO_COLOR_MAP[scenario.color] ?? "from-gray-500 to-gray-700";
-                      const icon = SCENARIO_ICON_MAP[scenario.icon] ?? <Rocket className="w-4 h-4" />;
+                      const icon = SCENARIO_ICON_MAP[scenario.icon] ?? <Rocket className="w-5 h-5" />;
                       const isScheduleOpen = openSchedule === scenario.id;
 
+                      // Short display label for the grid
+                      const SHORT_LABELS: Record<string, string> = {
+                        masters_city_outreach: "Рассылка",
+                        master_followup: "Зависшие",
+                        al_diagnostics: "АЛ-Диагностика",
+                        market_pricing_analysis: "Анализ цен",
+                      };
+                      const shortLabel = SHORT_LABELS[scenario.id] ?? scenario.title;
+
                       return (
-                        <div key={scenario.id} className="rounded-xl border border-border bg-card overflow-hidden">
-                          {/* Card header */}
-                          <div className="px-3 py-2.5 flex items-start gap-2.5">
-                            <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${colorClass} flex items-center justify-center text-white shrink-0`}>
-                              {icon}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <p className="text-xs font-semibold leading-tight">{scenario.title}</p>
-                                {catInfo && (
-                                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${catInfo.color}`}>
-                                    {catInfo.label}
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-[11px] text-muted-foreground leading-snug mt-0.5">
-                                {scenario.shortDescription}
-                              </p>
-                            </div>
-                          </div>
-
-                          {/* Schedule editor (inline, collapsible) */}
-                          {isScheduleOpen && (
-                            <div className="px-3 pb-2.5 border-t border-border/60 bg-muted/20 pt-2">
-                              <div className="flex items-center gap-2 mb-2">
-                                <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-                                <p className="text-xs font-medium text-muted-foreground">Автозапуск каждый день в 09:00 МСК</p>
-                              </div>
-                              <div className="flex gap-1 flex-wrap">
-                                {DAY_LABELS.map((label, dayIdx) => {
-                                  const isOn = schedule?.days?.includes(dayIdx) ?? false;
-                                  return (
-                                    <button
-                                      key={dayIdx}
-                                      onClick={() => {
-                                        const cur = schedules[scenario.id] ?? { enabled: true, days: [] };
-                                        const days = isOn
-                                          ? cur.days.filter(d => d !== dayIdx)
-                                          : [...cur.days, dayIdx];
-                                        saveSchedule(scenario.id, { enabled: days.length > 0, days });
-                                      }}
-                                      className={`w-8 h-8 rounded-lg text-xs font-semibold transition-colors ${
-                                        isOn
-                                          ? "bg-violet-600 text-white"
-                                          : "bg-muted text-muted-foreground hover:bg-muted/80"
-                                      }`}
-                                    >
-                                      {label}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                              {hasSchedule && (
-                                <p className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-1.5 flex items-center gap-1">
-                                  <CheckCircle2 className="w-3 h-3" />
-                                  Запускается по: {schedule.days.map(d => DAY_LABELS[d]).join(", ")}
-                                </p>
-                              )}
-                            </div>
-                          )}
-
-                          {/* Days interval selector — only for al_diagnostics */}
-                          {scenario.id === "al_diagnostics" && (
-                            <div className="px-3 pb-2 flex items-center gap-2">
-                              <span className="text-[10px] text-muted-foreground shrink-0">Период:</span>
-                              <div className="flex items-center gap-1 flex-1">
-                                <button
-                                  onClick={() => {
-                                    const cur = scenarioDays["al_diagnostics"] ?? 7;
-                                    if (cur > 1) {
-                                      const updated = { ...scenarioDays, al_diagnostics: cur - 1 };
-                                      setScenarioDays(updated);
-                                      localStorage.setItem("scenarioDays", JSON.stringify(updated));
-                                    }
-                                  }}
-                                  className="w-5 h-5 rounded flex items-center justify-center bg-muted hover:bg-muted/70 text-muted-foreground text-xs font-bold transition-colors"
-                                  disabled={(scenarioDays["al_diagnostics"] ?? 7) <= 1}
-                                >−</button>
-                                <div className="flex-1 relative h-1.5 bg-muted rounded-full overflow-hidden">
-                                  <div
-                                    className="absolute inset-y-0 left-0 bg-orange-500 rounded-full transition-all"
-                                    style={{ width: `${((scenarioDays["al_diagnostics"] ?? 7) - 1) / 13 * 100}%` }}
-                                  />
-                                </div>
-                                <button
-                                  onClick={() => {
-                                    const cur = scenarioDays["al_diagnostics"] ?? 7;
-                                    if (cur < 14) {
-                                      const updated = { ...scenarioDays, al_diagnostics: cur + 1 };
-                                      setScenarioDays(updated);
-                                      localStorage.setItem("scenarioDays", JSON.stringify(updated));
-                                    }
-                                  }}
-                                  className="w-5 h-5 rounded flex items-center justify-center bg-muted hover:bg-muted/70 text-muted-foreground text-xs font-bold transition-colors"
-                                  disabled={(scenarioDays["al_diagnostics"] ?? 7) >= 14}
-                                >+</button>
-                                <span className="text-[10px] font-semibold text-orange-600 dark:text-orange-400 w-10 text-right shrink-0">
-                                  {scenarioDays["al_diagnostics"] ?? 7} дн.
-                                </span>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Actions */}
-                          <div className="px-3 pb-2.5 flex items-center gap-2">
-                            <Button
-                              size="sm"
-                              className="gap-1.5 h-7 text-xs bg-gradient-to-r from-violet-600 to-indigo-600 hover:opacity-90 text-white flex-1"
-                              onClick={() => handleRunScenario(scenario)}
-                              disabled={isRunning}
-                            >
+                        <div key={scenario.id} className="flex flex-col gap-0">
+                          {/* Square tile */}
+                          <button
+                            onClick={() => handleRunScenario(scenario)}
+                            disabled={isRunning}
+                            className={`relative w-full aspect-square rounded-2xl bg-gradient-to-br ${colorClass} flex flex-col items-center justify-center gap-1.5 text-white shadow-sm hover:opacity-90 active:scale-95 transition-all disabled:opacity-60 group`}
+                          >
+                            {/* Icon */}
+                            <div className="w-8 h-8 flex items-center justify-center">
                               {isRunning
-                                ? <><Loader2 className="w-3 h-3 animate-spin" /> Запускаю...</>
-                                : scenario.requiresConfirmation
-                                  ? <><ShieldAlert className="w-3 h-3" /> Запустить</>
-                                  : <><Play className="w-3 h-3" /> Запустить</>
+                                ? <Loader2 className="w-6 h-6 animate-spin" />
+                                : <div className="w-6 h-6 [&>svg]:w-6 [&>svg]:h-6">{icon}</div>
                               }
-                            </Button>
-                            <button
-                              onClick={() => setOpenSchedule(isScheduleOpen ? null : scenario.id)}
-                              className={`h-7 w-7 rounded-lg flex items-center justify-center transition-colors border ${
-                                hasSchedule
-                                  ? "bg-violet-100 dark:bg-violet-900/30 border-violet-300 dark:border-violet-700 text-violet-600 dark:text-violet-400"
-                                  : isScheduleOpen
-                                  ? "bg-muted border-border text-foreground"
-                                  : "bg-muted/50 border-border text-muted-foreground hover:text-foreground"
-                              }`}
-                              title="Настроить расписание"
-                            >
-                              <Calendar className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
+                            </div>
+
+                            {/* Confirmation badge */}
+                            {scenario.requiresConfirmation && !isRunning && (
+                              <div className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-white/25 flex items-center justify-center">
+                                <ShieldAlert className="w-2.5 h-2.5" />
+                              </div>
+                            )}
+
+                            {/* Schedule badge */}
+                            {hasSchedule && (
+                              <div className="absolute bottom-1.5 right-1.5 w-4 h-4 rounded-full bg-white/25 flex items-center justify-center">
+                                <Clock className="w-2.5 h-2.5" />
+                              </div>
+                            )}
+
+                            {/* Days badge for al_diagnostics */}
+                            {scenario.id === "al_diagnostics" && (
+                              <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-full bg-black/20 text-[9px] font-bold leading-none">
+                                {scenarioDays["al_diagnostics"] ?? 7}д
+                              </div>
+                            )}
+                          </button>
+
+                          {/* Label below tile */}
+                          <p className="text-center text-[11px] font-medium text-foreground mt-1.5 leading-tight px-0.5 line-clamp-2">
+                            {shortLabel}
+                          </p>
+
+                          {/* Schedule toggle row (compact) */}
+                          <button
+                            onClick={e => { e.stopPropagation(); setOpenSchedule(isScheduleOpen ? null : scenario.id); }}
+                            className={`mt-0.5 mx-auto flex items-center gap-1 text-[10px] transition-colors rounded px-1 py-0.5 ${
+                              hasSchedule
+                                ? "text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20"
+                                : "text-muted-foreground/60 hover:text-muted-foreground hover:bg-muted/40"
+                            }`}
+                          >
+                            <Calendar className="w-2.5 h-2.5" />
+                            <span>{hasSchedule ? schedule.days.map(d => DAY_LABELS[d]).join(",") : "расписание"}</span>
+                          </button>
                         </div>
                       );
                     })}
                   </div>
+
+                  {/* Schedule editor panel (shared, shown below grid when open) */}
+                  {openSchedule && scenarios.find(s => s.id === openSchedule) && (() => {
+                    const scenario = scenarios.find(s => s.id === openSchedule)!;
+                    const schedule = schedules[openSchedule];
+                    const hasSchedule = schedule?.enabled && schedule.days.length > 0;
+                    return (
+                      <div className="mx-3 mb-2 rounded-xl border border-border bg-muted/30 p-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-muted-foreground" />
+                            <p className="text-xs font-medium">{scenario.title.split(":")[0]}</p>
+                          </div>
+                          <button onClick={() => setOpenSchedule(null)} className="text-muted-foreground hover:text-foreground">
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground mb-2">Автозапуск в 09:00 МСК по выбранным дням</p>
+                        <div className="flex gap-1 flex-wrap">
+                          {DAY_LABELS.map((label, dayIdx) => {
+                            const isOn = schedule?.days?.includes(dayIdx) ?? false;
+                            return (
+                              <button
+                                key={dayIdx}
+                                onClick={() => {
+                                  const cur = schedules[scenario.id] ?? { enabled: true, days: [] };
+                                  const days = isOn
+                                    ? cur.days.filter(d => d !== dayIdx)
+                                    : [...cur.days, dayIdx];
+                                  saveSchedule(scenario.id, { enabled: days.length > 0, days });
+                                }}
+                                className={`w-8 h-8 rounded-lg text-xs font-semibold transition-colors ${
+                                  isOn
+                                    ? "bg-violet-600 text-white"
+                                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                                }`}
+                              >
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {hasSchedule && (
+                          <p className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-2 flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3" />
+                            Запускается по: {schedule.days.map(d => DAY_LABELS[d]).join(", ")}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Days slider for al_diagnostics (always visible below grid) */}
+                  {scenarios.some(s => s.id === "al_diagnostics") && (
+                    <div className="mx-3 mb-3 flex items-center gap-2 bg-orange-50 dark:bg-orange-950/20 rounded-xl px-3 py-2 border border-orange-200/60 dark:border-orange-800/40">
+                      <span className="text-[10px] text-orange-700 dark:text-orange-400 font-medium shrink-0">АЛ-Диагностика:</span>
+                      <button
+                        onClick={() => {
+                          const cur = scenarioDays["al_diagnostics"] ?? 7;
+                          if (cur > 1) {
+                            const updated = { ...scenarioDays, al_diagnostics: cur - 1 };
+                            setScenarioDays(updated);
+                            localStorage.setItem("scenarioDays", JSON.stringify(updated));
+                          }
+                        }}
+                        disabled={(scenarioDays["al_diagnostics"] ?? 7) <= 1}
+                        className="w-5 h-5 rounded-md flex items-center justify-center bg-orange-200 dark:bg-orange-800 hover:opacity-80 text-orange-800 dark:text-orange-200 text-xs font-bold transition-colors disabled:opacity-40 shrink-0"
+                      >−</button>
+                      <div className="flex-1 relative h-1.5 bg-orange-200 dark:bg-orange-800/50 rounded-full overflow-hidden">
+                        <div
+                          className="absolute inset-y-0 left-0 bg-orange-500 rounded-full transition-all"
+                          style={{ width: `${((scenarioDays["al_diagnostics"] ?? 7) - 1) / 13 * 100}%` }}
+                        />
+                      </div>
+                      <button
+                        onClick={() => {
+                          const cur = scenarioDays["al_diagnostics"] ?? 7;
+                          if (cur < 14) {
+                            const updated = { ...scenarioDays, al_diagnostics: cur + 1 };
+                            setScenarioDays(updated);
+                            localStorage.setItem("scenarioDays", JSON.stringify(updated));
+                          }
+                        }}
+                        disabled={(scenarioDays["al_diagnostics"] ?? 7) >= 14}
+                        className="w-5 h-5 rounded-md flex items-center justify-center bg-orange-200 dark:bg-orange-800 hover:opacity-80 text-orange-800 dark:text-orange-200 text-xs font-bold transition-colors disabled:opacity-40 shrink-0"
+                      >+</button>
+                      <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400 w-8 text-right shrink-0">
+                        {scenarioDays["al_diagnostics"] ?? 7} дн.
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
 
