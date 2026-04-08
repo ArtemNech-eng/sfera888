@@ -8,7 +8,7 @@ import { recalcMasterColumn } from "../lib/masterColumn.js";
 import { performBroadcast } from "../lib/broadcastOrder.js";
 import { sendPushToMaster } from "../lib/push.js";
 import { sendMaxMessage } from "../maxBot.js";
-import { analyseOrderCancellation } from "../lib/dispatcherAI.js";
+import { analyseOrderCancellation, sendFeedbackRequest } from "../lib/dispatcherAI.js";
 
 const TELEGRAM_API = `https://api.telegram.org/bot${process.env["TELEGRAM_BOT_TOKEN"]}`;
 
@@ -448,6 +448,13 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
           if (awaitingCol) {
             await db.update(mastersTable).set({ voronkaColumnId: awaitingCol.id }).where(eq(mastersTable.id, masterId));
           }
+        }
+
+        // Send feedback request to master via Max if linked
+        if (master.maxChatId) {
+          sendFeedbackRequest(master.id, master.alias, master.maxChatId, id).catch(e =>
+            console.error(`[orders] Failed to send feedback request for order #${id}:`, e),
+          );
         }
       } else if (status === "cancelled" || approveCancellation) {
         // Count REMAINING active orders (excluding this order)

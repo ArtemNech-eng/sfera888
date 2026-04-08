@@ -976,6 +976,44 @@ export async function sendClientCallCheckin(
   }
 }
 
+/** Ask if work is completed — sent 6h after scheduledAt if still in_progress */
+export async function sendCompletionCheck(
+  masterId: number,
+  masterAlias: string,
+  maxChatId: string,
+  orderId: number,
+) {
+  if (await alreadySentBotMessage(masterId, `заказу #${orderId} завершены?`, 48)) return;
+
+  const msg = `${masterAlias}, как прошли работы по заказу #${orderId}? Всё завершено? Если да — отметьте заказ как выполненный в приложении и не забудьте попросить клиента оставить отзыв. 🏁`;
+  try {
+    await sendMaxMessage(maxChatId, msg);
+    await saveBotReply(masterId, maxChatId, msg);
+    console.log(`[dispatcherAI] Sent completion check to ${masterAlias} for order #${orderId}`);
+  } catch (e) {
+    console.error(`[dispatcherAI] Failed to send/save completion check for order #${orderId}:`, e);
+  }
+}
+
+/** Ask master to collect client feedback after order is marked completed */
+export async function sendFeedbackRequest(
+  masterId: number,
+  masterAlias: string,
+  maxChatId: string,
+  orderId: number,
+) {
+  if (await alreadySentBotMessage(masterId, `отзыв по заказу #${orderId}`)) return;
+
+  const msg = `Отлично, ${masterAlias}! Заказ #${orderId} завершён. 🎉\n\nПожалуйста, попросите клиента оставить короткий отзыв — это помогает вам получать больше заказов. Можно просто сфотографировать результат и попросить написать пару слов.\n\nСпасибо за работу! 👏`;
+  try {
+    await sendMaxMessage(maxChatId, msg);
+    await saveBotReply(masterId, maxChatId, msg);
+    console.log(`[dispatcherAI] Sent feedback request to ${masterAlias} for order #${orderId}`);
+  } catch (e) {
+    console.error(`[dispatcherAI] Failed to send/save feedback request for order #${orderId}:`, e);
+  }
+}
+
 /** Reminder the day before scheduledAt */
 export async function sendPreDayReminder(
   masterId: number,
@@ -1103,12 +1141,47 @@ export async function runProactiveChecks(): Promise<void> {
       // Always ensure greeting was sent (in case scheduler missed the first window)
       await sendAssignmentGreeting(master.id, master.alias, master.maxChatId, order.id);
 
-      // 1b. Client call check-in — send 30+ min after assignment so it arrives AFTER the greeting
+      // 1b. Client call check-in — send 30+ min after assignment
       if (hoursAssigned >= 0.5) {
         await sendClientCallCheckin(master.id, master.alias, master.maxChatId, order.id);
       }
 
-      // All other proactive messages removed — bot only works within the 4 defined scenarios
+      // 2. Estimate reminder — 6h+ after assignment, no estimate submitted yet
+      if (hoursAssigned >= 6) {
+        const receipts = await db.select({ id: receiptsTable.id })
+          .from(receiptsTable)
+          .where(eq(receiptsTable.orderId, order.id));
+        if (receipts.length === 0) {
+          await sendEstimateReminder(master.id, master.alias, master.maxChatId, order.id);
+        }
+      }
+
+      // 3. Pre-day reminder — 12–24h before scheduled visit
+      if (order.scheduledAt) {
+        const scheduledMs = new Date(order.scheduledAt).getTime();
+        const hoursUntil = (scheduledMs - now) / 3600000;
+        if (hoursUntil >= 12 && hoursUntil <= 24) {
+          await sendPreDayReminder(master.id, master.alias, master.maxChatId, order.id);
+        }
+      }
+
+      // 4. Completion check — 6h+ after scheduledAt and order still in_progress
+      if (order.scheduledAt && order.status === "in_progress") {
+        const scheduledMs = new Date(order.scheduledAt).getTime();
+        const hoursAfterScheduled = (now - scheduledMs) / 3600000;
+        if (hoursAfterScheduled >= 6) {
+          await sendCompletionCheck(master.id, master.alias, master.maxChatId, order.id);
+        }
+      }
+
+      // 5. Ghost master check — 12h+ after assignment, no reply at all
+      if (hoursAssigned >= 12) {
+        await detectGhostMaster(
+          { id: master.id, alias: master.alias, maxChatId: master.maxChatId },
+          order.id,
+          hoursAssigned,
+        );
+      }
     }
   } catch (e) {
     console.error("[dispatcherAI] proactive checks error:", e);
