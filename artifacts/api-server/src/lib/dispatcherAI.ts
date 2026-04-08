@@ -192,6 +192,50 @@ async function getMasterActiveOrders(masterId: number) {
   return orders;
 }
 
+async function toolSearchOrdersByQuery(masterId: number, query: string): Promise<string> {
+  try {
+    // Search in orders for this master (any status, not deleted) by address/service/district
+    const results = await db.execute(sql`
+      SELECT o.id, o.status, o.service_type, o.city, o.district, o.address,
+             o.scheduled_at, o.total_price, o.cancel_reason,
+             l.name AS client_name, l.phone AS client_phone
+      FROM orders o
+      LEFT JOIN leads l ON l.id = o.lead_id
+      WHERE o.master_id = ${masterId}
+        AND o.deleted_at IS NULL
+        AND (
+          o.address ILIKE ${'%' + query + '%'}
+          OR o.service_type ILIKE ${'%' + query + '%'}
+          OR o.district ILIKE ${'%' + query + '%'}
+          OR o.city ILIKE ${'%' + query + '%'}
+          OR l.name ILIKE ${'%' + query + '%'}
+          OR CAST(o.id AS text) = ${query.replace(/[^0-9]/g, '') || '0'}
+        )
+      ORDER BY o.created_at DESC
+      LIMIT 5
+    `);
+    if (results.rows.length === 0) {
+      return `По запросу «${query}» заказов не найдено. Уточните номер заказа или другие детали.`;
+    }
+    const STATUS_LABEL: Record<string, string> = {
+      new: "новый", master_assigned: "назначен", in_progress: "в работе",
+      completed: "завершён", cancelled: "отменён", pending_master: "поиск мастера",
+    };
+    const lines = (results.rows as any[]).map(r => {
+      const status = STATUS_LABEL[r.status] ?? r.status;
+      const client = r.client_name ? ` | клиент: ${r.client_name}${r.client_phone ? " " + r.client_phone : ""}` : "";
+      const addr = [r.city, r.district, r.address].filter(Boolean).join(", ");
+      const date = r.scheduled_at ? ` | дата: ${new Date(r.scheduled_at).toLocaleDateString("ru-RU")}` : "";
+      const price = r.total_price ? ` | ${Number(r.total_price).toLocaleString("ru-RU")} ₽` : "";
+      return `Заказ #${r.id} [${status}]: ${r.service_type}, ${addr}${client}${date}${price}`;
+    });
+    return `Найдено по «${query}»:\n${lines.join("\n")}`;
+  } catch (e) {
+    console.error("[dispatcherAI] searchOrders error:", e);
+    return `Ошибка поиска по запросу «${query}».`;
+  }
+}
+
 async function getOrderWithLead(orderId: number) {
   const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
   const order = orderRows[0];
@@ -563,6 +607,23 @@ const DISPATCHER_TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "search_order_by_query",
+      description: "Найти заказ(ы) мастера по адресу, названию улицы, имени клиента, типу работ или номеру. Используй ВСЕГДА когда мастер упоминает адрес, имя клиента или место, которого нет среди его активных заказов — никогда не угадывай и не делай предположений об ошибке адреса без проверки через этот инструмент.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "Поисковый запрос: адрес, улица, имя клиента, тип работ или номер заказа. Например: 'Игнатова', 'Иванов', 'плитка', '42'",
+          },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "save_memory",
       description: "Запомнить важный факт о мастере для использования в будущих разговорах. Используй когда узнаёшь что-то устойчивое о его характере, привычках, предпочтениях, специализации или паттернах поведения. Не дублируй уже известное.",
       parameters: {
@@ -691,6 +752,18 @@ ${context}${pendingOrderSection}
 **СЦЕНАРИЙ 5 — Серьёзная проблема (конфликт, травма, повреждение):**
 → Немедленно вызови escalate_to_manager
 
+━━━ СЦЕНАРИЙ 6 — Мастер говорит «Да», «Ок», «Хорошо», «Понял», «Принял» или любое другое подтверждение:
+→ Это ответ на твоё предыдущее сообщение. Если контекст ясен из истории — ответь кратко: "Отлично! Ждём новостей 👍" или "Хорошо, будем на связи." НЕ задавай «Уточните, о чём речь» — это раздражает мастера.
+→ Если твоё предыдущее сообщение было про смету — ответь: "Отлично! Как отправите — дайте знать 📋"
+→ Если история недоступна — ответь нейтрально: "Хорошо, ждём вестей! 👍"
+
+━━━ ПРАВИЛО ПОИСКА ЗАКАЗОВ (КРИТИЧНО) ━━━
+Если мастер упоминает адрес, улицу, имя клиента или место, которого НЕТ среди его активных заказов в контексте:
+→ СНАЧАЛА вызови search_order_by_query с этим ключевым словом
+→ Только ПОСЛЕ получения результатов — отвечай мастеру
+→ НИКОГДА не говори мастеру «у вас возможно ошибка в адресе» без проверки
+→ НИКОГДА не предполагай что мастер имеет в виду конкретный заказ без поиска
+
 ━━━ ОБЩИЕ ПРАВИЛА ━━━
 - Пиши коротко — ты в мессенджере, не пиши длинные тексты
 - Один вопрос за раз, не перегружай мастера
@@ -742,6 +815,8 @@ ${context}${pendingOrderSection}
           toolResult = await toolScheduleFollowup(masterId, args.orderId, args.hoursFromNow, args.question, args.context);
         } else if (fnName === "save_memory") {
           toolResult = await toolSaveMemory(masterId, args.category, args.content);
+        } else if (fnName === "search_order_by_query") {
+          toolResult = await toolSearchOrdersByQuery(masterId, args.query);
         }
 
         addToHistory(masterId, { role: "tool", content: toolResult, tool_call_id: tc.id, name: fnName });
