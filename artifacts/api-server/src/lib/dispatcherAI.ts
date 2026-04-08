@@ -694,7 +694,31 @@ export async function handleMasterMessage(
   const context = await buildMasterContext(masterId);
 
   // ── Pending order contact: detect YES / NO before calling GPT ──────────────
-  const pendingContact = pendingOrderContacts.get(masterId);
+  // Restore from DB if in-memory state was lost (server restart between send and reply)
+  let pendingContact = pendingOrderContacts.get(masterId);
+  if (!pendingContact) {
+    const since = new Date(Date.now() - 48 * 3600_000);
+    const dbSent = await db.select()
+      .from(orderDispatchesTable)
+      .where(and(
+        eq(orderDispatchesTable.masterId, masterId),
+        eq(orderDispatchesTable.status, "sent"),
+        gte(orderDispatchesTable.createdAt, since),
+      ))
+      .orderBy(desc(orderDispatchesTable.createdAt))
+      .limit(1);
+    if (dbSent.length > 0) {
+      const d = dbSent[0];
+      const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, d.orderId));
+      if (orderRows.length > 0) {
+        const o = orderRows[0];
+        const summary = `${o.serviceType || "работы"} в ${o.city || ""}${o.district ? ", " + o.district : ""}`;
+        pendingContact = { orderId: d.orderId, orderSummary: summary, sentAt: d.createdAt.getTime() };
+        pendingOrderContacts.set(masterId, pendingContact);
+        console.log(`[dispatcherAI] Restored pending contact from DB for master ${masterAlias}: order #${d.orderId}`);
+      }
+    }
+  }
 
   if (pendingContact) {
     const lower = text.toLowerCase();
