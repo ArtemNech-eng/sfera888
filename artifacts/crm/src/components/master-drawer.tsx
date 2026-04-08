@@ -332,6 +332,7 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
   const [showPwaPass, setShowPwaPass] = useState(false);
   const [savingPwa, setSavingPwa] = useState(false);
   const [resettingPwa, setResettingPwa] = useState(false);
+  const [resettingPwaToPhone, setResettingPwaToPhone] = useState(false);
 
   interface MaxBotLog { id: number; maxUserId: string | null; event: string; note: string | null; createdAt: string; }
   const [maxLogs, setMaxLogs] = useState<MaxBotLog[]>([]);
@@ -1114,14 +1115,36 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                     {master.pwaLogin ? "Обновить доступ" : "Выдать доступ"}
                   </button>
                   {master.pwaLogin && (
-                    <button
-                      onClick={resetPwaAccess}
-                      disabled={resettingPwa}
-                      className="w-full py-1.5 border border-red-200 text-red-500 rounded-lg text-xs font-medium hover:bg-red-50 disabled:opacity-40 transition-colors flex items-center justify-center gap-1"
-                    >
-                      {resettingPwa ? <Loader2 className="w-3 h-3 animate-spin" /> : <KeyRound className="w-3 h-3" />}
-                      Сбросить PWA-доступ
-                    </button>
+                    <div className="flex gap-1.5">
+                      <button
+                        onClick={async () => {
+                          if (!confirm(`Сбросить пароль мастера "${master.alias}" к номеру телефона?\n\nЛогин и пароль станут = ${master.pwaLogin}\n\nМастер сможет войти: Логин = ${master.pwaLogin}, Пароль = ${master.pwaLogin}`)) return;
+                          setResettingPwaToPhone(true);
+                          try {
+                            const r = await fetch(`/api/master-pwa/admin/reset-password-to-phone/${master.id}`, { method: "POST", credentials: "include" });
+                            const d = await r.json();
+                            if (!r.ok) throw new Error(d.error ?? "Ошибка");
+                            alert(`✓ ${d.message}\n\nСообщите мастеру:\nЛогин: ${d.login}\nПароль: ${d.login}`);
+                          } catch (e: any) { alert(e.message ?? "Ошибка"); }
+                          finally { setResettingPwaToPhone(false); }
+                        }}
+                        disabled={resettingPwaToPhone}
+                        className="flex-1 py-1.5 border border-amber-200 text-amber-600 rounded-lg text-xs font-medium hover:bg-amber-50 disabled:opacity-40 transition-colors flex items-center justify-center gap-1"
+                        title="Сбросить пароль — логин и пароль станут равны номеру телефона"
+                      >
+                        {resettingPwaToPhone ? <Loader2 className="w-3 h-3 animate-spin" /> : <KeyRound className="w-3 h-3" />}
+                        Пароль → телефон
+                      </button>
+                      <button
+                        onClick={resetPwaAccess}
+                        disabled={resettingPwa}
+                        className="flex-1 py-1.5 border border-red-200 text-red-500 rounded-lg text-xs font-medium hover:bg-red-50 disabled:opacity-40 transition-colors flex items-center justify-center gap-1"
+                        title="Полностью удалить логин и пароль мастера"
+                      >
+                        {resettingPwa ? <Loader2 className="w-3 h-3 animate-spin" /> : <KeyRound className="w-3 h-3" />}
+                        Удалить доступ
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>

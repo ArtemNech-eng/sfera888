@@ -1300,4 +1300,28 @@ router.post("/admin/set-credentials/:masterId", async (req: any, res: any) => {
   res.json({ success: true, login: normalizedLogin });
 });
 
+// POST /api/master-pwa/admin/reset-password-to-phone/:masterId
+// One-click: sets password = phone number (so master can log in with phone/phone)
+router.post("/admin/reset-password-to-phone/:masterId", async (req: any, res: any) => {
+  const userId = (req.session as any).userId;
+  if (!userId) return res.status(401).json({ error: "Не авторизован" });
+
+  const targetId = parseInt(req.params.masterId);
+  const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, targetId));
+  if (!master) return res.status(404).json({ error: "Мастер не найден" });
+
+  const login = normalizeLoginInput(master.pwaLogin ?? master.phone ?? "");
+  if (!login || login.length < 7) {
+    return res.status(400).json({ error: "У мастера нет номера телефона — укажите логин вручную" });
+  }
+
+  const passwordHash = await hashPassword(login);
+  await db.update(mastersTable)
+    .set({ pwaLogin: login, pwaPasswordHash: passwordHash })
+    .where(eq(mastersTable.id, targetId));
+
+  console.log(`[admin] reset-password-to-phone: master ${targetId} (${master.alias}) → login=${login}`);
+  res.json({ success: true, login, message: `Пароль сброшен. Логин и пароль = ${login}` });
+});
+
 export default router;

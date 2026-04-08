@@ -603,6 +603,28 @@ router.post("/reset-all-passwords", requireRole("admin"), async (req, res) => {
   res.json({ success: true, count: results.length, masters: results });
 });
 
+// POST /api/masters/bulk-reset-passwords — reset ALL masters' passwords to their phone number (login stays the same)
+router.post("/bulk-reset-passwords", requireRole("admin"), async (req, res) => {
+  const masters = await db.select({
+    id: mastersTable.id, alias: mastersTable.alias,
+    phone: mastersTable.phone, pwaLogin: mastersTable.pwaLogin,
+  }).from(mastersTable).where(and(isNull(mastersTable.deletedAt)));
+
+  const results: { id: number; alias: string; login: string }[] = [];
+  const skipped: { id: number; alias: string; reason: string }[] = [];
+
+  for (const m of masters) {
+    const login = m.pwaLogin ?? normalizePhoneForLogin(m.phone);
+    if (!login || login.length < 7) { skipped.push({ id: m.id, alias: m.alias ?? "—", reason: "no phone/login" }); continue; }
+    const hash = await hashPassword(login);
+    await db.update(mastersTable).set({ pwaLogin: login, pwaPasswordHash: hash }).where(eq(mastersTable.id, m.id));
+    results.push({ id: m.id, alias: m.alias ?? "—", login });
+  }
+
+  console.log(`[admin] bulk-reset-passwords: сброшено ${results.length}, пропущено ${skipped.length}`);
+  res.json({ success: true, reset: results.length, skipped: skipped.length, masters: results });
+});
+
 // POST /api/masters/auto-issue-credentials — auto-assign phone-based credentials to all active masters without pwaLogin
 router.post("/auto-issue-credentials", requireRole("admin"), async (req, res) => {
   const masters = await db.select({

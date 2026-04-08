@@ -921,31 +921,56 @@ export default function Masters() {
                 </button>
               )}
               {isAdmin && (
-                <button
-                  onClick={async () => {
-                    const noAccess = masters.filter(m => !m.pwaLogin);
-                    if (noAccess.length === 0) { alert("Все активные мастера уже имеют доступ к приложению."); return; }
-                    if (!confirm(`Выдать доступ к приложению ${noAccess.length} мастерам без учётных данных?\nЛогин и пароль = номер телефона мастера.`)) return;
-                    setIssuingCredentials(true);
-                    try {
-                      const r = await fetch("/api/masters/auto-issue-credentials", { method: "POST", credentials: "include" });
-                      const d = await r.json();
-                      if (!r.ok) throw new Error(d.error ?? "Ошибка");
-                      alert(`Готово! Выдан доступ: ${d.issued} мастерам.\nПропущено (нет телефона): ${d.skipped}`);
-                      queryClient.invalidateQueries({ queryKey: ["masters"] });
-                    } catch (e: any) {
-                      alert(e.message ?? "Ошибка");
-                    } finally {
-                      setIssuingCredentials(false);
-                    }
-                  }}
-                  disabled={issuingCredentials}
-                  title="Выдать доступ к МастерApp всем мастерам без учётных данных (логин = телефон)"
-                  className="px-3 py-2 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl text-sm font-medium flex items-center gap-1.5 hover:bg-amber-100 transition-colors shadow-sm disabled:opacity-50"
-                >
-                  {issuingCredentials ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
-                  <span className="hidden sm:inline">Выдать доступ</span>
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={async () => {
+                      const noAccess = masters.filter(m => !m.pwaLogin);
+                      if (noAccess.length === 0) { alert("Все активные мастера уже имеют доступ к приложению."); return; }
+                      if (!confirm(`Выдать доступ к приложению ${noAccess.length} мастерам без учётных данных?\nЛогин и пароль = номер телефона мастера.`)) return;
+                      setIssuingCredentials(true);
+                      try {
+                        const r = await fetch("/api/masters/auto-issue-credentials", { method: "POST", credentials: "include" });
+                        const d = await r.json();
+                        if (!r.ok) throw new Error(d.error ?? "Ошибка");
+                        alert(`Готово! Выдан доступ: ${d.issued} мастерам.\nПропущено (нет телефона): ${d.skipped}`);
+                        queryClient.invalidateQueries({ queryKey: ["masters"] });
+                      } catch (e: any) {
+                        alert(e.message ?? "Ошибка");
+                      } finally {
+                        setIssuingCredentials(false);
+                      }
+                    }}
+                    disabled={issuingCredentials}
+                    title="Выдать доступ к МастерApp всем мастерам без учётных данных (логин = телефон)"
+                    className="px-3 py-2 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl text-sm font-medium flex items-center gap-1.5 hover:bg-amber-100 transition-colors shadow-sm disabled:opacity-50"
+                  >
+                    {issuingCredentials ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+                    <span className="hidden sm:inline">Выдать доступ</span>
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!confirm(`Сбросить пароли ВСЕХ мастеров (${masters.length}) к номеру телефона?\n\nЭто поможет мастерам, которые не могут войти.\nПосле сброса: логин = телефон, пароль = телефон.`)) return;
+                      setIssuingCredentials(true);
+                      try {
+                        const r = await fetch("/api/masters/bulk-reset-passwords", { method: "POST", credentials: "include" });
+                        const d = await r.json();
+                        if (!r.ok) throw new Error(d.error ?? "Ошибка");
+                        alert(`Готово! Пароли сброшены у ${d.reset} мастеров.\nПропущено: ${d.skipped}\n\nТеперь каждый мастер может войти:\nЛогин = свой номер телефона\nПароль = свой номер телефона`);
+                        queryClient.invalidateQueries({ queryKey: ["masters"] });
+                      } catch (e: any) {
+                        alert(e.message ?? "Ошибка");
+                      } finally {
+                        setIssuingCredentials(false);
+                      }
+                    }}
+                    disabled={issuingCredentials}
+                    title="Сбросить пароли всех мастеров к номеру телефона"
+                    className="px-3 py-2 bg-orange-50 border border-orange-200 text-orange-700 rounded-xl text-sm font-medium flex items-center gap-1.5 hover:bg-orange-100 transition-colors shadow-sm disabled:opacity-50"
+                  >
+                    {issuingCredentials ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+                    <span className="hidden sm:inline">Сбросить пароли</span>
+                  </button>
+                </div>
               )}
               <button onClick={() => setIsCreateOpen(true)}
                 className="px-4 py-2 bg-blue-500 text-white rounded-xl text-sm font-medium flex items-center gap-1.5 hover:bg-blue-600 transition-colors shadow-sm">
