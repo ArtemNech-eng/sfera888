@@ -113,6 +113,107 @@ app.get("/api/receipt/:token/data", async (req, res) => {
 
 // ── Public receipt page (no auth required) — served under /api/ so Replit's ──
 // ── deployment proxy doesn't intercept it (non-/api paths go to CRM static). ──
+app.get("/api/receipt/:token/print", async (req, res) => {
+  try {
+    const { receiptsTable, mastersTable } = await import("@workspace/db");
+    const { db } = await import("@workspace/db");
+    const { eq } = await import("drizzle-orm");
+    const [receipt] = await db.select().from(receiptsTable).where(eq(receiptsTable.token, req.params.token));
+    if (!receipt) return res.status(404).send("Смета не найдена");
+    const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, receipt.masterId));
+    const masterName = master?.contractFullName || master?.alias || "Мастер";
+    const masterPhone = master?.phone || "";
+    const fmtN = (n: number) => Number(n).toLocaleString("ru-RU");
+    const date = new Date(receipt.createdAt).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+    const lineItems: Array<{description: string; unit?: string; quantity?: number; price: number}> = (receipt.lineItems as any) ?? [];
+    const totalAmount = Number(receipt.totalAmount);
+    const prepaymentAmount = Number(receipt.prepaymentAmount);
+    const remainder = totalAmount - prepaymentAmount;
+    const orderInfo = [receipt.serviceType, receipt.city, receipt.district ? `(${receipt.district})` : ""].filter(Boolean).join(", ");
+    const esc = (s: string) => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    const rows = lineItems.map((item, i) => {
+      const qty = item.quantity ?? 1;
+      return `<tr>
+        <td style="padding:6px 8px;border:1px solid #ccc;text-align:center">${i + 1}</td>
+        <td style="padding:6px 8px;border:1px solid #ccc">${esc(item.description)}</td>
+        <td style="padding:6px 8px;border:1px solid #ccc;text-align:center">${esc(item.unit ?? "—")}</td>
+        <td style="padding:6px 8px;border:1px solid #ccc;text-align:right">${qty}</td>
+        <td style="padding:6px 8px;border:1px solid #ccc;text-align:right">${fmtN(item.price)}</td>
+        <td style="padding:6px 8px;border:1px solid #ccc;text-align:right;font-weight:600">${fmtN(qty * Number(item.price))}</td>
+      </tr>`;
+    }).join("");
+    const printHtml = `<!DOCTYPE html>
+<html lang="ru"><head><meta charset="UTF-8"/>
+<title>Смета №${receipt.id}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,sans-serif;font-size:13px;color:#000;background:#fff;padding:32px}
+  h1{font-size:20px;font-weight:bold;text-align:center;margin-bottom:4px}
+  .sub{text-align:center;font-size:12px;color:#444;margin-bottom:24px}
+  table.meta{width:100%;margin-bottom:8px}
+  table.meta td{padding:3px 0;font-size:13px}
+  table.meta td:first-child{color:#555;width:180px}
+  table.items{width:100%;border-collapse:collapse;margin-top:16px}
+  table.items th{padding:7px 8px;border:1px solid #ccc;background:#f0f0f0;font-size:12px;text-align:left}
+  .summary{margin-top:14px;text-align:right}
+  .summary p{font-size:13px;margin-bottom:4px}
+  .summary p.main{font-size:15px;font-weight:bold}
+  .notes{margin-top:14px;padding:10px 12px;border:1px solid #ccc;border-radius:4px;font-size:12px}
+  .sig{margin-top:40px;display:flex;justify-content:space-between;font-size:12px;color:#333}
+  .sig div{flex:1;padding-right:24px}
+  .sig-line{margin-top:24px;border-top:1px solid #000}
+  @media print{body{padding:16px}}
+</style></head><body>
+<h1>СМЕТА №${receipt.id}</h1>
+<div class="sub">Честный мастер · sfera-master.ru</div>
+<hr style="border:none;border-top:1px solid #ccc;margin-bottom:20px"/>
+<table class="meta">
+  <tr><td>Дата составления:</td><td><strong>${date}</strong></td></tr>
+  <tr><td>Клиент:</td><td><strong>${esc(receipt.clientName ?? "")}</strong></td></tr>
+  ${receipt.clientPhone ? `<tr><td>Телефон клиента:</td><td>${esc(receipt.clientPhone)}</td></tr>` : ""}
+  ${orderInfo ? `<tr><td>Объект / услуга:</td><td>${esc(orderInfo)}</td></tr>` : ""}
+  <tr><td>Исполнитель:</td><td><strong>${esc(masterName)}</strong>${masterPhone ? ` · ${esc(masterPhone)}` : ""}</td></tr>
+  <tr><td>Организатор:</td><td>ИП Коваленко И.Г. · ИНН 262409599800</td></tr>
+</table>
+<table class="items">
+  <thead><tr>
+    <th style="width:36px;text-align:center">№</th>
+    <th>Наименование работ / материалов</th>
+    <th style="width:70px;text-align:center">Ед.</th>
+    <th style="width:60px;text-align:right">Кол-во</th>
+    <th style="width:90px;text-align:right">Цена, ₽</th>
+    <th style="width:100px;text-align:right">Сумма, ₽</th>
+  </tr></thead>
+  <tbody>${rows}</tbody>
+</table>
+<div class="summary">
+  <p>Итого по смете: <strong>${fmtN(totalAmount)} ₽</strong></p>
+  <p class="main">Предоплата (бронирование): <strong>${fmtN(prepaymentAmount)} ₽</strong></p>
+  <p style="color:#555">Остаток по факту работ: ${fmtN(remainder)} ₽</p>
+</div>
+${receipt.notes ? `<div class="notes"><strong>Примечания:</strong> ${esc(receipt.notes)}</div>` : ""}
+<div class="sig">
+  <div>
+    <p>Исполнитель: <strong>${esc(masterName)}</strong></p>
+    <div class="sig-line"></div>
+    <p style="margin-top:4px">подпись / дата</p>
+  </div>
+  <div>
+    <p>Заказчик: <strong>${esc(receipt.clientName ?? "")}</strong></p>
+    <div class="sig-line"></div>
+    <p style="margin-top:4px">подпись / дата</p>
+  </div>
+</div>
+<script>window.print();</script>
+</body></html>`;
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(printHtml);
+  } catch (err) {
+    console.error("[receipt-print]", err);
+    res.status(500).send("Ошибка сервера");
+  }
+});
+
 app.get("/api/receipt/:token", async (req, res) => {
   try {
     const { receiptsTable, mastersTable } = await import("@workspace/db");
@@ -335,13 +436,13 @@ app.get("/api/receipt/:token", async (req, res) => {
   </a>
   <span class="topbar-title">Честный мастер</span>
   <div style="display:flex;align-items:center;gap:7px;flex-shrink:0">
-    <button class="print-btn" onclick="printDoc()" title="Распечатать смету">
+    <a href="/api/receipt/${req.params.token}/print" target="_blank" class="print-btn" title="Распечатать смету">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0D9488" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="6 9 6 2 18 2 18 9"/>
         <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
         <rect x="6" y="14" width="12" height="8"/>
       </svg>
-    </button>
+    </a>
     <a href="/client/" class="topbar-install" id="topbar-install-btn" title="Установить приложение">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>
       Установить
@@ -522,94 +623,6 @@ app.get("/api/receipt/:token", async (req, res) => {
 </div>
 
 <script>
-  var RECEIPT = ${JSON.stringify({
-    id: receipt.id,
-    clientName: receipt.clientName ?? "",
-    clientPhone: receipt.clientPhone ?? "",
-    masterName,
-    masterPhone,
-    serviceType: receipt.serviceType ?? "",
-    city: receipt.city ?? "",
-    district: receipt.district ?? "",
-    totalAmount: Number(receipt.totalAmount),
-    prepaymentAmount: Number(receipt.prepaymentAmount),
-    notes: receipt.notes ?? "",
-    createdAt: receipt.createdAt,
-    lineItems,
-  }).replace(/</g, "\\u003c")};
-
-  function printDoc() {
-    var d = RECEIPT;
-    var fmtN = function(n) { return Number(n).toLocaleString('ru-RU'); };
-    var dateStr = new Date(d.createdAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
-    var orderInfo = d.serviceType + (d.city ? ', ' + d.city : '') + (d.district ? ' (' + d.district + ')' : '');
-    var remainder = d.totalAmount - d.prepaymentAmount;
-    var rows = d.lineItems.map(function(item, i) {
-      var qty = item.quantity && item.quantity !== 1 ? item.quantity : 1;
-      return '<tr><td style="padding:6px 8px;border:1px solid #ccc;text-align:center">' + (i+1) + '</td>' +
-        '<td style="padding:6px 8px;border:1px solid #ccc">' + item.description + '</td>' +
-        '<td style="padding:6px 8px;border:1px solid #ccc;text-align:center">' + (item.unit || '\u2014') + '</td>' +
-        '<td style="padding:6px 8px;border:1px solid #ccc;text-align:right">' + qty + '</td>' +
-        '<td style="padding:6px 8px;border:1px solid #ccc;text-align:right">' + fmtN(item.price) + '</td>' +
-        '<td style="padding:6px 8px;border:1px solid #ccc;text-align:right;font-weight:600">' + fmtN(qty * Number(item.price)) + '</td></tr>';
-    }).join('');
-    var html = '<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"/>' +
-      '<title>\u0421\u043c\u0435\u0442\u0430 \u2116' + d.id + '</title>' +
-      '<style>*{box-sizing:border-box;margin:0;padding:0}' +
-      'body{font-family:Arial,sans-serif;font-size:13px;color:#000;background:#fff;padding:32px}' +
-      'h1{font-size:20px;font-weight:bold;text-align:center;margin-bottom:4px}' +
-      '.sub{text-align:center;font-size:12px;color:#444;margin-bottom:24px}' +
-      'table.meta{width:100%;margin-bottom:8px}' +
-      'table.meta td{padding:3px 0;font-size:13px}' +
-      'table.meta td:first-child{color:#555;width:180px}' +
-      'table.items{width:100%;border-collapse:collapse;margin-top:16px}' +
-      'table.items th{padding:7px 8px;border:1px solid #ccc;background:#f0f0f0;font-size:12px;text-align:left}' +
-      '.summary{margin-top:14px;text-align:right}' +
-      '.summary p{font-size:13px;margin-bottom:4px}' +
-      '.summary p.main{font-size:15px;font-weight:bold}' +
-      '.notes{margin-top:14px;padding:10px 12px;border:1px solid #ccc;border-radius:4px;font-size:12px}' +
-      '.sig{margin-top:40px;display:flex;justify-content:space-between;font-size:12px;color:#333}' +
-      '.sig div{flex:1;padding-right:24px}' +
-      '.sig-line{margin-top:24px;border-top:1px solid #000}' +
-      '@media print{body{padding:16px}}</style></head><body>' +
-      '<h1>\u0421\u041c\u0415\u0422\u0410 \u2116' + d.id + '</h1>' +
-      '<div class="sub">\u0427\u0435\u0441\u0442\u043d\u044b\u0439 \u043c\u0430\u0441\u0442\u0435\u0440 \u00b7 sfera-master.ru</div>' +
-      '<hr style="border:none;border-top:1px solid #ccc;margin-bottom:20px"/>' +
-      '<table class="meta">' +
-      '<tr><td>\u0414\u0430\u0442\u0430 \u0441\u043e\u0441\u0442\u0430\u0432\u043b\u0435\u043d\u0438\u044f:</td><td><strong>' + dateStr + '</strong></td></tr>' +
-      '<tr><td>\u041a\u043b\u0438\u0435\u043d\u0442:</td><td><strong>' + d.clientName + '</strong></td></tr>' +
-      (d.clientPhone ? '<tr><td>\u0422\u0435\u043b\u0435\u0444\u043e\u043d \u043a\u043b\u0438\u0435\u043d\u0442\u0430:</td><td>' + d.clientPhone + '</td></tr>' : '') +
-      (orderInfo ? '<tr><td>\u041e\u0431\u044a\u0435\u043a\u0442 / \u0443\u0441\u043b\u0443\u0433\u0430:</td><td>' + orderInfo + '</td></tr>' : '') +
-      '<tr><td>\u0418\u0441\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044c:</td><td><strong>' + d.masterName + '</strong>' + (d.masterPhone ? ' \u00b7 ' + d.masterPhone : '') + '</td></tr>' +
-      '<tr><td>\u041e\u0440\u0433\u0430\u043d\u0438\u0437\u0430\u0442\u043e\u0440:</td><td>\u0418\u041f \u041a\u043e\u0432\u0430\u043b\u0435\u043d\u043a\u043e \u0418.\u0413. \u00b7 \u0418\u041d\u041d 262409599800</td></tr>' +
-      '</table>' +
-      '<table class="items"><thead><tr>' +
-      '<th style="width:36px;text-align:center">\u2116</th>' +
-      '<th>\u041d\u0430\u0438\u043c\u0435\u043d\u043e\u0432\u0430\u043d\u0438\u0435 \u0440\u0430\u0431\u043e\u0442 / \u043c\u0430\u0442\u0435\u0440\u0438\u0430\u043b\u043e\u0432</th>' +
-      '<th style="width:70px;text-align:center">\u0415\u0434.</th>' +
-      '<th style="width:60px;text-align:right">\u041a\u043e\u043b-\u0432\u043e</th>' +
-      '<th style="width:90px;text-align:right">\u0426\u0435\u043d\u0430, \u20bd</th>' +
-      '<th style="width:100px;text-align:right">\u0421\u0443\u043c\u043c\u0430, \u20bd</th>' +
-      '</tr></thead><tbody>' + rows + '</tbody></table>' +
-      '<div class="summary">' +
-      '<p>\u0418\u0442\u043e\u0433\u043e \u043f\u043e \u0441\u043c\u0435\u0442\u0435: <strong>' + fmtN(d.totalAmount) + ' \u20bd</strong></p>' +
-      '<p class="main">\u041f\u0440\u0435\u0434\u043e\u043f\u043b\u0430\u0442\u0430 (\u0431\u0440\u043e\u043d\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u0435): <strong>' + fmtN(d.prepaymentAmount) + ' \u20bd</strong></p>' +
-      '<p style="color:#555">\u041e\u0441\u0442\u0430\u0442\u043e\u043a \u043f\u043e \u0444\u0430\u043a\u0442\u0443 \u0440\u0430\u0431\u043e\u0442: ' + fmtN(remainder) + ' \u20bd</p>' +
-      '</div>' +
-      (d.notes ? '<div class="notes"><strong>\u041f\u0440\u0438\u043c\u0435\u0447\u0430\u043d\u0438\u044f:</strong> ' + d.notes + '</div>' : '') +
-      '<div class="sig">' +
-      '<div><p>\u0418\u0441\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044c: <strong>' + d.masterName + '</strong></p><div class="sig-line"></div><p style="margin-top:4px">\u043f\u043e\u0434\u043f\u0438\u0441\u044c / \u0434\u0430\u0442\u0430</p></div>' +
-      '<div><p>\u0417\u0430\u043a\u0430\u0437\u0447\u0438\u043a: <strong>' + d.clientName + '</strong></p><div class="sig-line"></div><p style="margin-top:4px">\u043f\u043e\u0434\u043f\u0438\u0441\u044c / \u0434\u0430\u0442\u0430</p></div>' +
-      '</div>' +
-      '<script>window.onload=function(){window.print()}<\/script>' +
-      '</body></html>';
-    var w = window.open('', '_blank', 'width=900,height=700');
-    if (!w) return;
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
-  }
-
   function scrollToBooking() {
     const el = document.getElementById('booking-section');
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
