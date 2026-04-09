@@ -43,6 +43,7 @@ async function sendToServer(sub: PushSubscription) {
 export function usePushNotifications(enabled: boolean) {
   useEffect(() => {
     if (!enabled) return;
+    if (!("Notification" in window)) return;
     if (Notification.permission === "denied") return;
 
     const run = async () => {

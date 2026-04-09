@@ -1,7 +1,36 @@
+import { Component, type ReactNode } from "react";
 import { Switch, Route, Router as WouterRouter, Redirect, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "@/lib/auth";
+
+class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; msg: string }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, msg: "" };
+  }
+  static getDerivedStateFromError(err: unknown) {
+    return { hasError: true, msg: err instanceof Error ? err.message : String(err) };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-dvh gap-4 px-6 text-center">
+          <div className="text-4xl">⚠️</div>
+          <h1 className="text-lg font-bold text-gray-900">Что-то пошло не так</h1>
+          <p className="text-sm text-muted-foreground max-w-xs">Перезагрузите страницу или обратитесь к менеджеру.</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-2 px-5 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold"
+          >
+            Перезагрузить
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 import BottomNav from "@/components/bottom-nav";
 import InstallBanner from "@/components/install-banner";
 import LoginPage from "@/pages/login";
@@ -108,15 +137,17 @@ function AppRoutes() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <AppRoutes />
-        </WouterRouter>
-        <Toaster position="top-center" richColors />
-        <InstallBanner />
-      </AuthProvider>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+            <AppRoutes />
+          </WouterRouter>
+          <Toaster position="top-center" richColors />
+          <InstallBanner />
+        </AuthProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 
