@@ -536,7 +536,7 @@ app.get("/api/receipt/:token", async (req, res) => {
     notes: receipt.notes ?? "",
     createdAt: receipt.createdAt,
     lineItems,
-  })};
+  }).replace(/</g, "\\u003c")};
 
   function printDoc() {
     var d = RECEIPT;
