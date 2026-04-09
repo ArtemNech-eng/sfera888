@@ -26,6 +26,95 @@ interface ReceiptData {
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const fmt = (n: number) => n.toLocaleString("ru-RU");
 
+function printSmetaDoc(data: ReceiptData) {
+  const date = new Date(data.createdAt).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+  const fmtN = (n: number) => Number(n).toLocaleString("ru-RU");
+  const rows = data.lineItems.map((item, i) => {
+    const qty = item.quantity ?? 1;
+    return `<tr>
+      <td style="padding:6px 8px;border:1px solid #ccc;text-align:center">${i + 1}</td>
+      <td style="padding:6px 8px;border:1px solid #ccc">${item.description}</td>
+      <td style="padding:6px 8px;border:1px solid #ccc;text-align:center">${item.unit ?? "—"}</td>
+      <td style="padding:6px 8px;border:1px solid #ccc;text-align:right">${qty}</td>
+      <td style="padding:6px 8px;border:1px solid #ccc;text-align:right">${fmtN(item.price)}</td>
+      <td style="padding:6px 8px;border:1px solid #ccc;text-align:right;font-weight:600">${fmtN(qty * Number(item.price))}</td>
+    </tr>`;
+  }).join("");
+  const orderInfo = `${data.serviceType}${data.city ? `, ${data.city}` : ""}${data.district ? ` (${data.district})` : ""}`;
+  const remainder = data.totalAmount - data.prepaymentAmount;
+
+  const html = `<!DOCTYPE html>
+<html lang="ru"><head><meta charset="UTF-8"/>
+<title>Смета №${data.id}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,sans-serif;font-size:13px;color:#000;background:#fff;padding:32px}
+  h1{font-size:20px;font-weight:bold;text-align:center;margin-bottom:4px}
+  .sub{text-align:center;font-size:12px;color:#444;margin-bottom:24px}
+  table.meta{width:100%;margin-bottom:8px}
+  table.meta td{padding:3px 0;font-size:13px}
+  table.meta td:first-child{color:#555;width:180px}
+  table.items{width:100%;border-collapse:collapse;margin-top:16px}
+  table.items th{padding:7px 8px;border:1px solid #ccc;background:#f0f0f0;font-size:12px;text-align:left}
+  .summary{margin-top:14px;text-align:right}
+  .summary p{font-size:13px;margin-bottom:4px}
+  .summary p.main{font-size:15px;font-weight:bold}
+  .notes{margin-top:14px;padding:10px 12px;border:1px solid #ccc;border-radius:4px;font-size:12px}
+  .sig{margin-top:40px;display:flex;justify-content:space-between;font-size:12px;color:#333}
+  .sig div{flex:1;padding-right:24px}
+  .sig-line{margin-top:24px;border-top:1px solid #000}
+  @media print{body{padding:16px}}
+</style></head><body>
+<h1>СМЕТА №${data.id}</h1>
+<div class="sub">Честный мастер · sfera-master.ru</div>
+<hr style="border:none;border-top:1px solid #ccc;margin-bottom:20px"/>
+<table class="meta">
+  <tr><td>Дата составления:</td><td><strong>${date}</strong></td></tr>
+  <tr><td>Клиент:</td><td><strong>${data.clientName}</strong></td></tr>
+  ${data.clientPhone ? `<tr><td>Телефон клиента:</td><td>${data.clientPhone}</td></tr>` : ""}
+  ${orderInfo ? `<tr><td>Объект / услуга:</td><td>${orderInfo}</td></tr>` : ""}
+  <tr><td>Исполнитель:</td><td><strong>${data.masterName}</strong>${data.masterPhone ? ` · ${data.masterPhone}` : ""}</td></tr>
+  <tr><td>Организатор:</td><td>ИП Коваленко И.Г. · ИНН 262409599800</td></tr>
+</table>
+<table class="items">
+  <thead><tr>
+    <th style="width:36px;text-align:center">№</th>
+    <th>Наименование работ / материалов</th>
+    <th style="width:70px;text-align:center">Ед.</th>
+    <th style="width:60px;text-align:right">Кол-во</th>
+    <th style="width:90px;text-align:right">Цена, ₽</th>
+    <th style="width:100px;text-align:right">Сумма, ₽</th>
+  </tr></thead>
+  <tbody>${rows}</tbody>
+</table>
+<div class="summary">
+  <p>Итого по смете: <strong>${fmtN(data.totalAmount)} ₽</strong></p>
+  <p class="main">Предоплата (бронирование): <strong>${fmtN(data.prepaymentAmount)} ₽</strong></p>
+  <p style="color:#555">Остаток по факту работ: ${fmtN(remainder)} ₽</p>
+</div>
+${data.notes ? `<div class="notes"><strong>Примечания:</strong> ${data.notes}</div>` : ""}
+<div class="sig">
+  <div>
+    <p>Исполнитель: <strong>${data.masterName}</strong></p>
+    <div class="sig-line"></div>
+    <p style="margin-top:4px">подпись / дата</p>
+  </div>
+  <div>
+    <p>Заказчик: <strong>${data.clientName}</strong></p>
+    <div class="sig-line"></div>
+    <p style="margin-top:4px">подпись / дата</p>
+  </div>
+</div>
+<script>window.onload=function(){window.print()};<\/script>
+</body></html>`;
+
+  const w = window.open("", "_blank", "width=900,height=700");
+  if (!w) return;
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+}
+
 function SectionCard({ title, icon, children, accent }: { title: string; icon: React.ReactNode; children: React.ReactNode; accent?: boolean }) {
   return (
     <div style={{
@@ -208,7 +297,25 @@ export default function Smeta() {
           <span style={{ fontSize: 12, fontWeight: 600 }}>Главная</span>
         </button>
         <span style={{ fontSize: 15, fontWeight: 700, color: "#0D2B28", flex: 1, textAlign: "center" as const }}>Честный мастер</span>
-        <span style={{ fontSize: 11, color: "#4A6B69", fontWeight: 500, flexShrink: 0 }}>Смета №{data.id}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+          <span style={{ fontSize: 11, color: "#4A6B69", fontWeight: 500 }}>Смета №{data.id}</span>
+          <button
+            onClick={() => printSmetaDoc(data)}
+            title="Распечатать смету"
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center",
+              width: 32, height: 32, borderRadius: 8,
+              background: "#F0FDFA", border: "1.5px solid #99F6E4",
+              cursor: "pointer", flexShrink: 0, padding: 0,
+            }}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0D9488" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="6 9 6 2 18 2 18 9"/>
+              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+              <rect x="6" y="14" width="12" height="8"/>
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* Landing-style content — natural page scroll */}
