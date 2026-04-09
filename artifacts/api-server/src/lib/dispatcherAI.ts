@@ -1155,7 +1155,7 @@ export async function sendCompletionCheck(
   orderId: number,
 ) {
   return withSendLock(`completion:${masterId}:${orderId}`, async () => {
-    if (await alreadySentBotMessage(masterId, `заказу #${orderId} завершены?`, 48)) return;
+    if (await alreadySentBotMessage(masterId, `как прошли работы по заказу #${orderId}`, 72)) return;
     // Skip if master already said work is done / mentioned completion
     if (await masterAlreadyMentioned(masterId, ["завершил", "завершили", "закончил", "закончили", "сделали", "всё готово", "готово", "работы выполнены", "выполнил", "закончено", "завершено"], 72)) {
       console.log(`[dispatcherAI] Skipping completion check for ${masterAlias} order #${orderId} — master already mentioned completion`);
@@ -1181,7 +1181,7 @@ export async function sendFeedbackRequest(
   orderId: number,
 ) {
   return withSendLock(`feedback:${masterId}:${orderId}`, async () => {
-    if (await alreadySentBotMessage(masterId, `отзыв по заказу #${orderId}`)) return;
+    if (await alreadySentBotMessage(masterId, `Заказ #${orderId} завершён`)) return;
 
     const msg = `Отлично, ${masterAlias}! Заказ #${orderId} завершён. 🎉\n\nПожалуйста, попросите клиента оставить короткий отзыв — это помогает вам получать больше заказов. Можно просто сфотографировать результат и попросить написать пару слов.\n\nСпасибо за работу! 👏`;
     try {
