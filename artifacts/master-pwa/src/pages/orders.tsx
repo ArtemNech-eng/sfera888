@@ -1,12 +1,113 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, uploadPhoto, resolvePhotoUrl } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import {
   ChevronDown, ChevronUp, MapPin, Phone, Ruler, Calendar,
   Camera, CheckCircle2, Image, FileText, Loader2, X, XCircle,
-  ReceiptText, Copy, Check, Plus, Trash2,
+  ReceiptText, Copy, Check, Plus, Trash2, Printer,
 } from "lucide-react";
+
+function printEstimate(
+  r: {
+    id: number;
+    createdAt: string;
+    lineItems: { description: string; unit?: string; quantity?: number; price: number }[];
+    totalAmount: number;
+    prepaymentAmount: number;
+    notes: string | null;
+    clientName?: string;
+    clientPhone?: string;
+  },
+  order: { city?: string; district?: string | null; serviceType?: string; area?: number },
+  masterName: string,
+  masterPhone: string | null,
+) {
+  const date = new Date(r.createdAt).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+  const fmt = (n: number) => Number(n).toLocaleString("ru-RU");
+  const rows = (r.lineItems ?? []).map((item, i) => {
+    const qty = item.quantity ?? 1;
+    return `<tr>
+      <td style="padding:6px 8px;border:1px solid #ccc;text-align:center;">${i + 1}</td>
+      <td style="padding:6px 8px;border:1px solid #ccc;">${item.description}</td>
+      <td style="padding:6px 8px;border:1px solid #ccc;text-align:center;">${item.unit ?? "—"}</td>
+      <td style="padding:6px 8px;border:1px solid #ccc;text-align:right;">${qty}</td>
+      <td style="padding:6px 8px;border:1px solid #ccc;text-align:right;">${fmt(item.price)}</td>
+      <td style="padding:6px 8px;border:1px solid #ccc;text-align:right;font-weight:600;">${fmt(qty * item.price)}</td>
+    </tr>`;
+  }).join("");
+
+  const orderInfo = `${order.serviceType ?? ""}${order.city ? `, ${order.city}` : ""}${order.district ? ` (${order.district})` : ""}${order.area ? `, ${order.area} м²` : ""}`;
+
+  const html = `<!DOCTYPE html>
+<html lang="ru"><head><meta charset="UTF-8"/>
+<title>Смета №${r.id}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,sans-serif;font-size:13px;color:#000;background:#fff;padding:32px}
+  h1{font-size:20px;font-weight:bold;text-align:center;margin-bottom:4px}
+  .sub{text-align:center;font-size:12px;color:#444;margin-bottom:24px}
+  table.meta td{padding:3px 0;font-size:13px}
+  table.meta td:first-child{color:#555;width:180px}
+  table.items{width:100%;border-collapse:collapse;margin-top:16px}
+  table.items th{padding:7px 8px;border:1px solid #ccc;background:#f0f0f0;font-size:12px;text-align:left}
+  .summary{margin-top:16px;text-align:right}
+  .summary p{font-size:14px;margin-bottom:4px}
+  .summary p.main{font-size:16px;font-weight:bold}
+  .notes{margin-top:16px;padding:10px 12px;border:1px solid #ccc;border-radius:4px;font-size:12px;color:#333}
+  .sig{margin-top:40px;display:flex;justify-content:space-between;font-size:12px;color:#333}
+  .sig div{flex:1;padding-right:24px}
+  .sig-line{margin-top:24px;border-top:1px solid #000}
+  @media print{body{padding:16px}}
+</style></head><body>
+<h1>СМЕТА №${r.id}</h1>
+<div class="sub">Честный мастер · sfera-master.ru</div>
+<hr style="border:none;border-top:1px solid #ccc;margin-bottom:20px"/>
+<table class="meta" style="width:100%;margin-bottom:8px">
+  <tr><td>Дата составления:</td><td><strong>${date}</strong></td></tr>
+  ${r.clientName ? `<tr><td>Клиент:</td><td><strong>${r.clientName}</strong></td></tr>` : ""}
+  ${r.clientPhone ? `<tr><td>Телефон клиента:</td><td>${r.clientPhone}</td></tr>` : ""}
+  ${orderInfo ? `<tr><td>Объект / услуга:</td><td>${orderInfo}</td></tr>` : ""}
+  <tr><td>Исполнитель:</td><td><strong>${masterName}</strong>${masterPhone ? ` · ${masterPhone}` : ""}</td></tr>
+</table>
+<table class="items">
+  <thead><tr>
+    <th style="width:36px;text-align:center">№</th>
+    <th>Наименование работ / материалов</th>
+    <th style="width:70px;text-align:center">Ед.</th>
+    <th style="width:60px;text-align:right">Кол-во</th>
+    <th style="width:90px;text-align:right">Цена, ₽</th>
+    <th style="width:100px;text-align:right">Сумма, ₽</th>
+  </tr></thead>
+  <tbody>${rows}</tbody>
+</table>
+<div class="summary">
+  <p>Итого: <strong>${fmt(r.totalAmount)} ₽</strong></p>
+  <p class="main">Предоплата (бронирование): <strong>${fmt(r.prepaymentAmount)} ₽</strong></p>
+</div>
+${r.notes ? `<div class="notes"><strong>Примечания:</strong> ${r.notes}</div>` : ""}
+<div class="sig">
+  <div>
+    <p>Исполнитель: <strong>${masterName}</strong></p>
+    <div class="sig-line"></div>
+    <p style="margin-top:4px">подпись / дата</p>
+  </div>
+  <div>
+    <p>Заказчик: ${r.clientName ? `<strong>${r.clientName}</strong>` : "______________________________"}</p>
+    <div class="sig-line"></div>
+    <p style="margin-top:4px">подпись / дата</p>
+  </div>
+</div>
+<script>window.onload=function(){window.print()};<\/script>
+</body></html>`;
+
+  const w = window.open("", "_blank", "width=900,height=700");
+  if (!w) return;
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+}
 
 interface Order {
   id: number;
@@ -313,6 +414,8 @@ interface ExistingReceipt {
   notes: string | null;
   publicUrl: string;
   createdAt: string;
+  clientName: string | null;
+  clientPhone: string | null;
   clientSubmittedName: string | null;
   prepaymentSubmittedAt: string | null;
   prepaymentScreenshotUrl: string | null;
@@ -329,6 +432,7 @@ function ReceiptModal({
   onSaved: (receipt: ExistingReceipt) => void;
   onClose: () => void;
 }) {
+  const { master } = useAuth();
   const isEdit = !!existingReceipt;
   const [lineItems, setLineItems] = useState<LineItem[]>(
     isEdit
@@ -560,6 +664,12 @@ function ReceiptModal({
                 {copied ? <Check size={16} /> : <Copy size={16} />}
                 {copied ? "Скопировано!" : "Скопировать ссылку"}
               </button>
+              <button
+                onClick={() => printEstimate(result, order, master?.alias ?? "Мастер", master?.phone ?? null)}
+                className="w-full h-11 rounded-xl border border-border text-sm font-medium flex items-center justify-center gap-2 text-muted-foreground"
+              >
+                <Printer size={15} /> Распечатать смету
+              </button>
               {typeof navigator.share === "function" && (
                 <button
                   onClick={() => navigator.share({ title: "Смета", url: result.publicUrl })}
@@ -583,13 +693,21 @@ function ReceiptModal({
                 {isEdit ? "Сохранить изменения" : "Создать смету"}
               </button>
               {isEdit && displayUrl && (
-                <button
-                  onClick={() => handleCopy(displayUrl)}
-                  className="w-full h-10 rounded-xl border border-border text-sm font-medium flex items-center justify-center gap-2 text-muted-foreground"
-                >
-                  {copied ? <Check size={14} /> : <Copy size={14} />}
-                  {copied ? "Скопировано!" : "Скопировать текущую ссылку"}
-                </button>
+                <>
+                  <button
+                    onClick={() => handleCopy(displayUrl)}
+                    className="w-full h-10 rounded-xl border border-border text-sm font-medium flex items-center justify-center gap-2 text-muted-foreground"
+                  >
+                    {copied ? <Check size={14} /> : <Copy size={14} />}
+                    {copied ? "Скопировано!" : "Скопировать текущую ссылку"}
+                  </button>
+                  <button
+                    onClick={() => printEstimate(existingReceipt!, order, master?.alias ?? "Мастер", master?.phone ?? null)}
+                    className="w-full h-10 rounded-xl border border-border text-sm font-medium flex items-center justify-center gap-2 text-muted-foreground"
+                  >
+                    <Printer size={14} /> Распечатать смету
+                  </button>
+                </>
               )}
             </>
           )}
@@ -601,6 +719,7 @@ function ReceiptModal({
 }
 
 function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefresh: () => void; initialExpanded?: boolean }) {
+  const { master } = useAuth();
   const [expanded, setExpanded] = useState(initialExpanded ?? false);
   const [loadingStatus, setLoadingStatus] = useState<string | null>(null);
   const [loadingPhoto, setLoadingPhoto] = useState<string | null>(null);
@@ -888,12 +1007,18 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
                               <p className="text-sm font-semibold">{Number(r.totalAmount).toLocaleString("ru-RU")} ₽</p>
                               <p className="text-xs text-muted-foreground">Предоплата: {Number(r.prepaymentAmount).toLocaleString("ru-RU")} ₽</p>
                             </div>
-                            <div className="flex gap-1.5 flex-shrink-0">
+                            <div className="flex gap-1.5 flex-shrink-0 flex-wrap justify-end">
                               <button
                                 onClick={() => { navigator.clipboard.writeText(r.publicUrl); toast.success("Ссылка скопирована!"); }}
                                 className="h-8 px-2.5 rounded-lg border border-border bg-background text-xs font-medium flex items-center gap-1"
                               >
                                 <Copy size={12} /> Ссылка
+                              </button>
+                              <button
+                                onClick={() => printEstimate(r, order, master?.alias ?? "Мастер", master?.phone ?? null)}
+                                className="h-8 px-2.5 rounded-lg border border-border bg-background text-xs font-medium flex items-center gap-1"
+                              >
+                                <Printer size={12} /> Печать
                               </button>
                               <button
                                 onClick={() => setEditingReceipt(r)}
