@@ -29,7 +29,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/login" component={Login} />
-      <Route path="/" component={() => { window.location.replace("/login"); return null; }} />
+      <Route path="/" component={() => { window.location.replace("/master-pwa/"); return null; }} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/leads" component={Leads} />
       <Route path="/orders" component={Orders} />
