@@ -1026,6 +1026,148 @@ async function saveBotReply(masterId: number, maxChatId: string | null, text: st
   });
 }
 
+// ─── Smart proactive messaging ────────────────────────────────────────────────
+//
+// Instead of sending fixed templates, GPT-4o reads the full conversation
+// history and decides: (a) should we even send a message? (b) what to say?
+// Dedup is stored in bot_memory (category "proactive_sent") so it survives
+// server restarts and doesn't rely on text-fragment matching.
+
+async function proactiveAlreadySent(
+  masterId: number,
+  type: string,
+  orderId: number,
+  withinHours: number,
+): Promise<boolean> {
+  const key = `${type}:${orderId}`;
+  const cutoff = new Date(Date.now() - withinHours * 3600_000);
+  const rows = await db.select({ id: botMemoryTable.id, updatedAt: botMemoryTable.updatedAt })
+    .from(botMemoryTable)
+    .where(and(
+      eq(botMemoryTable.masterId, masterId),
+      eq(botMemoryTable.category, "proactive_sent"),
+      ilike(botMemoryTable.content, key),
+    ))
+    .limit(1);
+  return rows.length > 0 && new Date(rows[0].updatedAt) > cutoff;
+}
+
+async function markProactiveSent(masterId: number, type: string, orderId: number) {
+  const key = `${type}:${orderId}`;
+  const existing = await db.select({ id: botMemoryTable.id })
+    .from(botMemoryTable)
+    .where(and(
+      eq(botMemoryTable.masterId, masterId),
+      eq(botMemoryTable.category, "proactive_sent"),
+      ilike(botMemoryTable.content, key),
+    ))
+    .limit(1);
+  if (existing.length > 0) {
+    await db.update(botMemoryTable).set({ updatedAt: new Date() }).where(eq(botMemoryTable.id, existing[0].id));
+  } else {
+    await db.insert(botMemoryTable).values({ masterId, category: "proactive_sent", content: key });
+  }
+}
+
+interface SmartProactiveOpts {
+  masterId: number;
+  masterAlias: string;
+  maxChatId: string;
+  orderId: number;
+  type: string;           // e.g. "completion", "callcheckin", "estimate", "preday"
+  withinHours: number;    // dedup window in hours
+  masterKeywords?: { words: string[]; withinHours: number }; // skip if master already mentioned
+  situation: string;      // plain-language description of WHY we're checking
+}
+
+/**
+ * The smart proactive engine:
+ *  1. Checks dedup (bot_memory-based, survives restarts)
+ *  2. Checks if master already addressed this topic
+ *  3. Asks GPT-4o to read conversation and decide what (if anything) to say
+ *  4. Sends + records dedup marker
+ */
+async function sendSmartProactive(opts: SmartProactiveOpts): Promise<void> {
+  const { masterId, masterAlias, maxChatId, orderId, type, withinHours, masterKeywords, situation } = opts;
+
+  return withSendLock(`${type}:${masterId}:${orderId}`, async () => {
+    // 1. Dedup: already sent this type for this order within window?
+    if (await proactiveAlreadySent(masterId, type, orderId, withinHours)) {
+      console.log(`[dispatcherAI] Proactive SKIP (already sent) ${type} for ${masterAlias} order #${orderId}`);
+      return;
+    }
+
+    // 2. Has master already addressed this topic on their own?
+    if (masterKeywords) {
+      if (await masterAlreadyMentioned(masterId, masterKeywords.words, masterKeywords.withinHours)) {
+        console.log(`[dispatcherAI] Proactive SKIP (master mentioned it) ${type} for ${masterAlias} order #${orderId}`);
+        return;
+      }
+    }
+
+    // 3. Build context + ask GPT
+    const context = await buildMasterContext(masterId);
+    const nowStr = new Intl.DateTimeFormat("ru-RU", {
+      weekday: "long", day: "numeric", month: "long",
+      hour: "2-digit", minute: "2-digit", timeZone: "Europe/Moscow",
+    }).format(new Date());
+
+    const gptPrompt = `Ты — ИИ-диспетчер ремонтного сервиса «Честный мастер». Сейчас: ${nowStr}.
+
+КОНТЕКСТ МАСТЕРА (${masterAlias}):
+${context}
+
+СИТУАЦИЯ:
+${situation}
+
+ЗАДАЧА:
+Прочитай переписку выше. Реши — нужно ли написать мастеру прямо сейчас?
+
+Правила принятия решения:
+• Если мастер уже ответил на этот вопрос в переписке → action: "skip"
+• Если ситуация требует уточнения и мастер молчит → action: "send"
+• Пишешь коротко, по-деловому, на ТЫ. Максимум 2 предложения.
+• Упоминай номер заказа. Без лишних слов.
+
+Ответ СТРОГО в JSON (только JSON, без markdown):
+{"action":"send","message":"...текст для мастера..."} 
+или
+{"action":"skip","reason":"...причина..."}`;
+
+    let result: { action: string; message?: string; reason?: string } = { action: "skip", reason: "default" };
+    try {
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: gptPrompt }],
+        temperature: 0.3,
+        max_tokens: 300,
+      });
+      const raw = (response.choices[0].message.content ?? "{}").replace(/```json\n?|\n?```/g, "").trim();
+      result = JSON.parse(raw);
+    } catch (e) {
+      console.error(`[dispatcherAI] Smart proactive GPT error (${type}, master ${masterAlias}):`, e);
+      return;
+    }
+
+    if (result.action !== "send" || !result.message) {
+      console.log(`[dispatcherAI] Proactive SKIP (GPT decided) ${type} for ${masterAlias} order #${orderId}: ${result.reason ?? "no message"}`);
+      // Mark as considered using same key — prevents re-checking for withinHours window
+      await markProactiveSent(masterId, type, orderId);
+      return;
+    }
+
+    const msg = result.message.trim();
+    try {
+      await sendMaxMessage(maxChatId, msg);
+      await saveBotReply(masterId, maxChatId, msg);
+      await markProactiveSent(masterId, type, orderId);
+      console.log(`[dispatcherAI] Smart proactive SENT ${type} to ${masterAlias} order #${orderId}: "${msg.slice(0, 80)}"`);
+    } catch (e) {
+      console.error(`[dispatcherAI] Smart proactive send error (${type}, order #${orderId}):`, e);
+    }
+  });
+}
+
 // ─── Proactive messages ──────────────────────────────────────────────────────
 
 /** Send greeting after master is assigned to an order */
@@ -1071,17 +1213,15 @@ export async function sendDailyCheckin(
   maxChatId: string,
   orderId: number,
 ) {
-  return withSendLock(`checkin:${masterId}:${orderId}`, async () => {
-    if (await alreadySentBotMessage(masterId, `объекте по заказу #${orderId}`)) return;
-
-    const msg = `Привет, ${masterAlias}! Как дела на объекте по заказу #${orderId}? Всё идёт по плану? 😊`;
-    try {
-      await sendMaxMessage(maxChatId, msg);
-      await saveBotReply(masterId, maxChatId, msg);
-      console.log(`[dispatcherAI] Sent 24h check-in to ${masterAlias} for order #${orderId}`);
-    } catch (e) {
-      console.error(`[dispatcherAI] Failed to send/save daily check-in for order #${orderId}:`, e);
-    }
+  return sendSmartProactive({
+    masterId, masterAlias, maxChatId, orderId,
+    type: "checkin",
+    withinHours: 24,
+    masterKeywords: {
+      words: ["всё хорошо", "всё норм", "работаем", "работаю", "делаем", "идёт", "нормально", "ок", "план"],
+      withinHours: 24,
+    },
+    situation: `Мастер назначен на заказ #${orderId} уже более 24 часов. Проверь как идут дела — узнай, всё ли по плану и нет ли проблем.`,
   });
 }
 
@@ -1092,23 +1232,15 @@ export async function sendEstimateReminder(
   maxChatId: string,
   orderId: number,
 ) {
-  return withSendLock(`estimate:${masterId}:${orderId}`, async () => {
-    // Don't re-send if already reminded in the last 48h
-    if (await alreadySentBotMessage(masterId, `заказу #${orderId} смета ещё не отправлена`, 48)) return;
-    // Skip if master already mentioned the estimate in the last 72h
-    if (await masterAlreadyMentioned(masterId, ["смета", "отправил смет", "скинул смет", "счёт отправил", "смету скинул", "смет"], 72)) {
-      console.log(`[dispatcherAI] Skipping estimate reminder for ${masterAlias} order #${orderId} — master already mentioned estimate`);
-      return;
-    }
-
-    const msg = `${masterAlias}, напомни — по заказу #${orderId} смета ещё не отправлена. Не забудь оформить её в приложении, чтобы клиент мог согласовать стоимость работ. 📋`;
-    try {
-      await sendMaxMessage(maxChatId, msg);
-      await saveBotReply(masterId, maxChatId, msg);
-      console.log(`[dispatcherAI] Sent estimate reminder to ${masterAlias} for order #${orderId}`);
-    } catch (e) {
-      console.error(`[dispatcherAI] Failed to send/save estimate reminder for order #${orderId}:`, e);
-    }
+  return sendSmartProactive({
+    masterId, masterAlias, maxChatId, orderId,
+    type: "estimate",
+    withinHours: 48,
+    masterKeywords: {
+      words: ["смета", "отправил смет", "скинул смет", "счёт отправил", "смету скинул"],
+      withinHours: 72,
+    },
+    situation: `По заказу #${orderId} смета до сих пор не отправлена клиенту. Напомни мастеру оформить её в приложении — без сметы клиент не может согласовать стоимость.`,
   });
 }
 
@@ -1119,31 +1251,15 @@ export async function sendClientCallCheckin(
   maxChatId: string,
   orderId: number,
 ) {
-  return withSendLock(`callcheckin:${masterId}:${orderId}`, async () => {
-    // Guard 1: already sent this exact question → skip
-    if (await alreadySentBotMessage(masterId, `созвонились с клиентом по заказу #${orderId}`)) return;
-
-    // Guard 2: master has already replied to a bot message → they're in active dialogue, skip
-    const lastBotMs = await lastBotMessageTimestamp(masterId);
-    if (lastBotMs && await masterRepliedAfter(masterId, lastBotMs)) {
-      console.log(`[dispatcherAI] Skipping check-in for order #${orderId} — master ${masterAlias} already replied to bot`);
-      return;
-    }
-
-    // Guard 3: master already wrote about calling/agreeing in last 24h → skip
-    if (await masterAlreadyMentioned(masterId, ["созвонился", "созвонились", "договорился", "договорились", "не берёт", "не отвечает", "недоступен", "дозвонился", "звонил", "перезвоню"], 24)) {
-      console.log(`[dispatcherAI] Skipping call check-in for ${masterAlias} order #${orderId} — master already mentioned call status`);
-      return;
-    }
-
-    const msg = `${masterAlias}, вы уже созвонились с клиентом по заказу #${orderId}? Напишите — о чём договорились, на какое время согласовали визит. Это важно для координации работ. 📞`;
-    try {
-      await sendMaxMessage(maxChatId, msg);
-      await saveBotReply(masterId, maxChatId, msg);
-      console.log(`[dispatcherAI] Sent client call check-in to ${masterAlias} for order #${orderId}`);
-    } catch (e) {
-      console.error(`[dispatcherAI] Failed to send/save check-in for order #${orderId}:`, e);
-    }
+  return sendSmartProactive({
+    masterId, masterAlias, maxChatId, orderId,
+    type: "callcheckin",
+    withinHours: 24,
+    masterKeywords: {
+      words: ["созвонился", "созвонились", "договорился", "договорились", "не берёт", "не отвечает", "недоступен", "дозвонился", "звонил", "перезвоню"],
+      withinHours: 24,
+    },
+    situation: `Мастеру только что назначен заказ #${orderId}. Нужно уточнить: позвонил ли он уже клиенту и на какое время договорились о визите. Если в переписке уже есть информация о звонке или договорённости — не спрашивай снова.`,
   });
 }
 
@@ -1154,22 +1270,15 @@ export async function sendCompletionCheck(
   maxChatId: string,
   orderId: number,
 ) {
-  return withSendLock(`completion:${masterId}:${orderId}`, async () => {
-    if (await alreadySentBotMessage(masterId, `как прошли работы по заказу #${orderId}`, 72)) return;
-    // Skip if master already said work is done / mentioned completion
-    if (await masterAlreadyMentioned(masterId, ["завершил", "завершили", "закончил", "закончили", "сделали", "всё готово", "готово", "работы выполнены", "выполнил", "закончено", "завершено"], 72)) {
-      console.log(`[dispatcherAI] Skipping completion check for ${masterAlias} order #${orderId} — master already mentioned completion`);
-      return;
-    }
-
-    const msg = `${masterAlias}, как прошли работы по заказу #${orderId}? Всё завершено? Если да — отметьте заказ как выполненный в приложении и не забудьте попросить клиента оставить отзыв. 🏁`;
-    try {
-      await sendMaxMessage(maxChatId, msg);
-      await saveBotReply(masterId, maxChatId, msg);
-      console.log(`[dispatcherAI] Sent completion check to ${masterAlias} for order #${orderId}`);
-    } catch (e) {
-      console.error(`[dispatcherAI] Failed to send/save completion check for order #${orderId}:`, e);
-    }
+  return sendSmartProactive({
+    masterId, masterAlias, maxChatId, orderId,
+    type: "completion",
+    withinHours: 72,
+    masterKeywords: {
+      words: ["завершил", "завершили", "закончил", "закончили", "сделали", "всё готово", "готово", "работы выполнены", "выполнил", "закончено", "завершено"],
+      withinHours: 72,
+    },
+    situation: `Запланированное время работ по заказу #${orderId} прошло 6+ часов назад, но заказ всё ещё не отмечен как выполненный. Уточни у мастера — работы завершены? Если да — пусть закроет заказ в приложении и попросит клиента оставить отзыв. Если в переписке уже есть информация о завершении или проблемах — учти это.`,
   });
 }
 
@@ -1201,22 +1310,15 @@ export async function sendPreDayReminder(
   maxChatId: string,
   orderId: number,
 ) {
-  return withSendLock(`preday:${masterId}:${orderId}`, async () => {
-    if (await alreadySentBotMessage(masterId, `завтра выезд на объект по заказу #${orderId}`)) return;
-    // Skip if master was already active in the last 12h (they're on top of it)
-    if (await masterAlreadyMentioned(masterId, ["готов", "буду", "подтверждаю", "всё готово", "приеду", "едем", "выезжаем", "ок", "хорошо", "понял"], 12)) {
-      console.log(`[dispatcherAI] Skipping pre-day reminder for ${masterAlias} order #${orderId} — master recently confirmed`);
-      return;
-    }
-
-    const msg = `${masterAlias}, завтра выезд на объект по заказу #${orderId}. Всё готово? Клиент ждёт, подтвердите что будете в срок. 🔧`;
-    try {
-      await sendMaxMessage(maxChatId, msg);
-      await saveBotReply(masterId, maxChatId, msg);
-      console.log(`[dispatcherAI] Sent pre-day reminder to ${masterAlias} for order #${orderId}`);
-    } catch (e) {
-      console.error(`[dispatcherAI] Failed to send/save pre-day reminder for order #${orderId}:`, e);
-    }
+  return sendSmartProactive({
+    masterId, masterAlias, maxChatId, orderId,
+    type: "preday",
+    withinHours: 24,
+    masterKeywords: {
+      words: ["готов", "буду", "подтверждаю", "всё готово", "приеду", "едем", "выезжаем", "подтвердил"],
+      withinHours: 12,
+    },
+    situation: `Завтра у мастера запланированы работы по заказу #${orderId}. Нужно убедиться что он готов — знает адрес, время, не забыл. Если мастер уже недавно подтвердил что всё готово — не беспокой лишний раз.`,
   });
 }
 
