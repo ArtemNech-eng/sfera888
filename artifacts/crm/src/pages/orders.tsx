@@ -10,7 +10,7 @@ import {
   DollarSign, Check, Pencil, AlertCircle, MessageSquare, Trash2, Search,
   ClipboardList, CalendarDays, ChevronDown, Filter, Settings, AlertTriangle,
   FileText, History, Timer, RefreshCw, CopyX, XCircle, ReceiptText, ExternalLink, Plus, Copy,
-  LayoutList, Kanban, Bell,
+  LayoutList, Kanban, Bell, Printer,
 } from "lucide-react";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -19,6 +19,116 @@ function resolvePhotoUrl(url: string): string {
   if (!url) return url;
   if (url.startsWith("/objects/")) return `/api/storage${url}`;
   return url;
+}
+
+function printReceipt(r: {
+  id: number;
+  clientName: string;
+  clientPhone: string;
+  createdAt: string;
+  lineItems: { description: string; unit?: string; quantity?: number; price: number }[];
+  totalAmount: number;
+  prepaymentAmount: number;
+  notes: string | null;
+}, order?: { city?: string; district?: string | null; serviceType?: string; area?: number } | null) {
+  const date = new Date(r.createdAt).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+  const fmt = (n: number) => Number(n).toLocaleString("ru-RU");
+  const rows = (r.lineItems ?? []).map((item, i) => {
+    const qty = item.quantity ?? 1;
+    const total = qty * item.price;
+    return `<tr>
+      <td style="padding:6px 8px;border:1px solid #ccc;text-align:center;">${i + 1}</td>
+      <td style="padding:6px 8px;border:1px solid #ccc;">${item.description}</td>
+      <td style="padding:6px 8px;border:1px solid #ccc;text-align:center;">${item.unit ?? "—"}</td>
+      <td style="padding:6px 8px;border:1px solid #ccc;text-align:right;">${qty}</td>
+      <td style="padding:6px 8px;border:1px solid #ccc;text-align:right;">${fmt(item.price)}</td>
+      <td style="padding:6px 8px;border:1px solid #ccc;text-align:right;font-weight:600;">${fmt(total)}</td>
+    </tr>`;
+  }).join("");
+
+  const orderInfo = order
+    ? `${order.serviceType ?? ""}${order.city ? `, ${order.city}` : ""}${order.district ? ` (${order.district})` : ""}${order.area ? `, ${order.area} м²` : ""}`
+    : "";
+
+  const html = `<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<title>Смета №${r.id}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 13px; color: #000; background: #fff; padding: 32px; }
+  h1 { font-size: 20px; font-weight: bold; text-align: center; margin-bottom: 4px; }
+  .subtitle { text-align: center; font-size: 12px; color: #444; margin-bottom: 24px; }
+  .meta { margin-bottom: 16px; }
+  .meta table { width: 100%; }
+  .meta td { padding: 3px 0; font-size: 13px; }
+  .meta td:first-child { color: #555; width: 180px; }
+  table.items { width: 100%; border-collapse: collapse; margin-top: 16px; }
+  table.items th { padding: 7px 8px; border: 1px solid #ccc; background: #f0f0f0; font-size: 12px; text-align: left; }
+  table.items th:nth-child(n+3) { text-align: center; }
+  .total-row td { padding: 8px; border: 1px solid #ccc; font-size: 14px; }
+  .summary { margin-top: 16px; text-align: right; }
+  .summary p { font-size: 14px; margin-bottom: 4px; }
+  .summary p.main { font-size: 16px; font-weight: bold; }
+  .notes { margin-top: 16px; padding: 10px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; color: #333; }
+  .signature { margin-top: 40px; display: flex; justify-content: space-between; font-size: 12px; color: #333; }
+  .signature div { flex: 1; padding-right: 24px; }
+  .sig-line { margin-top: 24px; border-top: 1px solid #000; }
+  @media print { body { padding: 16px; } button { display: none !important; } }
+</style>
+</head>
+<body>
+<h1>СМЕТА №${r.id}</h1>
+<div class="subtitle">Честный мастер · sfera-master.ru</div>
+<hr style="border:none;border-top:1px solid #ccc;margin-bottom:20px;"/>
+<div class="meta">
+  <table>
+    <tr><td>Дата составления:</td><td><strong>${date}</strong></td></tr>
+    <tr><td>Клиент:</td><td><strong>${r.clientName}</strong></td></tr>
+    <tr><td>Телефон клиента:</td><td>${r.clientPhone}</td></tr>
+    ${orderInfo ? `<tr><td>Объект / услуга:</td><td>${orderInfo}</td></tr>` : ""}
+  </table>
+</div>
+<table class="items">
+  <thead>
+    <tr>
+      <th style="width:36px;text-align:center;">№</th>
+      <th>Наименование работ / материалов</th>
+      <th style="width:70px;text-align:center;">Ед.</th>
+      <th style="width:60px;text-align:center;">Кол-во</th>
+      <th style="width:90px;text-align:right;">Цена, ₽</th>
+      <th style="width:100px;text-align:right;">Сумма, ₽</th>
+    </tr>
+  </thead>
+  <tbody>${rows}</tbody>
+</table>
+<div class="summary">
+  <p>Итого: <strong>${fmt(r.totalAmount)} ₽</strong></p>
+  <p class="main">Предоплата (бронирование): <strong>${fmt(r.prepaymentAmount)} ₽</strong></p>
+</div>
+${r.notes ? `<div class="notes"><strong>Примечания:</strong> ${r.notes}</div>` : ""}
+<div class="signature">
+  <div>
+    <p>Исполнитель: ____________________________</p>
+    <div class="sig-line"></div>
+    <p style="margin-top:4px;">подпись / дата</p>
+  </div>
+  <div>
+    <p>Заказчик: ______________________________</p>
+    <div class="sig-line"></div>
+    <p style="margin-top:4px;">подпись / дата</p>
+  </div>
+</div>
+<script>window.onload = function() { window.print(); };<\/script>
+</body>
+</html>`;
+
+  const w = window.open("", "_blank", "width=900,height=700");
+  if (!w) return;
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
 }
 
 interface DispatchEntry {
@@ -1793,12 +1903,15 @@ export default function Orders() {
                             </a>
                           )}
                           {r.notes && <p className="text-xs text-muted-foreground">{r.notes}</p>}
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <a href={r.publicUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs text-blue-500 hover:underline">
                               <ExternalLink className="w-3 h-3" /> Открыть
                             </a>
                             <button onClick={() => { navigator.clipboard.writeText(r.publicUrl); toast({ title: "Ссылка скопирована!" }); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
                               <Copy className="w-3 h-3" /> Ссылка
+                            </button>
+                            <button onClick={() => printReceipt(r, openOrder)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+                              <Printer className="w-3 h-3" /> Печать
                             </button>
                             <button onClick={() => { if (editingCrmReceiptId === r.id) { setEditingCrmReceiptId(null); return; } setEditingCrmReceiptId(r.id); setCrmEditLineItems(r.lineItems?.length ? r.lineItems.map((i: any) => ({ description: i.description, unit: i.unit ?? "", quantity: String(i.quantity ?? 1), price: String(i.price) })) : [{ description: "", unit: "", quantity: "1", price: "" }]); setCrmEditPrepayment(String(r.prepaymentAmount)); setCrmEditNotes(r.notes ?? ""); }} className="flex items-center gap-1 text-xs text-primary font-medium hover:underline ml-auto">
                               {editingCrmReceiptId === r.id ? "Отмена" : "Изменить"}
@@ -2050,10 +2163,13 @@ export default function Orders() {
                             >
                               <CheckCircle2 className="w-3.5 h-3.5" /> Подтвердить оплату
                             </button>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <a href={r.publicUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs text-blue-500 hover:underline">
                                 <ExternalLink className="w-3 h-3" /> Открыть смету
                               </a>
+                              <button onClick={() => printReceipt(r, openOrder)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+                                <Printer className="w-3 h-3" /> Печать
+                              </button>
                               <button onClick={() => { navigator.clipboard.writeText(r.publicUrl); toast({ title: "Ссылка скопирована!" }); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground ml-auto">
                                 <Copy className="w-3 h-3" /> Ссылка
                               </button>
@@ -2104,10 +2220,13 @@ export default function Orders() {
                               </a>
                             )}
                             {r.notes && <p className="text-xs text-muted-foreground">{r.notes}</p>}
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <a href={r.publicUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs text-blue-500 hover:underline">
                                 <ExternalLink className="w-3 h-3" /> Открыть
                               </a>
+                              <button onClick={() => printReceipt(r, openOrder)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+                                <Printer className="w-3 h-3" /> Печать
+                              </button>
                               <button onClick={() => { navigator.clipboard.writeText(r.publicUrl); toast({ title: "Ссылка скопирована!" }); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
                                 <Copy className="w-3 h-3" /> Ссылка
                               </button>
