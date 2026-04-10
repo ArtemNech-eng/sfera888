@@ -3,7 +3,7 @@ import { Layout } from "@/components/layout";
 import { ProtectedRoute } from "@/hooks/use-auth";
 import { useGetCities, useCreateCity, useDeleteCity, useGetServices, useCreateService, useDeleteService } from "@workspace/api-client-react";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
-import { Trash2, Plus, MapPin, Wrench, Percent, Save, Loader2 } from "lucide-react";
+import { Trash2, Plus, MapPin, Wrench, Percent, Save, Loader2, Zap, UserCheck } from "lucide-react";
 
 interface CommissionSettings {
   tier1Threshold: number;
@@ -28,11 +28,47 @@ function formatNum(n: number | undefined | null) {
   return n.toLocaleString("ru-RU");
 }
 
+function useAssignmentMode() {
+  return useQuery<{ mode: "auto" | "manual" }>({
+    queryKey: ["/api/masters/assignment-mode"],
+    queryFn: async () => {
+      const r = await fetch("/api/masters/assignment-mode", { credentials: "include" });
+      return r.json();
+    },
+  });
+}
+
 export default function Settings() {
   const queryClient = useQueryClient();
   const { data: cities } = useGetCities();
   const { data: services } = useGetServices();
   const { data: commission } = useCommission();
+  const { data: assignmentModeData } = useAssignmentMode();
+  const [assignMode, setAssignMode] = useState<"auto" | "manual">("auto");
+  const [modeSaved, setModeSaved] = useState(false);
+
+  useEffect(() => {
+    if (assignmentModeData?.mode) setAssignMode(assignmentModeData.mode);
+  }, [assignmentModeData]);
+
+  const saveModeMutation = useMutation({
+    mutationFn: async (mode: "auto" | "manual") => {
+      const r = await fetch("/api/masters/assignment-mode", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ mode }),
+      });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Ошибка"); }
+      return r.json();
+    },
+    onSuccess: (_, mode) => {
+      setAssignMode(mode);
+      queryClient.invalidateQueries({ queryKey: ["/api/masters/assignment-mode"] });
+      setModeSaved(true);
+      setTimeout(() => setModeSaved(false), 2500);
+    },
+  });
 
   const [newCity, setNewCity] = useState("");
   const [newService, setNewService] = useState("");
@@ -261,6 +297,88 @@ export default function Settings() {
                   {saveCommMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                   Сохранить
                 </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Assignment Mode — full width */}
+          <div className="bg-card rounded-2xl border border-border/50 shadow-sm overflow-hidden">
+            <div className="p-6 border-b border-border/50 flex items-center gap-3">
+              <div className="p-2 bg-violet-500/10 rounded-xl">
+                {assignMode === "auto" ? <Zap className="w-5 h-5 text-violet-600" /> : <UserCheck className="w-5 h-5 text-violet-600" />}
+              </div>
+              <div>
+                <h2 className="font-display font-bold text-lg">Назначение мастеров</h2>
+                <p className="text-sm text-muted-foreground">Как система выбирает мастера из откликнувшихся</p>
+              </div>
+            </div>
+
+            <div className="p-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Auto mode */}
+                <button
+                  onClick={() => { setAssignMode("auto"); saveModeMutation.mutate("auto"); }}
+                  disabled={saveModeMutation.isPending}
+                  className={`relative flex flex-col gap-3 p-5 rounded-xl border-2 text-left transition-all ${
+                    assignMode === "auto"
+                      ? "border-violet-500 bg-violet-50"
+                      : "border-border hover:border-violet-300 bg-background"
+                  }`}
+                >
+                  {assignMode === "auto" && (
+                    <span className="absolute top-3 right-3 w-2.5 h-2.5 rounded-full bg-violet-500" />
+                  )}
+                  <div className="flex items-center gap-2">
+                    <div className={`p-2 rounded-lg ${assignMode === "auto" ? "bg-violet-100" : "bg-muted"}`}>
+                      <Zap className={`w-4 h-4 ${assignMode === "auto" ? "text-violet-600" : "text-muted-foreground"}`} />
+                    </div>
+                    <span className={`font-semibold ${assignMode === "auto" ? "text-violet-700" : "text-foreground"}`}>
+                      Автоматическое
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Через 30 минут система сама выбирает лучшего мастера по конверсии, рейтингу и скорости отклика. При 5+ откликах — раньше срока.
+                  </p>
+                </button>
+
+                {/* Manual mode */}
+                <button
+                  onClick={() => { setAssignMode("manual"); saveModeMutation.mutate("manual"); }}
+                  disabled={saveModeMutation.isPending}
+                  className={`relative flex flex-col gap-3 p-5 rounded-xl border-2 text-left transition-all ${
+                    assignMode === "manual"
+                      ? "border-amber-500 bg-amber-50"
+                      : "border-border hover:border-amber-300 bg-background"
+                  }`}
+                >
+                  {assignMode === "manual" && (
+                    <span className="absolute top-3 right-3 w-2.5 h-2.5 rounded-full bg-amber-500" />
+                  )}
+                  <div className="flex items-center gap-2">
+                    <div className={`p-2 rounded-lg ${assignMode === "manual" ? "bg-amber-100" : "bg-muted"}`}>
+                      <UserCheck className={`w-4 h-4 ${assignMode === "manual" ? "text-amber-600" : "text-muted-foreground"}`} />
+                    </div>
+                    <span className={`font-semibold ${assignMode === "manual" ? "text-amber-700" : "text-foreground"}`}>
+                      Ручное
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Мастера откликаются, но назначение делает оператор вручную через CRM. Автоматический выбор отключён.
+                  </p>
+                </button>
+              </div>
+
+              {/* Status line */}
+              <div className="mt-4 flex items-center gap-2 text-sm">
+                {saveModeMutation.isPending && (
+                  <><Loader2 className="w-4 h-4 animate-spin text-muted-foreground" /><span className="text-muted-foreground">Сохранение…</span></>
+                )}
+                {modeSaved && (
+                  <span className="text-green-600">✅ Режим сохранён: {assignMode === "auto" ? "Автоматическое" : "Ручное"} назначение</span>
+                )}
+                {saveModeMutation.isError && (
+                  <span className="text-destructive">{(saveModeMutation.error as Error).message}</span>
+                )}
               </div>
             </div>
           </div>

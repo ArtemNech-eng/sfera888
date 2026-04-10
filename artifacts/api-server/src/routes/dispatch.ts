@@ -216,7 +216,7 @@ router.post("/test-order", ops, async (req, res) => {
   const cardText = buildOrderCard(order, order.id);
   const replyMarkup = {
     inline_keyboard: [
-      [{ text: "Хочу взять 🙋", callback_data: `respond_order_${order.id}` }],
+      [{ text: "Откликнуться 🙋", callback_data: `respond_order_${order.id}` }],
       [{ text: "💬 Задать вопрос оператору", callback_data: `ask_question_${order.id}` }],
     ],
   };

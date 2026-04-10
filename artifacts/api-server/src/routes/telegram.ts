@@ -1058,8 +1058,8 @@ async function handleCallback(callbackQuery: any) {
       `🔧 Услуга: <b>${order.serviceType}</b>\n` +
       `📍 Район: <b>${order.city}${order.district ? ", " + order.district : ""}</b>\n` +
       `📐 Объём: <b>${order.area} м²</b>\n\n` +
-      `✅ <b>Заявка зарегистрирована!</b> Через 30 минут система автоматически выберет лучшего мастера по конверсии.\n` +
-      `<i>Если вы будете выбраны — получите контакт клиента.</i>`;
+      `✅ <b>Вы откликнулись!</b> Ожидайте подтверждения оператора.\n` +
+      `<i>После подтверждения вы получите контакт клиента.</i>`;
 
     await editMessage(chatId, messageId, respondedCard, { reply_markup: { inline_keyboard: [] } });
 
@@ -1709,7 +1709,7 @@ router.post("/webhook", async (req, res) => {
         await sendMessage(chatId, cardText, {
           reply_markup: {
             inline_keyboard: [
-              [{ text: "Хочу взять 🙋", callback_data: `respond_order_${orderId}` }],
+              [{ text: "Откликнуться 🙋", callback_data: `respond_order_${orderId}` }],
               [{ text: "💬 Задать вопрос оператору", callback_data: `ask_question_${orderId}` }],
             ],
           },

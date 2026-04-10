@@ -226,7 +226,7 @@ export async function performBroadcast(
   const cardText = buildOrderCard(order, orderId);
   const replyMarkup = {
     inline_keyboard: [
-      [{ text: "Хочу взять 🙋", callback_data: `respond_order_${orderId}` }],
+      [{ text: "Откликнуться 🙋", callback_data: `respond_order_${orderId}` }],
       [{ text: "💬 Задать вопрос оператору", callback_data: `ask_question_${orderId}` }],
     ],
   };

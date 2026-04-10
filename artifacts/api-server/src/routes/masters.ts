@@ -265,6 +265,24 @@ router.patch("/:id/checkin", requireRole("admin", "master_operator"), async (req
   res.json({ ok: true });
 });
 
+// GET /api/masters/assignment-mode — get auto/manual assignment mode
+router.get("/assignment-mode", allMasterRoles, async (_req, res) => {
+  const rows = await db.select().from(systemSettingsTable)
+    .where(eq(systemSettingsTable.key, "assignment_mode"));
+  res.json({ mode: rows[0]?.value ?? "auto" });
+});
+
+// PUT /api/masters/assignment-mode — set auto/manual assignment mode
+router.put("/assignment-mode", requireRole("admin", "master_operator"), async (req, res) => {
+  const { mode } = req.body as { mode?: string };
+  if (mode !== "auto" && mode !== "manual") {
+    return res.status(400).json({ error: "mode must be 'auto' or 'manual'" });
+  }
+  await db.insert(systemSettingsTable).values({ key: "assignment_mode", value: mode })
+    .onConflictDoUpdate({ target: systemSettingsTable.key, set: { value: mode, updatedAt: new Date() } });
+  res.json({ ok: true, mode });
+});
+
 // GET /api/masters/:id
 router.get("/:id", allMasterRoles, async (req, res) => {
   const id = parseInt(req.params.id);

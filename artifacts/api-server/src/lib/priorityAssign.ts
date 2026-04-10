@@ -18,6 +18,7 @@ import {
   leadsTable,
   voronkaColumnsTable,
   masterMessagesTable,
+  systemSettingsTable,
 } from "@workspace/db";
 import { eq, inArray, and, isNull, count } from "drizzle-orm";
 import { sendMaxMessage } from "../maxBot.js";
@@ -27,6 +28,18 @@ import { sendPushToMaster } from "./push.js";
 const TELEGRAM_API = `https://api.telegram.org/bot${process.env["TELEGRAM_BOT_TOKEN"]}`;
 const WAVE1_MINUTES = 30;
 const WAVE2_MINUTES = 60;
+
+// ─── Assignment mode check ────────────────────────────────────────────────────
+
+async function isAutoAssignMode(): Promise<boolean> {
+  try {
+    const rows = await db.select().from(systemSettingsTable)
+      .where(eq(systemSettingsTable.key, "assignment_mode"));
+    return (rows[0]?.value ?? "auto") === "auto";
+  } catch {
+    return true; // default to auto if DB error
+  }
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -349,6 +362,11 @@ export async function escalateToAdmin(orderId: number): Promise<void> {
 // ─── Scheduler: check expired response windows ────────────────────────────────
 
 export async function checkResponseWindows(): Promise<void> {
+  // In manual mode — skip auto-assignment entirely
+  if (!(await isAutoAssignMode())) {
+    return;
+  }
+
   const now = new Date();
 
   // Find all waiting orders with an expired response window
@@ -393,6 +411,11 @@ export async function checkResponseWindows(): Promise<void> {
 // ─── Early trigger: call when 5+ masters have responded ──────────────────────
 
 export async function maybeEarlyAssign(orderId: number): Promise<void> {
+  // In manual mode — skip early assignment
+  if (!(await isAutoAssignMode())) {
+    return;
+  }
+
   const responded = await db.select({ cnt: count() })
     .from(orderDispatchesTable)
     .where(and(eq(orderDispatchesTable.orderId, orderId), eq(orderDispatchesTable.status, "responded")));
