@@ -101,10 +101,12 @@ router.post("/auth/login", async (req, res) => {
     return res.status(403).json({ error: "suspended", message: "Ваш аккаунт заблокирован. Обратитесь к менеджеру." });
   }
 
-  // Safety: if contractSignedAt is already set (admin marked external) but status
-  // is still pending_contract due to any race/bug, auto-activate now.
+  // Safety: if admin has already verified passport + contract is signed but
+  // status is still pending_contract due to a race/bug — auto-activate now.
+  // NOTE: contractSignedAt alone is NOT enough — passportVerified must be true
+  // (set by admin in CRM), otherwise we'd auto-activate before admin review.
   let effectiveStatus = master.status;
-  if (master.contractSignedAt && master.status === "pending_contract") {
+  if (master.contractSignedAt && master.passportVerified && master.status === "pending_contract") {
     await db.update(mastersTable)
       .set({ status: "active" })
       .where(eq(mastersTable.id, master.id));
