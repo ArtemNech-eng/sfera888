@@ -37,6 +37,7 @@ interface Master {
   pendingTransactionsCount?: number; contractLink?: string | null;
   maxChatId?: string | null;
   servicePrices?: { service: string; priceFrom: number }[] | null;
+  paidOrdersCount?: number;
 }
 
 interface VoronkaColumn {
@@ -58,8 +59,9 @@ function getInitialView(): ViewMode {
 
 // ─── Sort options ─────────────────────────────────────────────────────────────
 
-type SortKey = "name" | "rating" | "orders" | "debt" | "date" | "cancels";
+type SortKey = "name" | "rating" | "orders" | "debt" | "date" | "cancels" | "priority";
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+  { key: "priority", label: "По приоритету" },
   { key: "name",    label: "По алфавиту" },
   { key: "rating",  label: "По рейтингу" },
   { key: "orders",  label: "По заказам" },
@@ -70,6 +72,11 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
 function sortMasters(list: Master[], key: SortKey): Master[] {
   return [...list].sort((a, b) => {
     switch (key) {
+      case "priority": {
+        const { tier: ta, conv: ca } = getMasterTier(a);
+        const { tier: tb, conv: cb } = getMasterTier(b);
+        return ta !== tb ? ta - tb : cb - ca; // tier ASC (1=best), then conv DESC
+      }
       case "name":    return a.alias.localeCompare(b.alias, "ru");
       case "rating":  return b.rating - a.rating;
       case "orders":  return b.totalOrders - a.totalOrders;
@@ -97,6 +104,44 @@ const COLOR_OPTS = Object.keys(COLORS);
 function clr(key: string) { return COLORS[key] ?? COLORS.blue; }
 
 function timeAgo(d: string) { try { return formatDistanceToNow(new Date(d), { addSuffix: true, locale: ru }); } catch { return ""; } }
+
+// ─── Priority tier ────────────────────────────────────────────────────────────
+
+function calcConversion(paidCount: number, acceptedOrders: number): number {
+  if (acceptedOrders < 5) return 50;
+  return Math.round((paidCount / acceptedOrders) * 100);
+}
+
+function getPriorityTier(conv: number): 1 | 2 | 3 | 4 {
+  if (conv >= 80) return 1;
+  if (conv >= 60) return 2;
+  if (conv >= 30) return 3;
+  return 4;
+}
+
+function getMasterTier(master: Master) {
+  const conv = calcConversion(master.paidOrdersCount ?? 0, master.acceptedOrders ?? 0);
+  return { tier: getPriorityTier(conv), conv };
+}
+
+function PriorityBadge({ master, size = "sm" }: { master: Master; size?: "sm" | "xs" }) {
+  const { tier, conv } = getMasterTier(master);
+  const cfg = {
+    1: { label: "P1", emoji: "🔥", bg: "bg-red-50",    text: "text-red-600",    border: "border-red-200"    },
+    2: { label: "P2", emoji: "⚡", bg: "bg-violet-50", text: "text-violet-600", border: "border-violet-200" },
+    3: { label: "P3", emoji: "✅", bg: "bg-blue-50",   text: "text-blue-600",   border: "border-blue-200"   },
+    4: { label: "P4", emoji: "⬇️", bg: "bg-gray-100",  text: "text-gray-500",   border: "border-gray-200"   },
+  }[tier];
+  const px = size === "xs" ? "px-1 py-0.5 text-[9px]" : "px-1.5 py-0.5 text-[10px]";
+  return (
+    <span
+      title={`Приоритет ${cfg.label}: конверсия ${conv}% (оплаченных из принятых)`}
+      className={`inline-flex items-center gap-0.5 rounded-md border font-bold leading-none flex-shrink-0 ${px} ${cfg.bg} ${cfg.text} ${cfg.border}`}
+    >
+      {cfg.emoji} {cfg.label}
+    </span>
+  );
+}
 
 // ─── Status pill ──────────────────────────────────────────────────────────────
 
@@ -129,6 +174,7 @@ function MasterRow({ master, onOpenDrawer, onDelete, onGoToChat }: {
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="font-semibold text-[13px] text-gray-800 leading-tight">{master.alias}</span>
+          <PriorityBadge master={master} />
           <StatusPill master={master} />
           {master.isTestMaster && <span className="text-[10px] bg-amber-100 text-amber-700 rounded-full px-1.5 py-0.5 font-semibold">ТЕСТ</span>}
           {master.pwaLogin && (
@@ -248,6 +294,7 @@ function MasterCard({ master, columns, onMove, onOpenDrawer, onDragStart, onDrag
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1 flex-wrap">
                 <span className="font-semibold text-[12px] text-gray-800 leading-tight truncate">{master.alias}</span>
+                <PriorityBadge master={master} size="xs" />
                 {master.pwaLogin && <Smartphone className="w-2.5 h-2.5 text-emerald-500 flex-shrink-0" />}
                 {master.maxChatId && <Bot className="w-2.5 h-2.5 text-blue-500 flex-shrink-0" />}
                 {master.isTestMaster && <span className="text-[9px] bg-amber-100 text-amber-700 rounded-md px-1 font-semibold flex-shrink-0">ТЕСТ</span>}
