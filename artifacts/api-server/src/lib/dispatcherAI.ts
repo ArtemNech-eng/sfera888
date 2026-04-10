@@ -1078,6 +1078,7 @@ interface SmartProactiveOpts {
   withinHours: number;    // dedup window in hours
   masterKeywords?: { words: string[]; withinHours: number }; // skip if master already mentioned
   situation: string;      // plain-language description of WHY we're checking
+  orderStatus?: string;   // current DB status of the order — helps GPT make smarter decisions
 }
 
 /**
@@ -1088,7 +1089,7 @@ interface SmartProactiveOpts {
  *  4. Sends + records dedup marker
  */
 async function sendSmartProactive(opts: SmartProactiveOpts): Promise<void> {
-  const { masterId, masterAlias, maxChatId, orderId, type, withinHours, masterKeywords, situation } = opts;
+  const { masterId, masterAlias, maxChatId, orderId, type, withinHours, masterKeywords, situation, orderStatus } = opts;
 
   return withSendLock(`${type}:${masterId}:${orderId}`, async () => {
     // 1. Dedup: already sent this type for this order within window?
@@ -1112,12 +1113,16 @@ async function sendSmartProactive(opts: SmartProactiveOpts): Promise<void> {
       hour: "2-digit", minute: "2-digit", timeZone: "Europe/Moscow",
     }).format(new Date());
 
+    const statusLine = orderStatus
+      ? `СТАТУС ЗАКАЗА В БД: ${orderStatus} (master_assigned=назначен/ждёт визита; in_progress=работы идут; completed=завершён)\n\n`
+      : "";
+
     const gptPrompt = `Ты — ИИ-диспетчер ремонтного сервиса «Честный мастер». Сейчас: ${nowStr}.
 
 КОНТЕКСТ МАСТЕРА (${masterAlias}):
 ${context}
 
-СИТУАЦИЯ:
+${statusLine}СИТУАЦИЯ:
 ${situation}
 
 ЗАДАЧА:
@@ -1125,6 +1130,7 @@ ${situation}
 
 Правила принятия решения:
 • Если мастер уже ответил на этот вопрос в переписке → action: "skip"
+• Если статус заказа in_progress — работы идут, звонок клиенту уже был, вопросы про «звонил ли» неуместны → action: "skip"
 • Если ситуация требует уточнения и мастер молчит → action: "send"
 • Пишешь коротко, по-деловому, на ТЫ. Максимум 2 предложения.
 • Упоминай номер заказа. Без лишних слов.
@@ -1250,16 +1256,25 @@ export async function sendClientCallCheckin(
   masterAlias: string,
   maxChatId: string,
   orderId: number,
+  orderStatus?: string,
 ) {
   return sendSmartProactive({
     masterId, masterAlias, maxChatId, orderId,
     type: "callcheckin",
     withinHours: 24,
+    orderStatus,
     masterKeywords: {
-      words: ["созвонился", "созвонились", "договорился", "договорились", "не берёт", "не отвечает", "недоступен", "дозвонился", "звонил", "перезвоню"],
-      withinHours: 24,
+      words: [
+        "созвонился", "созвонились", "договорился", "договорились",
+        "не берёт", "не отвечает", "недоступен", "дозвонился", "звонил", "перезвоню",
+        "приехал", "приезжаю", "выезжаю", "на объекте", "у клиента",
+        "работаю", "работаем", "начал", "начали", "приступил", "в работе",
+        "делаем", "делаю", "завершено", "не завершено", "завершил", "закончил",
+        "встреча", "завтра в", "сегодня в", "приду в",
+      ],
+      withinHours: 48,
     },
-    situation: `Мастеру только что назначен заказ #${orderId}. Нужно уточнить: позвонил ли он уже клиенту и на какое время договорились о визите. Если в переписке уже есть информация о звонке или договорённости — не спрашивай снова.`,
+    situation: `Мастеру назначен заказ #${orderId}. Нужно уточнить: позвонил ли он уже клиенту и на какое время договорились о визите. Если в переписке уже есть информация о звонке, договорённости, приезде или о том что работы идут / завершены — не спрашивай снова, это лишнее.`,
   });
 }
 
@@ -1435,9 +1450,10 @@ export async function runProactiveChecks(): Promise<void> {
       // Always ensure greeting was sent (in case scheduler missed the first window)
       await sendAssignmentGreeting(master.id, master.alias, master.maxChatId, order.id);
 
-      // 1b. Client call check-in — send 30+ min after assignment
-      if (hoursAssigned >= 0.5) {
-        await sendClientCallCheckin(master.id, master.alias, master.maxChatId, order.id);
+      // 1b. Client call check-in — send 30+ min after assignment, ONLY while awaiting visit
+      // Once order is in_progress (work started), calling is obviously done — skip
+      if (hoursAssigned >= 0.5 && order.status === "master_assigned") {
+        await sendClientCallCheckin(master.id, master.alias, master.maxChatId, order.id, order.status);
       }
 
       // 2. Estimate reminder — 6h+ after assignment, no estimate submitted yet
