@@ -130,7 +130,7 @@ export interface DrawerMaster {
   id: number; alias: string; city: string;
   specialization: string; specializations: string[]; tags: string[];
   telegramId: string | null; phone: string | null; status: string;
-  rating: number; totalOrders: number; acceptedOrders: number; totalLeadsReceived?: number; debt: number;
+  rating: number; totalOrders: number; acceptedOrders: number; totalLeadsReceived?: number; paidOrdersCount?: number; debt: number;
   voronkaColumnId: number | null; isTestMaster: boolean;
   avatarUrl: string | null; activeOrders: any[]; createdAt: string;
   pwaLogin: string | null; contractLink: string | null;
@@ -844,7 +844,7 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                 </Row>
                 {(() => {
                   const leads = master.totalLeadsReceived ?? 0;
-                  const paid = master.totalOrders ?? 0;
+                  const paid = master.paidOrdersCount ?? 0;
                   const pct = leads >= 5 ? Math.round((paid / leads) * 100) : null;
                   const color = pct === null ? "text-gray-400" : pct >= 80 ? "text-emerald-600" : pct >= 60 ? "text-blue-600" : pct >= 30 ? "text-yellow-600" : "text-red-500";
                   const priority = pct === null ? "< 5 заявок" : pct >= 80 ? "Приоритет 1 🔥" : pct >= 60 ? "Приоритет 2" : pct >= 30 ? "Приоритет 3" : "Приоритет 4";

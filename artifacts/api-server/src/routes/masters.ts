@@ -120,7 +120,16 @@ function formatMaster(m: any) {
 // GET /api/masters
 router.get("/", allMasterRoles, async (_req, res) => {
   const masters = await db.select().from(mastersTable).where(isNull(mastersTable.deletedAt)).orderBy(mastersTable.createdAt);
-  res.json(masters.map(formatMaster));
+
+  // Count paid commissions per master (accurate conversion numerator — excludes cancelled orders)
+  const paidCounts = await db
+    .select({ masterId: transactionsTable.masterId, cnt: count() })
+    .from(transactionsTable)
+    .where(eq(transactionsTable.paymentStatus, "paid"))
+    .groupBy(transactionsTable.masterId);
+  const paidMap = new Map(paidCounts.map(r => [r.masterId, Number(r.cnt)]));
+
+  res.json(masters.map(m => ({ ...formatMaster(m), paidOrdersCount: paidMap.get(m.id) ?? 0 })));
 });
 
 // POST /api/masters
