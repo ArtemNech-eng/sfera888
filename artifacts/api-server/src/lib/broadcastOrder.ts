@@ -1,5 +1,5 @@
 import { db, ordersTable, mastersTable, orderDispatchesTable, masterCheckinsTable } from "@workspace/db";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { getMasterEligibility, getOverdueMasterIds } from "./orderEligibility.js";
 import { sendPushToMaster } from "./push.js";
 import { sendMaxMessage } from "../maxBot.js";
@@ -265,6 +265,10 @@ export async function performBroadcast(
       telegramMessageId: msgId || null,
       status: "sent",
     });
+    // Track total leads received per master for conversion analytics
+    await db.update(mastersTable)
+      .set({ totalLeadsReceived: sql`${mastersTable.totalLeadsReceived} + 1` })
+      .where(eq(mastersTable.id, master.id));
     sent++;
   }
 

@@ -88,6 +88,7 @@ function formatMaster(m: any) {
     rating: Number(m.rating),
     totalOrders: m.totalOrders,
     acceptedOrders: m.acceptedOrders,
+    totalLeadsReceived: m.totalLeadsReceived ?? 0,
     avgResponseTime: m.avgResponseTime ? Number(m.avgResponseTime) : null,
     debt: Number(m.debt),
     voronkaColumnId: m.voronkaColumnId ?? null,

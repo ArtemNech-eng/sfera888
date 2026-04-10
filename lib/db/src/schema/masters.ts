@@ -16,6 +16,7 @@ export const mastersTable = pgTable("masters", {
   rating: numeric("rating", { precision: 3, scale: 2 }).notNull().default("3.0"),
   totalOrders: integer("total_orders").notNull().default(0),
   acceptedOrders: integer("accepted_orders").notNull().default(0),
+  totalLeadsReceived: integer("total_leads_received").notNull().default(0),
   avgResponseTime: numeric("avg_response_time", { precision: 10, scale: 2 }),
   debt: numeric("debt", { precision: 12, scale: 2 }).notNull().default("0"),
   voronkaColumnId: integer("voronka_column_id"),
