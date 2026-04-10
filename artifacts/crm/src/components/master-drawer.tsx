@@ -843,16 +843,16 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                   <span className="text-gray-700 text-sm">{master.totalOrders} всего · {master.acceptedOrders} принято</span>
                 </Row>
                 {(() => {
-                  const leads = master.totalLeadsReceived ?? 0;
+                  const taken = master.acceptedOrders ?? 0;
                   const paid = master.paidOrdersCount ?? 0;
-                  const pct = leads >= 5 ? Math.round((paid / leads) * 100) : null;
+                  const pct = taken >= 5 ? Math.round((paid / taken) * 100) : null;
                   const color = pct === null ? "text-gray-400" : pct >= 80 ? "text-emerald-600" : pct >= 60 ? "text-blue-600" : pct >= 30 ? "text-yellow-600" : "text-red-500";
-                  const priority = pct === null ? "< 5 заявок" : pct >= 80 ? "Приоритет 1 🔥" : pct >= 60 ? "Приоритет 2" : pct >= 30 ? "Приоритет 3" : "Приоритет 4";
+                  const priority = pct === null ? "< 5 заказов" : pct >= 80 ? "Приоритет 1 🔥" : pct >= 60 ? "Приоритет 2" : pct >= 30 ? "Приоритет 3" : "Приоритет 4";
                   return (
                     <Row icon={<span className="text-sm">📊</span>} label="Конверсия">
                       <span className={`text-sm font-medium ${color}`}>
                         {pct !== null ? `${pct}%` : "—"}&nbsp;
-                        <span className="text-gray-400 font-normal">({leads} получено) · {priority}</span>
+                        <span className="text-gray-400 font-normal">({paid} из {taken} взятых) · {priority}</span>
                       </span>
                     </Row>
                   );
