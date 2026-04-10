@@ -127,10 +127,10 @@ function getMasterTier(master: Master) {
 function PriorityBadge({ master, size = "sm" }: { master: Master; size?: "sm" | "xs" }) {
   const { tier, conv } = getMasterTier(master);
   const cfg = {
-    1: { label: "P1", emoji: "🔥", bg: "bg-red-50",    text: "text-red-600",    border: "border-red-200"    },
-    2: { label: "P2", emoji: "⚡", bg: "bg-violet-50", text: "text-violet-600", border: "border-violet-200" },
-    3: { label: "P3", emoji: "✅", bg: "bg-blue-50",   text: "text-blue-600",   border: "border-blue-200"   },
-    4: { label: "P4", emoji: "⬇️", bg: "bg-gray-100",  text: "text-gray-500",   border: "border-gray-200"   },
+    1: { label: "P1", emoji: "🟢", bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200" },
+    2: { label: "P2", emoji: "🟡", bg: "bg-yellow-50",  text: "text-yellow-700",  border: "border-yellow-200"  },
+    3: { label: "P3", emoji: "🟠", bg: "bg-orange-50",  text: "text-orange-600",  border: "border-orange-200"  },
+    4: { label: "P4", emoji: "🔴", bg: "bg-red-50",     text: "text-red-600",     border: "border-red-200"     },
   }[tier];
   const px = size === "xs" ? "px-1 py-0.5 text-[9px]" : "px-1.5 py-0.5 text-[10px]";
   return (
