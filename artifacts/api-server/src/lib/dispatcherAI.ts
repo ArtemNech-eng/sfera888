@@ -112,6 +112,62 @@ function persistSession(masterId: number): void {
   `).catch(e => console.error("[dispatcherAI] Failed to persist session:", e));
 }
 
+// ─── Quiet hours (22:00–08:00 local time) ────────────────────────────────────
+// AI dispatcher does NOT send proactive messages to masters during night hours.
+// Responses to master-initiated messages are always allowed.
+
+const QUIET_START = 22; // 22:00 local time — begin quiet
+const QUIET_END   = 8;  // 08:00 local time — end quiet
+
+const CITY_UTC_OFFSETS: Record<string, number> = {
+  "Калининград": 2,
+  "Москва": 3, "Санкт-Петербург": 3, "Питер": 3, "СПб": 3,
+  "Краснодар": 3, "Ростов-на-Дону": 3, "Ростов": 3,
+  "Воронеж": 3, "Нижний Новгород": 3, "Нижний": 3,
+  "Казань": 3, "Самара": 3, "Волгоград": 3, "Саратов": 3,
+  "Тверь": 3, "Ярославль": 3, "Рязань": 3, "Тула": 3,
+  "Брянск": 3, "Орёл": 3, "Орел": 3, "Липецк": 3,
+  "Тамбов": 3, "Белгород": 3, "Курск": 3, "Смоленск": 3,
+  "Владимир": 3, "Иваново": 3, "Кострома": 3,
+  "Пенза": 3, "Ульяновск": 3, "Чебоксары": 3, "Саранск": 3,
+  "Псков": 3, "Великий Новгород": 3, "Вологда": 3,
+  "Мурманск": 3, "Петрозаводск": 3, "Архангельск": 3,
+  "Сыктывкар": 3, "Ставрополь": 3, "Махачкала": 3,
+  "Владикавказ": 3, "Нальчик": 3, "Черкесск": 3, "Майкоп": 3,
+  "Астрахань": 3, "Элиста": 3,
+  "Ижевск": 4, "Оренбург": 4,
+  "Екатеринбург": 5, "Пермь": 5, "Челябинск": 5, "Тюмень": 5,
+  "Уфа": 5, "Магнитогорск": 5, "Курган": 5,
+  "Омск": 6,
+  "Новосибирск": 7, "Красноярск": 7, "Кемерово": 7,
+  "Новокузнецк": 7, "Барнаул": 7, "Томск": 7,
+  "Горно-Алтайск": 7, "Абакан": 7,
+  "Иркутск": 8, "Улан-Удэ": 8, "Чита": 9,
+  "Якутск": 9,
+  "Владивосток": 10, "Хабаровск": 10,
+  "Южно-Сахалинск": 11,
+  "Петропавловск-Камчатский": 12, "Анадырь": 12,
+};
+
+function getMasterLocalHour(city?: string | null): number {
+  const c = (city ?? "").trim();
+  let offset = 3; // default Moscow
+  if (c) {
+    const key = Object.keys(CITY_UTC_OFFSETS).find(
+      k => c.toLowerCase().includes(k.toLowerCase()) || k.toLowerCase().includes(c.toLowerCase())
+    );
+    if (key) offset = CITY_UTC_OFFSETS[key];
+  }
+  const nowLocal = new Date(Date.now() + offset * 3_600_000);
+  return nowLocal.getUTCHours();
+}
+
+/** Returns true if it is night time (22:00–08:00) for the master's city. */
+function isQuietHours(city?: string | null): boolean {
+  const h = getMasterLocalHour(city);
+  return h >= QUIET_START || h < QUIET_END;
+}
+
 // ─── Follow-up / dormant constants ───────────────────────────────────────────
 const FOLLOWUP_DELAY_H = 5;    // hours before sending follow-up
 const FOLLOWUP_COOLDOWN_H = 20; // min hours between follow-ups
@@ -1355,27 +1411,33 @@ export async function runProactiveChecks(): Promise<void> {
       ));
 
     for (const followup of dueFollowups) {
-      // Mark as sent FIRST (prevents race condition if scheduler fires twice before DB write)
-      await db.update(dispatcherFollowupsTable)
-        .set({ sent: true })
-        .where(eq(dispatcherFollowupsTable.id, followup.id));
-
       const master = await db.select().from(mastersTable)
         .where(eq(mastersTable.id, followup.masterId))
         .then(r => r[0]);
 
       if (!master?.maxChatId) {
+        // No Max account — mark as sent so it doesn't clog the queue
+        await db.update(dispatcherFollowupsTable).set({ sent: true }).where(eq(dispatcherFollowupsTable.id, followup.id));
         console.log(`[dispatcherAI] Skipping follow-up #${followup.id} — master has no Max account`);
         continue;
       }
 
+      // ── Quiet hours: defer until morning, don't mark as sent ──────────────
+      if (isQuietHours(master.city)) {
+        console.log(`[dispatcherAI] Follow-up #${followup.id} deferred — quiet hours for ${master.alias} (${master.city})`);
+        continue; // will be retried next cycle
+      }
+
       // Skip if master has already replied to the bot since this follow-up was scheduled
-      // (means they've already addressed the topic through the active dialogue)
       const followupCreatedMs = new Date(followup.createdAt ?? followup.followupAt).getTime();
       if (await masterRepliedAfter(master.id, followupCreatedMs)) {
-        console.log(`[dispatcherAI] Skipping follow-up #${followup.id} — master ${master.alias} already replied since follow-up was scheduled`);
+        await db.update(dispatcherFollowupsTable).set({ sent: true }).where(eq(dispatcherFollowupsTable.id, followup.id));
+        console.log(`[dispatcherAI] Skipping follow-up #${followup.id} — master ${master.alias} already replied`);
         continue;
       }
+
+      // Mark as sent BEFORE sending (prevents double-send if scheduler fires again)
+      await db.update(dispatcherFollowupsTable).set({ sent: true }).where(eq(dispatcherFollowupsTable.id, followup.id));
 
       try {
         await sendMaxMessage(master.maxChatId, followup.question);
@@ -1383,7 +1445,6 @@ export async function runProactiveChecks(): Promise<void> {
         console.log(`[dispatcherAI] Sent scheduled follow-up #${followup.id} to ${master.alias}`);
       } catch (e) {
         console.error(`[dispatcherAI] Failed to send follow-up #${followup.id} to ${master.alias}:`, e);
-        // Already marked as sent — won't retry automatically. Log for manual review.
       }
     }
 
@@ -1401,16 +1462,20 @@ export async function runProactiveChecks(): Promise<void> {
 
       // 45 min passed, no reminder sent yet → send gentle reminder
       if (elapsed >= CONTACT_REMIND_MS && !contact.remindedAt) {
-        contact.remindedAt = nowMs;
         try {
           const master = await db.select().from(mastersTable)
             .where(eq(mastersTable.id, masterId))
             .then(r => r[0]);
           if (master?.maxChatId) {
-            const reminder = `${master.alias}, напоминаю — по заказу #${contact.orderId} (${contact.orderSummary}) ещё ищем мастера. Сможете взять? 🙏`;
-            await sendMaxMessage(master.maxChatId, reminder);
-            await saveBotReply(master.id, master.maxChatId, reminder);
-            console.log(`[dispatcherAI] Sent order contact reminder to ${master.alias} for order #${contact.orderId}`);
+            if (isQuietHours(master.city)) {
+              console.log(`[dispatcherAI] Order contact reminder deferred — quiet hours for ${master.alias}`);
+            } else {
+              contact.remindedAt = nowMs;
+              const reminder = `${master.alias}, напоминаю — по заказу #${contact.orderId} (${contact.orderSummary}) ещё ищем мастера. Сможете взять? 🙏`;
+              await sendMaxMessage(master.maxChatId, reminder);
+              await saveBotReply(master.id, master.maxChatId, reminder);
+              console.log(`[dispatcherAI] Sent order contact reminder to ${master.alias} for order #${contact.orderId}`);
+            }
           }
         } catch (e) {
           console.error(`[dispatcherAI] Reminder error for master ${masterId}:`, e);
@@ -1442,7 +1507,9 @@ export async function runProactiveChecks(): Promise<void> {
       const assignedAt = order.assignedAt ? new Date(order.assignedAt).getTime() : new Date(order.createdAt).getTime();
       const hoursAssigned = (now - assignedAt) / 3600000;
 
-      // 1. Assignment greeting (first 15 min only → don't pile on subsequent cycles)
+      const quiet = isQuietHours(master.city);
+
+      // 1. Assignment greeting — always allowed (critical info, sent once via dedup)
       if (hoursAssigned < 0.25) {
         await sendAssignmentGreeting(master.id, master.alias, master.maxChatId, order.id);
         continue; // Too fresh — wait before next message
@@ -1450,6 +1517,12 @@ export async function runProactiveChecks(): Promise<void> {
 
       // Always ensure greeting was sent (in case scheduler missed the first window)
       await sendAssignmentGreeting(master.id, master.alias, master.maxChatId, order.id);
+
+      // ── All subsequent proactive checks respect quiet hours ─────────────────
+      if (quiet) {
+        console.log(`[dispatcherAI] Quiet hours for ${master.alias} (${master.city ?? "?"}) — skipping proactive checks for order #${order.id}`);
+        continue;
+      }
 
       // 1b. Client call check-in — send 30+ min after assignment
       // GPT + keywords decide whether to skip based on conversation context and order status
