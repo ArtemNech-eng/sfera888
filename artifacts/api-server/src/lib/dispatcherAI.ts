@@ -1222,12 +1222,13 @@ export async function sendDailyCheckin(
   return sendSmartProactive({
     masterId, masterAlias, maxChatId, orderId,
     type: "checkin",
-    withinHours: 24,
+    withinHours: 72, // ask at most once every 3 days — not daily on long projects
     masterKeywords: {
-      words: ["всё хорошо", "всё норм", "работаем", "работаю", "делаем", "идёт", "нормально", "ок", "план"],
-      withinHours: 24,
+      words: ["всё хорошо", "всё норм", "работаем", "работаю", "делаем", "идёт", "нормально", "ок", "план",
+              "завершено", "закончил", "всё готово", "сдали", "готово"],
+      withinHours: 72,
     },
-    situation: `Мастер назначен на заказ #${orderId} уже более 24 часов. Проверь как идут дела — узнай, всё ли по плану и нет ли проблем.`,
+    situation: `Мастер назначен на заказ #${orderId} уже более 24 часов. Проверь как идут дела — узнай, всё ли по плану и нет ли проблем. Если мастер недавно сообщал о ходе работ или завершении — не беспокой снова.`,
   });
 }
 
@@ -1241,7 +1242,7 @@ export async function sendEstimateReminder(
   return sendSmartProactive({
     masterId, masterAlias, maxChatId, orderId,
     type: "estimate",
-    withinHours: 48,
+    withinHours: 720, // once per order — don't nag every 2 days on long projects
     masterKeywords: {
       words: ["смета", "отправил смет", "скинул смет", "счёт отправил", "смету скинул"],
       withinHours: 72,
@@ -1261,7 +1262,7 @@ export async function sendClientCallCheckin(
   return sendSmartProactive({
     masterId, masterAlias, maxChatId, orderId,
     type: "callcheckin",
-    withinHours: 24,
+    withinHours: 720, // once per order — never repeat this question
     orderStatus,
     masterKeywords: {
       words: [
