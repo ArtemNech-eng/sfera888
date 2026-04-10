@@ -88,6 +88,14 @@ router.get("/masters", requireAuth, async (_req, res) => {
     pendingTxMap.set(tx.masterId, (pendingTxMap.get(tx.masterId) ?? 0) + 1);
   }
 
+  // Get paid transactions count per master (conversion numerator)
+  const paidTxRows = await db
+    .select({ masterId: transactionsTable.masterId, cnt: count() })
+    .from(transactionsTable)
+    .where(eq(transactionsTable.paymentStatus, "paid"))
+    .groupBy(transactionsTable.masterId);
+  const paidTxMap = new Map(paidTxRows.map(r => [r.masterId, Number(r.cnt)]));
+
   // Cancel stats per master (last 30 and 7 days, master-fault only)
   const now = Date.now();
   const thirtyDaysAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
@@ -163,6 +171,7 @@ router.get("/masters", requireAuth, async (_req, res) => {
     avatarUrl: (m.telegramId ? (avatarMap.get(m.telegramId) ?? null) : null) ?? m.customAvatarUrl ?? null,
     activeOrders: masterActiveOrders.get(m.id) ?? [],
     pendingTransactionsCount: pendingTxMap.get(m.id) ?? 0,
+    paidOrdersCount: paidTxMap.get(m.id) ?? 0,
     contractLink: m.contractLink ?? null,
     workingHours: m.workingHours ?? null,
     preferredDistricts: m.preferredDistricts ?? [],
