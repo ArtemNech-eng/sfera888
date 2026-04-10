@@ -545,6 +545,33 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
       }).catch(() => {});
   }
 
+  // Notify master when admin approves a cancellation request
+  if (approveCancellation && current.masterId) {
+    const cancelNotifyText =
+      `❌ Заказ #${id} отменён\n\n` +
+      `Отмена подтверждена. Обратите внимание: частые отмены снижают ваш рейтинг и количество поступающих вам заявок. Берите только те заказы, в которых уверены.`;
+
+    const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, current.masterId));
+    const cancelledMaster = masterRows[0];
+    if (cancelledMaster) {
+      // Save to CRM chat (visible in CRM and master's app)
+      await db.insert(masterMessagesTable).values({
+        masterId: cancelledMaster.id,
+        telegramChatId: cancelledMaster.telegramId ?? String(cancelledMaster.id),
+        text: cancelNotifyText,
+        fromMaster: false,
+        senderName: "system",
+        isRead: false,
+      }).catch(e => console.error("[orders] Failed to insert cancellation message:", e));
+
+      // Send via Max if connected
+      if (cancelledMaster.maxChatId) {
+        sendMaxMessage(cancelledMaster.maxChatId, cancelNotifyText)
+          .catch(e => console.error("[orders] Failed to send Max cancellation message:", e));
+      }
+    }
+  }
+
   let masterName: string | null = null;
   if (o.masterId) {
     const m = await db.select().from(mastersTable).where(eq(mastersTable.id, o.masterId));
