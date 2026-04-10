@@ -1450,9 +1450,9 @@ export async function runProactiveChecks(): Promise<void> {
       // Always ensure greeting was sent (in case scheduler missed the first window)
       await sendAssignmentGreeting(master.id, master.alias, master.maxChatId, order.id);
 
-      // 1b. Client call check-in — send 30+ min after assignment, ONLY while awaiting visit
-      // Once order is in_progress (work started), calling is obviously done — skip
-      if (hoursAssigned >= 0.5 && order.status === "master_assigned") {
+      // 1b. Client call check-in — send 30+ min after assignment
+      // GPT + keywords decide whether to skip based on conversation context and order status
+      if (hoursAssigned >= 0.5) {
         await sendClientCallCheckin(master.id, master.alias, master.maxChatId, order.id, order.status);
       }
 
