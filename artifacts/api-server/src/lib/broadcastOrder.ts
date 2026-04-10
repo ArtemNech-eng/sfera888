@@ -226,7 +226,7 @@ export async function performBroadcast(
   const cardText = buildOrderCard(order, orderId);
   const replyMarkup = {
     inline_keyboard: [
-      [{ text: "Откликнуться 🙋", callback_data: `respond_order_${orderId}` }],
+      [{ text: "Хочу взять 🙋", callback_data: `respond_order_${orderId}` }],
       [{ text: "💬 Задать вопрос оператору", callback_data: `ask_question_${orderId}` }],
     ],
   };
@@ -272,8 +272,14 @@ export async function performBroadcast(
     sent++;
   }
 
+  // Set 30-minute response window for priority assignment (only if at least one master was notified)
+  const windowCloseAt = sent > 0 ? new Date(Date.now() + 30 * 60 * 1000) : null;
   await db.update(ordersTable)
-    .set({ dispatchStatus: "dispatching", updatedAt: new Date() })
+    .set({
+      dispatchStatus: "dispatching",
+      updatedAt: new Date(),
+      ...(windowCloseAt ? { responseWindowCloseAt: windowCloseAt, dispatchWave: 1 } : {}),
+    })
     .where(eq(ordersTable.id, orderId));
 
   return { ok: true, sent, skipped };

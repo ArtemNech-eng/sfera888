@@ -10,6 +10,7 @@ import { systemSettingsTable } from "@workspace/db";
 import { sendMorningBriefing, checkStaleOrders, sendWeeklyReport, checkNewMarkets, runAutonomousCycle, runQuickAutonomousCheck } from "./managerBot.js";
 import { autonomousAgent } from "./autonomousAgent.js";
 import { runProactiveChecks } from "./lib/dispatcherAI.js";
+import { checkResponseWindows } from "./lib/priorityAssign.js";
 import { backfillReceiptTransactions } from "./routes/receipts.js";
 
 const port = Number(process.env["PORT"] || "8080");
@@ -400,6 +401,9 @@ setInterval(() => autoScheduledOrderBroadcast().catch(console.error), 15 * 60 * 
 // autoReBroadcastNoResponse removed — per user request
 // AI dispatcher: only post-assignment flow (greeting → call check-in → scheduled follow-ups)
 setInterval(() => runProactiveChecks().catch(console.error), 30 * 60 * 1000);
+// Priority assignment: check expired response windows every 60 seconds
+setInterval(() => checkResponseWindows().catch(console.error), 60 * 1000);
+console.log("[checkin] Priority assignment scheduler started");
 // runQuickAutonomousCheck removed — caused spam to masters
 // runAutonomousCycle removed — caused spam to masters
 

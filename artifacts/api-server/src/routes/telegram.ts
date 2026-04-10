@@ -1024,7 +1024,7 @@ async function handleCallback(callbackQuery: any) {
     }
 
     if (dispatch.status === "responded") {
-      await answerCallback(cbId, "✅ Вы уже откликнулись — ожидайте оператора");
+      await answerCallback(cbId, "✅ Вы уже откликнулись — ожидайте результата");
       return;
     }
 
@@ -1058,13 +1058,16 @@ async function handleCallback(callbackQuery: any) {
       `🔧 Услуга: <b>${order.serviceType}</b>\n` +
       `📍 Район: <b>${order.city}${order.district ? ", " + order.district : ""}</b>\n` +
       `📐 Объём: <b>${order.area} м²</b>\n\n` +
-      `✅ <b>Вы откликнулись!</b> Ожидайте подтверждения оператора.\n` +
-      `<i>После подтверждения вы получите контакт клиента.</i>`;
+      `✅ <b>Заявка зарегистрирована!</b> Через 30 минут система автоматически выберет лучшего мастера по конверсии.\n` +
+      `<i>Если вы будете выбраны — получите контакт клиента.</i>`;
 
     await editMessage(chatId, messageId, respondedCard, { reply_markup: { inline_keyboard: [] } });
 
     // Log to CRM chat as system message
     await logToChat(master.id, chatId, `🙋 Откликнулся на заявку #${orderId}`);
+
+    // Early assignment if 5+ masters have responded
+    import("../lib/priorityAssign.js").then(m => m.maybeEarlyAssign(orderId)).catch(() => {});
 
     return;
   }
@@ -1706,7 +1709,7 @@ router.post("/webhook", async (req, res) => {
         await sendMessage(chatId, cardText, {
           reply_markup: {
             inline_keyboard: [
-              [{ text: "Откликнуться 🙋", callback_data: `respond_order_${orderId}` }],
+              [{ text: "Хочу взять 🙋", callback_data: `respond_order_${orderId}` }],
               [{ text: "💬 Задать вопрос оператору", callback_data: `ask_question_${orderId}` }],
             ],
           },

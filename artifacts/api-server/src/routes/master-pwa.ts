@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { db, mastersTable, ordersTable, orderDispatchesTable, transactionsTable, leadsTable, voronkaColumnsTable, masterMessagesTable, pushSubscriptionsTable, masterCheckinsTable } from "@workspace/db";
+import { maybeEarlyAssign } from "../lib/priorityAssign.js";
 import { eq, and, inArray, isNull, ne, asc, desc, gte } from "drizzle-orm";
 import { verifyPassword, hashPassword } from "../lib/auth.js";
 import { getMasterEligibility, getOverdueMasterIds, countActiveMasterOrders, getColumnIdForActiveCount } from "../lib/orderEligibility.js";
@@ -639,6 +640,9 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
 
   // Notify manager bot
   notifyManagerMasterResponse(orderId, master.alias, true).catch(() => {});
+
+  // Early assignment if 5+ masters have responded
+  maybeEarlyAssign(orderId).catch(e => console.error("[respond] maybeEarlyAssign error:", e));
 
   res.json({ success: true });
 });

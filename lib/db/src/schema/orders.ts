@@ -39,6 +39,8 @@ export const ordersTable = pgTable("orders", {
   photosBefore: text("photos_before").array().notNull().default([]),
   photosAfter: text("photos_after").array().notNull().default([]),
   photoAct: text("photo_act"),
+  responseWindowCloseAt: timestamp("response_window_close_at"),
+  dispatchWave: integer("dispatch_wave").notNull().default(1),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   deletedAt: timestamp("deleted_at"),
