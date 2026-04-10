@@ -288,7 +288,14 @@ router.get("/:id", allMasterRoles, async (req, res) => {
   const id = parseInt(req.params.id);
   const rows = await db.select().from(mastersTable).where(eq(mastersTable.id, id));
   if (!rows[0]) return res.status(404).json({ error: "Master not found" });
-  res.json(formatMaster(rows[0]));
+
+  const paidRows = await db
+    .select({ cnt: count() })
+    .from(transactionsTable)
+    .where(and(eq(transactionsTable.masterId, id), eq(transactionsTable.paymentStatus, "paid")));
+  const paidOrdersCount = Number(paidRows[0]?.cnt ?? 0);
+
+  res.json({ ...formatMaster(rows[0]), paidOrdersCount });
 });
 
 // PATCH /api/masters/:id
