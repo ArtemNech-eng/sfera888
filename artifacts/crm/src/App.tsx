@@ -1,4 +1,5 @@
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
+import { useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -25,11 +26,17 @@ import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
 
+function InAppRedirect({ to }: { to: string }) {
+  const [, setLocation] = useLocation();
+  useEffect(() => { setLocation(to); }, [to]);
+  return null;
+}
+
 function Router() {
   return (
     <Switch>
       <Route path="/login" component={Login} />
-      <Route path="/" component={() => { window.location.replace("/master-pwa/"); return null; }} />
+      <Route path="/" component={() => <InAppRedirect to="/dashboard" />} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/leads" component={Leads} />
       <Route path="/orders" component={Orders} />
@@ -39,7 +46,7 @@ function Router() {
       <Route path="/settings" component={Settings} />
       <Route path="/users" component={Users} />
       {/* Redirect old /voronka URL to unified masters page with kanban view */}
-      <Route path="/voronka" component={() => { window.location.replace("/masters?view=kanban"); return null; }} />
+      <Route path="/voronka" component={() => <InAppRedirect to="/masters?view=kanban" />} />
       <Route path="/master-chat" component={MasterChatPage} />
       <Route path="/trash" component={TrashPage} />
       <Route path="/tasks" component={TasksPage} />
