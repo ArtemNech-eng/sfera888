@@ -584,7 +584,21 @@ async function toolSaveMemory(masterId: number, category: string, content: strin
 async function buildMasterContext(masterId: number): Promise<string> {
   const orders = await getMasterActiveOrders(masterId);
 
+  // Fetch master financial data from DB — single source of truth
+  const masterRow = await db.select({
+    debt: mastersTable.debt,
+    alias: mastersTable.alias,
+  }).from(mastersTable).where(eq(mastersTable.id, masterId)).then(r => r[0]);
+  const debtAmount = Number(masterRow?.debt ?? 0);
+
   const sections: string[] = [];
+
+  // Financial summary (always include so AI never has to calculate/guess)
+  if (debtAmount > 0) {
+    sections.push(`Финансы мастера:\n  • Текущий долг по комиссии: ${debtAmount.toLocaleString("ru-RU")} ₽ (точная сумма из системы — НЕ складывай с другими числами)`);
+  } else {
+    sections.push(`Финансы мастера:\n  • Долг по комиссии: 0 ₽ (задолженности нет)`);
+  }
 
   if (orders.length === 0) {
     sections.push("Активных заказов нет.");
