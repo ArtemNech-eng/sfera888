@@ -226,8 +226,12 @@ function saveState(step: Step, data: PassportData) {
 
 export default function PendingContractPage() {
   const { master, logout, refresh } = useAuth();
+  const contractDone = !!(master as any)?.contractSignedAt;
   const saved = loadSavedState();
-  const [step, setStepRaw] = useState<Step>(saved?.step ?? "read");
+  const [step, setStepRaw] = useState<Step>(() => {
+    if (contractDone) return "done";
+    return saved?.step ?? "read";
+  });
   const [contractExpanded, setContractExpanded] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [passportFile, setPassportFile] = useState<File | null>(null);
@@ -252,8 +256,8 @@ export default function PendingContractPage() {
   const passportRegInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
-  const contractDone = !!(master as any)?.contractSignedAt;
-  useEffect(() => { if (contractDone) setStep("done"); }, [contractDone]);
+  // Sync if contractDone becomes true while component is mounted (e.g. from polling)
+  useEffect(() => { if (contractDone) setStepRaw("done"); }, [contractDone]);
 
   // If restored to "confirm" step but files were lost (page reload), go back to passport step
   useEffect(() => {

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db, leadsTable, ordersTable, mastersTable, transactionsTable, receiptsTable } from "@workspace/db";
 import { requirePermission } from "../middlewares/requireAuth.js";
-import { isNull, isNotNull, eq } from "drizzle-orm";
+import { isNull, isNotNull } from "drizzle-orm";
 
 const router = Router();
 const adminOnly = requirePermission("analytics");
@@ -83,6 +83,8 @@ router.get("/dashboard", adminOnly, async (req, res) => {
 
   // Masters
   const activeMasters = masters.filter(m => m.status === "active").length;
+  // Masters who signed the contract but admin hasn't verified passport yet
+  const pendingContracts = masters.filter(m => m.status === "pending_contract" && m.contractSignedAt).length;
 
   // Top masters by completed orders this month
   const completedOrdersThisMonth = orders.filter(o => o.status === "completed" && o.updatedAt >= monthStart && o.masterId);
@@ -127,6 +129,7 @@ router.get("/dashboard", adminOnly, async (req, res) => {
     conversionTrend,
     avgCheck: Math.round(avgCheck),
     activeMasters,
+    pendingContracts,
     topMasters,
   });
 });

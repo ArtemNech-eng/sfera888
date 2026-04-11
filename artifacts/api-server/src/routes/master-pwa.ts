@@ -204,6 +204,8 @@ router.get("/auth/me", async (req, res) => {
     pwaLogin: master.pwaLogin ?? null,
     maxChatId: master.maxChatId ?? null,
     maxBotLink: maxBotLink ?? null,
+    contractSignedAt: master.contractSignedAt ?? null,
+    passportVerified: master.passportVerified ?? false,
   });
 });
 

@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Loader2, TrendingUp, TrendingDown, Users, DollarSign, Target, BarChart3,
   AlertCircle, CheckCircle2, Clock, UserX, Ban, Receipt, ArrowRight, Star,
-  ShieldAlert, CalendarDays, Zap,
+  ShieldAlert, CalendarDays, Zap, FileText,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { ProtectedRoute } from "@/hooks/use-auth";
@@ -114,6 +114,7 @@ export default function Dashboard() {
     s.ordersWaitingMaster > 0 && { icon: Clock, label: "Без мастера", count: s.ordersWaitingMaster, href: "/orders", color: "amber" as const },
     s.cancellationRequests > 0 && { icon: Ban, label: "Запросов отмены", count: s.cancellationRequests, href: "/orders", color: "red" as const },
     s.pendingAmounts > 0 && { icon: Receipt, label: "Суммы на согласовании", count: s.pendingAmounts, href: "/orders", color: "purple" as const },
+    s.pendingContracts > 0 && { icon: FileText, label: "Договоры на проверку", count: s.pendingContracts, href: "/masters", color: "amber" as const },
   ].filter(Boolean) : [];
 
   return (
