@@ -5,7 +5,7 @@ import { ProtectedRoute, useAuth } from "@/hooks/use-auth";
 import {
   Loader2, Plus, Star, Phone, MessageSquare, Briefcase,
   AlertTriangle, MapPin, Search, X, Users, Zap, UserX, Filter,
-  FileSignature, Trash2, Smartphone, ChevronDown, Tag, ArrowUpDown, XCircle,
+  FileSignature, FileText, Trash2, Smartphone, ChevronDown, Tag, ArrowUpDown, XCircle,
   LayoutList, Columns, Settings, ArrowRight, Edit2, Banknote, User,
   ChevronUp, RefreshCw, AlertCircle, Clock, Check, UserCheck, SlidersHorizontal, CheckCircle2,
   Bot, KeyRound,
@@ -38,6 +38,8 @@ interface Master {
   maxChatId?: string | null;
   servicePrices?: { service: string; priceFrom: number }[] | null;
   paidOrdersCount?: number;
+  contractSignedAt?: string | null;
+  passportVerified?: boolean;
 }
 
 interface VoronkaColumn {
@@ -796,9 +798,9 @@ export default function Masters() {
   // ── Filters & sort ───────────────────────────────────────────────────────────
   const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get("search") ?? "");
   const [cityFilter, setCityFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState<"all" | "free" | "onsite" | "suspended" | "pending_contract" | "debtors">(() => {
+  const [statusFilter, setStatusFilter] = useState<"all" | "free" | "onsite" | "suspended" | "pending_contract" | "contract_review" | "debtors">(() => {
     const s = new URLSearchParams(window.location.search).get("status");
-    const valid = ["all","free","onsite","suspended","pending_contract","debtors"];
+    const valid = ["all","free","onsite","suspended","pending_contract","contract_review","debtors"];
     return valid.includes(s ?? "") ? (s as any) : "all";
   });
   const [tagFilter, setTagFilter] = useState<string | null>(null);
@@ -831,6 +833,7 @@ export default function Masters() {
     onsite: masters.filter(m => m.activeOrders.length > 0).length,
     suspended: masters.filter(m => m.status === "suspended").length,
     pending: masters.filter(m => m.status === "pending_contract").length,
+    contractReview: masters.filter(m => m.status === "pending_contract" && !!m.contractSignedAt).length,
     debtors: masters.filter(m => m.debt > 0).length,
     withApp: masters.filter(m => m.pwaLogin).length,
   }), [masters]);
@@ -854,6 +857,7 @@ export default function Masters() {
       if (statusFilter === "onsite" && m.activeOrders.length === 0) return false;
       if (statusFilter === "suspended" && m.status !== "suspended") return false;
       if (statusFilter === "pending_contract" && m.status !== "pending_contract") return false;
+      if (statusFilter === "contract_review" && !(m.status === "pending_contract" && m.contractSignedAt)) return false;
       if (statusFilter === "debtors" && m.debt <= 0) return false;
       // Tag
       if (tagFilter && !(m.tags ?? []).includes(tagFilter)) return false;
@@ -893,8 +897,9 @@ export default function Masters() {
     { key: "all"              as const, label: "Все",        value: counts.total,    icon: Users,         color: "text-gray-600 bg-gray-50 border-gray-100" },
     { key: "free"             as const, label: "Свободны",   value: counts.free,     icon: UserCheck,     color: "text-emerald-600 bg-emerald-50 border-emerald-100" },
     { key: "onsite"           as const, label: "На объекте", value: counts.onsite,   icon: Zap,           color: "text-blue-600 bg-blue-50 border-blue-100" },
-    { key: "pending_contract" as const, label: "Договор",    value: counts.pending,  icon: FileSignature, color: "text-amber-600 bg-amber-50 border-amber-100" },
-    { key: "debtors"          as const, label: "Должники",   value: counts.debtors,  icon: AlertTriangle, color: "text-red-500 bg-red-50 border-red-100" },
+    { key: "pending_contract" as const, label: "Договор",      value: counts.pending,        icon: FileSignature, color: "text-amber-600 bg-amber-50 border-amber-100" },
+    { key: "contract_review"  as const, label: "На проверке", value: counts.contractReview, icon: FileText,      color: "text-orange-600 bg-orange-50 border-orange-100" },
+    { key: "debtors"          as const, label: "Должники",    value: counts.debtors,        icon: AlertTriangle, color: "text-red-500 bg-red-50 border-red-100" },
     { key: "suspended"        as const, label: "Блок",       value: counts.suspended,icon: UserX,         color: "text-gray-400 bg-gray-50 border-gray-100" },
   ];
 
