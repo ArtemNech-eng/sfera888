@@ -796,7 +796,11 @@ export default function Masters() {
   // ── Filters & sort ───────────────────────────────────────────────────────────
   const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get("search") ?? "");
   const [cityFilter, setCityFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState<"all" | "free" | "onsite" | "suspended" | "pending_contract" | "debtors">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "free" | "onsite" | "suspended" | "pending_contract" | "debtors">(() => {
+    const s = new URLSearchParams(window.location.search).get("status");
+    const valid = ["all","free","onsite","suspended","pending_contract","debtors"];
+    return valid.includes(s ?? "") ? (s as any) : "all";
+  });
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [specFilter, setSpecFilter] = useState("all");
   const [sortKey, setSortKey] = useState<SortKey>("name");
