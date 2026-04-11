@@ -521,18 +521,17 @@ export default function LoginPage() {
                 : "Войти"}
             </button>
 
-            <div className="flex flex-col items-center gap-1">
-              <button
-                type="button"
-                onClick={() => { setForgotView(true); setForgotPhone(form.login); setForgotDone(null); }}
-                className="text-xs text-primary/70 hover:text-primary underline underline-offset-2 transition-colors"
-              >
-                Не помню пароль
-              </button>
-              <p className="text-center text-xs text-muted-foreground">
-                Обратитесь к менеджеру, если нет аккаунта
-              </p>
-            </div>
+            <button
+              type="button"
+              onClick={() => { setForgotView(true); setForgotPhone(form.login); setForgotDone(null); }}
+              style={{ minHeight: 48 }}
+              className="w-full border border-border rounded-xl text-sm font-medium text-foreground bg-background hover:bg-muted transition-colors"
+            >
+              Забыл пароль
+            </button>
+            <p className="text-center text-xs text-muted-foreground">
+              Обратитесь к менеджеру, если нет аккаунта
+            </p>
           </form>
         ) : regStep === "prices" ? (
           <PricesStep
