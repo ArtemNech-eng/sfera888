@@ -206,11 +206,99 @@ const clientPrepayment = (
   </div>
 );
 
+const ifClientDidntPay = (
+  <div className="space-y-3">
+    <P>Отправили смету — ждёте оплаты.</P>
+    <P>Если клиент не оплатил до вечера — напомните ему про бронь.</P>
+
+    <div className="bg-gray-50 rounded-xl px-3.5 py-3 space-y-1 border-l-4 border-gray-300">
+      <p className="text-[13px] font-semibold text-gray-500 mb-1">Напишите в WhatsApp:</p>
+      <p className="text-[14px] text-[#333333] leading-snug italic">
+        «Здравствуйте! Напоминаю про бронь мастера. Оплатите предоплату чтобы зафиксировать дату.
+        Если не успеете сегодня — мастер может быть занят на другом объекте.»
+      </p>
+    </div>
+
+    <SectionTitle>Если клиент просит начать без предоплаты:</SectionTitle>
+
+    <div className="bg-yellow-50 rounded-xl px-3.5 py-3 space-y-2">
+      <p className="text-[14px] font-bold text-[#333333] leading-snug">💡 Есть исключение</p>
+      <P>Если объект начинается в ближайшие 1–2 дня и клиент просит без брони — можно начать работу. Но только при одном условии:</P>
+      <P>В первый день работы возьмите аванс у клиента. С этого аванса оплатите комиссию через раздел «Оплата» в приложении.</P>
+    </div>
+
+    <div className="bg-gray-50 rounded-xl px-3.5 py-3 space-y-1">
+      <p className="text-[14px] font-bold text-[#333333] leading-snug mb-1.5">Порядок действий:</p>
+      {[
+        "Клиент просит начать без брони",
+        "Вы договариваетесь на ближайшие 1–2 дня",
+        "Выходите на объект",
+        "Берёте аванс у клиента",
+        "Оплачиваете комиссию через приложение — раздел «Оплата»",
+        "Смета закрывается",
+        "Лимит разблокируется",
+      ].map((step, i) => (
+        <div key={i} className="flex items-start gap-2.5">
+          <span className="text-[13px] font-bold text-gray-400 w-4 shrink-0 pt-px">{i + 1}.</span>
+          <p className="text-[14px] text-[#333333] leading-snug">{step}</p>
+        </div>
+      ))}
+    </div>
+
+    <SectionTitle>Если нет оплаты 24 часа и объект не начинается в ближайшие дни:</SectionTitle>
+
+    <div className="space-y-0.5">
+      {["Не ждите.", "Не уговаривайте.", "Не договаривайтесь напрямую."].map((phrase, i) => (
+        <p key={i} className="text-[14px] font-bold text-red-600 leading-snug">{phrase}</p>
+      ))}
+    </div>
+
+    <P>Мы сразу готовим для вас новый заказ.</P>
+
+    <div className="bg-gray-50 rounded-xl px-3.5 py-3 space-y-1">
+      <p className="text-[14px] font-bold text-[#333333] leading-snug mb-1.5">Как это работает:</p>
+      {[
+        "Отправили смету",
+        "Клиент не оплатил 24 часа",
+        "Мы даём вам новую заявку",
+        "Вы едете на новый замер",
+      ].map((step, i) => (
+        <div key={i} className="flex items-start gap-2.5">
+          <span className="text-[13px] font-bold text-gray-400 w-4 shrink-0 pt-px">{i + 1}.</span>
+          <p className="text-[14px] text-[#333333] leading-snug">{step}</p>
+        </div>
+      ))}
+    </div>
+
+    <P>Если старый клиент надумает — он оплатит предоплату через смету, вы получите уведомление и вернётесь к нему когда будет удобно.</P>
+
+    <SectionTitle>Почему не нужно уговаривать:</SectionTitle>
+    <P>Из 10 клиентов 8 вносят предоплату без проблем.</P>
+    <P>А те двое которые не хотят — обычно оказываются проблемными:</P>
+    <div className="space-y-0.5 pl-2">
+      {["Торгуются по цене работы", "Придираются к качеству", "Затягивают финальную оплату"].map((item, i) => (
+        <div key={i} className="flex items-start gap-2">
+          <span className="text-[14px] text-gray-400 leading-snug shrink-0">—</span>
+          <p className="text-[14px] text-[#333333] leading-snug">{item}</p>
+        </div>
+      ))}
+    </div>
+    <P>Зачем возиться с проблемным клиентом если есть нормальные?</P>
+    <P>Ваша задача — не ждать, а зарабатывать. Заказов много. Клиенты найдутся.</P>
+
+    <div className="bg-red-50 rounded-xl px-3.5 py-3 space-y-1">
+      <p className="text-[14px] font-bold text-[#333333] leading-snug">⚠️ Важно:</p>
+      <P>Если договоритесь с клиентом напрямую минуя систему — конверсия упадёт. Лимит на новые заказы заблокируется.</P>
+      <P>Не рискуйте стабильным потоком ради одного клиента.</P>
+    </div>
+  </div>
+);
+
 const SECTIONS: Section[] = [
   { emoji: "📋", title: "Как получать заказы", content: howToGetOrders },
   { emoji: "📱", title: "Как работает смета", content: howEstimateWorks },
   { emoji: "💰", title: "Предоплата клиента", content: clientPrepayment },
-  { emoji: "⏳", title: "Если клиент не оплатил", content: null },
+  { emoji: "⏳", title: "Если клиент не оплатил", content: ifClientDidntPay },
   { emoji: "📈", title: "Как зарабатывать больше", content: null },
   { emoji: "🔨", title: "Правила на объекте", content: null },
   { emoji: "📄", title: "Акт и фото", content: null },
