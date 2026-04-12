@@ -32,6 +32,8 @@ router.get("/dashboard", adminOnly, async (req, res) => {
   const ordersTotal = orders.length;
   const ordersActive = orders.filter(o => ["waiting_master", "master_assigned", "in_progress"].includes(o.status)).length;
   const ordersWaitingMaster = orders.filter(o => o.status === "waiting_master").length;
+  const noMasterFoundTotal = orders.filter(o => o.status === "cancelled" && (o as any).cancelType === "no_master_found").length;
+  const noMasterFoundMonth = orders.filter(o => o.status === "cancelled" && (o as any).cancelType === "no_master_found" && o.updatedAt >= monthStart).length;
   const cancellationRequests = orders.filter(o => o.status === "cancellation_requested").length;
   const pendingAmounts = orders.filter(o => o.proposedAmount && !o.orderAmount).length;
   const completedToday = orders.filter(o => o.status === "completed" && o.updatedAt >= todayStart).length;
@@ -118,6 +120,8 @@ router.get("/dashboard", adminOnly, async (req, res) => {
     ordersTotal,
     ordersActive,
     ordersWaitingMaster,
+    noMasterFoundTotal,
+    noMasterFoundMonth,
     cancellationRequests,
     pendingAmounts,
     completedToday,
@@ -145,6 +149,7 @@ router.get("/funnel", adminOnly, async (req, res) => {
     nonTarget: leads.filter(l => l.status === "non_target").length,
     refusal: leads.filter(l => l.status === "client_refusal").length,
     cancelled: orders.filter(o => o.status === "cancelled").length,
+    noMasterFound: orders.filter(o => o.status === "cancelled" && (o as any).cancelType === "no_master_found").length,
   });
 });
 

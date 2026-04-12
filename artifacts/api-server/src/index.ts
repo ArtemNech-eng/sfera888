@@ -1,7 +1,7 @@
 import app from "./app";
 import { db, usersTable, voronkaColumnsTable, mastersTable, ordersTable, orderDispatchesTable } from "@workspace/db";
 import { sql } from "drizzle-orm";
-import { eq, inArray, and, lte } from "drizzle-orm";
+import { eq, inArray, and, lte, isNull } from "drizzle-orm";
 import { hashPassword } from "./lib/auth.js";
 import { checkOverdueTransactions } from "./lib/orderEligibility.js";
 import { performBroadcast } from "./lib/broadcastOrder.js";
@@ -347,6 +347,33 @@ async function recalculateMasterVoronkaColumns() {
   if (fixed > 0) console.log(`[voronka-fix] Corrected ${fixed} master(s) to proper column`);
 }
 
+// Auto-close orders that have been in "waiting_master" for 48+ hours.
+// Sets status="cancelled", cancelType="no_master_found".
+async function autoCloseNoMasterOrders() {
+  const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000);
+  const stale = await db.select({ id: ordersTable.id, leadId: ordersTable.leadId })
+    .from(ordersTable)
+    .where(and(
+      eq(ordersTable.status, "waiting_master"),
+      lte(ordersTable.createdAt, cutoff),
+      isNull(ordersTable.deletedAt),
+    ));
+
+  if (stale.length === 0) return;
+
+  for (const order of stale) {
+    await db.update(ordersTable)
+      .set({
+        status: "cancelled",
+        cancelType: "no_master_found",
+        cancelReason: "Мастер не найден в течение 48 часов — заказ закрыт автоматически",
+        updatedAt: new Date(),
+      })
+      .where(eq(ordersTable.id, order.id));
+  }
+  console.log(`[auto-close] Closed ${stale.length} order(s) with no_master_found (>48h waiting_master)`);
+}
+
 // Auto re-broadcast orders that have been in "dispatching" for 30+ min with zero responses.
 async function autoReBroadcastNoResponse() {
   const cutoff = new Date(Date.now() - 30 * 60 * 1000); // 30 min ago
@@ -385,6 +412,7 @@ runMigrations()
     recalculateMasterVoronkaColumns().catch(console.error);
     checkOverdueTransactions().catch(console.error);
     autoExpireDispatches().catch(console.error);
+    autoCloseNoMasterOrders().catch(console.error);
     initCheckinScheduler().catch(console.error);
     backfillReceiptTransactions()
       .then(n => { if (n > 0) console.log(`[backfill] Created ${n} receipt transactions`); })
@@ -396,6 +424,8 @@ runMigrations()
 setInterval(() => checkOverdueTransactions().catch(console.error), 6 * 60 * 60 * 1000);
 // Auto-expire dispatches every hour
 setInterval(() => autoExpireDispatches().catch(console.error), 60 * 60 * 1000);
+// Auto-close orders with no master found after 48h — every hour
+setInterval(() => autoCloseNoMasterOrders().catch(console.error), 60 * 60 * 1000);
 // Auto-broadcast scheduled orders 2–4h before scheduledAt
 setInterval(() => autoScheduledOrderBroadcast().catch(console.error), 15 * 60 * 1000);
 // autoReBroadcastNoResponse removed — per user request

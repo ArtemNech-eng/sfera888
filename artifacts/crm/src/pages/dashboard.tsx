@@ -112,6 +112,7 @@ export default function Dashboard() {
   const alerts = s ? [
     s.newLeads > 0 && { icon: Zap, label: "Новых заявок", count: s.newLeads, href: "/leads", color: "blue" as const },
     s.ordersWaitingMaster > 0 && { icon: Clock, label: "Без мастера", count: s.ordersWaitingMaster, href: "/orders", color: "amber" as const },
+    s.noMasterFoundMonth > 0 && { icon: UserX, label: "Не нашли мастера (месяц)", count: s.noMasterFoundMonth, href: "/orders", color: "red" as const },
     s.cancellationRequests > 0 && { icon: Ban, label: "Запросов отмены", count: s.cancellationRequests, href: "/orders", color: "red" as const },
     s.pendingAmounts > 0 && { icon: Receipt, label: "Суммы на согласовании", count: s.pendingAmounts, href: "/orders", color: "purple" as const },
     s.pendingContracts > 0 && { icon: FileText, label: "Договоры на проверку", count: s.pendingContracts, href: "/masters?status=contract_review", color: "amber" as const },
@@ -241,6 +242,16 @@ export default function Dashboard() {
                       <MiniStat label="Завершено за месяц" value={s.completedMonth ?? 0} />
                       <MiniStat label="Активных сейчас" value={stats.ordersActive} highlight />
                     </div>
+                    {(s.noMasterFoundTotal ?? 0) > 0 && (
+                      <div className="mt-3 flex items-center gap-2 text-xs text-red-600 bg-red-50 rounded-xl px-3 py-2 border border-red-100">
+                        <UserX className="w-3.5 h-3.5 flex-shrink-0" />
+                        <span>
+                          Не нашли мастера: <b>{s.noMasterFoundTotal}</b> всего
+                          {(s.noMasterFoundMonth ?? 0) > 0 && <>, <b>{s.noMasterFoundMonth}</b> в этом месяце</>}
+                          {" "}— заказы закрыты автоматически после 48ч
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
