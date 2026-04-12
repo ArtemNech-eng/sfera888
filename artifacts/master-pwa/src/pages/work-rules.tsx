@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { ChevronRight, ArrowLeft } from "lucide-react";
+import {
+  ChevronRight, ArrowLeft,
+  ClipboardList, FileText, CreditCard, Clock,
+  TrendingUp, HardHat, Camera, ShieldCheck, Star,
+} from "lucide-react";
 
 function P({ children }: { children: React.ReactNode }) {
   return <p className="text-[14px] text-[#333333] leading-snug">{children}</p>;
@@ -79,95 +83,26 @@ const howToGetOrders = (
   </div>
 );
 
-// ─── Custom section icons ──────────────────────────────────────────────────────
+// ─── Section icons — unified primary colour ────────────────────────────────────
 
-function SectionIcon({ bg, children }: { bg: string; children: React.ReactNode }) {
+function SectionIcon({ children }: { children: React.ReactNode }) {
   return (
-    <span
-      className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${bg}`}
-    >
+    <span className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center flex-shrink-0">
       {children}
     </span>
   );
 }
 
 const ICONS = {
-  orders: (
-    <SectionIcon bg="bg-indigo-500">
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="white" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="4" y="2" width="12" height="16" rx="2" />
-        <line x1="7" y1="7" x2="13" y2="7" />
-        <line x1="7" y1="10" x2="13" y2="10" />
-        <line x1="7" y1="13" x2="11" y2="13" />
-      </svg>
-    </SectionIcon>
-  ),
-  estimate: (
-    <SectionIcon bg="bg-violet-500">
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="white" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M4 4h7l4 4v9a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z" />
-        <polyline points="11 4 11 8 15 8" />
-        <line x1="7" y1="11" x2="13" y2="11" />
-        <line x1="7" y1="14" x2="11" y2="14" />
-      </svg>
-    </SectionIcon>
-  ),
-  prepay: (
-    <SectionIcon bg="bg-emerald-500">
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="white" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="2" y="6" width="16" height="11" rx="2" />
-        <path d="M6 6V5a4 4 0 018 0v1" />
-        <circle cx="10" cy="12" r="1.5" fill="white" stroke="none" />
-      </svg>
-    </SectionIcon>
-  ),
-  unpaid: (
-    <SectionIcon bg="bg-orange-500">
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="white" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="10" cy="10" r="8" />
-        <polyline points="10 6 10 10 13 12" />
-      </svg>
-    </SectionIcon>
-  ),
-  earn: (
-    <SectionIcon bg="bg-green-500">
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="white" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-        <polyline points="3 14 7 9 11 12 17 5" />
-        <polyline points="13 5 17 5 17 9" />
-      </svg>
-    </SectionIcon>
-  ),
-  site: (
-    <SectionIcon bg="bg-amber-600">
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="white" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M13 3l4 4-8 8H5v-4l8-8z" />
-        <line x1="11" y1="5" x2="15" y2="9" />
-      </svg>
-    </SectionIcon>
-  ),
-  photo: (
-    <SectionIcon bg="bg-sky-500">
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="white" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M2 8a2 2 0 012-2h1.5L7 4h6l1.5 2H17a2 2 0 012 2v7a2 2 0 01-2 2H4a2 2 0 01-2-2V8z" />
-        <circle cx="10" cy="11" r="2.5" />
-      </svg>
-    </SectionIcon>
-  ),
-  warranty: (
-    <SectionIcon bg="bg-blue-600">
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="white" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M10 2l6 2.5v5c0 4-3 7-6 8.5C7 16.5 4 13.5 4 9.5v-5L10 2z" />
-        <polyline points="7.5 10.5 9.5 12.5 13 8.5" />
-      </svg>
-    </SectionIcon>
-  ),
-  bonus: (
-    <SectionIcon bg="bg-yellow-500">
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="white" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-        <polygon points="10 2 12.5 7.5 18.5 8.2 14.2 12.2 15.5 18 10 15 4.5 18 5.8 12.2 1.5 8.2 7.5 7.5 10 2" />
-      </svg>
-    </SectionIcon>
-  ),
+  orders:   <SectionIcon><ClipboardList size={18} className="text-white" /></SectionIcon>,
+  estimate: <SectionIcon><FileText      size={18} className="text-white" /></SectionIcon>,
+  prepay:   <SectionIcon><CreditCard    size={18} className="text-white" /></SectionIcon>,
+  unpaid:   <SectionIcon><Clock         size={18} className="text-white" /></SectionIcon>,
+  earn:     <SectionIcon><TrendingUp    size={18} className="text-white" /></SectionIcon>,
+  site:     <SectionIcon><HardHat       size={18} className="text-white" /></SectionIcon>,
+  photo:    <SectionIcon><Camera        size={18} className="text-white" /></SectionIcon>,
+  warranty: <SectionIcon><ShieldCheck   size={18} className="text-white" /></SectionIcon>,
+  bonus:    <SectionIcon><Star          size={18} className="text-white" /></SectionIcon>,
 };
 
 interface Section {

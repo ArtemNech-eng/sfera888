@@ -8,7 +8,7 @@ import {
   TrendingUp, ShieldCheck, LogOut, ExternalLink,
   BadgeCheck, Camera, Pencil, Check, X, Loader2,
   BarChart2, Clock, Filter, ChevronDown, Plus, Download,
-  DollarSign, ChevronRight,
+  DollarSign, ChevronRight, BookOpen,
 } from "lucide-react";
 import { useInstallPrompt } from "@/lib/useInstallPrompt";
 
@@ -849,13 +849,8 @@ export default function ProfilePage() {
         className="w-full flex items-center justify-between px-4 h-12 rounded-xl border border-border bg-card text-foreground font-semibold text-sm active:opacity-80 transition-colors"
       >
         <div className="flex items-center gap-2.5">
-          <span className="w-7 h-7 rounded-lg bg-indigo-500 flex items-center justify-center flex-shrink-0">
-            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="4" y="2" width="12" height="16" rx="2" />
-              <line x1="7" y1="7" x2="13" y2="7" />
-              <line x1="7" y1="10" x2="13" y2="10" />
-              <line x1="7" y1="13" x2="11" y2="13" />
-            </svg>
+          <span className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
+            <BookOpen size={14} className="text-white" />
           </span>
           Правила работы
         </div>
