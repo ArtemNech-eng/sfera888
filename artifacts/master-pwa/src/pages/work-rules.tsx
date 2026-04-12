@@ -381,6 +381,106 @@ const howToEarnMore = (
   </div>
 );
 
+const actAndPhoto = (
+  <div className="space-y-3">
+    <div className="bg-gray-50 rounded-xl px-3.5 py-3 space-y-1">
+      <p className="text-[14px] font-bold text-[#333333] leading-snug mb-1">После каждого заказа обязательно:</p>
+      {[
+        "Сделайте фото ДО и ПОСЛЕ",
+        "Заполните акт в приложении",
+        "Клиент подписывает акт",
+        "Скиньте нам фото и акт",
+      ].map((step, i) => (
+        <div key={i} className="flex items-start gap-2.5">
+          <span className="text-[13px] font-bold text-gray-400 w-4 shrink-0 pt-px">{i + 1}.</span>
+          <p className="text-[14px] text-[#333333] leading-snug">{step}</p>
+        </div>
+      ))}
+      <p className="text-[14px] font-bold text-red-600 leading-snug mt-1.5">Без этого следующий заказ не передаём.</p>
+    </div>
+
+    <SectionTitle>Фото ДО начала работ:</SectionTitle>
+    <P>Фотографируйте сразу как приехали на объект. До того как что-то тронули.</P>
+    <P>Что фотографировать:</P>
+    <div className="space-y-0.5 pl-2">
+      {["Общий вид комнаты/помещения", "Состояние стен, потолка, пола", "Проблемные места (трещины, неровности, старые обои)"].map((item, i) => (
+        <div key={i} className="flex items-start gap-2">
+          <span className="text-gray-400 text-sm leading-snug shrink-0">—</span>
+          <p className="text-[14px] text-[#333333] leading-snug">{item}</p>
+        </div>
+      ))}
+    </div>
+    <P>Минимум 2–3 фото.</P>
+    <P>
+      <span className="font-semibold">Зачем:</span> Если клиент потом скажет «вы сами сломали» или «это было не так» — у вас есть доказательства.
+    </P>
+
+    <SectionTitle>Фото ПОСЛЕ завершения работ:</SectionTitle>
+    <P>Фотографируйте когда всё готово и убрано.</P>
+    <P>Что фотографировать:</P>
+    <div className="space-y-0.5 pl-2">
+      {["Общий вид результата", "Стыки, углы, детали", "Красивые места"].map((item, i) => (
+        <div key={i} className="flex items-start gap-2">
+          <span className="text-gray-400 text-sm leading-snug shrink-0">—</span>
+          <p className="text-[14px] text-[#333333] leading-snug">{item}</p>
+        </div>
+      ))}
+    </div>
+    <P>Минимум 3–5 фото.</P>
+    <P><span className="font-semibold">Зачем:</span></P>
+    <div className="space-y-0.5 pl-2">
+      {["Это ваше портфолио", "Клиенты видят качество ваших работ", "Фото попадают в приложение и на сайт", "Новые клиенты видят и выбирают вас"].map((item, i) => (
+        <div key={i} className="flex items-start gap-2">
+          <span className="text-gray-400 text-sm leading-snug shrink-0">—</span>
+          <p className="text-[14px] text-[#333333] leading-snug">{item}</p>
+        </div>
+      ))}
+    </div>
+
+    <SectionTitle>Как заполнить акт:</SectionTitle>
+    <div className="bg-gray-50 rounded-xl px-3.5 py-3 space-y-1">
+      {[
+        "Откройте заказ в приложении",
+        "Нажмите «Заполнить акт»",
+        "Укажите итоговую сумму заказа",
+        "Перечислите выполненные работы",
+        "Дайте клиенту подписать на экране телефона",
+        "Нажмите «Завершить заказ»",
+      ].map((step, i) => (
+        <div key={i} className="flex items-start gap-2.5">
+          <span className="text-[13px] font-bold text-gray-400 w-4 shrink-0 pt-px">{i + 1}.</span>
+          <p className="text-[14px] text-[#333333] leading-snug">{step}</p>
+        </div>
+      ))}
+    </div>
+    <P>После этого:</P>
+    <div className="space-y-0.5 pl-2">
+      {["Клиент получает гарантийный сертификат", "Ваша конверсия обновляется", "Лимит на новые заказы остаётся открытым"].map((item, i) => (
+        <div key={i} className="flex items-start gap-2">
+          <span className="text-gray-400 text-sm leading-snug shrink-0">—</span>
+          <p className="text-[14px] text-[#333333] leading-snug">{item}</p>
+        </div>
+      ))}
+    </div>
+
+    <SectionTitle>Зачем нужен акт с подписью:</SectionTitle>
+    <P>Клиент подписал акт — значит принял работу.</P>
+    <P>Потом не сможет сказать:</P>
+    <div className="space-y-0.5 pl-2">
+      {["«Мне плохо сделали»", "«Я не доволен»", "«Верните деньги»"].map((quote, i) => (
+        <p key={i} className="text-[14px] italic text-gray-500 leading-snug">{quote}</p>
+      ))}
+    </div>
+    <p className="text-[14px] font-bold text-green-700 leading-snug">Акт защищает вас. Заполняйте всегда.</p>
+
+    <div className="bg-green-50 rounded-xl px-3.5 py-3 space-y-0.5">
+      <p className="text-[14px] font-bold text-[#333333] leading-snug">💡 Совет:</p>
+      <P>Фотографируйте красиво. Это ваше портфолио.</P>
+      <P>Хорошие фото = больше доверия клиентов = больше заказов для вас.</P>
+    </div>
+  </div>
+);
+
 const rulesOnSite = (
   <div className="space-y-3">
     <div className="bg-green-50 rounded-xl px-3.5 py-3">
@@ -472,7 +572,7 @@ const SECTIONS: Section[] = [
   { emoji: "⏳", title: "Если клиент не оплатил", content: ifClientDidntPay },
   { emoji: "📈", title: "Как зарабатывать больше", content: howToEarnMore },
   { emoji: "🔨", title: "Правила на объекте", content: rulesOnSite },
-  { emoji: "📄", title: "Акт и фото", content: null },
+  { emoji: "📄", title: "Акт и фото", content: actAndPhoto },
   { emoji: "🛡", title: "Гарантия", content: null },
   { emoji: "🏆", title: "Бонус для лучших", content: null },
 ];
