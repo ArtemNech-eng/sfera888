@@ -381,6 +381,78 @@ const howToEarnMore = (
   </div>
 );
 
+const warranty = (
+  <div className="space-y-3">
+    <div className="bg-blue-50 rounded-xl px-3.5 py-3 space-y-1">
+      <p className="text-[14px] font-bold text-[#333333] leading-snug">
+        После каждого завершённого заказа клиент получает гарантийный сертификат на 2 года.
+      </p>
+      <p className="text-[14px] font-bold text-[#333333] leading-snug">
+        Это наше обещание клиенту — если что-то пойдёт не так по вашей вине, мы исправим.
+      </p>
+    </div>
+
+    <SectionTitle>Что входит в гарантию:</SectionTitle>
+    <div className="space-y-1.5">
+      {[
+        "Бесплатное исправление дефектов",
+        "Бесплатный выезд мастера",
+        "Повторное выполнение работ если нужно",
+      ].map((item, i) => (
+        <div key={i} className="flex items-start gap-2">
+          <span className="text-base leading-none shrink-0 mt-px">✅</span>
+          <p className="text-[14px] text-[#333333] leading-snug">{item}</p>
+        </div>
+      ))}
+    </div>
+    <P>Срок: 2 года с даты подписания акта.</P>
+
+    <SectionTitle>Если клиент обратился по гарантии:</SectionTitle>
+    <div className="bg-gray-50 rounded-xl px-3.5 py-3 space-y-1">
+      {[
+        "Нам поступает обращение",
+        "Мы связываемся с вами",
+        "Вы приезжаете к клиенту в течение 5 рабочих дней",
+        "Осматриваете и исправляете",
+        "Бесплатно",
+      ].map((step, i) => (
+        <div key={i} className="flex items-start gap-2.5">
+          <span className="text-[13px] font-bold text-gray-400 w-4 shrink-0 pt-px">{i + 1}.</span>
+          <p className="text-[14px] text-[#333333] leading-snug">{step}</p>
+        </div>
+      ))}
+    </div>
+    <p className="text-[14px] font-bold text-[#333333] leading-snug">Это ваша ответственность за качество работы.</p>
+
+    <SectionTitle>На что гарантия НЕ распространяется:</SectionTitle>
+    <div className="space-y-1.5">
+      {[
+        "Механические повреждения — клиент сам повредил",
+        "Затопление соседями",
+        "Естественный износ материалов",
+        "Работы выполненные другими мастерами",
+      ].map((item, i) => (
+        <div key={i} className="flex items-start gap-2">
+          <span className="text-base leading-none shrink-0 mt-px">❌</span>
+          <p className="text-[14px] text-[#333333] leading-snug">{item}</p>
+        </div>
+      ))}
+    </div>
+
+    <SectionTitle>Почему это важно для вас:</SectionTitle>
+    <p className="text-[14px] font-bold text-green-700 leading-snug">Гарантия — это не страшно.</p>
+    <P>За 2 года по гарантии обращаются очень редко — только если работа сделана некачественно.</P>
+    <P>Если вы работаете хорошо — гарантийных случаев почти не будет.</P>
+    <P>Зато клиент видит сертификат и доверяет вам больше. Доверие = оплата предоплаты = высокая конверсия = больше заказов для вас.</P>
+
+    <div className="bg-green-50 rounded-xl px-3.5 py-3 space-y-0.5">
+      <p className="text-[14px] font-bold text-[#333333] leading-snug">💡 Совет:</p>
+      <P>Покажите клиенту на замере что после работы он получит гарантийный сертификат.</P>
+      <P>Это убеждает оплатить предоплату. Клиенты любят гарантии.</P>
+    </div>
+  </div>
+);
+
 const actAndPhoto = (
   <div className="space-y-3">
     <div className="bg-gray-50 rounded-xl px-3.5 py-3 space-y-1">
@@ -573,7 +645,7 @@ const SECTIONS: Section[] = [
   { emoji: "📈", title: "Как зарабатывать больше", content: howToEarnMore },
   { emoji: "🔨", title: "Правила на объекте", content: rulesOnSite },
   { emoji: "📄", title: "Акт и фото", content: actAndPhoto },
-  { emoji: "🛡", title: "Гарантия", content: null },
+  { emoji: "🛡", title: "Гарантия", content: warranty },
   { emoji: "🏆", title: "Бонус для лучших", content: null },
 ];
 
