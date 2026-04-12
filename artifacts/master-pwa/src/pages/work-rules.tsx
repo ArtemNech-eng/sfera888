@@ -294,12 +294,99 @@ const ifClientDidntPay = (
   </div>
 );
 
+const howToEarnMore = (
+  <div className="space-y-3">
+    <P>Один заказ занимает 2–3 дня. В месяце 22 рабочих дня. Максимум 8–10 заказов в месяц.</P>
+
+    <SectionTitle>Разница в деньгах:</SectionTitle>
+    <div className="grid grid-cols-1 gap-2">
+      <div className="bg-green-50 rounded-xl px-3.5 py-3 space-y-0.5">
+        <p className="text-[14px] font-bold text-green-800 leading-snug mb-1">Мастер с конверсией 80%</p>
+        {["8–10 заказов в месяц", "Без простоев между заказами", "Закончил один — следующий уже ждёт", "180 000 — 250 000₽ в месяц"].map((s, i) => (
+          <div key={i} className="flex items-start gap-2">
+            <span className="text-green-500 leading-none shrink-0 mt-px text-sm">—</span>
+            <p className="text-[14px] text-[#333333] leading-snug">{s}</p>
+          </div>
+        ))}
+      </div>
+      <div className="bg-red-50 rounded-xl px-3.5 py-3 space-y-0.5">
+        <p className="text-[14px] font-bold text-red-800 leading-snug mb-1">Мастер с конверсией 40%</p>
+        {["2–3 заказа в месяц", "Простои по 5–7 дней", "Ждёт когда дадут следующий", "40 000 — 70 000₽ в месяц"].map((s, i) => (
+          <div key={i} className="flex items-start gap-2">
+            <span className="text-red-400 leading-none shrink-0 mt-px text-sm">—</span>
+            <p className="text-[14px] text-[#333333] leading-snug">{s}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <p className="text-[14px] font-bold text-[#333333] leading-snug text-center">
+      Одна и та же система.{"\n"}Один зарабатывает 250 000₽. Другой 50 000₽.{"\n"}Разница не в руках — разница в конверсии.
+    </p>
+
+    <SectionTitle>Как поднять конверсию:</SectionTitle>
+    <div className="space-y-2.5">
+      {[
+        { title: "✅ Приезжайте на замер вовремя", text: "Клиент ждёт. Опоздали — он нашёл другого. Если задерживаетесь — предупредите за 2 часа." },
+        { title: "✅ Называйте рыночную цену", text: "Завысили — клиент ушёл. Конверсия упала. Рыночная цена = больше заказов = больше денег." },
+        { title: "✅ Общайтесь вежливо", text: "Клиент выбирает не только по цене. Улыбнулись, объяснили, показали фото работ — клиент ваш." },
+        { title: "✅ Отправляйте смету на замере", text: "Отправьте пока стоите рядом с клиентом. Не откладывайте на потом. Потом = клиент забыл." },
+        { title: "✅ Напоминайте про бронь", text: "Клиент не оплатил до вечера — напомните. Одно сообщение = плюс 20% к оплатам." },
+        { title: "✅ Берите все заказы", text: "И мелкие и крупные. Мелкий заказ за 15 000₽ — это 1–2 дня без простоя. Каждый выполненный заказ повышает конверсию." },
+      ].map((item, i) => (
+        <div key={i}>
+          <p className="text-[14px] font-bold text-[#333333] leading-snug">{item.title}</p>
+          <p className="text-[14px] text-[#333333] leading-snug mt-0.5">{item.text}</p>
+        </div>
+      ))}
+    </div>
+
+    <SectionTitle>Что убивает конверсию:</SectionTitle>
+    <div className="space-y-2.5">
+      {[
+        { title: "❌ Не приехали на замер", text: "Клиент ждал — вы не приехали. Заявка сгорела. 2–3 дня простоя." },
+        { title: "❌ Завысили цены", text: "Клиент сравнил с другими и ушёл. Конверсия упала." },
+        { title: "❌ Не отправили смету", text: "Договорились на словах — клиент забыл — не оплатил." },
+        { title: "❌ Отказались от мелкого заказа", text: "Каждый отказ = минус к конверсии. Система перестаёт давать даже крупные заказы." },
+        { title: "❌ Договорились мимо системы", text: "Конверсия падает. Лимит блокируется. Поток заказов уменьшается." },
+      ].map((item, i) => (
+        <div key={i}>
+          <p className="text-[14px] font-bold text-[#333333] leading-snug">{item.title}</p>
+          <p className="text-[14px] text-[#333333] leading-snug mt-0.5">{item.text}</p>
+        </div>
+      ))}
+    </div>
+
+    <SectionTitle>Пример роста:</SectionTitle>
+    <div className="space-y-2">
+      {[
+        { label: "Месяц 1", text: "Конверсия 50% → 4 заказа → простои → 80 000₽" },
+        { label: "Месяц 2", text: "Стали отправлять сметы, напоминать про бронь. Конверсия 70% → 7 заказов → меньше простоев → 150 000₽" },
+        { label: "Месяц 3", text: "Приезжаете вовремя, рыночные цены, берёте все заказы. Конверсия 85% → 9 заказов → без простоев → 220 000₽" },
+      ].map((m, i) => (
+        <div key={i} className="bg-gray-50 rounded-xl px-3.5 py-3">
+          <p className="text-[13px] font-bold text-gray-500 mb-0.5">{m.label}</p>
+          <p className="text-[14px] text-[#333333] leading-snug">{m.text}</p>
+        </div>
+      ))}
+    </div>
+    <P>За 3 месяца доход вырос почти в 3 раза. Не потому что работали больше. А потому что не было простоев.</P>
+
+    <div className="bg-green-50 rounded-xl px-3.5 py-3 space-y-0.5">
+      <p className="text-[14px] font-bold text-[#333333] leading-snug">Простое правило:</p>
+      <p className="text-[14px] font-bold text-[#333333] leading-snug">Высокая конверсия = нет простоев = 220 000₽/мес.</p>
+      <p className="text-[14px] font-bold text-[#333333] leading-snug">Низкая конверсия = простои = 80 000₽/мес.</p>
+      <p className="text-[14px] font-bold text-[#333333] leading-snug mt-1">Каждая упущенная заявка — это 2–3 дня простоя. 2–3 дня простоя — это минус 15 000 — 25 000₽.</p>
+    </div>
+  </div>
+);
+
 const SECTIONS: Section[] = [
   { emoji: "📋", title: "Как получать заказы", content: howToGetOrders },
   { emoji: "📱", title: "Как работает смета", content: howEstimateWorks },
   { emoji: "💰", title: "Предоплата клиента", content: clientPrepayment },
   { emoji: "⏳", title: "Если клиент не оплатил", content: ifClientDidntPay },
-  { emoji: "📈", title: "Как зарабатывать больше", content: null },
+  { emoji: "📈", title: "Как зарабатывать больше", content: howToEarnMore },
   { emoji: "🔨", title: "Правила на объекте", content: null },
   { emoji: "📄", title: "Акт и фото", content: null },
   { emoji: "🛡", title: "Гарантия", content: null },
