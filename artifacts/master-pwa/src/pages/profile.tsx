@@ -777,6 +777,24 @@ export default function ProfilePage() {
       {/* Service prices */}
       <ServicePricesSection data={data} onSave={updated => setData(d => d ? { ...d, ...updated } : d)} />
 
+      <button
+        onClick={() => navigate("/work-rules")}
+        className="w-full flex items-center justify-between px-4 h-12 rounded-xl border border-border bg-card text-foreground font-semibold text-sm active:opacity-80 transition-colors"
+      >
+        <div className="flex items-center gap-2.5">
+          <span className="w-7 h-7 rounded-lg bg-indigo-500 flex items-center justify-center flex-shrink-0">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="4" y="2" width="12" height="16" rx="2" />
+              <line x1="7" y1="7" x2="13" y2="7" />
+              <line x1="7" y1="10" x2="13" y2="10" />
+              <line x1="7" y1="13" x2="11" y2="13" />
+            </svg>
+          </span>
+          Правила работы
+        </div>
+        <ChevronRight size={16} className="text-muted-foreground" />
+      </button>
+
       {data.contractLink && (
         <a
           href={data.contractLink}
@@ -817,17 +835,6 @@ export default function ProfilePage() {
           Приложение установлено
         </div>
       )}
-
-      <button
-        onClick={() => navigate("/work-rules")}
-        className="w-full flex items-center justify-between px-4 h-12 rounded-xl border border-border bg-card text-foreground font-semibold text-sm active:opacity-80 transition-colors"
-      >
-        <div className="flex items-center gap-2">
-          <span className="text-base leading-none">📋</span>
-          Правила работы
-        </div>
-        <ChevronRight size={16} className="text-muted-foreground" />
-      </button>
 
       <button
         onClick={handleLogout}
