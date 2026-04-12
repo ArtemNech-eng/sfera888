@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useLocation } from "wouter";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
@@ -7,7 +8,7 @@ import {
   TrendingUp, ShieldCheck, LogOut, ExternalLink,
   BadgeCheck, Camera, Pencil, Check, X, Loader2,
   BarChart2, Clock, Filter, ChevronDown, Plus, Download,
-  DollarSign,
+  DollarSign, ChevronRight,
 } from "lucide-react";
 import { useInstallPrompt } from "@/lib/useInstallPrompt";
 
@@ -591,6 +592,7 @@ function WorkingHoursSection({ data, onSave }: { data: ProfileData; onSave: (u: 
 
 export default function ProfilePage() {
   const { logout } = useAuth();
+  const [, navigate] = useLocation();
   const [data, setData] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -815,6 +817,17 @@ export default function ProfilePage() {
           Приложение установлено
         </div>
       )}
+
+      <button
+        onClick={() => navigate("/work-rules")}
+        className="w-full flex items-center justify-between px-4 h-12 rounded-xl border border-border bg-card text-foreground font-semibold text-sm active:opacity-80 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-base leading-none">📋</span>
+          Правила работы
+        </div>
+        <ChevronRight size={16} className="text-muted-foreground" />
+      </button>
 
       <button
         onClick={handleLogout}

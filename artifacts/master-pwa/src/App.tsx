@@ -40,6 +40,7 @@ import BalancePage from "@/pages/balance";
 import ProfilePage from "@/pages/profile";
 import ChatPage from "@/pages/chat";
 import PendingContractPage from "@/pages/pending-contract";
+import WorkRulesPage from "@/pages/work-rules";
 import { ShieldBan, LogOut } from "lucide-react";
 import MaxBotBanner from "@/components/max-bot-banner";
 
@@ -127,6 +128,7 @@ function AppRoutes() {
             <Route path="/chat" component={ChatPage} />
             <Route path="/balance" component={BalancePage} />
             <Route path="/profile" component={ProfilePage} />
+            <Route path="/work-rules" component={WorkRulesPage} />
           </Switch>
         </AuthGuard>
       </main>
