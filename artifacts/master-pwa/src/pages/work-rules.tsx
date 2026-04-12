@@ -2,16 +2,99 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { ChevronRight, ArrowLeft } from "lucide-react";
 
-const SECTIONS = [
-  { emoji: "📋", title: "Как получать заказы", content: "" },
-  { emoji: "📱", title: "Как работает смета", content: "" },
-  { emoji: "💰", title: "Предоплата клиента", content: "" },
-  { emoji: "⏳", title: "Если клиент не оплатил", content: "" },
-  { emoji: "📈", title: "Как зарабатывать больше", content: "" },
-  { emoji: "🔨", title: "Правила на объекте", content: "" },
-  { emoji: "📄", title: "Акт и фото", content: "" },
-  { emoji: "🛡", title: "Гарантия", content: "" },
-  { emoji: "🏆", title: "Бонус для лучших", content: "" },
+function P({ children }: { children: React.ReactNode }) {
+  return <p className="text-[14px] text-[#333333] leading-snug">{children}</p>;
+}
+
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return <p className="text-[14px] font-bold text-[#333333] leading-snug">{children}</p>;
+}
+
+function TierBlock({
+  emoji,
+  bg,
+  children,
+}: {
+  emoji: string;
+  bg: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={`rounded-xl px-3.5 py-3 ${bg}`}>
+      <p className="text-[14px] font-bold text-[#333333] leading-snug mb-1">{emoji}</p>
+      <div className="text-[14px] text-[#333333] leading-snug space-y-0.5">{children}</div>
+    </div>
+  );
+}
+
+const howToGetOrders = (
+  <div className="space-y-3">
+    <P>Когда появляется новый заказ — его видят все свободные мастера.</P>
+    <P>Вы нажимаете «Откликнуться».</P>
+    <P>
+      Но заказ получает не тот кто первый откликнулся, а тот у кого выше{" "}
+      <span className="font-bold">конверсия</span>.
+    </P>
+
+    <SectionTitle>Что такое конверсия:</SectionTitle>
+    <P>
+      Это процент ваших заявок которые дошли до оплаты предоплаты клиентом.
+    </P>
+    <div className="bg-gray-50 rounded-xl px-3.5 py-3 space-y-0.5">
+      <P>Пример:</P>
+      <P>Вам пришло 10 заявок.</P>
+      <P>8 клиентов оплатили предоплату.</P>
+      <P><span className="font-bold">Ваша конверсия = 80%</span></P>
+    </div>
+
+    <SectionTitle>Как система выбирает:</SectionTitle>
+
+    <TierBlock emoji="🥇 Конверсия 80%+" bg="bg-green-50">
+      <p>Получаете заказы ПЕРВЫМ.</p>
+      <p>Включая крупные объекты за 50 000 — 100 000₽+</p>
+      <p>Пока другие ждут — вы уже зарабатываете.</p>
+    </TierBlock>
+
+    <TierBlock emoji="🥈 Конверсия 60–79%" bg="bg-blue-50">
+      <p>Получаете заказы во вторую очередь.</p>
+      <p>Если в первой группе никто не откликнулся.</p>
+    </TierBlock>
+
+    <TierBlock emoji="🥉 Конверсия 30–59%" bg="bg-yellow-50">
+      <p>Получаете редко.</p>
+      <p>Только если первые две группы не откликнулись.</p>
+    </TierBlock>
+
+    <TierBlock emoji="⚠️ Конверсия ниже 30%" bg="bg-red-50">
+      <p>Почти не получаете заказов.</p>
+      <p>Система считает что вы не доводите клиентов до оплаты.</p>
+    </TierBlock>
+
+    <div className="pt-1">
+      <p className="text-[14px] font-bold text-[#333333] leading-snug">Простое правило:</p>
+      <p className="text-[14px] font-bold text-[#333333] leading-snug">Чем выше конверсия — тем больше заказов.</p>
+      <p className="text-[14px] font-bold text-[#333333] leading-snug">Чем больше заказов — тем больше денег.</p>
+      <p className="text-[14px] font-bold text-[#333333] leading-snug">Тем меньше простоев.</p>
+    </div>
+  </div>
+);
+
+interface Section {
+  emoji: string;
+  title: string;
+  content: React.ReactNode;
+}
+
+const SECTIONS: Section[] = [
+  { emoji: "📋", title: "Как получать заказы", content: howToGetOrders },
+  { emoji: "📱", title: "Как работает смета", content: null },
+  { emoji: "💰", title: "Предоплата клиента", content: null },
+  { emoji: "⏳", title: "Если клиент не оплатил", content: null },
+  { emoji: "📈", title: "Как зарабатывать больше", content: null },
+  { emoji: "🔨", title: "Правила на объекте", content: null },
+  { emoji: "📄", title: "Акт и фото", content: null },
+  { emoji: "🛡", title: "Гарантия", content: null },
+  { emoji: "🏆", title: "Бонус для лучших", content: null },
 ];
 
 function AccordionItem({
@@ -24,7 +107,7 @@ function AccordionItem({
 }: {
   emoji: string;
   title: string;
-  content: string;
+  content: React.ReactNode;
   isOpen: boolean;
   onToggle: () => void;
   isLast: boolean;
@@ -48,12 +131,12 @@ function AccordionItem({
       </button>
 
       {isOpen && content && (
-        <div className="px-4 pb-4 pt-0 bg-white text-sm text-gray-600 leading-relaxed">
+        <div className="px-4 pb-5 pt-1 bg-white">
           {content}
         </div>
       )}
 
-      {!isLast && <div className="h-px bg-gray-100 mx-0" />}
+      {!isLast && <div className="h-px bg-gray-100" />}
     </div>
   );
 }
