@@ -381,6 +381,88 @@ const howToEarnMore = (
   </div>
 );
 
+const bonusForBest = (
+  <div className="space-y-3">
+    <div className="rounded-xl px-3.5 py-3 space-y-0.5" style={{ backgroundColor: "#FFF9E6" }}>
+      <p className="text-[14px] font-bold text-[#333333] leading-snug">Мы ценим мастеров которые работают хорошо.</p>
+      <p className="text-[14px] font-bold text-[#333333] leading-snug">Для лучших мастеров — особые условия.</p>
+    </div>
+
+    <SectionTitle>Как получить статус «Топ-мастер»:</SectionTitle>
+    <p className="text-[17px] font-bold text-green-700 leading-snug text-center">Конверсия 90%+ три месяца подряд</p>
+    <P>Это значит:</P>
+    <div className="space-y-1 pl-2">
+      {[
+        "Приезжаете на замеры вовремя",
+        "Называете рыночные цены",
+        "Отправляете сметы через приложение",
+        "9 из 10 клиентов оплачивают предоплату",
+        "Берёте все заказы — и мелкие и крупные",
+        "Клиенты довольны вашей работой",
+      ].map((item, i) => (
+        <div key={i} className="flex items-start gap-2">
+          <span className="text-gray-400 text-sm leading-snug shrink-0 mt-px">—</span>
+          <p className="text-[14px] text-[#333333] leading-snug">{item}</p>
+        </div>
+      ))}
+    </div>
+
+    <SectionTitle>Что даёт статус «Топ-мастер»:</SectionTitle>
+    <div className="space-y-2">
+      {[
+        { icon: "🔥", title: "Первый приоритет", text: "Заказы приходят вам раньше всех остальных. Пока другие ждут — вы уже работаете." },
+        { icon: "🔥", title: "Крупные объекты", text: "Заказы за 50 000 — 150 000₽ идут только топ-мастерам." },
+        { icon: "🔥", title: "Без простоев", text: "Закончили один заказ — следующий уже ждёт. Стабильная загрузка каждую неделю." },
+        { icon: "🔥", title: "Бонус 5 000₽", text: "Ежемесячный бонус на ваш баланс." },
+        { icon: "🔥", title: "Значок в профиле", text: "Клиенты видят что вы лучший мастер сервиса. Больше доверия = выше конверсия." },
+      ].map((item, i) => (
+        <div key={i} className="bg-orange-50 rounded-xl px-3.5 py-3">
+          <p className="text-[14px] font-bold text-[#333333] leading-snug">{item.icon} {item.title}</p>
+          <p className="text-[14px] text-[#333333] leading-snug mt-0.5">{item.text}</p>
+        </div>
+      ))}
+    </div>
+
+    <SectionTitle>Сколько можно заработать в статусе «Топ-мастер»:</SectionTitle>
+    <div className="space-y-0.5 pl-2">
+      {["8–10 заказов в месяц", "Средний заказ 30 000₽", "Без простоев"].map((item, i) => (
+        <div key={i} className="flex items-start gap-2">
+          <span className="text-gray-400 text-sm leading-snug shrink-0 mt-px">—</span>
+          <p className="text-[14px] text-[#333333] leading-snug">{item}</p>
+        </div>
+      ))}
+    </div>
+    <p className="text-[18px] font-bold text-green-700 leading-snug text-center">180 000 — 250 000₽ в месяц</p>
+    <p className="text-[14px] font-bold text-green-700 leading-snug text-center">+ бонус 5 000₽ + крупные объекты</p>
+    <P>Это реально. Это зарабатывают наши лучшие мастера.</P>
+
+    <SectionTitle>Как следить за прогрессом:</SectionTitle>
+    <div className="bg-gray-50 rounded-xl px-3.5 py-3 space-y-1">
+      <p className="text-[14px] font-bold text-[#333333] leading-snug mb-1">Откройте приложение → Профиль → Моя статистика</p>
+      <P>Там видно:</P>
+      <div className="space-y-0.5 pl-2">
+        {[
+          "Текущая конверсия",
+          "Сколько месяцев подряд конверсия выше 90%",
+          "До статуса «Топ-мастер» осталось: X месяцев",
+          "Ваш текущий статус",
+        ].map((item, i) => (
+          <div key={i} className="flex items-start gap-2">
+            <span className="text-gray-400 text-sm leading-snug shrink-0 mt-px">—</span>
+            <p className="text-[14px] text-[#333333] leading-snug">{item}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <SectionTitle>Начните сегодня:</SectionTitle>
+    <P>Каждый заказ который вы доводите до оплаты — это шаг к статусу «Топ-мастер».</P>
+    <P>Каждая смета отправленная вовремя — это шаг.</P>
+    <P>Каждый довольный клиент — это шаг.</P>
+    <p className="text-[15px] font-bold text-green-700 leading-snug text-center pt-1">У вас всё получится 💪</p>
+  </div>
+);
+
 const warranty = (
   <div className="space-y-3">
     <div className="bg-blue-50 rounded-xl px-3.5 py-3 space-y-1">
@@ -646,7 +728,7 @@ const SECTIONS: Section[] = [
   { emoji: "🔨", title: "Правила на объекте", content: rulesOnSite },
   { emoji: "📄", title: "Акт и фото", content: actAndPhoto },
   { emoji: "🛡", title: "Гарантия", content: warranty },
-  { emoji: "🏆", title: "Бонус для лучших", content: null },
+  { emoji: "🏆", title: "Бонус для лучших", content: bonusForBest },
 ];
 
 function AccordionItem({
