@@ -129,10 +129,10 @@ function EditProfileModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-end justify-center p-0" onClick={onClose}>
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-end justify-center" onClick={onClose}>
       <div
         className="w-full max-w-[480px] bg-card rounded-t-2xl flex flex-col"
-        style={{ maxHeight: "92dvh" }}
+        style={{ height: "92dvh" }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -154,8 +154,8 @@ function EditProfileModal({
           </button>
         </div>
 
-        {/* Scrollable body */}
-        <div className="overflow-y-auto flex-1 p-5 space-y-5">
+        {/* Scrollable body — min-h-0 required for overflow to work inside flex column */}
+        <div className="overflow-y-auto overscroll-contain flex-1 min-h-0 p-5 space-y-5">
 
           {/* Name */}
           <div className="space-y-1.5">
