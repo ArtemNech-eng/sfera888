@@ -85,9 +85,84 @@ interface Section {
   content: React.ReactNode;
 }
 
+const howEstimateWorks = (
+  <div className="space-y-3">
+    <P>Все заказы проходят через смету в приложении. Это обязательно.</P>
+
+    <SectionTitle>Как это работает:</SectionTitle>
+    <div className="bg-gray-50 rounded-xl px-3.5 py-3 space-y-1">
+      {[
+        "Вы приехали на замер",
+        "Посмотрели объект",
+        "Открываете смету в приложении",
+        "Выбираете работы из списка",
+        "Вводите площадь и цену за м²",
+        "Приложение само всё считает",
+        "Отправляете ссылку клиенту",
+      ].map((step, i) => (
+        <div key={i} className="flex items-start gap-2.5">
+          <span className="text-[13px] font-bold text-gray-400 w-4 shrink-0 pt-px">{i + 1}.</span>
+          <p className="text-[14px] text-[#333333] leading-snug">{step}</p>
+        </div>
+      ))}
+    </div>
+    <P>Это занимает 2 минуты.</P>
+
+    <SectionTitle>Зачем смета через приложение:</SectionTitle>
+    <div className="space-y-2">
+      {[
+        "Клиент видит профессиональный документ — доверяет больше, соглашается чаще",
+        "Клиент оплачивает предоплату прямо через смету — вам не нужно просить деньги",
+        "Сумма зафиксирована — потом не будет споров «мы договаривались на другую цену»",
+        "Ваш лимит на новые заказы разблокируется автоматически после оплаты",
+        "Вы выглядите как серьёзная компания, а не как шабашник",
+      ].map((text, i) => (
+        <div key={i} className="flex items-start gap-2">
+          <span className="text-base leading-none shrink-0 mt-px">✅</span>
+          <p className="text-[14px] text-[#333333] leading-snug">{text}</p>
+        </div>
+      ))}
+    </div>
+
+    <P>Без сметы через приложение заказ не считается выполненным и не учитывается в конверсии.</P>
+
+    <SectionTitle>Как брать предоплату на замере:</SectionTitle>
+    <P>
+      Лучше всего закрывать предоплату прямо на замере — пока стоите рядом с клиентом.
+    </P>
+    <P>
+      Отправили смету → клиент открыл → оплатил при вас → готово.{" "}
+      Не откладывайте на потом. Потом = клиент забыл.
+    </P>
+
+    <div className="bg-yellow-50 rounded-xl px-3.5 py-3 space-y-2">
+      <p className="text-[14px] font-bold text-[#333333] leading-snug">💡 Если у клиента нет денег на карте:</p>
+      <P>Можно взять предоплату наличкой. В этом случае:</P>
+      <div className="bg-white/70 rounded-lg px-3 py-2.5 space-y-1">
+        {[
+          "Берёте 5 000₽ наличкой у клиента",
+          "Пополняете свою карту",
+          "Переводите на реквизиты приложения Честный Мастер — реквизиты находятся в разделе «Оплата»",
+          "Смета закрывается автоматически",
+          "Лимит на новые заказы разблокируется",
+        ].map((step, i) => (
+          <div key={i} className="flex items-start gap-2.5">
+            <span className="text-[13px] font-bold text-gray-400 w-4 shrink-0 pt-px">{i + 1}.</span>
+            <p className="text-[14px] text-[#333333] leading-snug">{step}</p>
+          </div>
+        ))}
+      </div>
+      <P>
+        Клиенту всё равно как оплатить — картой или наличкой.
+        Главное чтобы смета была закрыта в приложении.
+      </P>
+    </div>
+  </div>
+);
+
 const SECTIONS: Section[] = [
   { emoji: "📋", title: "Как получать заказы", content: howToGetOrders },
-  { emoji: "📱", title: "Как работает смета", content: null },
+  { emoji: "📱", title: "Как работает смета", content: howEstimateWorks },
   { emoji: "💰", title: "Предоплата клиента", content: null },
   { emoji: "⏳", title: "Если клиент не оплатил", content: null },
   { emoji: "📈", title: "Как зарабатывать больше", content: null },
