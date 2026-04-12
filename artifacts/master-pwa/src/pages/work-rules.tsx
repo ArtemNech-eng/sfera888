@@ -160,10 +160,56 @@ const howEstimateWorks = (
   </div>
 );
 
+const clientPrepayment = (
+  <div className="space-y-3">
+    <P>Вы не платите ничего. Предоплату платит клиент.</P>
+    <P>Предоплата 5 000₽ — это бронь мастера и даты.</P>
+    <P>Клиент не переплачивает — предоплата входит в стоимость работ.</P>
+
+    <div className="bg-gray-50 rounded-xl px-3.5 py-3 space-y-0.5">
+      <p className="text-[14px] font-bold text-[#333333] leading-snug mb-1">Пример:</p>
+      <P>Смета: 32 000₽</P>
+      <P>Клиент оплатил предоплату: 5 000₽</P>
+      <P>Остаток после работы: 27 000₽</P>
+      <P>Итого клиент заплатил: 32 000₽</P>
+    </div>
+
+    <P>Всё честно. Клиент платит ту же сумму что в смете.</P>
+
+    <SectionTitle>Что происходит после оплаты:</SectionTitle>
+    <div className="space-y-2">
+      {[
+        "Вам приходит уведомление «Клиент забронировал!»",
+        "Лимит на новые заказы разблокируется — можете откликаться на следующие заявки",
+        "Вы можете приступать к работе",
+        "Клиент получает подтверждение брони и ждёт вас",
+      ].map((text, i) => (
+        <div key={i} className="flex items-start gap-2">
+          <span className="text-base leading-none shrink-0 mt-px">✅</span>
+          <p className="text-[14px] text-[#333333] leading-snug">{text}</p>
+        </div>
+      ))}
+    </div>
+
+    <SectionTitle>Почему предоплата важна:</SectionTitle>
+    <P>Клиент который оплатил предоплату — серьёзный клиент.</P>
+    <P>Он не передумает. Он не пропадёт. Он не начнёт торговаться после работы.</P>
+    <P>
+      Клиент который не хочет платить предоплату — обычно проблемный.
+      Экономит на всём. Будет торговаться по цене работы. Может затянуть финальную оплату.
+    </P>
+
+    <div className="bg-green-50 rounded-xl px-3.5 py-3 space-y-1">
+      <p className="text-[14px] font-bold text-[#333333] leading-snug">💡 Предоплата фильтрует несерьёзных клиентов.</p>
+      <P>Вам достаются только те кто точно заплатит.</P>
+    </div>
+  </div>
+);
+
 const SECTIONS: Section[] = [
   { emoji: "📋", title: "Как получать заказы", content: howToGetOrders },
   { emoji: "📱", title: "Как работает смета", content: howEstimateWorks },
-  { emoji: "💰", title: "Предоплата клиента", content: null },
+  { emoji: "💰", title: "Предоплата клиента", content: clientPrepayment },
   { emoji: "⏳", title: "Если клиент не оплатил", content: null },
   { emoji: "📈", title: "Как зарабатывать больше", content: null },
   { emoji: "🔨", title: "Правила на объекте", content: null },
