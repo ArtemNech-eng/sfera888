@@ -65,6 +65,14 @@ function EditProfileModal({
   const [city, setCity] = useState(data.city);
   const [phone, setPhone] = useState(data.phone ?? "");
   const [selectedSpecs, setSelectedSpecs] = useState<string[]>(data.specializations ?? []);
+  // prices: spec name → price string
+  const [prices, setPrices] = useState<Record<string, string>>(() => {
+    const map: Record<string, string> = {};
+    for (const p of data.servicePrices ?? []) {
+      map[p.service] = String(p.priceFrom);
+    }
+    return map;
+  });
   const [availableSpecs, setAvailableSpecs] = useState<string[]>([]);
   const [availableCities, setAvailableCities] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -91,6 +99,10 @@ function EditProfileModal({
     if (!city.trim()) { toast.error("Введите город"); return; }
     if (selectedSpecs.length === 0) { toast.error("Выберите хотя бы одну специализацию"); return; }
 
+    const servicePrices = selectedSpecs
+      .filter(s => Number(prices[s]) > 0)
+      .map(s => ({ service: s, priceFrom: Number(prices[s]) }));
+
     setLoading(true);
     try {
       await api.updateProfile({
@@ -98,6 +110,7 @@ function EditProfileModal({
         city: city.trim(),
         phone: phone.trim() || undefined,
         specializations: selectedSpecs,
+        servicePrices,
       });
       toast.success("Профиль обновлён");
       onSave({
@@ -106,6 +119,7 @@ function EditProfileModal({
         phone: phone.trim() || null,
         specializations: selectedSpecs,
         specialization: selectedSpecs.join(", "),
+        servicePrices,
       });
     } catch (err: any) {
       toast.error(err.message ?? "Ошибка сохранения");
@@ -117,10 +131,12 @@ function EditProfileModal({
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-end justify-center p-0" onClick={onClose}>
       <div
-        className="w-full max-w-[480px] bg-card rounded-t-2xl flex flex-col max-h-[90dvh]"
+        className="w-full max-w-[480px] bg-card rounded-t-2xl flex flex-col"
+        style={{ maxHeight: "92dvh" }}
         onClick={e => e.stopPropagation()}
       >
-        <div className="sticky top-0 bg-card border-b border-border px-4 py-3 flex items-center gap-3 flex-shrink-0">
+        {/* Header */}
+        <div className="bg-card border-b border-border px-4 py-3 flex items-center gap-3 flex-shrink-0 rounded-t-2xl">
           <button
             onClick={onClose}
             className="text-muted-foreground h-9 w-9 flex items-center justify-center rounded-xl hover:bg-muted transition-colors"
@@ -133,16 +149,17 @@ function EditProfileModal({
             disabled={loading}
             className="h-9 px-4 bg-primary text-white font-semibold rounded-xl text-sm active:opacity-80 disabled:opacity-50 flex items-center gap-1.5"
           >
-            {loading
-              ? <Loader2 size={15} className="animate-spin" />
-              : <Check size={15} />}
+            {loading ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
             Сохранить
           </button>
         </div>
 
-        <div className="p-5 space-y-4 overflow-y-auto flex-1">
+        {/* Scrollable body */}
+        <div className="overflow-y-auto flex-1 p-5 space-y-5">
+
+          {/* Name */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Имя / псевдоним</label>
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Имя / псевдоним</label>
             <input
               value={alias}
               onChange={e => setAlias(e.target.value)}
@@ -151,27 +168,23 @@ function EditProfileModal({
             />
           </div>
 
+          {/* City */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Город</label>
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Город</label>
             <select
               value={city}
               onChange={e => setCity(e.target.value)}
               className="w-full h-11 px-4 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring appearance-none"
             >
-              {city && !availableCities.includes(city) && (
-                <option value={city}>{city}</option>
-              )}
-              <option value="">
-                {availableCities.length === 0 ? "Загрузка городов..." : "Выберите город"}
-              </option>
-              {availableCities.map(c => (
-                <option key={c} value={c}>{c}</option>
-              ))}
+              {city && !availableCities.includes(city) && <option value={city}>{city}</option>}
+              <option value="">{availableCities.length === 0 ? "Загрузка городов..." : "Выберите город"}</option>
+              {availableCities.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
 
+          {/* Phone */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Телефон</label>
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Телефон</label>
             <input
               type="tel"
               value={phone}
@@ -181,10 +194,18 @@ function EditProfileModal({
             />
           </div>
 
-          <div className="space-y-2">
-            <label className="text-xs font-medium text-muted-foreground">Специализации</label>
+          {/* Specializations + prices (combined) */}
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Специализации и цены</label>
+              <p className="text-xs text-muted-foreground mt-0.5">Выберите все виды работ и укажите стартовую цену</p>
+            </div>
+
+            {/* Chips grid */}
             <div className="flex flex-wrap gap-2">
-              {availableSpecs.length === 0 && <p className="text-xs text-muted-foreground">Загрузка...</p>}
+              {availableSpecs.length === 0 && (
+                <p className="text-xs text-muted-foreground">Загрузка...</p>
+              )}
               {availableSpecs.map(s => {
                 const selected = selectedSpecs.includes(s);
                 return (
@@ -204,6 +225,29 @@ function EditProfileModal({
                 );
               })}
             </div>
+
+            {/* Price inputs for selected specs */}
+            {selectedSpecs.length > 0 && (
+              <div className="space-y-2 pt-1">
+                <p className="text-xs text-muted-foreground">Укажите стартовую цену для каждой услуги (необязательно):</p>
+                {selectedSpecs.map(s => (
+                  <div key={s} className="flex items-center gap-2">
+                    <span className="flex-1 text-sm text-foreground truncate">{s}</span>
+                    <div className="relative flex-shrink-0">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={prices[s] ?? ""}
+                        onChange={e => setPrices(p => ({ ...p, [s]: e.target.value.replace(/\D/g, "") }))}
+                        placeholder="от ₽"
+                        className="w-28 h-9 pl-3 pr-7 rounded-xl border border-border bg-muted/40 text-sm text-right focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">₽</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
         </div>
@@ -774,8 +818,31 @@ export default function ProfilePage() {
       {/* Working hours */}
       <WorkingHoursSection data={data} onSave={updated => setData(d => d ? { ...d, ...updated } : d)} />
 
-      {/* Service prices */}
-      <ServicePricesSection data={data} onSave={updated => setData(d => d ? { ...d, ...updated } : d)} />
+      {/* Service prices — read-only, edit via profile modal */}
+      {(data.servicePrices ?? []).length > 0 && (
+        <div className="bg-card border border-border rounded-2xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+            <div className="flex items-center gap-2 font-semibold text-sm">
+              <DollarSign size={15} className="text-primary" />
+              Мои цены на услуги
+            </div>
+            <button
+              onClick={() => setShowEdit(true)}
+              className="text-xs text-primary font-medium"
+            >
+              Изменить
+            </button>
+          </div>
+          <div className="divide-y divide-border">
+            {(data.servicePrices ?? []).map((p, i) => (
+              <div key={i} className="px-4 py-2.5 flex items-center justify-between">
+                <span className="text-sm text-foreground">{p.service}</span>
+                <span className="text-sm font-semibold text-primary">от {p.priceFrom.toLocaleString("ru-RU")} ₽</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <button
         onClick={() => navigate("/work-rules")}
