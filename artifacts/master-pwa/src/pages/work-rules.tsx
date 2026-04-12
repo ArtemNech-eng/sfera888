@@ -381,13 +381,97 @@ const howToEarnMore = (
   </div>
 );
 
+const rulesOnSite = (
+  <div className="space-y-3">
+    <div className="bg-green-50 rounded-xl px-3.5 py-3">
+      <p className="text-[14px] font-bold text-[#333333] leading-snug">
+        Как вы работаете на объекте — так клиент запоминает всю компанию.
+      </p>
+      <p className="text-[14px] font-bold text-[#333333] leading-snug mt-1">
+        Хорошая работа = хороший отзыв = больше заказов для вас.
+      </p>
+    </div>
+
+    <SectionTitle>Перед началом работ:</SectionTitle>
+    <div className="space-y-1.5">
+      {[
+        "Застелите полы плёнкой или картоном",
+        "Закройте мебель плёнкой",
+        "Сделайте фото ДО начала работ (2–3 фотографии)",
+        "Убедитесь что есть все материалы и инструменты",
+      ].map((item, i) => (
+        <div key={i} className="flex items-start gap-2">
+          <span className="text-[15px] leading-none shrink-0 mt-px text-gray-400">☐</span>
+          <p className="text-[14px] text-[#333333] leading-snug">{item}</p>
+        </div>
+      ))}
+    </div>
+
+    <SectionTitle>Во время работы:</SectionTitle>
+    <div className="space-y-1.5">
+      {[
+        "Работайте аккуратно и по технологии",
+        "Не курите в помещении",
+        "Не употребляйте алкоголь — это основание для немедленного прекращения сотрудничества",
+        "Если возникли проблемы или вопросы — напишите нам, решим вместе",
+        "Если клиент просит дополнительные работы — скажите «уточню стоимость» и обновите смету в приложении",
+      ].map((item, i) => (
+        <div key={i} className="flex items-start gap-2">
+          <span className="text-[15px] leading-none shrink-0 mt-px text-gray-400">☐</span>
+          <p className="text-[14px] text-[#333333] leading-snug">{item}</p>
+        </div>
+      ))}
+    </div>
+
+    <SectionTitle>После завершения работ:</SectionTitle>
+    <div className="space-y-1.5">
+      {[
+        ["Уберите за собой: вынесите мусор, уберите остатки материалов, протрите пол"],
+        ["Покажите результат клиенту"],
+        ["Убедитесь что клиент доволен"],
+        ["Сделайте фото ПОСЛЕ (3–5 фото)"],
+        ["Заполните акт в приложении"],
+        ["Попросите клиента подписать акт"],
+      ].map(([item], i) => (
+        <div key={i} className="flex items-start gap-2">
+          <span className="text-[15px] leading-none shrink-0 mt-px text-gray-400">☐</span>
+          <p className="text-[14px] text-[#333333] leading-snug">{item}</p>
+        </div>
+      ))}
+    </div>
+
+    <SectionTitle>Если клиент недоволен:</SectionTitle>
+    <div className="bg-yellow-50 rounded-xl px-3.5 py-3 space-y-1">
+      <p className="text-[14px] font-bold text-[#333333] leading-snug">💡 Не спорьте с клиентом. Не доказывайте что вы правы.</p>
+      <P>Напишите нам — мы разберёмся и поможем решить ситуацию.</P>
+      <P>Спокойный мастер + поддержка компании = довольный клиент.</P>
+    </div>
+
+    <div className="bg-red-50 rounded-xl px-3.5 py-3 space-y-1.5">
+      <p className="text-[14px] font-bold text-[#333333] leading-snug">⚠️ Запрещено:</p>
+      {[
+        "Курить в помещении клиента",
+        "Употреблять алкоголь на объекте",
+        "Грубить клиенту",
+        "Обсуждать цены и условия в обход приложения",
+        "Предлагать клиенту работать напрямую",
+      ].map((item, i) => (
+        <div key={i} className="flex items-start gap-2">
+          <span className="text-[14px] font-bold text-red-500 leading-none shrink-0 mt-px">❌</span>
+          <p className="text-[14px] text-red-700 leading-snug">{item}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
 const SECTIONS: Section[] = [
   { emoji: "📋", title: "Как получать заказы", content: howToGetOrders },
   { emoji: "📱", title: "Как работает смета", content: howEstimateWorks },
   { emoji: "💰", title: "Предоплата клиента", content: clientPrepayment },
   { emoji: "⏳", title: "Если клиент не оплатил", content: ifClientDidntPay },
   { emoji: "📈", title: "Как зарабатывать больше", content: howToEarnMore },
-  { emoji: "🔨", title: "Правила на объекте", content: null },
+  { emoji: "🔨", title: "Правила на объекте", content: rulesOnSite },
   { emoji: "📄", title: "Акт и фото", content: null },
   { emoji: "🛡", title: "Гарантия", content: null },
   { emoji: "🏆", title: "Бонус для лучших", content: null },
