@@ -135,120 +135,150 @@ function EditProfileModal({
         style={{ height: "92dvh" }}
         onClick={e => e.stopPropagation()}
       >
+        {/* Drag handle */}
+        <div className="flex justify-center pt-2.5 pb-1 flex-shrink-0">
+          <div className="w-10 h-1 rounded-full bg-border" />
+        </div>
+
         {/* Header */}
-        <div className="bg-card border-b border-border px-4 py-3 flex items-center gap-3 flex-shrink-0 rounded-t-2xl">
+        <div className="px-4 pt-1 pb-3 flex items-center gap-2 flex-shrink-0">
           <button
             onClick={onClose}
-            className="text-muted-foreground h-9 w-9 flex items-center justify-center rounded-xl hover:bg-muted transition-colors"
+            className="text-muted-foreground h-9 w-9 flex items-center justify-center rounded-xl active:bg-muted transition-colors"
           >
-            <X size={18} />
+            <X size={20} />
           </button>
-          <h3 className="font-bold text-base flex-1">Редактировать профиль</h3>
+          <h3 className="font-bold text-base flex-1 text-center">Редактировать профиль</h3>
           <button
             onClick={handleSave}
             disabled={loading}
             className="h-9 px-4 bg-primary text-white font-semibold rounded-xl text-sm active:opacity-80 disabled:opacity-50 flex items-center gap-1.5"
           >
-            {loading ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
-            Сохранить
+            {loading ? <Loader2 size={15} className="animate-spin" /> : null}
+            Готово
           </button>
         </div>
 
-        {/* Scrollable body — min-h-0 required for overflow to work inside flex column */}
-        <div className="overflow-y-auto overscroll-contain flex-1 min-h-0 p-5 space-y-5">
+        {/* Scrollable body */}
+        <div className="overflow-y-auto overscroll-contain flex-1 min-h-0 px-4 pb-10 space-y-6">
 
-          {/* Name */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Имя / псевдоним</label>
-            <input
-              value={alias}
-              onChange={e => setAlias(e.target.value)}
-              className="w-full h-11 px-4 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-              placeholder="Иван Мастеров"
-            />
-          </div>
+          {/* Basic info — iOS grouped list */}
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-1">Основное</p>
+            <div className="bg-muted/50 rounded-2xl overflow-hidden divide-y divide-border/60">
 
-          {/* City */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Город</label>
-            <select
-              value={city}
-              onChange={e => setCity(e.target.value)}
-              className="w-full h-11 px-4 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring appearance-none"
-            >
-              {city && !availableCities.includes(city) && <option value={city}>{city}</option>}
-              <option value="">{availableCities.length === 0 ? "Загрузка городов..." : "Выберите город"}</option>
-              {availableCities.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
+              {/* Name */}
+              <div className="flex items-center px-4 gap-3 min-h-[52px]">
+                <span className="text-sm text-muted-foreground w-20 flex-shrink-0">Имя</span>
+                <input
+                  value={alias}
+                  onChange={e => setAlias(e.target.value)}
+                  className="flex-1 bg-transparent text-sm text-right focus:outline-none placeholder:text-muted-foreground/50 py-3"
+                  placeholder="Иван Мастеров"
+                />
+              </div>
 
-          {/* Phone */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Телефон</label>
-            <input
-              type="tel"
-              value={phone}
-              onChange={e => setPhone(e.target.value)}
-              className="w-full h-11 px-4 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-              placeholder="+7 (999) 000-00-00"
-            />
-          </div>
+              {/* City */}
+              <div className="flex items-center px-4 gap-3 min-h-[52px]">
+                <span className="text-sm text-muted-foreground w-20 flex-shrink-0">Город</span>
+                <select
+                  value={city}
+                  onChange={e => setCity(e.target.value)}
+                  className="flex-1 bg-transparent text-sm text-right focus:outline-none appearance-none py-3 cursor-pointer"
+                >
+                  {city && !availableCities.includes(city) && <option value={city}>{city}</option>}
+                  <option value="">{availableCities.length === 0 ? "Загрузка..." : "Выберите город"}</option>
+                  {availableCities.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
 
-          {/* Specializations + prices (combined) */}
-          <div className="space-y-3">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Специализации и цены</label>
-              <p className="text-xs text-muted-foreground mt-0.5">Выберите все виды работ и укажите стартовую цену</p>
+              {/* Phone */}
+              <div className="flex items-center px-4 gap-3 min-h-[52px]">
+                <span className="text-sm text-muted-foreground w-20 flex-shrink-0">Телефон</span>
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={e => setPhone(e.target.value)}
+                  className="flex-1 bg-transparent text-sm text-right focus:outline-none placeholder:text-muted-foreground/50 py-3"
+                  placeholder="+7 (999) 000-00-00"
+                />
+              </div>
+
             </div>
+          </div>
 
-            {/* Chips grid */}
-            <div className="flex flex-wrap gap-2">
-              {availableSpecs.length === 0 && (
-                <p className="text-xs text-muted-foreground">Загрузка...</p>
+          {/* Specializations + inline prices — iOS list */}
+          <div>
+            <div className="flex items-end justify-between mb-2 px-1">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Специализации</p>
+              {selectedSpecs.length > 0 && (
+                <p className="text-xs text-primary font-medium">{selectedSpecs.length} выбрано</p>
               )}
-              {availableSpecs.map(s => {
-                const selected = selectedSpecs.includes(s);
-                return (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => toggleSpec(s)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                      selected
-                        ? "bg-primary text-white border-primary"
-                        : "bg-background text-foreground border-border"
-                    }`}
-                  >
-                    {selected && <Check size={11} />}
-                    {s}
-                  </button>
-                );
-              })}
             </div>
+            <p className="text-xs text-muted-foreground mb-3 px-1">
+              Нажмите чтобы выбрать. Укажите цену «от» рядом с каждой.
+            </p>
 
-            {/* Price inputs for selected specs */}
-            {selectedSpecs.length > 0 && (
-              <div className="space-y-2 pt-1">
-                <p className="text-xs text-muted-foreground">Укажите стартовую цену для каждой услуги (необязательно):</p>
-                {selectedSpecs.map(s => (
-                  <div key={s} className="flex items-center gap-2">
-                    <span className="flex-1 text-sm text-foreground truncate">{s}</span>
-                    <div className="relative flex-shrink-0">
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        value={prices[s] ?? ""}
-                        onChange={e => setPrices(p => ({ ...p, [s]: e.target.value.replace(/\D/g, "") }))}
-                        placeholder="от ₽"
-                        className="w-28 h-9 pl-3 pr-7 rounded-xl border border-border bg-muted/40 text-sm text-right focus:outline-none focus:ring-2 focus:ring-primary/30"
-                      />
-                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">₽</span>
+            {availableSpecs.length === 0 ? (
+              <div className="flex items-center justify-center h-20 bg-muted/40 rounded-2xl">
+                <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : (
+              <div className="bg-muted/50 rounded-2xl overflow-hidden divide-y divide-border/60">
+                {availableSpecs.map(s => {
+                  const selected = selectedSpecs.includes(s);
+                  return (
+                    <div key={s} className="flex items-center gap-3 px-4 min-h-[52px]">
+                      {/* Checkbox */}
+                      <button
+                        type="button"
+                        onClick={() => toggleSpec(s)}
+                        className="flex items-center gap-3 flex-1 min-w-0 py-3"
+                      >
+                        <span className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+                          selected
+                            ? "bg-primary border-primary"
+                            : "border-border bg-background"
+                        }`}>
+                          {selected && <Check size={13} className="text-white" strokeWidth={2.5} />}
+                        </span>
+                        <span className={`text-sm leading-snug ${selected ? "text-foreground font-medium" : "text-muted-foreground"}`}>
+                          {s}
+                        </span>
+                      </button>
+
+                      {/* Inline price input — only when selected */}
+                      {selected && (
+                        <div className="relative flex-shrink-0">
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={prices[s] ?? ""}
+                            onChange={e => setPrices(p => ({ ...p, [s]: e.target.value.replace(/\D/g, "") }))}
+                            placeholder="0"
+                            className="w-24 h-10 pl-3 pr-7 rounded-xl border border-border bg-background text-sm text-right focus:outline-none focus:ring-2 focus:ring-primary/40"
+                          />
+                          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">₽</span>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
+
+          {/* Save button at bottom for easy reach */}
+          <button
+            onClick={handleSave}
+            disabled={loading}
+            className="w-full h-13 bg-primary text-white font-bold rounded-2xl text-base active:opacity-80 disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {loading
+              ? <Loader2 size={18} className="animate-spin" />
+              : <Check size={18} />}
+            Сохранить изменения
+          </button>
 
         </div>
       </div>
