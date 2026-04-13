@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Loader2, TrendingUp, TrendingDown, Users, DollarSign, Target, BarChart3,
   AlertCircle, CheckCircle2, Clock, UserX, Ban, Receipt, ArrowRight, Star,
-  ShieldAlert, CalendarDays, Zap, FileText,
+  ShieldAlert, CalendarDays, Zap, FileText, Wallet,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { ProtectedRoute } from "@/hooks/use-auth";
@@ -107,6 +107,13 @@ export default function Dashboard() {
     queryFn: () => fetch("/api/finance/overdue-masters", { credentials: "include" }).then(r => r.json()),
     refetchInterval: 60_000,
   });
+  const { data: avitoBalanceData } = useQuery<{ balance: number; error?: string }>({
+    queryKey: ["/api/avito/balance"],
+    queryFn: () => fetch("/api/avito/balance", { credentials: "include" }).then(r => r.json()),
+    refetchInterval: 60 * 60_000,
+    retry: false,
+  });
+  const avitoBalance = avitoBalanceData?.error ? null : (avitoBalanceData?.balance ?? null);
 
   const s = stats as any;
   const alerts = s ? [
@@ -178,6 +185,16 @@ export default function Dashboard() {
                   href="/masters"
                   accent="blue"
                 />
+                {avitoBalance !== null && (
+                  <StatCard
+                    title="Баланс Авито"
+                    value={`${(avitoBalance / 100).toLocaleString("ru-RU")} ₽`}
+                    subtitle="Кошелёк Авито"
+                    icon={Wallet}
+                    href="/avito"
+                    accent={avitoBalance < 100000 ? "red" : "green"}
+                  />
+                )}
               </div>
 
               {/* Attention block */}

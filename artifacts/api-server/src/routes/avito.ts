@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { db, avitoSettingsTable, leadsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { db, avitoSettingsTable, leadsTable, systemSettingsTable } from "@workspace/db";
+import { eq, inArray } from "drizzle-orm";
 import OpenAI from "openai";
 
 const router = Router();
@@ -309,7 +309,7 @@ router.get("/oauth-start", async (req, res) => {
   // - no state required (optional)
   // user:read is required for /accounts/self (to get avitoUserId for messenger API)
   // items:info is required for listings/ads access
-  const authUrl = `https://avito.ru/oauth?response_type=code&client_id=${encodeURIComponent(client_id)}&scope=messenger:read,messenger:write,user:read,items:info`;
+  const authUrl = `https://avito.ru/oauth?response_type=code&client_id=${encodeURIComponent(client_id)}&scope=messenger:read,messenger:write,user:read,user_balance:read,items:info,stats:read`;
 
   console.log(`[avito:oauth-start] redirect → ${authUrl}`);
   res.redirect(authUrl);
@@ -395,8 +395,8 @@ router.get("/callback", async (req, res) => {
   }
 });
 
-// GET /api/avito/chats — list chats
-router.get("/chats", async (_req, res) => {
+// GET /api/avito/chats — list chats (v2 per official docs)
+router.get("/chats", async (req, res) => {
   const token = await getValidToken();
   if (!token) return res.status(403).json({ error: "Авито не подключён" });
 
@@ -404,18 +404,25 @@ router.get("/chats", async (_req, res) => {
   const userId = settings?.avitoUserId;
   if (!userId) return res.status(400).json({ error: "Нет ID пользователя Авито" });
 
+  const limit = Number(req.query.limit) || 100;
+  const unreadOnly = req.query.unread_only === "true" ? "&unread_only=true" : "";
+  const itemId = req.query.item_id ? `&item_id=${req.query.item_id}` : "";
+
   try {
+    console.log(`[avito:chats] GET /messenger/v2/accounts/${userId}/chats limit=${limit}`);
     const data = await avitoGet(
-      `/messenger/v3/accounts/${userId}/chats?limit=50&unread_only=false`,
+      `/messenger/v2/accounts/${userId}/chats?limit=${limit}${unreadOnly}${itemId}`,
       token
     ) as any;
+    console.log(`[avito:chats] got ${data?.chats?.length ?? 0} chats`);
     res.json(data);
   } catch (e: any) {
+    console.error(`[avito:chats] error:`, e.message);
     res.status(500).json({ error: e.message });
   }
 });
 
-// GET /api/avito/chats/:chatId/messages
+// GET /api/avito/chats/:chatId/messages (v3 per official docs)
 router.get("/chats/:chatId/messages", async (req, res) => {
   const token = await getValidToken();
   if (!token) return res.status(403).json({ error: "Авито не подключён" });
@@ -424,18 +431,22 @@ router.get("/chats/:chatId/messages", async (req, res) => {
   const userId = settings?.avitoUserId;
   if (!userId) return res.status(400).json({ error: "Нет ID пользователя Авито" });
 
+  const limit = Number(req.query.limit) || 100;
   try {
+    console.log(`[avito:messages] GET /messenger/v3/accounts/${userId}/chats/${req.params.chatId}/messages`);
     const data = await avitoGet(
-      `/messenger/v3/accounts/${userId}/chats/${req.params.chatId}/messages/?limit=100`,
+      `/messenger/v3/accounts/${userId}/chats/${req.params.chatId}/messages?limit=${limit}`,
       token
     ) as any;
+    console.log(`[avito:messages] got ${data?.messages?.length ?? 0} messages`);
     res.json(data);
   } catch (e: any) {
+    console.error(`[avito:messages] error:`, e.message);
     res.status(500).json({ error: e.message });
   }
 });
 
-// POST /api/avito/chats/:chatId/reply
+// POST /api/avito/chats/:chatId/reply — отправить сообщение (v1 per official docs)
 router.post("/chats/:chatId/reply", async (req, res) => {
   const token = await getValidToken();
   if (!token) return res.status(403).json({ error: "Авито не подключён" });
@@ -448,16 +459,134 @@ router.post("/chats/:chatId/reply", async (req, res) => {
   if (!text?.trim()) return res.status(400).json({ error: "Нужен текст сообщения" });
 
   try {
+    console.log(`[avito:send] POST /messenger/v1/accounts/${userId}/chats/${req.params.chatId}/messages`);
     const data = await avitoPost(
-      `/messenger/v3/accounts/${userId}/chats/${req.params.chatId}/messages`,
+      `/messenger/v1/accounts/${userId}/chats/${req.params.chatId}/messages`,
       token,
       { message: { text }, type: "text" }
     );
+    console.log(`[avito:send] sent OK`);
     res.json(data);
+  } catch (e: any) {
+    console.error(`[avito:send] error:`, e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/avito/chats/:chatId/read — отметить чат прочитанным (v1 per official docs)
+router.post("/chats/:chatId/read", async (req, res) => {
+  const token = await getValidToken();
+  if (!token) return res.status(403).json({ error: "Авито не подключён" });
+
+  const settings = await getSettings();
+  const userId = settings?.avitoUserId;
+  if (!userId) return res.status(400).json({ error: "Нет ID пользователя Авито" });
+
+  try {
+    console.log(`[avito:read] POST /messenger/v1/accounts/${userId}/chats/${req.params.chatId}/read`);
+    await avitoPost(
+      `/messenger/v1/accounts/${userId}/chats/${req.params.chatId}/read`,
+      token,
+      {}
+    );
+    res.json({ ok: true });
+  } catch (e: any) {
+    console.error(`[avito:read] error:`, e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/avito/balance — баланс кошелька
+router.get("/balance", async (_req, res) => {
+  const token = await getValidToken();
+  if (!token) return res.status(403).json({ error: "Авито не подключён" });
+
+  const settings = await getSettings();
+  const userId = settings?.avitoUserId;
+  if (!userId) return res.status(400).json({ error: "Нет ID пользователя Авито" });
+
+  try {
+    console.log(`[avito:balance] GET /core/v1/accounts/${userId}/balance/`);
+    const data = await avitoGet(`/core/v1/accounts/${userId}/balance/`, token) as any;
+    console.log(`[avito:balance] balance =`, data?.result?.real);
+    res.json({ balance: data?.result?.real ?? data?.result?.total ?? 0, raw: data });
+  } catch (e: any) {
+    console.error(`[avito:balance] error:`, e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/avito/unread-count — количество непрочитанных чатов
+router.get("/unread-count", async (_req, res) => {
+  const token = await getValidToken();
+  if (!token) return res.json({ count: 0 });
+
+  const settings = await getSettings();
+  const userId = settings?.avitoUserId;
+  if (!userId) return res.json({ count: 0 });
+
+  try {
+    const data = await avitoGet(
+      `/messenger/v2/accounts/${userId}/chats?limit=100&unread_only=true`,
+      token
+    ) as any;
+    const count = data?.chats?.length ?? 0;
+    res.json({ count });
+  } catch {
+    res.json({ count: 0 });
+  }
+});
+
+// GET /api/avito/quick-replies — получить быстрые ответы
+router.get("/quick-replies", async (_req, res) => {
+  try {
+    const [row] = await db.select().from(systemSettingsTable)
+      .where(eq(systemSettingsTable.key, "avito_quick_replies"));
+    const replies = row ? JSON.parse(row.value) : getDefaultQuickReplies();
+    res.json({ replies });
+  } catch {
+    res.json({ replies: getDefaultQuickReplies() });
+  }
+});
+
+// PUT /api/avito/quick-replies — сохранить быстрые ответы
+router.put("/quick-replies", async (req, res) => {
+  const { replies } = req.body as { replies: Array<{ id: string; label: string; text: string }> };
+  if (!Array.isArray(replies)) return res.status(400).json({ error: "replies must be array" });
+  try {
+    await db.insert(systemSettingsTable)
+      .values({ key: "avito_quick_replies", value: JSON.stringify(replies) })
+      .onConflictDoUpdate({ target: systemSettingsTable.key, set: { value: JSON.stringify(replies) } });
+    res.json({ ok: true });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
 });
+
+function getDefaultQuickReplies() {
+  return [
+    {
+      id: "prices",
+      label: "Цены",
+      text: "Здравствуйте!\nОбои от 300₽/м²\nШпаклёвка от 350₽/м²\nПокраска от 200₽/м²\nПлитка от 1200₽/м²\n\nПодскажите:\n1. Какой район?\n2. Примерная площадь?\n3. Когда хотите начать?"
+    },
+    {
+      id: "master",
+      label: "Мастер",
+      text: "Отлично! Сейчас подберу мастера из вашего района.\nОн свяжется с вами в течение часа.\nСкиньте номер для связи 👍"
+    },
+    {
+      id: "warranty",
+      label: "Гарантия",
+      text: "После работы выдаём гарантийный сертификат на 2 года.\nЕсли что-то отклеится — переделаем бесплатно 👍"
+    },
+    {
+      id: "brigade",
+      label: "Бригада",
+      text: "Да, мы частная бригада, работаем по районам.\nЦены одинаковые.\nКто ближе — тот и выезжает."
+    },
+  ];
+}
 
 // POST /api/avito/leads — создать заявку из чата
 router.post("/leads", async (req, res) => {
@@ -733,7 +862,7 @@ router.post("/ai-analyze", async (_req, res) => {
 
   try {
     const itemsData = await avitoGet(
-      `/core/v1/accounts/${userId}/items?per_page=100`,
+      `/core/v1/items?per_page=100`,
       token
     ) as any;
     items = itemsData.resources ?? [];

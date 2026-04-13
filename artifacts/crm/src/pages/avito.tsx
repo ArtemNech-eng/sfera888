@@ -13,7 +13,7 @@ import {
   ChevronRight, ExternalLink, Plug, Unplug, AlertCircle,
   LayoutGrid, BarChart3, Eye, Phone, Heart, Wifi, WifiOff,
   TrendingUp, TrendingDown, Minus, Sparkles, Loader2, Star,
-  Package, Search, Filter, X, FileText, Copy,
+  Package, Search, Filter, X, FileText, Copy, Zap, Plus, Trash2, Pencil,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -150,6 +150,194 @@ const REPLY_TEMPLATES = [
     text: "Оставьте, пожалуйста, номер телефона — наш менеджер свяжется с вами в течение часа.",
   },
 ];
+
+// ── Quick Replies Manager ──────────────────────────────────────────────────
+
+interface QuickReplyItem {
+  id: string;
+  label: string;
+  text: string;
+}
+
+function QuickRepliesManager() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [editing, setEditing] = useState<QuickReplyItem | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [newLabel, setNewLabel] = useState("");
+  const [newText, setNewText] = useState("");
+
+  const { data, isLoading } = useQuery<{ replies: QuickReplyItem[] }>({
+    queryKey: ["/api/avito/quick-replies"],
+    queryFn: () => fetch(`${BASE}/api/avito/quick-replies`, { credentials: "include" }).then(r => r.json()),
+  });
+  const replies = data?.replies ?? [];
+
+  const saveMutation = useMutation({
+    mutationFn: async (next: QuickReplyItem[]) => {
+      const r = await fetch(`${BASE}/api/avito/quick-replies`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ replies: next }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      return r.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/avito/quick-replies"] });
+      toast({ title: "Сохранено" });
+      setEditing(null);
+      setCreating(false);
+      setNewLabel("");
+      setNewText("");
+    },
+    onError: (e: any) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
+  });
+
+  const handleAdd = () => {
+    if (!newLabel.trim() || !newText.trim()) return;
+    const item: QuickReplyItem = {
+      id: crypto.randomUUID?.() ?? String(Date.now()),
+      label: newLabel.trim(),
+      text: newText.trim(),
+    };
+    saveMutation.mutate([...replies, item]);
+  };
+
+  const handleDelete = (id: string) => {
+    saveMutation.mutate(replies.filter(r => r.id !== id));
+  };
+
+  const handleSaveEdit = () => {
+    if (!editing) return;
+    saveMutation.mutate(replies.map(r => r.id === editing.id ? editing : r));
+  };
+
+  return (
+    <div className="space-y-4 max-w-2xl">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Zap className="w-4 h-4 text-amber-500" />
+            Быстрые ответы
+          </CardTitle>
+          <CardDescription>
+            Кнопки быстрых ответов отображаются в мессенджере Авито над полем ввода. Нажмите — текст вставится в поле.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {isLoading ? (
+            <div className="flex items-center gap-2 text-muted-foreground text-sm py-4">
+              <Loader2 className="w-4 h-4 animate-spin" /> Загрузка...
+            </div>
+          ) : (
+            <>
+              {replies.map(reply => (
+                <div key={reply.id} className="border rounded-xl p-4 space-y-2 bg-card">
+                  {editing?.id === reply.id ? (
+                    <>
+                      <div className="flex gap-2">
+                        <Input
+                          value={editing.label}
+                          onChange={e => setEditing({ ...editing, label: e.target.value })}
+                          placeholder="Название кнопки"
+                          className="text-sm h-8 flex-1"
+                        />
+                      </div>
+                      <Textarea
+                        value={editing.text}
+                        onChange={e => setEditing({ ...editing, text: e.target.value })}
+                        placeholder="Текст ответа..."
+                        className="text-sm resize-none"
+                        rows={4}
+                      />
+                      <div className="flex gap-2">
+                        <Button size="sm" onClick={handleSaveEdit} disabled={saveMutation.isPending} className="h-7 text-xs">
+                          Сохранить
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setEditing(null)} className="h-7 text-xs">
+                          Отмена
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium text-sm px-2 py-0.5 rounded-full border border-orange-200 bg-orange-50 text-orange-700">
+                          {reply.label}
+                        </span>
+                        <div className="flex gap-1">
+                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditing(reply)}>
+                            <Pencil className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7 text-destructive hover:text-destructive"
+                            onClick={() => handleDelete(reply.id)}
+                            disabled={saveMutation.isPending}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground whitespace-pre-wrap pl-1">{reply.text}</p>
+                    </>
+                  )}
+                </div>
+              ))}
+
+              {/* Add new */}
+              {creating ? (
+                <div className="border-2 border-dashed border-primary/30 rounded-xl p-4 space-y-2 bg-primary/5">
+                  <Input
+                    value={newLabel}
+                    onChange={e => setNewLabel(e.target.value)}
+                    placeholder="Название кнопки (например: «Цены»)"
+                    className="text-sm h-8"
+                    autoFocus
+                  />
+                  <Textarea
+                    value={newText}
+                    onChange={e => setNewText(e.target.value)}
+                    placeholder="Текст быстрого ответа..."
+                    className="text-sm resize-none"
+                    rows={4}
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      onClick={handleAdd}
+                      disabled={saveMutation.isPending || !newLabel.trim() || !newText.trim()}
+                      className="h-7 text-xs"
+                    >
+                      {saveMutation.isPending && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
+                      Добавить
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => { setCreating(false); setNewLabel(""); setNewText(""); }} className="h-7 text-xs">
+                      Отмена
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCreating(true)}
+                  className="w-full h-9 border-dashed gap-2 text-muted-foreground hover:text-foreground"
+                >
+                  <Plus className="w-4 h-4" />
+                  Добавить быстрый ответ
+                </Button>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
 // ── Component ──────────────────────────────────────────────────────────────
 
@@ -564,6 +752,10 @@ export default function AvitoPage() {
               <TabsTrigger value="analytics" className="flex items-center gap-1.5">
                 <BarChart3 className="w-4 h-4" />
                 Аналитика
+              </TabsTrigger>
+              <TabsTrigger value="quick-replies" className="flex items-center gap-1.5">
+                <Zap className="w-4 h-4" />
+                Быстрые ответы
               </TabsTrigger>
             </TabsList>
 
@@ -1114,6 +1306,12 @@ export default function AvitoPage() {
                 </CardContent>
               </Card>
             </TabsContent>
+
+            {/* ════════════════ QUICK REPLIES TAB ════════════════ */}
+            <TabsContent value="quick-replies">
+              <QuickRepliesManager />
+            </TabsContent>
+
           </Tabs>
         )}
       </div>
