@@ -21,7 +21,8 @@ async function getSettings() {
 
 // Minimal scopes — only what is approved by default in Avito developer apps
 // Extra scopes (stats:read, autouploading:read) can cause "Что-то пошло не так" if not whitelisted
-const AVITO_SCOPES = "items:info messenger:read messenger:write user:read user_balance:read";
+// items:write is required for toggle/schedule — must be enabled in your Avito developer app settings first
+const AVITO_SCOPES = "items:info items:write messenger:read messenger:write user:read user_balance:read";
 
 async function fetchToken(clientId: string, clientSecret: string) {
   const res = await fetch(`${AVITO_API}/token`, {
@@ -1098,12 +1099,13 @@ router.post("/items/:itemId/toggle", async (req, res) => {
   if (!action) return res.status(400).json({ error: "Нужен action: activate | deactivate" });
 
   try {
-    // Avito API: PATCH /core/v1/accounts/{userId}/items/{itemId}
-    // Requires items:write scope — gracefully handle if not available
-    const url = `${AVITO_API}/core/v1/accounts/${userId}/items/${itemId}`;
-    const body = { status: action === "activate" ? "active" : "closed" };
+    // Avito API: PUT /core/v1/accounts/{userId}/items/{itemId}/status/
+    // body: { action: "activate" | "close" }
+    // Requires items:write scope
+    const url = `${AVITO_API}/core/v1/accounts/${userId}/items/${itemId}/status/`;
+    const body = { action: action === "activate" ? "activate" : "close" };
     const resp = await fetch(url, {
-      method: "PATCH",
+      method: "PUT",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
@@ -1540,16 +1542,18 @@ export async function runAvitoSchedule(action: "activate" | "deactivate") {
       return { ok: true, results: [] };
     }
 
-    const apiStatus = action === "activate" ? "active" : "closed";
+    const apiAction = action === "activate" ? "activate" : "close";
     const results: { itemId: string; title: string; ok: boolean; error?: string }[] = [];
 
     for (const item of enabled) {
       try {
-        const url = `${AVITO_API}/core/v1/accounts/${userId}/items/${item.itemId}`;
+        // Correct Avito API endpoint: PUT /core/v1/accounts/{userId}/items/{itemId}/status/
+        // body: { action: "activate" | "close" }  — requires items:write scope
+        const url = `${AVITO_API}/core/v1/accounts/${userId}/items/${item.itemId}/status/`;
         const resp = await fetch(url, {
-          method: "PATCH",
+          method: "PUT",
           headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ status: apiStatus }),
+          body: JSON.stringify({ action: apiAction }),
         });
         const text = await resp.text();
         console.log(`[avito:schedule] ${action} item ${item.itemId} → ${resp.status}: ${text.slice(0, 120)}`);
