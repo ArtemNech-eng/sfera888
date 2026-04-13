@@ -90,16 +90,28 @@ class AvitoApiError extends Error {
 
 /** Получить аванс через CPA API Авито
  *  POST /cpa/v2/balanceInfo — возвращает {"advance": N, "balance": M} в копейках
- *  Документация: API CPA Авито — раздел "Баланс"
+ *  CPA API требует ClientCredentials токен (не OAuth Authorization Code!):
+ *    grant_type=client_credentials + client_id + client_secret
  */
-async function getAdvanceBalance(token: string, _userId: string, manualFallback: number): Promise<{ balanceRub: number; source: string; needsReauth: boolean }> {
+async function getAdvanceBalance(_token: string, _userId: string, manualFallback: number): Promise<{ balanceRub: number; source: string; needsReauth: boolean }> {
   try {
+    const settings = await getSettings();
+    if (!settings?.clientId || !settings?.clientSecret) {
+      console.log(`[avito:advance] no client_id/client_secret, using manual fallback`);
+      return { balanceRub: manualFallback, source: "manual", needsReauth: false };
+    }
+
+    // CPA API requires client_credentials token — separate from OAuth user token
+    console.log(`[avito:advance] getting client_credentials token for CPA API`);
+    const tokenData = await fetchToken(settings.clientId, settings.clientSecret);
+    const cpaToken = tokenData.access_token;
+
     const cpaUrl = `${AVITO_API}/cpa/v2/balanceInfo`;
     console.log(`[avito:advance] → POST ${cpaUrl}`);
     const resp = await fetch(cpaUrl, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${cpaToken}`,
         "Content-Type": "application/json",
         "X-Source": "sfera-master",
       },
@@ -109,7 +121,7 @@ async function getAdvanceBalance(token: string, _userId: string, manualFallback:
     console.log(`[avito:advance] ← status=${resp.status} body=${bodyText.slice(0, 400)}`);
 
     if (resp.status === 401 || resp.status === 403) {
-      console.log(`[avito:advance] ${resp.status} — unauthorized, using manual fallback=${manualFallback}`);
+      console.log(`[avito:advance] ${resp.status} — unauthorized`);
       return { balanceRub: manualFallback, source: "manual", needsReauth: true };
     }
     if (!resp.ok) {
