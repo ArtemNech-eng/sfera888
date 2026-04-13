@@ -132,19 +132,23 @@ async function getAdvanceBalance(_token: string, _userId: string, manualFallback
     let data: any = {};
     try { data = JSON.parse(bodyText); } catch { data = {}; }
 
-    // Response: {"result":{"advance": 9000, "balance": -5000, "debt": 0}} — values in KOPECKS
-    const advanceKop = data?.result?.advance ?? data?.advance;
-    const balanceKop = data?.result?.balance ?? data?.balance;
-    console.log(`[avito:advance] advance=${advanceKop} kopecks, balance=${balanceKop} kopecks`);
+    // Response: {"result":{"advance": N, "balance": M, "debt": 0}} — values in KOPECKS
+    // balance = текущий CPA баланс (основная метрика для отслеживания)
+    // advance = аванс текущего месяца (может быть почти нулевым)
+    const result = data?.result ?? data;
+    const balanceKop = result?.balance;
+    const advanceKop = result?.advance;
+    const debtKop = result?.debt;
+    console.log(`[avito:advance] balance=${balanceKop} advance=${advanceKop} debt=${debtKop} (kopecks)`);
 
-    if (typeof advanceKop === "number") {
-      const advanceRub = Math.round(advanceKop / 100);
-      console.log(`[avito:advance] ✅ аванс=${advanceRub}₽`);
-      return { balanceRub: advanceRub, source: "cpa", needsReauth: false };
+    if (typeof balanceKop === "number") {
+      const balanceRub = Math.round(balanceKop / 100);
+      console.log(`[avito:advance] ✅ CPA баланс=${balanceRub}₽`);
+      return { balanceRub, source: "cpa", needsReauth: false };
     }
 
-    // advance field absent (v3 response?) — fallback
-    console.log(`[avito:advance] no advance field in response, using manual fallback=${manualFallback}`);
+    // no balance field — fallback
+    console.log(`[avito:advance] no balance field in response, using manual fallback=${manualFallback}`);
     return { balanceRub: manualFallback, source: "manual", needsReauth: false };
   } catch (e: any) {
     console.log(`[avito:advance] error: ${e.message}`);
