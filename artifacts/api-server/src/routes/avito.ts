@@ -115,7 +115,9 @@ async function avitoPost(path: string, token: string, body: object) {
 // ── OAuth helpers ─────────────────────────────────────────────────────────────
 
 const REDIRECT_URI = "https://sfera-master.ru/api/avito/callback";
-const CRM_AVITO_URL = "https://sfera-master.ru/crm/avito";
+// Redirect to CRM root — static file servers don't support SPA sub-routes.
+// App.tsx will detect ?avito_connected=1 / ?avito_error=... and navigate to /avito.
+const CRM_AVITO_URL = "https://sfera-master.ru/crm/";
 
 /** Render a self-closing HTML page that shows status and redirects to CRM */
 function oauthResultPage(ok: boolean, title: string, subtitle: string): string {
@@ -305,7 +307,9 @@ router.get("/oauth-start", async (req, res) => {
   // - redirect_uri is NOT included (Avito uses the one registered in developer console)
   // - scope uses COMMA separator, NOT space
   // - no state required (optional)
-  const authUrl = `https://avito.ru/oauth?response_type=code&client_id=${encodeURIComponent(client_id)}&scope=messenger:read,messenger:write`;
+  // user:read is required for /accounts/self (to get avitoUserId for messenger API)
+  // items:info is required for listings/ads access
+  const authUrl = `https://avito.ru/oauth?response_type=code&client_id=${encodeURIComponent(client_id)}&scope=messenger:read,messenger:write,user:read,items:info`;
 
   console.log(`[avito:oauth-start] redirect → ${authUrl}`);
   res.redirect(authUrl);

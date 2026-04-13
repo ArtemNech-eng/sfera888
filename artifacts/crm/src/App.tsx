@@ -32,11 +32,20 @@ function InAppRedirect({ to }: { to: string }) {
   return null;
 }
 
+function RootRedirect() {
+  const params = new URLSearchParams(window.location.search);
+  const avitoConnected = params.get("avito_connected");
+  const avitoError = params.get("avito_error");
+  if (avitoConnected) return <InAppRedirect to={`/avito?avito_connected=1`} />;
+  if (avitoError) return <InAppRedirect to={`/avito?avito_error=${encodeURIComponent(avitoError)}`} />;
+  return <InAppRedirect to="/dashboard" />;
+}
+
 function Router() {
   return (
     <Switch>
       <Route path="/login" component={Login} />
-      <Route path="/" component={() => <InAppRedirect to="/dashboard" />} />
+      <Route path="/" component={RootRedirect} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/leads" component={Leads} />
       <Route path="/orders" component={Orders} />
