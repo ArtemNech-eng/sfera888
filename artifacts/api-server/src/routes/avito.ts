@@ -96,22 +96,26 @@ async function getAdvanceBalance(token: string, userId: string, manualFallback: 
   try {
     const today = new Date().toISOString().slice(0, 10);
     const ninetyDaysAgo = new Date(Date.now() - 90 * 86400_000).toISOString().slice(0, 10);
-    const opsResp = await fetch(`${AVITO_API}/core/v1/accounts/${userId}/operations/history/`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ dateFrom: ninetyDaysAgo, dateTo: today }),
+    // Avito operations history — GET with query params (not POST)
+    const opsUrl = `${AVITO_API}/core/v1/accounts/${userId}/operations/history/?dateFrom=${ninetyDaysAgo}&dateTo=${today}`;
+    console.log(`[avito:advance] → GET ${opsUrl}`);
+    const opsResp = await fetch(opsUrl, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` },
     });
+    const opsBodyText = await opsResp.text();
+    console.log(`[avito:advance] ← status=${opsResp.status} body=${opsBodyText.slice(0, 500)}`);
+
     if (opsResp.status === 403 || opsResp.status === 401) {
-      // Token lacks user_operations:read scope
-      console.log(`[avito:advance] ops ${opsResp.status} — need user_operations:read scope, using manual fallback=${manualFallback}`);
+      console.log(`[avito:advance] ${opsResp.status} — need user_operations:read scope, using manual fallback=${manualFallback}`);
       return { balanceRub: manualFallback, source: "manual", needsReauth: true };
     }
     if (!opsResp.ok) {
-      const errText = await opsResp.text();
-      console.log(`[avito:advance] ops error ${opsResp.status}: ${errText.slice(0, 200)}`);
+      console.log(`[avito:advance] ops error ${opsResp.status}, using manual fallback=${manualFallback}`);
       return { balanceRub: manualFallback, source: "manual", needsReauth: false };
     }
-    const opsData = await opsResp.json() as any;
+    let opsData: any = {};
+    try { opsData = JSON.parse(opsBodyText); } catch { opsData = {}; }
     const ops: any[] = opsData?.operations ?? [];
     const types = [...new Set(ops.map((o: any) => o.operationType))];
     console.log(`[avito:advance] ops count=${ops.length} types=${JSON.stringify(types)}`);
