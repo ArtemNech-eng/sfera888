@@ -1508,4 +1508,160 @@ router.post("/webhook", async (req, res) => {
   // TODO: можно добавить создание уведомления или обработку автоответа
 });
 
+// ══════════════════════════════════════════════════════════════════════════════
+// РАСПИСАНИЕ ОБЪЯВЛЕНИЙ — вкл. 08:00 МСК, выкл. 20:00 МСК
+// Экспортируется для вызова из index.ts по расписанию
+// ══════════════════════════════════════════════════════════════════════════════
+
+export async function runAvitoSchedule(action: "activate" | "deactivate") {
+  try {
+    const token = await getValidToken();
+    if (!token) {
+      console.log("[avito:schedule] No valid token — skipping");
+      return { ok: false, error: "Нет токена Авито", results: [] };
+    }
+
+    const settings = await getSettings();
+    const userId = settings?.avitoUserId;
+    if (!userId) {
+      console.log("[avito:schedule] No userId — skipping");
+      return { ok: false, error: "Нет ID пользователя Авито", results: [] };
+    }
+
+    // Читаем список объявлений из БД
+    const rows = await db.select().from(systemSettingsTable)
+      .where(eq(systemSettingsTable.key, "avito_item_schedules"));
+    let items: Array<{ itemId: string; title: string; enabled: boolean }> = [];
+    try { items = JSON.parse(rows[0]?.value ?? "[]"); } catch {}
+
+    const enabled = items.filter(i => i.enabled);
+    if (enabled.length === 0) {
+      console.log("[avito:schedule] No enabled items to toggle");
+      return { ok: true, results: [] };
+    }
+
+    const apiStatus = action === "activate" ? "active" : "closed";
+    const results: { itemId: string; title: string; ok: boolean; error?: string }[] = [];
+
+    for (const item of enabled) {
+      try {
+        const url = `${AVITO_API}/core/v1/accounts/${userId}/items/${item.itemId}`;
+        const resp = await fetch(url, {
+          method: "PATCH",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ status: apiStatus }),
+        });
+        const text = await resp.text();
+        console.log(`[avito:schedule] ${action} item ${item.itemId} → ${resp.status}: ${text.slice(0, 120)}`);
+
+        if (resp.status === 403 || resp.status === 401) {
+          results.push({
+            itemId: item.itemId, title: item.title, ok: false,
+            error: "Нет прав. Нужна повторная авторизация с разрешением items:write в Авито.",
+          });
+        } else {
+          results.push({
+            itemId: item.itemId, title: item.title, ok: resp.ok,
+            error: resp.ok ? undefined : `Авито ${resp.status}: ${text.slice(0, 100)}`,
+          });
+        }
+      } catch (e: any) {
+        results.push({ itemId: item.itemId, title: item.title, ok: false, error: e.message });
+        console.error(`[avito:schedule] item ${item.itemId} error:`, e.message);
+      }
+    }
+
+    // Сохраняем лог последнего запуска
+    const log = { action, ts: new Date().toISOString(), results };
+    await db.insert(systemSettingsTable)
+      .values({ key: "avito_schedule_log", value: JSON.stringify(log) })
+      .onConflictDoUpdate({ target: systemSettingsTable.key, set: { value: JSON.stringify(log), updatedAt: new Date() } });
+
+    const okCount = results.filter(r => r.ok).length;
+    console.log(`[avito:schedule] ${action} complete: ${okCount}/${results.length} ok`);
+    return { ok: true, results };
+  } catch (e: any) {
+    console.error("[avito:schedule] unexpected error:", e.message);
+    return { ok: false, error: e.message, results: [] };
+  }
+}
+
+// GET /api/avito/schedules — список объявлений в расписании + лог
+router.get("/schedules", async (_req, res) => {
+  try {
+    const rows = await db.select().from(systemSettingsTable)
+      .where(inArray(systemSettingsTable.key, ["avito_item_schedules", "avito_schedule_log"]));
+    const getVal = (k: string) => rows.find(r => r.key === k)?.value ?? null;
+
+    let items: any[] = [];
+    try { items = JSON.parse(getVal("avito_item_schedules") ?? "[]"); } catch {}
+    let lastLog: any = null;
+    try { lastLog = JSON.parse(getVal("avito_schedule_log") ?? "null"); } catch {}
+
+    res.json({ items, lastLog });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/avito/schedules — добавить / обновить объявление в расписании
+router.post("/schedules", async (req, res) => {
+  const { itemId, title, enabled = true } = req.body as { itemId: string | number; title?: string; enabled?: boolean };
+  if (!itemId) return res.status(400).json({ error: "Нужен itemId" });
+
+  try {
+    const rows = await db.select().from(systemSettingsTable)
+      .where(eq(systemSettingsTable.key, "avito_item_schedules"));
+    let items: any[] = [];
+    try { items = JSON.parse(rows[0]?.value ?? "[]"); } catch {}
+
+    const strId = String(itemId);
+    const idx = items.findIndex((i: any) => i.itemId === strId);
+    if (idx >= 0) {
+      items[idx] = { ...items[idx], title: title ?? items[idx].title, enabled };
+    } else {
+      items.push({ itemId: strId, title: title ?? "Объявление", enabled });
+    }
+
+    await db.insert(systemSettingsTable)
+      .values({ key: "avito_item_schedules", value: JSON.stringify(items) })
+      .onConflictDoUpdate({ target: systemSettingsTable.key, set: { value: JSON.stringify(items), updatedAt: new Date() } });
+
+    console.log(`[avito:schedules] ${enabled ? "Added" : "Disabled"} item ${strId} — ${title}`);
+    res.json({ ok: true, items });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// DELETE /api/avito/schedules/:itemId — убрать из расписания
+router.delete("/schedules/:itemId", async (req, res) => {
+  const { itemId } = req.params;
+  try {
+    const rows = await db.select().from(systemSettingsTable)
+      .where(eq(systemSettingsTable.key, "avito_item_schedules"));
+    let items: any[] = [];
+    try { items = JSON.parse(rows[0]?.value ?? "[]"); } catch {}
+
+    items = items.filter((i: any) => i.itemId !== itemId);
+
+    await db.insert(systemSettingsTable)
+      .values({ key: "avito_item_schedules", value: JSON.stringify(items) })
+      .onConflictDoUpdate({ target: systemSettingsTable.key, set: { value: JSON.stringify(items), updatedAt: new Date() } });
+
+    console.log(`[avito:schedules] Removed item ${itemId}`);
+    res.json({ ok: true, items });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/avito/schedules/run — ручной запуск для теста
+router.post("/schedules/run", async (req, res) => {
+  const { action } = req.body as { action: "activate" | "deactivate" };
+  if (!action) return res.status(400).json({ error: "Нужен action: activate | deactivate" });
+  const result = await runAvitoSchedule(action);
+  res.json(result);
+});
+
 export default router;

@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
 import { Button } from "@/components/ui/button";
 import {
   X, ExternalLink, Eye, Phone, Heart, TrendingUp,
-  ShoppingBag, Loader2, ToggleLeft, ToggleRight, AlertCircle, Star,
+  ShoppingBag, Loader2, ToggleLeft, ToggleRight, AlertCircle, Star, Clock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -43,6 +43,25 @@ interface Props {
 }
 
 type Period = "today" | "week" | "month";
+
+interface ScheduleItem {
+  itemId: string;
+  title: string;
+  enabled: boolean;
+}
+
+interface ScheduleLogEntry {
+  itemId: string;
+  title: string;
+  ok: boolean;
+  error?: string;
+}
+
+interface ScheduleLog {
+  action: "activate" | "deactivate";
+  ts: string;
+  results: ScheduleLogEntry[];
+}
 
 function StatusBadge({ status }: { status: string }) {
   if (status === "active") return (
@@ -122,7 +141,7 @@ export function AvitoItemModal({ item, crmData, itemSpend, onClose }: Props) {
   const [toggleSuccess, setToggleSuccess] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
-  // ── Period stats — use precomputed values from item.stats ──────────────────
+  // ── Period stats ───────────────────────────────────────────────────────────
   const s = item.stats;
   const periodStats = period === "today"
     ? { views: s?.viewsDay ?? 0, contacts: s?.contactsDay ?? 0, favorites: s?.favsDay ?? 0 }
@@ -130,7 +149,7 @@ export function AvitoItemModal({ item, crmData, itemSpend, onClose }: Props) {
     ? { views: s?.viewsWeek ?? 0, contacts: s?.contactsWeek ?? 0, favorites: s?.favsWeek ?? 0 }
     : { views: s?.viewsMonth ?? 0, contacts: s?.contactsMonth ?? 0, favorites: s?.favsMonth ?? 0 };
 
-  // ── Chart from daily array ─────────────────────────────────────────────────
+  // ── Chart data ─────────────────────────────────────────────────────────────
   const chartData = (s?.daily ?? []).map(d => ({
     date: new Date(d.date).toLocaleDateString("ru-RU", { day: "numeric", month: "short" }),
     views: d.uniqViews,
@@ -153,7 +172,68 @@ export function AvitoItemModal({ item, crmData, itemSpend, onClose }: Props) {
   const cpo = spend !== null && spend > 0 && orders > 0 ? Math.round(spend / orders) : null;
   const roi = spend !== null && spend > 0 && revenue > 0 ? revenue / spend : null;
 
-  // ── Toggle endpoint ────────────────────────────────────────────────────────
+  // ── Schedule query ─────────────────────────────────────────────────────────
+  const { data: scheduleData } = useQuery<{ items: ScheduleItem[]; lastLog: ScheduleLog | null }>({
+    queryKey: ["/api/avito/schedules"],
+    queryFn: async () => {
+      const r = await fetch(`${BASE}/api/avito/schedules`, { credentials: "include" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    },
+    refetchInterval: 30_000,
+  });
+
+  const scheduledItem = scheduleData?.items.find(i => i.itemId === String(item.id));
+  const isScheduled = scheduledItem?.enabled ?? false;
+  const lastLog = scheduleData?.lastLog ?? null;
+
+  // ── Schedule mutation ──────────────────────────────────────────────────────
+  const scheduleMutation = useMutation({
+    mutationFn: async (enable: boolean) => {
+      if (!enable) {
+        const r = await fetch(`${BASE}/api/avito/schedules/${item.id}`, {
+          method: "DELETE",
+          credentials: "include",
+        });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+        return j;
+      } else {
+        const r = await fetch(`${BASE}/api/avito/schedules`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ itemId: item.id, title: item.title, enabled: true }),
+        });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+        return j;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/avito/schedules"] });
+    },
+  });
+
+  // ── Manual schedule run ────────────────────────────────────────────────────
+  const runMutation = useMutation({
+    mutationFn: async (action: "activate" | "deactivate") => {
+      const r = await fetch(`${BASE}/api/avito/schedules/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ action }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+      return j;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/avito/schedules"] });
+    },
+  });
+
+  // ── Toggle manual ──────────────────────────────────────────────────────────
   const toggleMutation = useMutation({
     mutationFn: async (action: "activate" | "deactivate") => {
       setToggleError(null);
@@ -177,6 +257,9 @@ export function AvitoItemModal({ item, crmData, itemSpend, onClose }: Props) {
     },
   });
 
+  // ── Log entry for this item ────────────────────────────────────────────────
+  const myLogEntry = lastLog?.results.find(r => r.itemId === String(item.id));
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 overflow-y-auto"
@@ -190,6 +273,11 @@ export function AvitoItemModal({ item, crmData, itemSpend, onClose }: Props) {
             <h2 className="text-base font-bold leading-snug line-clamp-2">{item.title}</h2>
             <div className="flex items-center flex-wrap gap-2 mt-1.5">
               <StatusBadge status={item.status} />
+              {isScheduled && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                  <Clock className="w-3 h-3" /> По расписанию
+                </span>
+              )}
               <span className="text-xs text-muted-foreground">ID: {item.id}</span>
               {city !== "—" && <span className="text-xs text-muted-foreground">📍 {city}</span>}
               {category !== "—" && <span className="text-xs text-muted-foreground">📂 {category}</span>}
@@ -282,7 +370,7 @@ export function AvitoItemModal({ item, crmData, itemSpend, onClose }: Props) {
             </div>
           </div>
 
-          {/* Chart — 30-day daily from item.stats.daily */}
+          {/* Chart */}
           {chartData.length > 0 ? (
             <div>
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
@@ -308,6 +396,85 @@ export function AvitoItemModal({ item, crmData, itemSpend, onClose }: Props) {
 
           {/* Recommendations */}
           <Recommendations roi={roi} convView={convView} convLead={convLead} />
+
+          {/* ═══ SCHEDULE SECTION ════════════════════════════════════════════ */}
+          <div className="border rounded-xl p-4 space-y-3 bg-blue-50/40 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold text-blue-900 dark:text-blue-200">Авто-расписание</p>
+                  <p className="text-xs text-blue-700 dark:text-blue-400">Вкл. в 08:00, выкл. в 20:00 (МСК)</p>
+                </div>
+              </div>
+
+              {/* Toggle switch */}
+              <button
+                disabled={scheduleMutation.isPending}
+                onClick={() => scheduleMutation.mutate(!isScheduled)}
+                className={cn(
+                  "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus-visible:outline-none disabled:opacity-50",
+                  isScheduled ? "bg-blue-600" : "bg-gray-300 dark:bg-gray-600"
+                )}
+                role="switch"
+                aria-checked={isScheduled}
+              >
+                <span
+                  className={cn(
+                    "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition-transform duration-200",
+                    isScheduled ? "translate-x-5" : "translate-x-0"
+                  )}
+                />
+              </button>
+            </div>
+
+            {/* Status / error for last schedule run of this item */}
+            {myLogEntry && (
+              <div className={cn(
+                "flex items-start gap-2 p-2.5 rounded-lg text-xs",
+                myLogEntry.ok
+                  ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
+                  : "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"
+              )}>
+                <span className="shrink-0 mt-0.5">{myLogEntry.ok ? "✅" : "⚠️"}</span>
+                <div>
+                  <span className="font-medium">
+                    Последний запуск — {lastLog?.action === "activate" ? "включение" : "выключение"}
+                    {" "}
+                    {new Date(lastLog!.ts).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}:
+                  </span>
+                  {" "}
+                  {myLogEntry.ok ? "выполнено успешно" : myLogEntry.error}
+                  {myLogEntry.error?.includes("items:write") && (
+                    <p className="mt-1 text-xs opacity-80">
+                      Для автоматического управления нужно переподключить Авито с правами на управление объявлениями.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Manual run buttons (for testing) */}
+            {isScheduled && (
+              <div className="flex items-center gap-2 pt-1">
+                <span className="text-xs text-blue-700 dark:text-blue-400">Тест:</span>
+                <button
+                  disabled={runMutation.isPending}
+                  onClick={() => runMutation.mutate("activate")}
+                  className="text-xs px-2.5 py-1 rounded-md bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-300 disabled:opacity-50 transition-colors"
+                >
+                  {runMutation.isPending ? <Loader2 className="w-3 h-3 inline animate-spin" /> : "▶ Включить сейчас"}
+                </button>
+                <button
+                  disabled={runMutation.isPending}
+                  onClick={() => runMutation.mutate("deactivate")}
+                  className="text-xs px-2.5 py-1 rounded-md bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-300 disabled:opacity-50 transition-colors"
+                >
+                  {runMutation.isPending ? <Loader2 className="w-3 h-3 inline animate-spin" /> : "⏹ Выключить сейчас"}
+                </button>
+              </div>
+            )}
+          </div>
 
           {/* Toggle feedback */}
           {toggleSuccess && (

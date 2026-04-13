@@ -12,6 +12,7 @@ import { autonomousAgent } from "./autonomousAgent.js";
 import { runProactiveChecks } from "./lib/dispatcherAI.js";
 import { checkResponseWindows } from "./lib/priorityAssign.js";
 import { backfillReceiptTransactions } from "./routes/receipts.js";
+import { runAvitoSchedule } from "./routes/avito.js";
 
 const port = Number(process.env["PORT"] || "8080");
 
@@ -600,6 +601,48 @@ setInterval(async () => {
   }
 }, 60 * 1000);
 console.log("[checkin] Dynamic broadcast scheduler started");
+
+// ─── Avito item schedule: 08:00 activate, 20:00 deactivate (MSK = UTC+3) ────
+let avitoScheduleActivateDate: string | null = null;
+let avitoScheduleDeactivateDate: string | null = null;
+
+// On startup — catch up missed windows
+(async () => {
+  try {
+    const { hhmm, today } = getMskTime();
+    if (hhmm >= "08:00" && hhmm < "20:00") {
+      avitoScheduleActivateDate = today; // mark as if we've activated today
+      console.log(`[avito:schedule] Startup: activate window already passed (${hhmm} MSK), marking activated`);
+    }
+    if (hhmm >= "20:00") {
+      avitoScheduleDeactivateDate = today;
+      console.log(`[avito:schedule] Startup: deactivate window already passed (${hhmm} MSK), marking deactivated`);
+    }
+  } catch (e) {
+    console.error("[avito:schedule] startup check error:", e);
+  }
+})();
+
+setInterval(async () => {
+  try {
+    const { hhmm, today } = getMskTime();
+
+    if (hhmm >= "08:00" && avitoScheduleActivateDate !== today) {
+      avitoScheduleActivateDate = today;
+      console.log(`[avito:schedule] 08:00 trigger — activating scheduled items`);
+      runAvitoSchedule("activate").catch(console.error);
+    }
+
+    if (hhmm >= "20:00" && avitoScheduleDeactivateDate !== today) {
+      avitoScheduleDeactivateDate = today;
+      console.log(`[avito:schedule] 20:00 trigger — deactivating scheduled items`);
+      runAvitoSchedule("deactivate").catch(console.error);
+    }
+  } catch (e) {
+    console.error("[avito:schedule] interval error:", e);
+  }
+}, 60 * 1000); // check every minute
+console.log("[avito:schedule] Avito item schedule watcher started (08:00 on / 20:00 off MSK)");
 
 app.listen(port, "0.0.0.0", () => {
   console.log(`Server listening on port ${port}`);

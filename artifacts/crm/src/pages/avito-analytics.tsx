@@ -9,7 +9,7 @@ import {
 import {
   TrendingUp, TrendingDown, Eye, Phone, DollarSign, Wallet, RefreshCw,
   ArrowUpDown, ArrowUp, ArrowDown, Download, AlertCircle, Trophy, AlertTriangle,
-  Minus, Loader2, Calendar, Info,
+  Minus, Loader2, Calendar, Info, Clock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AvitoItemModal } from "./AvitoItemModal";
@@ -184,6 +184,16 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettin
     enabled: connected,
     staleTime: 5 * 60_000,
   });
+
+  // Schedule — which items are on timed activation
+  const { data: scheduleData } = useQuery<{ items: { itemId: string; enabled: boolean }[] }>({
+    queryKey: ["/api/avito/schedules"],
+    queryFn: () => apiFetch("/api/avito/schedules"),
+    enabled: connected,
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+  const scheduledIds = useMemo(() => new Set((scheduleData?.items ?? []).filter(i => i.enabled).map(i => i.itemId)), [scheduleData]);
 
   // Auto-refresh items every 30s
   useQuery({
@@ -602,7 +612,12 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettin
                           onClick={() => setSelectedItem(item)}
                         >
                           <td className="px-3 py-2.5 max-w-[180px]">
-                            <p className="font-medium text-xs leading-tight line-clamp-2">{item.title}</p>
+                            <p className="font-medium text-xs leading-tight line-clamp-2 flex items-start gap-1">
+                              {scheduledIds.has(String(item.id)) && (
+                                <Clock className="w-3 h-3 mt-0.5 shrink-0 text-blue-500" title="По расписанию (08:00–20:00)" />
+                              )}
+                              {item.title}
+                            </p>
                             <p className="text-[10px] text-muted-foreground mt-0.5">ID: {item.id}</p>
                           </td>
                           <td className="px-3 py-2.5">
