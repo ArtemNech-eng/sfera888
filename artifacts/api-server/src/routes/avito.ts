@@ -132,9 +132,9 @@ async function getAdvanceBalance(_token: string, _userId: string, manualFallback
     let data: any = {};
     try { data = JSON.parse(bodyText); } catch { data = {}; }
 
-    // Response: {"advance": 9000, "balance": -5000, "debt": 0} — values in KOPECKS
-    const advanceKop = data?.advance;
-    const balanceKop = data?.balance;
+    // Response: {"result":{"advance": 9000, "balance": -5000, "debt": 0}} — values in KOPECKS
+    const advanceKop = data?.result?.advance ?? data?.advance;
+    const balanceKop = data?.result?.balance ?? data?.balance;
     console.log(`[avito:advance] advance=${advanceKop} kopecks, balance=${balanceKop} kopecks`);
 
     if (typeof advanceKop === "number") {
