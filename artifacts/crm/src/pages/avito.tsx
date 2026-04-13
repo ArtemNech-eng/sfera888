@@ -493,7 +493,7 @@ export default function AvitoPage() {
                   onClick={() => {
                     if (!clientId || !clientSecret) return;
                     setOauthLoading(true);
-                    window.location.href = `${BASE}/api/avito/oauth-start?client_id=${encodeURIComponent(clientId)}&client_secret=${encodeURIComponent(clientSecret)}`;
+                    window.location.href = `/api/avito/oauth-start?client_id=${encodeURIComponent(clientId)}&client_secret=${encodeURIComponent(clientSecret)}`;
                   }}
                 >
                   {oauthLoading
