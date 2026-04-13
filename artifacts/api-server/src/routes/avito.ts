@@ -161,13 +161,13 @@ function oauthResultPage(ok: boolean, title: string, subtitle: string): string {
 }
 
 async function exchangeCode(code: string, clientId: string, clientSecret: string) {
-  // redirect_uri NOT included: we didn't send it in the auth request,
-  // so per RFC 6749 we must not include it here either.
+  // redirect_uri included here because it was included in the auth request (RFC 6749 §4.1.3)
   const params = new URLSearchParams({
     grant_type: "authorization_code",
     client_id: clientId,
     client_secret: clientSecret,
     code,
+    redirect_uri: REDIRECT_URI,
   });
 
   console.log(`[avito:exchangeCode] POST ${AVITO_API}/token code_len=${code.length}`);
@@ -301,12 +301,13 @@ router.get("/oauth-start", async (req, res) => {
     });
   }
 
-  // ВАЖНО: НЕ передаём redirect_uri и scope в URL авторизации —
-  // Авито использует то, что зарегистрировано в приложении разработчика.
-  // Любое несовпадение приводит к ошибке «Что-то пошло не так».
+  // redirect_uri подтверждён пользователем как верный в Авито Developer Console.
+  // scope — только messenger (минимально необходимые), без user:read который может быть невалидным.
   const authUrl = new URL("https://avito.ru/oauth");
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set("client_id", client_id);
+  authUrl.searchParams.set("redirect_uri", REDIRECT_URI);
+  authUrl.searchParams.set("scope", "messenger:read messenger:write");
 
   console.log(`[avito:oauth-start] redirect → ${authUrl.toString()}`);
   res.redirect(authUrl.toString());
