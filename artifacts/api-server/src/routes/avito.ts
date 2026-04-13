@@ -115,7 +115,50 @@ async function avitoPost(path: string, token: string, body: object) {
 // ── OAuth helpers ─────────────────────────────────────────────────────────────
 
 const REDIRECT_URI = "https://sfera-master.ru/api/avito/callback";
-const CRM_URL = "https://sfera-master.ru/crm/avito";
+const CRM_AVITO_URL = "https://sfera-master.ru/crm/avito";
+
+/** Render a self-closing HTML page that shows status and redirects to CRM */
+function oauthResultPage(ok: boolean, title: string, subtitle: string): string {
+  const color = ok ? "#22c55e" : "#ef4444";
+  const icon = ok ? "✅" : "❌";
+  const redirectUrl = ok
+    ? `${CRM_AVITO_URL}?avito_connected=1`
+    : `${CRM_AVITO_URL}?avito_error=${encodeURIComponent(subtitle)}`;
+  return `<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>${ok ? "Авито подключён" : "Ошибка подключения"}</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+      background:#f8fafc;display:flex;align-items:center;justify-content:center;
+      min-height:100vh;padding:24px}
+    .card{background:#fff;border-radius:20px;box-shadow:0 4px 32px rgba(0,0,0,.12);
+      padding:40px 32px;max-width:420px;width:100%;text-align:center}
+    .icon{font-size:56px;margin-bottom:16px}
+    h1{font-size:22px;font-weight:700;color:#111;margin-bottom:8px}
+    p{font-size:14px;color:#6b7280;line-height:1.6;margin-bottom:24px}
+    .btn{display:inline-block;padding:12px 28px;background:${color};color:#fff;
+      font-size:15px;font-weight:600;border-radius:12px;text-decoration:none;
+      transition:opacity .2s}
+    .btn:hover{opacity:.85}
+    .note{margin-top:14px;font-size:12px;color:#9ca3af}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">${icon}</div>
+    <h1>${title}</h1>
+    <p>${subtitle}</p>
+    <a class="btn" href="${CRM_AVITO_URL}">Перейти в CRM →</a>
+    <div class="note">Автоматический переход через 3 секунды…</div>
+  </div>
+  <script>setTimeout(()=>location.href=${JSON.stringify(redirectUrl)},3000)</script>
+</body>
+</html>`;
+}
 
 async function exchangeCode(code: string, clientId: string, clientSecret: string) {
   const params = new URLSearchParams({
@@ -275,21 +318,31 @@ router.get("/callback", async (req, res) => {
     code?: string; error?: string; error_description?: string;
   };
 
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+
   if (error) {
     const desc = error_description ?? error;
     console.error(`[avito:callback] Авито вернул ошибку: error="${error}" description="${error_description}"`);
-    return res.redirect(`${CRM_URL}?avito_error=${encodeURIComponent(desc)}`);
+    return res.send(oauthResultPage(false, "Авито отклонил авторизацию", String(desc)));
   }
 
   if (!code) {
     console.error(`[avito:callback] Нет параметра code. Все параметры:`, req.query);
-    return res.redirect(`${CRM_URL}?avito_error=${encodeURIComponent("Авито не вернул code")}`);
+    return res.send(oauthResultPage(
+      false,
+      "Нет кода авторизации",
+      "Авито не вернул code. Убедитесь что вы открываете эту страницу через кнопку «Войти через Авито» в CRM, а не напрямую."
+    ));
   }
 
   const settings = await getSettings();
   if (!settings?.clientId || !settings?.clientSecret) {
     console.error(`[avito:callback] Нет сохранённых credentials в БД`);
-    return res.redirect(`${CRM_URL}?avito_error=${encodeURIComponent("Нет credentials — введите Client ID и Secret заново")}`);
+    return res.send(oauthResultPage(
+      false,
+      "Нет учётных данных",
+      "Введите Client ID и Client Secret в форме подключения CRM, затем нажмите «Войти через Авито» снова."
+    ));
   }
 
   try {
@@ -325,10 +378,14 @@ router.get("/callback", async (req, res) => {
     } as any).where(eq(avitoSettingsTable.id, settings.id));
 
     console.log(`[avito:callback] ✅ OAuth success user="${avitoUserName}" id="${avitoUserId}" expires="${expiresAt.toISOString()}"`);
-    res.redirect(`${CRM_URL}?avito_connected=1&avito_user=${encodeURIComponent(avitoUserName ?? avitoUserId ?? "")}`);
+    return res.send(oauthResultPage(
+      true,
+      "Авито успешно подключён ✅",
+      avitoUserName ? `Аккаунт: ${avitoUserName}` : "Токен получен и сохранён. Перенаправляем в CRM…"
+    ));
   } catch (e: any) {
     console.error(`[avito:callback] ❌ token exchange failed:`, e.message);
-    res.redirect(`${CRM_URL}?avito_error=${encodeURIComponent(e.message)}`);
+    return res.send(oauthResultPage(false, "Ошибка получения токена", e.message));
   }
 });
 
