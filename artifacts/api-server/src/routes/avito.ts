@@ -21,7 +21,7 @@ async function getSettings() {
 
 // Minimal scopes — only what is approved by default in Avito developer apps
 // Extra scopes (stats:read, autouploading:read) can cause "Что-то пошло не так" if not whitelisted
-const AVITO_SCOPES = "items:info messenger:read messenger:write user:read";
+const AVITO_SCOPES = "items:info messenger:read messenger:write user:read user_operations:read user_balance:read";
 
 async function fetchToken(clientId: string, clientSecret: string) {
   const res = await fetch(`${AVITO_API}/token`, {
@@ -775,13 +775,16 @@ router.get("/analytics", async (_req, res) => {
         const opsUrl = `${AVITO_API}/core/v1/accounts/${userId}/operations/?dateTimeFrom=${dateFrom}T00:00:00&dateTimeTo=${todayStr}T23:59:59&types[]=service&limit=200`;
         console.log(`[avito:analytics] → GET ${opsUrl}`);
         const opsResp = await fetch(opsUrl, { headers: { Authorization: `Bearer ${token}` } });
+        console.log(`[avito:analytics] ← operations status=${opsResp.status}`);
         if (opsResp.ok) {
           const opsData = await opsResp.json() as any;
           const operations: any[] = opsData?.result?.operations ?? opsData?.operations ?? [];
+          console.log(`[avito:analytics] operations count=${operations.length}, sample=${JSON.stringify(operations[0] ?? null)}`);
           const dailyMap: Record<string, number> = {};
+          let skippedPositive = 0;
           for (const op of operations) {
             const amount = typeof op.amount === "number" ? op.amount : 0;
-            if (amount >= 0) continue; // only debits (spending)
+            if (amount >= 0) { skippedPositive++; continue; } // only debits (spending)
             const amountRub = Math.abs(amount) / 100; // kopecks → rubles
             const opDate = op.operationDate ?? op.updatedAt ?? op.createdAt ?? "";
             const dateStr = String(opDate).split("T")[0];
@@ -800,14 +803,16 @@ router.get("/analytics", async (_req, res) => {
           spending.yesterday = Math.round(spending.yesterday);
           spending.month = Math.round(spending.month);
           spending.prevMonth = Math.round(spending.prevMonth);
-          console.log(`[avito:analytics] spending today=${spending.today} month=${spending.month} ops=${operations.length}`);
+          console.log(`[avito:analytics] spending today=${spending.today} month=${spending.month} ops=${operations.length} skipped_positive=${skippedPositive}`);
         } else {
           const errText = await opsResp.text();
-          console.warn(`[avito:analytics] operations ${opsResp.status}: ${errText.slice(0, 200)}`);
+          console.warn(`[avito:analytics] operations ${opsResp.status}: ${errText.slice(0, 400)}`);
         }
       } catch (e: any) {
         console.warn(`[avito:analytics] spending error: ${e.message}`);
       }
+    } else {
+      console.log(`[avito:analytics] skip spending — token=${!!token} userId=${userId}`);
     }
 
     // 3. CRM by city and category
