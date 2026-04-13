@@ -796,9 +796,12 @@ router.get("/analytics", async (_req, res) => {
           for (const g of groupings) {
             const dateStr: string = g.date ?? "";
             if (!dateStr) continue;
-            // value — рубли (float), slug "all" = все расходы
-            const allEntry = (g.spendings as any[])?.find((s: any) => s.slug === "all");
-            const amountRub = typeof allEntry?.value === "number" ? allEntry.value : 0;
+            // value — рубли (float). Пробуем slug "all", если нет — суммируем все типы
+            const spendings: any[] = g.spendings ?? [];
+            const allEntry = spendings.find((s: any) => s.slug === "all");
+            const amountRub = allEntry
+              ? (typeof allEntry.value === "number" ? allEntry.value : 0)
+              : spendings.reduce((sum: number, s: any) => sum + (typeof s.value === "number" ? s.value : 0), 0);
             spending.daily.push({ date: dateStr, amount: Math.round(amountRub) });
             if (dateStr === todayStr) spending.today += amountRub;
             if (dateStr === yesterdayStr) spending.yesterday += amountRub;
