@@ -94,57 +94,78 @@ class AvitoApiError extends Error {
  */
 async function getAdvanceBalance(token: string, userId: string, manualFallback: number): Promise<{ balanceRub: number; source: string; needsReauth: boolean }> {
   try {
-    // Avito operations history — GET with dateTimeFrom/dateTimeTo (ISO 8601 with timezone)
-    // Docs: GET /core/v1/accounts/{user_id}/operations/history/
-    // Response: { result: { operations: [...], meta: {...} } }
-    // Fields: amountReal (rubles), amountBonus, operationType: "credit"|"debit"|"bonus_credit"|"bonus_debit"
+    // Avito operations history — try multiple URL variants to find the working one
     const now = new Date();
     const ninetyDaysAgo = new Date(now.getTime() - 90 * 86400_000);
-    const dateTimeTo   = now.toISOString().replace("Z", "+03:00");
+    const dateFrom = ninetyDaysAgo.toISOString().slice(0, 10);
+    const dateTo   = now.toISOString().slice(0, 10);
     const dateTimeFrom = ninetyDaysAgo.toISOString().replace("Z", "+03:00");
-    const opsParams = new URLSearchParams({ dateTimeFrom, dateTimeTo, per_page: "100", page: "1" });
-    const opsUrl = `${AVITO_API}/core/v1/accounts/${userId}/operations/history/?${opsParams}`;
-    console.log(`[avito:advance] → GET ${opsUrl}`);
-    const opsResp = await fetch(opsUrl, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const opsBodyText = await opsResp.text();
-    console.log(`[avito:advance] ← status=${opsResp.status} body=${opsBodyText.slice(0, 800)}`);
+    const dateTimeTo   = now.toISOString().replace("Z", "+03:00");
 
-    if (opsResp.status === 403 || opsResp.status === 401) {
-      console.log(`[avito:advance] ${opsResp.status} — need user_operations:read scope, using manual fallback=${manualFallback}`);
-      return { balanceRub: manualFallback, source: "manual", needsReauth: true };
+    // Candidate URLs to try (in priority order)
+    const candidates = [
+      // v1 with simple date strings (most common in docs)
+      `${AVITO_API}/core/v1/accounts/${userId}/operations/history/?dateFrom=${dateFrom}&dateTo=${dateTo}&per_page=100`,
+      // v1 without trailing slash
+      `${AVITO_API}/core/v1/accounts/${userId}/operations/history?dateFrom=${dateFrom}&dateTo=${dateTo}&per_page=100`,
+      // v2 with simple dates
+      `${AVITO_API}/core/v2/accounts/${userId}/operations/history/?dateFrom=${dateFrom}&dateTo=${dateTo}&per_page=100`,
+      // v1 with ISO datetime + timezone
+      `${AVITO_API}/core/v1/accounts/${userId}/operations/history/?dateTimeFrom=${encodeURIComponent(dateTimeFrom)}&dateTimeTo=${encodeURIComponent(dateTimeTo)}&per_page=100`,
+      // No dates at all
+      `${AVITO_API}/core/v1/accounts/${userId}/operations/history/?per_page=25`,
+    ];
+
+    let opsBodyText = "";
+    let opsStatus = 0;
+    let workingUrl = "";
+    for (const url of candidates) {
+      console.log(`[avito:advance] → GET ${url}`);
+      const resp = await fetch(url, { method: "GET", headers: { Authorization: `Bearer ${token}` } });
+      const body = await resp.text();
+      console.log(`[avito:advance] ← status=${resp.status} body=${body.slice(0, 300)}`);
+      if (resp.status !== 404) {
+        opsBodyText = body;
+        opsStatus = resp.status;
+        workingUrl = url;
+        break;
+      }
     }
-    if (!opsResp.ok) {
-      console.log(`[avito:advance] ops error ${opsResp.status}, using manual fallback=${manualFallback}`);
+
+    if (opsStatus === 0) {
+      console.log(`[avito:advance] all candidates returned 404 — endpoint unavailable, using manual fallback=${manualFallback}`);
       return { balanceRub: manualFallback, source: "manual", needsReauth: false };
     }
+    if (opsStatus === 403 || opsStatus === 401) {
+      console.log(`[avito:advance] ${opsStatus} at ${workingUrl} — need user_operations:read scope`);
+      return { balanceRub: manualFallback, source: "manual", needsReauth: true };
+    }
+    if (opsStatus !== 200) {
+      console.log(`[avito:advance] error ${opsStatus} at ${workingUrl}, using manual fallback=${manualFallback}`);
+      return { balanceRub: manualFallback, source: "manual", needsReauth: false };
+    }
+
     let opsData: any = {};
     try { opsData = JSON.parse(opsBodyText); } catch { opsData = {}; }
 
-    // Response is { result: { operations: [...], meta: {...} } }
+    // Response: { result: { operations: [...] } } OR { operations: [...] }
     const ops: any[] = opsData?.result?.operations ?? opsData?.operations ?? [];
     const types = [...new Set(ops.map((o: any) => o.operationType))];
-    console.log(`[avito:advance] ops count=${ops.length} types=${JSON.stringify(types)}`);
+    console.log(`[avito:advance] ✅ url=${workingUrl} ops=${ops.length} types=${JSON.stringify(types)}`);
     if (ops.length > 0) console.log(`[avito:advance] ops[0]=${JSON.stringify(ops[0])}`);
 
-    // credit / bonus_credit = пополнение аванса
-    // debit / bonus_debit   = списание за просмотры/услуги
+    // credit / bonus_credit = пополнение; debit / bonus_debit = списание
     const deposits = ops.filter((o: any) => /credit/i.test(o.operationType ?? ""));
     const charges  = ops.filter((o: any) => /debit/i.test(o.operationType ?? ""));
-    // Amount field: amountReal (rubles). amountRub also possible based on API version
     const getAmt = (o: any) => Math.abs(Number(o.amountReal ?? o.amountRub ?? o.amountTotal ?? 0));
     const totalDeposits = deposits.reduce((s: number, o: any) => s + getAmt(o), 0);
     const totalCharges  = charges.reduce((s: number,  o: any) => s + getAmt(o), 0);
     console.log(`[avito:advance] deposits=${totalDeposits}₽ charges=${totalCharges}₽ (${deposits.length}+${charges.length} ops)`);
 
     if (ops.length > 0) {
-      // We have real data — compute net balance
       const computed = Math.max(0, Math.round(totalDeposits - totalCharges));
       return { balanceRub: computed, source: "ops", needsReauth: false };
     }
-    // No operations in 90 days — use manual fallback
     return { balanceRub: manualFallback, source: "manual", needsReauth: false };
   } catch (e: any) {
     console.log(`[avito:advance] error: ${e.message}`);
