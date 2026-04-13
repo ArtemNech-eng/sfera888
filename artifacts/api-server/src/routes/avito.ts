@@ -301,17 +301,10 @@ router.get("/oauth-start", async (req, res) => {
     });
   }
 
-  // Build auth URL per Avito OAuth 2.0 docs.
-  // Colons in scope must NOT be percent-encoded; spaces encoded as %20.
-  const state = Math.random().toString(36).slice(2);
-  const scope = "messenger:read messenger:write";
-  const authUrl =
-    `https://avito.ru/oauth` +
-    `?response_type=code` +
-    `&client_id=${encodeURIComponent(client_id)}` +
-    `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
-    `&scope=${scope.replace(/ /g, "%20")}` +
-    `&state=${state}`;
+  // Minimal auth URL — no scope, no redirect_uri, no state.
+  // Avito uses the values registered in the developer console automatically.
+  // Any mismatch in optional params causes "Что-то пошло не так".
+  const authUrl = `https://avito.ru/oauth?response_type=code&client_id=${encodeURIComponent(client_id)}`;
 
   console.log(`[avito:oauth-start] redirect → ${authUrl}`);
   res.redirect(authUrl);
