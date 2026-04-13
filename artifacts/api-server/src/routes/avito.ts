@@ -602,11 +602,19 @@ router.get("/balance", async (_req, res) => {
 
   try {
     // 1) Standard balance endpoint (returns кошелёк only)
-    const balResp = await fetch(`${AVITO_API}/core/v1/accounts/${userId}/balance/`, {
+    const balUrl = `${AVITO_API}/core/v1/accounts/${userId}/balance/`;
+    console.log(`[avito:balance] → GET ${balUrl}`);
+    console.log(`[avito:balance] → Headers: Authorization: Bearer ${token.slice(0, 8)}...${token.slice(-4)}`);
+
+    const balResp = await fetch(balUrl, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    const balData = balResp.ok ? await balResp.json() as any : null;
-    console.log(`[avito:balance] /balance/ status=${balResp.status} body=${JSON.stringify(balData)}`);
+    const balBodyText = await balResp.text();
+    console.log(`[avito:balance] ← status=${balResp.status} body=${balBodyText}`);
+    console.log(`[avito:balance] ← response headers: content-type=${balResp.headers.get("content-type")}`);
+
+    let balData: any = null;
+    try { balData = JSON.parse(balBodyText); } catch {}
 
     const walletReal  = balData?.real ?? balData?.result?.real ?? 0;
     const walletBonus = balData?.bonus ?? balData?.result?.bonus ?? 0;
@@ -623,6 +631,14 @@ router.get("/balance", async (_req, res) => {
       bonusRub: Math.round(walletBonus / 100),
       source: advance.source,
       needsReauth: advance.needsReauth,
+      _debug: {
+        balUrl,
+        balStatus: balResp.status,
+        balHeaders: Object.fromEntries(balResp.headers.entries()),
+        balBody: balBodyText,
+        userId,
+        tokenPrefix: `${token.slice(0, 8)}...${token.slice(-4)}`,
+      },
     });
   } catch (e: any) {
     console.error(`[avito:balance] error:`, e.message);
