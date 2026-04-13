@@ -21,7 +21,7 @@ async function getSettings() {
 
 // Minimal scopes — only what is approved by default in Avito developer apps
 // Extra scopes (stats:read, autouploading:read) can cause "Что-то пошло не так" if not whitelisted
-const AVITO_SCOPES = "items:info messenger:read messenger:write user:read user_operations:read user_balance:read";
+const AVITO_SCOPES = "items:info messenger:read messenger:write user:read user_balance:read";
 
 async function fetchToken(clientId: string, clientSecret: string) {
   const res = await fetch(`${AVITO_API}/token`, {
@@ -769,44 +769,52 @@ router.get("/analytics", async (_req, res) => {
       available: boolean;
     } = { today: 0, yesterday: 0, month: 0, prevMonth: 0, daily: [], available: false };
 
+    // POST /stats/v2/accounts/{user_id}/spendings
+    // Работает с ClientCredentials без OAuth. Возвращает расходы в рублях (float).
+    // Лимит: 1 запрос в минуту — у нас кэш 60 сек на фронте, всё ок.
     if (token && userId) {
       try {
         const dateFrom = thirtyDaysAgo.toISOString().split("T")[0];
-        const opsUrl = `${AVITO_API}/core/v1/accounts/${userId}/operations/?dateTimeFrom=${dateFrom}T00:00:00&dateTimeTo=${todayStr}T23:59:59&types[]=service&limit=200`;
-        console.log(`[avito:analytics] → GET ${opsUrl}`);
-        const opsResp = await fetch(opsUrl, { headers: { Authorization: `Bearer ${token}` } });
-        console.log(`[avito:analytics] ← operations status=${opsResp.status}`);
-        if (opsResp.ok) {
-          const opsData = await opsResp.json() as any;
-          const operations: any[] = opsData?.result?.operations ?? opsData?.operations ?? [];
-          console.log(`[avito:analytics] operations count=${operations.length}, sample=${JSON.stringify(operations[0] ?? null)}`);
-          const dailyMap: Record<string, number> = {};
-          let skippedPositive = 0;
-          for (const op of operations) {
-            const amount = typeof op.amount === "number" ? op.amount : 0;
-            if (amount >= 0) { skippedPositive++; continue; } // only debits (spending)
-            const amountRub = Math.abs(amount) / 100; // kopecks → rubles
-            const opDate = op.operationDate ?? op.updatedAt ?? op.createdAt ?? "";
-            const dateStr = String(opDate).split("T")[0];
+        const spendUrl = `${AVITO_API}/stats/v2/accounts/${userId}/spendings`;
+        const spendBody = {
+          dateFrom,
+          dateTo: todayStr,
+          spendingTypes: ["all"],
+          grouping: "day",
+        };
+        console.log(`[avito:analytics] → POST ${spendUrl} body=${JSON.stringify(spendBody)}`);
+        const spendResp = await fetch(spendUrl, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify(spendBody),
+        });
+        console.log(`[avito:analytics] ← spendings status=${spendResp.status}`);
+        if (spendResp.ok) {
+          const spendData = await spendResp.json() as any;
+          const groupings: any[] = spendData?.result?.groupings ?? [];
+          console.log(`[avito:analytics] spendings groupings=${groupings.length}, sample=${JSON.stringify(groupings[0] ?? null)}`);
+          for (const g of groupings) {
+            const dateStr: string = g.date ?? "";
             if (!dateStr) continue;
-            dailyMap[dateStr] = (dailyMap[dateStr] ?? 0) + amountRub;
+            // value — рубли (float), slug "all" = все расходы
+            const allEntry = (g.spendings as any[])?.find((s: any) => s.slug === "all");
+            const amountRub = typeof allEntry?.value === "number" ? allEntry.value : 0;
+            spending.daily.push({ date: dateStr, amount: Math.round(amountRub) });
             if (dateStr === todayStr) spending.today += amountRub;
             if (dateStr === yesterdayStr) spending.yesterday += amountRub;
             if (dateStr >= monthStartStr) spending.month += amountRub;
             if (dateStr >= prevMonthStartStr && dateStr <= prevMonthEndStr) spending.prevMonth += amountRub;
           }
-          spending.daily = Object.entries(dailyMap)
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([date, amount]) => ({ date, amount: Math.round(amount) }));
-          spending.available = true; // API ответил успешно — данные доступны (даже если список пуст)
+          spending.daily.sort((a, b) => a.date.localeCompare(b.date));
+          spending.available = true;
           spending.today = Math.round(spending.today);
           spending.yesterday = Math.round(spending.yesterday);
           spending.month = Math.round(spending.month);
           spending.prevMonth = Math.round(spending.prevMonth);
-          console.log(`[avito:analytics] spending today=${spending.today} month=${spending.month} ops=${operations.length} skipped_positive=${skippedPositive}`);
+          console.log(`[avito:analytics] spending today=${spending.today} month=${spending.month} days=${groupings.length}`);
         } else {
-          const errText = await opsResp.text();
-          console.warn(`[avito:analytics] operations ${opsResp.status}: ${errText.slice(0, 400)}`);
+          const errText = await spendResp.text();
+          console.warn(`[avito:analytics] spendings ${spendResp.status}: ${errText.slice(0, 400)}`);
         }
       } catch (e: any) {
         console.warn(`[avito:analytics] spending error: ${e.message}`);
