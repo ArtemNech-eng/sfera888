@@ -1051,29 +1051,33 @@ router.get("/items/:itemId/daily-stats", async (req, res) => {
       }).catch(() => null),
     ]);
 
+    // Real Avito Stats API v1 format:
+    // { result: { items: [ { itemId, stats: [{date, uniqViews, uniqContacts, uniqFavorites}, ...] } ] } }
     function extractStats(data: any) {
       const items: any[] = data?.result?.items ?? [];
-      const f = items[0]?.fields ?? {};
+      const daily: { date: string; uniqViews: number; uniqContacts: number; uniqFavorites: number }[] =
+        Array.isArray(items[0]?.stats) ? items[0].stats : [];
+      const sum = (key: string) => daily.reduce((acc, d) => acc + (Number((d as any)[key]) || 0), 0);
       return {
-        views: typeof f.uniqViews === "object" ? (f.uniqViews?.value ?? 0) : (f.uniqViews ?? 0),
-        contacts: typeof f.uniqContacts === "object" ? (f.uniqContacts?.value ?? 0) : (f.uniqContacts ?? 0),
-        favorites: typeof f.uniqFavorites === "object" ? (f.uniqFavorites?.value ?? 0) : (f.uniqFavorites ?? 0),
+        views: sum("uniqViews"),
+        contacts: sum("uniqContacts"),
+        favorites: sum("uniqFavorites"),
+        daily,
       };
     }
 
-    const month = extractStats(monthData);
-    const week = extractStats(weekData);
-    const today = extractStats(todayData);
+    const monthResult = extractStats(monthData);
+    const weekResult = extractStats(weekData);
+    const todayResult = extractStats(todayData);
 
-    // Build synthetic daily chart data (last 30 days, distribute month total proportionally)
-    // For now return period totals; real per-day data requires multiple API calls
-    const daily: { date: string; views: number; contacts: number }[] = [];
-    for (let d = 29; d >= 0; d--) {
-      const date = new Date(now.getTime() - d * 86400000).toISOString().split("T")[0];
-      daily.push({ date, views: 0, contacts: 0 });
-    }
-
-    res.json({ today, week, month, daily, dateFrom, dateTo });
+    res.json({
+      today: { views: todayResult.views, contacts: todayResult.contacts, favorites: todayResult.favorites },
+      week: { views: weekResult.views, contacts: weekResult.contacts, favorites: weekResult.favorites },
+      month: { views: monthResult.views, contacts: monthResult.contacts, favorites: monthResult.favorites },
+      daily: monthResult.daily.map(d => ({ date: d.date, views: d.uniqViews, contacts: d.uniqContacts })),
+      dateFrom,
+      dateTo,
+    });
   } catch (e: any) {
     console.error(`[avito:daily-stats] error:`, e.message);
     res.status(500).json({ error: e.message });
