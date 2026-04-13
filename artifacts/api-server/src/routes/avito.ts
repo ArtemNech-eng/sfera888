@@ -850,18 +850,38 @@ router.get("/items-with-stats", async (req, res) => {
         }
       ) as any;
       console.log(`[avito:items-with-stats] stats response keys:`, Object.keys(statsData ?? {}));
-      // Avito Stats API v1 response: { result: { items: [ { itemId, fields: { uniqViews: { value: N }, ... } } ] } }
-      // NOTE: fields are OBJECTS with a .value property, not plain numbers
+      // Log first item raw to understand structure
+      const firstStatItem = statsData.result?.items?.[0];
+      if (firstStatItem) {
+        console.log(`[avito:items-with-stats] FIRST STAT ITEM RAW:`, JSON.stringify(firstStatItem).slice(0, 500));
+      }
+      // Avito Stats API v1 response: { result: { items: [ { itemId, fields: { uniqViews: { value: N, values: [] }, ... } } ] } }
+      // fields are OBJECTS with a .value property, not plain numbers
       for (const s of (statsData.result?.items ?? [])) {
         const f = s.fields ?? {};
+        const viewsVal   = typeof f.uniqViews    === "object" ? (f.uniqViews?.value    ?? 0) : (f.uniqViews    ?? 0);
+        const contactsVal= typeof f.uniqContacts === "object" ? (f.uniqContacts?.value ?? 0) : (f.uniqContacts ?? 0);
+        const favsVal    = typeof f.uniqFavorites=== "object" ? (f.uniqFavorites?.value?? 0) : (f.uniqFavorites?? 0);
+        // daily breakdown arrays for day/week calculation
+        const viewsArr   = (f.uniqViews?.values    ?? []) as { date: string; value: number }[];
+        const contactsArr= (f.uniqContacts?.values  ?? []) as { date: string; value: number }[];
+        const favsArr    = (f.uniqFavorites?.values ?? []) as { date: string; value: number }[];
+        // Aggregate: last 1 day, last 7 days
+        const sumLast = (arr: { value: number }[], days: number) =>
+          arr.slice(-days).reduce((s, v) => s + (v.value ?? 0), 0);
         statsMap[s.itemId] = {
-          uniqViews:    typeof f.uniqViews    === "object" ? (f.uniqViews?.value    ?? 0) : (f.uniqViews    ?? 0),
-          uniqContacts: typeof f.uniqContacts === "object" ? (f.uniqContacts?.value ?? 0) : (f.uniqContacts ?? 0),
-          uniqFavorites:typeof f.uniqFavorites=== "object" ? (f.uniqFavorites?.value?? 0) : (f.uniqFavorites?? 0),
-          // daily breakdown (for day/week calculation)
-          viewsValues:    f.uniqViews?.values    ?? [],
-          contactsValues: f.uniqContacts?.values  ?? [],
+          uniqViews:    viewsVal,
+          uniqContacts: contactsVal,
+          uniqFavorites:favsVal,
+          // day/week breakdown
+          viewsDay:     sumLast(viewsArr, 1),
+          viewsWeek:    sumLast(viewsArr, 7),
+          viewsMonth:   viewsVal,
+          contactsDay:  sumLast(contactsArr, 1),
+          contactsWeek: sumLast(contactsArr, 7),
+          contactsMonth: contactsVal,
         };
+        console.log(`[avito:items-with-stats] itemId=${s.itemId} views=${viewsVal} contacts=${contactsVal} favs=${favsVal}`);
       }
       console.log(`[avito:items-with-stats] parsed stats for ${Object.keys(statsMap).length} items`);
     } catch (e: any) {
