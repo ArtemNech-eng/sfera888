@@ -735,6 +735,139 @@ router.get("/crm-stats", async (_req, res) => {
   }
 });
 
+// GET /api/avito/analytics — сводная аналитика (расходы, по городам, по категориям)
+router.get("/analytics", async (_req, res) => {
+  try {
+    const token = await getValidToken();
+    const settings = await getSettings();
+    const userId = settings?.avitoUserId;
+
+    // 1. Balance
+    const manualBalance = settings?.advanceBalance ?? 0;
+    let balanceData: { balanceRub: number; source: string; needsReauth: boolean } = { balanceRub: manualBalance, source: "manual", needsReauth: false };
+    if (token && userId) {
+      balanceData = await getAdvanceBalance(token, userId, manualBalance);
+    }
+
+    // 2. Spending — try Avito operations API
+    const now = new Date();
+    const todayStr = now.toISOString().split("T")[0];
+    const yesterday = new Date(now.getTime() - 86400000);
+    const yesterdayStr = yesterday.toISOString().split("T")[0];
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthStartStr = monthStart.toISOString().split("T")[0];
+    const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const prevMonthStartStr = prevMonthStart.toISOString().split("T")[0];
+    const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+    const prevMonthEndStr = prevMonthEnd.toISOString().split("T")[0];
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000);
+
+    let spending: {
+      today: number; yesterday: number;
+      month: number; prevMonth: number;
+      daily: { date: string; amount: number }[];
+      available: boolean;
+    } = { today: 0, yesterday: 0, month: 0, prevMonth: 0, daily: [], available: false };
+
+    if (token && userId) {
+      try {
+        const dateFrom = thirtyDaysAgo.toISOString().split("T")[0];
+        const opsUrl = `${AVITO_API}/core/v1/accounts/${userId}/operations/?dateTimeFrom=${dateFrom}T00:00:00&dateTimeTo=${todayStr}T23:59:59&types[]=service&limit=200`;
+        console.log(`[avito:analytics] → GET ${opsUrl}`);
+        const opsResp = await fetch(opsUrl, { headers: { Authorization: `Bearer ${token}` } });
+        if (opsResp.ok) {
+          const opsData = await opsResp.json() as any;
+          const operations: any[] = opsData?.result?.operations ?? opsData?.operations ?? [];
+          const dailyMap: Record<string, number> = {};
+          for (const op of operations) {
+            const amount = typeof op.amount === "number" ? op.amount : 0;
+            if (amount >= 0) continue; // only debits (spending)
+            const amountRub = Math.abs(amount) / 100; // kopecks → rubles
+            const opDate = op.operationDate ?? op.updatedAt ?? op.createdAt ?? "";
+            const dateStr = String(opDate).split("T")[0];
+            if (!dateStr) continue;
+            dailyMap[dateStr] = (dailyMap[dateStr] ?? 0) + amountRub;
+            if (dateStr === todayStr) spending.today += amountRub;
+            if (dateStr === yesterdayStr) spending.yesterday += amountRub;
+            if (dateStr >= monthStartStr) spending.month += amountRub;
+            if (dateStr >= prevMonthStartStr && dateStr <= prevMonthEndStr) spending.prevMonth += amountRub;
+          }
+          spending.daily = Object.entries(dailyMap)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([date, amount]) => ({ date, amount: Math.round(amount) }));
+          spending.available = operations.length > 0 || opsData?.result !== undefined;
+          spending.today = Math.round(spending.today);
+          spending.yesterday = Math.round(spending.yesterday);
+          spending.month = Math.round(spending.month);
+          spending.prevMonth = Math.round(spending.prevMonth);
+          console.log(`[avito:analytics] spending today=${spending.today} month=${spending.month} ops=${operations.length}`);
+        } else {
+          const errText = await opsResp.text();
+          console.warn(`[avito:analytics] operations ${opsResp.status}: ${errText.slice(0, 200)}`);
+        }
+      } catch (e: any) {
+        console.warn(`[avito:analytics] spending error: ${e.message}`);
+      }
+    }
+
+    // 3. CRM by city and category
+    const SERVICE_CATEGORIES = ["Обои", "Шпаклёвка", "Покраска", "Плитка", "Санузел под ключ", "Ремонт под ключ"];
+    const allLeads = await db.select().from(leadsTable).where(eq(leadsTable.source, "avito"));
+    const avitoLeadIds = allLeads.map(l => l.id);
+    let allOrders: (typeof ordersTable.$inferSelect)[] = [];
+    if (avitoLeadIds.length > 0) {
+      allOrders = await db.select().from(ordersTable).where(inArray(ordersTable.leadId, avitoLeadIds));
+    }
+
+    type CrmGroup = { leads: number; orders: number; revenue: number };
+    const cityMap: Record<string, CrmGroup> = {};
+    const categoryMap: Record<string, CrmGroup> = {};
+
+    for (const lead of allLeads) {
+      const city = lead.city || "Не указан";
+      if (!cityMap[city]) cityMap[city] = { leads: 0, orders: 0, revenue: 0 };
+      cityMap[city].leads++;
+
+      let category = "Другое";
+      for (const cat of SERVICE_CATEGORIES) {
+        if (lead.serviceType?.toLowerCase().includes(cat.toLowerCase())) { category = cat; break; }
+      }
+      if (!categoryMap[category]) categoryMap[category] = { leads: 0, orders: 0, revenue: 0 };
+      categoryMap[category].leads++;
+    }
+
+    for (const order of allOrders) {
+      const lead = allLeads.find(l => l.id === order.leadId);
+      const city = lead?.city || "Не указан";
+      if (!cityMap[city]) cityMap[city] = { leads: 0, orders: 0, revenue: 0 };
+      cityMap[city].orders++;
+      cityMap[city].revenue += parseFloat(String(order.orderAmount ?? "0")) || 0;
+
+      let category = "Другое";
+      for (const cat of SERVICE_CATEGORIES) {
+        if (lead?.serviceType?.toLowerCase().includes(cat.toLowerCase())) { category = cat; break; }
+      }
+      if (!categoryMap[category]) categoryMap[category] = { leads: 0, orders: 0, revenue: 0 };
+      categoryMap[category].orders++;
+      categoryMap[category].revenue += parseFloat(String(order.orderAmount ?? "0")) || 0;
+    }
+
+    res.json({
+      balance: balanceData,
+      spending,
+      crmByCity: Object.entries(cityMap).map(([city, d]) => ({
+        city, leads: d.leads, orders: d.orders, revenue: Math.round(d.revenue),
+      })),
+      crmByCategory: Object.entries(categoryMap).map(([category, d]) => ({
+        category, leads: d.leads, orders: d.orders, revenue: Math.round(d.revenue),
+      })),
+    });
+  } catch (e: any) {
+    console.error("[avito:analytics] error:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/avito/unread-count — количество непрочитанных чатов
 router.get("/unread-count", async (_req, res) => {
   const token = await getValidToken();
