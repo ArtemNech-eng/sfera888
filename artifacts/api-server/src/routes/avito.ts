@@ -528,34 +528,20 @@ router.get("/items", async (req, res) => {
   const perPage = Math.min(100, Math.max(1, parseInt(req.query.per_page as string) || 50));
   const statusFilter = req.query.status as string | undefined;
 
-  // Build URL — Avito accepts status as comma-separated: status=active,old
-  // Must be URL-encoded to avoid parse issues on some proxies
+  // Per official docs: GET /core/v1/items (no user_id in URL)
   const params = new URLSearchParams({
     page: String(page),
     per_page: String(perPage),
   });
   if (statusFilter) {
-    // e.g. "active" or "active,old"
     params.set("status", statusFilter);
   }
 
   try {
-    const data = await avitoGet(
-      `/core/v1/accounts/${userId}/items?${params.toString()}`,
-      token
-    ) as any;
+    const data = await avitoGet(`/core/v1/items?${params.toString()}`, token) as any;
     res.json(data);
   } catch (e: any) {
-    // Fallback: try without status param if API rejected it
-    try {
-      const data = await avitoGet(
-        `/core/v1/accounts/${userId}/items?page=${page}&per_page=${perPage}`,
-        token
-      ) as any;
-      res.json(data);
-    } catch (e2: any) {
-      res.status(500).json({ error: e2.message });
-    }
+    res.status(500).json({ error: (e as Error).message });
   }
 });
 
@@ -571,13 +557,14 @@ router.get("/stats", async (req, res) => {
   const days = Math.min(90, Math.max(1, parseInt(req.query.days as string) || 30));
 
   // Fetch all active items first
+  // Per docs: GET /core/v1/items (no user_id in URL)
   let itemIds: number[] = [];
   try {
     const items = await avitoGet(
-      `/core/v1/accounts/${userId}/items?per_page=100`,
+      `/core/v1/items?per_page=100`,
       token
     ) as any;
-    itemIds = (items.resources ?? []).map((r: any) => Number(r.id)).filter(Boolean);
+    itemIds = (items.resources ?? items.items ?? []).map((r: any) => Number(r.id)).filter(Boolean);
   } catch (e: any) {
     return res.status(500).json({ error: `Не удалось загрузить объявления: ${e.message}` });
   }
@@ -618,17 +605,17 @@ router.get("/items-with-stats", async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page as string) || 1);
   const perPage = Math.min(100, parseInt(req.query.per_page as string) || 50);
 
-  // Helper: fetch items with fallback URL strategies
-  // Supports both regular apps (userId) and personal auth apps (self)
-  async function fetchItems(uid: string): Promise<{ items: any[]; meta: any }> {
+  // Helper: fetch items using the correct Avito API endpoint.
+  // Per official docs: GET /core/v1/items (NO user_id in URL — identity comes from Bearer token)
+  // SDK reference: https://github.com/darkvovich/avito-php-api-items
+  async function fetchItems(_uid: string): Promise<{ items: any[]; meta: any }> {
     const qs = `?page=${page}&per_page=${perPage}`;
+    // Correct endpoint first, then fallbacks for older API versions
     const urls = [
-      `/core/v1/accounts/${uid}/items${qs}`,
-      `/core/v1/accounts/self/items${qs}`,   // personal auth: "self" alias
-      `/core/v2/accounts/${uid}/items${qs}`,
-      `/core/v2/accounts/self/items${qs}`,
-      `/core/v1/accounts/${uid}/items`,
-      `/core/v1/accounts/self/items`,
+      `/core/v1/items${qs}`,                      // ✅ official docs: no user_id in URL
+      `/core/v1/items`,                            // ✅ without pagination
+      `/core/v1/accounts/${_uid}/items${qs}`,      // legacy attempt
+      `/core/v1/accounts/self/items${qs}`,         // legacy "self" alias
     ];
 
     let lastError: AvitoApiError | Error | null = null;
@@ -636,13 +623,13 @@ router.get("/items-with-stats", async (req, res) => {
       try {
         console.log(`[avito:items] trying: GET ${AVITO_API}${url}`);
         const data = await avitoGet(url, token) as any;
-        console.log(`[avito:items] success, keys=${Object.keys(data).join(",")}, count=${(data.resources ?? data.items ?? []).length}`);
+        console.log(`[avito:items] success url=${url} keys=${Object.keys(data).join(",")}, count=${(data.resources ?? data.items ?? []).length}`);
         return {
           items: data.resources ?? data.items ?? data.result ?? [],
           meta: data.meta ?? {},
         };
       } catch (e: any) {
-        console.log(`[avito:items] failed: ${e.message}`);
+        console.log(`[avito:items] failed url=${url}: ${e.message}`);
         lastError = e;
         // Only retry on routing errors; propagate auth / rate-limit errors immediately
         if (e instanceof AvitoApiError && e.statusCode !== 404 && e.statusCode !== 422) {
