@@ -1267,7 +1267,7 @@ export default function AvitoPage() {
                     <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center gap-1.5">
                         <p className="text-xs text-muted-foreground">Аванс Авито</p>
-                        {crmStats?.advanceSource === "ops" && (
+                        {(crmStats?.advanceSource === "ops" || crmStats?.advanceSource === "cpa") && (
                           <span className="text-[10px] bg-green-100 text-green-700 px-1 py-0.5 rounded font-medium">авто</span>
                         )}
                         {crmStats?.advanceSource === "manual" && !crmStats?.advanceNeedsReauth && (

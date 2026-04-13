@@ -189,7 +189,7 @@ export default function Dashboard() {
                   <StatCard
                     title="Аванс Авито"
                     value={`${avitoBalanceRub.toLocaleString("ru-RU")} ₽`}
-                    subtitle={avitoAdvanceData?.needsReauth ? "⚠ Переподключите Авито" : avitoAdvanceData?.source === "ops" ? "расчёт авто" : "аванс Авито"}
+                    subtitle={avitoAdvanceData?.needsReauth ? "⚠ Переподключите Авито" : (avitoAdvanceData?.source === "ops" || avitoAdvanceData?.source === "cpa") ? "расчёт авто" : "аванс Авито"}
                     icon={Wallet}
                     href="/avito"
                     accent={avitoBalanceRub < 1000 ? "red" : "green"}
