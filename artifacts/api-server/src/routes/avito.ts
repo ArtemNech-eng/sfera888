@@ -536,19 +536,48 @@ router.get("/crm-stats", async (_req, res) => {
       return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
     }).length;
 
-    // Avito lead IDs → joined orders
+    // Avito lead IDs → joined orders + revenue
     const avitoLeadIds = allLeads.map(l => l.id);
     let ordersTotal = 0, ordersMonth = 0, ordersWeek = 0;
+    let revenueTotal = 0, revenueMonth = 0;
     if (avitoLeadIds.length > 0) {
       const orders = await db.select().from(ordersTable).where(inArray(ordersTable.leadId, avitoLeadIds));
       ordersTotal = orders.length;
       ordersMonth = orders.filter(o => o.createdAt && new Date(o.createdAt) >= startOf30Days).length;
       ordersWeek  = orders.filter(o => o.createdAt && new Date(o.createdAt) >= startOf7Days).length;
+      // Revenue = sum of orderAmount (stored as numeric string)
+      for (const o of orders) {
+        const amt = parseFloat(String(o.orderAmount ?? "0")) || 0;
+        revenueTotal += amt;
+        if (o.createdAt && new Date(o.createdAt) >= startOf30Days) revenueMonth += amt;
+      }
     }
 
+    // Avito balance (kopecks → roubles)
+    let balanceRub = 0;
+    try {
+      const token = await getValidToken();
+      if (token) {
+        const settings = await getSettings();
+        if (settings?.avitoUserId) {
+          const bd = await avitoGet(`/core/v1/accounts/${settings.avitoUserId}/balance/`, token) as any;
+          balanceRub = Math.round((bd?.real ?? 0) / 100);
+        }
+      }
+    } catch (_) { /* balance optional */ }
+
+    // Cost metrics: revenue / count (returns 0 if no data)
+    const avgOrderAmount   = ordersTotal > 0 ? Math.round(revenueTotal / ordersTotal) : 0;
+    // For cost per contact we need total Avito contacts — pass from frontend,
+    // or use total leads as proxy (each lead = one contact)
+    const costPerLead      = allLeads.length > 0 ? Math.round(revenueTotal / allLeads.length) : 0;
+
     res.json({
-      leads:  { total: allLeads.length, month: leadsMonth, week: leadsWeek, today: leadsToday },
-      orders: { total: ordersTotal, month: ordersMonth, week: ordersWeek },
+      leads:   { total: allLeads.length, month: leadsMonth, week: leadsWeek, today: leadsToday },
+      orders:  { total: ordersTotal, month: ordersMonth, week: ordersWeek },
+      revenue: { total: Math.round(revenueTotal), month: Math.round(revenueMonth), avgOrder: avgOrderAmount },
+      costPerLead,
+      balanceRub,
     });
   } catch (e: any) {
     console.error("[avito:crm-stats] error:", e.message);

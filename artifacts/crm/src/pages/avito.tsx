@@ -83,8 +83,11 @@ interface AvitoItem {
 }
 
 interface CrmStats {
-  leads:  { total: number; month: number; week: number; today: number };
-  orders: { total: number; month: number; week: number };
+  leads:   { total: number; month: number; week: number; today: number };
+  orders:  { total: number; month: number; week: number };
+  revenue: { total: number; month: number; avgOrder: number };
+  costPerLead: number;
+  balanceRub: number;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -1204,75 +1207,171 @@ export default function AvitoPage() {
                 </Card>
               )}
 
-              {/* ── Сводные карточки (месяц) ─────────────────────────── */}
+              {/* ── Сводные карточки Авито (месяц) + баланс ───────────────── */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {[
-                  { label: "Просмотры / мес", value: totalViews, sub: `${totalViewsWeek} за нед`, icon: Eye, color: "text-blue-600", bg: "bg-blue-50" },
-                  { label: "Контакты / мес",  value: totalContacts, sub: `${totalContactsWeek} за нед`, icon: Phone, color: "text-green-600", bg: "bg-green-50" },
-                  { label: "В избранном / мес",value: totalFavorites, sub: `${allItems.length} объявлений`, icon: Star, color: "text-amber-500", bg: "bg-amber-50" },
-                  { label: "Конверсия",        value: null, sub: "контакты / просмотры", icon: TrendingUp, color: "text-purple-600", bg: "bg-purple-50" },
-                ].map((card, i) => (
-                  <Card key={card.label}>
-                    <CardContent className="py-4 px-4">
-                      <div className="flex items-center justify-between mb-1">
-                        <p className="text-xs text-muted-foreground">{card.label}</p>
-                        <div className={cn("w-7 h-7 rounded-lg flex items-center justify-center", card.bg)}>
-                          <card.icon className={cn("w-3.5 h-3.5", card.color)} />
-                        </div>
+                <Card>
+                  <CardContent className="py-4 px-4">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-xs text-muted-foreground">Просмотры / мес</p>
+                      <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center">
+                        <Eye className="w-3.5 h-3.5 text-blue-600" />
                       </div>
-                      <p className="text-2xl font-bold tabular-nums">
-                        {itemsLoading ? "—" : i === 3 ? `${avgConversion}%` : card.value!.toLocaleString("ru-RU")}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{card.sub}</p>
-                    </CardContent>
-                  </Card>
-                ))}
+                    </div>
+                    <p className="text-2xl font-bold tabular-nums">{itemsLoading ? "—" : totalViews.toLocaleString("ru-RU")}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{totalViewsWeek.toLocaleString("ru-RU")} за нед</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="py-4 px-4">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-xs text-muted-foreground">Контакты / мес</p>
+                      <div className="w-7 h-7 rounded-lg bg-green-50 flex items-center justify-center">
+                        <Phone className="w-3.5 h-3.5 text-green-600" />
+                      </div>
+                    </div>
+                    <p className="text-2xl font-bold tabular-nums">{itemsLoading ? "—" : totalContacts.toLocaleString("ru-RU")}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{totalContactsWeek.toLocaleString("ru-RU")} за нед</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="py-4 px-4">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-xs text-muted-foreground">Конверсия</p>
+                      <div className="w-7 h-7 rounded-lg bg-purple-50 flex items-center justify-center">
+                        <TrendingUp className="w-3.5 h-3.5 text-purple-600" />
+                      </div>
+                    </div>
+                    <p className="text-2xl font-bold tabular-nums">{itemsLoading ? "—" : `${avgConversion}%`}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">контакты / просмотры</p>
+                  </CardContent>
+                </Card>
+                {/* Баланс Авито */}
+                <Card className={cn(crmStats && crmStats.balanceRub < 1000 && crmStats.balanceRub >= 0 ? "border-red-200 bg-red-50/40" : "")}>
+                  <CardContent className="py-4 px-4">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-xs text-muted-foreground">Баланс Авито</p>
+                      <div className={cn("w-7 h-7 rounded-lg flex items-center justify-center",
+                        crmStats && crmStats.balanceRub < 1000 ? "bg-red-100" : "bg-amber-50")}>
+                        <Star className={cn("w-3.5 h-3.5", crmStats && crmStats.balanceRub < 1000 ? "text-red-500" : "text-amber-500")} />
+                      </div>
+                    </div>
+                    <p className={cn("text-2xl font-bold tabular-nums", crmStats && crmStats.balanceRub < 1000 ? "text-red-600" : "")}>
+                      {crmStats ? `${crmStats.balanceRub.toLocaleString("ru-RU")} ₽` : "—"}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {crmStats && crmStats.balanceRub < 1000 ? "⚠️ Пополните счёт" : "кошелёк Авито"}
+                    </p>
+                  </CardContent>
+                </Card>
               </div>
 
-              {/* ── Связка с CRM ────────────────────────────────────── */}
+              {/* ── Связка с CRM — лиды, заказы, выручка ───────────── */}
               <Card>
                 <CardHeader className="py-3 px-5 border-b">
                   <CardTitle className="text-sm flex items-center gap-2">
                     <TrendingUp className="w-4 h-4 text-primary" />
-                    Связка с CRM — лиды и заказы из Авито
+                    Связка с CRM — лиды, заказы и выручка из Авито
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="py-4 px-5">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {[
-                      { label: "Лидов всего",   value: crmStats?.leads.total  ?? "—", sub: "из Авито в CRM" },
-                      { label: "Лидов за мес",  value: crmStats?.leads.month  ?? "—", sub: "последние 30 дней" },
-                      { label: "Лидов за нед",  value: crmStats?.leads.week   ?? "—", sub: "последние 7 дней" },
-                      { label: "Сегодня",       value: crmStats?.leads.today  ?? "—", sub: "новых лидов" },
-                    ].map(s => (
-                      <div key={s.label} className="text-center p-3 bg-muted/30 rounded-xl">
-                        <p className="text-2xl font-bold tabular-nums">{s.value}</p>
-                        <p className="text-xs font-medium mt-0.5">{s.label}</p>
-                        <p className="text-xs text-muted-foreground">{s.sub}</p>
-                      </div>
-                    ))}
+                <CardContent className="py-4 px-5 space-y-4">
+                  {/* Лиды */}
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Лиды из Авито</p>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      {[
+                        { label: "Всего лидов",  value: crmStats?.leads.total  ?? "—", sub: "за всё время" },
+                        { label: "За 30 дней",   value: crmStats?.leads.month  ?? "—", sub: "новых лидов" },
+                        { label: "За 7 дней",    value: crmStats?.leads.week   ?? "—", sub: "новых лидов" },
+                        { label: "Сегодня",      value: crmStats?.leads.today  ?? "—", sub: "новых лидов" },
+                      ].map(s => (
+                        <div key={s.label} className="text-center p-3 bg-muted/30 rounded-xl">
+                          <p className="text-xl font-bold tabular-nums">{s.value}</p>
+                          <p className="text-xs font-medium mt-0.5">{s.label}</p>
+                          <p className="text-xs text-muted-foreground">{s.sub}</p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
+
+                  {/* Заказы и выручка */}
                   {crmStats && (
-                    <div className="mt-3 pt-3 border-t grid grid-cols-3 gap-4 text-center">
-                      <div className="p-3 bg-muted/30 rounded-xl">
-                        <p className="text-xl font-bold tabular-nums">{crmStats.orders.total}</p>
-                        <p className="text-xs font-medium mt-0.5">Заказов всего</p>
-                        <p className="text-xs text-muted-foreground">по Авито лидам</p>
+                    <div>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Заказы и выручка</p>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div className="text-center p-3 bg-muted/30 rounded-xl">
+                          <p className="text-xl font-bold tabular-nums">{crmStats.orders.total}</p>
+                          <p className="text-xs font-medium mt-0.5">Заказов всего</p>
+                          <p className="text-xs text-muted-foreground">по Авито лидам</p>
+                        </div>
+                        <div className="text-center p-3 bg-muted/30 rounded-xl">
+                          <p className="text-xl font-bold tabular-nums">{crmStats.orders.month}</p>
+                          <p className="text-xs font-medium mt-0.5">Заказов за мес</p>
+                          <p className="text-xs text-muted-foreground">последние 30 дней</p>
+                        </div>
+                        <div className="text-center p-3 bg-green-50 rounded-xl">
+                          <p className="text-xl font-bold tabular-nums text-green-700">
+                            {crmStats.revenue.total > 0 ? `${crmStats.revenue.total.toLocaleString("ru-RU")} ₽` : "—"}
+                          </p>
+                          <p className="text-xs font-medium mt-0.5">Выручка всего</p>
+                          <p className="text-xs text-muted-foreground">по Авито заказам</p>
+                        </div>
+                        <div className="text-center p-3 bg-green-50 rounded-xl">
+                          <p className="text-xl font-bold tabular-nums text-green-700">
+                            {crmStats.revenue.month > 0 ? `${crmStats.revenue.month.toLocaleString("ru-RU")} ₽` : "—"}
+                          </p>
+                          <p className="text-xs font-medium mt-0.5">Выручка за мес</p>
+                          <p className="text-xs text-muted-foreground">последние 30 дней</p>
+                        </div>
                       </div>
-                      <div className="p-3 bg-muted/30 rounded-xl">
-                        <p className="text-xl font-bold tabular-nums">{crmStats.orders.month}</p>
-                        <p className="text-xs font-medium mt-0.5">Заказов за мес</p>
-                        <p className="text-xs text-muted-foreground">последние 30 дней</p>
+                    </div>
+                  )}
+
+                  {/* Стоимость контакта и заявки */}
+                  {crmStats && (
+                    <div>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Стоимость привлечения</p>
+                      <div className="grid grid-cols-3 gap-3">
+                        {/* Цена контакта = выручка / контакты из объявлений */}
+                        <div className="text-center p-3 bg-blue-50 rounded-xl">
+                          <p className="text-xl font-bold tabular-nums text-blue-700">
+                            {crmStats.revenue.total > 0 && totalContacts > 0
+                              ? `${Math.round(crmStats.revenue.total / totalContacts).toLocaleString("ru-RU")} ₽`
+                              : "—"}
+                          </p>
+                          <p className="text-xs font-medium mt-0.5">Выручка / контакт</p>
+                          <p className="text-xs text-muted-foreground">доход с одного обращения</p>
+                        </div>
+                        {/* Цена заявки = выручка / лид */}
+                        <div className="text-center p-3 bg-blue-50 rounded-xl">
+                          <p className="text-xl font-bold tabular-nums text-blue-700">
+                            {crmStats.costPerLead > 0
+                              ? `${crmStats.costPerLead.toLocaleString("ru-RU")} ₽`
+                              : "—"}
+                          </p>
+                          <p className="text-xs font-medium mt-0.5">Выручка / заявка</p>
+                          <p className="text-xs text-muted-foreground">доход с одного лида</p>
+                        </div>
+                        {/* Средний чек */}
+                        <div className="text-center p-3 bg-purple-50 rounded-xl">
+                          <p className="text-xl font-bold tabular-nums text-purple-700">
+                            {crmStats.revenue.avgOrder > 0
+                              ? `${crmStats.revenue.avgOrder.toLocaleString("ru-RU")} ₽`
+                              : "—"}
+                          </p>
+                          <p className="text-xs font-medium mt-0.5">Средний чек</p>
+                          <p className="text-xs text-muted-foreground">по Авито заказам</p>
+                        </div>
                       </div>
-                      <div className="p-3 bg-muted/30 rounded-xl">
-                        <p className="text-xl font-bold tabular-nums">
-                          {crmStats.leads.total > 0
-                            ? `${Math.round(crmStats.orders.total / crmStats.leads.total * 100)}%`
-                            : "—"}
-                        </p>
-                        <p className="text-xs font-medium mt-0.5">Конверсия лид→заказ</p>
-                        <p className="text-xs text-muted-foreground">в CRM</p>
-                      </div>
+                    </div>
+                  )}
+
+                  {/* Конверсия лид → заказ */}
+                  {crmStats && crmStats.leads.total > 0 && (
+                    <div className="pt-2 border-t flex items-center justify-between">
+                      <p className="text-sm text-muted-foreground">Конверсия лид → заказ в CRM</p>
+                      <span className="text-lg font-bold tabular-nums">
+                        {Math.round(crmStats.orders.total / crmStats.leads.total * 100)}%
+                      </span>
                     </div>
                   )}
                 </CardContent>
