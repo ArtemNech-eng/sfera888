@@ -506,12 +506,41 @@ router.get("/balance", async (_req, res) => {
   if (!userId) return res.status(400).json({ error: "Нет ID пользователя Авито" });
 
   try {
-    console.log(`[avito:balance] GET /core/v1/accounts/${userId}/balance/`);
-    const data = await avitoGet(`/core/v1/accounts/${userId}/balance/`, token) as any;
-    // Avito Balance API returns { real: N, bonus: N } directly (no result wrapper)
-    const balance = data?.real ?? data?.result?.real ?? data?.result?.total ?? data?.balance ?? 0;
-    console.log(`[avito:balance] raw=`, JSON.stringify(data).slice(0, 200), `balance=`, balance);
-    res.json({ balance, bonus: data?.bonus ?? 0, raw: data });
+    // Try multiple endpoints to find the correct one
+    const endpoints = [
+      `/core/v1/accounts/${userId}/balance/`,
+      `/core/v1/accounts/self/balance/`,
+      `/core/v2/accounts/${userId}/balance/`,
+      `/core/v1/accounts/${userId}/balance`,
+    ];
+    let data: any = null;
+    let usedEndpoint = "";
+    for (const ep of endpoints) {
+      try {
+        const raw = await fetch(`${AVITO_API}${ep}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const body = await raw.json();
+        console.log(`[avito:balance] ${ep} → status=${raw.status} body=${JSON.stringify(body).slice(0, 300)}`);
+        if (raw.ok && body && (body.real !== undefined || body.bonus !== undefined || body.result)) {
+          data = body;
+          usedEndpoint = ep;
+          break;
+        }
+      } catch (err: any) {
+        console.log(`[avito:balance] ${ep} → error: ${err.message}`);
+      }
+    }
+    if (!data) {
+      return res.json({ balance: 0, bonus: 0, note: "Не удалось получить баланс" });
+    }
+    // Avito returns { real: N, bonus: N }
+    // real is in KOPECKS for most accounts; show both raw and divided
+    const rawReal  = data?.real ?? data?.result?.real ?? 0;
+    const rawBonus = data?.bonus ?? data?.result?.bonus ?? 0;
+    // Return kopecks for consumer (dashboard divides /100; analytics shows /100)
+    console.log(`[avito:balance] used=${usedEndpoint} rawReal=${rawReal} rawBonus=${rawBonus}`);
+    res.json({ balance: rawReal, bonus: rawBonus, balanceRub: Math.round(rawReal / 100), bonusRub: Math.round(rawBonus / 100), raw: data });
   } catch (e: any) {
     console.error(`[avito:balance] error:`, e.message);
     res.status(500).json({ error: e.message });
@@ -553,15 +582,30 @@ router.get("/crm-stats", async (_req, res) => {
       }
     }
 
-    // Avito balance (kopecks → roubles)
+    // Avito balance — try multiple endpoints, return rubles
     let balanceRub = 0;
     try {
       const token = await getValidToken();
       if (token) {
-        const settings = await getSettings();
-        if (settings?.avitoUserId) {
-          const bd = await avitoGet(`/core/v1/accounts/${settings.avitoUserId}/balance/`, token) as any;
-          balanceRub = Math.round((bd?.real ?? 0) / 100);
+        const settingsForBalance = await getSettings();
+        const uid = settingsForBalance?.avitoUserId;
+        if (uid) {
+          const balanceEndpoints = [
+            `/core/v1/accounts/${uid}/balance/`,
+            `/core/v1/accounts/self/balance/`,
+            `/core/v2/accounts/${uid}/balance/`,
+          ];
+          for (const ep of balanceEndpoints) {
+            try {
+              const r = await fetch(`${AVITO_API}${ep}`, { headers: { Authorization: `Bearer ${token}` } });
+              if (r.ok) {
+                const bd = await r.json() as any;
+                const raw = bd?.real ?? bd?.result?.real ?? 0;
+                balanceRub = Math.round(raw / 100);
+                if (balanceRub > 0) break; // found real data
+              }
+            } catch (_) { /* try next */ }
+          }
         }
       }
     } catch (_) { /* balance optional */ }
