@@ -173,6 +173,7 @@ export default function AvitoPage() {
   const [leadForm, setLeadForm] = useState({ city: "", serviceType: "", district: "", area: "", comment: "" });
   const [availableCities, setAvailableCities] = useState<string[]>([]);
   const [availableServices, setAvailableServices] = useState<string[]>([]);
+  const [oauthLoading, setOauthLoading] = useState(false);
   const prevUnreadRef = useRef(0);
   const pingInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -274,6 +275,23 @@ export default function AvitoPage() {
       .then((d: { name: string }[]) => setAvailableCities(d.map(c => c.name))).catch(() => {});
     fetch(`${BASE}/api/settings/services`).then(r => r.ok ? r.json() : [])
       .then((d: { name: string }[]) => setAvailableServices(d.map(s => s.name))).catch(() => {});
+  }, []);
+
+  // Handle OAuth callback result from URL params
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const connected = params.get("avito_connected");
+    const avitoUser = params.get("avito_user");
+    const avitoError = params.get("avito_error");
+
+    if (connected === "1") {
+      toast({ title: "✅ Авито подключён через OAuth", description: avitoUser ? `Аккаунт: ${avitoUser}` : "Успешно" });
+      qc.invalidateQueries({ queryKey: ["/api/avito/settings"] });
+      window.history.replaceState({}, "", window.location.pathname);
+    } else if (avitoError) {
+      toast({ title: "Ошибка подключения Авито", description: decodeURIComponent(avitoError), variant: "destructive" });
+      window.history.replaceState({}, "", window.location.pathname);
+    }
   }, []);
 
   // Sound notification for new unread messages
@@ -426,58 +444,101 @@ export default function AvitoPage() {
 
         {/* ── Connection card ──────────────────────────────────────────── */}
         {settings?.connected ? (
-          <Card className="border-green-200 bg-green-50/50 dark:border-green-900 dark:bg-green-950/20">
+          <Card className="border-orange-200 bg-orange-50/40 dark:border-orange-900 dark:bg-orange-950/10">
             <CardContent className="py-3 flex items-center gap-3">
-              <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
-              <p className="font-medium text-green-800 dark:text-green-400 text-sm">
-                Авито подключён — {settings.avitoUserName ?? settings.avitoUserId}
-              </p>
-              <span className="text-green-600/50 text-xs ml-auto hidden sm:block">Чаты обновляются автоматически</span>
+              <CheckCircle2 className="w-5 h-5 text-orange-500 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm">
+                  Авито подключён — {settings.avitoUserName ?? settings.avitoUserId}
+                </p>
+              </div>
+              <span className="text-muted-foreground text-xs hidden sm:block">Чаты обновляются автоматически</span>
             </CardContent>
           </Card>
         ) : (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
-                <Plug className="w-5 h-5 text-primary" /> Подключить Авито
+                <Plug className="w-5 h-5 text-orange-500" /> Подключить Авито
               </CardTitle>
               <CardDescription>
-                Введите Client ID и Client Secret из личного кабинета Авито Developers
+                Введите Client ID и Client Secret из личного кабинета Авито Developers.<br />
+                Redirect URL в настройках Авито: <code className="text-xs bg-muted px-1.5 py-0.5 rounded">https://sfera-master.ru/api/avito/callback</code>
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Client ID</label>
-                  <Input placeholder="Введите Client ID" value={clientId} onChange={e => setClientId(e.target.value)} />
+
+              {/* OAuth button — recommended */}
+              <div className="rounded-xl border-2 border-orange-200 dark:border-orange-800 bg-orange-50/50 dark:bg-orange-950/10 p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-orange-500 text-white">Рекомендуется</span>
+                  <p className="text-sm font-medium">Войти через Авито (OAuth)</p>
                 </div>
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Client Secret</label>
-                  <Input type="password" placeholder="Введите Client Secret" value={clientSecret} onChange={e => setClientSecret(e.target.value)} />
+                <p className="text-xs text-muted-foreground">
+                  Нажмите кнопку — откроется страница Авито для авторизации. Токен обновляется автоматически, не надо вводить заново.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">Client ID</label>
+                    <Input placeholder="Введите Client ID" value={clientId} onChange={e => setClientId(e.target.value)} className="h-9" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">Client Secret</label>
+                    <Input type="password" placeholder="Введите Client Secret" value={clientSecret} onChange={e => setClientSecret(e.target.value)} className="h-9" />
+                  </div>
                 </div>
+                <Button
+                  className="w-full bg-orange-500 hover:bg-orange-600 text-white"
+                  disabled={!clientId || !clientSecret || oauthLoading}
+                  onClick={() => {
+                    if (!clientId || !clientSecret) return;
+                    setOauthLoading(true);
+                    window.location.href = `${BASE}/api/avito/oauth-start?client_id=${encodeURIComponent(clientId)}&client_secret=${encodeURIComponent(clientSecret)}`;
+                  }}
+                >
+                  {oauthLoading
+                    ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Перенаправление...</>
+                    : <><ExternalLink className="w-4 h-4 mr-2" /> Войти через Авито →</>}
+                </Button>
               </div>
-              <div className="rounded-xl bg-muted/50 p-4 text-sm text-muted-foreground flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-amber-500" />
+
+              {/* Divider */}
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-px bg-border" />
+                <span className="text-xs text-muted-foreground">или напрямую через токен</span>
+                <div className="flex-1 h-px bg-border" />
+              </div>
+
+              {/* Client credentials fallback */}
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  Если OAuth не работает — подключитесь через Client Credentials (токен действует 24 часа, обновляется автоматически):
+                </p>
+                {connectMutation.isError && (
+                  <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 dark:bg-red-950/30 rounded-lg px-3 py-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    {connectMutation.error?.message}
+                  </div>
+                )}
+                <Button variant="outline" onClick={() => connectMutation.mutate()} disabled={!clientId || !clientSecret || connectMutation.isPending} className="w-full">
+                  {connectMutation.isPending
+                    ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Подключение...</>
+                    : <><Plug className="w-4 h-4 mr-2" /> Подключить через Client Credentials</>}
+                </Button>
+              </div>
+
+              <div className="rounded-xl bg-muted/50 p-3 text-xs text-muted-foreground flex items-start gap-2">
+                <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-500" />
                 <div>
-                  <p className="font-medium text-foreground">Как получить ключи:</p>
-                  <ol className="mt-1 space-y-1 list-decimal list-inside">
-                    <li>Перейдите на <a href="https://developers.avito.ru" target="_blank" rel="noreferrer" className="text-primary underline inline-flex items-center gap-0.5">developers.avito.ru <ExternalLink className="w-3 h-3" /></a></li>
-                    <li>Создайте приложение → укажите доступ к Messenger + Items</li>
+                  <p className="font-medium text-foreground mb-1">Как получить ключи:</p>
+                  <ol className="space-y-0.5 list-decimal list-inside">
+                    <li>Откройте <a href="https://developers.avito.ru" target="_blank" rel="noreferrer" className="text-primary underline inline-flex items-center gap-0.5">developers.avito.ru <ExternalLink className="w-3 h-3" /></a></li>
+                    <li>Создайте приложение → доступ: Messenger + Items</li>
+                    <li>Укажите Redirect URI: <code className="bg-muted px-1 rounded">https://sfera-master.ru/api/avito/callback</code></li>
                     <li>Скопируйте Client ID и Client Secret</li>
                   </ol>
                 </div>
               </div>
-              {connectMutation.isError && (
-                <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 dark:bg-red-950/30 rounded-lg px-3 py-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  {connectMutation.error?.message}
-                </div>
-              )}
-              <Button onClick={() => connectMutation.mutate()} disabled={!clientId || !clientSecret || connectMutation.isPending} className="w-full">
-                {connectMutation.isPending
-                  ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Подключение...</>
-                  : <><Plug className="w-4 h-4 mr-2" /> Подключить Авито</>}
-              </Button>
             </CardContent>
           </Card>
         )}

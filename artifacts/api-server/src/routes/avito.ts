@@ -47,12 +47,31 @@ async function getValidToken(): Promise<string | null> {
   if (!settings || !settings.enabled || !settings.clientId || !settings.clientSecret) return null;
 
   const now = new Date();
-  // Refresh 60 seconds early to avoid edge-case expiry during request
+  // Use cached token if still valid (with 60s buffer)
   if (settings.accessToken && settings.tokenExpiresAt && settings.tokenExpiresAt > new Date(now.getTime() + 60_000)) {
     return settings.accessToken;
   }
 
-  // Refresh token
+  // Try refresh_token first (OAuth code flow)
+  if ((settings as any).refreshToken && settings.authType === "oauth_code") {
+    try {
+      const tokenData = await refreshAccessToken((settings as any).refreshToken, settings.clientId, settings.clientSecret);
+      const expiresAt = new Date(now.getTime() + tokenData.expires_in * 1000);
+      await db.update(avitoSettingsTable)
+        .set({
+          accessToken: tokenData.access_token,
+          ...(tokenData.refresh_token ? { refreshToken: tokenData.refresh_token } : {}),
+          tokenExpiresAt: expiresAt,
+          updatedAt: new Date(),
+        } as any)
+        .where(eq(avitoSettingsTable.id, settings.id));
+      return tokenData.access_token;
+    } catch (e) {
+      console.warn("[avito] refresh_token failed, falling back to client_credentials:", (e as Error).message);
+    }
+  }
+
+  // Fallback: client_credentials
   const tokenData = await fetchToken(settings.clientId, settings.clientSecret);
   const expiresAt = new Date(now.getTime() + tokenData.expires_in * 1000);
   await db.update(avitoSettingsTable)
@@ -90,6 +109,48 @@ async function avitoPost(path: string, token: string, body: object) {
     throw new AvitoApiError(res.status, `Авито API ${res.status}: ${text}`);
   }
   return res.json();
+}
+
+// ── OAuth helpers ─────────────────────────────────────────────────────────────
+
+const REDIRECT_URI = "https://sfera-master.ru/api/avito/callback";
+const CRM_URL = "https://sfera-master.ru/crm/avito";
+
+async function exchangeCode(code: string, clientId: string, clientSecret: string) {
+  const res = await fetch(`${AVITO_API}/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      client_id: clientId,
+      client_secret: clientSecret,
+      code,
+      redirect_uri: REDIRECT_URI,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Авито OAuth: ${res.status} — ${text}`);
+  }
+  return res.json() as Promise<{ access_token: string; refresh_token?: string; expires_in: number }>;
+}
+
+async function refreshAccessToken(refreshToken: string, clientId: string, clientSecret: string) {
+  const res = await fetch(`${AVITO_API}/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Авито refresh token: ${res.status} — ${text}`);
+  }
+  return res.json() as Promise<{ access_token: string; refresh_token?: string; expires_in: number }>;
 }
 
 // ── routes ────────────────────────────────────────────────────────────────────
@@ -159,6 +220,88 @@ router.delete("/settings", async (_req, res) => {
     }).where(eq(avitoSettingsTable.id, existing.id));
   }
   res.json({ ok: true });
+});
+
+// GET /api/avito/oauth-start — начать OAuth авторизацию через Авито
+// ?client_id=XXX&client_secret=YYY (сохраняем credentials перед редиректом)
+router.get("/oauth-start", async (req, res) => {
+  const { client_id, client_secret } = req.query as { client_id?: string; client_secret?: string };
+  if (!client_id || !client_secret) {
+    return res.status(400).send("Нужны client_id и client_secret");
+  }
+
+  // Временно сохраним credentials, чтобы использовать при callback
+  const existing = await getSettings();
+  if (existing) {
+    await db.update(avitoSettingsTable)
+      .set({ clientId: client_id, clientSecret: client_secret, updatedAt: new Date() })
+      .where(eq(avitoSettingsTable.id, existing.id));
+  } else {
+    await db.insert(avitoSettingsTable).values({
+      clientId: client_id, clientSecret: client_secret, enabled: false,
+    });
+  }
+
+  const authUrl = new URL("https://avito.ru/oauth");
+  authUrl.searchParams.set("response_type", "code");
+  authUrl.searchParams.set("client_id", client_id);
+  authUrl.searchParams.set("scope", AVITO_SCOPES);
+  authUrl.searchParams.set("redirect_uri", REDIRECT_URI);
+
+  res.redirect(authUrl.toString());
+});
+
+// GET /api/avito/callback — обработка OAuth callback от Авито
+router.get("/callback", async (req, res) => {
+  const { code, error, error_description } = req.query as {
+    code?: string; error?: string; error_description?: string;
+  };
+
+  if (error) {
+    console.error(`[avito:callback] OAuth error: ${error} — ${error_description}`);
+    return res.redirect(`${CRM_URL}?avito_error=${encodeURIComponent(error_description ?? error)}`);
+  }
+
+  if (!code) {
+    return res.redirect(`${CRM_URL}?avito_error=no_code`);
+  }
+
+  const settings = await getSettings();
+  if (!settings?.clientId || !settings?.clientSecret) {
+    return res.redirect(`${CRM_URL}?avito_error=no_credentials`);
+  }
+
+  try {
+    const tokenData = await exchangeCode(code, settings.clientId, settings.clientSecret);
+    const expiresAt = new Date(Date.now() + tokenData.expires_in * 1000);
+
+    // Получаем данные аккаунта
+    let avitoUserId: string | null = null;
+    let avitoUserName: string | null = null;
+    try {
+      const self = await fetch(`${AVITO_API}/core/v1/accounts/self`, {
+        headers: { Authorization: `Bearer ${tokenData.access_token}` },
+      }).then(r => r.json()) as any;
+      avitoUserId = String(self.id ?? "");
+      avitoUserName = self.name ?? null;
+    } catch {}
+
+    await db.update(avitoSettingsTable).set({
+      accessToken: tokenData.access_token,
+      ...(tokenData.refresh_token ? { refreshToken: tokenData.refresh_token } : {}),
+      tokenExpiresAt: expiresAt,
+      avitoUserId, avitoUserName,
+      authType: "oauth_code",
+      enabled: true,
+      updatedAt: new Date(),
+    } as any).where(eq(avitoSettingsTable.id, settings.id));
+
+    console.log(`[avito:callback] OAuth success, user=${avitoUserName} (${avitoUserId})`);
+    res.redirect(`${CRM_URL}?avito_connected=1&avito_user=${encodeURIComponent(avitoUserName ?? avitoUserId ?? "")}`);
+  } catch (e: any) {
+    console.error(`[avito:callback] token exchange failed: ${e.message}`);
+    res.redirect(`${CRM_URL}?avito_error=${encodeURIComponent(e.message)}`);
+  }
 });
 
 // GET /api/avito/chats — list chats
