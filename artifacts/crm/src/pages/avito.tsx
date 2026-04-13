@@ -122,15 +122,33 @@ function conversionIcon(views: number, contacts: number) {
   return <TrendingDown className="w-3 h-3" />;
 }
 
-// ── Reply templates ────────────────────────────────────────────────────────
+// ── Reply templates (по спецификации) ──────────────────────────────────────
 
 const REPLY_TEMPLATES = [
-  { label: "Приветствие", text: "Здравствуйте! Спасибо за обращение. Чем могу помочь?" },
-  { label: "Стоимость", text: "Стоимость зависит от объёма работ. Уточните, пожалуйста, что именно нужно сделать, и я назову точную цену." },
-  { label: "Выезд мастера", text: "Мастер может выехать на замер и оценку бесплатно. Удобно завтра с 10 до 18?" },
-  { label: "Сроки", text: "Сроки выполнения работ зависят от их объёма. Обычно от 1 до 5 рабочих дней. Можем обсудить подробнее." },
-  { label: "Контакт", text: "Оставьте, пожалуйста, номер телефона — наш менеджер свяжется с вами в течение часа." },
-  { label: "Спасибо", text: "Спасибо за обращение! Будем рады помочь. Если появятся вопросы — пишите." },
+  {
+    label: "Цены",
+    text: "Здравствуйте!\nОбои от 300₽/м²\nШпаклёвка от 350₽/м²\nПокраска от 200₽/м²\nПлитка от 1200₽/м²\n\nПодскажите:\n1. Какой район?\n2. Примерная площадь?\n3. Когда хотите начать?",
+  },
+  {
+    label: "Мастер приедет",
+    text: "Отлично! Сейчас подберу мастера из вашего района. Он свяжется с вами в течение часа и договоритесь по времени.\nСкиньте номер для связи 👍",
+  },
+  {
+    label: "Гарантия",
+    text: "После работы выдаём гарантийный сертификат на 2 года.\nЕсли что-то отклеится — приедем и переделаем бесплатно 👍",
+  },
+  {
+    label: "Бригада",
+    text: "Да, мы частная бригада, работаем по районам. Цены одинаковые. Кто ближе — тот и выезжает.",
+  },
+  {
+    label: "Приветствие",
+    text: "Здравствуйте! Спасибо за обращение. Чем могу помочь?",
+  },
+  {
+    label: "Контакт",
+    text: "Оставьте, пожалуйста, номер телефона — наш менеджер свяжется с вами в течение часа.",
+  },
 ];
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -151,7 +169,11 @@ export default function AvitoPage() {
   const [chatSearch, setChatSearch] = useState("");
   const [itemSearch, setItemSearch] = useState("");
   const [itemStatusFilter, setItemStatusFilter] = useState<string>("all");
-  const [showTemplates, setShowTemplates] = useState(false);
+  const [showLeadModal, setShowLeadModal] = useState(false);
+  const [leadForm, setLeadForm] = useState({ city: "", serviceType: "", district: "", area: "", comment: "" });
+  const [availableCities, setAvailableCities] = useState<string[]>([]);
+  const [availableServices, setAvailableServices] = useState<string[]>([]);
+  const prevUnreadRef = useRef(0);
   const pingInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -246,6 +268,35 @@ export default function AvitoPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
 
+  // Load cities + services for lead form
+  useEffect(() => {
+    fetch(`${BASE}/api/settings/cities`).then(r => r.ok ? r.json() : [])
+      .then((d: { name: string }[]) => setAvailableCities(d.map(c => c.name))).catch(() => {});
+    fetch(`${BASE}/api/settings/services`).then(r => r.ok ? r.json() : [])
+      .then((d: { name: string }[]) => setAvailableServices(d.map(s => s.name))).catch(() => {});
+  }, []);
+
+  // Sound notification for new unread messages
+  useEffect(() => {
+    const current = unreadTotal;
+    if (current > prevUnreadRef.current) {
+      try {
+        const ctx = new AudioContext();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.setValueAtTime(880, ctx.currentTime);
+        osc.frequency.setValueAtTime(660, ctx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.4);
+      } catch {}
+    }
+    prevUnreadRef.current = current;
+  }, [unreadTotal]);
+
   // ── Mutations ──────────────────────────────────────────────────────────
 
   const connectMutation = useMutation({
@@ -289,7 +340,7 @@ export default function AvitoPage() {
   });
 
   const createLeadMutation = useMutation({
-    mutationFn: (chat: AvitoChat) => {
+    mutationFn: ({ chat, form }: { chat: AvitoChat; form: typeof leadForm }) => {
       const user = chat.users.find(u => u.id.toString() !== settings?.avitoUserId);
       return apiFetch("/api/avito/leads", {
         method: "POST",
@@ -298,11 +349,18 @@ export default function AvitoPage() {
           chatId: chat.id,
           clientName: user?.name,
           itemTitle: chat.context?.value?.title,
+          city: form.city || "Не указан",
+          serviceType: form.serviceType || chat.context?.value?.title || "Авито",
+          district: form.district,
+          area: form.area,
+          comment: form.comment,
         }),
       });
     },
     onSuccess: (data) => {
       toast({ title: "Заявка создана", description: `Заявка #${data.leadId}` });
+      setShowLeadModal(false);
+      setLeadForm({ city: "", serviceType: "", district: "", area: "", comment: "" });
     },
     onError: (e: Error) => {
       toast({ title: "Ошибка", description: e.message, variant: "destructive" });
@@ -600,33 +658,35 @@ export default function AvitoPage() {
                             )}
                             <Button size="sm"
                               className="bg-orange-500 hover:bg-orange-600 text-white border-0"
-                              onClick={() => createLeadMutation.mutate(selectedChat)}
-                              disabled={createLeadMutation.isPending}>
+                              onClick={() => setShowLeadModal(true)}>
                               <UserPlus className="w-4 h-4 mr-1.5" />
-                              {createLeadMutation.isPending ? "Создание..." : "Заявка"}
+                              Заявка
                             </Button>
                           </div>
                         </div>
                       </CardHeader>
 
                       {/* Messages */}
-                      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                      <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-muted/20">
                         {messages.length === 0 ? (
-                          <div className="text-center text-muted-foreground text-sm py-8">Нет сообщений</div>
+                          <div className="text-center text-muted-foreground text-sm py-8">
+                            <MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-20" />
+                            Нет сообщений
+                          </div>
                         ) : [...messages].reverse().map(msg => {
                           const isOurs = msg.author_id.toString() === settings.avitoUserId;
                           const text = msg.content?.text?.text;
                           return (
                             <div key={msg.id} className={cn("flex", isOurs ? "justify-end" : "justify-start")}>
-                              <div className={cn("max-w-[75%] rounded-2xl px-4 py-2.5 text-sm",
+                              <div className={cn("max-w-[75%] rounded-2xl px-3.5 py-2 text-sm shadow-sm",
                                 isOurs
-                                  ? "bg-primary text-primary-foreground rounded-tr-sm"
-                                  : "bg-muted text-foreground rounded-tl-sm")}>
+                                  ? "bg-orange-500 text-white rounded-br-sm"
+                                  : "bg-white dark:bg-card text-foreground rounded-bl-sm border border-border/50")}>
                                 {text
-                                  ? <p className="whitespace-pre-wrap">{text}</p>
+                                  ? <p className="whitespace-pre-wrap leading-relaxed">{text}</p>
                                   : <p className="italic opacity-60">[вложение]</p>}
                                 <p className={cn("text-[10px] mt-1",
-                                  isOurs ? "text-primary-foreground/60 text-right" : "text-muted-foreground")}>
+                                  isOurs ? "text-orange-100 text-right" : "text-muted-foreground")}>
                                   {msg.created ? formatTime(msg.created) : ""}
                                 </p>
                               </div>
@@ -637,37 +697,26 @@ export default function AvitoPage() {
                       </div>
 
                       {/* Reply area */}
-                      <div className="p-3 border-t shrink-0 space-y-2">
-                        {/* Templates */}
-                        {showTemplates && (
-                          <div className="bg-muted/50 rounded-xl p-2 space-y-1">
-                            <p className="text-xs font-medium text-muted-foreground px-1 mb-1.5">Шаблоны быстрых ответов:</p>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
-                              {REPLY_TEMPLATES.map(tpl => (
-                                <button
-                                  key={tpl.label}
-                                  onClick={() => { setReplyText(tpl.text); setShowTemplates(false); }}
-                                  className="text-left text-xs px-3 py-2 rounded-lg bg-background hover:bg-primary/5 border border-border/60 transition-colors">
-                                  <span className="font-medium block">{tpl.label}</span>
-                                  <span className="text-muted-foreground truncate block">{tpl.text.slice(0, 60)}…</span>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline" size="icon" className="h-10 w-10 shrink-0"
-                            onClick={() => setShowTemplates(v => !v)}
-                            title="Шаблоны ответов">
-                            <FileText className="w-4 h-4" />
-                          </Button>
+                      <div className="border-t shrink-0">
+                        {/* Quick reply chips — horizontal scroll */}
+                        <div className="px-3 pt-2.5 pb-1 flex gap-2 overflow-x-auto scrollbar-none">
+                          {REPLY_TEMPLATES.map(tpl => (
+                            <button
+                              key={tpl.label}
+                              onClick={() => setReplyText(tpl.text)}
+                              className="shrink-0 text-xs font-medium px-3 py-1.5 rounded-full border border-orange-300 bg-orange-50 hover:bg-orange-100 dark:border-orange-800 dark:bg-orange-950/30 dark:hover:bg-orange-950/50 text-orange-700 dark:text-orange-400 transition-colors whitespace-nowrap">
+                              {tpl.label}
+                            </button>
+                          ))}
+                        </div>
+                        {/* Input row */}
+                        <div className="flex gap-2 p-3 pt-1.5">
                           <Textarea
-                            placeholder="Написать сообщение... (Enter — отправить, Shift+Enter — новая строка)"
+                            placeholder="Написать сообщение... (Enter — отправить)"
                             value={replyText}
                             onChange={e => setReplyText(e.target.value)}
                             rows={2}
-                            className="resize-none text-sm"
+                            className="resize-none text-sm flex-1"
                             onKeyDown={e => {
                               if (e.key === "Enter" && !e.shiftKey) {
                                 e.preventDefault();
@@ -678,7 +727,7 @@ export default function AvitoPage() {
                           <Button
                             onClick={() => replyMutation.mutate()}
                             disabled={!replyText.trim() || replyMutation.isPending}
-                            size="icon" className="h-10 w-10 shrink-0">
+                            className="bg-orange-500 hover:bg-orange-600 text-white h-10 w-10 shrink-0 self-end">
                             {replyMutation.isPending
                               ? <Loader2 className="w-4 h-4 animate-spin" />
                               : <Send className="w-4 h-4" />}
@@ -1007,6 +1056,145 @@ export default function AvitoPage() {
           </Tabs>
         )}
       </div>
+
+      {/* ── Модал создания заявки из Авито чата ─────────────────────────── */}
+      {showLeadModal && selectedChat && settings && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+          onClick={() => setShowLeadModal(false)}
+        >
+          <div
+            className="bg-card rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b bg-orange-50/50 dark:bg-orange-950/10">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-base">Создать заявку</h3>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-500 text-white">Авито</span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Клиент: <strong>{selectedChat.users.find(u => u.id.toString() !== settings.avitoUserId)?.name ?? "Клиент"}</strong>
+                  {selectedChat.context?.value?.title && ` · ${selectedChat.context.value.title}`}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowLeadModal(false)}
+                className="text-muted-foreground hover:text-foreground h-8 w-8 flex items-center justify-center rounded-lg hover:bg-muted transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Form fields */}
+            <div className="p-5 space-y-4">
+              {/* Readonly fields */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">Источник</label>
+                  <div className="h-9 px-3 rounded-lg bg-muted/50 border border-border text-sm flex items-center text-muted-foreground">
+                    Авито
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">Имя клиента</label>
+                  <div className="h-9 px-3 rounded-lg bg-muted/50 border border-border text-sm flex items-center text-muted-foreground truncate">
+                    {selectedChat.users.find(u => u.id.toString() !== settings.avitoUserId)?.name ?? "Клиент"}
+                  </div>
+                </div>
+              </div>
+
+              {/* City + Service */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">Город <span className="text-red-500">*</span></label>
+                  <select
+                    value={leadForm.city}
+                    onChange={e => setLeadForm(f => ({ ...f, city: e.target.value }))}
+                    className="w-full h-9 px-3 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/50"
+                  >
+                    <option value="">Выберите город</option>
+                    {availableCities.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">Вид работ</label>
+                  <select
+                    value={leadForm.serviceType}
+                    onChange={e => setLeadForm(f => ({ ...f, serviceType: e.target.value }))}
+                    className="w-full h-9 px-3 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/50"
+                  >
+                    <option value="">Выберите услугу</option>
+                    {availableServices.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* District + Area */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">Район</label>
+                  <Input
+                    placeholder="Район клиента"
+                    value={leadForm.district}
+                    onChange={e => setLeadForm(f => ({ ...f, district: e.target.value }))}
+                    className="h-9 text-sm focus-visible:ring-orange-400/50"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">Площадь</label>
+                  <Input
+                    placeholder="м², кол-во комнат"
+                    value={leadForm.area}
+                    onChange={e => setLeadForm(f => ({ ...f, area: e.target.value }))}
+                    className="h-9 text-sm focus-visible:ring-orange-400/50"
+                  />
+                </div>
+              </div>
+
+              {/* Comment */}
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Комментарий</label>
+                <Textarea
+                  placeholder="Доп. информация из переписки..."
+                  value={leadForm.comment}
+                  onChange={e => setLeadForm(f => ({ ...f, comment: e.target.value }))}
+                  rows={2}
+                  className="resize-none text-sm focus-visible:ring-orange-400/50"
+                />
+              </div>
+
+              {/* Chat link notice */}
+              <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" />
+                Ссылка на чат Авито будет автоматически привязана к заявке
+              </p>
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 pb-5 flex gap-3">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setShowLeadModal(false)}
+              >
+                Отмена
+              </Button>
+              <Button
+                className="flex-1 bg-orange-500 hover:bg-orange-600 text-white"
+                disabled={!leadForm.city || createLeadMutation.isPending}
+                onClick={() => createLeadMutation.mutate({ chat: selectedChat, form: leadForm })}
+              >
+                {createLeadMutation.isPending
+                  ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Создание...</>
+                  : <><UserPlus className="w-4 h-4 mr-2" />Создать заявку</>}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </Layout>
   );
 }

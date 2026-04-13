@@ -227,19 +227,34 @@ router.post("/chats/:chatId/reply", async (req, res) => {
 
 // POST /api/avito/leads — создать заявку из чата
 router.post("/leads", async (req, res) => {
-  const { chatId, clientName, clientPhone, itemTitle } = req.body as {
-    chatId: string; clientName?: string; clientPhone?: string; itemTitle?: string;
+  const { chatId, clientName, clientPhone, itemTitle, city, serviceType, district, area, comment } = req.body as {
+    chatId: string;
+    clientName?: string;
+    clientPhone?: string;
+    itemTitle?: string;
+    city?: string;
+    serviceType?: string;
+    district?: string;
+    area?: string;
+    comment?: string;
   };
 
   if (!chatId) return res.status(400).json({ error: "Нужен chatId" });
 
+  const chatLink = `https://www.avito.ru/profile/chats/${chatId}`;
+  const fullComment = [
+    comment,
+    area ? `Площадь: ${area}` : null,
+    `Чат Авито: ${chatLink}`,
+  ].filter(Boolean).join("\n");
+
   const [lead] = await db.insert(leadsTable).values({
     clientName: clientName || "Клиент с Авито",
     clientPhone: clientPhone || "—",
-    city: "Не указан",
-    district: "Не указан",
-    serviceType: itemTitle || "Авито",
-    comment: `Заявка из Авито чата #${chatId}`,
+    city: city || "Не указан",
+    district: district || "Не указан",
+    serviceType: serviceType || itemTitle || "Авито",
+    comment: fullComment,
     source: "avito",
     status: "new",
   }).returning();
