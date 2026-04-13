@@ -389,12 +389,13 @@ export default function AvitoPage() {
   });
 
   // Items + stats combined in one request (fixes stats = 0 bug)
-  const { data: itemsData, isLoading: itemsLoading, error: itemsError, refetch: refetchItems } = useQuery<{ resources: AvitoItem[]; meta?: { total?: number } }>({
+  const { data: itemsData, isLoading: itemsLoading, error: itemsError, refetch: refetchItems } = useQuery<{ resources: AvitoItem[]; meta?: { total?: number }; statsError?: string | null }>({
     queryKey: ["/api/avito/items-with-stats"],
     queryFn: () => apiFetch("/api/avito/items-with-stats"),
     enabled: !!settings?.connected && (tab === "items" || tab === "analytics"),
     staleTime: 3 * 60_000,
   });
+  const statsError = itemsData?.statsError ?? null;
 
   // ── Derived ────────────────────────────────────────────────────────────
 
@@ -623,7 +624,7 @@ export default function AvitoPage() {
                 {isOnline === true ? "В сети" : isOnline === false ? "Не в сети" : "Проверка..."}
                 {lastPing && <span className="opacity-60">· {lastPing.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</span>}
               </div>
-              <Button variant="outline" size="sm" onClick={() => disconnectMutation.mutate()} disabled={disconnectMutation.isPending}>
+              <Button variant="outline" size="sm" onClick={() => disconnectMutation.mutate()} disabled={disconnectMutation.isPending} data-avito-disconnect>
                 <Unplug className="w-4 h-4 mr-1.5" /> Отключить
               </Button>
             </div>
@@ -1153,6 +1154,31 @@ export default function AvitoPage() {
 
             {/* ════════════════ ANALYTICS TAB ════════════════ */}
             <TabsContent value="analytics" className="space-y-5">
+              {/* Stats scope warning */}
+              {statsError && (
+                <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                  <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-amber-900">Статистика недоступна</p>
+                    <p className="text-xs text-amber-700 mt-0.5">
+                      Токен Авито не имеет разрешения <code className="bg-amber-100 px-1 rounded">stats:read</code>.
+                      Нужно переподключить Авито — нажмите «Отключить» и подключите заново.
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0 border-amber-300 text-amber-700 hover:bg-amber-100 h-7 text-xs"
+                    onClick={() => {
+                      const el = document.querySelector("[data-avito-disconnect]") as HTMLButtonElement | null;
+                      el?.click();
+                    }}
+                  >
+                    Отключить
+                  </Button>
+                </div>
+              )}
+
               {/* Summary cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {[

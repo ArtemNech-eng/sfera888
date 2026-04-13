@@ -706,6 +706,7 @@ router.get("/stats", async (req, res) => {
   const dateTo = now.toISOString().split("T")[0];
 
   try {
+    console.log(`[avito:stats] POST /stats/v1/accounts/${userId}/items itemIds=[${itemIds.slice(0,5).join(",")}...] dateFrom=${dateFrom} dateTo=${dateTo}`);
     const data = await avitoPost(
       `/stats/v1/accounts/${userId}/items`,
       token,
@@ -716,8 +717,23 @@ router.get("/stats", async (req, res) => {
         itemIds: itemIds.slice(0, 200),
       }
     ) as any;
-    res.json(data);
+    console.log(`[avito:stats] response keys:`, Object.keys(data ?? {}));
+
+    // Normalize: fields can be { uniqViews: { value: N } } or { uniqViews: N }
+    const normalized = (data.result?.items ?? []).map((s: any) => {
+      const f = s.fields ?? {};
+      return {
+        itemId: s.itemId,
+        fields: {
+          uniqViews:    typeof f.uniqViews    === "object" ? (f.uniqViews?.value    ?? 0) : (f.uniqViews    ?? 0),
+          uniqContacts: typeof f.uniqContacts === "object" ? (f.uniqContacts?.value ?? 0) : (f.uniqContacts ?? 0),
+          uniqFavorites:typeof f.uniqFavorites=== "object" ? (f.uniqFavorites?.value?? 0) : (f.uniqFavorites?? 0),
+        },
+      };
+    });
+    res.json({ result: { items: normalized } });
   } catch (e: any) {
+    console.error(`[avito:stats] FAILED:`, e.message);
     res.status(500).json({ error: e.message });
   }
 });
@@ -817,12 +833,14 @@ router.get("/items-with-stats", async (req, res) => {
 
   // 2. Fetch stats for these items (last 30 days) — optional, never fails the request
   let statsMap: Record<number, any> = {};
+  let statsError: string | null = null;
   if (items.length > 0) {
     const now = new Date();
     const from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     try {
+      console.log(`[avito:items-with-stats] fetching stats for ${items.length} items (userId=${resolvedUid})`);
       const statsData = await avitoPost(
-        `/stats/v1/accounts/${userId}/items`,
+        `/stats/v1/accounts/${resolvedUid}/items`,
         token,
         {
           dateFrom: from.toISOString().split("T")[0],
@@ -831,11 +849,25 @@ router.get("/items-with-stats", async (req, res) => {
           itemIds: items.map((i: any) => Number(i.id)),
         }
       ) as any;
+      console.log(`[avito:items-with-stats] stats response keys:`, Object.keys(statsData ?? {}));
+      // Avito Stats API v1 response: { result: { items: [ { itemId, fields: { uniqViews: { value: N }, ... } } ] } }
+      // NOTE: fields are OBJECTS with a .value property, not plain numbers
       for (const s of (statsData.result?.items ?? [])) {
-        statsMap[s.itemId] = s.fields ?? {};
+        const f = s.fields ?? {};
+        statsMap[s.itemId] = {
+          uniqViews:    typeof f.uniqViews    === "object" ? (f.uniqViews?.value    ?? 0) : (f.uniqViews    ?? 0),
+          uniqContacts: typeof f.uniqContacts === "object" ? (f.uniqContacts?.value ?? 0) : (f.uniqContacts ?? 0),
+          uniqFavorites:typeof f.uniqFavorites=== "object" ? (f.uniqFavorites?.value?? 0) : (f.uniqFavorites?? 0),
+          // daily breakdown (for day/week calculation)
+          viewsValues:    f.uniqViews?.values    ?? [],
+          contactsValues: f.uniqContacts?.values  ?? [],
+        };
       }
-    } catch {
-      // Stats are optional — items still shown without stats
+      console.log(`[avito:items-with-stats] parsed stats for ${Object.keys(statsMap).length} items`);
+    } catch (e: any) {
+      // Stats are optional — items still shown without stats, but log the error
+      console.error(`[avito:items-with-stats] stats fetch FAILED:`, e.message);
+      statsError = e.message;
     }
   }
 
@@ -845,7 +877,7 @@ router.get("/items-with-stats", async (req, res) => {
     stats: statsMap[item.id] ?? { uniqViews: 0, uniqContacts: 0, uniqFavorites: 0 },
   }));
 
-  res.json({ resources: enriched, meta });
+  res.json({ resources: enriched, meta, statsError });
 });
 
 // POST /api/avito/ai-analyze — AI-анализ объявлений и рекомендации
