@@ -94,17 +94,23 @@ class AvitoApiError extends Error {
  */
 async function getAdvanceBalance(token: string, userId: string, manualFallback: number): Promise<{ balanceRub: number; source: string; needsReauth: boolean }> {
   try {
-    const today = new Date().toISOString().slice(0, 10);
-    const ninetyDaysAgo = new Date(Date.now() - 90 * 86400_000).toISOString().slice(0, 10);
-    // Avito operations history — GET with query params (not POST)
-    const opsUrl = `${AVITO_API}/core/v1/accounts/${userId}/operations/history/?dateFrom=${ninetyDaysAgo}&dateTo=${today}`;
+    // Avito operations history — GET with dateTimeFrom/dateTimeTo (ISO 8601 with timezone)
+    // Docs: GET /core/v1/accounts/{user_id}/operations/history/
+    // Response: { result: { operations: [...], meta: {...} } }
+    // Fields: amountReal (rubles), amountBonus, operationType: "credit"|"debit"|"bonus_credit"|"bonus_debit"
+    const now = new Date();
+    const ninetyDaysAgo = new Date(now.getTime() - 90 * 86400_000);
+    const dateTimeTo   = now.toISOString().replace("Z", "+03:00");
+    const dateTimeFrom = ninetyDaysAgo.toISOString().replace("Z", "+03:00");
+    const opsParams = new URLSearchParams({ dateTimeFrom, dateTimeTo, per_page: "100", page: "1" });
+    const opsUrl = `${AVITO_API}/core/v1/accounts/${userId}/operations/history/?${opsParams}`;
     console.log(`[avito:advance] → GET ${opsUrl}`);
     const opsResp = await fetch(opsUrl, {
       method: "GET",
       headers: { Authorization: `Bearer ${token}` },
     });
     const opsBodyText = await opsResp.text();
-    console.log(`[avito:advance] ← status=${opsResp.status} body=${opsBodyText.slice(0, 500)}`);
+    console.log(`[avito:advance] ← status=${opsResp.status} body=${opsBodyText.slice(0, 800)}`);
 
     if (opsResp.status === 403 || opsResp.status === 401) {
       console.log(`[avito:advance] ${opsResp.status} — need user_operations:read scope, using manual fallback=${manualFallback}`);
@@ -116,28 +122,30 @@ async function getAdvanceBalance(token: string, userId: string, manualFallback: 
     }
     let opsData: any = {};
     try { opsData = JSON.parse(opsBodyText); } catch { opsData = {}; }
-    const ops: any[] = opsData?.operations ?? [];
+
+    // Response is { result: { operations: [...], meta: {...} } }
+    const ops: any[] = opsData?.result?.operations ?? opsData?.operations ?? [];
     const types = [...new Set(ops.map((o: any) => o.operationType))];
     console.log(`[avito:advance] ops count=${ops.length} types=${JSON.stringify(types)}`);
     if (ops.length > 0) console.log(`[avito:advance] ops[0]=${JSON.stringify(ops[0])}`);
 
-    // Separate deposits from charges
-    const deposits = ops.filter((o: any) =>
-      /пополнение|зачисление|возврат/i.test((o.operationType ?? "") + (o.operationName ?? ""))
-    );
-    const charges = ops.filter((o: any) =>
-      /списание|резервирование/i.test((o.operationType ?? "") + (o.operationName ?? ""))
-    );
-    const totalDeposits = deposits.reduce((s: number, o: any) => s + Math.abs(Number(o.amountRub ?? 0)), 0);
-    const totalCharges  = charges.reduce((s: number, o: any) => s + Math.abs(Number(o.amountRub ?? 0)), 0);
-    console.log(`[avito:advance] deposits=${totalDeposits} charges=${totalCharges} (${deposits.length} deposit ops, ${charges.length} charge ops)`);
+    // credit / bonus_credit = пополнение аванса
+    // debit / bonus_debit   = списание за просмотры/услуги
+    const deposits = ops.filter((o: any) => /credit/i.test(o.operationType ?? ""));
+    const charges  = ops.filter((o: any) => /debit/i.test(o.operationType ?? ""));
+    // Amount field: amountReal (rubles). amountRub also possible based on API version
+    const getAmt = (o: any) => Math.abs(Number(o.amountReal ?? o.amountRub ?? o.amountTotal ?? 0));
+    const totalDeposits = deposits.reduce((s: number, o: any) => s + getAmt(o), 0);
+    const totalCharges  = charges.reduce((s: number,  o: any) => s + getAmt(o), 0);
+    console.log(`[avito:advance] deposits=${totalDeposits}₽ charges=${totalCharges}₽ (${deposits.length}+${charges.length} ops)`);
 
-    if (deposits.length > 0) {
+    if (ops.length > 0) {
+      // We have real data — compute net balance
       const computed = Math.max(0, Math.round(totalDeposits - totalCharges));
       return { balanceRub: computed, source: "ops", needsReauth: false };
     }
-    // No deposits in 90 days — use manual or 0
-    return { balanceRub: manualFallback, source: ops.length > 0 ? "ops_no_deposits" : "manual", needsReauth: false };
+    // No operations in 90 days — use manual fallback
+    return { balanceRub: manualFallback, source: "manual", needsReauth: false };
   } catch (e: any) {
     console.log(`[avito:advance] error: ${e.message}`);
     return { balanceRub: manualFallback, source: "manual", needsReauth: false };
