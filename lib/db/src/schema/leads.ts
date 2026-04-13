@@ -23,6 +23,8 @@ export const leadsTable = pgTable("leads", {
   comment: text("comment"),
   photos: text("photos"),
   source: text("source"),
+  avitoItemId: text("avito_item_id"),
+  avitoItemTitle: text("avito_item_title"),
   status: leadStatusEnum("status").notNull().default("new"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

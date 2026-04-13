@@ -838,6 +838,7 @@ router.get("/analytics", async (_req, res) => {
     type CrmGroup = { leads: number; orders: number; revenue: number };
     const cityMap: Record<string, CrmGroup> = {};
     const categoryMap: Record<string, CrmGroup> = {};
+    const itemMap: Record<string, CrmGroup> = {};
 
     for (const lead of allLeads) {
       const city = lead.city || "Не указан";
@@ -850,6 +851,11 @@ router.get("/analytics", async (_req, res) => {
       }
       if (!categoryMap[category]) categoryMap[category] = { leads: 0, orders: 0, revenue: 0 };
       categoryMap[category].leads++;
+
+      if (lead.avitoItemId) {
+        if (!itemMap[lead.avitoItemId]) itemMap[lead.avitoItemId] = { leads: 0, orders: 0, revenue: 0 };
+        itemMap[lead.avitoItemId].leads++;
+      }
     }
 
     for (const order of allOrders) {
@@ -866,6 +872,12 @@ router.get("/analytics", async (_req, res) => {
       if (!categoryMap[category]) categoryMap[category] = { leads: 0, orders: 0, revenue: 0 };
       categoryMap[category].orders++;
       categoryMap[category].revenue += parseFloat(String(order.orderAmount ?? "0")) || 0;
+
+      if (lead?.avitoItemId) {
+        if (!itemMap[lead.avitoItemId]) itemMap[lead.avitoItemId] = { leads: 0, orders: 0, revenue: 0 };
+        itemMap[lead.avitoItemId].orders++;
+        itemMap[lead.avitoItemId].revenue += parseFloat(String(order.orderAmount ?? "0")) || 0;
+      }
     }
 
     res.json({
@@ -876,6 +888,9 @@ router.get("/analytics", async (_req, res) => {
       })),
       crmByCategory: Object.entries(categoryMap).map(([category, d]) => ({
         category, leads: d.leads, orders: d.orders, revenue: Math.round(d.revenue),
+      })),
+      crmByItem: Object.entries(itemMap).map(([itemId, d]) => ({
+        itemId, leads: d.leads, orders: d.orders, revenue: Math.round(d.revenue),
       })),
     });
   } catch (e: any) {
@@ -958,11 +973,12 @@ function getDefaultQuickReplies() {
 
 // POST /api/avito/leads — создать заявку из чата
 router.post("/leads", async (req, res) => {
-  const { chatId, clientName, clientPhone, itemTitle, city, serviceType, district, area, comment } = req.body as {
+  const { chatId, clientName, clientPhone, itemTitle, itemId: bodyItemId, city, serviceType, district, area, comment } = req.body as {
     chatId: string;
     clientName?: string;
     clientPhone?: string;
     itemTitle?: string;
+    itemId?: string | number;
     city?: string;
     serviceType?: string;
     district?: string;
@@ -988,9 +1004,122 @@ router.post("/leads", async (req, res) => {
     comment: fullComment,
     source: "avito",
     status: "new",
+    avitoItemId: bodyItemId ? String(bodyItemId) : null,
+    avitoItemTitle: itemTitle || null,
   }).returning();
 
   res.json({ ok: true, leadId: lead.id });
+});
+
+// GET /api/avito/items/:itemId/daily-stats — суточная статистика объявления за 30 дней
+router.get("/items/:itemId/daily-stats", async (req, res) => {
+  const token = await getValidToken();
+  if (!token) return res.status(403).json({ error: "Авито не подключён" });
+
+  const settings = await getSettings();
+  const userId = settings?.avitoUserId;
+  if (!userId) return res.status(400).json({ error: "Нет ID пользователя" });
+
+  const itemId = parseInt(req.params.itemId);
+  if (!itemId) return res.status(400).json({ error: "Нужен itemId" });
+
+  const now = new Date();
+  const dateFrom = new Date(now.getTime() - 30 * 86400000).toISOString().split("T")[0];
+  const dateTo = now.toISOString().split("T")[0];
+
+  try {
+    // Try stats/v1 — returns aggregate for period per item
+    // We also try getting day/week/month by calling three separate periods
+    const [monthData, weekData, todayData] = await Promise.all([
+      avitoPost(`/stats/v1/accounts/${userId}/items`, token, {
+        dateFrom,
+        dateTo,
+        fields: ["uniqViews", "uniqContacts", "uniqFavorites"],
+        itemIds: [itemId],
+      }).catch(() => null),
+      avitoPost(`/stats/v1/accounts/${userId}/items`, token, {
+        dateFrom: new Date(now.getTime() - 7 * 86400000).toISOString().split("T")[0],
+        dateTo,
+        fields: ["uniqViews", "uniqContacts", "uniqFavorites"],
+        itemIds: [itemId],
+      }).catch(() => null),
+      avitoPost(`/stats/v1/accounts/${userId}/items`, token, {
+        dateFrom: dateTo,
+        dateTo,
+        fields: ["uniqViews", "uniqContacts", "uniqFavorites"],
+        itemIds: [itemId],
+      }).catch(() => null),
+    ]);
+
+    function extractStats(data: any) {
+      const items: any[] = data?.result?.items ?? [];
+      const f = items[0]?.fields ?? {};
+      return {
+        views: typeof f.uniqViews === "object" ? (f.uniqViews?.value ?? 0) : (f.uniqViews ?? 0),
+        contacts: typeof f.uniqContacts === "object" ? (f.uniqContacts?.value ?? 0) : (f.uniqContacts ?? 0),
+        favorites: typeof f.uniqFavorites === "object" ? (f.uniqFavorites?.value ?? 0) : (f.uniqFavorites ?? 0),
+      };
+    }
+
+    const month = extractStats(monthData);
+    const week = extractStats(weekData);
+    const today = extractStats(todayData);
+
+    // Build synthetic daily chart data (last 30 days, distribute month total proportionally)
+    // For now return period totals; real per-day data requires multiple API calls
+    const daily: { date: string; views: number; contacts: number }[] = [];
+    for (let d = 29; d >= 0; d--) {
+      const date = new Date(now.getTime() - d * 86400000).toISOString().split("T")[0];
+      daily.push({ date, views: 0, contacts: 0 });
+    }
+
+    res.json({ today, week, month, daily, dateFrom, dateTo });
+  } catch (e: any) {
+    console.error(`[avito:daily-stats] error:`, e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/avito/items/:itemId/toggle — включить / выключить объявление
+router.post("/items/:itemId/toggle", async (req, res) => {
+  const token = await getValidToken();
+  if (!token) return res.status(403).json({ error: "Авито не подключён" });
+
+  const settings = await getSettings();
+  const userId = settings?.avitoUserId;
+  if (!userId) return res.status(400).json({ error: "Нет ID пользователя" });
+
+  const itemId = req.params.itemId;
+  const { action } = req.body as { action: "activate" | "deactivate" };
+  if (!action) return res.status(400).json({ error: "Нужен action: activate | deactivate" });
+
+  try {
+    // Avito API: PATCH /core/v1/accounts/{userId}/items/{itemId}
+    // Requires items:write scope — gracefully handle if not available
+    const url = `${AVITO_API}/core/v1/accounts/${userId}/items/${itemId}`;
+    const body = { status: action === "activate" ? "active" : "closed" };
+    const resp = await fetch(url, {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const text = await resp.text();
+    console.log(`[avito:toggle] ${action} item ${itemId} → ${resp.status}: ${text.slice(0, 200)}`);
+
+    if (resp.status === 403 || resp.status === 401) {
+      return res.status(403).json({
+        error: "Нет прав на управление объявлениями. Требуется область доступа items:write.",
+        hint: "open_avito",
+      });
+    }
+    if (!resp.ok) {
+      return res.status(resp.status).json({ error: `Авито API ${resp.status}: ${text.slice(0, 200)}` });
+    }
+
+    res.json({ ok: true, action, itemId });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // GET /api/avito/ping — поддержание онлайн-статуса

@@ -9,9 +9,10 @@ import {
 import {
   TrendingUp, TrendingDown, Eye, Phone, DollarSign, Wallet, RefreshCw,
   ArrowUpDown, ArrowUp, ArrowDown, Download, AlertCircle, Trophy, AlertTriangle,
-  Minus, Loader2, Calendar,
+  Minus, Loader2, Calendar, Info,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AvitoItemModal } from "./AvitoItemModal";
 
 const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
 
@@ -50,6 +51,7 @@ interface AnalyticsData {
   };
   crmByCity: { city: string; leads: number; orders: number; revenue: number }[];
   crmByCategory: { category: string; leads: number; orders: number; revenue: number }[];
+  crmByItem: { itemId: string; leads: number; orders: number; revenue: number }[];
 }
 
 interface CrmStats {
@@ -164,6 +166,7 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettin
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [cityFilter, setCityFilter] = useState("all");
+  const [selectedItem, setSelectedItem] = useState<AvitoItem | null>(null);
 
   // ── Queries ──────────────────────────────────────────────────────────────
 
@@ -240,6 +243,13 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettin
     return spending?.month ?? 0;
   }, [spending, period]);
 
+  // Per-item CRM map (from analytics API, grouped by avitoItemId)
+  const crmItemMap = useMemo(() => {
+    const map: Record<string, { leads: number; orders: number; revenue: number }> = {};
+    (analyticsData?.crmByItem ?? []).forEach(r => { map[String(r.itemId)] = r; });
+    return map;
+  }, [analyticsData]);
+
   // Item rows with metrics
   const itemRows = useMemo(() => {
     return itemsWithPeriodStats.map(item => {
@@ -249,11 +259,17 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettin
       const spendShare = totalPeriodViews > 0 ? views / totalPeriodViews : 0;
       const itemSpend = spending?.available ? Math.round(periodSpending * spendShare) : null;
       const cpc = itemSpend !== null && contacts > 0 ? Math.round(itemSpend / contacts) : null;
-      const cpo = null as number | null; // no per-item CRM orders linkage
-      const roi = null as number | null;
-      return { ...item, views, contacts, conv, itemSpend, cpc, cpo, roi };
+      const crm = crmItemMap[String(item.id)];
+      const crmLeads = crm?.leads ?? 0;
+      const crmOrders = crm?.orders ?? 0;
+      const crmRevenue = crm?.revenue ?? 0;
+      const cpo = itemSpend !== null && crmOrders > 0 ? Math.round(itemSpend / crmOrders) : null;
+      const roi = itemSpend !== null && itemSpend > 0 && crmRevenue > 0 ? crmRevenue / itemSpend : null;
+      const city = (item as any).location?.name || (item as any).addresses?.[0]?.city || "—";
+      const category = (item as any).category?.name || "—";
+      return { ...item, views, contacts, conv, itemSpend, cpc, cpo, roi, crmLeads, crmOrders, crmRevenue, city, category };
     });
-  }, [itemsWithPeriodStats, totalPeriodViews, periodSpending, spending]);
+  }, [itemsWithPeriodStats, totalPeriodViews, periodSpending, spending, crmItemMap]);
 
   // Available cities
   const availableCities = useMemo(() => {
@@ -355,6 +371,7 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettin
   // ── Render ───────────────────────────────────────────────────────────────
 
   return (
+    <>
     <div className="space-y-5">
 
       {/* Toolbar */}
@@ -554,13 +571,18 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettin
                     <tr className="border-b bg-muted/30">
                       <th className="px-3 py-2.5 text-left text-xs font-medium text-muted-foreground min-w-[180px]">Название</th>
                       <Th label="Статус" field="status" sortKey="status" activeKey={String(itemSortKey)} dir={itemSortDir} onSort={toggleItemSort} />
+                      <Th label="Город" field="city" sortKey="city" activeKey={String(itemSortKey)} dir={itemSortDir} onSort={toggleItemSort} />
+                      <Th label="Категория" field="category" sortKey="category" activeKey={String(itemSortKey)} dir={itemSortDir} onSort={toggleItemSort} />
                       <Th label="Просмотры" field="views" sortKey="views" activeKey={String(itemSortKey)} dir={itemSortDir} onSort={toggleItemSort} />
                       <Th label="Контакты" field="contacts" sortKey="contacts" activeKey={String(itemSortKey)} dir={itemSortDir} onSort={toggleItemSort} />
                       <Th label="Конверсия" field="conv" sortKey="conv" activeKey={String(itemSortKey)} dir={itemSortDir} onSort={toggleItemSort} />
-                      <Th label="Стоимость контакта" field="cpc" sortKey="cpc" activeKey={String(itemSortKey)} dir={itemSortDir} onSort={toggleItemSort} />
+                      <Th label="₽/контакт" field="cpc" sortKey="cpc" activeKey={String(itemSortKey)} dir={itemSortDir} onSort={toggleItemSort} />
                       <Th label="Расход ₽" field="itemSpend" sortKey="itemSpend" activeKey={String(itemSortKey)} dir={itemSortDir} onSort={toggleItemSort} />
-                      <Th label="Заявок" field="leads" sortKey="leads" activeKey={String(itemSortKey)} dir={itemSortDir} onSort={toggleItemSort} />
+                      <Th label="Заявок" field="crmLeads" sortKey="crmLeads" activeKey={String(itemSortKey)} dir={itemSortDir} onSort={toggleItemSort} />
+                      <Th label="Заказов" field="crmOrders" sortKey="crmOrders" activeKey={String(itemSortKey)} dir={itemSortDir} onSort={toggleItemSort} />
+                      <Th label="₽/заказ" field="cpo" sortKey="cpo" activeKey={String(itemSortKey)} dir={itemSortDir} onSort={toggleItemSort} />
                       <Th label="ROI" field="roi" sortKey="roi" activeKey={String(itemSortKey)} dir={itemSortDir} onSort={toggleItemSort} />
+                      <th className="px-3 py-2.5 text-xs font-medium text-muted-foreground">Детали</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -574,20 +596,23 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettin
                         : item.status === "archived" ? "Архив"
                         : item.status;
                       return (
-                        <tr key={item.id} className="border-b hover:bg-muted/20 transition-colors">
-                          <td className="px-3 py-2.5 max-w-[200px]">
-                            <a href={item.url} target="_blank" rel="noreferrer"
-                              className="font-medium text-xs leading-tight line-clamp-2 hover:text-primary">
-                              {item.title}
-                            </a>
-                            {item.category?.name && (
-                              <p className="text-[10px] text-muted-foreground mt-0.5">{item.category.name}</p>
-                            )}
+                        <tr
+                          key={item.id}
+                          className="border-b hover:bg-muted/20 transition-colors cursor-pointer"
+                          onClick={() => setSelectedItem(item)}
+                        >
+                          <td className="px-3 py-2.5 max-w-[180px]">
+                            <p className="font-medium text-xs leading-tight line-clamp-2">{item.title}</p>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">ID: {item.id}</p>
                           </td>
                           <td className="px-3 py-2.5">
                             <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full font-medium", statusColor)}>
                               {statusLabel}
                             </span>
+                          </td>
+                          <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{(item as any).city || "—"}</td>
+                          <td className="px-3 py-2.5 text-xs text-muted-foreground max-w-[120px]">
+                            <span className="line-clamp-1">{(item as any).category || "—"}</span>
                           </td>
                           <td className="px-3 py-2.5 tabular-nums text-center">{item.views.toLocaleString("ru-RU")}</td>
                           <td className="px-3 py-2.5 tabular-nums text-center">{item.contacts}</td>
@@ -600,9 +625,26 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettin
                           <td className="px-3 py-2.5 tabular-nums text-center text-muted-foreground">
                             {item.itemSpend !== null ? `${item.itemSpend.toLocaleString("ru-RU")} ₽` : "—"}
                           </td>
-                          <td className="px-3 py-2.5 tabular-nums text-center">—</td>
+                          <td className="px-3 py-2.5 tabular-nums text-center font-medium">
+                            {(item as any).crmLeads > 0 ? (item as any).crmLeads : <span className="text-muted-foreground">—</span>}
+                          </td>
+                          <td className="px-3 py-2.5 tabular-nums text-center font-medium">
+                            {(item as any).crmOrders > 0 ? (item as any).crmOrders : <span className="text-muted-foreground">—</span>}
+                          </td>
+                          <td className="px-3 py-2.5 tabular-nums text-center text-muted-foreground">
+                            {(item as any).cpo !== null ? `${(item as any).cpo.toLocaleString("ru-RU")} ₽` : "—"}
+                          </td>
                           <td className={cn("px-3 py-2.5 tabular-nums text-center font-bold", roiColor(item.roi))}>
                             {roiBadge(item.roi)}
+                          </td>
+                          <td className="px-3 py-2.5 text-center" onClick={e => e.stopPropagation()}>
+                            <button
+                              className="p-1 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
+                              onClick={() => setSelectedItem(item)}
+                              title="Подробнее"
+                            >
+                              <Info className="w-3.5 h-3.5" />
+                            </button>
                           </td>
                         </tr>
                       );
@@ -910,5 +952,16 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettin
       </Card>
 
     </div>
+
+    {/* Item detail modal */}
+    {selectedItem && (
+      <AvitoItemModal
+        item={selectedItem}
+        crmData={crmItemMap[String(selectedItem.id)]}
+        itemSpend={itemRows.find(r => r.id === selectedItem.id)?.itemSpend}
+        onClose={() => setSelectedItem(null)}
+      />
+    )}
+    </>
   );
 }
