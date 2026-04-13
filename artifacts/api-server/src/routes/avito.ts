@@ -115,7 +115,7 @@ async function getAdvanceBalance(_token: string, _userId: string, manualFallback
         "Content-Type": "application/json",
         "X-Source": "sfera-master",
       },
-      body: '"{}"',
+      body: '{}',
     });
     const bodyText = await resp.text();
     console.log(`[avito:advance] ← status=${resp.status} body=${bodyText.slice(0, 400)}`);
