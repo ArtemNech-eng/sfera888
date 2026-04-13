@@ -496,6 +496,35 @@ router.post("/chats/:chatId/read", async (req, res) => {
   }
 });
 
+// GET /api/avito/advance — аванс (вручную)
+router.get("/advance", async (_req, res) => {
+  try {
+    const settings = await getSettings();
+    res.json({
+      advanceBalance: settings?.advanceBalance ?? 0,
+      updatedAt: settings?.advanceBalanceUpdatedAt ?? null,
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/avito/advance — сохранить аванс вручную
+router.post("/advance", async (req, res) => {
+  try {
+    const { amount } = req.body as { amount: number };
+    if (typeof amount !== "number" || amount < 0) {
+      return res.status(400).json({ error: "amount должен быть неотрицательным числом" });
+    }
+    await db
+      .update(avitoSettingsTable)
+      .set({ advanceBalance: Math.round(amount), advanceBalanceUpdatedAt: new Date() });
+    res.json({ ok: true, advanceBalance: Math.round(amount) });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/avito/balance — баланс кошелька
 router.get("/balance", async (_req, res) => {
   const token = await getValidToken();
@@ -582,33 +611,10 @@ router.get("/crm-stats", async (_req, res) => {
       }
     }
 
-    // Avito balance — try multiple endpoints, return rubles
-    let balanceRub = 0;
-    try {
-      const token = await getValidToken();
-      if (token) {
-        const settingsForBalance = await getSettings();
-        const uid = settingsForBalance?.avitoUserId;
-        if (uid) {
-          const balanceEndpoints = [
-            `/core/v1/accounts/${uid}/balance/`,
-            `/core/v1/accounts/self/balance/`,
-            `/core/v2/accounts/${uid}/balance/`,
-          ];
-          for (const ep of balanceEndpoints) {
-            try {
-              const r = await fetch(`${AVITO_API}${ep}`, { headers: { Authorization: `Bearer ${token}` } });
-              if (r.ok) {
-                const bd = await r.json() as any;
-                const raw = bd?.real ?? bd?.result?.real ?? 0;
-                balanceRub = Math.round(raw / 100);
-                if (balanceRub > 0) break; // found real data
-              }
-            } catch (_) { /* try next */ }
-          }
-        }
-      }
-    } catch (_) { /* balance optional */ }
+    // Аванс Авито — берём из БД (ручной ввод), т.к. Avito API не отдаёт аванс публично
+    const settingsForAdvance = await getSettings();
+    const balanceRub = settingsForAdvance?.advanceBalance ?? 0;
+    const advanceUpdatedAt = settingsForAdvance?.advanceBalanceUpdatedAt ?? null;
 
     // Cost metrics: revenue / count (returns 0 if no data)
     const avgOrderAmount   = ordersTotal > 0 ? Math.round(revenueTotal / ordersTotal) : 0;
@@ -622,6 +628,7 @@ router.get("/crm-stats", async (_req, res) => {
       revenue: { total: Math.round(revenueTotal), month: Math.round(revenueMonth), avgOrder: avgOrderAmount },
       costPerLead,
       balanceRub,
+      advanceUpdatedAt,
     });
   } catch (e: any) {
     console.error("[avito:crm-stats] error:", e.message);

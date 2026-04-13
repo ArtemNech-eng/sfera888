@@ -161,6 +161,12 @@ async function runMigrations() {
   await db.execute(sql`
     CREATE INDEX IF NOT EXISTS browser_agent_logs_session_idx ON browser_agent_logs(session_id)
   `);
+  // Avito advance balance (manual, since Avito API does not expose аванс publicly)
+  await db.execute(sql`
+    ALTER TABLE avito_settings
+      ADD COLUMN IF NOT EXISTS advance_balance INTEGER DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS advance_balance_updated_at TIMESTAMP
+  `);
   console.log("[startup] Migrations applied");
 }
 

@@ -88,6 +88,7 @@ interface CrmStats {
   revenue: { total: number; month: number; avgOrder: number };
   costPerLead: number;
   balanceRub: number;
+  advanceUpdatedAt?: string | null;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -372,6 +373,8 @@ export default function AvitoPage() {
   const [availableCities, setAvailableCities] = useState<string[]>([]);
   const [availableServices, setAvailableServices] = useState<string[]>([]);
   const [oauthLoading, setOauthLoading] = useState(false);
+  const [advanceEditMode, setAdvanceEditMode] = useState(false);
+  const [advanceInput, setAdvanceInput] = useState("");
   const prevUnreadRef = useRef(0);
   const pingInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -408,11 +411,22 @@ export default function AvitoPage() {
   const statsError = itemsData?.statsError ?? null;
 
   // CRM linkage: Avito-sourced leads and orders
-  const { data: crmStats } = useQuery<CrmStats>({
+  const { data: crmStats, refetch: refetchCrmStats } = useQuery<CrmStats>({
     queryKey: ["/api/avito/crm-stats"],
     queryFn: () => apiFetch("/api/avito/crm-stats"),
     enabled: tab === "analytics",
     staleTime: 5 * 60_000,
+  });
+
+  const saveAdvanceMutation = useMutation({
+    mutationFn: (amount: number) =>
+      apiFetch("/api/avito/advance", { method: "POST", body: JSON.stringify({ amount }) }),
+    onSuccess: () => {
+      refetchCrmStats();
+      setAdvanceEditMode(false);
+      toast({ title: "Аванс сохранён" });
+    },
+    onError: (e: any) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
   });
 
   // ── Derived ────────────────────────────────────────────────────────────
@@ -1245,22 +1259,61 @@ export default function AvitoPage() {
                     <p className="text-xs text-muted-foreground mt-0.5">контакты / просмотры</p>
                   </CardContent>
                 </Card>
-                {/* Аванс Авито */}
+                {/* Аванс Авито (ручной ввод — API не отдаёт аванс) */}
                 <Card className={cn(crmStats && crmStats.balanceRub < 1000 && crmStats.balanceRub >= 0 ? "border-red-200 bg-red-50/40" : "")}>
                   <CardContent className="py-4 px-4">
                     <div className="flex items-center justify-between mb-1">
                       <p className="text-xs text-muted-foreground">Аванс Авито</p>
-                      <div className={cn("w-7 h-7 rounded-lg flex items-center justify-center",
-                        crmStats && crmStats.balanceRub < 1000 ? "bg-red-100" : "bg-amber-50")}>
-                        <Star className={cn("w-3.5 h-3.5", crmStats && crmStats.balanceRub < 1000 ? "text-red-500" : "text-amber-500")} />
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => { setAdvanceInput(String(crmStats?.balanceRub ?? 0)); setAdvanceEditMode(true); }}
+                          className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                          title="Обновить аванс вручную"
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </button>
+                        <div className={cn("w-7 h-7 rounded-lg flex items-center justify-center",
+                          crmStats && crmStats.balanceRub < 1000 ? "bg-red-100" : "bg-amber-50")}>
+                          <Star className={cn("w-3.5 h-3.5", crmStats && crmStats.balanceRub < 1000 ? "text-red-500" : "text-amber-500")} />
+                        </div>
                       </div>
                     </div>
-                    <p className={cn("text-2xl font-bold tabular-nums", crmStats && crmStats.balanceRub < 1000 ? "text-red-600" : "")}>
-                      {crmStats ? `${crmStats.balanceRub.toLocaleString("ru-RU")} ₽` : "—"}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {crmStats && crmStats.balanceRub < 1000 ? "⚠️ Пополните аванс" : "аванс Авито"}
-                    </p>
+                    {advanceEditMode ? (
+                      <div className="flex gap-1 mt-1">
+                        <Input
+                          type="number"
+                          value={advanceInput}
+                          onChange={e => setAdvanceInput(e.target.value)}
+                          className="h-8 text-sm"
+                          placeholder="Сумма ₽"
+                          autoFocus
+                          onKeyDown={e => {
+                            if (e.key === "Enter") saveAdvanceMutation.mutate(Number(advanceInput));
+                            if (e.key === "Escape") setAdvanceEditMode(false);
+                          }}
+                        />
+                        <Button
+                          size="sm"
+                          className="h-8 px-2 text-xs"
+                          onClick={() => saveAdvanceMutation.mutate(Number(advanceInput))}
+                          disabled={saveAdvanceMutation.isPending}
+                        >
+                          {saveAdvanceMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : "OK"}
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => setAdvanceEditMode(false)}>
+                          <X className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <>
+                        <p className={cn("text-2xl font-bold tabular-nums", crmStats && crmStats.balanceRub < 1000 ? "text-red-600" : "")}>
+                          {crmStats ? `${crmStats.balanceRub.toLocaleString("ru-RU")} ₽` : "—"}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {crmStats && crmStats.balanceRub < 1000 ? "⚠️ Пополните аванс" : "нажмите ✎ чтобы обновить"}
+                        </p>
+                      </>
+                    )}
                   </CardContent>
                 </Card>
               </div>

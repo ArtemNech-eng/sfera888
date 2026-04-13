@@ -107,14 +107,13 @@ export default function Dashboard() {
     queryFn: () => fetch("/api/finance/overdue-masters", { credentials: "include" }).then(r => r.json()),
     refetchInterval: 60_000,
   });
-  const { data: avitoBalanceData } = useQuery<{ balance: number; balanceRub: number; bonus: number; bonusRub: number; error?: string }>({
-    queryKey: ["/api/avito/balance"],
-    queryFn: () => fetch("/api/avito/balance", { credentials: "include" }).then(r => r.json()),
-    refetchInterval: 60 * 60_000,
+  const { data: avitoAdvanceData } = useQuery<{ advanceBalance: number; updatedAt?: string | null }>({
+    queryKey: ["/api/avito/advance"],
+    queryFn: () => fetch("/api/avito/advance", { credentials: "include" }).then(r => r.json()),
+    refetchInterval: 5 * 60_000,
     retry: false,
   });
-  const avitoBalance = avitoBalanceData?.error ? null : (avitoBalanceData?.balance ?? null);
-  const avitoBalanceRub = avitoBalanceData?.error ? null : (avitoBalanceData?.balanceRub ?? (avitoBalance !== null ? Math.round(avitoBalance / 100) : null));
+  const avitoBalanceRub = avitoAdvanceData?.advanceBalance ?? null;
 
   const s = stats as any;
   const alerts = s ? [
