@@ -161,13 +161,13 @@ function oauthResultPage(ok: boolean, title: string, subtitle: string): string {
 }
 
 async function exchangeCode(code: string, clientId: string, clientSecret: string) {
-  // redirect_uri included here because it was included in the auth request (RFC 6749 §4.1.3)
+  // Per official Avito docs: token exchange only needs grant_type, client_id, client_secret, code.
+  // redirect_uri is NOT required (docs don't mention it in token exchange step).
   const params = new URLSearchParams({
     grant_type: "authorization_code",
     client_id: clientId,
     client_secret: clientSecret,
     code,
-    redirect_uri: REDIRECT_URI,
   });
 
   console.log(`[avito:exchangeCode] POST ${AVITO_API}/token code_len=${code.length}`);
@@ -301,10 +301,11 @@ router.get("/oauth-start", async (req, res) => {
     });
   }
 
-  // Minimal auth URL — no scope, no redirect_uri, no state.
-  // Avito uses the values registered in the developer console automatically.
-  // Any mismatch in optional params causes "Что-то пошло не так".
-  const authUrl = `https://avito.ru/oauth?response_type=code&client_id=${encodeURIComponent(client_id)}`;
+  // Per official Avito docs: https://developers.avito.ru/api-catalog/auth/documentation
+  // - redirect_uri is NOT included (Avito uses the one registered in developer console)
+  // - scope uses COMMA separator, NOT space
+  // - no state required (optional)
+  const authUrl = `https://avito.ru/oauth?response_type=code&client_id=${encodeURIComponent(client_id)}&scope=messenger:read,messenger:write`;
 
   console.log(`[avito:oauth-start] redirect → ${authUrl}`);
   res.redirect(authUrl);
