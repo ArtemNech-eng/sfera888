@@ -73,12 +73,18 @@ interface AvitoItem {
   url: string;
   category?: { id: number; name: string };
   images?: Array<{ "832x624"?: string; "140x105"?: string }>;
-  stats?: { uniqViews?: number; uniqContacts?: number; uniqFavorites?: number };
+  stats?: {
+    uniqViews?: number; uniqContacts?: number; uniqFavorites?: number;
+    viewsDay?: number; viewsWeek?: number; viewsMonth?: number;
+    contactsDay?: number; contactsWeek?: number; contactsMonth?: number;
+    favsDay?: number; favsWeek?: number; favsMonth?: number;
+    daily?: { date: string; uniqViews: number; uniqContacts: number; uniqFavorites: number }[];
+  };
 }
 
-interface ItemStats {
-  itemId: number;
-  fields: { uniqViews?: number; uniqContacts?: number; uniqFavorites?: number };
+interface CrmStats {
+  leads:  { total: number; month: number; week: number; today: number };
+  orders: { total: number; month: number; week: number };
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -358,6 +364,7 @@ export default function AvitoPage() {
   const [itemSearch, setItemSearch] = useState("");
   const [itemStatusFilter, setItemStatusFilter] = useState<string>("all");
   const [showLeadModal, setShowLeadModal] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
   const [leadForm, setLeadForm] = useState({ city: "", serviceType: "", district: "", area: "", comment: "" });
   const [availableCities, setAvailableCities] = useState<string[]>([]);
   const [availableServices, setAvailableServices] = useState<string[]>([]);
@@ -397,6 +404,14 @@ export default function AvitoPage() {
   });
   const statsError = itemsData?.statsError ?? null;
 
+  // CRM linkage: Avito-sourced leads and orders
+  const { data: crmStats } = useQuery<CrmStats>({
+    queryKey: ["/api/avito/crm-stats"],
+    queryFn: () => apiFetch("/api/avito/crm-stats"),
+    enabled: tab === "analytics",
+    staleTime: 5 * 60_000,
+  });
+
   // ── Derived ────────────────────────────────────────────────────────────
 
   const chats = useMemo(() => chatsData?.chats ?? [], [chatsData]);
@@ -424,10 +439,12 @@ export default function AvitoPage() {
     return list;
   }, [allItems, itemStatusFilter, itemSearch]);
 
-  // Analytics totals from enriched items
-  const totalViews = useMemo(() => allItems.reduce((s, i) => s + (i.stats?.uniqViews ?? 0), 0), [allItems]);
-  const totalContacts = useMemo(() => allItems.reduce((s, i) => s + (i.stats?.uniqContacts ?? 0), 0), [allItems]);
-  const totalFavorites = useMemo(() => allItems.reduce((s, i) => s + (i.stats?.uniqFavorites ?? 0), 0), [allItems]);
+  // Analytics totals — use month fields from new stats format
+  const totalViews    = useMemo(() => allItems.reduce((s, i) => s + (i.stats?.viewsMonth    ?? i.stats?.uniqViews    ?? 0), 0), [allItems]);
+  const totalContacts = useMemo(() => allItems.reduce((s, i) => s + (i.stats?.contactsMonth ?? i.stats?.uniqContacts ?? 0), 0), [allItems]);
+  const totalFavorites= useMemo(() => allItems.reduce((s, i) => s + (i.stats?.favsMonth     ?? i.stats?.uniqFavorites?? 0), 0), [allItems]);
+  const totalViewsWeek= useMemo(() => allItems.reduce((s, i) => s + (i.stats?.viewsWeek    ?? 0), 0), [allItems]);
+  const totalContactsWeek = useMemo(() => allItems.reduce((s, i) => s + (i.stats?.contactsWeek ?? 0), 0), [allItems]);
   const avgConversion = useMemo(() => {
     if (totalViews === 0) return "0.0";
     return (totalContacts / totalViews * 100).toFixed(1);
@@ -1154,6 +1171,7 @@ export default function AvitoPage() {
 
             {/* ════════════════ ANALYTICS TAB ════════════════ */}
             <TabsContent value="analytics" className="space-y-5">
+
               {/* Stats scope warning */}
               {statsError && (
                 <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
@@ -1162,59 +1180,215 @@ export default function AvitoPage() {
                     <p className="text-sm font-semibold text-amber-900">Статистика недоступна</p>
                     <p className="text-xs text-amber-700 mt-0.5">
                       Токен Авито не имеет разрешения <code className="bg-amber-100 px-1 rounded">stats:read</code>.
-                      Нужно переподключить Авито — нажмите «Отключить» и подключите заново.
+                      Нужно переподключить Авито.
                     </p>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
+                  <Button size="sm" variant="outline"
                     className="shrink-0 border-amber-300 text-amber-700 hover:bg-amber-100 h-7 text-xs"
-                    onClick={() => {
-                      const el = document.querySelector("[data-avito-disconnect]") as HTMLButtonElement | null;
-                      el?.click();
-                    }}
-                  >
+                    onClick={() => { const el = document.querySelector("[data-avito-disconnect]") as HTMLButtonElement | null; el?.click(); }}>
                     Отключить
                   </Button>
                 </div>
               )}
 
-              {/* Summary cards */}
+              {itemsError && (
+                <Card className="border-red-200 bg-red-50/50">
+                  <CardContent className="py-4 flex items-center gap-3">
+                    <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-red-700">Ошибка загрузки данных Авито</p>
+                      <p className="text-xs text-red-600/80 mt-0.5">{(itemsError as Error).message}</p>
+                    </div>
+                    <Button size="sm" variant="outline" className="shrink-0" onClick={() => refetchItems()}>Повторить</Button>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* ── Сводные карточки (месяц) ─────────────────────────── */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {[
-                  { label: "Просмотры (30д)", value: totalViews.toLocaleString("ru-RU"), icon: Eye, color: "text-blue-600" },
-                  { label: "Контакты (30д)", value: totalContacts.toLocaleString("ru-RU"), icon: Phone, color: "text-green-600" },
-                  { label: "В избранном (30д)", value: totalFavorites.toLocaleString("ru-RU"), icon: Star, color: "text-amber-500" },
-                  { label: "Конверсия", value: `${avgConversion}%`, icon: TrendingUp, color: "text-purple-600" },
-                ].map(card => (
+                  { label: "Просмотры / мес", value: totalViews, sub: `${totalViewsWeek} за нед`, icon: Eye, color: "text-blue-600", bg: "bg-blue-50" },
+                  { label: "Контакты / мес",  value: totalContacts, sub: `${totalContactsWeek} за нед`, icon: Phone, color: "text-green-600", bg: "bg-green-50" },
+                  { label: "В избранном / мес",value: totalFavorites, sub: `${allItems.length} объявлений`, icon: Star, color: "text-amber-500", bg: "bg-amber-50" },
+                  { label: "Конверсия",        value: null, sub: "контакты / просмотры", icon: TrendingUp, color: "text-purple-600", bg: "bg-purple-50" },
+                ].map((card, i) => (
                   <Card key={card.label}>
                     <CardContent className="py-4 px-4">
                       <div className="flex items-center justify-between mb-1">
                         <p className="text-xs text-muted-foreground">{card.label}</p>
-                        <card.icon className={cn("w-4 h-4", card.color)} />
+                        <div className={cn("w-7 h-7 rounded-lg flex items-center justify-center", card.bg)}>
+                          <card.icon className={cn("w-3.5 h-3.5", card.color)} />
+                        </div>
                       </div>
-                      <p className="text-2xl font-bold">{itemsLoading ? "—" : card.value}</p>
+                      <p className="text-2xl font-bold tabular-nums">
+                        {itemsLoading ? "—" : i === 3 ? `${avgConversion}%` : card.value!.toLocaleString("ru-RU")}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{card.sub}</p>
                     </CardContent>
                   </Card>
                 ))}
               </div>
 
-              {itemsError && (
-                <Card className="border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-950/20">
-                  <CardContent className="py-4 flex items-center gap-3">
-                    <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
-                    <div>
-                      <p className="text-sm font-medium text-red-700 dark:text-red-400">Ошибка загрузки данных</p>
-                      <p className="text-xs text-red-600/80 dark:text-red-400/80 mt-0.5">{(itemsError as Error).message}</p>
+              {/* ── Связка с CRM ────────────────────────────────────── */}
+              <Card>
+                <CardHeader className="py-3 px-5 border-b">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4 text-primary" />
+                    Связка с CRM — лиды и заказы из Авито
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="py-4 px-5">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {[
+                      { label: "Лидов всего",   value: crmStats?.leads.total  ?? "—", sub: "из Авито в CRM" },
+                      { label: "Лидов за мес",  value: crmStats?.leads.month  ?? "—", sub: "последние 30 дней" },
+                      { label: "Лидов за нед",  value: crmStats?.leads.week   ?? "—", sub: "последние 7 дней" },
+                      { label: "Сегодня",       value: crmStats?.leads.today  ?? "—", sub: "новых лидов" },
+                    ].map(s => (
+                      <div key={s.label} className="text-center p-3 bg-muted/30 rounded-xl">
+                        <p className="text-2xl font-bold tabular-nums">{s.value}</p>
+                        <p className="text-xs font-medium mt-0.5">{s.label}</p>
+                        <p className="text-xs text-muted-foreground">{s.sub}</p>
+                      </div>
+                    ))}
+                  </div>
+                  {crmStats && (
+                    <div className="mt-3 pt-3 border-t grid grid-cols-3 gap-4 text-center">
+                      <div className="p-3 bg-muted/30 rounded-xl">
+                        <p className="text-xl font-bold tabular-nums">{crmStats.orders.total}</p>
+                        <p className="text-xs font-medium mt-0.5">Заказов всего</p>
+                        <p className="text-xs text-muted-foreground">по Авито лидам</p>
+                      </div>
+                      <div className="p-3 bg-muted/30 rounded-xl">
+                        <p className="text-xl font-bold tabular-nums">{crmStats.orders.month}</p>
+                        <p className="text-xs font-medium mt-0.5">Заказов за мес</p>
+                        <p className="text-xs text-muted-foreground">последние 30 дней</p>
+                      </div>
+                      <div className="p-3 bg-muted/30 rounded-xl">
+                        <p className="text-xl font-bold tabular-nums">
+                          {crmStats.leads.total > 0
+                            ? `${Math.round(crmStats.orders.total / crmStats.leads.total * 100)}%`
+                            : "—"}
+                        </p>
+                        <p className="text-xs font-medium mt-0.5">Конверсия лид→заказ</p>
+                        <p className="text-xs text-muted-foreground">в CRM</p>
+                      </div>
                     </div>
-                    <Button size="sm" variant="outline" className="ml-auto shrink-0" onClick={() => refetchItems()}>
-                      Повторить
-                    </Button>
-                  </CardContent>
-                </Card>
-              )}
+                  )}
+                </CardContent>
+              </Card>
 
-              {/* AI analysis */}
+              {/* ── Таблица объявлений: день / неделя / месяц ──────── */}
+              <Card>
+                <CardHeader className="py-4 px-5 border-b">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <BarChart3 className="w-4 h-4 text-primary" />
+                      Статистика объявлений
+                    </CardTitle>
+                    <Button size="sm" variant="ghost" onClick={() => refetchItems()} disabled={itemsLoading}>
+                      <Loader2 className={cn("w-3.5 h-3.5 mr-1", itemsLoading && "animate-spin")} />
+                      Обновить
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {itemsLoading ? (
+                    <div className="py-10 text-center text-muted-foreground text-sm">
+                      <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" /> Загрузка статистики...
+                    </div>
+                  ) : allItems.length === 0 ? (
+                    <div className="py-10 text-center text-muted-foreground text-sm">Нет объявлений</div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b bg-muted/30">
+                            <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs min-w-[180px]">Объявление</th>
+                            <th className="text-center px-2 py-2.5 font-medium text-muted-foreground text-xs" colSpan={3}>
+                              <Eye className="w-3 h-3 inline mr-1" />Просмотры
+                            </th>
+                            <th className="text-center px-2 py-2.5 font-medium text-muted-foreground text-xs" colSpan={3}>
+                              <Phone className="w-3 h-3 inline mr-1" />Контакты
+                            </th>
+                            <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs">Конверсия</th>
+                            <th className="text-center px-3 py-2.5 font-medium text-muted-foreground text-xs">Статус</th>
+                          </tr>
+                          <tr className="border-b bg-muted/10 text-[10px] text-muted-foreground">
+                            <td className="px-4 pb-1" />
+                            <td className="text-center px-2 pb-1">День</td>
+                            <td className="text-center px-2 pb-1">Нед</td>
+                            <td className="text-center px-2 pb-1 border-r">Мес</td>
+                            <td className="text-center px-2 pb-1">День</td>
+                            <td className="text-center px-2 pb-1">Нед</td>
+                            <td className="text-center px-2 pb-1 border-r">Мес</td>
+                            <td className="pb-1" />
+                            <td className="pb-1" />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[...allItems]
+                            .sort((a, b) => (b.stats?.viewsMonth ?? b.stats?.uniqViews ?? 0) - (a.stats?.viewsMonth ?? a.stats?.uniqViews ?? 0))
+                            .map(item => {
+                              const vD = item.stats?.viewsDay    ?? 0;
+                              const vW = item.stats?.viewsWeek   ?? 0;
+                              const vM = item.stats?.viewsMonth  ?? item.stats?.uniqViews    ?? 0;
+                              const cD = item.stats?.contactsDay ?? 0;
+                              const cW = item.stats?.contactsWeek?? 0;
+                              const cM = item.stats?.contactsMonth ?? item.stats?.uniqContacts ?? 0;
+                              const conv = vM > 0 ? (cM / vM * 100).toFixed(1) : "0";
+                              const convNum = parseFloat(conv);
+                              const statusLabel = item.status === "active" ? "Активно"
+                                : item.status === "blocked" ? "Заблокировано"
+                                : item.status === "rejected" ? "Отклонено"
+                                : item.status === "archived" ? "Архив"
+                                : item.status ?? "—";
+                              const statusColor = item.status === "active" ? "bg-green-100 text-green-700"
+                                : item.status === "blocked" || item.status === "rejected" ? "bg-red-100 text-red-700"
+                                : "bg-muted text-muted-foreground";
+                              return (
+                                <tr key={item.id} className="border-b hover:bg-muted/20 transition-colors">
+                                  <td className="px-4 py-2.5">
+                                    <a href={item.url} target="_blank" rel="noreferrer"
+                                      className="font-medium text-xs leading-tight line-clamp-2 hover:text-primary transition-colors max-w-[200px] block">
+                                      {item.title}
+                                    </a>
+                                    {item.category?.name && (
+                                      <p className="text-[10px] text-muted-foreground mt-0.5">{item.category.name}</p>
+                                    )}
+                                    {item.price > 0 && (
+                                      <p className="text-[10px] text-muted-foreground">{item.price.toLocaleString("ru-RU")} ₽</p>
+                                    )}
+                                  </td>
+                                  <td className="text-center px-2 py-2.5 tabular-nums text-xs">{vD}</td>
+                                  <td className="text-center px-2 py-2.5 tabular-nums text-xs font-medium">{vW}</td>
+                                  <td className="text-center px-2 py-2.5 tabular-nums text-xs font-bold border-r">{vM}</td>
+                                  <td className="text-center px-2 py-2.5 tabular-nums text-xs">{cD}</td>
+                                  <td className="text-center px-2 py-2.5 tabular-nums text-xs font-medium">{cW}</td>
+                                  <td className="text-center px-2 py-2.5 tabular-nums text-xs font-bold border-r">{cM}</td>
+                                  <td className="text-right px-4 py-2.5">
+                                    <span className={cn("inline-flex items-center gap-0.5 font-semibold text-xs tabular-nums",
+                                      convNum >= 5 ? "text-green-600" : convNum >= 2 ? "text-amber-600" : cM === 0 && vM === 0 ? "text-muted-foreground" : "text-red-500")}>
+                                      {conversionIcon(vM, cM)}
+                                      {conv}%
+                                    </span>
+                                  </td>
+                                  <td className="text-center px-3 py-2.5">
+                                    <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full font-medium", statusColor)}>
+                                      {statusLabel}
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* ── AI анализ ───────────────────────────────────────── */}
               <Card>
                 <CardHeader className="py-4 px-5 border-b">
                   <div className="flex items-center justify-between">
@@ -1228,13 +1402,13 @@ export default function AvitoPage() {
                         : <><Sparkles className="w-4 h-4 mr-1.5" /> Проанализировать</>}
                     </Button>
                   </div>
-                  <CardDescription>ИИ изучит ваши объявления и даст конкретные советы по улучшению конверсии</CardDescription>
+                  <CardDescription>ИИ изучит объявления со статистикой и даст советы по конверсии</CardDescription>
                 </CardHeader>
                 <CardContent className="py-4">
                   {!aiAnalysis && !isAnalyzing && (
                     <div className="text-center py-8 text-muted-foreground">
                       <Sparkles className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                      <p className="text-sm">Нажмите «Проанализировать» — ИИ изучит ваши объявления<br />и даст рекомендации по заголовкам, ценам и описаниям</p>
+                      <p className="text-sm">Нажмите «Проанализировать» — ИИ изучит статистику<br />и даст рекомендации по заголовкам, ценам и описаниям</p>
                     </div>
                   )}
                   {isAnalyzing && (
@@ -1245,9 +1419,7 @@ export default function AvitoPage() {
                   )}
                   {aiAnalysis && (
                     <div className="relative">
-                      <Button
-                        variant="ghost" size="sm"
-                        className="absolute top-2 right-2"
+                      <Button variant="ghost" size="sm" className="absolute top-2 right-2"
                         onClick={() => { navigator.clipboard.writeText(aiAnalysis); toast({ title: "Скопировано" }); }}>
                         <Copy className="w-3.5 h-3.5 mr-1" /> Скопировать
                       </Button>
@@ -1259,78 +1431,6 @@ export default function AvitoPage() {
                 </CardContent>
               </Card>
 
-              {/* Per-item conversion table */}
-              <Card>
-                <CardHeader className="py-4 px-5 border-b">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <BarChart3 className="w-4 h-4 text-primary" />
-                    Конверсии по объявлениям
-                    <span className="text-xs text-muted-foreground font-normal">за 30 дней</span>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-0">
-                  {itemsLoading ? (
-                    <div className="py-8 text-center text-muted-foreground text-sm">
-                      <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" /> Загрузка...
-                    </div>
-                  ) : allItems.length === 0 ? (
-                    <div className="py-8 text-center text-muted-foreground text-sm">Нет данных</div>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b bg-muted/30">
-                            <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs">Объявление</th>
-                            <th className="text-right px-3 py-2.5 font-medium text-muted-foreground text-xs">
-                              <Eye className="w-3.5 h-3.5 inline mr-1" />Просмотры
-                            </th>
-                            <th className="text-right px-3 py-2.5 font-medium text-muted-foreground text-xs">
-                              <Phone className="w-3.5 h-3.5 inline mr-1" />Контакты
-                            </th>
-                            <th className="text-right px-3 py-2.5 font-medium text-muted-foreground text-xs">
-                              <Heart className="w-3.5 h-3.5 inline mr-1" />Избранное
-                            </th>
-                            <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs">Конверсия</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {[...allItems]
-                            .sort((a, b) => (b.stats?.uniqViews ?? 0) - (a.stats?.uniqViews ?? 0))
-                            .map(item => {
-                              const views = item.stats?.uniqViews ?? 0;
-                              const contacts = item.stats?.uniqContacts ?? 0;
-                              const favs = item.stats?.uniqFavorites ?? 0;
-                              const rate = views > 0 ? (contacts / views * 100).toFixed(1) : "0";
-                              return (
-                                <tr key={item.id} className="border-b hover:bg-muted/20 transition-colors">
-                                  <td className="px-4 py-3">
-                                    <a href={item.url} target="_blank" rel="noreferrer"
-                                      className="font-medium truncate max-w-[280px] block hover:text-primary transition-colors">
-                                      {item.title}
-                                    </a>
-                                    {item.category?.name && (
-                                      <p className="text-xs text-muted-foreground">{item.category.name}</p>
-                                    )}
-                                  </td>
-                                  <td className="text-right px-3 py-3 tabular-nums">{views.toLocaleString("ru-RU")}</td>
-                                  <td className="text-right px-3 py-3 tabular-nums">{contacts.toLocaleString("ru-RU")}</td>
-                                  <td className="text-right px-3 py-3 tabular-nums">{favs.toLocaleString("ru-RU")}</td>
-                                  <td className="text-right px-4 py-3">
-                                    <span className={cn("flex items-center justify-end gap-1 font-semibold tabular-nums",
-                                      conversionColor(views, contacts))}>
-                                      {conversionIcon(views, contacts)}
-                                      {rate}%
-                                    </span>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
             </TabsContent>
 
             {/* ════════════════ QUICK REPLIES TAB ════════════════ */}

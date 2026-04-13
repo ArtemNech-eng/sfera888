@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, avitoSettingsTable, leadsTable, systemSettingsTable } from "@workspace/db";
+import { db, avitoSettingsTable, leadsTable, ordersTable, systemSettingsTable } from "@workspace/db";
 import { eq, inArray } from "drizzle-orm";
 import OpenAI from "openai";
 
@@ -508,10 +508,50 @@ router.get("/balance", async (_req, res) => {
   try {
     console.log(`[avito:balance] GET /core/v1/accounts/${userId}/balance/`);
     const data = await avitoGet(`/core/v1/accounts/${userId}/balance/`, token) as any;
-    console.log(`[avito:balance] balance =`, data?.result?.real);
-    res.json({ balance: data?.result?.real ?? data?.result?.total ?? 0, raw: data });
+    // Avito Balance API returns { real: N, bonus: N } directly (no result wrapper)
+    const balance = data?.real ?? data?.result?.real ?? data?.result?.total ?? data?.balance ?? 0;
+    console.log(`[avito:balance] raw=`, JSON.stringify(data).slice(0, 200), `balance=`, balance);
+    res.json({ balance, bonus: data?.bonus ?? 0, raw: data });
   } catch (e: any) {
     console.error(`[avito:balance] error:`, e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/avito/crm-stats — Авито лиды/заказы из CRM
+router.get("/crm-stats", async (_req, res) => {
+  try {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOf7Days = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const startOf30Days = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    // All Avito leads
+    const allLeads = await db.select().from(leadsTable).where(eq(leadsTable.source, "avito"));
+    const leadsMonth = allLeads.filter(l => l.createdAt && new Date(l.createdAt) >= startOf30Days).length;
+    const leadsWeek  = allLeads.filter(l => l.createdAt && new Date(l.createdAt) >= startOf7Days).length;
+    const leadsToday = allLeads.filter(l => {
+      if (!l.createdAt) return false;
+      const d = new Date(l.createdAt);
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+    }).length;
+
+    // Avito lead IDs → joined orders
+    const avitoLeadIds = allLeads.map(l => l.id);
+    let ordersTotal = 0, ordersMonth = 0, ordersWeek = 0;
+    if (avitoLeadIds.length > 0) {
+      const orders = await db.select().from(ordersTable).where(inArray(ordersTable.leadId, avitoLeadIds));
+      ordersTotal = orders.length;
+      ordersMonth = orders.filter(o => o.createdAt && new Date(o.createdAt) >= startOf30Days).length;
+      ordersWeek  = orders.filter(o => o.createdAt && new Date(o.createdAt) >= startOf7Days).length;
+    }
+
+    res.json({
+      leads:  { total: allLeads.length, month: leadsMonth, week: leadsWeek, today: leadsToday },
+      orders: { total: ordersTotal, month: ordersMonth, week: ordersWeek },
+    });
+  } catch (e: any) {
+    console.error("[avito:crm-stats] error:", e.message);
     res.status(500).json({ error: e.message });
   }
 });
@@ -850,38 +890,42 @@ router.get("/items-with-stats", async (req, res) => {
         }
       ) as any;
       console.log(`[avito:items-with-stats] stats response keys:`, Object.keys(statsData ?? {}));
-      // Log first item raw to understand structure
-      const firstStatItem = statsData.result?.items?.[0];
-      if (firstStatItem) {
-        console.log(`[avito:items-with-stats] FIRST STAT ITEM RAW:`, JSON.stringify(firstStatItem).slice(0, 500));
+      // REAL Avito Stats API v1 format:
+      // { result: { items: [ { itemId, stats: [ {date, uniqViews, uniqContacts, uniqFavorites}, ... ] } ] } }
+      // stats is a FLAT ARRAY of daily records — NOT a "fields" object!
+      const statItems: any[] = statsData.result?.items ?? [];
+      console.log(`[avito:items-with-stats] raw item count=${statItems.length}`);
+      if (statItems[0]) {
+        console.log(`[avito:items-with-stats] SAMPLE:`, JSON.stringify(statItems[0]).slice(0, 400));
       }
-      // Avito Stats API v1 response: { result: { items: [ { itemId, fields: { uniqViews: { value: N, values: [] }, ... } } ] } }
-      // fields are OBJECTS with a .value property, not plain numbers
-      for (const s of (statsData.result?.items ?? [])) {
-        const f = s.fields ?? {};
-        const viewsVal   = typeof f.uniqViews    === "object" ? (f.uniqViews?.value    ?? 0) : (f.uniqViews    ?? 0);
-        const contactsVal= typeof f.uniqContacts === "object" ? (f.uniqContacts?.value ?? 0) : (f.uniqContacts ?? 0);
-        const favsVal    = typeof f.uniqFavorites=== "object" ? (f.uniqFavorites?.value?? 0) : (f.uniqFavorites?? 0);
-        // daily breakdown arrays for day/week calculation
-        const viewsArr   = (f.uniqViews?.values    ?? []) as { date: string; value: number }[];
-        const contactsArr= (f.uniqContacts?.values  ?? []) as { date: string; value: number }[];
-        const favsArr    = (f.uniqFavorites?.values ?? []) as { date: string; value: number }[];
-        // Aggregate: last 1 day, last 7 days
-        const sumLast = (arr: { value: number }[], days: number) =>
-          arr.slice(-days).reduce((s, v) => s + (v.value ?? 0), 0);
+      for (const s of statItems) {
+        // s.stats is array of { date: "YYYY-MM-DD", uniqViews: N, uniqContacts: N, uniqFavorites: N }
+        type DayStats = { date: string; uniqViews: number; uniqContacts: number; uniqFavorites: number };
+        const daily: DayStats[] = Array.isArray(s.stats) ? s.stats : [];
+        // sort ascending so slice(-N) gives last N days
+        daily.sort((a, b) => a.date.localeCompare(b.date));
+        const sum = (key: keyof DayStats, arr: DayStats[]) =>
+          arr.reduce((acc, d) => acc + (Number(d[key]) || 0), 0);
+        const viewsMonth    = sum("uniqViews",    daily);
+        const contactsMonth = sum("uniqContacts", daily);
+        const favsMonth     = sum("uniqFavorites",daily);
+        const viewsWeek     = sum("uniqViews",    daily.slice(-7));
+        const viewsDay      = sum("uniqViews",    daily.slice(-1));
+        const contactsWeek  = sum("uniqContacts", daily.slice(-7));
+        const contactsDay   = sum("uniqContacts", daily.slice(-1));
+        const favsWeek      = sum("uniqFavorites",daily.slice(-7));
         statsMap[s.itemId] = {
-          uniqViews:    viewsVal,
-          uniqContacts: contactsVal,
-          uniqFavorites:favsVal,
-          // day/week breakdown
-          viewsDay:     sumLast(viewsArr, 1),
-          viewsWeek:    sumLast(viewsArr, 7),
-          viewsMonth:   viewsVal,
-          contactsDay:  sumLast(contactsArr, 1),
-          contactsWeek: sumLast(contactsArr, 7),
-          contactsMonth: contactsVal,
+          uniqViews:     viewsMonth,
+          uniqContacts:  contactsMonth,
+          uniqFavorites: favsMonth,
+          viewsDay, viewsWeek, viewsMonth,
+          contactsDay, contactsWeek, contactsMonth,
+          favsDay: sum("uniqFavorites", daily.slice(-1)),
+          favsWeek, favsMonth,
+          // raw daily for charts
+          daily: daily.slice(-30),
         };
-        console.log(`[avito:items-with-stats] itemId=${s.itemId} views=${viewsVal} contacts=${contactsVal} favs=${favsVal}`);
+        console.log(`[avito:items-with-stats] itemId=${s.itemId} viewsM=${viewsMonth} contactsM=${contactsMonth} favM=${favsMonth} | viewsW=${viewsWeek} contactsW=${contactsWeek} | viewsD=${viewsDay} contactsD=${contactsDay}`);
       }
       console.log(`[avito:items-with-stats] parsed stats for ${Object.keys(statsMap).length} items`);
     } catch (e: any) {
