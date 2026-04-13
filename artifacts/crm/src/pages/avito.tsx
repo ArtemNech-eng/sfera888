@@ -1228,6 +1228,7 @@ export default function AvitoPage() {
                 items={allItems}
                 itemsLoading={itemsLoading}
                 connected={!!settings?.connected}
+                onGoToSettings={() => setTab("settings")}
               />
 
             </TabsContent>

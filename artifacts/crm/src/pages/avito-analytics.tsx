@@ -156,9 +156,10 @@ interface Props {
   items: AvitoItem[];
   itemsLoading: boolean;
   connected: boolean;
+  onGoToSettings?: () => void;
 }
 
-export function AvitoAnalyticsTab({ items, itemsLoading, connected }: Props) {
+export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettings }: Props) {
   const [period, setPeriod] = useState<Period>("today");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -406,6 +407,25 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected }: Props) {
           </Button>
         </div>
       </div>
+
+      {/* Баннер: данные расходов недоступны */}
+      {!analyticsLoading && analyticsData && !analyticsData.spending.available && (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50/60 dark:border-amber-700/40 dark:bg-amber-950/20 px-4 py-3 text-sm">
+          <AlertCircle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-amber-800 dark:text-amber-300">Данные о расходах Авито недоступны</p>
+            <p className="text-xs text-amber-700/80 dark:text-amber-400/80 mt-0.5">
+              API операций Авито не настроен или не выдал данные. Стоимость контакта, расход по объявлениям и график трат не отображаются.
+              Для подключения нужны <b>Client ID</b>, <b>Client Secret</b> и авторизация по OAuth.
+            </p>
+          </div>
+          {onGoToSettings && (
+            <Button size="sm" variant="outline" className="h-7 text-xs shrink-0 border-amber-300 text-amber-800 dark:text-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/30" onClick={onGoToSettings}>
+              Открыть настройки
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* ══════════════════════════════════════════════════════════════
           БЛОК 1: СВОДКА

@@ -795,7 +795,7 @@ router.get("/analytics", async (_req, res) => {
           spending.daily = Object.entries(dailyMap)
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([date, amount]) => ({ date, amount: Math.round(amount) }));
-          spending.available = operations.length > 0 || opsData?.result !== undefined;
+          spending.available = true; // API ответил успешно — данные доступны (даже если список пуст)
           spending.today = Math.round(spending.today);
           spending.yesterday = Math.round(spending.yesterday);
           spending.month = Math.round(spending.month);
