@@ -161,15 +161,16 @@ function oauthResultPage(ok: boolean, title: string, subtitle: string): string {
 }
 
 async function exchangeCode(code: string, clientId: string, clientSecret: string) {
+  // redirect_uri NOT included: we didn't send it in the auth request,
+  // so per RFC 6749 we must not include it here either.
   const params = new URLSearchParams({
     grant_type: "authorization_code",
     client_id: clientId,
     client_secret: clientSecret,
     code,
-    redirect_uri: REDIRECT_URI,
   });
 
-  console.log(`[avito:exchangeCode] POST ${AVITO_API}/token redirect_uri="${REDIRECT_URI}" code_len=${code.length}`);
+  console.log(`[avito:exchangeCode] POST ${AVITO_API}/token code_len=${code.length}`);
 
   const res = await fetch(`${AVITO_API}/token`, {
     method: "POST",
@@ -288,7 +289,7 @@ router.get("/oauth-start", async (req, res) => {
     return res.status(400).send("Нужны client_id и client_secret");
   }
 
-  // Временно сохраним credentials, чтобы использовать при callback
+  // Сохраняем credentials, чтобы использовать при callback
   const existing = await getSettings();
   if (existing) {
     await db.update(avitoSettingsTable)
@@ -300,12 +301,14 @@ router.get("/oauth-start", async (req, res) => {
     });
   }
 
+  // ВАЖНО: НЕ передаём redirect_uri и scope в URL авторизации —
+  // Авито использует то, что зарегистрировано в приложении разработчика.
+  // Любое несовпадение приводит к ошибке «Что-то пошло не так».
   const authUrl = new URL("https://avito.ru/oauth");
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set("client_id", client_id);
-  authUrl.searchParams.set("scope", AVITO_SCOPES);
-  authUrl.searchParams.set("redirect_uri", REDIRECT_URI);
 
+  console.log(`[avito:oauth-start] redirect → ${authUrl.toString()}`);
   res.redirect(authUrl.toString());
 });
 
