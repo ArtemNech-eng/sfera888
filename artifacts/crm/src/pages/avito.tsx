@@ -1245,11 +1245,11 @@ export default function AvitoPage() {
                     <p className="text-xs text-muted-foreground mt-0.5">контакты / просмотры</p>
                   </CardContent>
                 </Card>
-                {/* Баланс Авито */}
+                {/* Аванс Авито */}
                 <Card className={cn(crmStats && crmStats.balanceRub < 1000 && crmStats.balanceRub >= 0 ? "border-red-200 bg-red-50/40" : "")}>
                   <CardContent className="py-4 px-4">
                     <div className="flex items-center justify-between mb-1">
-                      <p className="text-xs text-muted-foreground">Баланс Авито</p>
+                      <p className="text-xs text-muted-foreground">Аванс Авито</p>
                       <div className={cn("w-7 h-7 rounded-lg flex items-center justify-center",
                         crmStats && crmStats.balanceRub < 1000 ? "bg-red-100" : "bg-amber-50")}>
                         <Star className={cn("w-3.5 h-3.5", crmStats && crmStats.balanceRub < 1000 ? "text-red-500" : "text-amber-500")} />
@@ -1259,7 +1259,7 @@ export default function AvitoPage() {
                       {crmStats ? `${crmStats.balanceRub.toLocaleString("ru-RU")} ₽` : "—"}
                     </p>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      {crmStats && crmStats.balanceRub < 1000 ? "⚠️ Пополните счёт" : "кошелёк Авито"}
+                      {crmStats && crmStats.balanceRub < 1000 ? "⚠️ Пополните аванс" : "аванс Авито"}
                     </p>
                   </CardContent>
                 </Card>

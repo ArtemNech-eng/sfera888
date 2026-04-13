@@ -107,13 +107,14 @@ export default function Dashboard() {
     queryFn: () => fetch("/api/finance/overdue-masters", { credentials: "include" }).then(r => r.json()),
     refetchInterval: 60_000,
   });
-  const { data: avitoBalanceData } = useQuery<{ balance: number; error?: string }>({
+  const { data: avitoBalanceData } = useQuery<{ balance: number; balanceRub: number; bonus: number; bonusRub: number; error?: string }>({
     queryKey: ["/api/avito/balance"],
     queryFn: () => fetch("/api/avito/balance", { credentials: "include" }).then(r => r.json()),
     refetchInterval: 60 * 60_000,
     retry: false,
   });
   const avitoBalance = avitoBalanceData?.error ? null : (avitoBalanceData?.balance ?? null);
+  const avitoBalanceRub = avitoBalanceData?.error ? null : (avitoBalanceData?.balanceRub ?? (avitoBalance !== null ? Math.round(avitoBalance / 100) : null));
 
   const s = stats as any;
   const alerts = s ? [
@@ -185,14 +186,14 @@ export default function Dashboard() {
                   href="/masters"
                   accent="blue"
                 />
-                {avitoBalance !== null && (
+                {avitoBalanceRub !== null && (
                   <StatCard
-                    title="Баланс Авито"
-                    value={`${(avitoBalance / 100).toLocaleString("ru-RU")} ₽`}
-                    subtitle="Кошелёк Авито"
+                    title="Аванс Авито"
+                    value={`${avitoBalanceRub.toLocaleString("ru-RU")} ₽`}
+                    subtitle="аванс Авито"
                     icon={Wallet}
                     href="/avito"
-                    accent={avitoBalance < 100000 ? "red" : "green"}
+                    accent={avitoBalanceRub < 1000 ? "red" : "green"}
                   />
                 )}
               </div>
