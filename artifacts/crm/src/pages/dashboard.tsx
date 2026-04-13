@@ -107,7 +107,7 @@ export default function Dashboard() {
     queryFn: () => fetch("/api/finance/overdue-masters", { credentials: "include" }).then(r => r.json()),
     refetchInterval: 60_000,
   });
-  const { data: avitoAdvanceData } = useQuery<{ advanceBalance: number; updatedAt?: string | null }>({
+  const { data: avitoAdvanceData } = useQuery<{ advanceBalance: number; source?: string; needsReauth?: boolean; updatedAt?: string | null }>({
     queryKey: ["/api/avito/advance"],
     queryFn: () => fetch("/api/avito/advance", { credentials: "include" }).then(r => r.json()),
     refetchInterval: 5 * 60_000,
@@ -189,7 +189,7 @@ export default function Dashboard() {
                   <StatCard
                     title="Аванс Авито"
                     value={`${avitoBalanceRub.toLocaleString("ru-RU")} ₽`}
-                    subtitle="аванс Авито"
+                    subtitle={avitoAdvanceData?.needsReauth ? "⚠ Переподключите Авито" : avitoAdvanceData?.source === "ops" ? "расчёт авто" : "аванс Авито"}
                     icon={Wallet}
                     href="/avito"
                     accent={avitoBalanceRub < 1000 ? "red" : "green"}

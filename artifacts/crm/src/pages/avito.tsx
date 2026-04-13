@@ -88,6 +88,8 @@ interface CrmStats {
   revenue: { total: number; month: number; avgOrder: number };
   costPerLead: number;
   balanceRub: number;
+  advanceSource?: string;
+  advanceNeedsReauth?: boolean;
   advanceUpdatedAt?: string | null;
 }
 
@@ -1259,11 +1261,19 @@ export default function AvitoPage() {
                     <p className="text-xs text-muted-foreground mt-0.5">контакты / просмотры</p>
                   </CardContent>
                 </Card>
-                {/* Аванс Авито (ручной ввод — API не отдаёт аванс) */}
+                {/* Аванс Авито — авто (operations) или ручной */}
                 <Card className={cn(crmStats && crmStats.balanceRub < 1000 && crmStats.balanceRub >= 0 ? "border-red-200 bg-red-50/40" : "")}>
                   <CardContent className="py-4 px-4">
                     <div className="flex items-center justify-between mb-1">
-                      <p className="text-xs text-muted-foreground">Аванс Авито</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-xs text-muted-foreground">Аванс Авито</p>
+                        {crmStats?.advanceSource === "ops" && (
+                          <span className="text-[10px] bg-green-100 text-green-700 px-1 py-0.5 rounded font-medium">авто</span>
+                        )}
+                        {crmStats?.advanceSource === "manual" && !crmStats?.advanceNeedsReauth && (
+                          <span className="text-[10px] bg-gray-100 text-gray-500 px-1 py-0.5 rounded">ручной</span>
+                        )}
+                      </div>
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => { setAdvanceInput(String(crmStats?.balanceRub ?? 0)); setAdvanceEditMode(true); }}
@@ -1310,7 +1320,14 @@ export default function AvitoPage() {
                           {crmStats ? `${crmStats.balanceRub.toLocaleString("ru-RU")} ₽` : "—"}
                         </p>
                         <p className="text-xs text-muted-foreground mt-0.5">
-                          {crmStats && crmStats.balanceRub < 1000 ? "⚠️ Пополните аванс" : "нажмите ✎ чтобы обновить"}
+                          {crmStats?.advanceNeedsReauth
+                            ? <span className="text-amber-600 font-medium cursor-pointer underline" onClick={() => {
+                                const tab = document.querySelector('[value="settings"]') as HTMLElement | null;
+                                tab?.click();
+                              }}>Переподключите Авито для авто-расчёта</span>
+                            : crmStats && crmStats.balanceRub < 1000 ? "⚠️ Пополните аванс"
+                            : crmStats?.advanceSource === "ops" ? "расчёт из истории операций"
+                            : "нажмите ✎ чтобы обновить"}
                         </p>
                       </>
                     )}

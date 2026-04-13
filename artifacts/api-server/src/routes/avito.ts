@@ -88,6 +88,58 @@ class AvitoApiError extends Error {
   }
 }
 
+/** Compute аванс balance:
+ *  1. Try operations history (user_operations:read scope required)
+ *  2. Fall back to manually-stored advanceBalance from DB
+ */
+async function getAdvanceBalance(token: string, userId: string, manualFallback: number): Promise<{ balanceRub: number; source: string; needsReauth: boolean }> {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 86400_000).toISOString().slice(0, 10);
+    const opsResp = await fetch(`${AVITO_API}/core/v1/accounts/${userId}/operations/history/`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ dateFrom: ninetyDaysAgo, dateTo: today }),
+    });
+    if (opsResp.status === 403 || opsResp.status === 401) {
+      // Token lacks user_operations:read scope
+      console.log(`[avito:advance] ops ${opsResp.status} — need user_operations:read scope, using manual fallback=${manualFallback}`);
+      return { balanceRub: manualFallback, source: "manual", needsReauth: true };
+    }
+    if (!opsResp.ok) {
+      const errText = await opsResp.text();
+      console.log(`[avito:advance] ops error ${opsResp.status}: ${errText.slice(0, 200)}`);
+      return { balanceRub: manualFallback, source: "manual", needsReauth: false };
+    }
+    const opsData = await opsResp.json() as any;
+    const ops: any[] = opsData?.operations ?? [];
+    const types = [...new Set(ops.map((o: any) => o.operationType))];
+    console.log(`[avito:advance] ops count=${ops.length} types=${JSON.stringify(types)}`);
+    if (ops.length > 0) console.log(`[avito:advance] ops[0]=${JSON.stringify(ops[0])}`);
+
+    // Separate deposits from charges
+    const deposits = ops.filter((o: any) =>
+      /пополнение|зачисление|возврат/i.test((o.operationType ?? "") + (o.operationName ?? ""))
+    );
+    const charges = ops.filter((o: any) =>
+      /списание|резервирование/i.test((o.operationType ?? "") + (o.operationName ?? ""))
+    );
+    const totalDeposits = deposits.reduce((s: number, o: any) => s + Math.abs(Number(o.amountRub ?? 0)), 0);
+    const totalCharges  = charges.reduce((s: number, o: any) => s + Math.abs(Number(o.amountRub ?? 0)), 0);
+    console.log(`[avito:advance] deposits=${totalDeposits} charges=${totalCharges} (${deposits.length} deposit ops, ${charges.length} charge ops)`);
+
+    if (deposits.length > 0) {
+      const computed = Math.max(0, Math.round(totalDeposits - totalCharges));
+      return { balanceRub: computed, source: "ops", needsReauth: false };
+    }
+    // No deposits in 90 days — use manual or 0
+    return { balanceRub: manualFallback, source: ops.length > 0 ? "ops_no_deposits" : "manual", needsReauth: false };
+  } catch (e: any) {
+    console.log(`[avito:advance] error: ${e.message}`);
+    return { balanceRub: manualFallback, source: "manual", needsReauth: false };
+  }
+}
+
 async function avitoGet(path: string, token: string) {
   const res = await fetch(`${AVITO_API}${path}`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -309,7 +361,7 @@ router.get("/oauth-start", async (req, res) => {
   // - no state required (optional)
   // user:read is required for /accounts/self (to get avitoUserId for messenger API)
   // items:info is required for listings/ads access
-  const authUrl = `https://avito.ru/oauth?response_type=code&client_id=${encodeURIComponent(client_id)}&scope=messenger:read,messenger:write,user:read,user_balance:read,items:info,stats:read`;
+  const authUrl = `https://avito.ru/oauth?response_type=code&client_id=${encodeURIComponent(client_id)}&scope=messenger:read,messenger:write,user:read,user_balance:read,user_operations:read,items:info,stats:read`;
 
   console.log(`[avito:oauth-start] redirect → ${authUrl}`);
   res.redirect(authUrl);
@@ -496,12 +548,26 @@ router.post("/chats/:chatId/read", async (req, res) => {
   }
 });
 
-// GET /api/avito/advance — аванс (вручную)
+// GET /api/avito/advance — аванс (авто из операций или ручной)
 router.get("/advance", async (_req, res) => {
   try {
     const settings = await getSettings();
+    const manualBalance = settings?.advanceBalance ?? 0;
+
+    const token = await getValidToken();
+    if (token && settings?.avitoUserId) {
+      const advance = await getAdvanceBalance(token, settings.avitoUserId, manualBalance);
+      return res.json({
+        advanceBalance: advance.balanceRub,
+        source: advance.source,
+        needsReauth: advance.needsReauth,
+        updatedAt: settings?.advanceBalanceUpdatedAt ?? null,
+      });
+    }
     res.json({
-      advanceBalance: settings?.advanceBalance ?? 0,
+      advanceBalance: manualBalance,
+      source: "manual",
+      needsReauth: false,
       updatedAt: settings?.advanceBalanceUpdatedAt ?? null,
     });
   } catch (e: any) {
@@ -535,41 +601,29 @@ router.get("/balance", async (_req, res) => {
   if (!userId) return res.status(400).json({ error: "Нет ID пользователя Авито" });
 
   try {
-    // Try multiple endpoints to find the correct one
-    const endpoints = [
-      `/core/v1/accounts/${userId}/balance/`,
-      `/core/v1/accounts/self/balance/`,
-      `/core/v2/accounts/${userId}/balance/`,
-      `/core/v1/accounts/${userId}/balance`,
-    ];
-    let data: any = null;
-    let usedEndpoint = "";
-    for (const ep of endpoints) {
-      try {
-        const raw = await fetch(`${AVITO_API}${ep}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const body = await raw.json();
-        console.log(`[avito:balance] ${ep} → status=${raw.status} body=${JSON.stringify(body).slice(0, 300)}`);
-        if (raw.ok && body && (body.real !== undefined || body.bonus !== undefined || body.result)) {
-          data = body;
-          usedEndpoint = ep;
-          break;
-        }
-      } catch (err: any) {
-        console.log(`[avito:balance] ${ep} → error: ${err.message}`);
-      }
-    }
-    if (!data) {
-      return res.json({ balance: 0, bonus: 0, note: "Не удалось получить баланс" });
-    }
-    // Avito returns { real: N, bonus: N }
-    // real is in KOPECKS for most accounts; show both raw and divided
-    const rawReal  = data?.real ?? data?.result?.real ?? 0;
-    const rawBonus = data?.bonus ?? data?.result?.bonus ?? 0;
-    // Return kopecks for consumer (dashboard divides /100; analytics shows /100)
-    console.log(`[avito:balance] used=${usedEndpoint} rawReal=${rawReal} rawBonus=${rawBonus}`);
-    res.json({ balance: rawReal, bonus: rawBonus, balanceRub: Math.round(rawReal / 100), bonusRub: Math.round(rawBonus / 100), raw: data });
+    // 1) Standard balance endpoint (returns кошелёк only)
+    const balResp = await fetch(`${AVITO_API}/core/v1/accounts/${userId}/balance/`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const balData = balResp.ok ? await balResp.json() as any : null;
+    console.log(`[avito:balance] /balance/ status=${balResp.status} body=${JSON.stringify(balData)}`);
+
+    const walletReal  = balData?.real ?? balData?.result?.real ?? 0;
+    const walletBonus = balData?.bonus ?? balData?.result?.bonus ?? 0;
+
+    // Get аванс: try operations history (auto) or fall back to manual DB value
+    const manualBalance = settings?.advanceBalance ?? 0;
+    const advance = await getAdvanceBalance(token, userId, manualBalance);
+
+    console.log(`[avito:balance] walletReal=${walletReal} advance=${advance.balanceRub} source=${advance.source}`);
+    res.json({
+      balance: walletReal,
+      bonus: walletBonus,
+      balanceRub: advance.balanceRub,
+      bonusRub: Math.round(walletBonus / 100),
+      source: advance.source,
+      needsReauth: advance.needsReauth,
+    });
   } catch (e: any) {
     console.error(`[avito:balance] error:`, e.message);
     res.status(500).json({ error: e.message });
@@ -611,10 +665,21 @@ router.get("/crm-stats", async (_req, res) => {
       }
     }
 
-    // Аванс Авито — берём из БД (ручной ввод), т.к. Avito API не отдаёт аванс публично
+    // Аванс Авито — авто из операций (если есть user_operations:read) или ручной из БД
     const settingsForAdvance = await getSettings();
-    const balanceRub = settingsForAdvance?.advanceBalance ?? 0;
+    const manualBalance = settingsForAdvance?.advanceBalance ?? 0;
     const advanceUpdatedAt = settingsForAdvance?.advanceBalanceUpdatedAt ?? null;
+    const tokenForAdvance = await getValidToken();
+    const userId = settingsForAdvance?.avitoUserId;
+    let balanceRub = manualBalance;
+    let advanceSource = "manual";
+    let advanceNeedsReauth = false;
+    if (tokenForAdvance && userId) {
+      const adv = await getAdvanceBalance(tokenForAdvance, userId, manualBalance);
+      balanceRub = adv.balanceRub;
+      advanceSource = adv.source;
+      advanceNeedsReauth = adv.needsReauth;
+    }
 
     // Cost metrics: revenue / count (returns 0 if no data)
     const avgOrderAmount   = ordersTotal > 0 ? Math.round(revenueTotal / ordersTotal) : 0;
@@ -628,6 +693,8 @@ router.get("/crm-stats", async (_req, res) => {
       revenue: { total: Math.round(revenueTotal), month: Math.round(revenueMonth), avgOrder: avgOrderAmount },
       costPerLead,
       balanceRub,
+      advanceSource,
+      advanceNeedsReauth,
       advanceUpdatedAt,
     });
   } catch (e: any) {
