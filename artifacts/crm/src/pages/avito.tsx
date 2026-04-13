@@ -503,31 +503,51 @@ export default function AvitoPage() {
                       const opponent = chat.users.find(u => u.id.toString() !== settings.avitoUserId);
                       const lastText = chat.last_message?.content?.text?.text;
                       const isSelected = selectedChat?.id === chat.id;
+                      const hasUnread = chat.unread_counter > 0;
                       return (
                         <button key={chat.id} onClick={() => setSelectedChat(chat)}
-                          className={cn("w-full text-left p-3 border-b hover:bg-muted/50 transition-colors",
-                            isSelected && "bg-primary/5 border-l-2 border-l-primary")}>
-                          <div className="flex items-start gap-2">
+                          className={cn(
+                            "w-full text-left px-4 py-3 border-b border-border/50 transition-colors",
+                            "hover:bg-orange-50/60 dark:hover:bg-orange-950/10",
+                            isSelected
+                              ? "bg-orange-50 dark:bg-orange-950/20 border-l-[3px] border-l-orange-500 pl-[13px]"
+                              : hasUnread
+                              ? "border-l-[3px] border-l-orange-400 pl-[13px]"
+                              : "border-l-[3px] border-l-transparent pl-[13px]"
+                          )}>
+                          <div className="flex items-center gap-3">
+                            {/* Avatar */}
+                            <div className={cn(
+                              "w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm shrink-0",
+                              hasUnread
+                                ? "bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400"
+                                : "bg-muted text-muted-foreground"
+                            )}>
+                              {(opponent?.name ?? "К").charAt(0).toUpperCase()}
+                            </div>
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-medium text-sm truncate">{opponent?.name ?? "Клиент"}</span>
-                                {chat.unread_counter > 0 && (
-                                  <Badge className="bg-red-500 text-white text-[10px] h-4 px-1.5 shrink-0">
-                                    {chat.unread_counter}
-                                  </Badge>
-                                )}
+                              <div className="flex items-center justify-between gap-1">
+                                <span className={cn("text-sm truncate", hasUnread ? "font-semibold" : "font-medium")}>
+                                  {opponent?.name ?? "Клиент"}
+                                </span>
+                                <span className="text-[10px] text-muted-foreground shrink-0">
+                                  {chat.updated ? formatTime(chat.updated) : ""}
+                                </span>
                               </div>
                               {chat.context?.value?.title && (
-                                <p className="text-xs text-muted-foreground truncate">{chat.context.value.title}</p>
+                                <p className="text-[11px] text-orange-600 dark:text-orange-400 truncate font-medium">{chat.context.value.title}</p>
                               )}
-                              {lastText && (
-                                <p className="text-xs text-muted-foreground/70 truncate mt-0.5">{lastText}</p>
-                              )}
-                              {chat.updated && (
-                                <p className="text-[10px] text-muted-foreground mt-1">{formatTime(chat.updated)}</p>
-                              )}
+                              <div className="flex items-center justify-between gap-1 mt-0.5">
+                                {lastText ? (
+                                  <p className="text-xs text-muted-foreground truncate">{lastText}</p>
+                                ) : <span />}
+                                {hasUnread && (
+                                  <span className="shrink-0 min-w-[18px] h-[18px] bg-orange-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1">
+                                    {chat.unread_counter}
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                            <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
                           </div>
                         </button>
                       );
@@ -547,28 +567,39 @@ export default function AvitoPage() {
                     </div>
                   ) : (
                     <>
-                      <CardHeader className="py-3 px-4 border-b shrink-0">
+                      <CardHeader className="py-3 px-4 border-b shrink-0 bg-orange-50/50 dark:bg-orange-950/10">
                         <div className="flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <CardTitle className="text-base truncate">
-                              {selectedChat.users.find(u => u.id.toString() !== settings.avitoUserId)?.name ?? "Клиент"}
-                            </CardTitle>
-                            {selectedChat.context?.value?.title && (
-                              <CardDescription className="text-xs truncate">
-                                {selectedChat.context.value.title}
-                              </CardDescription>
-                            )}
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-9 h-9 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 flex items-center justify-center font-bold text-sm shrink-0">
+                              {(selectedChat.users.find(u => u.id.toString() !== settings.avitoUserId)?.name ?? "К").charAt(0).toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <CardTitle className="text-sm truncate">
+                                  {selectedChat.users.find(u => u.id.toString() !== settings.avitoUserId)?.name ?? "Клиент"}
+                                </CardTitle>
+                                <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-500 text-white">
+                                  Авито
+                                </span>
+                              </div>
+                              {selectedChat.context?.value?.title && (
+                                <p className="text-xs text-orange-600 dark:text-orange-400 truncate font-medium">
+                                  {selectedChat.context.value.title}
+                                </p>
+                              )}
+                            </div>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
                             {selectedChat.context?.value?.id && (
                               <a
                                 href={`https://www.avito.ru/items/${selectedChat.context.value.id}`}
                                 target="_blank" rel="noreferrer"
-                                className="text-xs text-primary flex items-center gap-1 hover:underline">
+                                className="text-xs text-orange-600 dark:text-orange-400 flex items-center gap-1 hover:underline">
                                 <ExternalLink className="w-3.5 h-3.5" /> Объявление
                               </a>
                             )}
-                            <Button size="sm" variant="outline"
+                            <Button size="sm"
+                              className="bg-orange-500 hover:bg-orange-600 text-white border-0"
                               onClick={() => createLeadMutation.mutate(selectedChat)}
                               disabled={createLeadMutation.isPending}>
                               <UserPlus className="w-4 h-4 mr-1.5" />

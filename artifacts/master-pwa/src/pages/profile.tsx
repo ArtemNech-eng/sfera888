@@ -160,7 +160,7 @@ function EditProfileModal({
         </div>
 
         {/* Scrollable body */}
-        <div className="overflow-y-auto overscroll-contain flex-1 min-h-0 px-4 pb-10 space-y-6">
+        <div className="overflow-y-auto overscroll-contain flex-1 min-h-0 px-4 pb-4 space-y-6">
 
           {/* Basic info — iOS grouped list */}
           <div>
@@ -268,19 +268,22 @@ function EditProfileModal({
             )}
           </div>
 
-          {/* Save button at bottom for easy reach */}
+        </div>
+
+        {/* Pinned save footer — always visible above bottom nav */}
+        <div className="px-4 pt-3 pb-[max(20px,env(safe-area-inset-bottom,20px))] border-t border-border/60 flex-shrink-0">
           <button
             onClick={handleSave}
             disabled={loading}
-            className="w-full h-13 bg-primary text-white font-bold rounded-2xl text-base active:opacity-80 disabled:opacity-50 flex items-center justify-center gap-2"
+            className="w-full h-12 bg-primary text-white font-bold rounded-2xl text-base active:opacity-80 disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {loading
               ? <Loader2 size={18} className="animate-spin" />
               : <Check size={18} />}
             Сохранить изменения
           </button>
-
         </div>
+
       </div>
     </div>
   );
