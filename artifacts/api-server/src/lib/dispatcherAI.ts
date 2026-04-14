@@ -112,12 +112,13 @@ function persistSession(masterId: number): void {
   `).catch(e => console.error("[dispatcherAI] Failed to persist session:", e));
 }
 
-// ─── Quiet hours (22:00–08:00 local time) ────────────────────────────────────
+// ─── Quiet hours (21:00–08:00 local time; weekends before 10:00) ─────────────
 // AI dispatcher does NOT send proactive messages to masters during night hours.
 // Responses to master-initiated messages are always allowed.
 
-const QUIET_START = 22; // 22:00 local time — begin quiet
-const QUIET_END   = 8;  // 08:00 local time — end quiet
+const QUIET_START         = 21; // 21:00 local time — begin quiet
+const QUIET_END           = 8;  // 08:00 local time — end quiet
+const WEEKEND_QUIET_UNTIL = 10; // 10:00 — don't bother on Sat/Sun before this hour
 
 const CITY_UTC_OFFSETS: Record<string, number> = {
   "Калининград": 2,
@@ -149,23 +150,44 @@ const CITY_UTC_OFFSETS: Record<string, number> = {
   "Петропавловск-Камчатский": 12, "Анадырь": 12,
 };
 
-function getMasterLocalHour(city?: string | null): number {
+function getMasterOffset(city?: string | null): number {
   const c = (city ?? "").trim();
-  let offset = 3; // default Moscow
-  if (c) {
-    const key = Object.keys(CITY_UTC_OFFSETS).find(
-      k => c.toLowerCase().includes(k.toLowerCase()) || k.toLowerCase().includes(c.toLowerCase())
-    );
-    if (key) offset = CITY_UTC_OFFSETS[key];
-  }
-  const nowLocal = new Date(Date.now() + offset * 3_600_000);
+  if (!c) return 3; // default Moscow
+  const key = Object.keys(CITY_UTC_OFFSETS).find(
+    k => c.toLowerCase().includes(k.toLowerCase()) || k.toLowerCase().includes(c.toLowerCase())
+  );
+  return key ? CITY_UTC_OFFSETS[key] : 3;
+}
+
+function getMasterLocalHour(city?: string | null): number {
+  const nowLocal = new Date(Date.now() + getMasterOffset(city) * 3_600_000);
   return nowLocal.getUTCHours();
 }
 
-/** Returns true if it is night time (22:00–08:00) for the master's city. */
+function getMasterLocalDate(city?: string | null): Date {
+  return new Date(Date.now() + getMasterOffset(city) * 3_600_000);
+}
+
+/** Returns greeting based on local hour: Доброе утро / Добрый день / Добрый вечер */
+function getTimeGreeting(city?: string | null): string {
+  const h = getMasterLocalHour(city);
+  if (h >= 8 && h < 12) return "Доброе утро";
+  if (h >= 12 && h < 17) return "Добрый день";
+  if (h >= 17 && h < 21) return "Добрый вечер";
+  return "Добрый день";
+}
+
+/** Returns true if it is quiet time (21:00–08:00, or weekend before 10:00) for the master's city. */
 function isQuietHours(city?: string | null): boolean {
   const h = getMasterLocalHour(city);
-  return h >= QUIET_START || h < QUIET_END;
+  if (h >= QUIET_START || h < QUIET_END) return true; // night hours
+
+  // Weekends: don't bother before 10:00
+  const localDate = getMasterLocalDate(city);
+  const dayOfWeek = localDate.getUTCDay(); // 0=Sun, 6=Sat
+  if ((dayOfWeek === 0 || dayOfWeek === 6) && h < WEEKEND_QUIET_UNTIL) return true;
+
+  return false;
 }
 
 // ─── Follow-up / dormant constants ───────────────────────────────────────────
@@ -917,6 +939,11 @@ export async function handleMasterMessage(
 ═══ ДАННЫЕ МАСТЕРА ═══
 ${context}${pendingOrderSection}
 
+═══ ГЛАВНОЕ ПРАВИЛО ═══
+НЕ пиши мастеру каждый день одно и то же.
+Если мастер уже назвал срок — запомни дату через schedule_followup и напиши ТОЛЬКО в этот день.
+Не беспокой раньше запланированной даты.
+
 ═══ КАК ТЫ РАБОТАЕШЬ (ОБЯЗАТЕЛЬНО ВЫПОЛНЯЙ ПЕРЕД КАЖДЫМ ОТВЕТОМ) ═══
 
 Перед тем как ответить — мысленно пройди 4 шага:
@@ -925,12 +952,12 @@ ${context}${pendingOrderSection}
 Сформулируй одним предложением суть его сообщения.
 
 ШАГ 2 — Мастер уже отвечал на этот вопрос?
-Посмотри на «Переписка за последние 48ч» выше. Если мастер уже писал об этом — НЕ спрашивай снова, подтверди что услышал.
+Посмотри «Переписка за последние 48ч» выше. Если мастер уже писал об этом — НЕ спрашивай снова, подтверди что услышал.
 
-ШАГ 3 — Какой сценарий? (СЦ-1 ... СЦ-8 или "другое")
-Найди подходящий сценарий из раздела СЦЕНАРИИ ниже.
+ШАГ 3 — Есть ли в памяти запланированный следующий контакт?
+Посмотри «Уже запланированные напоминания». Если есть — не создавай новое (не дублируй).
 
-ШАГ 4 — Нужен tool?
+ШАГ 4 — Какой сценарий? Нужен tool?
 Если да — вызови tool ПЕРВЫМ. Ответ пиши только после.
 
 ЗАПРЕЩЕНО:
@@ -938,37 +965,57 @@ ${context}${pendingOrderSection}
 ❌ Длинные тексты — мастер работает руками, не за компьютером. 1–3 предложения.
 ❌ «Возможно ошибка в адресе» — сначала search_order_by_query, потом вывод.
 ❌ Повторять вопрос если мастер уже ответил — проверь переписку за 48ч.
-❌ НАЗЫВАТЬ ЛЮБЫЕ СУММЫ долга / задолженности / просрочки / штрафов — у тебя НЕТ доступа к финансовым данным мастера. Любые цифры которые ты назовёшь — будут выдуманы. Направляй на раздел «Баланс» в приложении.
+❌ НАЗЫВАТЬ ЛЮБЫЕ СУММЫ долга / задолженности / просрочки / штрафов — у тебя НЕТ доступа к финансовым данным мастера. Направляй на раздел «Баланс» в приложении.
+
+═══ ИНТЕРПРЕТАЦИЯ СРОКОВ — ПЕРЕВОДИ В ДАТУ ═══
+Когда мастер называет срок — ВСЕГДА переводи в конкретную дату и указывай в schedule_followup:
+
+«сегодня»              → текущая дата
+«завтра»               → текущая дата + 1 день
+«послезавтра»          → текущая дата + 2 дня
+«в пятницу»            → ближайшая пятница
+«на следующей неделе»  → следующий понедельник
+«через пару дней»      → текущая дата + 2 дня
+«вечером»              → сегодня 19:00
+«утром»                → завтра 10:00
+«в обед»               → сегодня 13:00
+«через неделю»         → текущая дата + 7 дней
+
+ПОСЛЕ СОХРАНЕНИЯ ДАТЫ всегда подтверждай одной фразой:
+«Понял, записал — напишу [дата/время] если статус не изменится. Удачи на объекте!»
 
 ═══ СЦЕНАРИИ ═══
 
 **[СЦ-1] Созвон / договорённость с клиентом:**
 Признаки: "созвонились", "договорились", "встреча в ...", "приеду в ...", "клиент ждёт в ..."
 → add_order_note(orderId, "Созвон: [суть]")
-→ schedule_followup(orderId, hoursFromNow, "Как прошёл замер? Договорились?", "[что обещал]")
-→ Ответ: "Хорошо! Напишите как пройдёт замер, не забудьте смету в приложении 📋"
+→ schedule_followup(orderId, hoursFromNow, "Как прошёл замер? Клиент подтвердил?", "[что обещал]")
+→ Ответ: "Понял, записал — напишу [дата]. Как пройдёт замер — отпишись. Смету не забудь 📋"
 
 **[СЦ-2] Клиент не отвечает:**
 Признаки: "не берёт", "недоступен", "не дозвонился", "занято", "сбросил"
 → add_order_note(orderId, "Клиент не ответил на звонок")
-→ Ответ: "Понял. Попробуйте ещё раз через час, напишите как дозвонитесь 📞"
+→ schedule_followup(orderId, 1, "Удалось дозвониться клиенту по заказу #${/* orderId */0}?", "клиент не брал трубку")
+→ Ответ: "Понял. Попробуй ещё раз через час, напиши как дозвонишься 📞"
 
 **[СЦ-3] Замер прошёл, договорились о работах:**
 Признаки: "замер прошёл", "замерил", "договорились", "клиент согласен", "беремся"
 → add_order_note(orderId, "Замер: [детали договорённостей]")
-→ Ответ: "Отлично! Оформите смету в приложении и попросите предоплату — это фиксирует заказ 💰"
+→ schedule_followup(orderId, hoursFromNow, "Смета по заказу отправлена?", "[когда планирует выслать смету]")
+→ Ответ: "Отлично! Оформи смету в приложении и попроси предоплату — это фиксирует заказ 💰"
 
 **[СЦ-4] Начало работ:**
 Признаки: "начали", "приступили", "работаем", "начинаю"
 → set_order_in_progress(orderId)
-→ Ответ: "Зафиксировал! Как закончите — отметьте в приложении ✅"
+→ schedule_followup(orderId, hoursFromNow, "Заказ #${/* orderId */0} — работы завершены? Клиент доволен?", "[когда планирует закончить]")
+→ Ответ: "Понял, записал — напишу [дата]. Зафиксировал начало работ ✅"
 
 **[СЦ-5] Мастер отправил смету:**
 Признаки: "отправил смету", "смету скинул", "счёт отправил"
 → add_order_note(orderId, "Смета отправлена клиенту")
 → Ответ: "Хорошо! Ждём оплаты от клиента 💳"
 
-**[СЦ-6] Серьёзная проблема (конфликт / повреждение / травма):**
+**[СЦ-6] Серьёзная проблема (конфликт / повреждение / травма / проблемный клиент):**
 → escalate_to_manager("СРОЧНО: [суть проблемы]", orderId)
 → Ответ: "Передал руководству, с вами свяжутся."
 
@@ -981,13 +1028,19 @@ ${context}${pendingOrderSection}
 
 **[СЦ-8] Мастер спрашивает когда придут деньги / о выплате за заказ:**
 Признаки: "когда деньги", "когда выплата", "когда перечислят"
-→ Ответ: "Выплата по заказу приходит в течение 3 рабочих дней после его закрытия. Если есть вопросы — напишите, разберёмся 💬"
+→ Ответ: "Выплата приходит в течение 3 рабочих дней после закрытия заказа. Есть вопросы — напишите, разберёмся 💬"
 
 **[СЦ-9] Мастер спрашивает о долге / задолженности / просрочке / штрафах / комиссии:**
-Признаки: "долг", "задолженность", "просрочка", "что я должен", "что я просрочил", "штраф", "сколько должен", "комиссия", "сколько с меня"
+Признаки: "долг", "задолженность", "просрочка", "что я должен", "штраф", "сколько должен", "комиссия", "сколько с меня"
 → НИКОГДА не называй конкретные суммы — у тебя нет доступа к финансовым данным.
 → Ответ: "Точные данные по долгам и комиссии есть в приложении в разделе «Баланс». Там всё актуально. Если что-то непонятно — напишу менеджеру."
 → Если мастер настаивает на цифрах — escalate_to_manager("Мастер ${masterAlias} спрашивает о задолженности/просрочке — нужна сверка")
+
+**[СЦ-10] Перенос срока:**
+Признаки: мастер называет НОВУЮ дату/срок после того как уже давал другую
+→ add_order_note(orderId, "Срок перенесён: [новая дата]")
+→ schedule_followup(orderId, hoursFromNow, "Заказ #${/* orderId */0} — статус?", "[новый срок от мастера]")
+→ Ответ: "Понял, записал — напишу [новая дата] если статус не изменится. Удачи на объекте!"
 
 ═══ ПРАВИЛА ПОИСКА ═══
 Если мастер упоминает адрес / имя клиента / улицу которых НЕТ в активных заказах:
@@ -996,7 +1049,7 @@ ${context}${pendingOrderSection}
 
 ═══ ТЕХНИЧЕСКИЕ ПРАВИЛА ═══
 - Сначала инструмент → потом текстовый ответ
-- Если мастер называет конкретную дату/время → schedule_followup
+- Если мастер называет конкретную дату/время → ОБЯЗАТЕЛЬНО schedule_followup (это ключевое действие)
 - orderId: если заказ один — используй его. Если несколько — уточни ОДИН вопрос: "По какому заказу?"
 - Пиши на ты, коротко, по-деловому, без лишних слов
 - hoursFromNow считай от текущего времени (${nowStr})`;
@@ -1272,13 +1325,14 @@ export async function sendAssignmentGreeting(
       ? new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(order.scheduledAt))
       : "уточните с клиентом";
 
-    let msg = `👋 ${masterAlias}, вы назначены на заказ #${orderId}!\n\n`;
+    const greeting = getTimeGreeting(order.city);
+    let msg = `${greeting}, ${masterAlias}! Вы назначены на заказ #${orderId} 📋\n\n`;
     msg += `🔧 ${order.serviceType}\n`;
     msg += `📍 ${order.city}${order.district ? ", " + order.district : ""}\n`;
     msg += `📐 ${order.area} м²\n`;
     msg += `📅 Дата: ${scheduledStr}`;
     if (lead) msg += `\n📞 Клиент: ${lead.clientName} · ${lead.clientPhone}`;
-    msg += `\n\nВсё понятно? Подтвердите получение или задайте вопрос.`;
+    msg += `\n\nВсё понятно? Подтверди получение или задай вопрос.`;
 
     try {
       await sendMaxMessage(maxChatId, msg);
@@ -1414,6 +1468,86 @@ export async function sendPreDayReminder(
     },
     situation: `Завтра у мастера запланированы работы по заказу #${orderId}. Нужно убедиться что он готов — знает адрес, время, не забыл. Если мастер уже недавно подтвердил что всё готово — не беспокой лишний раз.`,
   });
+}
+
+// ─── Escalation helpers ───────────────────────────────────────────────────────
+
+/** Escalate to manager when master hasn't replied to any bot message in 24h */
+async function escalate24hNoResponse(
+  master: { id: number; alias: string; maxChatId: string; city?: string | null },
+  orderId: number,
+  hoursAssigned: number,
+): Promise<void> {
+  try {
+    const key = `escalate_24h_no_response:${orderId}`;
+    const already = await db.select({ id: botMemoryTable.id })
+      .from(botMemoryTable)
+      .where(and(
+        eq(botMemoryTable.masterId, master.id),
+        eq(botMemoryTable.category, "proactive_sent"),
+        ilike(botMemoryTable.content, key),
+      ))
+      .limit(1);
+    if (already.length > 0) return; // Already escalated
+
+    // Only fire if there was a bot message that went unanswered for 24h+
+    const lastBot = lastBotMessageAt.get(master.id);
+    const lastReply = lastMasterReplyAt.get(master.id);
+    if (!lastBot) return; // Bot never wrote — no escalation needed
+
+    const botMsgAgeH = (Date.now() - lastBot) / 3_600_000;
+    if (botMsgAgeH < 24) return; // Last bot message was less than 24h ago
+
+    // Master replied after last bot message — no issue
+    if (lastReply && lastReply >= lastBot) return;
+
+    const managerId = getManagerUserId();
+    if (!managerId) return;
+
+    const alert = `⚠️ Заказ #${orderId} / Мастер: ${master.alias}\n\nМастер не отвечает на сообщения диспетчера уже ${Math.round(botMsgAgeH)} часов. Назначен ${Math.round(hoursAssigned)} ч назад.\n\nРекомендуется связаться напрямую.`;
+    await sendManagerMsg(managerId, alert);
+    injectNotification(alert, { masterAlias: master.alias });
+
+    // Mark as escalated
+    await db.insert(botMemoryTable).values({ masterId: master.id, category: "proactive_sent", content: key });
+    console.log(`[dispatcherAI] 24h no-response escalated for ${master.alias} order #${orderId}`);
+  } catch (e) {
+    console.error("[dispatcherAI] escalate24hNoResponse error:", e);
+  }
+}
+
+/** Escalate to manager when order has been hanging for 14+ days with no completion */
+async function escalateStaleLongOrder(
+  master: { id: number; alias: string; maxChatId: string; city?: string | null },
+  orderId: number,
+  hoursAssigned: number,
+): Promise<void> {
+  try {
+    const key = `escalate_stale_14d:${orderId}`;
+    const already = await db.select({ id: botMemoryTable.id })
+      .from(botMemoryTable)
+      .where(and(
+        eq(botMemoryTable.masterId, master.id),
+        eq(botMemoryTable.category, "proactive_sent"),
+        ilike(botMemoryTable.content, key),
+      ))
+      .limit(1);
+    if (already.length > 0) return; // Already escalated
+
+    const managerId = getManagerUserId();
+    if (!managerId) return;
+
+    const daysAssigned = Math.round(hoursAssigned / 24);
+    const alert = `⚠️ Заказ #${orderId} / Мастер: ${master.alias}\n\nЗаказ висит уже ${daysAssigned} дней без завершения. Требует ручного контроля руководителя.\n\nПроверьте статус и при необходимости примите меры.`;
+    await sendManagerMsg(managerId, alert);
+    injectNotification(alert, { masterAlias: master.alias });
+
+    // Mark as escalated (once per order — don't spam)
+    await db.insert(botMemoryTable).values({ masterId: master.id, category: "proactive_sent", content: key });
+    console.log(`[dispatcherAI] 14-day stale order escalated for ${master.alias} order #${orderId}`);
+  } catch (e) {
+    console.error("[dispatcherAI] escalateStaleLongOrder error:", e);
+  }
 }
 
 // ─── Scheduler: run checks for all active orders ─────────────────────────────
@@ -1584,6 +1718,24 @@ export async function runProactiveChecks(): Promise<void> {
       if (hoursAssigned >= 12) {
         await detectGhostMaster(
           { id: master.id, alias: master.alias, maxChatId: master.maxChatId },
+          order.id,
+          hoursAssigned,
+        );
+      }
+
+      // 6. 24h no-response escalation — master didn't reply to any bot message
+      if (hoursAssigned >= 24) {
+        await escalate24hNoResponse(
+          master,
+          order.id,
+          hoursAssigned,
+        );
+      }
+
+      // 7. 14-day stale order escalation — order hanging too long
+      if (hoursAssigned >= 336) { // 14 days = 336h
+        await escalateStaleLongOrder(
+          master,
           order.id,
           hoursAssigned,
         );
