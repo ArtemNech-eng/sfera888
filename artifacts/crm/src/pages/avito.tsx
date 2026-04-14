@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   CheckCircle2, RefreshCw, MessageSquare, UserPlus, Send,
   ChevronRight, ExternalLink, Plug, Unplug, AlertCircle,
-  LayoutGrid, BarChart3, Eye, Phone, Heart, Wifi, WifiOff,
+  LayoutGrid, BarChart3, Eye, EyeOff, Phone, Heart, Wifi, WifiOff,
   TrendingUp, TrendingDown, Minus, Sparkles, Loader2, Star,
   Package, Search, Filter, X, FileText, Copy, Zap, Plus, Trash2, Pencil,
 } from "lucide-react";
@@ -1065,15 +1065,30 @@ export default function AvitoPage() {
                         </button>
                       )}
                     </div>
+                    <button
+                      onClick={() => setItemStatusFilter(f => f === "active" ? "all" : "active")}
+                      className={cn(
+                        "h-9 px-3 rounded-md border text-sm flex items-center gap-1.5 transition-colors",
+                        itemStatusFilter === "active"
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-background border-input text-foreground hover:bg-muted/50"
+                      )}
+                    >
+                      {itemStatusFilter === "active"
+                        ? <><Eye className="w-3.5 h-3.5" /> Показать все</>
+                        : <><EyeOff className="w-3.5 h-3.5" /> Скрыть неактивные</>
+                      }
+                    </button>
                     <select
                       value={itemStatusFilter}
                       onChange={e => setItemStatusFilter(e.target.value)}
                       className="h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring">
                       <option value="all">Все статусы</option>
                       <option value="active">Активные</option>
-                      <option value="old">Старые</option>
-                      <option value="archived">В архиве</option>
+                      <option value="old">Истёкшие</option>
+                      <option value="rejected">Отклонённые</option>
                       <option value="blocked">Заблокированные</option>
+                      <option value="archived">В архиве</option>
                     </select>
                   </div>
                 </CardHeader>

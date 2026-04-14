@@ -7,7 +7,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer,
 } from "recharts";
 import {
-  TrendingUp, TrendingDown, Eye, Phone, DollarSign, Wallet, RefreshCw,
+  TrendingUp, TrendingDown, Eye, EyeOff, Phone, DollarSign, Wallet, RefreshCw,
   ArrowUpDown, ArrowUp, ArrowDown, Download, AlertCircle, Trophy, AlertTriangle,
   Minus, Loader2, Calendar, Info, Clock,
 } from "lucide-react";
@@ -168,6 +168,7 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettin
   const [dateTo, setDateTo] = useState("");
   const [cityFilter, setCityFilter] = useState("all");
   const [selectedItem, setSelectedItem] = useState<AvitoItem | null>(null);
+  const [hideInactive, setHideInactive] = useState(false);
 
   // ── Queries ──────────────────────────────────────────────────────────────
 
@@ -390,6 +391,11 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettin
 
   const { sorted: sortedItems, key: itemSortKey, dir: itemSortDir, toggle: toggleItemSort } =
     useSortable(itemRows, "roi" as any, "desc");
+
+  const visibleItems = useMemo(
+    () => hideInactive ? sortedItems.filter(i => i.status === "active") : sortedItems,
+    [sortedItems, hideInactive],
+  );
   const { sorted: sortedCities, key: citySortKey, dir: citySortDir, toggle: toggleCitySort } =
     useSortable(cityRows, "roi" as any, "desc");
   const { sorted: sortedCategories, key: catSortKey, dir: catSortDir, toggle: toggleCatSort } =
@@ -590,27 +596,40 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettin
             <CardTitle className="text-sm flex items-center gap-2 flex-wrap">
               <TrendingUp className="w-4 h-4 text-primary" />
               Эффективность объявлений
-              {items.length > 0 && <Badge variant="secondary">{items.length}</Badge>}
+              {items.length > 0 && <Badge variant="secondary">{visibleItems.length}{hideInactive && visibleItems.length !== sortedItems.length ? `/${sortedItems.length}` : ""}</Badge>}
               {statsLastDate && (
                 <span className="text-[10px] font-normal px-1.5 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
                   ✓ данные за {new Date(statsLastDate).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}
                 </span>
               )}
             </CardTitle>
-            <Button
-              size="sm" variant="outline" className="h-7 text-xs gap-1.5"
-              onClick={() => exportCsv(
-                ["Название", "Статус", "Просмотры", "Контакты", "Конверсия %", "Стоимость контакта ₽", "Расход ₽"],
-                sortedItems.map(i => [
-                  i.title, i.status, i.views, i.contacts,
-                  i.views > 0 ? (i.contacts / i.views * 100).toFixed(1) : "0",
-                  i.cpc ?? "—", i.itemSpend ?? "—",
-                ]),
-                "avito-items.csv"
-              )}
-            >
-              <Download className="w-3.5 h-3.5" /> Выгрузить в Excel
-            </Button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setHideInactive(h => !h)}
+                className={cn(
+                  "h-7 px-2.5 rounded-md border text-xs flex items-center gap-1.5 transition-colors",
+                  hideInactive
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background border-input text-foreground hover:bg-muted/50"
+                )}
+              >
+                {hideInactive ? <><Eye className="w-3 h-3" /> Показать все</> : <><EyeOff className="w-3 h-3" /> Скрыть неактивные</>}
+              </button>
+              <Button
+                size="sm" variant="outline" className="h-7 text-xs gap-1.5"
+                onClick={() => exportCsv(
+                  ["Название", "Статус", "Просмотры", "Контакты", "Конверсия %", "Стоимость контакта ₽", "Расход ₽"],
+                  visibleItems.map(i => [
+                    i.title, i.status, i.views, i.contacts,
+                    i.views > 0 ? (i.contacts / i.views * 100).toFixed(1) : "0",
+                    i.cpc ?? "—", i.itemSpend ?? "—",
+                  ]),
+                  "avito-items.csv"
+                )}
+              >
+                <Download className="w-3.5 h-3.5" /> Выгрузить в Excel
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="p-0">
@@ -643,7 +662,7 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettin
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedItems.map(item => {
+                    {visibleItems.map(item => {
                       const conv = item.views > 0 ? item.contacts / item.views * 100 : 0;
                       const statusColor = item.status === "active" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
                         : item.status === "blocked" ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
