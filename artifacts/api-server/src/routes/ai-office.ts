@@ -468,18 +468,18 @@ async function runOrdersWithoutReceipts(runType: "manual" | "auto" = "auto"): Pr
   const h24ago = new Date(now.getTime() - 24 * 3600_000).toISOString();
 
   const rows = await db.execute(sql`
-    SELECT o.id, o.city, o.district, o.service_type, o.assigned_at,
+    SELECT o.id, o.city, o.district, o.service_type,
+           COALESCE(o.assigned_at, o.created_at) AS ref_time,
            m.id AS master_id, m.alias AS master_alias, m.max_chat_id, m.phone AS master_phone,
-           EXTRACT(EPOCH FROM (NOW() - o.assigned_at)) / 3600 AS hours_without_receipt
+           EXTRACT(EPOCH FROM (NOW() - COALESCE(o.assigned_at, o.created_at))) / 3600 AS hours_without_receipt
     FROM orders o
     JOIN masters m ON m.id = o.master_id
     LEFT JOIN receipts r ON r.order_id = o.id
-    WHERE o.status IN ('master_assigned')
+    WHERE o.status IN ('master_assigned', 'in_progress')
       AND o.deleted_at IS NULL
-      AND o.assigned_at IS NOT NULL
-      AND o.assigned_at < ${h24ago}
+      AND COALESCE(o.assigned_at, o.created_at) < ${h24ago}
       AND r.id IS NULL
-    ORDER BY o.assigned_at ASC
+    ORDER BY COALESCE(o.assigned_at, o.created_at) ASC
   `);
 
   const critical: OrderWithoutReceipt[] = [];
@@ -495,7 +495,7 @@ async function runOrdersWithoutReceipts(runType: "manual" | "auto" = "auto"): Pr
       city: r.city ?? "",
       district: r.district ?? "",
       serviceType: r.service_type ?? "",
-      assignedAt: r.assigned_at,
+      assignedAt: r.ref_time,
       hoursWithoutReceipt: hours,
       risk: hours >= 48 ? "critical" : "warning",
       masterPhone: r.master_phone ?? null,
@@ -866,8 +866,9 @@ router.post("/template-scenarios/orders-without-receipts/:orderId/message-master
   const orderId = Number(req.params.orderId);
   try {
     const rows = await db.execute(sql`
-      SELECT o.id, o.service_type, o.district, o.city, o.assigned_at,
-             EXTRACT(EPOCH FROM (NOW() - o.assigned_at)) / 3600 AS hours,
+      SELECT o.id, o.service_type, o.district, o.city,
+             COALESCE(o.assigned_at, o.created_at) AS ref_time,
+             EXTRACT(EPOCH FROM (NOW() - COALESCE(o.assigned_at, o.created_at))) / 3600 AS hours,
              m.id AS master_id, m.alias AS master_alias, m.max_chat_id
       FROM orders o
       JOIN masters m ON m.id = o.master_id
@@ -987,16 +988,16 @@ router.post("/template-scenarios/orders-without-receipts/send-all", async (req, 
   try {
     const h24ago = new Date(Date.now() - 24 * 3600_000).toISOString();
     const rows = await db.execute(sql`
-      SELECT o.id, o.city, o.district, o.service_type, o.assigned_at,
+      SELECT o.id, o.city, o.district, o.service_type,
+             COALESCE(o.assigned_at, o.created_at) AS ref_time,
              m.id AS master_id, m.alias AS master_alias, m.max_chat_id,
-             EXTRACT(EPOCH FROM (NOW() - o.assigned_at)) / 3600 AS hours_without_receipt
+             EXTRACT(EPOCH FROM (NOW() - COALESCE(o.assigned_at, o.created_at))) / 3600 AS hours_without_receipt
       FROM orders o
       JOIN masters m ON m.id = o.master_id
       LEFT JOIN receipts r ON r.order_id = o.id
-      WHERE o.status IN ('master_assigned')
+      WHERE o.status IN ('master_assigned', 'in_progress')
         AND o.deleted_at IS NULL
-        AND o.assigned_at IS NOT NULL
-        AND o.assigned_at < ${h24ago}
+        AND COALESCE(o.assigned_at, o.created_at) < ${h24ago}
         AND r.id IS NULL
     `);
 
@@ -1027,18 +1028,18 @@ router.get("/template-scenarios/orders-without-receipts/live", async (_req, res)
   try {
     const h24ago = new Date(Date.now() - 24 * 3600_000).toISOString();
     const rows = await db.execute(sql`
-      SELECT o.id, o.city, o.district, o.service_type, o.assigned_at,
+      SELECT o.id, o.city, o.district, o.service_type,
+             COALESCE(o.assigned_at, o.created_at) AS ref_time,
              m.alias AS master_alias, m.max_chat_id, m.phone AS master_phone,
-             EXTRACT(EPOCH FROM (NOW() - o.assigned_at)) / 3600 AS hours_without_receipt
+             EXTRACT(EPOCH FROM (NOW() - COALESCE(o.assigned_at, o.created_at))) / 3600 AS hours_without_receipt
       FROM orders o
       JOIN masters m ON m.id = o.master_id
       LEFT JOIN receipts r ON r.order_id = o.id
-      WHERE o.status IN ('master_assigned')
+      WHERE o.status IN ('master_assigned', 'in_progress')
         AND o.deleted_at IS NULL
-        AND o.assigned_at IS NOT NULL
-        AND o.assigned_at < ${h24ago}
+        AND COALESCE(o.assigned_at, o.created_at) < ${h24ago}
         AND r.id IS NULL
-      ORDER BY o.assigned_at ASC
+      ORDER BY COALESCE(o.assigned_at, o.created_at) ASC
     `);
 
     const items = (rows.rows as any[]).map(r => ({
@@ -1048,7 +1049,7 @@ router.get("/template-scenarios/orders-without-receipts/live", async (_req, res)
       city: r.city ?? "",
       district: r.district ?? "",
       serviceType: r.service_type ?? "",
-      assignedAt: r.assigned_at,
+      assignedAt: r.ref_time,
       hoursWithoutReceipt: Math.floor(Number(r.hours_without_receipt)),
       risk: Number(r.hours_without_receipt) >= 48 ? "critical" : "warning",
       masterPhone: r.master_phone ?? null,
