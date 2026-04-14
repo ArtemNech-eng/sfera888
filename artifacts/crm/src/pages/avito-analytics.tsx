@@ -314,12 +314,12 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettin
     });
   }, [itemsWithPeriodStats, totalPeriodViews, periodSpending, spending, crmItemMap]);
 
-  // Available cities
+  // Available cities — derived from actual Avito items (not CRM data)
   const availableCities = useMemo(() => {
     const cities = new Set<string>();
-    (analyticsData?.crmByCity ?? []).forEach(r => cities.add(r.city));
+    itemRows.forEach(r => { if (r.city && r.city !== "—") cities.add(r.city); });
     return Array.from(cities).sort();
-  }, [analyticsData]);
+  }, [itemRows]);
 
   // City table rows
   const cityRows = useMemo(() => {
@@ -392,10 +392,12 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettin
   const { sorted: sortedItems, key: itemSortKey, dir: itemSortDir, toggle: toggleItemSort } =
     useSortable(itemRows, "roi" as any, "desc");
 
-  const visibleItems = useMemo(
-    () => hideInactive ? sortedItems.filter(i => i.status === "active") : sortedItems,
-    [sortedItems, hideInactive],
-  );
+  const visibleItems = useMemo(() => {
+    let result = sortedItems;
+    if (hideInactive) result = result.filter(i => i.status === "active");
+    if (cityFilter !== "all") result = result.filter(i => i.city === cityFilter);
+    return result;
+  }, [sortedItems, hideInactive, cityFilter]);
   const { sorted: sortedCities, key: citySortKey, dir: citySortDir, toggle: toggleCitySort } =
     useSortable(cityRows, "roi" as any, "desc");
   const { sorted: sortedCategories, key: catSortKey, dir: catSortDir, toggle: toggleCatSort } =
