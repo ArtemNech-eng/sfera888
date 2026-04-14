@@ -204,6 +204,24 @@ async function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_scen_notif_lookup
       ON scenario_notifications (scenario_id, order_id, master_id, tier, sent_at DESC)
   `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS order_broadcast_waves (
+      id SERIAL PRIMARY KEY,
+      order_id INTEGER NOT NULL UNIQUE,
+      current_wave INTEGER NOT NULL DEFAULT 1,
+      wave_1_sent_at TIMESTAMP,
+      wave_2_sent_at TIMESTAMP,
+      wave_3_sent_at TIMESTAMP,
+      wave_4_sent_at TIMESTAMP,
+      admin_alerted_at TIMESTAMP,
+      wave_1_count INTEGER NOT NULL DEFAULT 0,
+      wave_2_count INTEGER NOT NULL DEFAULT 0,
+      wave_3_count INTEGER NOT NULL DEFAULT 0,
+      wave_4_count INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
   console.log("[startup] Migrations applied");
 }
 

@@ -23,3 +23,4 @@ export * from "./bot-memory";
 export * from "./avito";
 
 export * from "./scenario-notifications";
+export * from "./order-broadcast-waves";

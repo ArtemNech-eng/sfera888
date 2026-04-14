@@ -128,25 +128,185 @@ async function notifyAdminError(scenario: string, error: string) {
   }
 }
 
-// ─── Scenario 1: Broadcast Open Orders ────────────────────────────────────────
+// ─── Scenario 1: Broadcast Open Orders — Wave System ──────────────────────────
+
+// Wave timings (minutes since wave 1)
+const WAVE_DELAYS = [0, 15, 30, 45, 75]; // wave1, wave2, wave3, wave4, admin-alert
+
+function computeConversion(m: any): number {
+  const received = Number(m.total_leads_received ?? 0);
+  if (received === 0) return 0;
+  return Number(m.accepted_orders ?? 0) / received;
+}
+
+function conversionTier(conv: number): 1 | 2 | 3 | 4 {
+  if (conv >= 0.8) return 1;
+  if (conv >= 0.6) return 2;
+  if (conv >= 0.3) return 3;
+  return 4;
+}
+
+function computeMasterScore(m: any, order: any): number {
+  const ratingScore = Math.min(Number(m.rating ?? 3) / 5, 1);
+  const loadScore = Math.max(0, (3 - Number(m.active_orders ?? 0)) / 3);
+  const districts: string[] = Array.isArray(m.preferred_districts) ? m.preferred_districts : [];
+  const districtScore = order.district && districts.includes(order.district) ? 1 : 0;
+  const avgMin = Number(m.avg_response_minutes ?? 30);
+  const speedScore = Math.max(0, Math.min(1, (60 - avgMin) / 60));
+  return 0.4 * ratingScore + 0.3 * loadScore + 0.2 * districtScore + 0.1 * speedScore;
+}
+
+function normalizeRu(s: string) {
+  return s.toLowerCase().replace(/ё/g, "е");
+}
+
+function masterMatchesOrder(m: any, order: any): boolean {
+  if (m.city !== order.city) return false;
+  if (Number(m.active_orders ?? 0) >= 3) return false;
+  if (Number(m.rating ?? 0) < 3.0) return false;
+  const stNorm = normalizeRu(order.service_type as string);
+  const orderTerms = stNorm.split(/[,;]+/).map(t => t.trim()).filter(Boolean);
+  const WILDCARD = ["комплексный ремонт", "комплексная отделка"];
+  const specs: string[] = Array.isArray(m.specializations) && m.specializations.length > 0
+    ? m.specializations
+    : (m.specialization ? [m.specialization] : []);
+  if (specs.length === 0) return true;
+  const specsNorm = specs.map((s: string) => normalizeRu(s.trim()));
+  if (specsNorm.some((sp: string) => WILDCARD.includes(sp))) return true;
+  return orderTerms.some((term: string) =>
+    specsNorm.some((sp: string) => sp === term || term.includes(sp) || sp.includes(term))
+  );
+}
+
+/** Returns set of master IDs already notified about this order in any wave */
+async function getAlreadyNotifiedForOrder(orderId: number): Promise<Set<number>> {
+  const rows = await db.execute(sql`
+    SELECT DISTINCT master_id FROM scenario_notifications
+    WHERE scenario_id = 'broadcast-orders' AND order_id = ${orderId}
+  `);
+  return new Set((rows.rows as any[]).map(r => Number(r.master_id)));
+}
+
+function buildWaveMessage(m: any, order: any, wave: number): string {
+  const areaStr = order.area ? `${Number(order.area).toFixed(0)} м²` : "—";
+  const scheduledText = order.scheduled_at
+    ? new Date(order.scheduled_at).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })
+    : "по договорённости";
+  const location = order.district ? `${order.city}, ${order.district}` : order.city;
+
+  if (wave === 1) {
+    const conv = Math.round(computeConversion(m) * 100);
+    return (
+      `🔔 Новый заказ!\n\n` +
+      `📍 ${location}\n` +
+      `🔨 ${order.service_type}\n` +
+      `📐 ${areaStr}\n` +
+      `📅 ${scheduledText}\n\n` +
+      `Вы в приоритете — ваша конверсия ${conv}% 🔥\n\n` +
+      `Откликнитесь в приложении 👍`
+    );
+  }
+  if (wave === 4) {
+    return (
+      `🔔 Заказ ещё свободен!\n\n` +
+      `📍 ${location}\n` +
+      `🔨 ${order.service_type}\n` +
+      `📐 ${areaStr}\n` +
+      `📅 ${scheduledText}\n\n` +
+      `Никто не взял — ваш шанс!\n\n` +
+      `Откликнитесь в приложении 👍`
+    );
+  }
+  return (
+    `🔔 Новый заказ!\n\n` +
+    `📍 ${location}\n` +
+    `🔨 ${order.service_type}\n` +
+    `📐 ${areaStr}\n` +
+    `📅 ${scheduledText}\n\n` +
+    `Откликнитесь в приложении 👍`
+  );
+}
+
+async function sendWaveToMasters(
+  masters: any[], order: any, wave: number
+): Promise<number> {
+  let sent = 0;
+  for (const m of masters) {
+    await sendAndSaveMasterMessage(
+      m.id, m.max_chat_id,
+      buildWaveMessage(m, order, wave),
+      "📋 Рассылка заказов"
+    );
+    await recordNotification("broadcast-orders", order.id, m.id, `wave-${wave}`);
+    await db.execute(sql`
+      UPDATE masters SET total_leads_received = COALESCE(total_leads_received, 0) + 1
+      WHERE id = ${m.id}
+    `);
+    sent++;
+    await sleep(MSG_DELAY_MS);
+  }
+  return sent;
+}
+
+async function upsertWave1(orderId: number, count: number): Promise<void> {
+  await db.execute(sql`
+    INSERT INTO order_broadcast_waves (order_id, current_wave, wave_1_sent_at, wave_1_count)
+    VALUES (${orderId}, 1, NOW(), ${count})
+    ON CONFLICT (order_id) DO UPDATE
+    SET current_wave = 1, wave_1_sent_at = NOW(), wave_1_count = ${count}, updated_at = NOW()
+  `);
+}
+async function upsertWave2(orderId: number, count: number): Promise<void> {
+  await db.execute(sql`
+    INSERT INTO order_broadcast_waves (order_id, current_wave, wave_2_sent_at, wave_2_count)
+    VALUES (${orderId}, 2, NOW(), ${count})
+    ON CONFLICT (order_id) DO UPDATE
+    SET current_wave = 2, wave_2_sent_at = NOW(), wave_2_count = ${count}, updated_at = NOW()
+  `);
+}
+async function upsertWave3(orderId: number, count: number): Promise<void> {
+  await db.execute(sql`
+    INSERT INTO order_broadcast_waves (order_id, current_wave, wave_3_sent_at, wave_3_count)
+    VALUES (${orderId}, 3, NOW(), ${count})
+    ON CONFLICT (order_id) DO UPDATE
+    SET current_wave = 3, wave_3_sent_at = NOW(), wave_3_count = ${count}, updated_at = NOW()
+  `);
+}
+async function upsertWave4(orderId: number, count: number): Promise<void> {
+  await db.execute(sql`
+    INSERT INTO order_broadcast_waves (order_id, current_wave, wave_4_sent_at, wave_4_count)
+    VALUES (${orderId}, 4, NOW(), ${count})
+    ON CONFLICT (order_id) DO UPDATE
+    SET current_wave = 4, wave_4_sent_at = NOW(), wave_4_count = ${count}, updated_at = NOW()
+  `);
+}
 
 async function runBroadcastOrders() {
-  const orders = await db.execute(sql`
-    SELECT id, city, district, service_type, area, scheduled_at, comment
-    FROM orders
-    WHERE status = 'waiting_master' AND deleted_at IS NULL
-    ORDER BY created_at ASC
+  const now = new Date();
+
+  // 1. Load open orders with their wave state
+  const ordersResult = await db.execute(sql`
+    SELECT o.id, o.city, o.district, o.service_type, o.area, o.scheduled_at, o.created_at,
+           w.current_wave, w.wave_1_sent_at, w.wave_2_sent_at,
+           w.wave_3_sent_at, w.wave_4_sent_at, w.admin_alerted_at,
+           w.wave_1_count, w.wave_2_count, w.wave_3_count, w.wave_4_count
+    FROM orders o
+    LEFT JOIN order_broadcast_waves w ON w.order_id = o.id
+    WHERE o.status = 'waiting_master' AND o.deleted_at IS NULL
+    ORDER BY o.created_at ASC
   `);
 
-  if ((orders.rows as any[]).length === 0) {
-    return { totalOrders: 0, totalSent: 0, citySummary: {} };
+  if ((ordersResult.rows as any[]).length === 0) {
+    return { totalOrders: 0, totalSent: 0, newOrders: 0, wavesAdvanced: 0, adminAlerts: 0 };
   }
 
-  // Masters: active, has Max chat, with their active order counts
-  const masters = await db.execute(sql`
-    SELECT m.id, m.alias, m.city, m.specialization, m.specializations,
-           m.max_chat_id, m.accepted_orders, m.total_leads_received,
-           COALESCE(active.cnt, 0) AS active_orders
+  // 2. Load all eligible active masters with scores
+  const mastersResult = await db.execute(sql`
+    SELECT m.id, m.alias, m.city, m.district, m.specialization, m.specializations,
+           m.max_chat_id, m.rating, m.accepted_orders, m.total_leads_received,
+           m.preferred_districts,
+           COALESCE(active.cnt, 0) AS active_orders,
+           COALESCE(resp_speed.avg_minutes, 30) AS avg_response_minutes
     FROM masters m
     LEFT JOIN (
       SELECT master_id, COUNT(*) AS cnt
@@ -154,68 +314,107 @@ async function runBroadcastOrders() {
       WHERE status IN ('master_assigned', 'in_progress') AND deleted_at IS NULL
       GROUP BY master_id
     ) active ON active.master_id = m.id
+    LEFT JOIN (
+      SELECT master_id,
+        AVG(EXTRACT(EPOCH FROM (responded_at - created_at)) / 60) AS avg_minutes
+      FROM order_dispatches
+      WHERE status IN ('responded', 'assigned') AND responded_at IS NOT NULL
+      GROUP BY master_id
+    ) resp_speed ON resp_speed.master_id = m.id
     WHERE m.status = 'active' AND m.deleted_at IS NULL AND m.max_chat_id IS NOT NULL
   `);
 
-  const mastersList = masters.rows as any[];
+  const allMasters = mastersResult.rows as any[];
   let totalSent = 0;
-  const citySummary: Record<string, { orders: number; masters: number }> = {};
+  let newOrders = 0;
+  let wavesAdvanced = 0;
+  let adminAlerts = 0;
 
-  for (const order of orders.rows as any[]) {
-    const serviceType = order.service_type as string;
-    const stLower = serviceType.toLowerCase();
+  for (const order of ordersResult.rows as any[]) {
+    const wave1Time = order.wave_1_sent_at ? new Date(order.wave_1_sent_at) : null;
+    const elapsedMin = wave1Time ? (now.getTime() - wave1Time.getTime()) / 60000 : -1;
 
-    const matching = mastersList
-      .filter(m => {
-        if (m.city !== order.city) return false;
-        if (Number(m.active_orders) >= 3) return false;
-        const specs: string[] = Array.isArray(m.specializations) && m.specializations.length > 0
-          ? m.specializations
-          : [m.specialization ?? ""];
-        return specs.some(s =>
-          s.toLowerCase().includes(stLower) ||
-          stLower.includes(s.toLowerCase())
-        );
-      })
-      .sort((a, b) => {
-        const convA = a.total_leads_received > 0 ? a.accepted_orders / a.total_leads_received : 0;
-        const convB = b.total_leads_received > 0 ? b.accepted_orders / b.total_leads_received : 0;
-        return convB - convA;
-      });
+    // Eligible masters for this order (city + specialty + active < 3 + rating >= 3.0)
+    const eligible = allMasters
+      .filter(m => masterMatchesOrder(m, order))
+      .sort((a, b) => computeMasterScore(b, order) - computeMasterScore(a, order));
 
-    if (matching.length === 0) continue;
+    if (!wave1Time) {
+      // ── Wave 1: conv >= 80%, max 5 masters ────────────────────────────────
+      const wave1 = eligible
+        .filter(m => conversionTier(computeConversion(m)) === 1)
+        .slice(0, 5);
 
-    const scheduledText = order.scheduled_at
-      ? new Date(order.scheduled_at).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })
-      : "по договорённости";
+      const sent1 = await sendWaveToMasters(wave1, order, 1);
+      await upsertWave1(order.id, sent1);
+      totalSent += sent1;
+      newOrders++;
 
-    const areaStr = order.area ? `${Number(order.area).toFixed(0)} м²` : "—";
+    } else if (!order.wave_2_sent_at && elapsedMin >= WAVE_DELAYS[1]) {
+      // ── Wave 2: conv 60-79%, skip already notified ─────────────────────────
+      const notified = await getAlreadyNotifiedForOrder(order.id);
+      const wave2 = eligible.filter(m =>
+        !notified.has(m.id) && conversionTier(computeConversion(m)) === 2
+      );
+      const sent2 = await sendWaveToMasters(wave2, order, 2);
+      await upsertWave2(order.id, sent2);
+      totalSent += sent2;
+      wavesAdvanced++;
 
-    const message =
-      `🔔 Новый заказ!\n\n` +
-      `📍 ${order.city}, ${order.district}\n` +
-      `🔨 ${order.service_type}\n` +
-      `📐 ${areaStr}\n` +
-      `📅 ${scheduledText}\n\n` +
-      `Откликнитесь в приложении чтобы взять заказ 👍`;
+    } else if (!order.wave_3_sent_at && elapsedMin >= WAVE_DELAYS[2]) {
+      // ── Wave 3: conv 30-59%, skip already notified ─────────────────────────
+      const notified = await getAlreadyNotifiedForOrder(order.id);
+      const wave3 = eligible.filter(m =>
+        !notified.has(m.id) && conversionTier(computeConversion(m)) === 3
+      );
+      const sent3 = await sendWaveToMasters(wave3, order, 3);
+      await upsertWave3(order.id, sent3);
+      totalSent += sent3;
+      wavesAdvanced++;
 
-    let orderSent = 0;
-    for (const m of matching) {
-      const alreadySent = await wasNotified("broadcast-orders", order.id, m.id, "new");
-      if (alreadySent) continue;
-      await sendAndSaveMasterMessage(m.id, m.max_chat_id, message, "📋 Рассылка заказов");
-      await recordNotification("broadcast-orders", order.id, m.id, "new");
-      totalSent++;
-      orderSent++;
-      await sleep(MSG_DELAY_MS);
+    } else if (!order.wave_4_sent_at && elapsedMin >= WAVE_DELAYS[3]) {
+      // ── Wave 4: all remaining, skip already notified ────────────────────────
+      const notified = await getAlreadyNotifiedForOrder(order.id);
+      const wave4 = eligible.filter(m => !notified.has(m.id));
+      const sent4 = await sendWaveToMasters(wave4, order, 4);
+      await upsertWave4(order.id, sent4);
+      totalSent += sent4;
+      wavesAdvanced++;
+
+    } else if (!order.admin_alerted_at && elapsedMin >= WAVE_DELAYS[4]) {
+      // ── Wave 5: admin alert in Max ─────────────────────────────────────────
+      const cityMasters = allMasters.filter(m => m.city === order.city).length;
+      const freeMasters = allMasters.filter(m => m.city === order.city && Number(m.active_orders ?? 0) < 3).length;
+      const w1c = order.wave_1_count ?? 0;
+      const w2c = order.wave_2_count ?? 0;
+      const w3c = order.wave_3_count ?? 0;
+      const w4c = order.wave_4_count ?? 0;
+      const location = order.district ? `${order.city}, ${order.district}` : order.city;
+      const areaStr = order.area ? `${Number(order.area).toFixed(0)} м²` : "—";
+      const scheduledText = order.scheduled_at
+        ? new Date(order.scheduled_at).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })
+        : "по договорённости";
+
+      await sendAdminMax(
+        `⚠️ ЗАКАЗ БЕЗ МАСТЕРА\n\n` +
+        `Заказ: #${order.id}\nВид работ: ${order.service_type}\nГород: ${location}\nПлощадь: ${areaStr}\nКогда нужно: ${scheduledText}\n\n` +
+        `Рассылка прошла 4 волны — никто не откликнулся.\n\n` +
+        `Мастеров в городе: ${cityMasters}\nСвободных: ${freeMasters}\n` +
+        `Получили уведомление: ${w1c + w2c + w3c + w4c} мастеров\n\n` +
+        `Решение в ИИ Офис → Открытые заказы`
+      );
+      await db.execute(sql`
+        UPDATE order_broadcast_waves SET admin_alerted_at = NOW(), updated_at = NOW()
+        WHERE order_id = ${order.id}
+      `);
+      adminAlerts++;
     }
-
-    if (!citySummary[order.city]) citySummary[order.city] = { orders: 0, masters: 0 };
-    citySummary[order.city].orders++;
-    citySummary[order.city].masters += orderSent;
   }
 
-  return { totalOrders: (orders.rows as any[]).length, totalSent, citySummary };
+  return {
+    totalOrders: (ordersResult.rows as any[]).length,
+    totalSent, newOrders, wavesAdvanced, adminAlerts,
+  };
 }
 
 // ─── Scenario 2: Payment Reminders ────────────────────────────────────────────
@@ -830,6 +1029,165 @@ router.put("/template-scenarios/:id/toggle", async (req, res) => {
       ON CONFLICT (scenario) DO UPDATE SET auto_enabled = EXCLUDED.auto_enabled, updated_at = NOW()
     `);
     res.json({ ok: true, enabled });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ─── Broadcast-orders: live panel data ────────────────────────────────────────
+
+// GET /api/ai-office/template-scenarios/broadcast-orders/live
+router.get("/template-scenarios/broadcast-orders/live", async (_req, res) => {
+  try {
+    const now = new Date();
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+
+    // All open orders with wave state
+    const openRows = await db.execute(sql`
+      SELECT o.id, o.city, o.district, o.service_type, o.area, o.scheduled_at, o.created_at,
+             w.current_wave, w.wave_1_sent_at, w.wave_2_sent_at,
+             w.wave_3_sent_at, w.wave_4_sent_at, w.admin_alerted_at,
+             w.wave_1_count, w.wave_2_count, w.wave_3_count, w.wave_4_count,
+             (
+               SELECT COUNT(*) FROM scenario_notifications sn
+               WHERE sn.scenario_id = 'broadcast-orders' AND sn.order_id = o.id
+             ) AS total_notified,
+             (
+               SELECT COUNT(*) FROM order_dispatches od
+               WHERE od.order_id = o.id AND od.status IN ('responded', 'assigned')
+             ) AS total_responded
+      FROM orders o
+      LEFT JOIN order_broadcast_waves w ON w.order_id = o.id
+      WHERE o.status = 'waiting_master' AND o.deleted_at IS NULL
+      ORDER BY o.created_at ASC
+    `);
+
+    // Assigned today count
+    const assignedToday = await db.execute(sql`
+      SELECT COUNT(*) AS cnt FROM orders
+      WHERE status IN ('master_assigned', 'in_progress', 'completed')
+        AND assigned_at >= ${todayStart.toISOString()}
+        AND deleted_at IS NULL
+    `);
+
+    const orders = (openRows.rows as any[]).map(r => {
+      const wave1Time = r.wave_1_sent_at ? new Date(r.wave_1_sent_at) : null;
+      const elapsedMin = wave1Time ? Math.floor((now.getTime() - wave1Time.getTime()) / 60000) : 0;
+      const totalNotified = Number(r.total_notified ?? 0);
+      const totalResponded = Number(r.total_responded ?? 0);
+
+      let currentWave = r.current_wave ?? null;
+      let isStuck = false;
+      if (wave1Time && elapsedMin >= 75 && r.admin_alerted_at) isStuck = true;
+
+      return {
+        orderId: r.id,
+        city: r.city,
+        district: r.district ?? "—",
+        serviceType: r.service_type,
+        area: r.area ? Number(r.area).toFixed(0) : "—",
+        scheduledAt: r.scheduled_at ?? null,
+        createdAt: r.created_at,
+        currentWave,
+        wave1SentAt: r.wave_1_sent_at ?? null,
+        wave2SentAt: r.wave_2_sent_at ?? null,
+        wave3SentAt: r.wave_3_sent_at ?? null,
+        wave4SentAt: r.wave_4_sent_at ?? null,
+        adminAlerted: !!r.admin_alerted_at,
+        wave1Count: r.wave_1_count ?? 0,
+        wave2Count: r.wave_2_count ?? 0,
+        wave3Count: r.wave_3_count ?? 0,
+        wave4Count: r.wave_4_count ?? 0,
+        totalNotified,
+        totalResponded,
+        elapsedMin,
+        isStuck,
+      };
+    });
+
+    const openCount = orders.length;
+    const assignedTodayCount = Number((assignedToday.rows[0] as any)?.cnt ?? 0);
+    const awaitingCount = orders.filter(o => o.currentWave && !o.isStuck).length;
+    const stuckCount = orders.filter(o => o.elapsedMin >= 60 && !o.adminAlerted).length;
+
+    res.json({
+      orders,
+      stats: {
+        openCount,
+        assignedTodayCount,
+        awaitingCount,
+        stuckCount,
+      },
+    });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// GET /api/ai-office/template-scenarios/broadcast-orders/:orderId/details — timeline
+router.get("/template-scenarios/broadcast-orders/:orderId/details", async (req, res) => {
+  try {
+    const orderId = Number(req.params.orderId);
+
+    const waveRow = await db.execute(sql`
+      SELECT * FROM order_broadcast_waves WHERE order_id = ${orderId}
+    `);
+
+    const notifications = await db.execute(sql`
+      SELECT sn.master_id, sn.tier, sn.sent_at, m.alias AS master_alias
+      FROM scenario_notifications sn
+      JOIN masters m ON m.id = sn.master_id
+      WHERE sn.scenario_id = 'broadcast-orders' AND sn.order_id = ${orderId}
+      ORDER BY sn.sent_at ASC
+    `);
+
+    const dispatches = await db.execute(sql`
+      SELECT od.master_id, od.status, od.created_at, od.responded_at, m.alias AS master_alias
+      FROM order_dispatches od
+      JOIN masters m ON m.id = od.master_id
+      WHERE od.order_id = ${orderId}
+      ORDER BY od.created_at ASC
+    `);
+
+    res.json({
+      wave: waveRow.rows[0] ?? null,
+      notifications: notifications.rows,
+      dispatches: dispatches.rows,
+    });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// POST /api/ai-office/template-scenarios/broadcast-orders/:orderId/resend — force resend all waves
+router.post("/template-scenarios/broadcast-orders/:orderId/resend", async (req, res) => {
+  try {
+    const orderId = Number(req.params.orderId);
+
+    // Clear all wave data and dedup records
+    await db.execute(sql`DELETE FROM order_broadcast_waves WHERE order_id = ${orderId}`);
+    await db.execute(sql`
+      DELETE FROM scenario_notifications
+      WHERE scenario_id = 'broadcast-orders' AND order_id = ${orderId}
+    `);
+
+    res.json({ ok: true, message: "Волны сброшены. Заказ будет разослан заново на следующем запуске." });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// POST /api/ai-office/template-scenarios/broadcast-orders/:orderId/cancel — cancel order
+router.post("/template-scenarios/broadcast-orders/:orderId/cancel", async (req, res) => {
+  try {
+    const orderId = Number(req.params.orderId);
+    await db.execute(sql`
+      UPDATE orders
+      SET status = 'cancelled', cancel_reason = 'Отменён вручную из ИИ Офиса', updated_at = NOW()
+      WHERE id = ${orderId} AND status = 'waiting_master'
+    `);
+    res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }

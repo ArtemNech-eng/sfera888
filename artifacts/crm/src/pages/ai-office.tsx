@@ -400,6 +400,14 @@ export default function AiOfficePage() {
   const [noReceiptCommentSaved, setNoReceiptCommentSaved] = useState<Set<number>>(new Set());
   const [noReceiptSendAllState, setNoReceiptSendAllState] = useState<"idle" | "confirm" | "loading">("idle");
 
+  // Broadcast-orders live state
+  interface BroadcastOrderEntry { orderId: number; city: string; district: string; serviceType: string; area: string; scheduledAt: string | null; createdAt: string; currentWave: number | null; wave1SentAt: string | null; wave2SentAt: string | null; wave3SentAt: string | null; wave4SentAt: string | null; adminAlerted: boolean; wave1Count: number; wave2Count: number; wave3Count: number; wave4Count: number; totalNotified: number; totalResponded: number; elapsedMin: number; isStuck: boolean }
+  interface BroadcastLiveData { orders: BroadcastOrderEntry[]; stats: { openCount: number; assignedTodayCount: number; awaitingCount: number; stuckCount: number } }
+  const [broadcastLive, setBroadcastLive] = useState<BroadcastLiveData | null>(null);
+  const [broadcastLiveLoading, setBroadcastLiveLoading] = useState(false);
+  const [broadcastActionLoading, setBroadcastActionLoading] = useState<Record<number, string>>({});
+  const [broadcastCancelConfirm, setBroadcastCancelConfirm] = useState<{ orderId: number; serviceType: string } | null>(null);
+
   // Legacy GPT scenarios state
   const [scenarios, setScenarios] = useState<PredefinedScenario[]>([]);
   const [schedules, setSchedules] = useState<Schedules>({});
@@ -503,6 +511,49 @@ export default function AiOfficePage() {
     const data = await res.json();
     setScenarioLogs(prev => ({ ...prev, [id]: data }));
   }, []);
+
+  // ── Broadcast-orders handlers ──────────────────────────────────────────────
+  const fetchBroadcastLive = useCallback(async () => {
+    setBroadcastLiveLoading(true);
+    try {
+      const res = await fetch(`${BASE}/api/ai-office/template-scenarios/broadcast-orders/live`, { credentials: "include" });
+      const data = await res.json();
+      setBroadcastLive(data);
+    } catch (e) {
+      toast({ title: "Ошибка загрузки", description: String(e), variant: "destructive" });
+    } finally {
+      setBroadcastLiveLoading(false);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleBroadcastResend = useCallback(async (orderId: number) => {
+    setBroadcastActionLoading(p => ({ ...p, [orderId]: "resend" }));
+    try {
+      const res = await fetch(`${BASE}/api/ai-office/template-scenarios/broadcast-orders/${orderId}/resend`, { method: "POST", credentials: "include" });
+      if (!res.ok) throw new Error((await res.json()).error);
+      toast({ title: "Волны сброшены ✓", description: "Заказ будет разослан заново на следующем запуске" });
+      fetchBroadcastLive();
+    } catch (e) {
+      toast({ title: "Ошибка", description: String(e), variant: "destructive" });
+    } finally {
+      setBroadcastActionLoading(p => { const n = { ...p }; delete n[orderId]; return n; });
+    }
+  }, [fetchBroadcastLive]);
+
+  const handleBroadcastCancel = useCallback(async (orderId: number) => {
+    setBroadcastActionLoading(p => ({ ...p, [orderId]: "cancel" }));
+    setBroadcastCancelConfirm(null);
+    try {
+      const res = await fetch(`${BASE}/api/ai-office/template-scenarios/broadcast-orders/${orderId}/cancel`, { method: "POST", credentials: "include" });
+      if (!res.ok) throw new Error((await res.json()).error);
+      toast({ title: "Заказ отменён ✓" });
+      fetchBroadcastLive();
+    } catch (e) {
+      toast({ title: "Ошибка", description: String(e), variant: "destructive" });
+    } finally {
+      setBroadcastActionLoading(p => { const n = { ...p }; delete n[orderId]; return n; });
+    }
+  }, [fetchBroadcastLive]);
 
   // ── Payment-reminders handlers ─────────────────────────────────────────────
   const fetchPaymentLive = useCallback(async () => {
@@ -909,8 +960,10 @@ export default function AiOfficePage() {
   useEffect(() => {
     const hasPayment = templateScenarios.find(s => s.id === "payment-reminders")?.lastRun?.summary;
     const hasReceipt = templateScenarios.find(s => s.id === "orders-without-receipts")?.lastRun?.summary;
+    const hasBroadcast = templateScenarios.find(s => s.id === "broadcast-orders");
     if (hasPayment) fetchPaymentLive();
     if (hasReceipt) fetchNoReceiptLive();
+    if (hasBroadcast) fetchBroadcastLive();
   }, [templateScenarios]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
@@ -1283,7 +1336,14 @@ export default function AiOfficePage() {
                       if (s.status === "error") return { text: "Ошибка: " + (s.error_text ?? "неизвестно"), color: "text-red-500" };
                       const sm = s.summary;
                       if (!sm) return null;
-                      if (scenario.id === "broadcast-orders") return { text: `📤 ${sm.totalSent ?? 0} сообщ. по ${sm.totalOrders ?? 0} заказам`, color: "text-blue-600 dark:text-blue-400" };
+                      if (scenario.id === "broadcast-orders") {
+                        const parts = [];
+                        if (sm.newOrders > 0) parts.push(`🟢 ${sm.newOrders} новых`);
+                        if (sm.wavesAdvanced > 0) parts.push(`⏩ ${sm.wavesAdvanced} волн`);
+                        if (sm.adminAlerts > 0) parts.push(`⚠️ ${sm.adminAlerts} алертов`);
+                        if (sm.totalSent > 0) parts.push(`📤 ${sm.totalSent} сообщ.`);
+                        return { text: parts.length > 0 ? parts.join(" · ") : `📤 ${sm.totalSent ?? 0} сообщ. по ${sm.totalOrders ?? 0} заказам`, color: "text-blue-600 dark:text-blue-400" };
+                      }
                       if (scenario.id === "payment-reminders") {
                         const total = (sm.superCritical?.length ?? 0) + (sm.critical?.length ?? 0) + (sm.warning?.length ?? 0);
                         const sent = (sm.sent24h ?? 0) + (sm.sent48h ?? 0) + (sm.sent72h ?? 0);
@@ -1354,6 +1414,139 @@ export default function AiOfficePage() {
                               Сценарий ещё не запускался
                             </div>
                           )}
+
+                          {/* Broadcast-orders inline panel */}
+                          {scenario.id === "broadcast-orders" && (() => {
+                            const data = broadcastLive;
+                            const orders: BroadcastOrderEntry[] = data?.orders ?? [];
+                            const stats = data?.stats ?? { openCount: 0, assignedTodayCount: 0, awaitingCount: 0, stuckCount: 0 };
+
+                            function waveInfo(o: BroadcastOrderEntry): { label: string; color: string; bg: string } {
+                              if (o.adminAlerted) return { label: "⚫ Без ответа", color: "text-gray-600", bg: "bg-red-50/80 dark:bg-red-950/20" };
+                              if (!o.currentWave) return { label: "⏳ Новый", color: "text-gray-400", bg: "" };
+                              const wl = ["", "🟢 Волна 1", "🟡 Волна 2", "🟠 Волна 3", "🔴 Волна 4"];
+                              const wc = ["", "text-green-600", "text-yellow-600", "text-orange-600", "text-red-600"];
+                              const wb = ["", "", "", "", "bg-amber-50/60 dark:bg-amber-950/10"];
+                              return { label: wl[o.currentWave] ?? `Волна ${o.currentWave}`, color: wc[o.currentWave] ?? "", bg: wb[o.currentWave] ?? "" };
+                            }
+
+                            function elapsedLabel(min: number): string {
+                              if (min < 60) return `${min} мин`;
+                              const h = Math.floor(min / 60); const m = min % 60;
+                              return m > 0 ? `${h}ч ${m}м` : `${h}ч`;
+                            }
+
+                            return (
+                              <div className="space-y-2 mt-1">
+                                {/* 4 summary cards */}
+                                <div className="grid grid-cols-2 gap-1.5">
+                                  <div className="rounded-lg px-2.5 py-2 bg-blue-50/80 dark:bg-blue-950/20 border border-blue-200/60 dark:border-blue-800/40 text-center">
+                                    <p className="text-[11px] text-blue-600 font-semibold">📋 Открытых</p>
+                                    <p className="text-base font-bold text-blue-700 dark:text-blue-400">{stats.openCount}</p>
+                                  </div>
+                                  <div className="rounded-lg px-2.5 py-2 bg-emerald-50/80 dark:bg-emerald-950/20 border border-emerald-200/60 dark:border-emerald-800/40 text-center">
+                                    <p className="text-[11px] text-emerald-600 font-semibold">✅ Назначено сегодня</p>
+                                    <p className="text-base font-bold text-emerald-700 dark:text-emerald-400">{stats.assignedTodayCount}</p>
+                                  </div>
+                                  <div className="rounded-lg px-2.5 py-2 bg-yellow-50/80 dark:bg-yellow-950/20 border border-yellow-200/60 dark:border-yellow-800/40 text-center">
+                                    <p className="text-[11px] text-yellow-600 font-semibold">⏳ Ждут отклика</p>
+                                    <p className="text-base font-bold text-yellow-700 dark:text-yellow-400">{stats.awaitingCount}</p>
+                                  </div>
+                                  <div className="rounded-lg px-2.5 py-2 bg-red-50/80 dark:bg-red-950/20 border border-red-200/60 dark:border-red-800/40 text-center">
+                                    <p className="text-[11px] text-red-500 font-semibold">⚠️ Без мастера 1ч+</p>
+                                    <p className="text-base font-bold text-red-700 dark:text-red-400">{stats.stuckCount}</p>
+                                  </div>
+                                </div>
+
+                                {/* Refresh row */}
+                                <div className="flex items-center gap-2 text-xs">
+                                  {orders.length === 0 && !broadcastLiveLoading && (
+                                    <span className="px-2 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 font-semibold">✅ Нет открытых заказов</span>
+                                  )}
+                                  <button onClick={fetchBroadcastLive} disabled={broadcastLiveLoading}
+                                    className="ml-auto flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors">
+                                    <RefreshCw className={`w-3 h-3 ${broadcastLiveLoading ? "animate-spin" : ""}`} />
+                                    <span>Обновить</span>
+                                  </button>
+                                </div>
+
+                                {/* Orders list */}
+                                {orders.length > 0 && (
+                                  <div className="rounded-xl border border-border overflow-hidden">
+                                    <div className="divide-y divide-border max-h-[420px] overflow-y-auto">
+                                      {orders.map(o => {
+                                        const wi = waveInfo(o);
+                                        const resendLoading = broadcastActionLoading[o.orderId] === "resend";
+                                        const cancelLoading = broadcastActionLoading[o.orderId] === "cancel";
+                                        const scheduledStr = o.scheduledAt
+                                          ? new Date(o.scheduledAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })
+                                          : "по договор.";
+                                        const isCancelling = broadcastCancelConfirm?.orderId === o.orderId;
+
+                                        return (
+                                          <div key={o.orderId} className={`px-3 py-2.5 ${wi.bg}`}>
+                                            <div className="flex items-start gap-2 flex-wrap">
+                                              <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                  <span className="text-xs font-bold text-foreground">#{o.orderId}</span>
+                                                  <span className={`text-[11px] font-semibold ${wi.color}`}>{wi.label}</span>
+                                                  {o.elapsedMin > 0 && (
+                                                    <span className="text-[10px] text-muted-foreground">· {elapsedLabel(o.elapsedMin)}</span>
+                                                  )}
+                                                </div>
+                                                <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                                                  📍 {o.city}{o.district !== "—" ? `, ${o.district}` : ""} · 🔨 {o.serviceType}
+                                                  {o.area !== "—" ? ` · ${o.area} м²` : ""} · 📅 {scheduledStr}
+                                                </p>
+                                                <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+                                                  📬 {o.totalNotified} мастеров · {o.totalResponded > 0 ? `✅ ${o.totalResponded} откликнулись` : "Откликов нет"}
+                                                  {o.wave1Count > 0 && ` · В1:${o.wave1Count}`}
+                                                  {o.wave2Count > 0 && ` В2:${o.wave2Count}`}
+                                                  {o.wave3Count > 0 && ` В3:${o.wave3Count}`}
+                                                  {o.wave4Count > 0 && ` В4:${o.wave4Count}`}
+                                                </p>
+                                              </div>
+
+                                              {/* Actions */}
+                                              <div className="flex items-center gap-1 shrink-0">
+                                                {isCancelling ? (
+                                                  <>
+                                                    <span className="text-[11px] text-red-600 font-semibold">Отменить?</span>
+                                                    <button
+                                                      onClick={() => handleBroadcastCancel(o.orderId)}
+                                                      disabled={cancelLoading}
+                                                      className="px-1.5 py-0.5 rounded text-[11px] bg-red-500 text-white font-semibold hover:opacity-80 transition-colors"
+                                                    >{cancelLoading ? "..." : "Да"}</button>
+                                                    <button
+                                                      onClick={() => setBroadcastCancelConfirm(null)}
+                                                      className="px-1.5 py-0.5 rounded text-[11px] bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                                                    >Нет</button>
+                                                  </>
+                                                ) : (
+                                                  <>
+                                                    <button
+                                                      onClick={() => handleBroadcastResend(o.orderId)}
+                                                      disabled={resendLoading}
+                                                      title="Сбросить волны и разослать заново"
+                                                      className="px-1.5 py-0.5 rounded text-[11px] bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 hover:opacity-80 transition-colors font-medium"
+                                                    >{resendLoading ? <Loader2 className="w-2.5 h-2.5 animate-spin inline" /> : "📱 Повтор"}</button>
+                                                    <button
+                                                      onClick={() => setBroadcastCancelConfirm({ orderId: o.orderId, serviceType: o.serviceType })}
+                                                      className="px-1.5 py-0.5 rounded text-[11px] bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:opacity-80 transition-colors font-medium"
+                                                    >❌</button>
+                                                  </>
+                                                )}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
 
                           {/* Payment-reminders inline panel */}
                           {scenario.id === "payment-reminders" && (paymentResult || lastRun?.summary) && (() => {
