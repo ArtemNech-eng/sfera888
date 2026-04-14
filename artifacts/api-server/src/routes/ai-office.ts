@@ -426,7 +426,13 @@ async function runOrderDiagnostics(runType: "manual" | "auto" = "auto") {
            r.prepayment_submitted_at, r.total_amount AS receipt_amount
     FROM orders o
     LEFT JOIN masters m ON m.id = o.master_id
-    LEFT JOIN receipts r ON r.order_id = o.id
+    LEFT JOIN LATERAL (
+      SELECT id, created_at, prepayment_submitted_at, total_amount
+      FROM receipts
+      WHERE order_id = o.id
+      ORDER BY prepayment_submitted_at DESC NULLS LAST, created_at DESC
+      LIMIT 1
+    ) r ON TRUE
     WHERE o.status IN ('master_assigned', 'in_progress')
       AND o.deleted_at IS NULL
     ORDER BY COALESCE(o.assigned_at, o.created_at) ASC NULLS LAST
@@ -465,15 +471,16 @@ async function runOrderDiagnostics(runType: "manual" | "auto" = "auto") {
     let risk = "ok";
     const reasons: { text: string; recommendation: string }[] = [];
 
-    // Criterion 1: master_assigned, no response
-    if (o.status === "master_assigned") {
+    // Criterion 1: master_assigned, no receipt yet (= no real response from master)
+    // Skip if master already submitted a receipt — they clearly responded and are working
+    if (o.status === "master_assigned" && !hasReceipt) {
       const days = Math.floor(daysSinceRef);
       if (daysSinceRef >= 2) {
         risk = "critical";
-        reasons.push({ text: `Мастер назначен ${days} дн. назад — нет отклика`, recommendation: "Срочно: напишите мастеру или переназначьте" });
+        reasons.push({ text: `Мастер назначен ${days} дн. назад — не отправил смету`, recommendation: "Срочно: напишите мастеру или переназначьте" });
       } else if (daysSinceRef >= 1) {
         if (risk !== "critical") risk = "warning";
-        reasons.push({ text: `Мастер назначен ${days} дн. назад — нет отклика`, recommendation: "Напишите мастеру или переназначьте заказ" });
+        reasons.push({ text: `Мастер назначен ${days} дн. назад — не отправил смету`, recommendation: "Напишите мастеру или переназначьте заказ" });
       }
     }
 
@@ -1516,7 +1523,13 @@ router.post("/template-scenarios/order-diagnostics/:orderId/message-master", asy
              m.id AS master_id, m.alias AS master_alias, m.max_chat_id
       FROM orders o
       JOIN masters m ON m.id = o.master_id
-      LEFT JOIN receipts r ON r.order_id = o.id
+      LEFT JOIN LATERAL (
+        SELECT id, created_at, prepayment_submitted_at
+        FROM receipts
+        WHERE order_id = o.id
+        ORDER BY prepayment_submitted_at DESC NULLS LAST, created_at DESC
+        LIMIT 1
+      ) r ON TRUE
       WHERE o.id = ${orderId} AND o.deleted_at IS NULL
     `);
     const o = rows.rows[0] as any;
