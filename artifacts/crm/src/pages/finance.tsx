@@ -302,17 +302,25 @@ export default function Finance() {
     return list;
   }, [transactions, statusFilter, cityFilter, search, orderSearch, txPeriod, txFrom, txTo]);
 
-  const txSummary = useMemo(() => ({
-    // Total commissions earned in period (all statuses — shows business volume)
-    income:  filtered.reduce((s, t) => s + t.commission, 0),
-    // Net amount still owed by masters (pending / overdue) — uses netPayable after prepayment deduction
-    pending: filtered.filter(t => t.paymentStatus === "pending").reduce((s, t) => s + t.netPayable, 0),
-    overdue: filtered.filter(t => t.paymentStatus === "overdue").reduce((s, t) => s + t.netPayable, 0),
-    avg:     filtered.length ? filtered.reduce((s, t) => s + t.commission, 0) / filtered.length : 0,
-    paidCount:    filtered.filter(t => t.paymentStatus === "paid").length,
-    pendingCount: filtered.filter(t => t.paymentStatus === "pending").length,
-    overdueCount: filtered.filter(t => t.paymentStatus === "overdue").length,
-  }), [filtered]);
+  const txSummary = useMemo(() => {
+    // "Общий доход" = деньги фактически полученные:
+    //   - для оплаченных транзакций: полная комиссия
+    //   - для ожидающих/просроченных: только уже полученная предоплата (prepaymentDeducted)
+    //   Т.е. НЕ считаем неоплаченный остаток (netPayable) по ожидающим транзакциям
+    const income = filtered.reduce((s, t) => {
+      if (t.paymentStatus === "paid") return s + t.commission;
+      return s + t.prepaymentDeducted; // только предоплата, остаток не считаем
+    }, 0);
+    return {
+      income,
+      pending: filtered.filter(t => t.paymentStatus === "pending").reduce((s, t) => s + t.netPayable, 0),
+      overdue: filtered.filter(t => t.paymentStatus === "overdue").reduce((s, t) => s + t.netPayable, 0),
+      avg:     filtered.length ? filtered.reduce((s, t) => s + t.commission, 0) / filtered.length : 0,
+      paidCount:    filtered.filter(t => t.paymentStatus === "paid").length,
+      pendingCount: filtered.filter(t => t.paymentStatus === "pending").length,
+      overdueCount: filtered.filter(t => t.paymentStatus === "overdue").length,
+    };
+  }, [filtered]);
 
   const totalTxPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safeTxPage   = Math.min(txPage, totalTxPages);
