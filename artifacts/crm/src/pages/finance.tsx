@@ -362,19 +362,29 @@ export default function Finance() {
       const r = await fetch(`${BASE}/api/finance/transactions/${tx.id}/remind`, {
         method: "POST", credentials: "include",
       });
-      if (!r.ok) throw new Error();
+      if (r.status === 429) {
+        const body = await r.json().catch(() => ({}));
+        toast.warning(body.error ?? "Напоминание уже было отправлено недавно");
+        return;
+      }
+      if (!r.ok) { const b = await r.json().catch(() => ({})); throw new Error(b.error); }
       toast.success("Напоминание отправлено");
       setRemindSent(s => new Set([...s, tx.id]));
-    } catch { toast.error("Не удалось отправить напоминание"); }
+    } catch (e: any) { toast.error(e?.message ?? "Не удалось отправить напоминание"); }
   };
 
   const doRemindAll = async (m: MasterStat) => {
     setMasterActionLoading({ id: m.masterId, action: "remind" });
     try {
       const r = await fetch(`${BASE}/api/finance/masters/${m.masterId}/remind-all`, { method: "POST", credentials: "include" });
-      if (!r.ok) throw new Error();
+      if (r.status === 429) {
+        const body = await r.json().catch(() => ({}));
+        toast.warning(body.error ?? "Сводка уже была отправлена недавно");
+        return;
+      }
+      if (!r.ok) { const b = await r.json().catch(() => ({})); throw new Error(b.error); }
       toast.success(`Напоминание отправлено мастеру ${m.alias}`);
-    } catch { toast.error("Ошибка при отправке напоминания"); }
+    } catch (e: any) { toast.error(e?.message ?? "Ошибка при отправке напоминания"); }
     finally { setMasterActionLoading(null); }
   };
 

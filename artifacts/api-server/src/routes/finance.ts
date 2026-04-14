@@ -43,6 +43,33 @@ function computeDaysOverdue(createdAt: Date, now = new Date()): number {
   return ms > 0 ? Math.floor(ms / 86400_000) : 0;
 }
 
+const REMIND_DEDUP_HOURS  = 24;
+const REMIND_ALL_DEDUP_H  = 8;
+
+async function wasFinanceReminded(
+  scenario: string, orderId: number, masterId: number, hours: number
+): Promise<boolean> {
+  const cutoff = new Date(Date.now() - hours * 3600_000).toISOString();
+  const r = await db.execute(sql`
+    SELECT 1 FROM scenario_notifications
+    WHERE scenario_id = ${scenario}
+      AND order_id    = ${orderId}
+      AND master_id   = ${masterId}
+      AND sent_at    >= ${cutoff}
+    LIMIT 1
+  `);
+  return r.rows.length > 0;
+}
+
+async function recordFinanceRemind(
+  scenario: string, orderId: number, masterId: number
+): Promise<void> {
+  await db.execute(sql`
+    INSERT INTO scenario_notifications (scenario_id, order_id, master_id, tier)
+    VALUES (${scenario}, ${orderId}, ${masterId}, 'reminder')
+  `).catch(console.error);
+}
+
 // ─── GET /api/finance/transactions ───────────────────────────────────────────
 
 router.get("/transactions", opsAndAdmin, async (req, res) => {
@@ -174,6 +201,18 @@ router.post("/transactions/:id/remind", opsAndAdmin, async (req, res) => {
   const t = rows.rows[0] as any;
   if (!t) return res.status(404).json({ error: "Not found" });
   if (t.payment_status === "paid") return res.status(400).json({ error: "Already paid" });
+  if (!t.max_chat_id) return res.status(400).json({ error: "Мастер не подключён к Max" });
+
+  // ── Dedup: не слать чаще раза в 24ч по одной транзакции ────────────────────
+  const alreadySent = await wasFinanceReminded(
+    "finance-remind", t.order_id, t.master_id, REMIND_DEDUP_HOURS
+  );
+  if (alreadySent) {
+    return res.status(429).json({
+      error: `Напоминание уже отправлено в течение последних ${REMIND_DEDUP_HOURS}ч`,
+      cooldownHours: REMIND_DEDUP_HOURS,
+    });
+  }
 
   const commission  = Number(t.commission);
   const dueDate     = computeDueDate(new Date(t.created_at));
@@ -187,11 +226,9 @@ router.post("/transactions/:id/remind", opsAndAdmin, async (req, res) => {
     `Срок: ${dueDateStr}\n\n` +
     `Оплатите на реквизиты в приложении → раздел Оплата.`;
 
-  if (t.max_chat_id) {
-    await sendMaxMessage(t.max_chat_id, text).catch(console.error);
-    return res.json({ ok: true });
-  }
-  res.status(400).json({ error: "Мастер не подключён к Max" });
+  await sendMaxMessage(t.max_chat_id, text).catch(console.error);
+  await recordFinanceRemind("finance-remind", t.order_id, t.master_id);
+  res.json({ ok: true });
 });
 
 // ─── POST /api/finance/masters/:masterId/remind-all ──────────────────────────
@@ -215,6 +252,18 @@ router.post("/masters/:masterId/remind-all", opsAndAdmin, async (req, res) => {
   const master = txList[0];
   if (!master.max_chat_id) return res.status(400).json({ error: "Мастер не подключён к Max" });
 
+  // ── Dedup: не слать сводку чаще раза в 8ч на одного мастера ───────────────
+  // Используем orderId = 0 как "сводное" напоминание без привязки к конкретному заказу
+  const alreadySent = await wasFinanceReminded(
+    "finance-remind-all", 0, masterId, REMIND_ALL_DEDUP_H
+  );
+  if (alreadySent) {
+    return res.status(429).json({
+      error: `Сводка уже отправлена в течение последних ${REMIND_ALL_DEDUP_H}ч`,
+      cooldownHours: REMIND_ALL_DEDUP_H,
+    });
+  }
+
   const total    = txList.reduce((s, t) => s + Number(t.commission), 0);
   const orderLines = txList.map(t =>
     `Заказ #${t.order_id}: ${Number(t.commission).toLocaleString("ru-RU")} ₽`
@@ -228,6 +277,7 @@ router.post("/masters/:masterId/remind-all", opsAndAdmin, async (req, res) => {
     `Оплатите на реквизиты в приложении → раздел Оплата.`;
 
   await sendMaxMessage(master.max_chat_id, text).catch(console.error);
+  await recordFinanceRemind("finance-remind-all", 0, masterId);
   res.json({ ok: true, count: txList.length, total });
 });
 
