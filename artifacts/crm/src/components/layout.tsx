@@ -21,7 +21,7 @@ import {
   Tag,
   ChevronDown,
   Bot,
-  MessageSquareDot,
+
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect, useRef } from "react";
@@ -88,19 +88,11 @@ export function Layout({ children }: LayoutProps) {
   });
   const unreadDialogs = dialogStats?.count ?? 0;
 
-  const { data: avitoUnreadData } = useQuery<{ count: number }>({
-    queryKey: ["/api/avito/unread-count"],
-    queryFn: () => fetch("/api/avito/unread-count", { credentials: "include" }).then(r => r.json()),
-    enabled: user?.role === "admin" || userPerms.includes("leads"),
-    refetchInterval: 30_000,
-  });
-  const avitoUnread = avitoUnreadData?.count ?? 0;
-
   const navItems = [
     { href: "/dashboard",      label: "Дашборд",              icon: LayoutDashboard,  permKey: "dashboard" },
     { href: "/master-chat",    label: "Чат с мастерами",       icon: MessagesSquare,   permKey: "master-chat",  badge: unreadCount > 0 ? unreadCount : null },
     { href: "/dialogs",        label: "Диалоги с клиентами",   icon: MessageCircle,    permKey: "orders",       badge: unreadDialogs > 0 ? unreadDialogs : null },
-    { href: "/avito-messages", label: "Сообщения Авито",       icon: MessageSquareDot, permKey: "leads",        badge: avitoUnread > 0 ? avitoUnread : null },
+
     { href: "/leads",          label: "Заявки",                icon: Inbox,            permKey: "leads" },
     { href: "/orders",      label: "Буфер заказов",        icon: Briefcase,       permKey: "orders" },
     { href: "/masters",     label: "Мастера",              icon: Users,           permKey: "masters" },
