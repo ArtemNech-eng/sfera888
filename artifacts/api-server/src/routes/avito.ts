@@ -1256,14 +1256,19 @@ router.get("/items-with-stats", async (req, res) => {
   // Helper: fetch items using the correct Avito API endpoint.
   // Per official docs: GET /core/v1/items (NO user_id in URL — identity comes from Bearer token)
   // SDK reference: https://github.com/darkvovich/avito-php-api-items
+  // We include all non-removed statuses so inactive items also appear in stats.
   async function fetchItems(_uid: string): Promise<{ items: any[]; meta: any }> {
-    const qs = `?page=${page}&per_page=${perPage}`;
+    // API default is status=active — we must explicitly request all statuses to include inactive items
+    const allStatuses = "active,old,blocked,rejected";
+    const qs = `?page=${page}&per_page=${perPage}&status=${encodeURIComponent(allStatuses)}`;
+    const qsNoStatus = `?page=${page}&per_page=${perPage}`;
     // Correct endpoint first, then fallbacks for older API versions
     const urls = [
-      `/core/v1/items${qs}`,                      // ✅ official docs: no user_id in URL
-      `/core/v1/items`,                            // ✅ without pagination
-      `/core/v1/accounts/${_uid}/items${qs}`,      // legacy attempt
-      `/core/v1/accounts/self/items${qs}`,         // legacy "self" alias
+      `/core/v1/items${qs}`,                           // ✅ official docs: all statuses
+      `/core/v1/items${qsNoStatus}`,                   // fallback: pagination only (active by default)
+      `/core/v1/items`,                                // ✅ without pagination
+      `/core/v1/accounts/${_uid}/items${qs}`,          // legacy attempt with statuses
+      `/core/v1/accounts/self/items${qsNoStatus}`,     // legacy "self" alias
     ];
 
     let lastError: AvitoApiError | Error | null = null;

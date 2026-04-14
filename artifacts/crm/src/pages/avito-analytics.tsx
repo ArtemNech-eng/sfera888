@@ -646,11 +646,16 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettin
                     {sortedItems.map(item => {
                       const conv = item.views > 0 ? item.contacts / item.views * 100 : 0;
                       const statusColor = item.status === "active" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                        : item.status === "blocked" ? "bg-red-100 text-red-700"
+                        : item.status === "blocked" ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                        : item.status === "rejected" ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
+                        : item.status === "old" ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
                         : "bg-muted text-muted-foreground";
                       const statusLabel = item.status === "active" ? "Активно"
                         : item.status === "blocked" ? "Заблок."
+                        : item.status === "rejected" ? "Отклонено"
+                        : item.status === "old" ? "Истёк"
                         : item.status === "archived" ? "Архив"
+                        : item.status === "removed" ? "Удалено"
                         : item.status;
                       return (
                         <tr
