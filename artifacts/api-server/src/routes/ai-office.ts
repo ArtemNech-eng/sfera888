@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { sql, and, eq, isNull, inArray, lt } from "drizzle-orm";
-import { mastersTable, ordersTable } from "@workspace/db";
+import { mastersTable, ordersTable, masterMessagesTable } from "@workspace/db";
 import { sendMaxMessage } from "../maxBot.js";
 
 const router = Router();
@@ -35,6 +35,29 @@ async function sendAdminMax(text: string): Promise<void> {
     await sendMaxMessage(userId, text);
   } catch (e) {
     console.error("[sendAdminMax]", e);
+  }
+}
+
+// Send a message to a master via Max AND save it to master_messages so it
+// appears in the CRM "master-chat" dialogs section.
+async function sendAndSaveMasterMessage(
+  masterId: number,
+  maxChatId: string | number,
+  text: string,
+  senderName = "system"
+): Promise<void> {
+  await sendMaxMessage(maxChatId, text);
+  try {
+    await db.insert(masterMessagesTable).values({
+      masterId,
+      telegramChatId: String(maxChatId),
+      text,
+      fromMaster: false,
+      senderName,
+      isRead: true,
+    });
+  } catch (e) {
+    console.error("[sendAndSaveMasterMessage] DB save failed:", e);
   }
 }
 
@@ -142,7 +165,7 @@ async function runBroadcastOrders() {
       `Откликнитесь в приложении чтобы взять заказ 👍`;
 
     for (const m of matching) {
-      await sendMaxMessage(m.max_chat_id, message);
+      await sendAndSaveMasterMessage(m.id, m.max_chat_id, message, "📋 Рассылка заказов");
       totalSent++;
     }
 
@@ -164,7 +187,7 @@ async function runPaymentReminders() {
     SELECT r.order_id, r.created_at AS receipt_created_at,
            r.service_type, r.district, r.city, r.client_name, r.client_phone,
            r.total_amount,
-           m.alias AS master_alias, m.max_chat_id
+           m.id AS master_id, m.alias AS master_alias, m.max_chat_id
     FROM receipts r
     JOIN orders o ON o.id = r.order_id
     JOIN masters m ON m.id = r.master_id
@@ -202,11 +225,11 @@ async function runPaymentReminders() {
 
     if (hoursElapsed >= 72) {
       superCritical.push(entry);
-      if (r.max_chat_id) {
+      if (r.max_chat_id && r.master_id) {
         const msg =
           `${r.master_alias}, по заказу #${r.order_id} предоплата не поступила уже ${hoursElapsed} часов.\n\n` +
           `Вопрос передан руководителю.\nОжидайте — мы свяжемся с вами.`;
-        await sendMaxMessage(r.max_chat_id, msg).catch(() => {});
+        await sendAndSaveMasterMessage(r.master_id, r.max_chat_id, msg, "💰 Напомнить об оплате").catch(() => {});
         sent72h++;
       }
       await sendAdminMax(
@@ -225,23 +248,23 @@ async function runPaymentReminders() {
       adminNotified++;
     } else if (hoursElapsed >= 48) {
       critical.push(entry);
-      if (r.max_chat_id) {
+      if (r.max_chat_id && r.master_id) {
         const msg =
           `⚠️ ${r.master_alias}, по заказу #${r.order_id} предоплата не поступила уже ${hoursElapsed} часов.\n\n` +
           `Пожалуйста ещё раз напомните клиенту про бронь.\n\n` +
           `Если клиент не планирует оплачивать — сообщите нам, мы решим что делать с этим заказом.`;
-        await sendMaxMessage(r.max_chat_id, msg).catch(() => {});
+        await sendAndSaveMasterMessage(r.master_id, r.max_chat_id, msg, "💰 Напомнить об оплате").catch(() => {});
         sent48h++;
       }
     } else {
       warning.push(entry);
-      if (r.max_chat_id) {
+      if (r.max_chat_id && r.master_id) {
         const msg =
           `👋 ${r.master_alias}, добрый день!\n\n` +
           `По заказу #${r.order_id} (${r.service_type}, ${location}) клиент пока не оплатил предоплату.\n\n` +
           `Напомните клиенту про бронь — одно сообщение часто решает вопрос 👍\n\n` +
           `Если клиент отказался — сообщите нам, и мы подготовим новый заказ для вас.`;
-        await sendMaxMessage(r.max_chat_id, msg).catch(() => {});
+        await sendAndSaveMasterMessage(r.master_id, r.max_chat_id, msg, "💰 Напомнить об оплате").catch(() => {});
         sent24h++;
       }
     }
@@ -469,7 +492,7 @@ async function runOrdersWithoutReceipts(): Promise<{
 
   const rows = await db.execute(sql`
     SELECT o.id, o.city, o.district, o.service_type, o.assigned_at,
-           m.alias AS master_alias, m.max_chat_id, m.phone AS master_phone,
+           m.id AS master_id, m.alias AS master_alias, m.max_chat_id, m.phone AS master_phone,
            EXTRACT(EPOCH FROM (NOW() - o.assigned_at)) / 3600 AS hours_without_receipt
     FROM orders o
     JOIN masters m ON m.id = o.master_id
@@ -554,7 +577,7 @@ async function runOrdersWithoutReceipts(): Promise<{
         `Отправьте смету сегодня 👍`;
     }
 
-    await sendMaxMessage(r.max_chat_id, message);
+    await sendAndSaveMasterMessage(r.master_id, r.max_chat_id, message, "📄 Заказы без сметы");
     totalNotified++;
   }
 
@@ -750,7 +773,7 @@ router.post("/template-scenarios/payment-reminders/:orderId/message-master", asy
     const rows = await db.execute(sql`
       SELECT r.order_id, r.service_type, r.district, r.city,
              EXTRACT(EPOCH FROM (NOW() - r.created_at)) / 3600 AS hours,
-             m.alias AS master_alias, m.max_chat_id
+             m.id AS master_id, m.alias AS master_alias, m.max_chat_id
       FROM receipts r
       JOIN masters m ON m.id = r.master_id
       WHERE r.order_id = ${orderId} AND r.prepayment_submitted_at IS NULL
@@ -780,7 +803,7 @@ router.post("/template-scenarios/payment-reminders/:orderId/message-master", asy
         `Если клиент отказался — сообщите нам, и мы подготовим новый заказ для вас.`;
     }
 
-    await sendMaxMessage(r.max_chat_id, message);
+    await sendAndSaveMasterMessage(r.master_id, r.max_chat_id, message, "💰 Напомнить об оплате");
     res.json({ ok: true, hours, template: hours >= 72 ? "72h" : hours >= 48 ? "48h" : "24h" });
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -792,7 +815,7 @@ router.post("/template-scenarios/payment-reminders/:orderId/return-to-pool", asy
   const orderId = Number(req.params.orderId);
   try {
     const rows = await db.execute(sql`
-      SELECT o.id, o.service_type, m.alias AS master_alias, m.max_chat_id
+      SELECT o.id, o.service_type, m.id AS master_id, m.alias AS master_alias, m.max_chat_id
       FROM orders o
       JOIN masters m ON m.id = o.master_id
       WHERE o.id = ${orderId} AND o.deleted_at IS NULL
@@ -806,11 +829,13 @@ router.post("/template-scenarios/payment-reminders/:orderId/return-to-pool", asy
       WHERE id = ${orderId} AND status NOT IN ('completed', 'cancelled')
     `);
 
-    if (o.max_chat_id) {
-      await sendMaxMessage(o.max_chat_id,
+    if (o.max_chat_id && o.master_id) {
+      await sendAndSaveMasterMessage(
+        o.master_id, o.max_chat_id,
         `Заказ #${o.id} возвращён в пул — клиент не оплатил предоплату.\n\n` +
         `Из 10 клиентов 8 оплачивают без проблем — те кто не платит, обычно проблемные.\n\n` +
-        `Готовим для вас новый заказ 👍`
+        `Готовим для вас новый заказ 👍`,
+        "💰 Напомнить об оплате"
       );
     }
     res.json({ ok: true });
@@ -824,7 +849,7 @@ router.post("/template-scenarios/payment-reminders/:orderId/cancel", async (req,
   const orderId = Number(req.params.orderId);
   try {
     const rows = await db.execute(sql`
-      SELECT o.id, m.alias AS master_alias, m.max_chat_id
+      SELECT o.id, m.id AS master_id, m.alias AS master_alias, m.max_chat_id
       FROM orders o
       JOIN masters m ON m.id = o.master_id
       WHERE o.id = ${orderId} AND o.deleted_at IS NULL
@@ -837,9 +862,11 @@ router.post("/template-scenarios/payment-reminders/:orderId/cancel", async (req,
       WHERE id = ${orderId} AND status NOT IN ('completed', 'cancelled')
     `);
 
-    if (o.max_chat_id) {
-      await sendMaxMessage(o.max_chat_id,
-        `Заказ #${o.id} отменён.\nПричина: клиент не оплатил предоплату.`
+    if (o.max_chat_id && o.master_id) {
+      await sendAndSaveMasterMessage(
+        o.master_id, o.max_chat_id,
+        `Заказ #${o.id} отменён.\nПричина: клиент не оплатил предоплату.`,
+        "💰 Напомнить об оплате"
       );
     }
     res.json({ ok: true });
@@ -857,7 +884,7 @@ router.post("/template-scenarios/orders-without-receipts/:orderId/message-master
     const rows = await db.execute(sql`
       SELECT o.id, o.service_type, o.district, o.city, o.assigned_at,
              EXTRACT(EPOCH FROM (NOW() - o.assigned_at)) / 3600 AS hours,
-             m.alias AS master_alias, m.max_chat_id
+             m.id AS master_id, m.alias AS master_alias, m.max_chat_id
       FROM orders o
       JOIN masters m ON m.id = o.master_id
       WHERE o.id = ${orderId} AND o.deleted_at IS NULL
@@ -896,7 +923,7 @@ router.post("/template-scenarios/orders-without-receipts/:orderId/message-master
         `Отправьте смету сегодня 👍`;
     }
 
-    await sendMaxMessage(o.max_chat_id, message);
+    await sendAndSaveMasterMessage(o.master_id, o.max_chat_id, message, "📄 Заказы без сметы");
     res.json({ ok: true, hours, template: hours >= 72 ? "72h" : hours >= 48 ? "48h" : "24h" });
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -908,7 +935,7 @@ router.post("/template-scenarios/orders-without-receipts/:orderId/reassign", asy
   const orderId = Number(req.params.orderId);
   try {
     const rows = await db.execute(sql`
-      SELECT o.id, o.service_type, m.alias AS master_alias, m.max_chat_id
+      SELECT o.id, o.service_type, m.id AS master_id, m.alias AS master_alias, m.max_chat_id
       FROM orders o
       JOIN masters m ON m.id = o.master_id
       WHERE o.id = ${orderId} AND o.deleted_at IS NULL
@@ -922,11 +949,13 @@ router.post("/template-scenarios/orders-without-receipts/:orderId/reassign", asy
       WHERE id = ${orderId} AND status NOT IN ('completed', 'cancelled')
     `);
 
-    if (o.max_chat_id) {
-      await sendMaxMessage(o.max_chat_id,
+    if (o.max_chat_id && o.master_id) {
+      await sendAndSaveMasterMessage(
+        o.master_id, o.max_chat_id,
         `Заказ #${o.id} переназначен другому мастеру.\n` +
         `Причина: смета не была отправлена в срок.\n` +
-        `Это повлияло на вашу конверсию.`
+        `Это повлияло на вашу конверсию.`,
+        "📄 Заказы без сметы"
       );
     }
 
@@ -941,7 +970,7 @@ router.post("/template-scenarios/orders-without-receipts/:orderId/cancel", async
   const orderId = Number(req.params.orderId);
   try {
     const rows = await db.execute(sql`
-      SELECT o.id, o.service_type, m.alias AS master_alias, m.max_chat_id
+      SELECT o.id, o.service_type, m.id AS master_id, m.alias AS master_alias, m.max_chat_id
       FROM orders o
       JOIN masters m ON m.id = o.master_id
       WHERE o.id = ${orderId} AND o.deleted_at IS NULL
@@ -954,8 +983,12 @@ router.post("/template-scenarios/orders-without-receipts/:orderId/cancel", async
       WHERE id = ${orderId} AND status NOT IN ('completed', 'cancelled')
     `);
 
-    if (o.max_chat_id) {
-      await sendMaxMessage(o.max_chat_id, `Заказ #${o.id} отменён.`);
+    if (o.max_chat_id && o.master_id) {
+      await sendAndSaveMasterMessage(
+        o.master_id, o.max_chat_id,
+        `Заказ #${o.id} отменён.`,
+        "📄 Заказы без сметы"
+      );
     }
 
     res.json({ ok: true });
@@ -1009,7 +1042,7 @@ router.post("/template-scenarios/order-diagnostics/:orderId/message-master", asy
     const rows = await db.execute(sql`
       SELECT o.id, o.service_type, o.district, o.city, o.status,
              EXTRACT(EPOCH FROM (NOW() - o.updated_at)) / 86400 AS days_no_update,
-             m.alias AS master_alias, m.max_chat_id
+             m.id AS master_id, m.alias AS master_alias, m.max_chat_id
       FROM orders o
       JOIN masters m ON m.id = o.master_id
       WHERE o.id = ${orderId} AND o.deleted_at IS NULL
@@ -1021,7 +1054,7 @@ router.post("/template-scenarios/order-diagnostics/:orderId/message-master", asy
     const days = Math.floor(Number(o.days_no_update));
     const msg =
       `${o.master_alias}, по заказу #${o.id} (${o.service_type}, ${o.district || o.city}) нет обновлений уже ${days} дн.\n\nПодскажите что со статусом?\nВсё в порядке?`;
-    await sendMaxMessage(o.max_chat_id, msg);
+    await sendAndSaveMasterMessage(o.master_id, o.max_chat_id, msg, "🔍 Диагностика заказов");
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: String(e) });
