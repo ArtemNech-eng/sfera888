@@ -139,8 +139,8 @@ function computeConversion(m: any): number {
   return Number(m.accepted_orders ?? 0) / received;
 }
 
-// Ranking score for send order: 50% conversion + 50% rating
-// Best masters get the message first → more likely to respond quickly
+// Assignment score used when masters respond: 50% conversion + 50% rating
+// Higher score → master gets priority when multiple masters respond simultaneously
 function computeBroadcastScore(m: any): number {
   const conv = computeConversion(m);
   const rating = Math.min(Number(m.rating ?? 3) / 5, 1);
@@ -245,12 +245,12 @@ async function runBroadcastOrders() {
     const elapsedMin = sentTime ? (now.getTime() - sentTime.getTime()) / 60000 : -1;
 
     if (!sentTime) {
-      // ── New order: send to ALL eligible masters at once ────────────────────
-      // Sorted by score so the best masters get the message first (faster response)
+      // ── New order: send to ALL eligible masters simultaneously ─────────────
+      // No priority ordering — everyone gets the notification at the same time.
+      // Selection of who gets assigned is based on rating+conversion when they respond.
       const notified = await getAlreadyNotifiedForOrder(order.id);
       const toSend = allMasters
-        .filter(m => masterMatchesOrder(m, order) && !notified.has(m.id))
-        .sort((a, b) => computeBroadcastScore(b) - computeBroadcastScore(a));
+        .filter(m => masterMatchesOrder(m, order) && !notified.has(m.id));
 
       const message = buildBroadcastMessage(order);
       let sent = 0;
