@@ -303,10 +303,15 @@ export default function Finance() {
   }, [transactions, statusFilter, cityFilter, search, orderSearch, txPeriod, txFrom, txTo]);
 
   const txSummary = useMemo(() => ({
-    income:  filtered.filter(t => t.paymentStatus === "paid").reduce((s, t) => s + t.commission, 0),
+    // Total commissions earned in period (all statuses — shows business volume)
+    income:  filtered.reduce((s, t) => s + t.commission, 0),
+    // Net amount still owed by masters (pending / overdue) — uses netPayable after prepayment deduction
     pending: filtered.filter(t => t.paymentStatus === "pending").reduce((s, t) => s + t.netPayable, 0),
     overdue: filtered.filter(t => t.paymentStatus === "overdue").reduce((s, t) => s + t.netPayable, 0),
     avg:     filtered.length ? filtered.reduce((s, t) => s + t.commission, 0) / filtered.length : 0,
+    paidCount:    filtered.filter(t => t.paymentStatus === "paid").length,
+    pendingCount: filtered.filter(t => t.paymentStatus === "pending").length,
+    overdueCount: filtered.filter(t => t.paymentStatus === "overdue").length,
   }), [filtered]);
 
   const totalTxPages = Math.max(1, Math.ceil(filtered.length / pageSize));
@@ -493,17 +498,17 @@ export default function Finance() {
                 <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl p-4 text-white shadow-lg shadow-emerald-500/20 col-span-2 lg:col-span-1">
                   <p className="text-emerald-50 text-xs font-medium mb-1">💰 Общий доход</p>
                   <p className="text-2xl font-bold">{formatCurrency(txSummary.income)}</p>
-                  <p className="text-emerald-100 text-[11px] mt-1">{filtered.filter(t => t.paymentStatus === "paid").length} транзакций</p>
+                  <p className="text-emerald-100 text-[11px] mt-1">{filtered.length} транзакций · {txSummary.paidCount} оплачено</p>
                 </div>
                 <div className={`rounded-2xl p-4 border shadow-sm ${txSummary.pending > 0 ? "bg-amber-50 border-amber-200" : "bg-card border-border/50"}`}>
                   <p className="text-xs font-medium text-amber-700 mb-1">⏳ Ожидает оплаты</p>
                   <p className="text-2xl font-bold text-amber-800">{formatCurrency(txSummary.pending)}</p>
-                  <p className="text-amber-600 text-[11px] mt-1">{filtered.filter(t => t.paymentStatus === "pending").length} транзакций</p>
+                  <p className="text-amber-600 text-[11px] mt-1">{txSummary.pendingCount} транзакций</p>
                 </div>
                 <div className={`rounded-2xl p-4 border shadow-sm ${txSummary.overdue > 0 ? "bg-red-50 border-red-200" : "bg-card border-border/50"}`}>
                   <p className="text-xs font-medium text-red-700 mb-1">⚠️ Просрочено</p>
                   <p className={`text-2xl font-bold ${txSummary.overdue > 0 ? "text-red-700" : "text-foreground"}`}>{formatCurrency(txSummary.overdue)}</p>
-                  <p className="text-red-500 text-[11px] mt-1">{filtered.filter(t => t.paymentStatus === "overdue").length} транзакций</p>
+                  <p className="text-red-500 text-[11px] mt-1">{txSummary.overdueCount} транзакций</p>
                 </div>
                 <div className="bg-card border border-border/50 rounded-2xl p-4 shadow-sm">
                   <p className="text-xs font-medium text-muted-foreground mb-1">📊 Средняя комиссия</p>
