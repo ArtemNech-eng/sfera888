@@ -205,19 +205,40 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettin
     staleTime: 25_000,
   });
 
+  // Custom period query — fires only when user selects custom + enters both dates
+  const hasCustomDates = period === "custom" && !!dateFrom && !!dateTo;
+  const { data: customData, isFetching: customFetching } = useQuery<{ resources: AvitoItem[] }>({
+    queryKey: ["/api/avito/items-with-stats/custom", dateFrom, dateTo],
+    queryFn: () => apiFetch(`/api/avito/items-with-stats?statsFrom=${dateFrom}&statsTo=${dateTo}`),
+    enabled: connected && hasCustomDates,
+    staleTime: 5 * 60_000,
+  });
+
+  // Map: itemId → {views, contacts} for the custom period
+  const customStatsMap = useMemo(() => {
+    const map: Record<number, { views: number; contacts: number }> = {};
+    for (const item of (customData?.resources ?? [])) {
+      map[item.id] = {
+        views:    (item.stats as any)?.viewsDay    ?? 0,
+        contacts: (item.stats as any)?.contactsDay ?? 0,
+      };
+    }
+    return map;
+  }, [customData]);
+
   // ── Derived values ───────────────────────────────────────────────────────
 
   const balance = analyticsData?.balance;
   const spending = analyticsData?.spending;
 
-  // Today / yesterday views & contacts — all pre-computed by backend via 4 separate Avito API calls
+  // Today / yesterday views & contacts — from pre-computed backend stats
   const { viewsToday, viewsYesterday, contactsToday, contactsYesterday, statsLastDate } = useMemo(() => {
     let vT = 0, vY = 0, cT = 0, cY = 0;
     let lastDate: string | null = null;
     for (const item of items) {
-      vT += (item.stats as any)?.viewsDay       ?? 0;
-      cT += (item.stats as any)?.contactsDay    ?? 0;
-      vY += (item.stats as any)?.viewsYesterday ?? 0;
+      vT += (item.stats as any)?.viewsDay          ?? 0;
+      cT += (item.stats as any)?.contactsDay       ?? 0;
+      vY += (item.stats as any)?.viewsYesterday    ?? 0;
       cY += (item.stats as any)?.contactsYesterday ?? 0;
       const ld = item.stats?.lastDataDate;
       if (ld && (!lastDate || ld > lastDate)) lastDate = ld;
@@ -229,12 +250,23 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettin
   const itemsWithPeriodStats = useMemo(() => {
     return items.map(item => {
       let views = 0, contacts = 0;
-      if (period === "today") { views = item.stats?.viewsDay ?? 0; contacts = item.stats?.contactsDay ?? 0; }
-      else if (period === "week") { views = item.stats?.viewsWeek ?? 0; contacts = item.stats?.contactsWeek ?? 0; }
-      else { views = item.stats?.viewsMonth ?? 0; contacts = item.stats?.contactsMonth ?? 0; }
+      if (period === "custom") {
+        const cs = customStatsMap[item.id];
+        views    = cs?.views    ?? 0;
+        contacts = cs?.contacts ?? 0;
+      } else if (period === "today") {
+        views    = (item.stats as any)?.viewsDay    ?? 0;
+        contacts = (item.stats as any)?.contactsDay ?? 0;
+      } else if (period === "week") {
+        views    = (item.stats as any)?.viewsWeek    ?? 0;
+        contacts = (item.stats as any)?.contactsWeek ?? 0;
+      } else {
+        views    = (item.stats as any)?.viewsMonth    ?? 0;
+        contacts = (item.stats as any)?.contactsMonth ?? 0;
+      }
       return { ...item, periodViews: views, periodContacts: contacts };
     });
-  }, [items, period]);
+  }, [items, period, customStatsMap]);
 
   const totalPeriodViews = useMemo(() => itemsWithPeriodStats.reduce((s, i) => s + i.periodViews, 0), [itemsWithPeriodStats]);
 
@@ -245,6 +277,10 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettin
       const daily = spending?.daily ?? [];
       const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split("T")[0];
       return daily.filter(d => d.date >= weekAgo).reduce((s, d) => s + d.amount, 0);
+    }
+    if (period === "custom" && dateFrom && dateTo) {
+      const daily = spending?.daily ?? [];
+      return daily.filter(d => d.date >= dateFrom && d.date <= dateTo).reduce((s, d) => s + d.amount, 0);
     }
     return spending?.month ?? 0;
   }, [spending, period]);
@@ -412,6 +448,13 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettin
                 onChange={e => setDateTo(e.target.value)}
                 className="h-8 px-2 border rounded-md text-xs bg-background focus:outline-none focus:ring-1 focus:ring-ring"
               />
+              {customFetching && <RefreshCw className="w-3.5 h-3.5 animate-spin text-muted-foreground ml-1" />}
+              {!customFetching && hasCustomDates && customData && (
+                <span className="text-xs text-green-600 ml-1">✓</span>
+              )}
+              {period === "custom" && !dateFrom && !dateTo && (
+                <span className="text-xs text-muted-foreground ml-1">выберите период</span>
+              )}
             </div>
           )}
         </div>

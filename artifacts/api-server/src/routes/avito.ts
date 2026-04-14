@@ -1334,105 +1334,133 @@ router.get("/items-with-stats", async (req, res) => {
     });
   }
 
-  // 2. Fetch stats for these items using 3 SEPARATE period calls (same as per-item daily-stats)
-  // WHY 3 calls: Avito Stats v1 API returns AGGREGATE data (not per-day breakdown) for a date
-  // range. The "stats" array in the response has one record per day only when Avito returns
-  // daily data. Making separate calls for today/week/month ensures each call's aggregate is
-  // the correct period total, avoiding the "month total shows as today" bug.
+  // 2. Fetch stats — ONE request covering full needed range, filter periods locally.
+  // This avoids rate-limit issues from multiple parallel Avito API calls.
+  // Supports optional query params: statsFrom / statsTo for custom period.
   let statsMap: Record<number, any> = {};
   let statsError: string | null = null;
   if (items.length > 0) {
     const now = new Date();
     const todayStr      = now.toISOString().split("T")[0];
+    const yesterdayStr  = new Date(now.getTime() - 86400000).toISOString().split("T")[0];
     const weekStartStr  = new Date(now.getTime() - 7 * 86400000).toISOString().split("T")[0];
     const monthStartStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
     const itemIds       = items.map((i: any) => Number(i.id));
 
-    // Helper: extract aggregate stats from a Stats v1 response for a given itemId.
-    // The API returns either:
-    //   { result: { items: [ { itemId, stats: [{date, uniqViews, ...}] } ] } }  ← daily array
-    //   { result: { items: [ { itemId, fields: {uniqViews: N, ...} } ] } }       ← aggregate object
-    // We handle both, summing all entries in the daily array case.
-    function extractAgg(data: any): Map<number, { v: number; c: number; f: number }> {
-      const out = new Map<number, { v: number; c: number; f: number }>();
-      for (const s of (data?.result?.items ?? [])) {
-        const id = Number(s.itemId);
-        let v = 0, c = 0, f = 0;
-        if (Array.isArray(s.stats) && s.stats.length > 0) {
-          // Daily breakdown — sum all entries
-          for (const d of s.stats) {
-            v += Number(d.uniqViews)    || 0;
-            c += Number(d.uniqContacts) || 0;
-            f += Number(d.uniqFavorites)|| 0;
-          }
-        } else if (s.fields) {
-          // Aggregate object
-          const fld = s.fields;
-          v = typeof fld.uniqViews    === "object" ? (fld.uniqViews?.value    ?? 0) : (fld.uniqViews    ?? 0);
-          c = typeof fld.uniqContacts === "object" ? (fld.uniqContacts?.value ?? 0) : (fld.uniqContacts ?? 0);
-          f = typeof fld.uniqFavorites=== "object" ? (fld.uniqFavorites?.value?? 0) : (fld.uniqFavorites?? 0);
-        }
-        out.set(id, { v, c, f });
-      }
-      return out;
-    }
+    // Custom period from query params (used when user selects a custom date range)
+    const customFrom = (req.query.statsFrom as string) || null;
+    const customTo   = (req.query.statsTo   as string) || null;
+    const isCustom   = !!(customFrom && customTo);
 
-    const yesterdayStr = new Date(now.getTime() - 86400000).toISOString().split("T")[0];
+    // dateFrom = earliest date we need. For default: cover full month + 7 days.
+    // For custom: use the specified range.
+    const rangeFrom = isCustom ? customFrom! : (monthStartStr < weekStartStr ? monthStartStr : weekStartStr);
+    const rangeTo   = isCustom ? customTo!   : todayStr;
 
     try {
-      console.log(`[avito:items-with-stats] fetching stats (4 periods) for ${items.length} items uid=${resolvedUid}`);
-      const [todayData, yesterdayData, weekData, monthData] = await Promise.all([
-        avitoPost(`/stats/v1/accounts/${resolvedUid}/items`, token, {
-          dateFrom: todayStr, dateTo: todayStr,
+      console.log(`[avito:items-with-stats] fetching stats uid=${resolvedUid} from=${rangeFrom} to=${rangeTo} items=${items.length}`);
+      const statsData = await avitoPost(
+        `/stats/v1/accounts/${resolvedUid}/items`,
+        token,
+        {
+          dateFrom: rangeFrom,
+          dateTo:   rangeTo,
           fields: ["uniqViews", "uniqContacts", "uniqFavorites"],
           itemIds,
-        }).catch((e: any) => { console.warn(`[avito:items-with-stats] today call failed: ${e.message}`); return null; }),
-        avitoPost(`/stats/v1/accounts/${resolvedUid}/items`, token, {
-          dateFrom: yesterdayStr, dateTo: yesterdayStr,
-          fields: ["uniqViews", "uniqContacts", "uniqFavorites"],
-          itemIds,
-        }).catch((e: any) => { console.warn(`[avito:items-with-stats] yesterday call failed: ${e.message}`); return null; }),
-        avitoPost(`/stats/v1/accounts/${resolvedUid}/items`, token, {
-          dateFrom: weekStartStr, dateTo: todayStr,
-          fields: ["uniqViews", "uniqContacts", "uniqFavorites"],
-          itemIds,
-        }).catch((e: any) => { console.warn(`[avito:items-with-stats] week call failed: ${e.message}`); return null; }),
-        avitoPost(`/stats/v1/accounts/${resolvedUid}/items`, token, {
-          dateFrom: monthStartStr, dateTo: todayStr,
-          fields: ["uniqViews", "uniqContacts", "uniqFavorites"],
-          itemIds,
-        }).catch((e: any) => { console.warn(`[avito:items-with-stats] month call failed: ${e.message}`); return null; }),
-      ]);
+        }
+      ) as any;
 
-      const todayMap     = extractAgg(todayData);
-      const yesterdayMap = extractAgg(yesterdayData);
-      const weekMap      = extractAgg(weekData);
-      const monthMap     = extractAgg(monthData);
-
-      console.log(`[avito:items-with-stats] today=${todayMap.size} yest=${yesterdayMap.size} week=${weekMap.size} month=${monthMap.size} items parsed`);
-      if (todayMap.size > 0) {
-        const [firstId, firstVal] = [...todayMap.entries()][0];
-        console.log(`[avito:items-with-stats] SAMPLE itemId=${firstId} today=${JSON.stringify(firstVal)}`);
+      console.log(`[avito:items-with-stats] response keys: ${Object.keys(statsData ?? {}).join(",")}`);
+      const statItems: any[] = statsData?.result?.items ?? [];
+      console.log(`[avito:items-with-stats] statItems count=${statItems.length}`);
+      if (statItems[0]) {
+        console.log(`[avito:items-with-stats] SAMPLE:`, JSON.stringify(statItems[0]).slice(0, 500));
       }
 
-      for (const id of itemIds) {
-        const td = todayMap.get(id)     ?? { v: 0, c: 0, f: 0 };
-        const yd = yesterdayMap.get(id) ?? { v: 0, c: 0, f: 0 };
-        const wd = weekMap.get(id)      ?? { v: 0, c: 0, f: 0 };
-        const md = monthMap.get(id)     ?? { v: 0, c: 0, f: 0 };
+      for (const s of statItems) {
+        const id = Number(s.itemId);
+
+        // Build daily array — handle both formats Avito may return:
+        //  A) stats: [{date, uniqViews, uniqContacts, uniqFavorites}, ...]  ← preferred daily breakdown
+        //  B) fields: {uniqViews: N, ...}                                   ← aggregate for whole range
+        type DayEntry = { date: string; uniqViews: number; uniqContacts: number; uniqFavorites: number };
+        let daily: DayEntry[] = [];
+
+        if (Array.isArray(s.stats) && s.stats.length > 0) {
+          // Format A: proper daily array
+          daily = s.stats.map((d: any) => ({
+            date:          String(d.date ?? ""),
+            uniqViews:     Number(d.uniqViews)    || 0,
+            uniqContacts:  Number(d.uniqContacts)  || 0,
+            uniqFavorites: Number(d.uniqFavorites) || 0,
+          })).filter((d: DayEntry) => d.date.length === 10);
+          daily.sort((a, b) => a.date.localeCompare(b.date));
+        } else if (s.fields) {
+          // Format B: aggregate → synthesise a single entry dated to rangeTo so
+          // it counts toward month/week/today calculations below.
+          const fld = s.fields;
+          const gv = (k: string) => {
+            const raw = fld[k];
+            return typeof raw === "object" ? (raw?.value ?? 0) : (Number(raw) || 0);
+          };
+          // Put this aggregate under rangeTo so it lands inside every filter window
+          daily = [{ date: rangeTo, uniqViews: gv("uniqViews"), uniqContacts: gv("uniqContacts"), uniqFavorites: gv("uniqFavorites") }];
+          console.log(`[avito:items-with-stats] id=${id} FORMAT-B aggregate views=${gv("uniqViews")} contacts=${gv("uniqContacts")}`);
+        }
+
+        const sum = (key: keyof DayEntry, arr: DayEntry[]) =>
+          arr.reduce((acc, d) => acc + d[key] as number, 0);
+
+        let viewsDay = 0, contactsDay = 0, favsDay = 0;
+        let viewsYesterday = 0, contactsYesterday = 0;
+
+        if (isCustom) {
+          // Custom period: total for the requested range
+          viewsDay     = sum("uniqViews",    daily);
+          contactsDay  = sum("uniqContacts", daily);
+          favsDay      = sum("uniqFavorites",daily);
+        } else {
+          // TODAY: find today's exact date entry (Avito may not have it yet — stays 0)
+          const todayEntry = daily.find(d => d.date === todayStr);
+          viewsDay    = todayEntry?.uniqViews    ?? 0;
+          contactsDay = todayEntry?.uniqContacts  ?? 0;
+          favsDay     = todayEntry?.uniqFavorites ?? 0;
+          // YESTERDAY: explicit entry
+          const yEntry = daily.find(d => d.date === yesterdayStr);
+          viewsYesterday    = yEntry?.uniqViews    ?? 0;
+          contactsYesterday = yEntry?.uniqContacts  ?? 0;
+        }
+
+        // WEEK: sum entries where date >= 7 days ago
+        const weekData  = isCustom ? daily : daily.filter(d => d.date >= weekStartStr);
+        const viewsWeek    = sum("uniqViews",    weekData);
+        const contactsWeek = sum("uniqContacts", weekData);
+        const favsWeek     = sum("uniqFavorites",weekData);
+
+        // MONTH (or full custom range): sum entries where date >= start of current month
+        const monthData    = isCustom ? daily : daily.filter(d => d.date >= monthStartStr);
+        const viewsMonth    = sum("uniqViews",    monthData);
+        const contactsMonth = sum("uniqContacts", monthData);
+        const favsMonth     = sum("uniqFavorites",monthData);
+
+        // lastDataDate: most recent date with actual data
+        const lastDataDate = daily.length ? daily[daily.length - 1].date : todayStr;
+
         statsMap[id] = {
-          uniqViews:     md.v,
-          uniqContacts:  md.c,
-          uniqFavorites: md.f,
-          viewsDay:       td.v, contactsDay:       td.c, favsDay:       td.f,
-          viewsYesterday: yd.v, contactsYesterday: yd.c,
-          viewsWeek:      wd.v, contactsWeek:      wd.c, favsWeek:      wd.f,
-          viewsMonth:     md.v, contactsMonth:     md.c, favsMonth:     md.f,
-          lastDataDate: todayStr,
-          daily: [],  // no daily chart data in bulk mode (use per-item daily-stats for charts)
+          uniqViews:     viewsMonth,
+          uniqContacts:  contactsMonth,
+          uniqFavorites: favsMonth,
+          viewsDay,    contactsDay,    favsDay,
+          viewsYesterday, contactsYesterday,
+          viewsWeek,   contactsWeek,   favsWeek,
+          viewsMonth,  contactsMonth,  favsMonth,
+          lastDataDate,
+          isCustom,
+          daily,
         };
-        console.log(`[avito:items-with-stats] id=${id} D=${td.c}c/${td.v}v Yd=${yd.c}c/${yd.v}v W=${wd.c}c/${wd.v}v M=${md.c}c/${md.v}v`);
+        console.log(`[avito:items-with-stats] id=${id} lastData=${lastDataDate} D=${contactsDay}c/${viewsDay}v Yd=${contactsYesterday}c W=${contactsWeek}c M=${contactsMonth}c`);
       }
+      console.log(`[avito:items-with-stats] done: ${Object.keys(statsMap).length} items with stats`);
     } catch (e: any) {
       console.error(`[avito:items-with-stats] stats fetch FAILED:`, e.message);
       statsError = e.message;
