@@ -1,817 +1,1092 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { Layout } from "@/components/layout";
-import { useGetTransactions, useGetFinanceSummary, useUpdateTransaction, TransactionPaymentStatus } from "@workspace/api-client-react";
 import { ProtectedRoute } from "@/hooks/use-auth";
-import { StatusBadge } from "@/components/status-badge";
 import { formatDate, formatCurrency } from "@/lib/utils";
 import {
   Loader2, CheckCircle2, TrendingDown, TrendingUp, AlertCircle, Search, X,
-  RefreshCw, ShieldAlert, ThumbsUp, ThumbsDown, Minus,
-  BarChart3, ReceiptText, MapPin, Phone, Award, Clock,
-  ChevronLeft, ChevronRight, Calendar,
+  RefreshCw, MapPin, Phone, Clock, ChevronLeft, ChevronRight, Calendar,
+  ReceiptText, BarChart3, FileText, Download, Bell, ChevronDown, ChevronUp,
+  Users, Banknote, TrendingDown as DebtIcon,
 } from "lucide-react";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  LineChart, Line, CartesianGrid, Legend,
+} from "recharts";
 
-type StatusFilter = "all" | "pending" | "overdue" | "paid";
-type Sentiment = "positive" | "negative" | "neutral";
-type PageTab = "transactions" | "by-master";
-type Period = "today" | "week" | "month" | "quarter" | "year" | "all" | "custom";
+// ─── Types ───────────────────────────────────────────────────────────────────
 
-const PAGE_SIZE_OPTIONS = [10, 20, 30, 40, 50];
+type StatusFilter  = "all" | "pending" | "overdue" | "paid";
+type PageTab       = "transactions" | "by-master" | "estimates";
+type Period        = "today" | "week" | "month" | "quarter" | "year" | "all" | "custom";
+type EstimateStatus = "all" | "paid" | "pending" | "unpaid";
 
-interface PendingReviewInfo {
-  masterId: number;
-  masterAlias: string;
-  orderId: number | null;
+interface Transaction {
+  id: number; orderId: number | null; masterId: number; masterAlias: string;
+  city: string; serviceType: string; area: number | null;
+  orderAmount: number; commission: number; prepaymentDeducted: number; netPayable: number;
+  paymentStatus: string; sourceType: string | null;
+  createdAt: string; paidAt: string | null; dueDate: string; daysOverdue: number;
 }
 
 interface MasterStat {
-  masterId: number;
-  alias: string;
-  city: string;
-  phone: string | null;
-  orderCount: number;
-  totalOrderAmount: number;
-  totalCommission: number;
-  paidCommission: number;
-  pendingCommission: number;
-  overdueCommission: number;
-  paidCount: number;
-  pendingCount: number;
-  overdueCount: number;
+  masterId: number; alias: string; city: string; phone: string | null;
+  orderCount: number; totalOrderAmount: number; totalCommission: number;
+  paidCommission: number; pendingCommission: number; overdueCommission: number;
+  paidCount: number; pendingCount: number; overdueCount: number;
+  lastPaidAt: string | null; debtTotal: number;
 }
 
-const SENTIMENTS: { value: Sentiment; label: string; icon: React.ReactNode; activeClass: string }[] = [
-  { value: "positive", label: "Позитивный", icon: <ThumbsUp className="w-4 h-4" />,   activeClass: "bg-emerald-500 text-white border-emerald-500" },
-  { value: "neutral",  label: "Нейтральный", icon: <Minus className="w-4 h-4" />,      activeClass: "bg-amber-500 text-white border-amber-500" },
-  { value: "negative", label: "Негативный",  icon: <ThumbsDown className="w-4 h-4" />, activeClass: "bg-red-500 text-white border-red-500" },
-];
+interface LineItem { description: string; unit?: string; quantity?: number; price: number }
+
+interface Estimate {
+  id: number; token: string; orderId: number; masterId: number; masterAlias: string;
+  clientName: string; clientPhone: string; serviceType: string;
+  city: string; district: string | null; lineItems: LineItem[];
+  totalAmount: number; prepaymentAmount: number; remainder: number;
+  notes: string | null; createdAt: string;
+  clientSubmittedName: string | null; prepaymentSubmittedAt: string | null;
+  prepaymentScreenshotUrl: string | null; prepaymentSeenAt: string | null;
+  status: EstimateStatus; hoursAgo: number;
+}
+
+interface FinanceSummary {
+  totalIncome: number; totalDebt: number; avgCommission: number;
+  paidCount: number; pendingCount: number; overdueCount: number; totalCount: number;
+  pendingAmount: number; overdueAmount: number;
+}
+
+interface EstimateStats {
+  total: number; paidCount: number; pendingCount: number; unpaidCount: number;
+  paidSum: number; pendingSum: number; avgCheck: number; avgHours: number; conversionRate: number;
+  byService: { name: string; count: number; total: number }[];
+  byCity: { city: string; avgAmount: number }[];
+  daily: { date: string; paid: number; unpaid: number }[];
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const PERIODS: { key: Period; label: string }[] = [
-  { key: "today",   label: "Сегодня" },
-  { key: "week",    label: "Неделя" },
-  { key: "month",   label: "Месяц" },
-  { key: "quarter", label: "Квартал" },
-  { key: "year",    label: "Год" },
-  { key: "all",     label: "Всё время" },
-  { key: "custom",  label: "Диапазон" },
+  { key: "today", label: "Сегодня" }, { key: "week", label: "Неделя" },
+  { key: "month", label: "Месяц" },  { key: "quarter", label: "Квартал" },
+  { key: "year",  label: "Год" },    { key: "all", label: "Всё время" },
+  { key: "custom", label: "Диапазон" },
 ];
 
-/** Returns ms-timestamp bounds for the given period. Uses local browser time. */
-function getPeriodRange(period: Period, customFrom: string, customTo: string): { from?: number; to?: number } {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = now.getMonth();
-  const d = now.getDate();
+const PAGE_SIZE_OPTIONS = [10, 20, 30, 50];
 
-  // Start / end of today in LOCAL time
+function getPeriodRange(period: Period, customFrom: string, customTo: string) {
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
   const todayStart = new Date(y, m, d, 0, 0, 0, 0).getTime();
   const todayEnd   = new Date(y, m, d, 23, 59, 59, 999).getTime();
-
   switch (period) {
-    case "today":
-      return { from: todayStart, to: todayEnd };
-
+    case "today":   return { from: todayStart, to: todayEnd };
     case "week": {
-      // Monday-based week (Russian calendar)
-      const dow = now.getDay(); // 0=Sun … 6=Sat
-      const daysToMon = dow === 0 ? -6 : 1 - dow;
-      const monDate = new Date(y, m, d + daysToMon, 0, 0, 0, 0);
-      return { from: monDate.getTime(), to: todayEnd };
+      const dow = now.getDay(), daysToMon = dow === 0 ? -6 : 1 - dow;
+      return { from: new Date(y, m, d + daysToMon, 0, 0, 0, 0).getTime(), to: todayEnd };
     }
-
-    case "month":
-      return { from: new Date(y, m, 1, 0, 0, 0, 0).getTime(), to: todayEnd };
-
-    case "quarter": {
-      const q = Math.floor(m / 3);
-      return { from: new Date(y, q * 3, 1, 0, 0, 0, 0).getTime(), to: todayEnd };
-    }
-
-    case "year":
-      return { from: new Date(y, 0, 1, 0, 0, 0, 0).getTime(), to: todayEnd };
-
-    case "custom":
-      return {
-        from: customFrom ? new Date(customFrom + "T00:00:00").getTime() : undefined,
-        to:   customTo   ? new Date(customTo   + "T23:59:59.999").getTime() : undefined,
-      };
-
-    default:
-      return {};
+    case "month":   return { from: new Date(y, m, 1, 0, 0, 0, 0).getTime(), to: todayEnd };
+    case "quarter": { const q = Math.floor(m / 3); return { from: new Date(y, q * 3, 1, 0, 0, 0, 0).getTime(), to: todayEnd }; }
+    case "year":    return { from: new Date(y, 0, 1, 0, 0, 0, 0).getTime(), to: todayEnd };
+    case "custom":  return {
+      from: customFrom ? new Date(customFrom + "T00:00:00").getTime() : undefined,
+      to:   customTo   ? new Date(customTo   + "T23:59:59.999").getTime() : undefined,
+    };
+    default: return {};
   }
 }
 
+function downloadCSV(filename: string, rows: string[][], headers: string[]) {
+  const bom  = "\uFEFF"; // UTF-8 BOM for Excel
+  const sep  = ";";
+  const lines = [headers.join(sep), ...rows.map(r => r.map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(sep))];
+  const blob = new Blob([bom + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+  const url  = URL.createObjectURL(blob);
+  const a    = Object.assign(document.createElement("a"), { href: url, download: filename });
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function PeriodSelector({ value, onChange, customFrom, customTo, onCustomFrom, onCustomTo }: {
+  value: Period; onChange: (p: Period) => void;
+  customFrom: string; customTo: string;
+  onCustomFrom: (v: string) => void; onCustomTo: (v: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Calendar className="w-4 h-4 text-muted-foreground shrink-0" />
+      {PERIODS.map(p => (
+        <button key={p.key} onClick={() => onChange(p.key)}
+          className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all ${
+            value === p.key ? "bg-primary text-primary-foreground border-primary shadow-sm"
+              : "bg-background border-border/60 text-muted-foreground hover:text-foreground"}`}>
+          {p.label}
+        </button>
+      ))}
+      {value === "custom" && (
+        <div className="flex items-center gap-1.5">
+          <input type="date" value={customFrom} onChange={e => onCustomFrom(e.target.value)}
+            className="text-xs border border-border/60 rounded-xl px-2.5 py-1.5 bg-background outline-none focus:ring-2 focus:ring-primary/30" />
+          <span className="text-muted-foreground text-xs">—</span>
+          <input type="date" value={customTo} onChange={e => onCustomTo(e.target.value)}
+            className="text-xs border border-border/60 rounded-xl px-2.5 py-1.5 bg-background outline-none focus:ring-2 focus:ring-primary/30" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Pagination({ page, total, onChange }: { page: number; total: number; onChange: (p: number) => void }) {
+  if (total <= 1) return null;
+  const pages = Array.from({ length: total }, (_, i) => i + 1)
+    .filter(p => p === 1 || p === total || Math.abs(p - page) <= 2)
+    .reduce<(number | "…")[]>((acc, p, idx, arr) => {
+      if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push("…");
+      acc.push(p); return acc;
+    }, []);
+  return (
+    <div className="flex items-center gap-1">
+      <button onClick={() => onChange(Math.max(1, page - 1))} disabled={page === 1}
+        className="p-1.5 rounded-lg border border-border/60 bg-background text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors">
+        <ChevronLeft className="w-4 h-4" />
+      </button>
+      {pages.map((p, i) => p === "…" ? (
+        <span key={`d${i}`} className="px-2 text-muted-foreground text-sm">…</span>
+      ) : (
+        <button key={p} onClick={() => onChange(p as number)}
+          className={`min-w-[32px] h-8 px-2 rounded-lg text-sm font-medium transition-colors ${
+            page === p ? "bg-primary text-primary-foreground" : "bg-background border border-border/60 text-muted-foreground hover:text-foreground"}`}>
+          {p}
+        </button>
+      ))}
+      <button onClick={() => onChange(Math.min(total, page + 1))} disabled={page === total}
+        className="p-1.5 rounded-lg border border-border/60 bg-background text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors">
+        <ChevronRight className="w-4 h-4" />
+      </button>
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const map: Record<string, string> = {
+    paid:    "bg-emerald-100 text-emerald-700 border-emerald-200",
+    pending: "bg-amber-100 text-amber-700 border-amber-200",
+    overdue: "bg-red-100 text-red-700 border-red-200",
+    unpaid:  "bg-red-100 text-red-700 border-red-200",
+  };
+  const labels: Record<string, string> = { paid: "Оплачено", pending: "Ожидает", overdue: "Просрочено", unpaid: "Не оплачено" };
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${map[status] ?? "bg-muted text-muted-foreground border-border"}`}>
+      {labels[status] ?? status}
+    </span>
+  );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
 export default function Finance() {
   const queryClient = useQueryClient();
+  const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
 
-  // ── UI state ──────────────────────────────────────────────────────────────
-  const [search, setSearch]       = useState("");
+  const [pageTab, setPageTab] = useState<PageTab>("transactions");
+
+  // ── Tab 1 state ──
+  const [txPeriod, setTxPeriod]       = useState<Period>("all");
+  const [txFrom, setTxFrom]           = useState("");
+  const [txTo, setTxTo]               = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [pageTab, setPageTab]     = useState<PageTab>("transactions");
-
-  // ── Transactions date filter ──────────────────────────────────────────────
-  const [txPeriod, setTxPeriod]           = useState<Period>("all");
-  const [txCustomFrom, setTxCustomFrom]   = useState("");
-  const [txCustomTo, setTxCustomTo]       = useState("");
-
-  // ── Pagination ────────────────────────────────────────────────────────────
+  const [search, setSearch]           = useState("");
+  const [cityFilter, setCityFilter]   = useState("");
+  const [orderSearch, setOrderSearch] = useState("");
+  const [txPage, setTxPage]           = useState(1);
   const [pageSize, setPageSize]       = useState(20);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [confirmPay, setConfirmPay]   = useState<Transaction | null>(null);
+  const [remindSent, setRemindSent]   = useState<Set<number>>(new Set());
+  const [payLoading, setPayLoading]   = useState<number | null>(null);
 
-  // ── Master-stats period ───────────────────────────────────────────────────
-  const [statsPeriod, setStatsPeriod]       = useState<Period>("month");
-  const [statsCustomFrom, setStatsCustomFrom] = useState("");
-  const [statsCustomTo, setStatsCustomTo]     = useState("");
+  // ── Tab 2 state ──
+  const [statsPeriod, setStatsPeriod] = useState<Period>("month");
+  const [statsFrom, setStatsFrom]     = useState("");
+  const [statsTo, setStatsTo]         = useState("");
+  const [confirmPayAll, setConfirmPayAll] = useState<MasterStat | null>(null);
+  const [masterActionLoading, setMasterActionLoading] = useState<{ id: number; action: string } | null>(null);
 
-  // ── Review modal ──────────────────────────────────────────────────────────
-  const pendingTxRef = useRef<PendingReviewInfo | null>(null);
-  const [pendingReviewInfo, setPendingReviewInfo] = useState<PendingReviewInfo | null>(null);
-  const [reviewText, setReviewText]       = useState("");
-  const [reviewSentiment, setReviewSentiment] = useState<Sentiment>("positive");
-  const [savingReview, setSavingReview]   = useState(false);
+  // ── Tab 3 state ──
+  const [estPeriod, setEstPeriod]     = useState<Period>("month");
+  const [estFrom, setEstFrom]         = useState("");
+  const [estTo, setEstTo]             = useState("");
+  const [estStatus, setEstStatus]     = useState<EstimateStatus>("all");
+  const [estSearch, setEstSearch]     = useState("");
+  const [estCity, setEstCity]         = useState("");
+  const [expandedEst, setExpandedEst] = useState<number | null>(null);
+  const [estPage, setEstPage]         = useState(1);
 
-  const statsRange = useMemo(
-    () => getPeriodRange(statsPeriod, statsCustomFrom, statsCustomTo),
-    [statsPeriod, statsCustomFrom, statsCustomTo],
-  );
+  // ─── Data fetching ────────────────────────────────────────────────────────
 
-  // ── Data fetching ─────────────────────────────────────────────────────────
-  const { data: summary } = useGetFinanceSummary();
-
-  // Load ALL transactions — client filters by date / status / search.
-  const { data: transactions, isLoading } = useGetTransactions();
-
-  const { data: overdueMasters } = useQuery<{ masterId: number; alias: string; totalOverdue: number; count: number }[]>({
-    queryKey: ["/api/finance/overdue-masters"],
-    queryFn: () => fetch("/api/finance/overdue-masters", { credentials: "include" }).then(r => r.json()),
-    refetchInterval: 60_000,
+  const { data: summary, refetch: refetchSummary } = useQuery<FinanceSummary>({
+    queryKey: [`${BASE}/api/finance/summary`],
+    queryFn: () => fetch(`${BASE}/api/finance/summary`, { credentials: "include" }).then(r => r.json()),
+    staleTime: 30_000,
   });
 
+  const { data: transactions, isLoading: txLoading, refetch: refetchTx } = useQuery<Transaction[]>({
+    queryKey: [`${BASE}/api/finance/transactions`],
+    queryFn: () => fetch(`${BASE}/api/finance/transactions`, { credentials: "include" }).then(r => r.json()),
+    staleTime: 30_000,
+  });
+
+  const statsRange = useMemo(() => getPeriodRange(statsPeriod, statsFrom, statsTo), [statsPeriod, statsFrom, statsTo]);
   const statsParams = new URLSearchParams();
   if (statsRange.from) statsParams.set("from", new Date(statsRange.from).toISOString());
   if (statsRange.to)   statsParams.set("to",   new Date(statsRange.to).toISOString());
 
   const { data: masterStats, isLoading: statsLoading } = useQuery<MasterStat[]>({
-    queryKey: ["/api/finance/master-stats", statsRange.from, statsRange.to],
-    queryFn: () => fetch(`/api/finance/master-stats?${statsParams}`, { credentials: "include" }).then(r => r.json()),
+    queryKey: [`${BASE}/api/finance/master-stats`, statsRange.from, statsRange.to],
+    queryFn: () => fetch(`${BASE}/api/finance/master-stats?${statsParams}`, { credentials: "include" }).then(r => r.json()),
     enabled: pageTab === "by-master",
     staleTime: 30_000,
   });
 
-  // ── Mutations ─────────────────────────────────────────────────────────────
-  const overdueCheckMutation = useMutation({
-    mutationFn: () => fetch("/api/finance/check-overdue", { method: "POST", credentials: "include" }).then(r => r.json()),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/finance/overdue-masters"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/finance/summary"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/finance/transactions"] });
-    },
+  const estRange  = useMemo(() => getPeriodRange(estPeriod, estFrom, estTo), [estPeriod, estFrom, estTo]);
+  const estParams = new URLSearchParams();
+  if (estRange.from)  estParams.set("from",   new Date(estRange.from).toISOString());
+  if (estRange.to)    estParams.set("to",     new Date(estRange.to).toISOString());
+  if (estSearch)      estParams.set("search", estSearch);
+  if (estCity)        estParams.set("city",   estCity);
+
+  const { data: estimates, isLoading: estLoading } = useQuery<Estimate[]>({
+    queryKey: [`${BASE}/api/finance/estimates`, estRange.from, estRange.to, estSearch, estCity],
+    queryFn: () => fetch(`${BASE}/api/finance/estimates?${estParams}`, { credentials: "include" }).then(r => r.json()),
+    enabled: pageTab === "estimates",
+    staleTime: 30_000,
   });
 
-  const updateMutation = useUpdateTransaction({
-    mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ["/api/finance/transactions"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/finance/summary"] });
-        if (pendingTxRef.current) {
-          setPendingReviewInfo(pendingTxRef.current);
-          setReviewText("");
-          setReviewSentiment("positive");
-          pendingTxRef.current = null;
-        }
-      },
-    },
+  const { data: estStats } = useQuery<EstimateStats>({
+    queryKey: [`${BASE}/api/finance/estimates/stats`, estRange.from, estRange.to],
+    queryFn: () => fetch(`${BASE}/api/finance/estimates/stats?${estParams}`, { credentials: "include" }).then(r => r.json()),
+    enabled: pageTab === "estimates",
+    staleTime: 30_000,
   });
 
-  // ── Derived data ──────────────────────────────────────────────────────────
-  const statsSummary = useMemo(() => {
-    if (!masterStats) return { totalPaid: 0, totalPending: 0, totalOverdue: 0, totalOrderAmount: 0 };
-    return masterStats.reduce((acc, m) => ({
-      totalPaid:        acc.totalPaid        + m.paidCommission,
-      totalPending:     acc.totalPending     + m.pendingCommission,
-      totalOverdue:     acc.totalOverdue     + m.overdueCommission,
-      totalOrderAmount: acc.totalOrderAmount + m.totalOrderAmount,
-    }), { totalPaid: 0, totalPending: 0, totalOverdue: 0, totalOrderAmount: 0 });
-  }, [masterStats]);
+  // ─── Derived: transactions ────────────────────────────────────────────────
 
-  // Client-side filtering: status + search + date period
+  const allCities = useMemo(() =>
+    [...new Set((transactions ?? []).map(t => t.city).filter(Boolean))].sort(),
+  [transactions]);
+
   const filtered = useMemo(() => {
     if (!transactions) return [];
-    let list = [...transactions].sort((a, b) => new Date(b.createdAt as string).getTime() - new Date(a.createdAt as string).getTime());
-
+    let list = [...transactions];
     if (statusFilter !== "all") list = list.filter(t => t.paymentStatus === statusFilter);
-
+    if (cityFilter)  list = list.filter(t => t.city === cityFilter);
     if (search.trim()) {
       const q = search.toLowerCase();
-      list = list.filter(t =>
-        t.masterAlias.toLowerCase().includes(q) ||
-        `tx-${t.id}`.includes(q) ||
-        String(t.orderId).includes(q)
-      );
+      list = list.filter(t => t.masterAlias.toLowerCase().includes(q));
     }
-
-    // Date filter — compare in ms (local browser time)
-    const { from: fromMs, to: toMs } = getPeriodRange(txPeriod, txCustomFrom, txCustomTo);
-    if (fromMs !== undefined || toMs !== undefined) {
+    if (orderSearch.trim()) {
+      list = list.filter(t => String(t.orderId ?? "").includes(orderSearch.trim()));
+    }
+    const { from, to } = getPeriodRange(txPeriod, txFrom, txTo);
+    if (from !== undefined || to !== undefined) {
       list = list.filter(t => {
-        if (!t.createdAt) return false;
-        const ms = new Date(t.createdAt as string).getTime();
-        if (isNaN(ms)) return false;
-        if (fromMs !== undefined && ms < fromMs) return false;
-        if (toMs   !== undefined && ms > toMs)   return false;
+        const ms = new Date(t.createdAt).getTime();
+        if (from !== undefined && ms < from) return false;
+        if (to   !== undefined && ms > to)   return false;
         return true;
       });
     }
-
     return list;
-  }, [transactions, statusFilter, search, txPeriod, txCustomFrom, txCustomTo]);
+  }, [transactions, statusFilter, cityFilter, search, orderSearch, txPeriod, txFrom, txTo]);
 
-  // ── Pagination ────────────────────────────────────────────────────────────
-  const resetPage = () => setCurrentPage(1);
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const safePage   = Math.min(currentPage, totalPages);
-  const paginated  = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const txSummary = useMemo(() => ({
+    income:  filtered.filter(t => t.paymentStatus === "paid").reduce((s, t) => s + t.commission, 0),
+    pending: filtered.filter(t => t.paymentStatus === "pending").reduce((s, t) => s + t.netPayable, 0),
+    overdue: filtered.filter(t => t.paymentStatus === "overdue").reduce((s, t) => s + t.netPayable, 0),
+    avg:     filtered.length ? filtered.reduce((s, t) => s + t.commission, 0) / filtered.length : 0,
+  }), [filtered]);
 
-  // ── Handlers ──────────────────────────────────────────────────────────────
-  const handleMarkPaid = (tx: { id: number; masterId: number; masterAlias: string; orderId: number | null }) => {
-    pendingTxRef.current = { masterId: tx.masterId, masterAlias: tx.masterAlias, orderId: tx.orderId };
-    updateMutation.mutate({ id: tx.id, data: { paymentStatus: TransactionPaymentStatus.paid } });
-  };
+  const totalTxPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safeTxPage   = Math.min(txPage, totalTxPages);
+  const paginated    = filtered.slice((safeTxPage - 1) * pageSize, safeTxPage * pageSize);
 
-  const submitReview = async () => {
-    if (!pendingReviewInfo || !reviewText.trim()) return;
-    setSavingReview(true);
+  // ─── Derived: estimates ───────────────────────────────────────────────────
+
+  const filteredEst = useMemo(() => {
+    if (!estimates) return [];
+    return estStatus === "all" ? estimates : estimates.filter(e => e.status === estStatus);
+  }, [estimates, estStatus]);
+
+  const estCities = useMemo(() =>
+    [...new Set((estimates ?? []).map(e => e.city).filter(Boolean))].sort(),
+  [estimates]);
+
+  const totalEstPages = Math.max(1, Math.ceil(filteredEst.length / 20));
+  const safeEstPage   = Math.min(estPage, totalEstPages);
+  const paginatedEst  = filteredEst.slice((safeEstPage - 1) * 20, safeEstPage * 20);
+
+  // ─── Derived: master stats summary ───────────────────────────────────────
+
+  const statsSummary = useMemo(() => {
+    if (!masterStats) return { totalPaid: 0, totalPending: 0, totalOverdue: 0, debtors: 0 };
+    return masterStats.reduce((acc, m) => ({
+      totalPaid:    acc.totalPaid    + m.paidCommission,
+      totalPending: acc.totalPending + m.pendingCommission,
+      totalOverdue: acc.totalOverdue + m.overdueCommission,
+      debtors:      acc.debtors     + (m.debtTotal > 0 ? 1 : 0),
+    }), { totalPaid: 0, totalPending: 0, totalOverdue: 0, debtors: 0 });
+  }, [masterStats]);
+
+  // ─── Handlers ─────────────────────────────────────────────────────────────
+
+  const doMarkPaid = async (tx: Transaction) => {
+    setPayLoading(tx.id);
     try {
-      const r = await fetch("/api/master-reviews", {
-        method: "POST",
+      const r = await fetch(`${BASE}/api/finance/transactions/${tx.id}`, {
+        method: "PATCH", credentials: "include",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          masterId: pendingReviewInfo.masterId,
-          orderId: pendingReviewInfo.orderId,
-          sentiment: reviewSentiment,
-          text: reviewText.trim(),
-        }),
+        body: JSON.stringify({ paymentStatus: "paid" }),
       });
-      if (r.ok) {
-        toast.success("Отзыв сохранён");
-        setPendingReviewInfo(null);
-      } else {
-        toast.error("Не удалось сохранить отзыв");
-      }
-    } finally {
-      setSavingReview(false);
-    }
+      if (!r.ok) throw new Error();
+      toast.success(`Комиссия по заказу #${tx.orderId} отмечена оплаченной`);
+      queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/transactions`] });
+      queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/summary`] });
+      queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/master-stats`] });
+    } catch { toast.error("Ошибка при обновлении транзакции"); }
+    finally { setPayLoading(null); setConfirmPay(null); }
   };
 
-  const STATUS_TABS: { key: StatusFilter; label: string }[] = [
-    { key: "all",     label: "Все" },
-    { key: "pending", label: "Ожидают" },
-    { key: "overdue", label: "Просрочено" },
-    { key: "paid",    label: "Оплачено" },
-  ];
+  const doRemind = async (tx: Transaction) => {
+    try {
+      const r = await fetch(`${BASE}/api/finance/transactions/${tx.id}/remind`, {
+        method: "POST", credentials: "include",
+      });
+      if (!r.ok) throw new Error();
+      toast.success("Напоминание отправлено");
+      setRemindSent(s => new Set([...s, tx.id]));
+    } catch { toast.error("Не удалось отправить напоминание"); }
+  };
+
+  const doRemindAll = async (m: MasterStat) => {
+    setMasterActionLoading({ id: m.masterId, action: "remind" });
+    try {
+      const r = await fetch(`${BASE}/api/finance/masters/${m.masterId}/remind-all`, { method: "POST", credentials: "include" });
+      if (!r.ok) throw new Error();
+      toast.success(`Напоминание отправлено мастеру ${m.alias}`);
+    } catch { toast.error("Ошибка при отправке напоминания"); }
+    finally { setMasterActionLoading(null); }
+  };
+
+  const doPayAll = async (m: MasterStat) => {
+    setMasterActionLoading({ id: m.masterId, action: "pay" });
+    try {
+      const r = await fetch(`${BASE}/api/finance/masters/${m.masterId}/pay-all`, { method: "POST", credentials: "include" });
+      if (!r.ok) throw new Error();
+      toast.success(`Все транзакции мастера ${m.alias} отмечены оплаченными`);
+      queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/transactions`] });
+      queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/summary`] });
+      queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/master-stats`] });
+    } catch { toast.error("Ошибка при оплате"); }
+    finally { setMasterActionLoading(null); setConfirmPayAll(null); }
+  };
+
+  const exportTxCSV = useCallback(() => {
+    const headers = ["Дата", "Заказ", "Мастер", "Город", "Вид работ", "Сумма заказа", "Комиссия", "К оплате", "Статус", "Дата оплаты"];
+    const rows = filtered.map(t => [
+      formatDate(t.createdAt), String(t.orderId ?? ""), t.masterAlias, t.city, t.serviceType,
+      String(t.orderAmount), String(t.commission), String(t.netPayable), t.paymentStatus,
+      t.paidAt ? formatDate(t.paidAt) : "",
+    ]);
+    downloadCSV("транзакции.csv", rows, headers);
+  }, [filtered]);
+
+  const exportMasterCSV = useCallback(() => {
+    if (!masterStats) return;
+    const headers = ["Мастер", "Город", "Заказов", "Оборот", "Оплачено", "Ожидает", "Просрочено", "Долг итого"];
+    const rows = masterStats.map(m => [
+      m.alias, m.city, String(m.orderCount), String(m.totalOrderAmount),
+      String(m.paidCommission), String(m.pendingCommission), String(m.overdueCommission), String(m.debtTotal),
+    ]);
+    downloadCSV("по_мастерам.csv", rows, headers);
+  }, [masterStats]);
+
+  const exportEstCSV = useCallback(() => {
+    if (!filteredEst) return;
+    const headers = ["Дата", "Заказ", "Мастер", "Клиент", "Телефон", "Город", "Вид работ", "Сумма", "Предоплата", "Статус"];
+    const rows = filteredEst.map(e => [
+      formatDate(e.createdAt), String(e.orderId), e.masterAlias, e.clientName, e.clientPhone,
+      e.city, e.serviceType, String(e.totalAmount), String(e.prepaymentAmount),
+      { paid: "Оплачена", pending: "Ожидает", unpaid: "Не оплачена" }[e.status as string] ?? e.status,
+    ]);
+    downloadCSV("сметы.csv", rows, headers);
+  }, [filteredEst]);
+
+  // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <ProtectedRoute allowedRoles={['admin', 'master_operator', 'lead_operator']} permissionKey="finance">
+    <ProtectedRoute allowedRoles={["admin", "master_operator", "lead_operator"]} permissionKey="finance">
       <Layout>
         <div className="space-y-6">
-          <div>
-            <h1 className="text-3xl font-display font-bold text-foreground">Финансы</h1>
-            <p className="text-muted-foreground mt-1">Управление комиссиями и выплатами</p>
+
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-display font-bold text-foreground">Финансы</h1>
+              <p className="text-muted-foreground mt-1">Управление комиссиями и выплатами</p>
+            </div>
+            <button onClick={() => { refetchTx(); refetchSummary(); }}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border/60 text-sm text-muted-foreground hover:text-foreground bg-background transition-colors">
+              <RefreshCw className="w-4 h-4" /> Обновить
+            </button>
           </div>
 
-          {/* ── Summary cards ─────────────────────────────────────────────── */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl p-6 text-white shadow-lg shadow-emerald-500/20">
-              <div className="flex justify-between items-start mb-4">
-                <p className="text-emerald-50 font-medium">Общий доход</p>
-                <div className="p-2 bg-white/20 rounded-xl backdrop-blur-sm">
-                  <TrendingUp className="w-5 h-5 text-white" />
-                </div>
-              </div>
-              <h2 className="text-3xl font-display font-bold">{formatCurrency(summary?.totalIncome || 0)}</h2>
-            </div>
-
-            <div className="bg-gradient-to-br from-destructive to-red-600 rounded-2xl p-6 text-white shadow-lg shadow-red-500/20">
-              <div className="flex justify-between items-start mb-4">
-                <p className="text-red-50 font-medium">Ожидает оплаты (Долг)</p>
-                <div className="p-2 bg-white/20 rounded-xl backdrop-blur-sm">
-                  <TrendingDown className="w-5 h-5 text-white" />
-                </div>
-              </div>
-              <h2 className="text-3xl font-display font-bold">{formatCurrency(summary?.totalDebt || 0)}</h2>
-            </div>
-
-            <div className="bg-card border border-border/50 rounded-2xl p-6 shadow-sm">
-              <p className="text-muted-foreground font-medium mb-4">Статистика транзакций</p>
-              <div className="space-y-3">
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-emerald-600 font-medium flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4" /> Оплачено
-                  </span>
-                  <span className="font-bold">{summary?.paidCount || 0}</span>
-                </div>
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-amber-600 font-medium flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4" /> Ожидают
-                  </span>
-                  <span className="font-bold">{summary?.pendingCount || 0}</span>
-                </div>
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-red-600 font-medium flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4" /> Просрочено
-                  </span>
-                  <span className="font-bold">{summary?.overdueCount || 0}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* ── Overdue masters alert ─────────────────────────────────────── */}
-          {overdueMasters && overdueMasters.length > 0 && (
-            <div className="bg-red-50 border border-red-200 rounded-2xl p-5">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <ShieldAlert className="w-5 h-5 text-red-600" />
-                  <h3 className="font-semibold text-red-800">Мастера с просроченной комиссией ({overdueMasters.length})</h3>
-                </div>
-                <span className="text-xs text-red-600 bg-red-100 border border-red-200 rounded-full px-2 py-0.5 font-medium">заблокированы от приёма заказов</span>
-              </div>
-              <div className="space-y-1.5">
-                {overdueMasters.map(m => (
-                  <div key={m.masterId} className="flex items-center justify-between bg-white rounded-xl border border-red-100 px-4 py-2.5">
-                    <span className="font-medium text-foreground">{m.alias}</span>
-                    <div className="flex items-center gap-3 text-sm">
-                      <span className="text-muted-foreground">{m.count} транз.</span>
-                      <span className="text-red-700 font-bold">{m.totalOverdue.toLocaleString("ru")} ₽</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ── Tab bar ───────────────────────────────────────────────────── */}
+          {/* Tab bar */}
           <div className="flex rounded-2xl border border-border/50 bg-muted/30 p-1 gap-1 w-fit">
             {([
-              { key: "transactions", label: "Транзакции", icon: <ReceiptText className="w-4 h-4" /> },
+              { key: "transactions", label: "Транзакции",  icon: <ReceiptText className="w-4 h-4" /> },
               { key: "by-master",    label: "По мастерам", icon: <BarChart3 className="w-4 h-4" /> },
+              { key: "estimates",    label: "Сметы",        icon: <FileText className="w-4 h-4" /> },
             ] as const).map(tab => (
-              <button
-                key={tab.key}
-                onClick={() => setPageTab(tab.key)}
+              <button key={tab.key} onClick={() => setPageTab(tab.key)}
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-                  pageTab === tab.key
-                    ? "bg-white shadow-sm text-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
+                  pageTab === tab.key ? "bg-white shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
                 {tab.icon}{tab.label}
               </button>
             ))}
           </div>
 
-          {/* ════════════ TAB: TRANSACTIONS ════════════════════════════════ */}
+          {/* ══════════════════════════════ TAB 1: TRANSACTIONS ══════════════ */}
           {pageTab === "transactions" && (
-            <div className="bg-card rounded-2xl border border-border/50 shadow-sm overflow-hidden">
+            <div className="space-y-5">
 
-              {/* Date period filter */}
-              <div className="px-4 pt-4 pb-3 border-b border-border/50">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Calendar className="w-4 h-4 text-muted-foreground shrink-0" />
-                  {PERIODS.map(p => (
-                    <button
-                      key={p.key}
-                      onClick={() => { setTxPeriod(p.key); resetPage(); }}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all ${
-                        txPeriod === p.key
-                          ? "bg-primary text-primary-foreground border-primary shadow-sm"
-                          : "bg-background border-border/60 text-muted-foreground hover:text-foreground hover:border-border"
-                      }`}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
-                  {txPeriod === "custom" && (
-                    <div className="flex items-center gap-1.5 ml-1">
-                      <input
-                        type="date"
-                        value={txCustomFrom}
-                        onChange={e => { setTxCustomFrom(e.target.value); resetPage(); }}
-                        className="text-xs border border-border/60 rounded-xl px-2.5 py-1.5 bg-background outline-none focus:ring-2 focus:ring-primary/30"
-                      />
-                      <span className="text-muted-foreground text-xs">—</span>
-                      <input
-                        type="date"
-                        value={txCustomTo}
-                        onChange={e => { setTxCustomTo(e.target.value); resetPage(); }}
-                        className="text-xs border border-border/60 rounded-xl px-2.5 py-1.5 bg-background outline-none focus:ring-2 focus:ring-primary/30"
-                      />
-                    </div>
-                  )}
+              {/* 5 summary cards */}
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+                <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl p-4 text-white shadow-lg shadow-emerald-500/20 col-span-2 lg:col-span-1">
+                  <p className="text-emerald-50 text-xs font-medium mb-1">💰 Общий доход</p>
+                  <p className="text-2xl font-bold">{formatCurrency(txSummary.income)}</p>
+                  <p className="text-emerald-100 text-[11px] mt-1">{filtered.filter(t => t.paymentStatus === "paid").length} транзакций</p>
+                </div>
+                <div className={`rounded-2xl p-4 border shadow-sm ${txSummary.pending > 0 ? "bg-amber-50 border-amber-200" : "bg-card border-border/50"}`}>
+                  <p className="text-xs font-medium text-amber-700 mb-1">⏳ Ожидает оплаты</p>
+                  <p className="text-2xl font-bold text-amber-800">{formatCurrency(txSummary.pending)}</p>
+                  <p className="text-amber-600 text-[11px] mt-1">{filtered.filter(t => t.paymentStatus === "pending").length} транзакций</p>
+                </div>
+                <div className={`rounded-2xl p-4 border shadow-sm ${txSummary.overdue > 0 ? "bg-red-50 border-red-200" : "bg-card border-border/50"}`}>
+                  <p className="text-xs font-medium text-red-700 mb-1">⚠️ Просрочено</p>
+                  <p className={`text-2xl font-bold ${txSummary.overdue > 0 ? "text-red-700" : "text-foreground"}`}>{formatCurrency(txSummary.overdue)}</p>
+                  <p className="text-red-500 text-[11px] mt-1">{filtered.filter(t => t.paymentStatus === "overdue").length} транзакций</p>
+                </div>
+                <div className="bg-card border border-border/50 rounded-2xl p-4 shadow-sm">
+                  <p className="text-xs font-medium text-muted-foreground mb-1">📊 Средняя комиссия</p>
+                  <p className="text-2xl font-bold">{formatCurrency(txSummary.avg)}</p>
+                  <p className="text-muted-foreground text-[11px] mt-1">за транзакцию</p>
+                </div>
+                <div className="bg-card border border-border/50 rounded-2xl p-4 shadow-sm">
+                  <p className="text-xs font-medium text-muted-foreground mb-1">📋 Транзакций</p>
+                  <p className="text-2xl font-bold">{filtered.length}</p>
+                  <p className="text-muted-foreground text-[11px] mt-1">за период</p>
                 </div>
               </div>
 
-              {/* Search + status filter */}
-              <div className="p-4 border-b border-border/50 flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <h3 className="font-display font-semibold text-lg">Транзакции</h3>
-                  <button
-                    onClick={() => overdueCheckMutation.mutate()}
-                    disabled={overdueCheckMutation.isPending}
-                    title="Отметить просроченные (старше 7 дней)"
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border border-border bg-background hover:bg-slate-50 text-muted-foreground hover:text-foreground transition-all disabled:opacity-50"
-                  >
-                    {overdueCheckMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                    Проверить просрочку
-                  </button>
-                  {overdueCheckMutation.isSuccess && (
-                    <span className="text-xs text-emerald-600">Отмечено: {(overdueCheckMutation.data as any)?.marked ?? 0}</span>
-                  )}
-                </div>
-
-                <div className="flex gap-2 flex-wrap w-full sm:w-auto">
-                  <div className="relative flex-1 sm:flex-none sm:w-56">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-                    <input
-                      value={search}
-                      onChange={e => { setSearch(e.target.value); resetPage(); }}
-                      placeholder="Мастер, TX-ID, заказ..."
-                      className="w-full pl-9 pr-8 py-2 text-sm bg-background border border-border/60 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30"
-                    />
-                    {search && (
-                      <button onClick={() => { setSearch(""); resetPage(); }} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex rounded-xl border border-border/60 overflow-hidden bg-background text-sm">
-                    {STATUS_TABS.map(tab => (
-                      <button
-                        key={tab.key}
-                        onClick={() => { setStatusFilter(tab.key); resetPage(); }}
+              {/* Filters */}
+              <div className="bg-card border border-border/50 rounded-2xl p-4 space-y-3">
+                <PeriodSelector value={txPeriod} onChange={p => { setTxPeriod(p); setTxPage(1); }}
+                  customFrom={txFrom} customTo={txTo}
+                  onCustomFrom={v => { setTxFrom(v); setTxPage(1); }}
+                  onCustomTo={v => { setTxTo(v); setTxPage(1); }} />
+                <div className="flex flex-wrap gap-2">
+                  {/* Status filter */}
+                  <div className="flex rounded-xl border border-border/60 overflow-hidden bg-background text-xs">
+                    {(["all", "pending", "overdue", "paid"] as StatusFilter[]).map(s => (
+                      <button key={s} onClick={() => { setStatusFilter(s); setTxPage(1); }}
                         className={`px-3 py-2 font-medium transition-colors ${
-                          statusFilter === tab.key
-                            ? "bg-primary text-primary-foreground"
-                            : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                        }`}
-                      >
-                        {tab.label}
+                          statusFilter === s ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                        {s === "all" ? "Все" : s === "pending" ? "Ожидают" : s === "overdue" ? "Просрочено" : "Оплачено"}
                       </button>
                     ))}
                   </div>
+                  {/* City filter */}
+                  {allCities.length > 0 && (
+                    <select value={cityFilter} onChange={e => { setCityFilter(e.target.value); setTxPage(1); }}
+                      className="text-xs border border-border/60 rounded-xl px-3 py-2 bg-background text-foreground outline-none focus:ring-2 focus:ring-primary/30">
+                      <option value="">Все города</option>
+                      {allCities.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  )}
+                  {/* Master search */}
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+                    <input value={search} onChange={e => { setSearch(e.target.value); setTxPage(1); }}
+                      placeholder="Поиск по мастеру..."
+                      className="pl-8 pr-8 py-2 text-xs bg-background border border-border/60 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30 w-44" />
+                    {search && <button onClick={() => { setSearch(""); setTxPage(1); }} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="w-3 h-3" /></button>}
+                  </div>
+                  {/* Order search */}
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+                    <input value={orderSearch} onChange={e => { setOrderSearch(e.target.value); setTxPage(1); }}
+                      placeholder="Номер заказа..."
+                      className="pl-8 pr-8 py-2 text-xs bg-background border border-border/60 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30 w-36" />
+                    {orderSearch && <button onClick={() => { setOrderSearch(""); setTxPage(1); }} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="w-3 h-3" /></button>}
+                  </div>
+                  <button onClick={exportTxCSV}
+                    className="ml-auto flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border/60 text-xs text-muted-foreground hover:text-foreground bg-background transition-colors">
+                    <Download className="w-3.5 h-3.5" /> Выгрузить CSV
+                  </button>
                 </div>
               </div>
 
               {/* Table */}
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left">
-                  <thead className="bg-slate-50/50 text-muted-foreground font-medium border-b border-border/50">
-                    <tr>
-                      <th className="px-6 py-4">ID / Дата</th>
-                      <th className="px-6 py-4">Мастер</th>
-                      <th className="px-6 py-4">Сумма заказа</th>
-                      <th className="px-6 py-4">Комиссия (Долг)</th>
-                      <th className="px-6 py-4">Статус</th>
-                      <th className="px-6 py-4 text-right">Действия</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/50">
-                    {isLoading ? (
+              <div className="bg-card border border-border/50 rounded-2xl overflow-hidden shadow-sm">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-slate-50/50 text-muted-foreground font-medium border-b border-border/50 text-xs">
                       <tr>
-                        <td colSpan={6} className="px-6 py-12 text-center">
-                          <Loader2 className="w-6 h-6 animate-spin text-primary mx-auto" />
-                        </td>
+                        <th className="px-4 py-3">Дата</th>
+                        <th className="px-4 py-3">Заказ</th>
+                        <th className="px-4 py-3">Мастер</th>
+                        <th className="px-4 py-3">Город / Вид работ</th>
+                        <th className="px-4 py-3 text-right">Сумма заказа</th>
+                        <th className="px-4 py-3 text-right">Комиссия</th>
+                        <th className="px-4 py-3 text-right">К оплате</th>
+                        <th className="px-4 py-3">Срок / Просрочка</th>
+                        <th className="px-4 py-3">Статус</th>
+                        <th className="px-4 py-3 text-right">Действия</th>
                       </tr>
-                    ) : paginated.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="px-6 py-12 text-center text-muted-foreground text-sm">
-                          {search || statusFilter !== "all" || txPeriod !== "all"
-                            ? "Ничего не найдено за выбранный период"
-                            : "Нет транзакций"}
-                        </td>
-                      </tr>
-                    ) : paginated.map(tx => {
-                      const isPlaceholder  = tx.commission === 0 && tx.orderAmount === 0;
-                      const hasPrepay      = (tx.prepaymentDeducted ?? 0) > 0;
-                      const netPayable     = tx.netPayable ?? tx.commission;
-                      const isFromReceipt  = tx.sourceType === "receipt";
-                      const isLargeReceipt = isFromReceipt && tx.orderAmount > 50_000;
-                      return (
-                        <tr key={tx.id} className={`hover:bg-slate-50/50 transition-colors ${isPlaceholder ? "opacity-70" : ""}`}>
-                          <td className="px-6 py-4">
-                            <span className="font-medium text-foreground">TX-{tx.id}</span>
-                            <div className="text-xs text-muted-foreground mt-1">{formatDate(tx.createdAt)}</div>
-                            {isPlaceholder  && <div className="text-[10px] text-amber-500 font-medium mt-0.5">На объекте</div>}
-                            {isFromReceipt  && <div className="text-[10px] text-violet-600 font-medium mt-0.5">📋 Из сметы</div>}
-                          </td>
-                          <td className="px-6 py-4 font-medium">{tx.masterAlias}</td>
-                          <td className="px-6 py-4">
-                            {isPlaceholder
-                              ? <span className="text-muted-foreground italic text-xs">Неизвестна</span>
-                              : formatCurrency(tx.orderAmount)}
-                          </td>
-                          <td className="px-6 py-4">
-                            {isPlaceholder ? (
-                              <span className="text-muted-foreground italic text-xs">Неизвестна</span>
-                            ) : (
-                              <div>
-                                <span className="font-bold text-foreground">{formatCurrency(netPayable)}</span>
-                                {hasPrepay && (
-                                  <div className="text-xs text-emerald-600 mt-0.5">
-                                    −{formatCurrency(tx.prepaymentDeducted)} предоплата
-                                  </div>
-                                )}
-                                {isLargeReceipt && netPayable > 0 && (
-                                  <div className="text-xs text-amber-600 mt-0.5 font-medium">
-                                    ожидается: {formatCurrency(netPayable)}
-                                  </div>
+                    </thead>
+                    <tbody className="divide-y divide-border/50">
+                      {txLoading ? (
+                        <tr><td colSpan={10} className="py-12 text-center"><Loader2 className="w-6 h-6 animate-spin text-primary mx-auto" /></td></tr>
+                      ) : paginated.length === 0 ? (
+                        <tr><td colSpan={10} className="py-12 text-center text-muted-foreground text-sm">Нет транзакций за выбранный период</td></tr>
+                      ) : paginated.map(tx => {
+                        const rowBg = tx.paymentStatus === "paid"    ? "bg-emerald-50/40 hover:bg-emerald-50/70"
+                                    : tx.paymentStatus === "overdue" ? "bg-red-50/40 hover:bg-red-50/70"
+                                    : "hover:bg-slate-50/50";
+                        const isLoading = payLoading === tx.id;
+                        const reminded  = remindSent.has(tx.id);
+                        return (
+                          <tr key={tx.id} className={`transition-colors ${rowBg}`}>
+                            <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{formatDate(tx.createdAt)}</td>
+                            <td className="px-4 py-3">
+                              <span className="font-medium text-foreground">#{tx.orderId ?? "—"}</span>
+                              {tx.sourceType === "receipt" && <div className="text-[10px] text-violet-600 mt-0.5">📋 Из сметы</div>}
+                            </td>
+                            <td className="px-4 py-3 font-medium text-foreground whitespace-nowrap">{tx.masterAlias}</td>
+                            <td className="px-4 py-3">
+                              <div className="text-xs text-muted-foreground">{tx.city}</div>
+                              <div className="text-xs text-foreground truncate max-w-[160px]">{tx.serviceType}</div>
+                            </td>
+                            <td className="px-4 py-3 text-right text-foreground whitespace-nowrap">
+                              {tx.orderAmount > 0 ? formatCurrency(tx.orderAmount) : <span className="text-muted-foreground italic text-xs">—</span>}
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <span className="font-medium">{formatCurrency(tx.commission)}</span>
+                              {tx.orderAmount > 50_000
+                                ? <div className="text-[10px] text-violet-500">15%</div>
+                                : <div className="text-[10px] text-muted-foreground">фикс.</div>}
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <span className={`font-bold ${tx.netPayable > 0 ? "text-foreground" : "text-emerald-600"}`}>
+                                {tx.netPayable > 0 ? formatCurrency(tx.netPayable) : "Погашено"}
+                              </span>
+                              {tx.prepaymentDeducted > 0 && (
+                                <div className="text-[10px] text-emerald-600">−{formatCurrency(tx.prepaymentDeducted)} предоплата</div>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-xs whitespace-nowrap">
+                              <div className="text-muted-foreground">{new Date(tx.dueDate).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}</div>
+                              {tx.daysOverdue > 0 && <div className="text-red-600 font-semibold">+{tx.daysOverdue} дн.</div>}
+                            </td>
+                            <td className="px-4 py-3"><StatusBadge status={tx.paymentStatus} /></td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-1 justify-end flex-wrap">
+                                {(tx.paymentStatus === "pending" || tx.paymentStatus === "overdue") && <>
+                                  <button onClick={() => setConfirmPay(tx)} disabled={isLoading}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-emerald-100 text-emerald-700 hover:bg-emerald-600 hover:text-white rounded-lg text-[11px] font-medium transition-colors disabled:opacity-50">
+                                    {isLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />} Оплачено
+                                  </button>
+                                  <button onClick={() => doRemind(tx)}
+                                    className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
+                                      reminded ? "bg-blue-50 text-blue-500 cursor-default" : "bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white"}`}
+                                    disabled={reminded}>
+                                    <Bell className="w-3 h-3" /> {reminded ? "Отправлено" : "Напомнить"}
+                                  </button>
+                                </>}
+                                {tx.orderId && (
+                                  <a href={`/orders?id=${tx.orderId}`}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 text-slate-600 hover:bg-slate-600 hover:text-white rounded-lg text-[11px] font-medium transition-colors">
+                                    📋 Заказ
+                                  </a>
                                 )}
                               </div>
-                            )}
-                          </td>
-                          <td className="px-6 py-4">
-                            <StatusBadge status={tx.paymentStatus} type="payment" />
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            {!isPlaceholder && (
-                              tx.paymentStatus === TransactionPaymentStatus.pending ||
-                              tx.paymentStatus === TransactionPaymentStatus.overdue
-                            ) && (
-                              <button
-                                onClick={() => handleMarkPaid({
-                                  id: tx.id, masterId: tx.masterId,
-                                  masterAlias: tx.masterAlias, orderId: tx.orderId,
-                                })}
-                                disabled={updateMutation.isPending}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-100 text-emerald-700 hover:bg-emerald-600 hover:text-white rounded-lg font-medium text-xs transition-colors"
-                              >
-                                <CheckCircle2 className="w-3 h-3" /> Оплачено
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
 
-              {/* Footer: counter + page-size + pagination */}
-              {!isLoading && (
-                <div className="px-4 py-3 border-t border-border/50 flex flex-col sm:flex-row items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                    <span>
-                      {filtered.length === 0
-                        ? "Нет транзакций"
-                        : `${(safePage - 1) * pageSize + 1}–${Math.min(safePage * pageSize, filtered.length)} из ${filtered.length}`}
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs">По</span>
-                      <div className="flex rounded-lg border border-border/60 overflow-hidden">
-                        {PAGE_SIZE_OPTIONS.map(size => (
-                          <button
-                            key={size}
-                            onClick={() => { setPageSize(size); setCurrentPage(1); }}
-                            className={`px-2.5 py-1 text-xs font-medium transition-colors ${
-                              pageSize === size
-                                ? "bg-primary text-primary-foreground"
-                                : "bg-background text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                            }`}
-                          >
-                            {size}
-                          </button>
-                        ))}
+                {/* Pagination */}
+                {!txLoading && (
+                  <div className="px-4 py-3 border-t border-border/50 flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                      <span>{filtered.length === 0 ? "Нет транзакций" : `${(safeTxPage - 1) * pageSize + 1}–${Math.min(safeTxPage * pageSize, filtered.length)} из ${filtered.length}`}</span>
+                      <div className="flex items-center gap-1.5 text-xs">
+                        <span>По</span>
+                        <div className="flex rounded-lg border border-border/60 overflow-hidden">
+                          {PAGE_SIZE_OPTIONS.map(size => (
+                            <button key={size} onClick={() => { setPageSize(size); setTxPage(1); }}
+                              className={`px-2.5 py-1 text-xs font-medium transition-colors ${pageSize === size ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"}`}>
+                              {size}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     </div>
-                  </div>
-
-                  {totalPages > 1 && (
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                        disabled={safePage === 1}
-                        className="p-1.5 rounded-lg border border-border/60 bg-background text-muted-foreground hover:text-foreground hover:bg-muted/50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                      >
-                        <ChevronLeft className="w-4 h-4" />
-                      </button>
-                      {Array.from({ length: totalPages }, (_, i) => i + 1)
-                        .filter(p => p === 1 || p === totalPages || Math.abs(p - safePage) <= 2)
-                        .reduce<(number | "…")[]>((acc, p, idx, arr) => {
-                          if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push("…");
-                          acc.push(p);
-                          return acc;
-                        }, [])
-                        .map((p, idx) =>
-                          p === "…" ? (
-                            <span key={`dots-${idx}`} className="px-2 text-muted-foreground text-sm">…</span>
-                          ) : (
-                            <button
-                              key={p}
-                              onClick={() => setCurrentPage(p as number)}
-                              className={`min-w-[32px] h-8 px-2 rounded-lg text-sm font-medium transition-colors ${
-                                safePage === p
-                                  ? "bg-primary text-primary-foreground"
-                                  : "bg-background border border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                              }`}
-                            >
-                              {p}
-                            </button>
-                          )
-                        )}
-                      <button
-                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                        disabled={safePage === totalPages}
-                        className="p-1.5 rounded-lg border border-border/60 bg-background text-muted-foreground hover:text-foreground hover:bg-muted/50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                      >
-                        <ChevronRight className="w-4 h-4" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ════════════ TAB: BY MASTER ════════════════════════════════════ */}
-          {pageTab === "by-master" && (
-            <div className="space-y-5">
-              {/* Period selector */}
-              <div className="flex flex-wrap gap-2 items-center">
-                {PERIODS.map(p => (
-                  <button
-                    key={p.key}
-                    onClick={() => setStatsPeriod(p.key)}
-                    className={`px-3.5 py-1.5 rounded-xl text-sm font-medium border transition-all ${
-                      statsPeriod === p.key
-                        ? "bg-primary text-primary-foreground border-primary shadow-sm"
-                        : "bg-background border-border/60 text-muted-foreground hover:text-foreground hover:border-border"
-                    }`}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-                {statsPeriod === "custom" && (
-                  <div className="flex items-center gap-2 ml-2">
-                    <input
-                      type="date"
-                      value={statsCustomFrom}
-                      onChange={e => setStatsCustomFrom(e.target.value)}
-                      className="text-sm border border-border/60 rounded-xl px-3 py-1.5 bg-background outline-none focus:ring-2 focus:ring-primary/30"
-                    />
-                    <span className="text-muted-foreground text-sm">—</span>
-                    <input
-                      type="date"
-                      value={statsCustomTo}
-                      onChange={e => setStatsCustomTo(e.target.value)}
-                      className="text-sm border border-border/60 rounded-xl px-3 py-1.5 bg-background outline-none focus:ring-2 focus:ring-primary/30"
-                    />
+                    <Pagination page={safeTxPage} total={totalTxPages} onChange={setTxPage} />
                   </div>
                 )}
               </div>
+            </div>
+          )}
 
-              {/* Mini-cards */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* ══════════════════════════════ TAB 2: BY MASTER ═════════════════ */}
+          {pageTab === "by-master" && (
+            <div className="space-y-5">
+              <PeriodSelector value={statsPeriod} onChange={setStatsPeriod}
+                customFrom={statsFrom} customTo={statsTo}
+                onCustomFrom={setStatsFrom} onCustomTo={setStatsTo} />
+
+              {/* 4 summary cards */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {[
-                  { label: "Поступило в кассу",  value: statsSummary.totalPaid,        color: "emerald", icon: <TrendingUp className="w-3.5 h-3.5 text-emerald-500" /> },
-                  { label: "Ожидает оплаты",      value: statsSummary.totalPending,     color: "amber",   icon: <Clock className="w-3.5 h-3.5 text-amber-500" /> },
-                  { label: "Просрочено",           value: statsSummary.totalOverdue,     color: "red",     icon: <AlertCircle className="w-3.5 h-3.5 text-red-500" /> },
-                  { label: "Оборот мастеров",     value: statsSummary.totalOrderAmount, color: "violet",  icon: <Award className="w-3.5 h-3.5 text-violet-500" /> },
+                  { label: "💰 Общий доход", value: statsSummary.totalPaid, color: "emerald", icon: <TrendingUp className="w-4 h-4 text-emerald-500" /> },
+                  { label: "⏳ Долг мастеров", value: statsSummary.totalPending + statsSummary.totalOverdue, color: statsSummary.totalPending + statsSummary.totalOverdue > 0 ? "red" : "slate", icon: <DebtIcon className="w-4 h-4 text-red-500" /> },
+                  { label: "⚠️ Просрочено транз.", value: (masterStats ?? []).reduce((s, m) => s + m.overdueCount, 0), color: "red", icon: <AlertCircle className="w-4 h-4 text-red-500" />, isCount: true },
+                  { label: "👷 Должников", value: statsSummary.debtors, color: "amber", icon: <Users className="w-4 h-4 text-amber-500" />, isCount: true },
                 ].map(card => (
                   <div key={card.label} className="bg-card border border-border/50 rounded-2xl p-4 shadow-sm">
-                    <p className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-1.5">
-                      {card.icon}{card.label}
+                    <p className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-1.5">{card.icon}{card.label}</p>
+                    <p className={`text-xl font-bold text-${card.color}-600 dark:text-${card.color}-400`}>
+                      {card.isCount ? card.value : formatCurrency(card.value as number)}
                     </p>
-                    <p className={`text-xl font-bold text-${card.color}-600`}>{formatCurrency(card.value)}</p>
                   </div>
                 ))}
               </div>
 
-              {/* Master stats table */}
-              <div className="bg-card rounded-2xl border border-border/50 shadow-sm overflow-hidden">
-                <div className="p-4 border-b border-border/50">
-                  <h3 className="font-display font-semibold text-lg">Статистика по мастерам</h3>
+              {/* Master table */}
+              <div className="bg-card border border-border/50 rounded-2xl overflow-hidden shadow-sm">
+                <div className="flex items-center justify-between p-4 border-b border-border/50">
+                  <h3 className="font-display font-semibold">Статистика по мастерам</h3>
+                  <button onClick={exportMasterCSV}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border/60 text-xs text-muted-foreground hover:text-foreground bg-background transition-colors">
+                    <Download className="w-3.5 h-3.5" /> CSV
+                  </button>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm text-left">
-                    <thead className="bg-slate-50/50 text-muted-foreground font-medium border-b border-border/50">
+                    <thead className="bg-slate-50/50 text-muted-foreground font-medium border-b border-border/50 text-xs">
                       <tr>
-                        <th className="px-6 py-4">Мастер</th>
-                        <th className="px-6 py-4">Город</th>
-                        <th className="px-6 py-4">Заказов</th>
-                        <th className="px-6 py-4">Оборот</th>
-                        <th className="px-6 py-4">Оплачено</th>
-                        <th className="px-6 py-4">Ожидает</th>
-                        <th className="px-6 py-4">Просрочено</th>
+                        <th className="px-4 py-3">Мастер</th>
+                        <th className="px-4 py-3">Город</th>
+                        <th className="px-4 py-3 text-right">Заказов</th>
+                        <th className="px-4 py-3 text-right">Оборот</th>
+                        <th className="px-4 py-3 text-right">Оплачено</th>
+                        <th className="px-4 py-3 text-right">Ожидает</th>
+                        <th className="px-4 py-3 text-right">Просрочено</th>
+                        <th className="px-4 py-3 text-right">Долг итого</th>
+                        <th className="px-4 py-3">Посл. оплата</th>
+                        <th className="px-4 py-3 text-right">Действия</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border/50">
                       {statsLoading ? (
-                        <tr>
-                          <td colSpan={7} className="px-6 py-12 text-center">
-                            <Loader2 className="w-6 h-6 animate-spin text-primary mx-auto" />
-                          </td>
-                        </tr>
+                        <tr><td colSpan={10} className="py-12 text-center"><Loader2 className="w-6 h-6 animate-spin text-primary mx-auto" /></td></tr>
                       ) : !masterStats || masterStats.length === 0 ? (
-                        <tr>
-                          <td colSpan={7} className="px-6 py-12 text-center text-muted-foreground text-sm">
-                            Нет данных за выбранный период
-                          </td>
-                        </tr>
-                      ) : masterStats.map(m => (
-                        <tr key={m.masterId} className="hover:bg-slate-50/50 transition-colors">
-                          <td className="px-6 py-4">
-                            <div className="font-medium text-foreground">{m.alias}</div>
-                            {m.phone && (
-                              <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                                <Phone className="w-3 h-3" />{m.phone}
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-1 text-muted-foreground">
-                              <MapPin className="w-3.5 h-3.5" />{m.city}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 font-medium">{m.orderCount}</td>
-                          <td className="px-6 py-4">{formatCurrency(m.totalOrderAmount)}</td>
-                          <td className="px-6 py-4">
-                            {m.paidCommission > 0 ? (
-                              <div>
-                                <span className="text-emerald-700 font-medium">{formatCurrency(m.paidCommission)}</span>
-                                <div className="text-[10px] text-muted-foreground">{m.paidCount} транз.</div>
-                              </div>
-                            ) : <span className="text-muted-foreground">—</span>}
-                          </td>
-                          <td className="px-6 py-4">
-                            {m.pendingCommission > 0 ? (
-                              <div>
-                                <span className="text-amber-700 font-medium">{formatCurrency(m.pendingCommission)}</span>
-                                <div className="text-[10px] text-muted-foreground">{m.pendingCount} транз.</div>
-                              </div>
-                            ) : <span className="text-muted-foreground">—</span>}
-                          </td>
-                          <td className="px-6 py-4">
-                            {m.overdueCommission > 0 ? (
-                              <div>
-                                <span className="text-red-700 font-bold">{formatCurrency(m.overdueCommission)}</span>
-                                <div className="text-[10px] text-muted-foreground">{m.overdueCount} транз.</div>
-                              </div>
-                            ) : <span className="text-muted-foreground">—</span>}
-                          </td>
-                        </tr>
-                      ))}
+                        <tr><td colSpan={10} className="py-12 text-center text-muted-foreground text-sm">Нет данных за выбранный период</td></tr>
+                      ) : masterStats.map(m => {
+                        const rowBg = m.overdueCommission > 0 ? "bg-red-50/40 hover:bg-red-50/70"
+                                    : m.pendingCommission > 0 ? "bg-amber-50/30 hover:bg-amber-50/60"
+                                    : "bg-emerald-50/20 hover:bg-emerald-50/50";
+                        const isReminding = masterActionLoading?.id === m.masterId && masterActionLoading?.action === "remind";
+                        const isPaying    = masterActionLoading?.id === m.masterId && masterActionLoading?.action === "pay";
+                        const hasDebt     = m.debtTotal > 0;
+                        return (
+                          <tr key={m.masterId} className={`transition-colors ${rowBg}`}>
+                            <td className="px-4 py-3">
+                              <div className="font-medium text-foreground">{m.alias}</div>
+                              {m.phone && <div className="text-[11px] text-muted-foreground flex items-center gap-1 mt-0.5"><Phone className="w-3 h-3" />{m.phone}</div>}
+                            </td>
+                            <td className="px-4 py-3"><div className="flex items-center gap-1 text-muted-foreground text-xs"><MapPin className="w-3 h-3" />{m.city}</div></td>
+                            <td className="px-4 py-3 text-right font-medium">{m.orderCount}</td>
+                            <td className="px-4 py-3 text-right">{formatCurrency(m.totalOrderAmount)}</td>
+                            <td className="px-4 py-3 text-right">
+                              {m.paidCommission > 0 ? <div><span className="text-emerald-700 font-medium">{formatCurrency(m.paidCommission)}</span><div className="text-[10px] text-muted-foreground">{m.paidCount} транз.</div></div> : <span className="text-muted-foreground">—</span>}
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              {m.pendingCommission > 0 ? <div><span className="text-amber-700 font-medium">{formatCurrency(m.pendingCommission)}</span><div className="text-[10px] text-muted-foreground">{m.pendingCount} транз.</div></div> : <span className="text-muted-foreground">—</span>}
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              {m.overdueCommission > 0 ? <div><span className="text-red-700 font-bold">{formatCurrency(m.overdueCommission)}</span><div className="text-[10px] text-muted-foreground">{m.overdueCount} транз.</div></div> : <span className="text-muted-foreground">—</span>}
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <span className={`font-bold ${m.debtTotal > 0 ? "text-red-700" : "text-emerald-600"}`}>
+                                {m.debtTotal > 0 ? formatCurrency(m.debtTotal) : "Нет долга"}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                              {m.lastPaidAt ? formatDate(m.lastPaidAt) : "—"}
+                            </td>
+                            <td className="px-4 py-3">
+                              {hasDebt && (
+                                <div className="flex items-center gap-1 justify-end">
+                                  <button onClick={() => doRemindAll(m)} disabled={!!masterActionLoading}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg text-[11px] font-medium transition-colors disabled:opacity-50">
+                                    {isReminding ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bell className="w-3 h-3" />} Напомнить
+                                  </button>
+                                  <button onClick={() => setConfirmPayAll(m)} disabled={!!masterActionLoading}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-emerald-100 text-emerald-700 hover:bg-emerald-600 hover:text-white rounded-lg text-[11px] font-medium transition-colors disabled:opacity-50">
+                                    {isPaying ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />} Оплатить всё
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
               </div>
             </div>
           )}
+
+          {/* ══════════════════════════════ TAB 3: ESTIMATES ═════════════════ */}
+          {pageTab === "estimates" && (
+            <div className="space-y-5">
+
+              {/* 5 summary cards */}
+              {estStats && (
+                <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+                  {[
+                    { label: "📄 Всего смет",        value: estStats.total,         color: "slate",   isCount: true },
+                    { label: "💰 Оплачено",           value: estStats.paidCount,     color: "emerald", isCount: true, sub: formatCurrency(estStats.paidSum) },
+                    { label: "⏳ Ждут оплаты",        value: estStats.pendingCount,  color: "amber",   isCount: true, sub: formatCurrency(estStats.pendingSum) },
+                    { label: "❌ Не оплачено",        value: estStats.unpaidCount,   color: "red",     isCount: true },
+                    { label: "📊 Средний чек",        value: estStats.avgCheck,      color: "violet",  isCount: false },
+                  ].map(card => (
+                    <div key={card.label} className="bg-card border border-border/50 rounded-2xl p-4 shadow-sm">
+                      <p className="text-xs font-medium text-muted-foreground mb-1">{card.label}</p>
+                      <p className={`text-2xl font-bold text-${card.color}-600 dark:text-${card.color}-400`}>
+                        {card.isCount ? card.value : formatCurrency(card.value as number)}
+                      </p>
+                      {card.sub && <p className="text-[11px] text-muted-foreground mt-0.5">{card.sub}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Filters */}
+              <div className="bg-card border border-border/50 rounded-2xl p-4 space-y-3">
+                <PeriodSelector value={estPeriod} onChange={p => { setEstPeriod(p); setEstPage(1); }}
+                  customFrom={estFrom} customTo={estTo}
+                  onCustomFrom={v => { setEstFrom(v); setEstPage(1); }}
+                  onCustomTo={v => { setEstTo(v); setEstPage(1); }} />
+                <div className="flex flex-wrap gap-2">
+                  <div className="flex rounded-xl border border-border/60 overflow-hidden bg-background text-xs">
+                    {(["all", "paid", "pending", "unpaid"] as EstimateStatus[]).map(s => (
+                      <button key={s} onClick={() => { setEstStatus(s); setEstPage(1); }}
+                        className={`px-3 py-2 font-medium transition-colors ${estStatus === s ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                        {s === "all" ? "Все" : s === "paid" ? "Оплачены" : s === "pending" ? "Ожидают" : "Не оплачены"}
+                      </button>
+                    ))}
+                  </div>
+                  {estCities.length > 0 && (
+                    <select value={estCity} onChange={e => { setEstCity(e.target.value); setEstPage(1); }}
+                      className="text-xs border border-border/60 rounded-xl px-3 py-2 bg-background text-foreground outline-none focus:ring-2 focus:ring-primary/30">
+                      <option value="">Все города</option>
+                      {estCities.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  )}
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+                    <input value={estSearch} onChange={e => { setEstSearch(e.target.value); setEstPage(1); }}
+                      placeholder="Клиент, заказ..."
+                      className="pl-8 pr-8 py-2 text-xs bg-background border border-border/60 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30 w-44" />
+                    {estSearch && <button onClick={() => { setEstSearch(""); setEstPage(1); }} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="w-3 h-3" /></button>}
+                  </div>
+                  <button onClick={exportEstCSV} className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border/60 text-xs text-muted-foreground hover:text-foreground bg-background transition-colors">
+                    <Download className="w-3.5 h-3.5" /> CSV
+                  </button>
+                </div>
+              </div>
+
+              {/* Estimates table */}
+              <div className="bg-card border border-border/50 rounded-2xl overflow-hidden shadow-sm">
+                {estLoading ? (
+                  <div className="py-12 text-center"><Loader2 className="w-6 h-6 animate-spin text-primary mx-auto" /></div>
+                ) : paginatedEst.length === 0 ? (
+                  <div className="py-12 text-center text-muted-foreground text-sm">Нет смет за выбранный период</div>
+                ) : (
+                  <div className="divide-y divide-border/50">
+                    {paginatedEst.map(e => {
+                      const isExpanded = expandedEst === e.id;
+                      const rowBg = e.status === "paid"    ? "bg-emerald-50/30"
+                                  : e.status === "unpaid"  ? "bg-red-50/30"
+                                  : "";
+                      return (
+                        <div key={e.id} className={rowBg}>
+                          {/* Collapsed row */}
+                          <button
+                            onClick={() => setExpandedEst(isExpanded ? null : e.id)}
+                            className="w-full px-4 py-3 text-left hover:bg-black/[0.02] transition-colors"
+                          >
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <div className="flex items-center gap-2 min-w-0">
+                                {isExpanded ? <ChevronUp className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />}
+                                <span className="font-medium text-foreground text-sm">#{e.orderId}</span>
+                                <StatusBadge status={e.status} />
+                              </div>
+                              <div className="flex-1 min-w-0 grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-0.5 text-xs">
+                                <div className="text-muted-foreground">{e.masterAlias}</div>
+                                <div className="text-muted-foreground">{e.clientName}</div>
+                                <div className="text-muted-foreground">{e.city}{e.district ? `, ${e.district}` : ""}</div>
+                                <div className="text-muted-foreground truncate">{e.serviceType}</div>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <p className="font-bold text-sm">{formatCurrency(e.totalAmount)}</p>
+                                <p className="text-[11px] text-muted-foreground">{formatDate(e.createdAt)}</p>
+                              </div>
+                            </div>
+                          </button>
+
+                          {/* Expanded details */}
+                          {isExpanded && (
+                            <div className="px-4 pb-4 space-y-4">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* Line items */}
+                                <div className="bg-slate-50 rounded-xl border border-border/50 overflow-hidden">
+                                  <div className="px-3 py-2 border-b border-border/50 bg-slate-100/60">
+                                    <p className="text-xs font-semibold text-foreground">Состав работ</p>
+                                  </div>
+                                  <div className="divide-y divide-border/30">
+                                    {(e.lineItems ?? []).map((item, i) => {
+                                      const sum = (item.quantity ?? 1) * item.price;
+                                      return (
+                                        <div key={i} className="px-3 py-2 text-xs flex items-center justify-between gap-2">
+                                          <span className="text-foreground flex-1">{item.description}</span>
+                                          <span className="text-muted-foreground shrink-0">
+                                            {item.quantity ? `${item.quantity} ${item.unit ?? "м²"} × ${formatCurrency(item.price)}` : formatCurrency(item.price)}
+                                          </span>
+                                          <span className="font-semibold shrink-0">{formatCurrency(sum)}</span>
+                                        </div>
+                                      );
+                                    })}
+                                    <div className="px-3 py-2 bg-slate-100/60 flex justify-between text-sm font-bold">
+                                      <span>Итого</span><span>{formatCurrency(e.totalAmount)}</span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Payment info */}
+                                <div className="space-y-3">
+                                  <div className="bg-slate-50 rounded-xl border border-border/50 p-3 space-y-2">
+                                    <p className="text-xs font-semibold text-foreground mb-2">Информация об оплате</p>
+                                    <div className="flex justify-between text-xs">
+                                      <span className="text-muted-foreground">Предоплата:</span>
+                                      <span className="font-medium">{formatCurrency(e.prepaymentAmount)}</span>
+                                    </div>
+                                    <div className="flex justify-between text-xs">
+                                      <span className="text-muted-foreground">Статус предоплаты:</span>
+                                      <span>
+                                        {e.prepaymentSubmittedAt
+                                          ? <span className="text-emerald-600 font-medium">✅ Оплачена {new Date(e.prepaymentSubmittedAt).toLocaleDateString("ru-RU")}</span>
+                                          : e.hoursAgo > 72
+                                            ? <span className="text-red-600 font-medium">❌ Не оплачена</span>
+                                            : <span className="text-amber-600 font-medium">⏳ Ожидает ({e.hoursAgo}ч назад)</span>}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between text-xs">
+                                      <span className="text-muted-foreground">Остаток к оплате:</span>
+                                      <span className="font-bold">{formatCurrency(e.remainder)}</span>
+                                    </div>
+                                    <div className="flex justify-between text-xs pt-1 border-t border-border/50">
+                                      <span className="text-muted-foreground">Комиссия платформы:</span>
+                                      <span className="font-medium text-violet-600">
+                                        {e.totalAmount > 50_000
+                                          ? `${formatCurrency(e.totalAmount * 0.15)} (${e.totalAmount.toLocaleString("ru-RU")}₽ × 15%)`
+                                          : `5 000₽ (фиксированная)`}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="bg-slate-50 rounded-xl border border-border/50 p-3 text-xs space-y-1.5">
+                                    <p className="font-semibold text-foreground mb-1.5">Клиент</p>
+                                    <div className="flex justify-between"><span className="text-muted-foreground">Имя:</span><span>{e.clientName}</span></div>
+                                    <div className="flex justify-between"><span className="text-muted-foreground">Телефон:</span><span>{e.clientPhone}</span></div>
+                                    {e.clientSubmittedName && <div className="flex justify-between"><span className="text-muted-foreground">Подтвердил:</span><span>{e.clientSubmittedName}</span></div>}
+                                  </div>
+                                  <div className="flex gap-2 flex-wrap">
+                                    <a href={`${BASE}/api/receipts/${e.token}`} target="_blank" rel="noreferrer"
+                                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-border/60 text-xs font-medium text-foreground hover:bg-muted/50 transition-colors">
+                                      👁 Смета для клиента
+                                    </a>
+                                    {e.orderId && (
+                                      <a href={`/orders?id=${e.orderId}`}
+                                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-border/60 text-xs font-medium text-foreground hover:bg-muted/50 transition-colors">
+                                        📋 Открыть заказ
+                                      </a>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {!estLoading && filteredEst.length > 20 && (
+                  <div className="px-4 py-3 border-t border-border/50 flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">{(safeEstPage - 1) * 20 + 1}–{Math.min(safeEstPage * 20, filteredEst.length)} из {filteredEst.length}</span>
+                    <Pagination page={safeEstPage} total={totalEstPages} onChange={setEstPage} />
+                  </div>
+                )}
+              </div>
+
+              {/* Analytics block */}
+              {estStats && estStats.total > 0 && (
+                <div className="space-y-4">
+                  <h3 className="font-display font-semibold text-lg">Аналитика по сметам</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                    {/* Conversion */}
+                    <div className="bg-card border border-border/50 rounded-2xl p-4 shadow-sm">
+                      <p className="text-sm font-semibold mb-3">Конверсия смет</p>
+                      <div className="space-y-2 text-sm">
+                        {[
+                          { label: "Отправлено смет", value: estStats.total, color: "bg-slate-400" },
+                          { label: `Оплачено (${estStats.conversionRate}%)`, value: estStats.paidCount, color: "bg-emerald-500" },
+                          { label: "Не оплачено", value: estStats.unpaidCount, color: "bg-red-400" },
+                        ].map(row => (
+                          <div key={row.label}>
+                            <div className="flex justify-between mb-1"><span className="text-muted-foreground text-xs">{row.label}</span><span className="font-semibold text-xs">{row.value}</span></div>
+                            <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                              <div className={`h-full ${row.color} rounded-full transition-all`} style={{ width: `${estStats.total > 0 ? (row.value / estStats.total) * 100 : 0}%` }} />
+                            </div>
+                          </div>
+                        ))}
+                        {estStats.avgHours > 0 && (
+                          <p className="text-xs text-muted-foreground pt-2">⏱ Среднее время до оплаты: <strong>{estStats.avgHours}ч</strong></p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* By service */}
+                    {estStats.byService.length > 0 && (
+                      <div className="bg-card border border-border/50 rounded-2xl p-4 shadow-sm">
+                        <p className="text-sm font-semibold mb-3">Топ видов работ</p>
+                        <ResponsiveContainer width="100%" height={160}>
+                          <BarChart data={estStats.byService} layout="vertical" margin={{ left: 0, right: 20 }}>
+                            <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${Math.round(v / 1000)}к`} />
+                            <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={90} />
+                            <Tooltip formatter={(v: number) => formatCurrency(v)} />
+                            <Bar dataKey="total" fill="#6366f1" radius={[0, 4, 4, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
+
+                    {/* By city */}
+                    {estStats.byCity.length > 0 && (
+                      <div className="bg-card border border-border/50 rounded-2xl p-4 shadow-sm">
+                        <p className="text-sm font-semibold mb-3">Средний чек по городам</p>
+                        <ResponsiveContainer width="100%" height={160}>
+                          <BarChart data={estStats.byCity}>
+                            <XAxis dataKey="city" tick={{ fontSize: 10 }} />
+                            <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${Math.round(v / 1000)}к`} />
+                            <Tooltip formatter={(v: number) => formatCurrency(v)} />
+                            <Bar dataKey="avgAmount" fill="#10b981" radius={[4, 4, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
+
+                    {/* Daily dynamics */}
+                    {estStats.daily.length > 1 && (
+                      <div className="bg-card border border-border/50 rounded-2xl p-4 shadow-sm">
+                        <p className="text-sm font-semibold mb-3">Динамика смет по дням</p>
+                        <ResponsiveContainer width="100%" height={160}>
+                          <LineChart data={estStats.daily}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                            <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                            <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
+                            <Tooltip />
+                            <Legend iconSize={10} iconType="circle" wrapperStyle={{ fontSize: 11 }} />
+                            <Line type="monotone" dataKey="paid"   name="Оплачены"     stroke="#10b981" strokeWidth={2} dot={false} />
+                            <Line type="monotone" dataKey="unpaid" name="Не оплачены"  stroke="#ef4444" strokeWidth={2} dot={false} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* ── Review modal ──────────────────────────────────────────────────── */}
-        {pendingReviewInfo && (
+        {/* ── Confirm: mark paid ────────────────────────────────────────────── */}
+        {confirmPay && (
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-5">
-              <div>
-                <h3 className="text-lg font-display font-semibold">Оставить отзыв</h3>
-                <p className="text-sm text-muted-foreground mt-1">Мастер: <strong>{pendingReviewInfo.masterAlias}</strong></p>
-              </div>
-              <div className="flex gap-2">
-                {SENTIMENTS.map(s => (
-                  <button
-                    key={s.value}
-                    onClick={() => setReviewSentiment(s.value)}
-                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-medium border transition-all ${
-                      reviewSentiment === s.value ? s.activeClass : "bg-background border-border text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {s.icon}{s.label}
-                  </button>
-                ))}
-              </div>
-              <textarea
-                value={reviewText}
-                onChange={e => setReviewText(e.target.value)}
-                placeholder="Комментарий о мастере..."
-                rows={3}
-                className="w-full text-sm border border-border/60 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-primary/30 resize-none"
-              />
-              <div className="flex gap-3 pt-1">
-                <button
-                  onClick={() => setPendingReviewInfo(null)}
-                  className="flex-1 py-2.5 rounded-xl border border-border text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-                >
-                  Пропустить
+            <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4">
+              <h3 className="text-lg font-display font-semibold">Подтвердите оплату</h3>
+              <p className="text-sm text-muted-foreground">
+                Отметить комиссию по заказу <strong>#{confirmPay.orderId}</strong> как оплаченную?<br />
+                Сумма: <strong>{formatCurrency(confirmPay.netPayable)}</strong>
+              </p>
+              <p className="text-xs text-muted-foreground bg-blue-50 rounded-xl p-3">
+                Мастеру будет отправлено уведомление в Max.
+              </p>
+              <div className="flex gap-3">
+                <button onClick={() => setConfirmPay(null)}
+                  className="flex-1 py-2.5 rounded-xl border border-border text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                  Отмена
                 </button>
-                <button
-                  onClick={submitReview}
-                  disabled={savingReview || !reviewText.trim()}
-                  className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
-                >
-                  {savingReview ? "Сохранение..." : "Сохранить"}
+                <button onClick={() => doMarkPaid(confirmPay)} disabled={payLoading === confirmPay.id}
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 transition-colors">
+                  {payLoading === confirmPay.id ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : "Да, оплачено"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Confirm: pay-all for master ───────────────────────────────────── */}
+        {confirmPayAll && (
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4">
+              <h3 className="text-lg font-display font-semibold">Оплатить всё</h3>
+              <p className="text-sm text-muted-foreground">
+                Отметить все неоплаченные транзакции мастера <strong>{confirmPayAll.alias}</strong> как оплаченные?<br /><br />
+                Количество: <strong>{confirmPayAll.pendingCount + confirmPayAll.overdueCount}</strong><br />
+                Сумма: <strong>{formatCurrency(confirmPayAll.debtTotal)}</strong>
+              </p>
+              <p className="text-xs text-muted-foreground bg-blue-50 rounded-xl p-3">
+                Мастеру будет отправлено уведомление в Max.
+              </p>
+              <div className="flex gap-3">
+                <button onClick={() => setConfirmPayAll(null)}
+                  className="flex-1 py-2.5 rounded-xl border border-border text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                  Отмена
+                </button>
+                <button onClick={() => doPayAll(confirmPayAll)}
+                  disabled={masterActionLoading?.id === confirmPayAll.masterId}
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 transition-colors">
+                  {masterActionLoading?.id === confirmPayAll.masterId ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : "Да, оплатить всё"}
                 </button>
               </div>
             </div>
