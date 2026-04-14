@@ -687,7 +687,7 @@ router.post("/template-scenarios/payment-reminders/send-all", async (req, res) =
       const location = r.district || r.city;
       let msg: string;
       if (hours >= 72) {
-        msg = `${r.master_alias}, по заказу #${r.order_id} предоплата не поступила уже ${hours} часов.\n\nВопрос передан руководителю.\nОжидайте — мы свяжемся с вами.`;
+        msg = `${r.master_alias}, по заказу #${r.order_id} предоплата не поступила уже ${hours} часов.\n\nУточните у клиента, когда он планирует внести предоплату, и сообщите нам.`;
       } else if (hours >= 48) {
         msg = `⚠️ ${r.master_alias}, по заказу #${r.order_id} предоплата не поступила уже ${hours} часов.\n\nПожалуйста ещё раз напомните клиенту про бронь.\n\nЕсли клиент не планирует оплачивать — сообщите нам, мы решим что делать с этим заказом.`;
       } else {
@@ -773,7 +773,7 @@ router.post("/template-scenarios/payment-reminders/:orderId/message-master", asy
     if (hours >= 72) {
       message =
         `${r.master_alias}, по заказу #${r.order_id} предоплата не поступила уже ${hours} часов.\n\n` +
-        `Вопрос передан руководителю.\nОжидайте — мы свяжемся с вами.`;
+        `Уточните у клиента, когда он планирует внести предоплату, и сообщите нам.`;
     } else if (hours >= 48) {
       message =
         `⚠️ ${r.master_alias}, по заказу #${r.order_id} предоплата не поступила уже ${hours} часов.\n\n` +
