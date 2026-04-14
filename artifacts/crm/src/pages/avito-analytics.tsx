@@ -314,12 +314,13 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettin
     });
   }, [itemsWithPeriodStats, totalPeriodViews, periodSpending, spending, crmItemMap]);
 
-  // Available cities — derived from actual Avito items (not CRM data)
+  // Available cities — union of CRM order cities and Avito item location names
   const availableCities = useMemo(() => {
     const cities = new Set<string>();
+    (analyticsData?.crmByCity ?? []).forEach(r => { if (r.city) cities.add(r.city); });
     itemRows.forEach(r => { if (r.city && r.city !== "—") cities.add(r.city); });
     return Array.from(cities).sort();
-  }, [itemRows]);
+  }, [analyticsData, itemRows]);
 
   // City table rows
   const cityRows = useMemo(() => {
