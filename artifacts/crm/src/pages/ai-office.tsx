@@ -381,6 +381,7 @@ export default function AiOfficePage() {
   const [paymentCallModal, setPaymentCallModal] = useState<{ orderId: number; clientPhone: string; clientName: string } | null>(null);
   const [paymentCallComment, setPaymentCallComment] = useState<Record<number, string>>({});
   const [paymentCommentSaved, setPaymentCommentSaved] = useState<Set<number>>(new Set());
+  const [paymentSendAllState, setPaymentSendAllState] = useState<"idle" | "confirm" | "loading">("idle");
 
   // Orders-without-receipts state
   interface NoReceiptEntry { orderId: number; masterAlias: string; maxChatId: string | null; city: string; district: string; serviceType: string; assignedAt: string; hoursWithoutReceipt: number; risk: "critical" | "warning"; masterPhone: string | null }
@@ -392,6 +393,7 @@ export default function AiOfficePage() {
   const [noReceiptCallModal, setNoReceiptCallModal] = useState<{ orderId: number; masterPhone: string; masterAlias: string } | null>(null);
   const [noReceiptCallComment, setNoReceiptCallComment] = useState<Record<number, string>>({});
   const [noReceiptCommentSaved, setNoReceiptCommentSaved] = useState<Set<number>>(new Set());
+  const [noReceiptSendAllState, setNoReceiptSendAllState] = useState<"idle" | "confirm" | "loading">("idle");
 
   // Legacy GPT scenarios state
   const [scenarios, setScenarios] = useState<PredefinedScenario[]>([]);
@@ -563,6 +565,42 @@ export default function AiOfficePage() {
       setPaymentActionLoading(p => { const n = { ...p }; delete n[orderId]; return n; });
     }
   }, [fetchPaymentLive]);
+
+  const handlePaymentSendAll = useCallback(async () => {
+    setPaymentSendAllState("loading");
+    try {
+      const res = await fetch(`${BASE}/api/ai-office/template-scenarios/payment-reminders/send-all`, {
+        method: "POST", credentials: "include",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast({ title: `Отправлено ${data.sent} мастерам ✓` });
+      setPaymentMsgSent(new Set());
+      fetchPaymentLive();
+    } catch (e) {
+      toast({ title: "Ошибка", description: String(e), variant: "destructive" });
+    } finally {
+      setPaymentSendAllState("idle");
+    }
+  }, [fetchPaymentLive]);
+
+  const handleNoReceiptSendAll = useCallback(async () => {
+    setNoReceiptSendAllState("loading");
+    try {
+      const res = await fetch(`${BASE}/api/ai-office/template-scenarios/orders-without-receipts/send-all`, {
+        method: "POST", credentials: "include",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast({ title: `Отправлено ${data.sent} мастерам ✓` });
+      setNoReceiptMsgSent(new Set());
+      fetchNoReceiptLive();
+    } catch (e) {
+      toast({ title: "Ошибка", description: String(e), variant: "destructive" });
+    } finally {
+      setNoReceiptSendAllState("idle");
+    }
+  }, []);
 
   const handleRunTemplate = useCallback(async (id: string) => {
     setRunningTemplates(prev => new Set(prev).add(id));
@@ -1320,10 +1358,40 @@ export default function AiOfficePage() {
                                   </div>
                                 </div>
 
-                                {/* Refresh + status */}
+                                {/* Refresh + send-all row */}
                                 <div className="flex items-center gap-2 text-xs">
                                   {total === 0 && (
                                     <span className="px-2 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 font-semibold">✅ Все оплатили</span>
+                                  )}
+                                  {total > 0 && paymentSendAllState === "idle" && (
+                                    <button
+                                      onClick={() => setPaymentSendAllState("confirm")}
+                                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 hover:opacity-80 transition-colors font-semibold"
+                                    >
+                                      📨 Отправить всем
+                                    </button>
+                                  )}
+                                  {total > 0 && paymentSendAllState === "confirm" && (
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-orange-600 dark:text-orange-400 font-semibold">Отправить {total} мастерам?</span>
+                                      <button
+                                        onClick={handlePaymentSendAll}
+                                        className="px-2 py-0.5 rounded-lg bg-orange-500 text-white font-semibold hover:opacity-80 transition-colors"
+                                      >
+                                        Да
+                                      </button>
+                                      <button
+                                        onClick={() => setPaymentSendAllState("idle")}
+                                        className="px-2 py-0.5 rounded-lg bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                                      >
+                                        Нет
+                                      </button>
+                                    </div>
+                                  )}
+                                  {paymentSendAllState === "loading" && (
+                                    <span className="flex items-center gap-1 text-orange-600 dark:text-orange-400 font-semibold">
+                                      <Loader2 className="w-3 h-3 animate-spin" /> Отправляю...
+                                    </span>
                                   )}
                                   <button onClick={fetchPaymentLive} disabled={paymentLiveLoading}
                                     className="ml-auto flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors">
@@ -1449,10 +1517,40 @@ export default function AiOfficePage() {
                                   </div>
                                 </div>
 
-                                {/* Refresh + status */}
+                                {/* Refresh + send-all row */}
                                 <div className="flex items-center gap-2 text-xs">
                                   {total === 0 && (
                                     <span className="px-2 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 font-semibold">✅ Все сметы отправлены</span>
+                                  )}
+                                  {total > 0 && noReceiptSendAllState === "idle" && (
+                                    <button
+                                      onClick={() => setNoReceiptSendAllState("confirm")}
+                                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 hover:opacity-80 transition-colors font-semibold"
+                                    >
+                                      📨 Отправить всем
+                                    </button>
+                                  )}
+                                  {total > 0 && noReceiptSendAllState === "confirm" && (
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-amber-600 dark:text-amber-400 font-semibold">Отправить {total} мастерам?</span>
+                                      <button
+                                        onClick={handleNoReceiptSendAll}
+                                        className="px-2 py-0.5 rounded-lg bg-amber-500 text-white font-semibold hover:opacity-80 transition-colors"
+                                      >
+                                        Да
+                                      </button>
+                                      <button
+                                        onClick={() => setNoReceiptSendAllState("idle")}
+                                        className="px-2 py-0.5 rounded-lg bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                                      >
+                                        Нет
+                                      </button>
+                                    </div>
+                                  )}
+                                  {noReceiptSendAllState === "loading" && (
+                                    <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-semibold">
+                                      <Loader2 className="w-3 h-3 animate-spin" /> Отправляю...
+                                    </span>
                                   )}
                                   <button onClick={fetchNoReceiptLive} disabled={noReceiptLiveLoading}
                                     className="ml-auto flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors">
