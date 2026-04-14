@@ -38,6 +38,7 @@ interface AvitoItem {
     viewsDay?: number; viewsWeek?: number; viewsMonth?: number;
     contactsDay?: number; contactsWeek?: number; contactsMonth?: number;
     favsDay?: number; favsWeek?: number; favsMonth?: number;
+    lastDataDate?: string | null;
     daily?: { date: string; uniqViews: number; uniqContacts: number; uniqFavorites: number }[];
   };
 }
@@ -209,24 +210,24 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettin
   const balance = analyticsData?.balance;
   const spending = analyticsData?.spending;
 
-  // Today / yesterday views & contacts from daily stats
-  const { viewsToday, viewsYesterday, contactsToday, contactsYesterday } = useMemo(() => {
+  // Today / yesterday views & contacts
+  // viewsDay is now backend-computed: today's data if Avito has it, else yesterday's (1-2d lag)
+  const { viewsToday, viewsYesterday, contactsToday, contactsYesterday, statsLastDate } = useMemo(() => {
     let vT = 0, vY = 0, cT = 0, cY = 0;
-    const todayStr = new Date().toISOString().split("T")[0];
     const yesterdayStr = new Date(Date.now() - 86400000).toISOString().split("T")[0];
+    let lastDate: string | null = null;
     for (const item of items) {
+      vT += item.stats?.viewsDay    ?? 0;
+      cT += item.stats?.contactsDay ?? 0;
+      // For "yesterday" row, look explicitly in daily array
       const daily = item.stats?.daily ?? [];
       for (const d of daily) {
-        if (d.date === todayStr) { vT += d.uniqViews; cT += d.uniqContacts; }
         if (d.date === yesterdayStr) { vY += d.uniqViews; cY += d.uniqContacts; }
       }
-      // fallback: use precomputed Day fields if daily is empty/missing today
-      if (vT === 0 && !item.stats?.daily?.some(d => d.date === todayStr)) {
-        vT += item.stats?.viewsDay ?? 0;
-        cT += item.stats?.contactsDay ?? 0;
-      }
+      const ld = item.stats?.lastDataDate;
+      if (ld && (!lastDate || ld > lastDate)) lastDate = ld;
     }
-    return { viewsToday: vT, viewsYesterday: vY, contactsToday: cT, contactsYesterday: cY };
+    return { viewsToday: vT, viewsYesterday: vY, contactsToday: cT, contactsYesterday: cY, statsLastDate: lastDate };
   }, [items]);
 
   // Period-aware stats per item
@@ -374,8 +375,15 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettin
 
   // ── Period helpers ───────────────────────────────────────────────────────
 
+  const todayStr = new Date().toISOString().split("T")[0];
+  // Avito stats lag: if last data date < today, "today" tab actually shows yesterday's data
+  const statsLagging = statsLastDate !== null && statsLastDate < todayStr;
+
   const periodLabel: Record<Period, string> = {
-    today: "Сегодня", week: "Неделя", month: "Месяц", custom: "Период",
+    today: statsLagging ? "Вчера" : "Сегодня",
+    week: "7 дней",
+    month: "Тек. месяц",
+    custom: "Период",
   };
 
   // ── Render ───────────────────────────────────────────────────────────────
@@ -510,31 +518,43 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettin
           </CardContent>
         </Card>
 
-        {/* Просмотры сегодня */}
+        {/* Просмотры сегодня / вчера */}
         <Card>
           <CardContent className="py-3 px-4">
             <div className="flex items-center justify-between mb-1">
-              <p className="text-xs text-muted-foreground">👁 Просмотров сегодня</p>
+              <p className="text-xs text-muted-foreground">
+                👁 {statsLagging ? "Просмотров вчера" : "Просмотров сегодня"}
+              </p>
               <Eye className="w-4 h-4 text-blue-500" />
             </div>
             {itemsLoading ? <div className="h-7 w-16 bg-muted animate-pulse rounded" /> : (
               <p className="text-xl font-bold tabular-nums">{viewsToday.toLocaleString("ru-RU")}</p>
             )}
-            <p className="text-xs text-muted-foreground mt-0.5">Вчера: {viewsYesterday.toLocaleString("ru-RU")}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {statsLagging
+                ? <span className="text-amber-600 dark:text-amber-400">⏳ задержка Авито</span>
+                : `Вчера: ${viewsYesterday.toLocaleString("ru-RU")}`}
+            </p>
           </CardContent>
         </Card>
 
-        {/* Контакты сегодня */}
+        {/* Контакты сегодня / вчера */}
         <Card>
           <CardContent className="py-3 px-4">
             <div className="flex items-center justify-between mb-1">
-              <p className="text-xs text-muted-foreground">📞 Контактов сегодня</p>
+              <p className="text-xs text-muted-foreground">
+                📞 {statsLagging ? "Контактов вчера" : "Контактов сегодня"}
+              </p>
               <Phone className="w-4 h-4 text-green-500" />
             </div>
             {itemsLoading ? <div className="h-7 w-16 bg-muted animate-pulse rounded" /> : (
               <p className="text-xl font-bold tabular-nums">{contactsToday.toLocaleString("ru-RU")}</p>
             )}
-            <p className="text-xs text-muted-foreground mt-0.5">Вчера: {contactsYesterday.toLocaleString("ru-RU")}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {statsLagging
+                ? <span className="text-amber-600 dark:text-amber-400">⏳ задержка Авито</span>
+                : `Вчера: ${contactsYesterday.toLocaleString("ru-RU")}`}
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -545,10 +565,20 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettin
       <Card>
         <CardHeader className="py-3 px-5 border-b">
           <div className="flex items-center justify-between flex-wrap gap-2">
-            <CardTitle className="text-sm flex items-center gap-2">
+            <CardTitle className="text-sm flex items-center gap-2 flex-wrap">
               <TrendingUp className="w-4 h-4 text-primary" />
               Эффективность объявлений
               {items.length > 0 && <Badge variant="secondary">{items.length}</Badge>}
+              {statsLastDate && (
+                <span className={cn(
+                  "text-[10px] font-normal px-1.5 py-0.5 rounded",
+                  statsLagging
+                    ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                    : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                )}>
+                  {statsLagging ? "⏳ " : "✓ "}данные за {new Date(statsLastDate).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}
+                </span>
+              )}
             </CardTitle>
             <Button
               size="sm" variant="outline" className="h-7 text-xs gap-1.5"
