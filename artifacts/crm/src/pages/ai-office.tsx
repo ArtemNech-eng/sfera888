@@ -371,6 +371,14 @@ export default function AiOfficePage() {
   const [diagResult, setDiagResult] = useState<{ critical: DiagEntry[]; warning: DiagEntry[]; ok: DiagEntry[]; totalAmount: { critical: number; warning: number } } | null>(null);
   const [messagingOrderId, setMessagingOrderId] = useState<number | null>(null);
 
+  // Orders-without-receipts state
+  interface NoReceiptEntry { orderId: number; masterAlias: string; maxChatId: string | null; city: string; district: string; serviceType: string; assignedAt: string; hoursWithoutReceipt: number; risk: "critical" | "warning"; masterPhone: string | null }
+  const [noReceiptResult, setNoReceiptResult] = useState<{ critical: NoReceiptEntry[]; warning: NoReceiptEntry[] } | null>(null);
+  const [noReceiptLiveLoading, setNoReceiptLiveLoading] = useState(false);
+  const [noReceiptActionLoading, setNoReceiptActionLoading] = useState<Record<number, string>>({});
+  const [noReceiptConfirm, setNoReceiptConfirm] = useState<{ orderId: number; type: "reassign" | "cancel" } | null>(null);
+  const [noReceiptMsgSent, setNoReceiptMsgSent] = useState<Set<number>>(new Set());
+
   // Legacy GPT scenarios state
   const [scenarios, setScenarios] = useState<PredefinedScenario[]>([]);
   const [schedules, setSchedules] = useState<Schedules>({});
@@ -486,6 +494,7 @@ export default function AiOfficePage() {
       if (!res.ok) throw new Error(data.error ?? "Ошибка");
       toast({ title: "Сценарий выполнен ✓", description: "Результат записан в историю." });
       if (id === "order-diagnostics" && data.result) setDiagResult(data.result);
+      if (id === "orders-without-receipts" && data.result) setNoReceiptResult(data.result);
       fetchTemplateScenarios();
       fetchScenarioLogs(id);
     } catch (e) {
@@ -525,6 +534,72 @@ export default function AiOfficePage() {
       setMessagingOrderId(null);
     }
   }, []);
+
+  const fetchNoReceiptLive = useCallback(async () => {
+    setNoReceiptLiveLoading(true);
+    try {
+      const res = await fetch(`${BASE}/api/ai-office/template-scenarios/orders-without-receipts/live`, { credentials: "include" });
+      const data = await res.json();
+      setNoReceiptResult(data);
+    } catch (e) {
+      toast({ title: "Ошибка загрузки", description: String(e), variant: "destructive" });
+    } finally {
+      setNoReceiptLiveLoading(false);
+    }
+  }, []);
+
+  const handleNoReceiptMessage = useCallback(async (orderId: number) => {
+    setNoReceiptActionLoading(p => ({ ...p, [orderId]: "message" }));
+    try {
+      const res = await fetch(`${BASE}/api/ai-office/template-scenarios/orders-without-receipts/${orderId}/message-master`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error((await res.json()).error);
+      setNoReceiptMsgSent(prev => new Set(prev).add(orderId));
+      toast({ title: "Сообщение отправлено мастеру ✓" });
+    } catch (e) {
+      toast({ title: "Ошибка", description: String(e), variant: "destructive" });
+    } finally {
+      setNoReceiptActionLoading(p => { const n = { ...p }; delete n[orderId]; return n; });
+    }
+  }, []);
+
+  const handleNoReceiptReassign = useCallback(async (orderId: number) => {
+    setNoReceiptActionLoading(p => ({ ...p, [orderId]: "reassign" }));
+    setNoReceiptConfirm(null);
+    try {
+      const res = await fetch(`${BASE}/api/ai-office/template-scenarios/orders-without-receipts/${orderId}/reassign`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error((await res.json()).error);
+      toast({ title: "Заказ переназначен ✓" });
+      fetchNoReceiptLive();
+    } catch (e) {
+      toast({ title: "Ошибка", description: String(e), variant: "destructive" });
+    } finally {
+      setNoReceiptActionLoading(p => { const n = { ...p }; delete n[orderId]; return n; });
+    }
+  }, [fetchNoReceiptLive]);
+
+  const handleNoReceiptCancel = useCallback(async (orderId: number) => {
+    setNoReceiptActionLoading(p => ({ ...p, [orderId]: "cancel" }));
+    setNoReceiptConfirm(null);
+    try {
+      const res = await fetch(`${BASE}/api/ai-office/template-scenarios/orders-without-receipts/${orderId}/cancel`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error((await res.json()).error);
+      toast({ title: "Заказ отменён ✓" });
+      fetchNoReceiptLive();
+    } catch (e) {
+      toast({ title: "Ошибка", description: String(e), variant: "destructive" });
+    } finally {
+      setNoReceiptActionLoading(p => { const n = { ...p }; delete n[orderId]; return n; });
+    }
+  }, [fetchNoReceiptLive]);
 
   // ── Legacy GPT Scenarios ───────────────────────────────────────────────────
   const fetchScenarios = useCallback(async () => {
@@ -730,7 +805,7 @@ export default function AiOfficePage() {
               <CheckSquare className="w-4 h-4" />
               Сценарии
               <span className="text-xs bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 rounded-full px-1.5 py-0.5 font-semibold">
-                4
+                5
               </span>
             </button>
             <button
@@ -1045,6 +1120,7 @@ export default function AiOfficePage() {
                       "payment-reminders": "from-emerald-600 to-teal-600",
                       "order-diagnostics": "from-orange-500 to-amber-600",
                       "price-analysis": "from-violet-600 to-indigo-600",
+                      "orders-without-receipts": "from-amber-500 to-orange-600",
                     };
                     const colorClass = COLORS[scenario.id] ?? "from-gray-500 to-gray-700";
 
@@ -1062,6 +1138,7 @@ export default function AiOfficePage() {
                       if (scenario.id === "payment-reminders") return { text: `💬 ${(sm.sent24h ?? 0) + (sm.sent48h ?? 0)} напомин., ${sm.returnedToPool ?? 0} возврат.`, color: "text-emerald-600 dark:text-emerald-400" };
                       if (scenario.id === "order-diagnostics") return { text: `🔴 ${sm.critical?.length ?? 0} крит. 🟡 ${sm.warning?.length ?? 0} внимание 🟢 ${sm.ok?.length ?? 0} ок`, color: "text-orange-600 dark:text-orange-400" };
                       if (scenario.id === "price-analysis") return { text: `📊 ${sm.services?.length ?? 0} услуг, ${sm.anomalies?.length ?? 0} аномалий`, color: "text-violet-600 dark:text-violet-400" };
+                      if (scenario.id === "orders-without-receipts") return { text: `🔴 ${sm.critical?.length ?? 0} крит. 🟡 ${sm.warning?.length ?? 0} внимание · ${sm.totalNotified ?? 0} уведомлено`, color: "text-amber-600 dark:text-amber-400" };
                       return null;
                     }
 
@@ -1124,6 +1201,96 @@ export default function AiOfficePage() {
                               Сценарий ещё не запускался
                             </div>
                           )}
+
+                          {/* Orders-without-receipts inline panel */}
+                          {scenario.id === "orders-without-receipts" && (noReceiptResult || lastRun?.summary) && (() => {
+                            const data = noReceiptResult ?? (lastRun?.summary as any ?? null);
+                            const critical: any[] = data?.critical ?? [];
+                            const warning: any[] = data?.warning ?? [];
+                            const total = critical.length + warning.length;
+                            const allItems = [...critical, ...warning];
+                            return (
+                              <div className="space-y-2">
+                                {/* Summary row */}
+                                <div className="flex items-center gap-2 text-xs">
+                                  <span className="px-2 py-1 rounded-lg bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 font-semibold">🔴 {critical.length}</span>
+                                  <span className="px-2 py-1 rounded-lg bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 font-semibold">🟡 {warning.length}</span>
+                                  {total === 0 && <span className="px-2 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 font-semibold">✅ Все сметы отправлены</span>}
+                                  <button onClick={fetchNoReceiptLive} disabled={noReceiptLiveLoading}
+                                    className="ml-auto flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors">
+                                    <RefreshCw className={`w-3 h-3 ${noReceiptLiveLoading ? "animate-spin" : ""}`} />
+                                    <span>Обновить</span>
+                                  </button>
+                                </div>
+
+                                {/* Orders table */}
+                                {allItems.length > 0 && (
+                                  <div className="rounded-xl border border-border overflow-hidden">
+                                    <div className="divide-y divide-border max-h-80 overflow-y-auto">
+                                      {allItems.map((entry: any) => {
+                                        const hours = entry.hoursWithoutReceipt ?? 0;
+                                        const isCrit = entry.risk === "critical" || hours >= 48;
+                                        const isSuper = hours >= 72;
+                                        const msgLoading = noReceiptActionLoading[entry.orderId] === "message";
+                                        const reassignLoading = noReceiptActionLoading[entry.orderId] === "reassign";
+                                        const cancelLoading = noReceiptActionLoading[entry.orderId] === "cancel";
+                                        const msgSent = noReceiptMsgSent.has(entry.orderId);
+                                        return (
+                                          <div key={entry.orderId}
+                                            className={`px-3 py-2.5 ${isSuper ? "bg-red-50/60 dark:bg-red-950/20" : isCrit ? "bg-amber-50/40 dark:bg-amber-950/10" : ""}`}>
+                                            <div className="flex items-start gap-2 flex-wrap">
+                                              <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                  <span className={`text-xs font-bold ${isSuper ? "text-red-600 dark:text-red-400" : isCrit ? "text-amber-600 dark:text-amber-400" : "text-foreground"}`}>
+                                                    {isCrit ? "🔴" : "🟡"} #{entry.orderId}
+                                                  </span>
+                                                  <span className="text-xs text-muted-foreground">{entry.serviceType}</span>
+                                                </div>
+                                                <p className="text-[11px] text-muted-foreground mt-0.5">
+                                                  {entry.masterAlias} · {entry.district || entry.city}
+                                                </p>
+                                                <p className="text-[11px] font-medium mt-0.5 text-orange-600 dark:text-orange-400">
+                                                  {hours}ч без сметы · назначен {new Date(entry.assignedAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}
+                                                </p>
+                                              </div>
+                                              {/* Action buttons */}
+                                              <div className="flex gap-1 flex-wrap shrink-0">
+                                                <button
+                                                  onClick={() => handleNoReceiptMessage(entry.orderId)}
+                                                  disabled={!!noReceiptActionLoading[entry.orderId] || msgSent}
+                                                  className={`text-[10px] px-2 py-1 rounded-lg transition-colors font-medium ${
+                                                    msgSent
+                                                      ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400"
+                                                      : "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 hover:opacity-80"
+                                                  } disabled:opacity-50`}
+                                                >
+                                                  {msgLoading ? "…" : msgSent ? "✅ Отправлено" : "📱 Написать"}
+                                                </button>
+                                                <button
+                                                  onClick={() => setNoReceiptConfirm({ orderId: entry.orderId, type: "reassign" })}
+                                                  disabled={!!noReceiptActionLoading[entry.orderId]}
+                                                  className="text-[10px] px-2 py-1 rounded-lg bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 hover:opacity-80 transition-colors font-medium disabled:opacity-50"
+                                                >
+                                                  {reassignLoading ? "…" : "🔄 Переназначить"}
+                                                </button>
+                                                <button
+                                                  onClick={() => setNoReceiptConfirm({ orderId: entry.orderId, type: "cancel" })}
+                                                  disabled={!!noReceiptActionLoading[entry.orderId]}
+                                                  className="text-[10px] px-2 py-1 rounded-lg bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:opacity-80 transition-colors font-medium disabled:opacity-50"
+                                                >
+                                                  {cancelLoading ? "…" : "❌ Отменить"}
+                                                </button>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
 
                           {/* Diagnostics result inline */}
                           {scenario.id === "order-diagnostics" && diagResult && diagResult.critical.length > 0 && (
@@ -1654,6 +1821,72 @@ export default function AiOfficePage() {
           </div>
         </div>
       )}
+      {/* ── Orders-without-receipts confirm dialog ── */}
+      {noReceiptConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-card border border-border rounded-2xl shadow-2xl p-6 max-w-sm w-full space-y-4">
+            {noReceiptConfirm.type === "reassign" ? (
+              <>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
+                    <span className="text-xl">🔄</span>
+                  </div>
+                  <div>
+                    <p className="font-bold text-sm">Переназначить заказ?</p>
+                    <p className="text-xs text-muted-foreground">Заказ #{noReceiptConfirm.orderId}</p>
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Вы уверены что хотите переназначить заказ другому мастеру?
+                  Мастер получит уведомление о переназначении.
+                </p>
+                <div className="flex gap-2">
+                  <Button variant="outline" className="flex-1" onClick={() => setNoReceiptConfirm(null)}>
+                    Отмена
+                  </Button>
+                  <Button
+                    className="flex-1 bg-orange-500 hover:bg-orange-600 text-white"
+                    onClick={() => handleNoReceiptReassign(noReceiptConfirm.orderId)}
+                    disabled={!!noReceiptActionLoading[noReceiptConfirm.orderId]}
+                  >
+                    {noReceiptActionLoading[noReceiptConfirm.orderId] ? <Loader2 className="w-4 h-4 animate-spin" /> : "Да, переназначить"}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                    <span className="text-xl">❌</span>
+                  </div>
+                  <div>
+                    <p className="font-bold text-sm">Отменить заказ?</p>
+                    <p className="text-xs text-muted-foreground">Заказ #{noReceiptConfirm.orderId}</p>
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Вы уверены что хотите отменить заказ #{noReceiptConfirm.orderId}?
+                  Мастер получит уведомление об отмене.
+                </p>
+                <div className="flex gap-2">
+                  <Button variant="outline" className="flex-1" onClick={() => setNoReceiptConfirm(null)}>
+                    Нет
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    className="flex-1"
+                    onClick={() => handleNoReceiptCancel(noReceiptConfirm.orderId)}
+                    disabled={!!noReceiptActionLoading[noReceiptConfirm.orderId]}
+                  >
+                    {noReceiptActionLoading[noReceiptConfirm.orderId] ? <Loader2 className="w-4 h-4 animate-spin" /> : "Да, отменить"}
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
     </AppLayout>
   );
 }

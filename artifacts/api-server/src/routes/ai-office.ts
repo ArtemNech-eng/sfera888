@@ -12,6 +12,22 @@ function getMskNow() {
   return new Date(Date.now() + 3 * 60 * 60 * 1000);
 }
 
+const TELEGRAM_API = `https://api.telegram.org/bot${process.env["TELEGRAM_BOT_TOKEN"]}`;
+
+async function sendAdminTelegram(text: string): Promise<void> {
+  const chatId = process.env["ADMIN_TELEGRAM_CHAT_ID"];
+  if (!chatId || !process.env["TELEGRAM_BOT_TOKEN"]) return;
+  try {
+    await fetch(`${TELEGRAM_API}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
+    });
+  } catch (e) {
+    console.error("[sendAdminTelegram]", e);
+  }
+}
+
 async function saveScenarioRun(
   scenario: string,
   runType: "manual" | "auto",
@@ -380,6 +396,124 @@ async function runPriceAnalysis() {
   return { services, anomalies, cityComparison };
 }
 
+// ─── Scenario 5: Orders Without Receipts ──────────────────────────────────────
+
+interface OrderWithoutReceipt {
+  orderId: number;
+  masterAlias: string;
+  maxChatId: string | null;
+  city: string;
+  district: string;
+  serviceType: string;
+  assignedAt: string;
+  hoursWithoutReceipt: number;
+  risk: "critical" | "warning";
+  masterPhone: string | null;
+}
+
+async function runOrdersWithoutReceipts(): Promise<{
+  critical: OrderWithoutReceipt[];
+  warning: OrderWithoutReceipt[];
+  totalNotified: number;
+  adminNotified: number;
+}> {
+  const now = new Date();
+  const h24ago = new Date(now.getTime() - 24 * 3600_000).toISOString();
+
+  const rows = await db.execute(sql`
+    SELECT o.id, o.city, o.district, o.service_type, o.assigned_at,
+           m.alias AS master_alias, m.max_chat_id, m.phone AS master_phone,
+           EXTRACT(EPOCH FROM (NOW() - o.assigned_at)) / 3600 AS hours_without_receipt
+    FROM orders o
+    JOIN masters m ON m.id = o.master_id
+    LEFT JOIN receipts r ON r.order_id = o.id
+    WHERE o.status IN ('master_assigned')
+      AND o.deleted_at IS NULL
+      AND o.assigned_at IS NOT NULL
+      AND o.assigned_at < ${h24ago}
+      AND r.id IS NULL
+    ORDER BY o.assigned_at ASC
+  `);
+
+  const critical: OrderWithoutReceipt[] = [];
+  const warning: OrderWithoutReceipt[] = [];
+  let totalNotified = 0;
+  let adminNotified = 0;
+
+  for (const r of rows.rows as any[]) {
+    const hours = Math.floor(Number(r.hours_without_receipt));
+    const entry: OrderWithoutReceipt = {
+      orderId: r.id,
+      masterAlias: r.master_alias ?? "—",
+      maxChatId: r.max_chat_id ?? null,
+      city: r.city ?? "",
+      district: r.district ?? "",
+      serviceType: r.service_type ?? "",
+      assignedAt: r.assigned_at,
+      hoursWithoutReceipt: hours,
+      risk: hours >= 48 ? "critical" : "warning",
+      masterPhone: r.master_phone ?? null,
+    };
+
+    if (hours >= 48) critical.push(entry);
+    else warning.push(entry);
+
+    if (!r.max_chat_id) continue;
+
+    const location = r.district || r.city;
+    let message: string;
+
+    if (hours >= 72) {
+      message =
+        `⚠️ ${r.master_alias}, ` +
+        `по заказу #${r.id} (${r.service_type}, ${location}) ` +
+        `смета не отправлена уже ${hours} часов.\n\n` +
+        `Отправьте смету или сообщите нам что не можете взять заказ.\n\n` +
+        `Вопрос по заказу передан руководителю.`;
+
+      // Admin Telegram alert for 72h+
+      const assignedDate = new Date(r.assigned_at).toLocaleDateString("ru-RU", {
+        day: "numeric", month: "long", hour: "2-digit", minute: "2-digit",
+      });
+      await sendAdminTelegram(
+        `⚠️ <b>ЗАКАЗ БЕЗ СМЕТЫ 72+ ЧАСОВ</b>\n\n` +
+        `Заказ: #${r.id}\n` +
+        `Вид работ: ${r.service_type}\n` +
+        `Город: ${r.city}, ${r.district ?? "—"}\n` +
+        `Мастер: ${r.master_alias}\n` +
+        `Назначен: ${assignedDate}\n` +
+        `Часов без сметы: ${hours}\n\n` +
+        `Решение принимается в ИИ Офис → Заказы без сметы`
+      ).catch(() => {});
+      adminNotified++;
+    } else if (hours >= 48) {
+      message =
+        `⚠️ ${r.master_alias}, ` +
+        `по заказу #${r.id} (${r.service_type}, ${location}) ` +
+        `смета не отправлена уже ${hours} часов.\n\n` +
+        `Без сметы через приложение заказ не считается активным.\n\n` +
+        `Если вы уже договорились с клиентом — отправьте смету через приложение, ` +
+        `чтобы клиент оплатил предоплату.\n\n` +
+        `Если не можете взять этот заказ — напишите нам, мы решим вопрос.\n\n` +
+        `Ожидаем ответ в течение 3 часов.`;
+    } else {
+      message =
+        `👋 ${r.master_alias}, добрый день!\n\n` +
+        `По заказу #${r.id} (${r.service_type}, ${location}) ` +
+        `вы ещё не отправили смету клиенту.\n\n` +
+        `Напоминаю: смета составляется в приложении и отправляется клиенту ссылкой. ` +
+        `Это занимает 2 минуты.\n\n` +
+        `Без сметы клиент не сможет оплатить предоплату, а вы не получите новые заказы.\n\n` +
+        `Отправьте смету сегодня 👍`;
+    }
+
+    await sendMaxMessage(r.max_chat_id, message);
+    totalNotified++;
+  }
+
+  return { critical, warning, totalNotified, adminNotified };
+}
+
 // ─── Public runner (used by cron in index.ts) ──────────────────────────────────
 
 export async function runTemplateScenario(
@@ -393,6 +527,7 @@ export async function runTemplateScenario(
     else if (scenarioId === "payment-reminders") result = await runPaymentReminders();
     else if (scenarioId === "order-diagnostics") result = await runOrderDiagnostics();
     else if (scenarioId === "price-analysis") result = await runPriceAnalysis();
+    else if (scenarioId === "orders-without-receipts") result = await runOrdersWithoutReceipts();
     else throw new Error(`Unknown scenario: ${scenarioId}`);
     await saveScenarioRun(scenarioId, runType, "success", result, null, Date.now() - start);
     return result;
@@ -429,6 +564,12 @@ const SCENARIO_META = [
     title: "📊 Анализ рыночных цен",
     description: "Собирает данные смет и заказов, считает среднюю/медианную цену за м² по видам работ и городам, выявляет аномалии у мастеров.",
     autoInterval: "еженедельно пн 8:00",
+  },
+  {
+    id: "orders-without-receipts",
+    title: "📄 Заказы без сметы",
+    description: "Находит заказы где мастер назначен, но смета не создана более 24 часов. Отправляет напоминания мастерам в Max. При 72ч+ уведомляет администратора в Telegram.",
+    autoInterval: "каждые 6 часов",
   },
 ];
 
@@ -500,6 +641,160 @@ router.put("/template-scenarios/:id/toggle", async (req, res) => {
       ON CONFLICT (scenario) DO UPDATE SET auto_enabled = EXCLUDED.auto_enabled, updated_at = NOW()
     `);
     res.json({ ok: true, enabled });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ─── Orders-without-receipts actions ─────────────────────────────────────────
+
+// POST /api/ai-office/template-scenarios/orders-without-receipts/:orderId/message-master
+router.post("/template-scenarios/orders-without-receipts/:orderId/message-master", async (req, res) => {
+  const orderId = Number(req.params.orderId);
+  try {
+    const rows = await db.execute(sql`
+      SELECT o.id, o.service_type, o.district, o.city, o.assigned_at,
+             EXTRACT(EPOCH FROM (NOW() - o.assigned_at)) / 3600 AS hours,
+             m.alias AS master_alias, m.max_chat_id
+      FROM orders o
+      JOIN masters m ON m.id = o.master_id
+      WHERE o.id = ${orderId} AND o.deleted_at IS NULL
+    `);
+    const o = rows.rows[0] as any;
+    if (!o) return res.status(404).json({ error: "Заказ не найден" });
+    if (!o.max_chat_id) return res.status(400).json({ error: "У мастера нет Max-чата" });
+
+    const hours = Math.floor(Number(o.hours));
+    const location = o.district || o.city;
+    let message: string;
+
+    if (hours >= 72) {
+      message =
+        `⚠️ ${o.master_alias}, ` +
+        `по заказу #${o.id} (${o.service_type}, ${location}) ` +
+        `смета не отправлена уже ${hours} часов.\n\n` +
+        `Отправьте смету или сообщите нам что не можете взять заказ.\n\n` +
+        `Вопрос по заказу передан руководителю.`;
+    } else if (hours >= 48) {
+      message =
+        `⚠️ ${o.master_alias}, ` +
+        `по заказу #${o.id} (${o.service_type}, ${location}) ` +
+        `смета не отправлена уже ${hours} часов.\n\n` +
+        `Без сметы через приложение заказ не считается активным.\n\n` +
+        `Если вы уже договорились с клиентом — отправьте смету через приложение, чтобы клиент оплатил предоплату.\n\n` +
+        `Если не можете взять этот заказ — напишите нам, мы решим вопрос.\n\n` +
+        `Ожидаем ответ в течение 3 часов.`;
+    } else {
+      message =
+        `👋 ${o.master_alias}, добрый день!\n\n` +
+        `По заказу #${o.id} (${o.service_type}, ${location}) ` +
+        `вы ещё не отправили смету клиенту.\n\n` +
+        `Напоминаю: смета составляется в приложении и отправляется клиенту ссылкой. Это занимает 2 минуты.\n\n` +
+        `Без сметы клиент не сможет оплатить предоплату, а вы не получите новые заказы.\n\n` +
+        `Отправьте смету сегодня 👍`;
+    }
+
+    await sendMaxMessage(o.max_chat_id, message);
+    res.json({ ok: true, hours, template: hours >= 72 ? "72h" : hours >= 48 ? "48h" : "24h" });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// POST /api/ai-office/template-scenarios/orders-without-receipts/:orderId/reassign
+router.post("/template-scenarios/orders-without-receipts/:orderId/reassign", async (req, res) => {
+  const orderId = Number(req.params.orderId);
+  try {
+    const rows = await db.execute(sql`
+      SELECT o.id, o.service_type, m.alias AS master_alias, m.max_chat_id
+      FROM orders o
+      JOIN masters m ON m.id = o.master_id
+      WHERE o.id = ${orderId} AND o.deleted_at IS NULL
+    `);
+    const o = rows.rows[0] as any;
+    if (!o) return res.status(404).json({ error: "Заказ не найден" });
+
+    await db.execute(sql`
+      UPDATE orders
+      SET status = 'waiting_master', master_id = NULL, assigned_at = NULL, updated_at = NOW()
+      WHERE id = ${orderId} AND status NOT IN ('completed', 'cancelled')
+    `);
+
+    if (o.max_chat_id) {
+      await sendMaxMessage(o.max_chat_id,
+        `Заказ #${o.id} переназначен другому мастеру.\n` +
+        `Причина: смета не была отправлена в срок.\n` +
+        `Это повлияло на вашу конверсию.`
+      );
+    }
+
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// POST /api/ai-office/template-scenarios/orders-without-receipts/:orderId/cancel
+router.post("/template-scenarios/orders-without-receipts/:orderId/cancel", async (req, res) => {
+  const orderId = Number(req.params.orderId);
+  try {
+    const rows = await db.execute(sql`
+      SELECT o.id, o.service_type, m.alias AS master_alias, m.max_chat_id
+      FROM orders o
+      JOIN masters m ON m.id = o.master_id
+      WHERE o.id = ${orderId} AND o.deleted_at IS NULL
+    `);
+    const o = rows.rows[0] as any;
+    if (!o) return res.status(404).json({ error: "Заказ не найден" });
+
+    await db.execute(sql`
+      UPDATE orders SET status = 'cancelled', updated_at = NOW()
+      WHERE id = ${orderId} AND status NOT IN ('completed', 'cancelled')
+    `);
+
+    if (o.max_chat_id) {
+      await sendMaxMessage(o.max_chat_id, `Заказ #${o.id} отменён.`);
+    }
+
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// GET /api/ai-office/template-scenarios/orders-without-receipts/live — current live list
+router.get("/template-scenarios/orders-without-receipts/live", async (_req, res) => {
+  try {
+    const h24ago = new Date(Date.now() - 24 * 3600_000).toISOString();
+    const rows = await db.execute(sql`
+      SELECT o.id, o.city, o.district, o.service_type, o.assigned_at,
+             m.alias AS master_alias, m.max_chat_id, m.phone AS master_phone,
+             EXTRACT(EPOCH FROM (NOW() - o.assigned_at)) / 3600 AS hours_without_receipt
+      FROM orders o
+      JOIN masters m ON m.id = o.master_id
+      LEFT JOIN receipts r ON r.order_id = o.id
+      WHERE o.status IN ('master_assigned')
+        AND o.deleted_at IS NULL
+        AND o.assigned_at IS NOT NULL
+        AND o.assigned_at < ${h24ago}
+        AND r.id IS NULL
+      ORDER BY o.assigned_at ASC
+    `);
+
+    const items = (rows.rows as any[]).map(r => ({
+      orderId: r.id,
+      masterAlias: r.master_alias ?? "—",
+      maxChatId: r.max_chat_id ?? null,
+      city: r.city ?? "",
+      district: r.district ?? "",
+      serviceType: r.service_type ?? "",
+      assignedAt: r.assigned_at,
+      hoursWithoutReceipt: Math.floor(Number(r.hours_without_receipt)),
+      risk: Number(r.hours_without_receipt) >= 48 ? "critical" : "warning",
+      masterPhone: r.master_phone ?? null,
+    }));
+
+    res.json({ critical: items.filter(i => i.risk === "critical"), warning: items.filter(i => i.risk === "warning") });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }

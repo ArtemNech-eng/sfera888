@@ -696,7 +696,7 @@ setInterval(async () => {
     const { hhmm, today } = getMskTime();
     const nowMsk = new Date(Date.now() + 3 * 60 * 60 * 1000);
 
-    // Scenario 2: payment-reminders at 9:00, 15:00, 21:00 MSK
+    // Scenario 2: payment-reminders + orders-without-receipts at 9:00, 15:00, 21:00 MSK
     for (const slot of ["09:00", "15:00", "21:00"]) {
       const key = `${today} ${slot}`;
       if (hhmm === slot && !scenarioPaymentFiredHours.has(key)) {
@@ -704,6 +704,10 @@ setInterval(async () => {
         if (await isScenarioAutoEnabled("payment-reminders")) {
           console.log(`[scenarios] auto: payment-reminders at ${slot}`);
           runTemplateScenario("payment-reminders", "auto").catch(console.error);
+        }
+        if (await isScenarioAutoEnabled("orders-without-receipts")) {
+          console.log(`[scenarios] auto: orders-without-receipts at ${slot}`);
+          runTemplateScenario("orders-without-receipts", "auto").catch(console.error);
         }
       }
     }
