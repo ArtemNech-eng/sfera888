@@ -387,8 +387,11 @@ export default function AiOfficePage() {
   const [noReceiptResult, setNoReceiptResult] = useState<{ critical: NoReceiptEntry[]; warning: NoReceiptEntry[] } | null>(null);
   const [noReceiptLiveLoading, setNoReceiptLiveLoading] = useState(false);
   const [noReceiptActionLoading, setNoReceiptActionLoading] = useState<Record<number, string>>({});
-  const [noReceiptConfirm, setNoReceiptConfirm] = useState<{ orderId: number; type: "reassign" | "cancel" } | null>(null);
+  const [noReceiptConfirm, setNoReceiptConfirm] = useState<{ orderId: number; type: "reassign" | "cancel"; masterAlias: string } | null>(null);
   const [noReceiptMsgSent, setNoReceiptMsgSent] = useState<Set<number>>(new Set());
+  const [noReceiptCallModal, setNoReceiptCallModal] = useState<{ orderId: number; masterPhone: string; masterAlias: string } | null>(null);
+  const [noReceiptCallComment, setNoReceiptCallComment] = useState<Record<number, string>>({});
+  const [noReceiptCommentSaved, setNoReceiptCommentSaved] = useState<Set<number>>(new Set());
 
   // Legacy GPT scenarios state
   const [scenarios, setScenarios] = useState<PredefinedScenario[]>([]);
@@ -1417,17 +1420,40 @@ export default function AiOfficePage() {
                           {/* Orders-without-receipts inline panel */}
                           {scenario.id === "orders-without-receipts" && (noReceiptResult || lastRun?.summary) && (() => {
                             const data = noReceiptResult ?? (lastRun?.summary as any ?? null);
-                            const critical: any[] = data?.critical ?? [];
+                            const allCritical: any[] = data?.critical ?? [];
                             const warning: any[] = data?.warning ?? [];
-                            const total = critical.length + warning.length;
-                            const allItems = [...critical, ...warning];
+                            const superCriticalItems = allCritical.filter((e: any) => e.hoursWithoutReceipt >= 72);
+                            const criticalItems = allCritical.filter((e: any) => e.hoursWithoutReceipt < 72);
+                            const total = allCritical.length + warning.length;
+                            const allItems = [...superCriticalItems, ...criticalItems, ...warning];
+
                             return (
                               <div className="space-y-2">
-                                {/* Summary row */}
+                                {/* 4 summary cards */}
+                                <div className="grid grid-cols-2 gap-1.5">
+                                  <div className="rounded-lg px-2.5 py-2 bg-red-100/80 dark:bg-red-950/30 border border-red-200/60 dark:border-red-800/40 text-center">
+                                    <p className="text-[11px] text-red-500 font-semibold">⚫ 72ч+</p>
+                                    <p className="text-base font-bold text-red-700 dark:text-red-400">{superCriticalItems.length}</p>
+                                  </div>
+                                  <div className="rounded-lg px-2.5 py-2 bg-orange-100/80 dark:bg-orange-950/30 border border-orange-200/60 dark:border-orange-800/40 text-center">
+                                    <p className="text-[11px] text-orange-500 font-semibold">🔴 48-72ч</p>
+                                    <p className="text-base font-bold text-orange-700 dark:text-orange-400">{criticalItems.length}</p>
+                                  </div>
+                                  <div className="rounded-lg px-2.5 py-2 bg-yellow-100/80 dark:bg-yellow-950/30 border border-yellow-200/60 dark:border-yellow-800/40 text-center">
+                                    <p className="text-[11px] text-yellow-600 font-semibold">🟡 24-48ч</p>
+                                    <p className="text-base font-bold text-yellow-700 dark:text-yellow-400">{warning.length}</p>
+                                  </div>
+                                  <div className="rounded-lg px-2.5 py-2 bg-amber-100/80 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-800/40 text-center">
+                                    <p className="text-[11px] text-amber-600 font-semibold">📋 Всего</p>
+                                    <p className="text-base font-bold text-amber-700 dark:text-amber-400">{total}</p>
+                                  </div>
+                                </div>
+
+                                {/* Refresh + status */}
                                 <div className="flex items-center gap-2 text-xs">
-                                  <span className="px-2 py-1 rounded-lg bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 font-semibold">🔴 {critical.length}</span>
-                                  <span className="px-2 py-1 rounded-lg bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 font-semibold">🟡 {warning.length}</span>
-                                  {total === 0 && <span className="px-2 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 font-semibold">✅ Все сметы отправлены</span>}
+                                  {total === 0 && (
+                                    <span className="px-2 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 font-semibold">✅ Все сметы отправлены</span>
+                                  )}
                                   <button onClick={fetchNoReceiptLive} disabled={noReceiptLiveLoading}
                                     className="ml-auto flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors">
                                     <RefreshCw className={`w-3 h-3 ${noReceiptLiveLoading ? "animate-spin" : ""}`} />
@@ -1438,23 +1464,28 @@ export default function AiOfficePage() {
                                 {/* Orders table */}
                                 {allItems.length > 0 && (
                                   <div className="rounded-xl border border-border overflow-hidden">
-                                    <div className="divide-y divide-border max-h-80 overflow-y-auto">
+                                    <div className="divide-y divide-border max-h-96 overflow-y-auto">
                                       {allItems.map((entry: any) => {
                                         const hours = entry.hoursWithoutReceipt ?? 0;
-                                        const isCrit = entry.risk === "critical" || hours >= 48;
                                         const isSuper = hours >= 72;
+                                        const isCrit = hours >= 48 && hours < 72;
                                         const msgLoading = noReceiptActionLoading[entry.orderId] === "message";
                                         const reassignLoading = noReceiptActionLoading[entry.orderId] === "reassign";
                                         const cancelLoading = noReceiptActionLoading[entry.orderId] === "cancel";
                                         const msgSent = noReceiptMsgSent.has(entry.orderId);
+                                        const rowBg = isSuper
+                                          ? "bg-red-50/70 dark:bg-red-950/20"
+                                          : isCrit
+                                          ? "bg-orange-50/50 dark:bg-orange-950/10"
+                                          : "bg-yellow-50/30 dark:bg-yellow-950/5";
+
                                         return (
-                                          <div key={entry.orderId}
-                                            className={`px-3 py-2.5 ${isSuper ? "bg-red-50/60 dark:bg-red-950/20" : isCrit ? "bg-amber-50/40 dark:bg-amber-950/10" : ""}`}>
+                                          <div key={entry.orderId} className={`px-3 py-2.5 ${rowBg}`}>
                                             <div className="flex items-start gap-2 flex-wrap">
                                               <div className="flex-1 min-w-0">
                                                 <div className="flex items-center gap-1.5 flex-wrap">
-                                                  <span className={`text-xs font-bold ${isSuper ? "text-red-600 dark:text-red-400" : isCrit ? "text-amber-600 dark:text-amber-400" : "text-foreground"}`}>
-                                                    {isCrit ? "🔴" : "🟡"} #{entry.orderId}
+                                                  <span className={`text-xs font-bold ${isSuper ? "text-red-700 dark:text-red-400" : isCrit ? "text-orange-600 dark:text-orange-400" : "text-yellow-700 dark:text-yellow-400"}`}>
+                                                    {isSuper ? "⚫" : isCrit ? "🔴" : "🟡"} #{entry.orderId}
                                                   </span>
                                                   <span className="text-xs text-muted-foreground">{entry.serviceType}</span>
                                                 </div>
@@ -1465,34 +1496,43 @@ export default function AiOfficePage() {
                                                   {hours}ч без сметы · назначен {new Date(entry.assignedAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}
                                                 </p>
                                               </div>
-                                              {/* Action buttons */}
-                                              <div className="flex gap-1 flex-wrap shrink-0">
+                                            </div>
+
+                                            {/* Action buttons */}
+                                            <div className="flex gap-1 flex-wrap mt-2">
+                                              <button
+                                                onClick={() => handleNoReceiptMessage(entry.orderId)}
+                                                disabled={!!noReceiptActionLoading[entry.orderId] || msgSent}
+                                                className={`text-[10px] px-2 py-1 rounded-lg transition-colors font-medium ${
+                                                  msgSent
+                                                    ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400"
+                                                    : "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 hover:opacity-80"
+                                                } disabled:opacity-50`}
+                                              >
+                                                {msgLoading ? "…" : msgSent ? "✅ Отправлено" : "📱 Написать мастеру"}
+                                              </button>
+                                              {entry.masterPhone ? (
                                                 <button
-                                                  onClick={() => handleNoReceiptMessage(entry.orderId)}
-                                                  disabled={!!noReceiptActionLoading[entry.orderId] || msgSent}
-                                                  className={`text-[10px] px-2 py-1 rounded-lg transition-colors font-medium ${
-                                                    msgSent
-                                                      ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400"
-                                                      : "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 hover:opacity-80"
-                                                  } disabled:opacity-50`}
+                                                  onClick={() => setNoReceiptCallModal({ orderId: entry.orderId, masterPhone: entry.masterPhone, masterAlias: entry.masterAlias })}
+                                                  className="text-[10px] px-2 py-1 rounded-lg bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400 hover:opacity-80 transition-colors font-medium"
                                                 >
-                                                  {msgLoading ? "…" : msgSent ? "✅ Отправлено" : "📱 Написать"}
+                                                  📞 Позвонить мастеру
                                                 </button>
-                                                <button
-                                                  onClick={() => setNoReceiptConfirm({ orderId: entry.orderId, type: "reassign" })}
-                                                  disabled={!!noReceiptActionLoading[entry.orderId]}
-                                                  className="text-[10px] px-2 py-1 rounded-lg bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 hover:opacity-80 transition-colors font-medium disabled:opacity-50"
-                                                >
-                                                  {reassignLoading ? "…" : "🔄 Переназначить"}
-                                                </button>
-                                                <button
-                                                  onClick={() => setNoReceiptConfirm({ orderId: entry.orderId, type: "cancel" })}
-                                                  disabled={!!noReceiptActionLoading[entry.orderId]}
-                                                  className="text-[10px] px-2 py-1 rounded-lg bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:opacity-80 transition-colors font-medium disabled:opacity-50"
-                                                >
-                                                  {cancelLoading ? "…" : "❌ Отменить"}
-                                                </button>
-                                              </div>
+                                              ) : null}
+                                              <button
+                                                onClick={() => setNoReceiptConfirm({ orderId: entry.orderId, type: "reassign", masterAlias: entry.masterAlias })}
+                                                disabled={!!noReceiptActionLoading[entry.orderId]}
+                                                className="text-[10px] px-2 py-1 rounded-lg bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 hover:opacity-80 transition-colors font-medium disabled:opacity-50"
+                                              >
+                                                {reassignLoading ? "…" : "🔄 Переназначить"}
+                                              </button>
+                                              <button
+                                                onClick={() => setNoReceiptConfirm({ orderId: entry.orderId, type: "cancel", masterAlias: entry.masterAlias })}
+                                                disabled={!!noReceiptActionLoading[entry.orderId]}
+                                                className="text-[10px] px-2 py-1 rounded-lg bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:opacity-80 transition-colors font-medium disabled:opacity-50"
+                                              >
+                                                {cancelLoading ? "…" : "❌ Отменить заказ"}
+                                              </button>
                                             </div>
                                           </div>
                                         );
@@ -2145,6 +2185,58 @@ export default function AiOfficePage() {
         </div>
       )}
 
+      {/* ── Orders-without-receipts: call modal ── */}
+      {noReceiptCallModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-card border border-border rounded-2xl shadow-2xl p-6 max-w-sm w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center">
+                  <span className="text-xl">📞</span>
+                </div>
+                <div>
+                  <p className="font-bold text-sm">{noReceiptCallModal.masterAlias}</p>
+                  <p className="text-xs text-muted-foreground">Заказ #{noReceiptCallModal.orderId}</p>
+                </div>
+              </div>
+              <button onClick={() => setNoReceiptCallModal(null)} className="text-muted-foreground hover:text-foreground">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <a
+              href={`tel:${noReceiptCallModal.masterPhone}`}
+              className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-semibold text-sm transition-colors"
+            >
+              <span>📞</span>
+              {noReceiptCallModal.masterPhone}
+            </a>
+
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Комментарий по звонку</Label>
+              <Textarea
+                placeholder="Что сказал мастер?..."
+                value={noReceiptCallComment[noReceiptCallModal.orderId] ?? ""}
+                onChange={e => setNoReceiptCallComment(p => ({ ...p, [noReceiptCallModal.orderId]: e.target.value }))}
+                className="text-sm resize-none"
+                rows={3}
+              />
+              <Button
+                size="sm"
+                className="w-full"
+                variant={noReceiptCommentSaved.has(noReceiptCallModal.orderId) ? "outline" : "default"}
+                onClick={() => {
+                  setNoReceiptCommentSaved(prev => new Set(prev).add(noReceiptCallModal.orderId));
+                  toast({ title: "Комментарий сохранён ✓" });
+                }}
+              >
+                {noReceiptCommentSaved.has(noReceiptCallModal.orderId) ? "✅ Сохранено" : "Сохранить комментарий"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Orders-without-receipts confirm dialog ── */}
       {noReceiptConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
@@ -2161,8 +2253,7 @@ export default function AiOfficePage() {
                   </div>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Вы уверены что хотите переназначить заказ другому мастеру?
-                  Мастер получит уведомление о переназначении.
+                  Мастер <strong>{noReceiptConfirm.masterAlias}</strong> получит уведомление о переназначении заказа.
                 </p>
                 <div className="flex gap-2">
                   <Button variant="outline" className="flex-1" onClick={() => setNoReceiptConfirm(null)}>
@@ -2184,18 +2275,15 @@ export default function AiOfficePage() {
                     <span className="text-xl">❌</span>
                   </div>
                   <div>
-                    <p className="font-bold text-sm">Отменить заказ?</p>
-                    <p className="text-xs text-muted-foreground">Заказ #{noReceiptConfirm.orderId}</p>
+                    <p className="font-bold text-sm">Отменить заказ #{noReceiptConfirm.orderId}?</p>
+                    <p className="text-xs text-muted-foreground">Это действие нельзя отменить</p>
                   </div>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Вы уверены что хотите отменить заказ #{noReceiptConfirm.orderId}?
-                  Мастер получит уведомление об отмене.
+                  Мастер <strong>{noReceiptConfirm.masterAlias}</strong> получит уведомление в Max об отмене заказа.
                 </p>
                 <div className="flex gap-2">
-                  <Button variant="outline" className="flex-1" onClick={() => setNoReceiptConfirm(null)}>
-                    Нет
-                  </Button>
+                  <Button variant="outline" className="flex-1" onClick={() => setNoReceiptConfirm(null)}>Нет</Button>
                   <Button
                     variant="destructive"
                     className="flex-1"
