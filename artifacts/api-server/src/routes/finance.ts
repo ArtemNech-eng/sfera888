@@ -12,6 +12,21 @@ const opsAndAdmin = requirePermission("finance");
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/** Normalise a pg timestamp value to an ISO-8601 string with Z suffix.
+ *  PostgreSQL TIMESTAMP WITHOUT TIME ZONE columns come back as JS Date objects
+ *  (which serialise with Z correctly) but can also be raw strings without timezone
+ *  info depending on the pg driver version. This ensures the browser always
+ *  parses the value as UTC. */
+function toIsoUtc(raw: Date | string | null | undefined): string | null {
+  if (!raw) return null;
+  if (raw instanceof Date) return raw.toISOString();
+  const s = String(raw);
+  // If already has timezone info, parse and re-serialise as UTC
+  if (s.endsWith("Z") || s.includes("+")) return new Date(s).toISOString();
+  // No timezone info → assume UTC (Replit servers run in UTC)
+  return new Date(s + "Z").toISOString();
+}
+
 async function getAdminMaxChatId(): Promise<string | null> {
   const row = await db.execute(sql`
     SELECT max_chat_id FROM masters
@@ -114,8 +129,8 @@ router.get("/transactions", opsAndAdmin, async (req, res) => {
       netPayable,
       paymentStatus:       t.payment_status,
       sourceType:          t.source_type ?? null,
-      createdAt:           t.created_at,
-      paidAt:              t.paid_at ?? null,
+      createdAt:           toIsoUtc(t.created_at),
+      paidAt:              t.paid_at ? toIsoUtc(t.paid_at) : null,
       dueDate:             computeDueDate(createdAt).toISOString(),
       daysOverdue,
     };
@@ -182,7 +197,7 @@ router.patch("/transactions/:id", opsAndAdmin, async (req, res) => {
     orderAmount: Number(t.orderAmount), commission: Number(t.commission),
     prepaymentDeducted, netPayable: Math.max(0, Number(t.commission) - prepaymentDeducted),
     paymentStatus: t.paymentStatus, sourceType: t.sourceType ?? null,
-    createdAt: t.createdAt, paidAt: t.paidAt ?? null,
+    createdAt: toIsoUtc(t.createdAt), paidAt: t.paidAt ? toIsoUtc(t.paidAt) : null,
   });
 });
 
@@ -479,7 +494,11 @@ router.get("/master-stats", opsAndAdmin, async (req, res) => {
     a.totalCommission  += commission;
     if (t.payment_status === "paid") {
       a.paidCommission += commission; a.paidCount++;
-      if (!a.lastPaidAt || new Date(t.paid_at) > new Date(a.lastPaidAt)) a.lastPaidAt = t.paid_at;
+      // Normalise to ISO string with Z so browsers interpret it as UTC correctly
+      const paidAtIso = t.paid_at instanceof Date
+        ? t.paid_at.toISOString()
+        : t.paid_at ? new Date(t.paid_at + (String(t.paid_at).endsWith("Z") ? "" : "Z")).toISOString() : null;
+      if (paidAtIso && (!a.lastPaidAt || paidAtIso > a.lastPaidAt)) a.lastPaidAt = paidAtIso;
     }
     if (t.payment_status === "pending") { a.pendingCommission += commission; a.pendingCount++; a.debtTotal += netPayable; }
     if (t.payment_status === "overdue") { a.overdueCommission += commission; a.overdueCount++; a.debtTotal += netPayable; }

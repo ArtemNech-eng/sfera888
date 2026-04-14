@@ -428,6 +428,10 @@ export default function Finance() {
       toast.success(`Предоплата по смете #${e.id} подтверждена`);
       queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/estimates`] });
       queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/estimates/stats`] });
+      // Refresh transactions and master-stats — a new transaction was just created server-side
+      queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/transactions`] });
+      queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/summary`] });
+      queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/master-stats`] });
     } catch { toast.error("Ошибка при подтверждении сметы"); }
     finally { setEstConfirmLoading(null); setConfirmEst(null); }
   };
