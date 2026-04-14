@@ -22,3 +22,4 @@ export * from "./dispatcher-followups";
 export * from "./bot-memory";
 export * from "./avito";
 
+export * from "./scenario-notifications";

@@ -190,6 +190,20 @@ async function runMigrations() {
       updated_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS scenario_notifications (
+      id SERIAL PRIMARY KEY,
+      scenario_id VARCHAR(64) NOT NULL,
+      order_id INTEGER NOT NULL,
+      master_id INTEGER NOT NULL,
+      tier VARCHAR(32) NOT NULL,
+      sent_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS idx_scen_notif_lookup
+      ON scenario_notifications (scenario_id, order_id, master_id, tier, sent_at DESC)
+  `);
   console.log("[startup] Migrations applied");
 }
 

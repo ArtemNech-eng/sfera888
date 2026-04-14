@@ -579,7 +579,8 @@ export default function AiOfficePage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      toast({ title: `Отправлено ${data.sent} мастерам ✓` });
+      const skipNote = data.skipped > 0 ? `, пропущено ${data.skipped} (уже уведомлены)` : "";
+      toast({ title: `Отправлено ${data.sent} мастерам ✓${skipNote}` });
       setPaymentMsgSent(new Set());
       fetchPaymentLive();
     } catch (e) {
@@ -597,7 +598,8 @@ export default function AiOfficePage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      toast({ title: `Отправлено ${data.sent} мастерам ✓` });
+      const skipNote = data.skipped > 0 ? `, пропущено ${data.skipped} (уже уведомлены)` : "";
+      toast({ title: `Отправлено ${data.sent} мастерам ✓${skipNote}` });
       setNoReceiptMsgSent(new Set());
       fetchNoReceiptLive();
     } catch (e) {
