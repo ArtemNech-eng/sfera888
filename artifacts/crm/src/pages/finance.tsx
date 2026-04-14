@@ -222,6 +222,8 @@ export default function Finance() {
   const [estCity, setEstCity]         = useState("");
   const [expandedEst, setExpandedEst] = useState<number | null>(null);
   const [estPage, setEstPage]         = useState(1);
+  const [confirmEst, setConfirmEst]   = useState<Estimate | null>(null);
+  const [estConfirmLoading, setEstConfirmLoading] = useState<number | null>(null);
 
   // ─── Data fetching ────────────────────────────────────────────────────────
 
@@ -399,6 +401,22 @@ export default function Finance() {
       queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/master-stats`] });
     } catch { toast.error("Ошибка при оплате"); }
     finally { setMasterActionLoading(null); setConfirmPayAll(null); }
+  };
+
+  const doConfirmPrepayment = async (e: Estimate) => {
+    setEstConfirmLoading(e.id);
+    try {
+      const r = await fetch(`${BASE}/api/receipts/${e.id}/confirm`, {
+        method: "PATCH", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ operatorNote: "Подтверждено оператором из CRM" }),
+      });
+      if (!r.ok) throw new Error();
+      toast.success(`Предоплата по смете #${e.id} подтверждена`);
+      queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/estimates`] });
+      queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/estimates/stats`] });
+    } catch { toast.error("Ошибка при подтверждении сметы"); }
+    finally { setEstConfirmLoading(null); setConfirmEst(null); }
   };
 
   const exportTxCSV = useCallback(() => {
@@ -938,11 +956,27 @@ export default function Finance() {
                                     <div className="flex justify-between"><span className="text-muted-foreground">Телефон:</span><span>{e.clientPhone}</span></div>
                                     {e.clientSubmittedName && <div className="flex justify-between"><span className="text-muted-foreground">Подтвердил:</span><span>{e.clientSubmittedName}</span></div>}
                                   </div>
+                                  {/* Screenshot preview if client submitted */}
+                                  {e.prepaymentScreenshotUrl && (
+                                    <div className="rounded-xl overflow-hidden border border-border/50">
+                                      <p className="text-xs text-muted-foreground px-3 pt-2 pb-1">Скриншот оплаты</p>
+                                      <a href={e.prepaymentScreenshotUrl} target="_blank" rel="noreferrer">
+                                        <img src={e.prepaymentScreenshotUrl} alt="Скриншот" className="w-full max-h-48 object-cover" />
+                                      </a>
+                                    </div>
+                                  )}
                                   <div className="flex gap-2 flex-wrap">
-                                    <a href={`${BASE}/api/receipts/${e.token}`} target="_blank" rel="noreferrer"
+                                    <a href={`/api/receipt/${e.token}`} target="_blank" rel="noreferrer"
                                       className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-border/60 text-xs font-medium text-foreground hover:bg-muted/50 transition-colors">
                                       👁 Смета для клиента
                                     </a>
+                                    {e.status !== "paid" && (
+                                      <button
+                                        onClick={() => setConfirmEst(e)}
+                                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-emerald-500/60 text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors">
+                                        ✅ Подтвердить предоплату
+                                      </button>
+                                    )}
                                     {e.orderId && (
                                       <a href={`/orders?id=${e.orderId}`}
                                         className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-border/60 text-xs font-medium text-foreground hover:bg-muted/50 transition-colors">
@@ -1097,6 +1131,34 @@ export default function Finance() {
                   disabled={masterActionLoading?.id === confirmPayAll.masterId}
                   className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 transition-colors">
                   {masterActionLoading?.id === confirmPayAll.masterId ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : "Да, оплатить всё"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Confirm prepayment dialog ─────────────────────────────────────── */}
+        {confirmEst && (
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4">
+              <h3 className="text-lg font-display font-semibold">Подтвердить предоплату</h3>
+              <p className="text-sm text-muted-foreground">
+                Отметить предоплату по смете <strong>#{confirmEst.id}</strong> как полученную?<br /><br />
+                Клиент: <strong>{confirmEst.clientName}</strong><br />
+                Предоплата: <strong>{formatCurrency(confirmEst.prepaymentAmount)}</strong>
+              </p>
+              <p className="text-xs text-muted-foreground bg-emerald-50 rounded-xl p-3">
+                Мастеру придёт уведомление об оплате в Max. Статус сметы изменится на «Оплачено».
+              </p>
+              <div className="flex gap-3">
+                <button onClick={() => setConfirmEst(null)}
+                  className="flex-1 py-2.5 rounded-xl border border-border text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                  Отмена
+                </button>
+                <button onClick={() => doConfirmPrepayment(confirmEst)}
+                  disabled={estConfirmLoading === confirmEst.id}
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 transition-colors">
+                  {estConfirmLoading === confirmEst.id ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : "✅ Подтвердить"}
                 </button>
               </div>
             </div>
