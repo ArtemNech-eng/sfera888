@@ -605,40 +605,44 @@ function MastersRatingBlock({ cities }: { cities: string[] }) {
 function AvitoAdsBlock({ cities }: { cities: string[] }) {
   const [city, setCity] = useState("all");
 
-  const { data: avitoData, isLoading } = useQuery<any>({
-    queryKey: ["/api/avito/analytics"],
-    queryFn: () => fetch("/api/avito/analytics", { credentials: "include" }).then(r => r.json()),
+  // Correct endpoint: /api/avito/items-with-stats returns { resources: [...], meta, statsError }
+  // Each item has: id, title, status, stats: { uniqViews, uniqContacts, uniqFavorites, ... }
+  const { data: avitoData, isLoading, error } = useQuery<any>({
+    queryKey: ["/api/avito/items-with-stats"],
+    queryFn: () => fetch("/api/avito/items-with-stats?per_page=100", { credentials: "include" }).then(r => r.json()),
+    retry: 1,
   });
 
   const items: any[] = useMemo(() => {
-    const list = avitoData?.items ?? [];
+    const list: any[] = avitoData?.resources ?? [];
     if (city === "all") return list;
-    return list.filter((item: any) => item.category?.includes(city) || item.title?.includes(city));
+    return list.filter((item: any) => item.title?.toLowerCase().includes(city.toLowerCase()));
   }, [avitoData, city]);
 
+  // Items that need attention
   const recommendations = items.filter((it: any) => {
-    const views = it.stats?.views ?? 0;
-    const contacts = it.stats?.contacts ?? 0;
-    const costPerContact = it.costPerContact ?? 0;
+    const views = it.stats?.uniqViews ?? 0;
+    const contacts = it.stats?.uniqContacts ?? 0;
     const conversion = views > 0 ? (contacts / views) * 100 : 0;
-    return costPerContact > 300 || conversion < 5;
+    return conversion < 5 && views >= 20; // low conversion with enough views
   });
 
-  function contactCostColor(cost: number) {
-    if (cost <= 0) return "text-muted-foreground";
-    if (cost <= 150) return "bg-emerald-100 text-emerald-700";
-    if (cost <= 300) return "bg-amber-100 text-amber-700";
+  function conversionColor(conv: number) {
+    if (conv >= 5) return "bg-emerald-100 text-emerald-700";
+    if (conv >= 2) return "bg-amber-100 text-amber-700";
     return "bg-red-100 text-red-600";
   }
 
   function doExport() {
     exportCSV("avito-ads.csv",
-      ["Название", "Просмотры", "Контакты", "Конверсия", "Стоимость контакта"],
+      ["Название", "Статус", "Просмотры (месяц)", "Просмотры (неделя)", "Контакты (месяц)", "Контакты (неделя)", "Конверсия %"],
       items.map(it => {
-        const views = it.stats?.views ?? 0;
-        const contacts = it.stats?.contacts ?? 0;
+        const views = it.stats?.uniqViews ?? 0;
+        const viewsW = it.stats?.viewsWeek ?? 0;
+        const contacts = it.stats?.uniqContacts ?? 0;
+        const contactsW = it.stats?.contactsWeek ?? 0;
         const conv = views > 0 ? ((contacts / views) * 100).toFixed(1) : "0";
-        return [it.title, views, contacts, `${conv}%`, it.costPerContact ?? "—"];
+        return [it.title, it.status, views, viewsW, contacts, contactsW, `${conv}%`];
       }));
   }
 
@@ -649,11 +653,13 @@ function AvitoAdsBlock({ cities }: { cities: string[] }) {
     </div>
   );
 
-  if (!avitoData || (!avitoData.items && !avitoData.error)) return (
+  const isNotConnected = (error as any) || avitoData?.error || avitoData?.code === "NO_ITEMS_PERMISSION";
+
+  if (isNotConnected) return (
     <div>
       <SectionHeader icon={BarChart2} title="Эффективность объявлений" subtitle="Данные из Авито API" />
       <div className="bg-card rounded-2xl border border-border/50 p-8 text-center text-muted-foreground text-sm">
-        Авито не подключён или нет данных. Настройте интеграцию в разделе Авито.
+        Авито не подключён или нет доступа к объявлениям. Настройте интеграцию в разделе Авито.
       </div>
     </div>
   );
@@ -673,63 +679,74 @@ function AvitoAdsBlock({ cities }: { cities: string[] }) {
             <span className="text-sm font-semibold text-amber-700">Рекомендации системы</span>
           </div>
           {recommendations.slice(0, 5).map((it: any) => {
-            const views = it.stats?.views ?? 0;
-            const contacts = it.stats?.contacts ?? 0;
+            const views = it.stats?.uniqViews ?? 0;
+            const contacts = it.stats?.uniqContacts ?? 0;
             const conv = views > 0 ? (contacts / views) * 100 : 0;
-            const cost = it.costPerContact ?? 0;
             return (
-              <p key={it.itemId} className="text-xs text-amber-800">
-                {cost > 300
-                  ? `⚠️ «${it.title}» — дорогое объявление (${cost}₽/контакт). Рекомендуется изменить текст или отключить.`
-                  : `⚠️ «${it.title}» — мало кликают (конверсия ${conv.toFixed(1)}%). Рекомендуется изменить заголовок или фото.`}
+              <p key={it.id} className="text-xs text-amber-800">
+                ⚠️ «{it.title}» — мало кликают (конверсия {conv.toFixed(1)}% при {views} просмотрах). Рекомендуется изменить заголовок или фото.
               </p>
             );
           })}
         </div>
       )}
 
+      {avitoData?.statsError && (
+        <div className="bg-muted/30 border border-border/50 rounded-xl px-4 py-2 mb-4 text-xs text-muted-foreground">
+          Статистика просмотров временно недоступна: {avitoData.statsError}
+        </div>
+      )}
+
       <div className="bg-card rounded-2xl border border-border/50 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[700px]">
+          <table className="w-full text-sm min-w-[750px]">
             <thead>
               <tr className="border-b border-border/50 bg-muted/30">
-                {["Название", "Просмотры", "Контакты", "Конв. просмотр→контакт", "Стоимость контакта"].map(h => (
+                {["Название", "Статус", "Просмотры (мес.)", "Просмотры (нед.)", "Контакты (мес.)", "Контакты (нед.)", "Конверсия"].map(h => (
                   <th key={h} className="px-4 py-3 text-left font-semibold text-muted-foreground text-xs uppercase tracking-wide whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {items.map((it: any, i: number) => {
-                const views = it.stats?.views ?? 0;
-                const contacts = it.stats?.contacts ?? 0;
-                const conv = views > 0 ? ((contacts / views) * 100).toFixed(1) : "0.0";
-                const cost = it.costPerContact ?? 0;
-                const costClass = cost > 0 ? contactCostColor(cost) : "";
+                const views = it.stats?.uniqViews ?? 0;
+                const viewsW = it.stats?.viewsWeek ?? 0;
+                const contacts = it.stats?.uniqContacts ?? 0;
+                const contactsW = it.stats?.contactsWeek ?? 0;
+                const conv = views > 0 ? (contacts / views) * 100 : 0;
+                const isActive = it.status === "active";
                 return (
-                  <tr key={it.itemId ?? i} className={`border-b border-border/30 hover:bg-muted/20 ${i % 2 ? "bg-muted/10" : ""}`}>
-                    <td className="px-4 py-3 font-medium text-foreground max-w-[260px] truncate">{it.title}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{views.toLocaleString("ru-RU")}</td>
-                    <td className="px-4 py-3 font-semibold">{contacts}</td>
+                  <tr key={it.id ?? i} className={`border-b border-border/30 hover:bg-muted/20 ${i % 2 ? "bg-muted/10" : ""}`}>
+                    <td className="px-4 py-3 font-medium text-foreground max-w-[220px] truncate">{it.title}</td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${parseFloat(conv) >= 5 ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600"}`}>
-                        {conv}%
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${isActive ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"}`}>
+                        {isActive ? "Активно" : it.status}
                       </span>
                     </td>
+                    <td className="px-4 py-3 font-semibold">{views.toLocaleString("ru-RU")}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{viewsW.toLocaleString("ru-RU")}</td>
+                    <td className="px-4 py-3 font-semibold text-blue-600">{contacts}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{contactsW}</td>
                     <td className="px-4 py-3">
-                      {cost > 0
-                        ? <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${costClass}`}>{cost}₽</span>
-                        : <span className="text-muted-foreground">—</span>
+                      {views > 0
+                        ? <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${conversionColor(conv)}`}>{conv.toFixed(1)}%</span>
+                        : <span className="text-muted-foreground text-xs">—</span>
                       }
                     </td>
                   </tr>
                 );
               })}
               {items.length === 0 && (
-                <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground text-sm">Нет объявлений</td></tr>
+                <tr><td colSpan={7} className="px-4 py-8 text-center text-muted-foreground text-sm">Нет объявлений</td></tr>
               )}
             </tbody>
           </table>
         </div>
+        {items.length > 0 && (
+          <div className="px-5 py-3 border-t border-border/30 text-xs text-muted-foreground">
+            Всего объявлений: {items.length} · Активных: {items.filter((it: any) => it.status === "active").length}
+          </div>
+        )}
       </div>
     </div>
   );

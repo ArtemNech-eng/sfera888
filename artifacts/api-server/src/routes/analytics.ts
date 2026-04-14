@@ -328,10 +328,10 @@ router.get("/sources-roi", adminOnly, async (req, res) => {
 
     const txRows = await db.select().from(transactionsTable);
 
-    const SOURCES = ["avito", "website", "ads", "call", "referral", "other"];
+    const SOURCES = ["avito", "website", "ads", "call", "referral", "repeat", "other"];
     const SOURCE_LABELS: Record<string, string> = {
       avito: "Авито", website: "Сайт", ads: "Директ",
-      call: "Звонки", referral: "Сарафан", other: "Другое",
+      call: "Звонки", referral: "Сарафан", repeat: "Повторный", other: "Другое",
     };
 
     function calcIncome(orderIds: number[]) {
