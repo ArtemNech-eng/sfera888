@@ -13,6 +13,7 @@ import { runProactiveChecks } from "./lib/dispatcherAI.js";
 import { checkResponseWindows } from "./lib/priorityAssign.js";
 import { backfillReceiptTransactions } from "./routes/receipts.js";
 import { runAvitoSchedule } from "./routes/avito.js";
+import { runTemplateScenario } from "./routes/ai-office.js";
 
 const port = Number(process.env["PORT"] || "8080");
 
@@ -162,11 +163,32 @@ async function runMigrations() {
   await db.execute(sql`
     CREATE INDEX IF NOT EXISTS browser_agent_logs_session_idx ON browser_agent_logs(session_id)
   `);
-  // Avito advance balance (manual, since Avito API does not expose аванс publicly)
   await db.execute(sql`
     ALTER TABLE avito_settings
       ADD COLUMN IF NOT EXISTS advance_balance INTEGER DEFAULT 0,
       ADD COLUMN IF NOT EXISTS advance_balance_updated_at TIMESTAMP
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS scenario_runs (
+      id SERIAL PRIMARY KEY,
+      scenario TEXT NOT NULL,
+      run_type TEXT NOT NULL DEFAULT 'manual',
+      status TEXT NOT NULL DEFAULT 'running',
+      summary JSONB,
+      error_text TEXT,
+      duration_ms INTEGER,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS scenario_runs_scenario_idx ON scenario_runs(scenario, created_at DESC)
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS scenario_settings (
+      scenario TEXT PRIMARY KEY,
+      auto_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
   `);
   console.log("[startup] Migrations applied");
 }
@@ -643,6 +665,69 @@ setInterval(async () => {
   }
 }, 60 * 1000); // check every minute
 console.log("[avito:schedule] Avito item schedule watcher started (08:00 on / 20:00 off MSK)");
+
+// ─── Template Scenario Schedulers ────────────────────────────────────────────
+
+// Helper to get scenario auto_enabled from DB
+async function isScenarioAutoEnabled(scenario: string): Promise<boolean> {
+  try {
+    const r = await db.execute(sql`SELECT auto_enabled FROM scenario_settings WHERE scenario = ${scenario}`);
+    return !!(r.rows[0] as any)?.auto_enabled;
+  } catch { return false; }
+}
+
+// Scenario 1: broadcast-orders — every 15 min if enabled
+setInterval(async () => {
+  try {
+    if (await isScenarioAutoEnabled("broadcast-orders")) {
+      console.log("[scenarios] auto: broadcast-orders");
+      runTemplateScenario("broadcast-orders", "auto").catch(console.error);
+    }
+  } catch (e) { console.error("[scenarios] broadcast-orders interval error:", e); }
+}, 15 * 60 * 1000);
+
+// Scenarios 2, 3, 4 — time-based, checked every minute using existing getMskTime helper
+let scenarioDiagDate: string | null = null;
+let scenarioPriceDate: string | null = null;
+const scenarioPaymentFiredHours = new Set<string>();
+
+setInterval(async () => {
+  try {
+    const { hhmm, today } = getMskTime();
+    const nowMsk = new Date(Date.now() + 3 * 60 * 60 * 1000);
+
+    // Scenario 2: payment-reminders at 9:00, 15:00, 21:00 MSK
+    for (const slot of ["09:00", "15:00", "21:00"]) {
+      const key = `${today} ${slot}`;
+      if (hhmm === slot && !scenarioPaymentFiredHours.has(key)) {
+        scenarioPaymentFiredHours.add(key);
+        if (await isScenarioAutoEnabled("payment-reminders")) {
+          console.log(`[scenarios] auto: payment-reminders at ${slot}`);
+          runTemplateScenario("payment-reminders", "auto").catch(console.error);
+        }
+      }
+    }
+
+    // Scenario 3: order-diagnostics daily at 9:00 MSK
+    if (hhmm === "09:00" && scenarioDiagDate !== today) {
+      scenarioDiagDate = today;
+      if (await isScenarioAutoEnabled("order-diagnostics")) {
+        console.log("[scenarios] auto: order-diagnostics");
+        runTemplateScenario("order-diagnostics", "auto").catch(console.error);
+      }
+    }
+
+    // Scenario 4: price-analysis every Monday at 8:00 MSK
+    if (hhmm === "08:00" && nowMsk.getUTCDay() === 1 && scenarioPriceDate !== today) {
+      scenarioPriceDate = today;
+      if (await isScenarioAutoEnabled("price-analysis")) {
+        console.log("[scenarios] auto: price-analysis");
+        runTemplateScenario("price-analysis", "auto").catch(console.error);
+      }
+    }
+  } catch (e) { console.error("[scenarios] scheduler error:", e); }
+}, 60 * 1000);
+console.log("[scenarios] Template scenario schedulers started");
 
 app.listen(port, "0.0.0.0", () => {
   console.log(`Server listening on port ${port}`);

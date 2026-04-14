@@ -119,6 +119,50 @@ const CATEGORY_LABELS: Record<string, { label: string; color: string }> = {
   operations: { label: "Операции",        color: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300" },
 };
 
+// ─── Template Scenario Types ───────────────────────────────────────────────
+
+interface TemplateScenario {
+  id: string;
+  title: string;
+  description: string;
+  autoInterval: string;
+  autoEnabled: boolean;
+  lastRun: {
+    run_type: string;
+    status: "success" | "error";
+    summary: any;
+    error_text: string | null;
+    duration_ms: number;
+    created_at: string;
+  } | null;
+}
+
+interface ScenarioLog {
+  id: number;
+  run_type: string;
+  status: string;
+  summary: any;
+  error_text: string | null;
+  duration_ms: number;
+  created_at: string;
+}
+
+interface DiagEntry {
+  orderId: number;
+  masterAlias: string;
+  maxChatId: string | null;
+  city: string;
+  district: string;
+  serviceType: string;
+  status: string;
+  daysSinceAssigned: number;
+  daysSinceUpdated: number;
+  prepaidOk: boolean;
+  amount: number;
+  risk: string;
+  reasons: string[];
+}
+
 // ─── Memory Types ──────────────────────────────────────────────────────────
 
 interface MemEntry {
@@ -318,7 +362,16 @@ export default function AiOfficePage() {
   const [autoStarting, setAutoStarting] = useState(false);
   const autoPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Scenarios state
+  // Template scenarios state
+  const [templateScenarios, setTemplateScenarios] = useState<TemplateScenario[]>([]);
+  const [templateScenariosLoading, setTemplateScenariosLoading] = useState(false);
+  const [runningTemplates, setRunningTemplates] = useState<Set<string>>(new Set());
+  const [expandedLogs, setExpandedLogs] = useState<string | null>(null);
+  const [scenarioLogs, setScenarioLogs] = useState<Record<string, ScenarioLog[]>>({});
+  const [diagResult, setDiagResult] = useState<{ critical: DiagEntry[]; warning: DiagEntry[]; ok: DiagEntry[]; totalAmount: { critical: number; warning: number } } | null>(null);
+  const [messagingOrderId, setMessagingOrderId] = useState<number | null>(null);
+
+  // Legacy GPT scenarios state
   const [scenarios, setScenarios] = useState<PredefinedScenario[]>([]);
   const [schedules, setSchedules] = useState<Schedules>({});
   // Confirmation modal state
@@ -402,8 +455,78 @@ export default function AiOfficePage() {
     if (tab === "memory") fetchAgentMemory(memFilter === "all" ? undefined : memFilter);
   }, [tab, memFilter, fetchAgentMemory]);
 
-  // ── Scenarios ───────────────────────────────────────────────────────────────
+  // ── Template Scenarios ─────────────────────────────────────────────────────
+  const fetchTemplateScenarios = useCallback(async () => {
+    setTemplateScenariosLoading(true);
+    try {
+      const res = await fetch(`${BASE}/api/ai-office/template-scenarios`, { credentials: "include" });
+      const data = await res.json();
+      setTemplateScenarios(data);
+    } catch (e) {
+      console.error("[template-scenarios]", e);
+    } finally {
+      setTemplateScenariosLoading(false);
+    }
+  }, []);
 
+  const fetchScenarioLogs = useCallback(async (id: string) => {
+    const res = await fetch(`${BASE}/api/ai-office/template-scenarios/${id}/logs`, { credentials: "include" });
+    const data = await res.json();
+    setScenarioLogs(prev => ({ ...prev, [id]: data }));
+  }, []);
+
+  const handleRunTemplate = useCallback(async (id: string) => {
+    setRunningTemplates(prev => new Set(prev).add(id));
+    try {
+      const res = await fetch(`${BASE}/api/ai-office/template-scenarios/${id}/run`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Ошибка");
+      toast({ title: "Сценарий выполнен ✓", description: "Результат записан в историю." });
+      if (id === "order-diagnostics" && data.result) setDiagResult(data.result);
+      fetchTemplateScenarios();
+      fetchScenarioLogs(id);
+    } catch (e) {
+      toast({ title: "Ошибка", description: String(e), variant: "destructive" });
+    } finally {
+      setRunningTemplates(prev => { const s = new Set(prev); s.delete(id); return s; });
+    }
+  }, [fetchTemplateScenarios, fetchScenarioLogs]);
+
+  const handleToggleAuto = useCallback(async (id: string, enabled: boolean) => {
+    try {
+      await fetch(`${BASE}/api/ai-office/template-scenarios/${id}/toggle`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ enabled }),
+      });
+      setTemplateScenarios(prev => prev.map(s => s.id === id ? { ...s, autoEnabled: enabled } : s));
+      toast({ title: enabled ? "Автозапуск включён" : "Автозапуск выключен" });
+    } catch (e) {
+      toast({ title: "Ошибка", description: String(e), variant: "destructive" });
+    }
+  }, []);
+
+  const handleMessageMaster = useCallback(async (orderId: number) => {
+    setMessagingOrderId(orderId);
+    try {
+      const res = await fetch(`${BASE}/api/ai-office/template-scenarios/order-diagnostics/${orderId}/message-master`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error((await res.json()).error);
+      toast({ title: "Сообщение отправлено мастеру ✓" });
+    } catch (e) {
+      toast({ title: "Ошибка", description: String(e), variant: "destructive" });
+    } finally {
+      setMessagingOrderId(null);
+    }
+  }, []);
+
+  // ── Legacy GPT Scenarios ───────────────────────────────────────────────────
   const fetchScenarios = useCallback(async () => {
     try {
       const [sRes, schRes] = await Promise.all([
@@ -556,12 +679,15 @@ export default function AiOfficePage() {
   }, [fetchStats]);
 
   useEffect(() => {
+    if (tab === "scenarios") {
+      fetchTemplateScenarios();
+    }
     if (tab === "autonomous") {
       fetchAutoSessions();
       fetchScenarios();
     }
     return () => { if (autoPollingRef.current) clearInterval(autoPollingRef.current); };
-  }, [tab, fetchAutoSessions, fetchScenarios]);
+  }, [tab, fetchAutoSessions, fetchScenarios, fetchTemplateScenarios]);
 
 
   return (
@@ -603,11 +729,9 @@ export default function AiOfficePage() {
             >
               <CheckSquare className="w-4 h-4" />
               Сценарии
-              {scenarios.length > 0 && (
-                <span className="text-xs bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 rounded-full px-1.5 py-0.5 font-semibold">
-                  {scenarios.length}
-                </span>
-              )}
+              <span className="text-xs bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 rounded-full px-1.5 py-0.5 font-semibold">
+                4
+              </span>
             </button>
             <button
               onClick={() => setTab("autonomous")}
@@ -884,168 +1008,221 @@ export default function AiOfficePage() {
           <div className="flex-1 overflow-y-auto p-6">
             <div className="max-w-4xl mx-auto space-y-6">
               {/* Header */}
-              <div>
-                <h2 className="text-xl font-bold">Сценарии</h2>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Готовые автоматические сценарии — запускайте вручную или настройте расписание. Каждый сценарий выполняется агентом и записывает отчёт в историю.
-                </p>
+              <div className="flex items-start justify-between">
+                <div>
+                  <h2 className="text-xl font-bold">Шаблонные сценарии</h2>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Готовые автоматические сценарии — рассылка заказов, контроль оплат, диагностика, анализ цен.
+                    Запускайте вручную или включите автозапуск по расписанию.
+                  </p>
+                </div>
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={fetchTemplateScenarios} disabled={templateScenariosLoading}>
+                  <RefreshCw className={`w-3.5 h-3.5 ${templateScenariosLoading ? "animate-spin" : ""}`} />
+                  Обновить
+                </Button>
               </div>
 
-              {/* Scenarios grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {scenarios.map(scenario => {
-                  const isRunning = runningScenarios.has(scenario.id);
-                  const schedule = schedules[scenario.id];
-                  const hasSchedule = schedule?.enabled && schedule.days.length > 0;
-                  const colorClass = SCENARIO_COLOR_MAP[scenario.color] ?? "from-gray-500 to-gray-700";
-                  const icon = SCENARIO_ICON_MAP[scenario.icon] ?? <Rocket className="w-5 h-5" />;
-                  const catInfo = CATEGORY_LABELS[scenario.category];
-                  const isScheduleOpen = openSchedule === scenario.id;
+              {/* Scenario cards */}
+              {templateScenariosLoading && templateScenarios.length === 0 ? (
+                <div className="flex items-center justify-center py-20">
+                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground/40" />
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  {(templateScenarios.length > 0 ? templateScenarios : [
+                    { id: "broadcast-orders", title: "📋 Разослать открытые заказы", description: "Находит заказы «ищем мастера», подбирает мастеров по городу и специализации, рассылает уведомления в Max.", autoInterval: "каждые 15 мин", autoEnabled: false, lastRun: null },
+                    { id: "payment-reminders", title: "💰 Напомнить об оплате", description: "Проверяет сметы без предоплаты более 24ч, отправляет напоминания. После 72ч — возвращает заказ в пул.", autoInterval: "каждые 6 часов", autoEnabled: false, lastRun: null },
+                    { id: "order-diagnostics", title: "🔍 Диагностика заказов", description: "Анализирует активные заказы на риски: нет отклика, задержка оплаты, заказ завис. Уровни: 🔴 Критично / 🟡 Внимание / 🟢 Норма.", autoInterval: "ежедневно в 9:00", autoEnabled: false, lastRun: null },
+                    { id: "price-analysis", title: "📊 Анализ рыночных цен", description: "Считает среднюю/медианную цену за м² по услугам и городам, выявляет аномалии у мастеров.", autoInterval: "еженедельно пн 8:00", autoEnabled: false, lastRun: null },
+                  ] as TemplateScenario[]).map(scenario => {
+                    const isRunning = runningTemplates.has(scenario.id);
+                    const logs = scenarioLogs[scenario.id] ?? [];
+                    const logsOpen = expandedLogs === scenario.id;
+                    const lastRun = scenario.lastRun;
 
-                  return (
-                    <div key={scenario.id} className="rounded-2xl border border-border bg-card overflow-hidden flex flex-col">
-                      {/* Gradient header */}
-                      <div className={`bg-gradient-to-br ${colorClass} px-5 py-4 flex items-start gap-4`}>
-                        <div className="w-12 h-12 rounded-2xl bg-white/15 flex items-center justify-center text-white shrink-0">
-                          <div className="[&>svg]:w-6 [&>svg]:h-6">{icon}</div>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="text-white font-bold text-sm leading-snug">{scenario.title}</p>
-                            {scenario.requiresConfirmation && (
-                              <span className="flex items-center gap-0.5 text-[10px] bg-white/20 text-white px-1.5 py-0.5 rounded-full font-medium">
-                                <ShieldAlert className="w-3 h-3" /> Подтверждение
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-white/75 text-xs mt-1 leading-snug">{scenario.description}</p>
-                          <div className="flex items-center gap-3 mt-2">
-                            {catInfo && (
-                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium bg-white/20 text-white`}>
-                                {catInfo.label}
-                              </span>
-                            )}
-                            <span className="text-[10px] text-white/60 flex items-center gap-1">
-                              <Clock className="w-3 h-3" />~{scenario.estimatedMinutes} мин
-                            </span>
-                          </div>
-                        </div>
-                      </div>
+                    const COLORS: Record<string, string> = {
+                      "broadcast-orders": "from-blue-600 to-cyan-600",
+                      "payment-reminders": "from-emerald-600 to-teal-600",
+                      "order-diagnostics": "from-orange-500 to-amber-600",
+                      "price-analysis": "from-violet-600 to-indigo-600",
+                    };
+                    const colorClass = COLORS[scenario.id] ?? "from-gray-500 to-gray-700";
 
-                      {/* Body */}
-                      <div className="flex-1 p-4 space-y-3">
-                        {/* Days slider — only for al_diagnostics */}
-                        {scenario.id === "al_diagnostics" && (
-                          <div className="flex items-center gap-2 bg-orange-50 dark:bg-orange-950/20 rounded-xl px-3 py-2.5 border border-orange-200/60 dark:border-orange-800/40">
-                            <span className="text-xs text-orange-700 dark:text-orange-400 font-medium shrink-0">Период анализа:</span>
+                    function formatDuration(ms: number) {
+                      if (ms < 1000) return `${ms}ms`;
+                      return `${(ms / 1000).toFixed(1)}s`;
+                    }
+
+                    function formatLastRunSummary(s: TemplateScenario["lastRun"]) {
+                      if (!s) return null;
+                      if (s.status === "error") return { text: "Ошибка: " + (s.error_text ?? "неизвестно"), color: "text-red-500" };
+                      const sm = s.summary;
+                      if (!sm) return null;
+                      if (scenario.id === "broadcast-orders") return { text: `📤 ${sm.totalSent ?? 0} сообщ. по ${sm.totalOrders ?? 0} заказам`, color: "text-blue-600 dark:text-blue-400" };
+                      if (scenario.id === "payment-reminders") return { text: `💬 ${(sm.sent24h ?? 0) + (sm.sent48h ?? 0)} напомин., ${sm.returnedToPool ?? 0} возврат.`, color: "text-emerald-600 dark:text-emerald-400" };
+                      if (scenario.id === "order-diagnostics") return { text: `🔴 ${sm.critical?.length ?? 0} крит. 🟡 ${sm.warning?.length ?? 0} внимание 🟢 ${sm.ok?.length ?? 0} ок`, color: "text-orange-600 dark:text-orange-400" };
+                      if (scenario.id === "price-analysis") return { text: `📊 ${sm.services?.length ?? 0} услуг, ${sm.anomalies?.length ?? 0} аномалий`, color: "text-violet-600 dark:text-violet-400" };
+                      return null;
+                    }
+
+                    const lastRunSummary = formatLastRunSummary(lastRun);
+
+                    return (
+                      <div key={scenario.id} className="rounded-2xl border border-border bg-card overflow-hidden flex flex-col">
+                        {/* Gradient header */}
+                        <div className={`bg-gradient-to-br ${colorClass} px-5 py-4`}>
+                          <div className="flex items-start justify-between gap-3">
+                            <p className="text-white font-bold text-base leading-snug">{scenario.title}</p>
+                            {/* Auto toggle */}
                             <button
-                              onClick={() => {
-                                const cur = scenarioDays["al_diagnostics"] ?? 7;
-                                if (cur > 1) {
-                                  const updated = { ...scenarioDays, al_diagnostics: cur - 1 };
-                                  setScenarioDays(updated);
-                                  localStorage.setItem("scenarioDays", JSON.stringify(updated));
-                                }
-                              }}
-                              disabled={(scenarioDays["al_diagnostics"] ?? 7) <= 1}
-                              className="w-6 h-6 rounded-lg flex items-center justify-center bg-orange-200 dark:bg-orange-800 hover:opacity-80 text-orange-800 dark:text-orange-200 font-bold transition-colors disabled:opacity-40 shrink-0 text-sm"
-                            >−</button>
-                            <div className="flex-1 relative h-2 bg-orange-200 dark:bg-orange-800/50 rounded-full overflow-hidden">
-                              <div
-                                className="absolute inset-y-0 left-0 bg-orange-500 rounded-full transition-all"
-                                style={{ width: `${((scenarioDays["al_diagnostics"] ?? 7) - 1) / 13 * 100}%` }}
-                              />
-                            </div>
-                            <button
-                              onClick={() => {
-                                const cur = scenarioDays["al_diagnostics"] ?? 7;
-                                if (cur < 14) {
-                                  const updated = { ...scenarioDays, al_diagnostics: cur + 1 };
-                                  setScenarioDays(updated);
-                                  localStorage.setItem("scenarioDays", JSON.stringify(updated));
-                                }
-                              }}
-                              disabled={(scenarioDays["al_diagnostics"] ?? 7) >= 14}
-                              className="w-6 h-6 rounded-lg flex items-center justify-center bg-orange-200 dark:bg-orange-800 hover:opacity-80 text-orange-800 dark:text-orange-200 font-bold transition-colors disabled:opacity-40 shrink-0 text-sm"
-                            >+</button>
-                            <span className="text-sm font-bold text-orange-600 dark:text-orange-400 w-12 text-right shrink-0">
-                              {scenarioDays["al_diagnostics"] ?? 7} дн.
-                            </span>
+                              onClick={() => handleToggleAuto(scenario.id, !scenario.autoEnabled)}
+                              className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors flex items-center gap-1 ${
+                                scenario.autoEnabled
+                                  ? "bg-white text-green-700"
+                                  : "bg-white/20 text-white/80 hover:bg-white/30"
+                              }`}
+                            >
+                              {scenario.autoEnabled ? (
+                                <><CheckCircle2 className="w-3 h-3" /> Авто</>
+                              ) : (
+                                <><Clock className="w-3 h-3" /> Авто</>
+                              )}
+                            </button>
                           </div>
-                        )}
+                          <p className="text-white/75 text-xs mt-1.5 leading-snug">{scenario.description}</p>
+                          <p className="text-white/50 text-[10px] mt-2 flex items-center gap-1">
+                            <Calendar className="w-3 h-3" />
+                            {scenario.autoEnabled ? `Автозапуск: ${scenario.autoInterval}` : `Расписание: ${scenario.autoInterval}`}
+                          </p>
+                        </div>
 
-                        {/* Schedule section */}
-                        <div className="rounded-xl border border-border overflow-hidden">
-                          <button
-                            onClick={() => setOpenSchedule(isScheduleOpen ? null : scenario.id)}
-                            className="w-full px-3 py-2.5 flex items-center justify-between hover:bg-muted/40 transition-colors"
-                          >
-                            <div className="flex items-center gap-2">
-                              <Calendar className={`w-3.5 h-3.5 ${hasSchedule ? "text-emerald-500" : "text-muted-foreground"}`} />
-                              <span className="text-xs font-medium">
-                                {hasSchedule
-                                  ? `Расписание: ${schedule.days.map(d => DAY_LABELS[d]).join(", ")}`
-                                  : "Настроить расписание"
-                                }
-                              </span>
-                            </div>
-                            <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${isScheduleOpen ? "rotate-180" : ""}`} />
-                          </button>
-                          {isScheduleOpen && (
-                            <div className="px-3 pb-3 border-t border-border bg-muted/20 pt-2.5">
-                              <p className="text-[11px] text-muted-foreground mb-2">Автозапуск в 09:00 МСК</p>
-                              <div className="flex gap-1.5 flex-wrap">
-                                {DAY_LABELS.map((label, dayIdx) => {
-                                  const isOn = schedule?.days?.includes(dayIdx) ?? false;
-                                  return (
-                                    <button
-                                      key={dayIdx}
-                                      onClick={() => {
-                                        const cur = schedules[scenario.id] ?? { enabled: true, days: [] };
-                                        const days = isOn
-                                          ? cur.days.filter(d => d !== dayIdx)
-                                          : [...cur.days, dayIdx];
-                                        saveSchedule(scenario.id, { enabled: days.length > 0, days });
-                                      }}
-                                      className={`w-9 h-9 rounded-xl text-xs font-semibold transition-colors ${
-                                        isOn
-                                          ? "bg-violet-600 text-white"
-                                          : "bg-muted text-muted-foreground hover:bg-muted/80"
-                                      }`}
-                                    >{label}</button>
-                                  );
-                                })}
+                        {/* Body */}
+                        <div className="flex-1 p-4 space-y-3">
+                          {/* Last run info */}
+                          {lastRun ? (
+                            <div className={`rounded-xl px-3 py-2.5 text-xs border ${
+                              lastRun.status === "error"
+                                ? "bg-red-50 dark:bg-red-950/20 border-red-200/60 dark:border-red-800/40"
+                                : "bg-muted/40 border-border"
+                            }`}>
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-muted-foreground">
+                                  {lastRun.run_type === "auto" ? "🤖 Авто" : "▶ Ручной"} · {new Date(lastRun.created_at).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })} · {formatDuration(lastRun.duration_ms)}
+                                </span>
+                                {lastRun.status === "success" ? (
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                                ) : (
+                                  <span className="text-red-500 font-medium shrink-0">Ошибка</span>
+                                )}
                               </div>
-                              {hasSchedule && (
-                                <p className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-2 flex items-center gap-1">
-                                  <CheckCircle2 className="w-3 h-3" />
-                                  Запускается по: {schedule.days.map(d => DAY_LABELS[d]).join(", ")} в 09:00 МСК
-                                </p>
+                              {lastRunSummary && (
+                                <p className={`mt-1 font-medium ${lastRunSummary.color}`}>{lastRunSummary.text}</p>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="rounded-xl px-3 py-2.5 text-xs bg-muted/30 border border-border text-muted-foreground">
+                              Сценарий ещё не запускался
+                            </div>
+                          )}
+
+                          {/* Diagnostics result inline */}
+                          {scenario.id === "order-diagnostics" && diagResult && diagResult.critical.length > 0 && (
+                            <div className="rounded-xl border border-red-200 dark:border-red-800/40 overflow-hidden">
+                              <div className="bg-red-50 dark:bg-red-950/20 px-3 py-2 flex items-center justify-between">
+                                <span className="text-xs font-semibold text-red-700 dark:text-red-400">
+                                  🔴 Критичные заказы ({diagResult.critical.length})
+                                </span>
+                                <span className="text-[10px] text-red-500">~{Math.round(diagResult.totalAmount.critical / 1000)}к ₽</span>
+                              </div>
+                              <div className="divide-y divide-border max-h-48 overflow-y-auto">
+                                {diagResult.critical.map(entry => (
+                                  <div key={entry.orderId} className="px-3 py-2 flex items-start gap-2">
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-xs font-medium">#{entry.orderId} {entry.serviceType}</p>
+                                      <p className="text-[11px] text-muted-foreground">{entry.masterAlias} · {entry.district || entry.city}</p>
+                                      {entry.reasons.map((r, i) => (
+                                        <p key={i} className="text-[11px] text-red-600 dark:text-red-400">{r}</p>
+                                      ))}
+                                    </div>
+                                    {entry.maxChatId && (
+                                      <button
+                                        onClick={() => handleMessageMaster(entry.orderId)}
+                                        disabled={messagingOrderId === entry.orderId}
+                                        className="shrink-0 text-[10px] px-2 py-1 rounded-lg bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:opacity-80 transition-opacity disabled:opacity-50"
+                                      >
+                                        {messagingOrderId === entry.orderId ? "…" : "Написать"}
+                                      </button>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* History toggle */}
+                          <button
+                            className="w-full flex items-center justify-between text-xs text-muted-foreground hover:text-foreground transition-colors px-1"
+                            onClick={async () => {
+                              if (!logsOpen) {
+                                fetchScenarioLogs(scenario.id);
+                                setExpandedLogs(scenario.id);
+                              } else {
+                                setExpandedLogs(null);
+                              }
+                            }}
+                          >
+                            <span className="flex items-center gap-1.5">
+                              <Clock className="w-3 h-3" />
+                              История запусков
+                            </span>
+                            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${logsOpen ? "rotate-180" : ""}`} />
+                          </button>
+
+                          {logsOpen && (
+                            <div className="rounded-xl border border-border overflow-hidden">
+                              {logs.length === 0 ? (
+                                <p className="text-xs text-muted-foreground px-3 py-3 text-center">Нет запусков</p>
+                              ) : (
+                                <div className="divide-y divide-border max-h-48 overflow-y-auto">
+                                  {logs.map(log => (
+                                    <div key={log.id} className="px-3 py-2 flex items-center gap-2">
+                                      {log.status === "success"
+                                        ? <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
+                                        : <span className="text-[10px] text-red-500 font-medium shrink-0">ERR</span>
+                                      }
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-[11px] truncate">
+                                          {log.run_type === "auto" ? "🤖 Авто" : "▶ Ручной"} · {new Date(log.created_at).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                                        </p>
+                                        {log.error_text && <p className="text-[10px] text-red-500 truncate">{log.error_text}</p>}
+                                      </div>
+                                      <span className="text-[10px] text-muted-foreground shrink-0">{formatDuration(log.duration_ms)}</span>
+                                    </div>
+                                  ))}
+                                </div>
                               )}
                             </div>
                           )}
                         </div>
-                      </div>
 
-                      {/* Footer: run button */}
-                      <div className="px-4 pb-4">
-                        <Button
-                          className={`w-full gap-2 bg-gradient-to-r ${colorClass} hover:opacity-90 text-white`}
-                          onClick={() => handleRunScenario(scenario)}
-                          disabled={isRunning}
-                        >
-                          {isRunning
-                            ? <><Loader2 className="w-4 h-4 animate-spin" /> Запускаю...</>
-                            : scenario.requiresConfirmation
-                              ? <><ShieldAlert className="w-4 h-4" /> Запустить</>
+                        {/* Footer */}
+                        <div className="px-4 pb-4">
+                          <Button
+                            className={`w-full gap-2 bg-gradient-to-r ${colorClass} hover:opacity-90 text-white`}
+                            onClick={() => handleRunTemplate(scenario.id)}
+                            disabled={isRunning}
+                          >
+                            {isRunning
+                              ? <><Loader2 className="w-4 h-4 animate-spin" /> Запускаю...</>
                               : <><Play className="w-4 h-4" /> Запустить</>
-                          }
-                        </Button>
+                            }
+                          </Button>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}
