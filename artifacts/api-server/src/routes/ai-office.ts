@@ -28,6 +28,16 @@ async function sendAdminTelegram(text: string): Promise<void> {
   }
 }
 
+async function sendAdminMax(text: string): Promise<void> {
+  const userId = process.env["ADMIN_MAX_USER_ID"];
+  if (!userId) return;
+  try {
+    await sendMaxMessage(userId, text);
+  } catch (e) {
+    console.error("[sendAdminMax]", e);
+  }
+}
+
 async function saveScenarioRun(
   scenario: string,
   runType: "manual" | "auto",
@@ -151,9 +161,10 @@ async function runPaymentReminders() {
   const h24ago = new Date(now.getTime() - 24 * 3600_000).toISOString();
 
   const rows = await db.execute(sql`
-    SELECT r.id, r.order_id, r.created_at, r.service_type, r.district, r.city,
-           m.alias AS master_alias, m.max_chat_id,
-           o.status AS order_status
+    SELECT r.order_id, r.created_at AS receipt_created_at,
+           r.service_type, r.district, r.city, r.client_name, r.client_phone,
+           r.total_amount,
+           m.alias AS master_alias, m.max_chat_id
     FROM receipts r
     JOIN orders o ON o.id = r.order_id
     JOIN masters m ON m.id = r.master_id
@@ -161,46 +172,82 @@ async function runPaymentReminders() {
       AND r.created_at < ${h24ago}
       AND o.status NOT IN ('completed', 'cancelled', 'cancellation_requested', 'waiting_master')
       AND o.deleted_at IS NULL
-      AND m.max_chat_id IS NOT NULL
+    ORDER BY r.created_at ASC
   `);
 
-  let sent24h = 0, sent48h = 0, returnedToPool = 0;
+  const warning: any[] = [];
+  const critical: any[] = [];
+  const superCritical: any[] = [];
+  let sent24h = 0, sent48h = 0, sent72h = 0, adminNotified = 0;
+  let totalAmount = 0;
 
   for (const r of rows.rows as any[]) {
-    const hoursElapsed = (now.getTime() - new Date(r.created_at).getTime()) / 3600_000;
-    const chatId = r.max_chat_id;
+    const hoursElapsed = Math.floor((now.getTime() - new Date(r.receipt_created_at).getTime()) / 3600_000);
+    const location = r.district || r.city;
+    const entry = {
+      orderId: r.order_id,
+      masterAlias: r.master_alias ?? "—",
+      maxChatId: r.max_chat_id ?? null,
+      clientName: r.client_name ?? "Клиент",
+      clientPhone: r.client_phone ?? null,
+      city: r.city ?? "",
+      district: r.district ?? "",
+      serviceType: r.service_type ?? "",
+      receiptSentAt: r.receipt_created_at,
+      hoursWithoutPayment: hoursElapsed,
+      totalAmount: Number(r.total_amount ?? 0),
+      risk: hoursElapsed >= 72 ? "super" : hoursElapsed >= 48 ? "critical" : "warning",
+    };
+    totalAmount += entry.totalAmount;
 
     if (hoursElapsed >= 72) {
-      await db.execute(sql`
-        UPDATE orders SET status = 'waiting_master', master_id = NULL, updated_at = NOW()
-        WHERE id = ${r.order_id} AND status NOT IN ('completed', 'cancelled', 'waiting_master')
-      `);
-      const msg =
-        `${r.master_alias}, заказ #${r.order_id} возвращён в пул — клиент не оплатил предоплату.\n\n` +
-        `Готовим для вас новый заказ.\nПроверяйте приложение 👍`;
-      await sendMaxMessage(chatId, msg);
-      returnedToPool++;
+      superCritical.push(entry);
+      if (r.max_chat_id) {
+        const msg =
+          `${r.master_alias}, по заказу #${r.order_id} предоплата не поступила уже ${hoursElapsed} часов.\n\n` +
+          `Вопрос передан руководителю.\nОжидайте — мы свяжемся с вами.`;
+        await sendMaxMessage(r.max_chat_id, msg).catch(() => {});
+        sent72h++;
+      }
+      await sendAdminMax(
+        `⚠️ ПРЕДОПЛАТА НЕ ОПЛАЧЕНА 72+ ЧАСОВ\n\n` +
+        `Заказ: #${r.order_id}\n` +
+        `Вид работ: ${r.service_type}\n` +
+        `Город: ${r.city}${r.district ? ", " + r.district : ""}\n` +
+        `Мастер: ${r.master_alias}\n` +
+        `Клиент: ${r.client_name}\n` +
+        `Смета отправлена: ${new Date(r.receipt_created_at).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" })}\n` +
+        `Сумма заказа: ${Number(r.total_amount ?? 0).toLocaleString("ru-RU")}₽\n` +
+        `Предоплата: 5 000₽\n` +
+        `Часов без оплаты: ${hoursElapsed}\n\n` +
+        `Решение принимается в ИИ Офис → Напомнить об оплате`
+      );
+      adminNotified++;
     } else if (hoursElapsed >= 48) {
-      const days = Math.ceil(hoursElapsed / 24);
-      const msg =
-        `⚠️ ${r.master_alias}, по заказу #${r.order_id} предоплата не поступила уже ${days} дня.\n\n` +
-        `Если клиент не оплатит в течение 24 часов — заказ вернётся в пул и мы подготовим для вас новую заявку.\n\n` +
-        `Не ждите — заказов много 👍`;
-      await sendMaxMessage(chatId, msg);
-      sent48h++;
+      critical.push(entry);
+      if (r.max_chat_id) {
+        const msg =
+          `⚠️ ${r.master_alias}, по заказу #${r.order_id} предоплата не поступила уже ${hoursElapsed} часов.\n\n` +
+          `Пожалуйста ещё раз напомните клиенту про бронь.\n\n` +
+          `Если клиент не планирует оплачивать — сообщите нам, мы решим что делать с этим заказом.`;
+        await sendMaxMessage(r.max_chat_id, msg).catch(() => {});
+        sent48h++;
+      }
     } else {
-      const location = r.district || r.city;
-      const msg =
-        `👋 ${r.master_alias}, добрый день!\n\n` +
-        `По заказу #${r.order_id} (${r.service_type}, ${location}) клиент пока не оплатил предоплату.\n\n` +
-        `Напомните клиенту про бронь — одно сообщение часто решает вопрос 👍\n\n` +
-        `Если клиент отказался — нажмите «Отказ клиента» в приложении, и мы дадим вам новый заказ.`;
-      await sendMaxMessage(chatId, msg);
-      sent24h++;
+      warning.push(entry);
+      if (r.max_chat_id) {
+        const msg =
+          `👋 ${r.master_alias}, добрый день!\n\n` +
+          `По заказу #${r.order_id} (${r.service_type}, ${location}) клиент пока не оплатил предоплату.\n\n` +
+          `Напомните клиенту про бронь — одно сообщение часто решает вопрос 👍\n\n` +
+          `Если клиент отказался — сообщите нам, и мы подготовим новый заказ для вас.`;
+        await sendMaxMessage(r.max_chat_id, msg).catch(() => {});
+        sent24h++;
+      }
     }
   }
 
-  return { sent24h, sent48h, returnedToPool };
+  return { warning, critical, superCritical, sent24h, sent48h, sent72h, adminNotified, totalAmount };
 }
 
 // ─── Scenario 3: Order Diagnostics ────────────────────────────────────────────
@@ -550,7 +597,7 @@ const SCENARIO_META = [
   {
     id: "payment-reminders",
     title: "💰 Напомнить об оплате",
-    description: "Проверяет сметы, по которым предоплата не поступила более 24 часов, и отправляет напоминания мастерам. После 72 часов — возвращает заказ в пул.",
+    description: "Находит сметы без предоплаты более 24ч. Отправляет напоминания мастерам в Max (3 шаблона по срокам). При 72ч+ уведомляет администратора в Max. Решения принимает только администратор.",
     autoInterval: "каждые 6 часов",
   },
   {
@@ -641,6 +688,161 @@ router.put("/template-scenarios/:id/toggle", async (req, res) => {
       ON CONFLICT (scenario) DO UPDATE SET auto_enabled = EXCLUDED.auto_enabled, updated_at = NOW()
     `);
     res.json({ ok: true, enabled });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ─── Payment-reminders actions ────────────────────────────────────────────────
+
+// GET /api/ai-office/template-scenarios/payment-reminders/live
+router.get("/template-scenarios/payment-reminders/live", async (_req, res) => {
+  try {
+    const now = new Date();
+    const h24ago = new Date(now.getTime() - 24 * 3600_000).toISOString();
+    const rows = await db.execute(sql`
+      SELECT r.order_id, r.created_at AS receipt_created_at,
+             r.service_type, r.district, r.city, r.client_name, r.client_phone,
+             r.total_amount,
+             m.alias AS master_alias, m.max_chat_id
+      FROM receipts r
+      JOIN orders o ON o.id = r.order_id
+      JOIN masters m ON m.id = r.master_id
+      WHERE r.prepayment_submitted_at IS NULL
+        AND r.created_at < ${h24ago}
+        AND o.status NOT IN ('completed', 'cancelled', 'cancellation_requested', 'waiting_master')
+        AND o.deleted_at IS NULL
+      ORDER BY r.created_at ASC
+    `);
+
+    const items = (rows.rows as any[]).map(r => {
+      const h = Math.floor((now.getTime() - new Date(r.receipt_created_at).getTime()) / 3600_000);
+      return {
+        orderId: r.order_id,
+        masterAlias: r.master_alias ?? "—",
+        maxChatId: r.max_chat_id ?? null,
+        clientName: r.client_name ?? "Клиент",
+        clientPhone: r.client_phone ?? null,
+        city: r.city ?? "",
+        district: r.district ?? "",
+        serviceType: r.service_type ?? "",
+        receiptSentAt: r.receipt_created_at,
+        hoursWithoutPayment: h,
+        totalAmount: Number(r.total_amount ?? 0),
+        risk: h >= 72 ? "super" : h >= 48 ? "critical" : "warning",
+      };
+    });
+
+    const warning = items.filter(i => i.risk === "warning");
+    const critical = items.filter(i => i.risk === "critical");
+    const superCritical = items.filter(i => i.risk === "super");
+    const totalAmount = items.reduce((s, i) => s + i.totalAmount, 0);
+    res.json({ warning, critical, superCritical, totalAmount });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// POST /api/ai-office/template-scenarios/payment-reminders/:orderId/message-master
+router.post("/template-scenarios/payment-reminders/:orderId/message-master", async (req, res) => {
+  const orderId = Number(req.params.orderId);
+  try {
+    const rows = await db.execute(sql`
+      SELECT r.order_id, r.service_type, r.district, r.city,
+             EXTRACT(EPOCH FROM (NOW() - r.created_at)) / 3600 AS hours,
+             m.alias AS master_alias, m.max_chat_id
+      FROM receipts r
+      JOIN masters m ON m.id = r.master_id
+      WHERE r.order_id = ${orderId} AND r.prepayment_submitted_at IS NULL
+    `);
+    const r = rows.rows[0] as any;
+    if (!r) return res.status(404).json({ error: "Заказ или смета не найдены" });
+    if (!r.max_chat_id) return res.status(400).json({ error: "У мастера нет Max-чата" });
+
+    const hours = Math.floor(Number(r.hours));
+    const location = r.district || r.city;
+    let message: string;
+
+    if (hours >= 72) {
+      message =
+        `${r.master_alias}, по заказу #${r.order_id} предоплата не поступила уже ${hours} часов.\n\n` +
+        `Вопрос передан руководителю.\nОжидайте — мы свяжемся с вами.`;
+    } else if (hours >= 48) {
+      message =
+        `⚠️ ${r.master_alias}, по заказу #${r.order_id} предоплата не поступила уже ${hours} часов.\n\n` +
+        `Пожалуйста ещё раз напомните клиенту про бронь.\n\n` +
+        `Если клиент не планирует оплачивать — сообщите нам, мы решим что делать с этим заказом.`;
+    } else {
+      message =
+        `👋 ${r.master_alias}, добрый день!\n\n` +
+        `По заказу #${r.order_id} (${r.service_type}, ${location}) клиент пока не оплатил предоплату.\n\n` +
+        `Напомните клиенту про бронь — одно сообщение часто решает вопрос 👍\n\n` +
+        `Если клиент отказался — сообщите нам, и мы подготовим новый заказ для вас.`;
+    }
+
+    await sendMaxMessage(r.max_chat_id, message);
+    res.json({ ok: true, hours, template: hours >= 72 ? "72h" : hours >= 48 ? "48h" : "24h" });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// POST /api/ai-office/template-scenarios/payment-reminders/:orderId/return-to-pool
+router.post("/template-scenarios/payment-reminders/:orderId/return-to-pool", async (req, res) => {
+  const orderId = Number(req.params.orderId);
+  try {
+    const rows = await db.execute(sql`
+      SELECT o.id, o.service_type, m.alias AS master_alias, m.max_chat_id
+      FROM orders o
+      JOIN masters m ON m.id = o.master_id
+      WHERE o.id = ${orderId} AND o.deleted_at IS NULL
+    `);
+    const o = rows.rows[0] as any;
+    if (!o) return res.status(404).json({ error: "Заказ не найден" });
+
+    await db.execute(sql`
+      UPDATE orders
+      SET status = 'waiting_master', master_id = NULL, assigned_at = NULL, updated_at = NOW()
+      WHERE id = ${orderId} AND status NOT IN ('completed', 'cancelled')
+    `);
+
+    if (o.max_chat_id) {
+      await sendMaxMessage(o.max_chat_id,
+        `Заказ #${o.id} возвращён в пул — клиент не оплатил предоплату.\n\n` +
+        `Из 10 клиентов 8 оплачивают без проблем — те кто не платит, обычно проблемные.\n\n` +
+        `Готовим для вас новый заказ 👍`
+      );
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// POST /api/ai-office/template-scenarios/payment-reminders/:orderId/cancel
+router.post("/template-scenarios/payment-reminders/:orderId/cancel", async (req, res) => {
+  const orderId = Number(req.params.orderId);
+  try {
+    const rows = await db.execute(sql`
+      SELECT o.id, m.alias AS master_alias, m.max_chat_id
+      FROM orders o
+      JOIN masters m ON m.id = o.master_id
+      WHERE o.id = ${orderId} AND o.deleted_at IS NULL
+    `);
+    const o = rows.rows[0] as any;
+    if (!o) return res.status(404).json({ error: "Заказ не найден" });
+
+    await db.execute(sql`
+      UPDATE orders SET status = 'cancelled', updated_at = NOW()
+      WHERE id = ${orderId} AND status NOT IN ('completed', 'cancelled')
+    `);
+
+    if (o.max_chat_id) {
+      await sendMaxMessage(o.max_chat_id,
+        `Заказ #${o.id} отменён.\nПричина: клиент не оплатил предоплату.`
+      );
+    }
+    res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }

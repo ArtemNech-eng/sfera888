@@ -371,6 +371,17 @@ export default function AiOfficePage() {
   const [diagResult, setDiagResult] = useState<{ critical: DiagEntry[]; warning: DiagEntry[]; ok: DiagEntry[]; totalAmount: { critical: number; warning: number } } | null>(null);
   const [messagingOrderId, setMessagingOrderId] = useState<number | null>(null);
 
+  // Payment-reminders state
+  interface PaymentEntry { orderId: number; masterAlias: string; maxChatId: string | null; clientName: string; clientPhone: string | null; city: string; district: string; serviceType: string; receiptSentAt: string; hoursWithoutPayment: number; totalAmount: number; risk: "super" | "critical" | "warning" }
+  const [paymentResult, setPaymentResult] = useState<{ warning: PaymentEntry[]; critical: PaymentEntry[]; superCritical: PaymentEntry[]; totalAmount: number } | null>(null);
+  const [paymentLiveLoading, setPaymentLiveLoading] = useState(false);
+  const [paymentActionLoading, setPaymentActionLoading] = useState<Record<number, string>>({});
+  const [paymentMsgSent, setPaymentMsgSent] = useState<Set<number>>(new Set());
+  const [paymentConfirm, setPaymentConfirm] = useState<{ orderId: number; type: "return-to-pool" | "cancel"; masterAlias: string } | null>(null);
+  const [paymentCallModal, setPaymentCallModal] = useState<{ orderId: number; clientPhone: string; clientName: string } | null>(null);
+  const [paymentCallComment, setPaymentCallComment] = useState<Record<number, string>>({});
+  const [paymentCommentSaved, setPaymentCommentSaved] = useState<Set<number>>(new Set());
+
   // Orders-without-receipts state
   interface NoReceiptEntry { orderId: number; masterAlias: string; maxChatId: string | null; city: string; district: string; serviceType: string; assignedAt: string; hoursWithoutReceipt: number; risk: "critical" | "warning"; masterPhone: string | null }
   const [noReceiptResult, setNoReceiptResult] = useState<{ critical: NoReceiptEntry[]; warning: NoReceiptEntry[] } | null>(null);
@@ -483,6 +494,73 @@ export default function AiOfficePage() {
     setScenarioLogs(prev => ({ ...prev, [id]: data }));
   }, []);
 
+  // ── Payment-reminders handlers ─────────────────────────────────────────────
+  const fetchPaymentLive = useCallback(async () => {
+    setPaymentLiveLoading(true);
+    try {
+      const res = await fetch(`${BASE}/api/ai-office/template-scenarios/payment-reminders/live`, { credentials: "include" });
+      const data = await res.json();
+      setPaymentResult(data);
+    } catch (e) {
+      toast({ title: "Ошибка загрузки", description: String(e), variant: "destructive" });
+    } finally {
+      setPaymentLiveLoading(false);
+    }
+  }, []);
+
+  const handlePaymentMessage = useCallback(async (orderId: number) => {
+    setPaymentActionLoading(p => ({ ...p, [orderId]: "message" }));
+    try {
+      const res = await fetch(`${BASE}/api/ai-office/template-scenarios/payment-reminders/${orderId}/message-master`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error((await res.json()).error);
+      setPaymentMsgSent(prev => new Set(prev).add(orderId));
+      toast({ title: "Сообщение отправлено мастеру ✓" });
+    } catch (e) {
+      toast({ title: "Ошибка", description: String(e), variant: "destructive" });
+    } finally {
+      setPaymentActionLoading(p => { const n = { ...p }; delete n[orderId]; return n; });
+    }
+  }, []);
+
+  const handlePaymentReturnToPool = useCallback(async (orderId: number) => {
+    setPaymentActionLoading(p => ({ ...p, [orderId]: "pool" }));
+    setPaymentConfirm(null);
+    try {
+      const res = await fetch(`${BASE}/api/ai-office/template-scenarios/payment-reminders/${orderId}/return-to-pool`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error((await res.json()).error);
+      toast({ title: "Заказ возвращён в пул ✓" });
+      fetchPaymentLive();
+    } catch (e) {
+      toast({ title: "Ошибка", description: String(e), variant: "destructive" });
+    } finally {
+      setPaymentActionLoading(p => { const n = { ...p }; delete n[orderId]; return n; });
+    }
+  }, [fetchPaymentLive]);
+
+  const handlePaymentCancel = useCallback(async (orderId: number) => {
+    setPaymentActionLoading(p => ({ ...p, [orderId]: "cancel" }));
+    setPaymentConfirm(null);
+    try {
+      const res = await fetch(`${BASE}/api/ai-office/template-scenarios/payment-reminders/${orderId}/cancel`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error((await res.json()).error);
+      toast({ title: "Заказ отменён ✓" });
+      fetchPaymentLive();
+    } catch (e) {
+      toast({ title: "Ошибка", description: String(e), variant: "destructive" });
+    } finally {
+      setPaymentActionLoading(p => { const n = { ...p }; delete n[orderId]; return n; });
+    }
+  }, [fetchPaymentLive]);
+
   const handleRunTemplate = useCallback(async (id: string) => {
     setRunningTemplates(prev => new Set(prev).add(id));
     try {
@@ -495,6 +573,7 @@ export default function AiOfficePage() {
       toast({ title: "Сценарий выполнен ✓", description: "Результат записан в историю." });
       if (id === "order-diagnostics" && data.result) setDiagResult(data.result);
       if (id === "orders-without-receipts" && data.result) setNoReceiptResult(data.result);
+      if (id === "payment-reminders" && data.result) setPaymentResult(data.result);
       fetchTemplateScenarios();
       fetchScenarioLogs(id);
     } catch (e) {
@@ -1135,7 +1214,11 @@ export default function AiOfficePage() {
                       const sm = s.summary;
                       if (!sm) return null;
                       if (scenario.id === "broadcast-orders") return { text: `📤 ${sm.totalSent ?? 0} сообщ. по ${sm.totalOrders ?? 0} заказам`, color: "text-blue-600 dark:text-blue-400" };
-                      if (scenario.id === "payment-reminders") return { text: `💬 ${(sm.sent24h ?? 0) + (sm.sent48h ?? 0)} напомин., ${sm.returnedToPool ?? 0} возврат.`, color: "text-emerald-600 dark:text-emerald-400" };
+                      if (scenario.id === "payment-reminders") {
+                        const total = (sm.superCritical?.length ?? 0) + (sm.critical?.length ?? 0) + (sm.warning?.length ?? 0);
+                        const sent = (sm.sent24h ?? 0) + (sm.sent48h ?? 0) + (sm.sent72h ?? 0);
+                        return { text: `⚫ ${sm.superCritical?.length ?? 0} 🔴 ${sm.critical?.length ?? 0} 🟡 ${sm.warning?.length ?? 0} · ${sent} напомин.`, color: "text-emerald-600 dark:text-emerald-400" };
+                      }
                       if (scenario.id === "order-diagnostics") return { text: `🔴 ${sm.critical?.length ?? 0} крит. 🟡 ${sm.warning?.length ?? 0} внимание 🟢 ${sm.ok?.length ?? 0} ок`, color: "text-orange-600 dark:text-orange-400" };
                       if (scenario.id === "price-analysis") return { text: `📊 ${sm.services?.length ?? 0} услуг, ${sm.anomalies?.length ?? 0} аномалий`, color: "text-violet-600 dark:text-violet-400" };
                       if (scenario.id === "orders-without-receipts") return { text: `🔴 ${sm.critical?.length ?? 0} крит. 🟡 ${sm.warning?.length ?? 0} внимание · ${sm.totalNotified ?? 0} уведомлено`, color: "text-amber-600 dark:text-amber-400" };
@@ -1201,6 +1284,135 @@ export default function AiOfficePage() {
                               Сценарий ещё не запускался
                             </div>
                           )}
+
+                          {/* Payment-reminders inline panel */}
+                          {scenario.id === "payment-reminders" && (paymentResult || lastRun?.summary) && (() => {
+                            const data = paymentResult ?? (lastRun?.summary as any ?? null);
+                            const superCritical: any[] = data?.superCritical ?? [];
+                            const critical: any[] = data?.critical ?? [];
+                            const warning: any[] = data?.warning ?? [];
+                            const totalAmt: number = data?.totalAmount ?? 0;
+                            const total = superCritical.length + critical.length + warning.length;
+                            const allItems = [...superCritical, ...critical, ...warning];
+
+                            return (
+                              <div className="space-y-2">
+                                {/* 4 summary cards */}
+                                <div className="grid grid-cols-2 gap-1.5">
+                                  <div className="rounded-lg px-2.5 py-2 bg-red-100/80 dark:bg-red-950/30 border border-red-200/60 dark:border-red-800/40 text-center">
+                                    <p className="text-[11px] text-red-500 font-semibold">⚫ 72ч+</p>
+                                    <p className="text-base font-bold text-red-700 dark:text-red-400">{superCritical.length}</p>
+                                  </div>
+                                  <div className="rounded-lg px-2.5 py-2 bg-orange-100/80 dark:bg-orange-950/30 border border-orange-200/60 dark:border-orange-800/40 text-center">
+                                    <p className="text-[11px] text-orange-500 font-semibold">🔴 48-72ч</p>
+                                    <p className="text-base font-bold text-orange-700 dark:text-orange-400">{critical.length}</p>
+                                  </div>
+                                  <div className="rounded-lg px-2.5 py-2 bg-yellow-100/80 dark:bg-yellow-950/30 border border-yellow-200/60 dark:border-yellow-800/40 text-center">
+                                    <p className="text-[11px] text-yellow-600 font-semibold">🟡 24-48ч</p>
+                                    <p className="text-base font-bold text-yellow-700 dark:text-yellow-400">{warning.length}</p>
+                                  </div>
+                                  <div className="rounded-lg px-2.5 py-2 bg-emerald-100/80 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/40 text-center">
+                                    <p className="text-[11px] text-emerald-600 font-semibold">💰 Ожидается</p>
+                                    <p className="text-sm font-bold text-emerald-700 dark:text-emerald-400">{totalAmt.toLocaleString("ru-RU")}₽</p>
+                                  </div>
+                                </div>
+
+                                {/* Refresh + status */}
+                                <div className="flex items-center gap-2 text-xs">
+                                  {total === 0 && (
+                                    <span className="px-2 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 font-semibold">✅ Все оплатили</span>
+                                  )}
+                                  <button onClick={fetchPaymentLive} disabled={paymentLiveLoading}
+                                    className="ml-auto flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors">
+                                    <RefreshCw className={`w-3 h-3 ${paymentLiveLoading ? "animate-spin" : ""}`} />
+                                    <span>Обновить</span>
+                                  </button>
+                                </div>
+
+                                {/* Orders table */}
+                                {allItems.length > 0 && (
+                                  <div className="rounded-xl border border-border overflow-hidden">
+                                    <div className="divide-y divide-border max-h-96 overflow-y-auto">
+                                      {allItems.map((entry: any) => {
+                                        const isSuper = entry.risk === "super";
+                                        const isCrit = entry.risk === "critical";
+                                        const msgLoading = paymentActionLoading[entry.orderId] === "message";
+                                        const poolLoading = paymentActionLoading[entry.orderId] === "pool";
+                                        const cancelLoading = paymentActionLoading[entry.orderId] === "cancel";
+                                        const msgSent = paymentMsgSent.has(entry.orderId);
+                                        const rowBg = isSuper
+                                          ? "bg-red-50/70 dark:bg-red-950/20"
+                                          : isCrit
+                                          ? "bg-orange-50/50 dark:bg-orange-950/10"
+                                          : "bg-yellow-50/30 dark:bg-yellow-950/5";
+
+                                        return (
+                                          <div key={entry.orderId} className={`px-3 py-2.5 ${rowBg}`}>
+                                            <div className="flex items-start gap-2 flex-wrap">
+                                              <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                  <span className={`text-xs font-bold ${isSuper ? "text-red-700 dark:text-red-400" : isCrit ? "text-orange-600 dark:text-orange-400" : "text-yellow-700 dark:text-yellow-400"}`}>
+                                                    {isSuper ? "⚫" : isCrit ? "🔴" : "🟡"} #{entry.orderId}
+                                                  </span>
+                                                  <span className="text-xs text-muted-foreground">{entry.serviceType}</span>
+                                                  <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 ml-auto">
+                                                    {Number(entry.totalAmount).toLocaleString("ru-RU")}₽
+                                                  </span>
+                                                </div>
+                                                <p className="text-[11px] text-muted-foreground mt-0.5">
+                                                  {entry.masterAlias} · {entry.clientName} · {entry.district || entry.city}
+                                                </p>
+                                                <p className="text-[11px] font-medium mt-0.5 text-red-600 dark:text-red-400">
+                                                  {entry.hoursWithoutPayment}ч без оплаты · смета {new Date(entry.receiptSentAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}
+                                                </p>
+                                              </div>
+                                            </div>
+
+                                            {/* Action buttons */}
+                                            <div className="flex gap-1 flex-wrap mt-2">
+                                              <button
+                                                onClick={() => handlePaymentMessage(entry.orderId)}
+                                                disabled={!!paymentActionLoading[entry.orderId] || msgSent}
+                                                className={`text-[10px] px-2 py-1 rounded-lg transition-colors font-medium ${
+                                                  msgSent
+                                                    ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400"
+                                                    : "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 hover:opacity-80"
+                                                } disabled:opacity-50`}
+                                              >
+                                                {msgLoading ? "…" : msgSent ? "✅ Отправлено" : "📱 Написать мастеру"}
+                                              </button>
+                                              {entry.clientPhone ? (
+                                                <button
+                                                  onClick={() => setPaymentCallModal({ orderId: entry.orderId, clientPhone: entry.clientPhone, clientName: entry.clientName })}
+                                                  className="text-[10px] px-2 py-1 rounded-lg bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400 hover:opacity-80 transition-colors font-medium"
+                                                >
+                                                  📞 Позвонить клиенту
+                                                </button>
+                                              ) : null}
+                                              <button
+                                                onClick={() => setPaymentConfirm({ orderId: entry.orderId, type: "return-to-pool", masterAlias: entry.masterAlias })}
+                                                disabled={!!paymentActionLoading[entry.orderId]}
+                                                className="text-[10px] px-2 py-1 rounded-lg bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 hover:opacity-80 transition-colors font-medium disabled:opacity-50"
+                                              >
+                                                {poolLoading ? "…" : "🔄 Вернуть в пул"}
+                                              </button>
+                                              <button
+                                                onClick={() => setPaymentConfirm({ orderId: entry.orderId, type: "cancel", masterAlias: entry.masterAlias })}
+                                                disabled={!!paymentActionLoading[entry.orderId]}
+                                                className="text-[10px] px-2 py-1 rounded-lg bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:opacity-80 transition-colors font-medium disabled:opacity-50"
+                                              >
+                                                {cancelLoading ? "…" : "❌ Отменить заказ"}
+                                              </button>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
 
                           {/* Orders-without-receipts inline panel */}
                           {scenario.id === "orders-without-receipts" && (noReceiptResult || lastRun?.summary) && (() => {
@@ -1821,6 +2033,118 @@ export default function AiOfficePage() {
           </div>
         </div>
       )}
+      {/* ── Payment-reminders: call modal ── */}
+      {paymentCallModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-card border border-border rounded-2xl shadow-2xl p-6 max-w-sm w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center">
+                  <span className="text-xl">📞</span>
+                </div>
+                <div>
+                  <p className="font-bold text-sm">{paymentCallModal.clientName}</p>
+                  <p className="text-xs text-muted-foreground">Заказ #{paymentCallModal.orderId}</p>
+                </div>
+              </div>
+              <button onClick={() => setPaymentCallModal(null)} className="text-muted-foreground hover:text-foreground">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <a
+              href={`tel:${paymentCallModal.clientPhone}`}
+              className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-semibold text-sm transition-colors"
+            >
+              <span>📞</span>
+              {paymentCallModal.clientPhone}
+            </a>
+
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Что сказал клиент?</Label>
+              <Textarea
+                placeholder="Комментарий по звонку..."
+                value={paymentCallComment[paymentCallModal.orderId] ?? ""}
+                onChange={e => setPaymentCallComment(p => ({ ...p, [paymentCallModal.orderId]: e.target.value }))}
+                className="text-sm resize-none"
+                rows={3}
+              />
+              <Button
+                size="sm"
+                className="w-full"
+                variant={paymentCommentSaved.has(paymentCallModal.orderId) ? "outline" : "default"}
+                onClick={() => {
+                  setPaymentCommentSaved(prev => new Set(prev).add(paymentCallModal.orderId));
+                  toast({ title: "Комментарий сохранён ✓" });
+                }}
+              >
+                {paymentCommentSaved.has(paymentCallModal.orderId) ? "✅ Сохранено" : "Сохранить комментарий"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Payment-reminders: confirm dialog ── */}
+      {paymentConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-card border border-border rounded-2xl shadow-2xl p-6 max-w-sm w-full space-y-4">
+            {paymentConfirm.type === "return-to-pool" ? (
+              <>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
+                    <span className="text-xl">🔄</span>
+                  </div>
+                  <div>
+                    <p className="font-bold text-sm">Вернуть заказ в пул?</p>
+                    <p className="text-xs text-muted-foreground">Заказ #{paymentConfirm.orderId}</p>
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Мастер <strong>{paymentConfirm.masterAlias}</strong> получит уведомление в Max о возврате заказа в пул.
+                </p>
+                <div className="flex gap-2">
+                  <Button variant="outline" className="flex-1" onClick={() => setPaymentConfirm(null)}>Отмена</Button>
+                  <Button
+                    className="flex-1 bg-orange-500 hover:bg-orange-600 text-white"
+                    onClick={() => handlePaymentReturnToPool(paymentConfirm.orderId)}
+                    disabled={paymentActionLoading[paymentConfirm.orderId] === "pool"}
+                  >
+                    {paymentActionLoading[paymentConfirm.orderId] === "pool" ? <Loader2 className="w-4 h-4 animate-spin" /> : "Да, вернуть"}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                    <span className="text-xl">❌</span>
+                  </div>
+                  <div>
+                    <p className="font-bold text-sm">Отменить заказ #{paymentConfirm.orderId}?</p>
+                    <p className="text-xs text-muted-foreground">Это действие нельзя отменить</p>
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Мастер <strong>{paymentConfirm.masterAlias}</strong> получит уведомление в Max об отмене заказа.
+                </p>
+                <div className="flex gap-2">
+                  <Button variant="outline" className="flex-1" onClick={() => setPaymentConfirm(null)}>Нет</Button>
+                  <Button
+                    variant="destructive"
+                    className="flex-1"
+                    onClick={() => handlePaymentCancel(paymentConfirm.orderId)}
+                    disabled={paymentActionLoading[paymentConfirm.orderId] === "cancel"}
+                  >
+                    {paymentActionLoading[paymentConfirm.orderId] === "cancel" ? <Loader2 className="w-4 h-4 animate-spin" /> : "Да, отменить"}
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── Orders-without-receipts confirm dialog ── */}
       {noReceiptConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
