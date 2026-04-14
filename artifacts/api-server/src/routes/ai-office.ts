@@ -253,97 +253,141 @@ async function runPaymentReminders(runType: "manual" | "auto" = "auto") {
 
 // ─── Scenario 3: Order Diagnostics ────────────────────────────────────────────
 
-async function runOrderDiagnostics() {
+async function runOrderDiagnostics(runType: "manual" | "auto" = "auto") {
   const now = new Date();
 
   const rows = await db.execute(sql`
-    SELECT o.id, o.city, o.district, o.service_type, o.area,
-           o.status, o.assigned_at, o.updated_at, o.order_amount,
+    SELECT o.id, o.city, o.district, o.service_type,
+           o.status, o.updated_at, o.order_amount, o.master_id,
+           COALESCE(o.assigned_at, o.created_at) AS ref_time,
            m.alias AS master_alias, m.max_chat_id,
-           r.prepayment_submitted_at, r.total_amount AS receipt_amount,
-           ARRAY_LENGTH(o.photos_before, 1) AS photos_before_count,
-           ARRAY_LENGTH(o.photos_after, 1) AS photos_after_count
+           r.id AS receipt_id, r.created_at AS receipt_created_at,
+           r.prepayment_submitted_at, r.total_amount AS receipt_amount
     FROM orders o
     LEFT JOIN masters m ON m.id = o.master_id
     LEFT JOIN receipts r ON r.order_id = o.id
     WHERE o.status IN ('master_assigned', 'in_progress')
       AND o.deleted_at IS NULL
-    ORDER BY o.assigned_at ASC NULLS LAST
+    ORDER BY COALESCE(o.assigned_at, o.created_at) ASC NULLS LAST
   `);
+
+  // Criterion 5: low conversion masters (min 3 orders)
+  const convRows = await db.execute(sql`
+    SELECT master_id,
+           COUNT(*) FILTER (WHERE status = 'completed') AS completed,
+           COUNT(*) AS total
+    FROM orders
+    WHERE master_id IS NOT NULL AND deleted_at IS NULL
+      AND status IN ('completed', 'cancelled', 'cancellation_requested', 'master_assigned', 'in_progress')
+    GROUP BY master_id
+    HAVING COUNT(*) >= 3
+  `);
+  const masterConv: Record<number, number> = {};
+  for (const r of convRows.rows as any[]) {
+    masterConv[Number(r.master_id)] = Math.round(Number(r.completed) * 100 / Number(r.total));
+  }
 
   const critical: any[] = [];
   const warning: any[] = [];
   const ok: any[] = [];
-  let criticalAmount = 0;
-  let warningAmount = 0;
 
   for (const o of rows.rows as any[]) {
-    const daysSinceAssigned = o.assigned_at
-      ? (now.getTime() - new Date(o.assigned_at).getTime()) / 86_400_000
-      : 0;
+    const refTime = new Date(o.ref_time ?? o.updated_at);
+    const daysSinceRef = (now.getTime() - refTime.getTime()) / 86_400_000;
+    const hoursSinceRef = daysSinceRef * 24;
     const daysSinceUpdated = (now.getTime() - new Date(o.updated_at).getTime()) / 86_400_000;
-    const hoursSinceAssigned = daysSinceAssigned * 24;
+    const hasReceipt = !!o.receipt_id;
     const prepaidOk = !!o.prepayment_submitted_at;
     const amount = Number(o.order_amount ?? o.receipt_amount ?? 0);
+    const conv = o.master_id ? masterConv[Number(o.master_id)] : undefined;
 
     let risk = "ok";
-    const reasons: string[] = [];
+    const reasons: { text: string; recommendation: string }[] = [];
 
-    // Master assigned but no response
+    // Criterion 1: master_assigned, no response
     if (o.status === "master_assigned") {
-      if (daysSinceAssigned >= 2) {
+      const days = Math.floor(daysSinceRef);
+      if (daysSinceRef >= 2) {
         risk = "critical";
-        reasons.push(`Мастер назначен ${Math.floor(daysSinceAssigned)} дн. назад — нет отклика`);
-      } else if (daysSinceAssigned >= 1) {
+        reasons.push({ text: `Мастер назначен ${days} дн. назад — нет отклика`, recommendation: "Срочно: напишите мастеру или переназначьте" });
+      } else if (daysSinceRef >= 1) {
         if (risk !== "critical") risk = "warning";
-        reasons.push(`Мастер назначен ${Math.floor(daysSinceAssigned)} дн. назад`);
+        reasons.push({ text: `Мастер назначен ${days} дн. назад — нет отклика`, recommendation: "Напишите мастеру или переназначьте заказ" });
       }
     }
 
-    // Prepayment overdue
-    if (!prepaidOk) {
-      if (hoursSinceAssigned >= 72) {
+    // Criterion 2: in_progress but no receipt
+    if (o.status === "in_progress" && !hasReceipt) {
+      const hours = Math.floor(hoursSinceRef);
+      if (hoursSinceRef >= 48) {
         risk = "critical";
-        reasons.push("Предоплата не оплачена > 72ч");
-      } else if (hoursSinceAssigned >= 24) {
+        reasons.push({ text: `Мастер откликнулся ${hours}ч назад — смета не отправлена. Возможно работает мимо системы`, recommendation: "Срочно: свяжитесь с мастером и клиентом" });
+      } else if (hoursSinceRef >= 24) {
         if (risk !== "critical") risk = "warning";
-        reasons.push("Предоплата не оплачена > 24ч");
+        reasons.push({ text: `Мастер откликнулся ${hours}ч назад — смета не отправлена`, recommendation: "Напомните мастеру отправить смету" });
       }
     }
 
-    // Order stale
+    // Criterion 3: receipt sent but no prepayment
+    if (hasReceipt && !prepaidOk && o.receipt_created_at) {
+      const hoursNoPay = (now.getTime() - new Date(o.receipt_created_at).getTime()) / 3_600_000;
+      const h = Math.floor(hoursNoPay);
+      if (hoursNoPay >= 72) {
+        risk = "critical";
+        reasons.push({ text: `Предоплата не оплачена > 72ч`, recommendation: "Позвоните клиенту или верните заказ в пул" });
+      } else if (hoursNoPay >= 24) {
+        if (risk !== "critical") risk = "warning";
+        reasons.push({ text: `Предоплата не оплачена ${h}ч`, recommendation: "Попросите мастера напомнить клиенту" });
+      }
+    }
+
+    // Criterion 4: stalled in_progress
     if (o.status === "in_progress") {
+      const days = Math.floor(daysSinceUpdated);
       if (daysSinceUpdated >= 14) {
         risk = "critical";
-        reasons.push(`В работе > 14 дней без обновлений`);
+        reasons.push({ text: `В работе ${days} дней без обновлений`, recommendation: "Срочно: свяжитесь с мастером. Возможно заказ заброшен" });
       } else if (daysSinceUpdated >= 7) {
         if (risk !== "critical") risk = "warning";
-        reasons.push(`В работе > 7 дней без обновлений`);
+        reasons.push({ text: `В работе ${days} дней без обновлений`, recommendation: "Уточните у мастера статус работ" });
       }
+    }
+
+    // Criterion 5: low conversion master
+    if (conv !== undefined && conv < 30) {
+      if (risk !== "critical") risk = "warning";
+      reasons.push({ text: `Мастер ${o.master_alias}: конверсия ${conv}% (< 30%)`, recommendation: "Проверьте качество работы мастера" });
     }
 
     const entry = {
       orderId: o.id,
       masterAlias: o.master_alias ?? "—",
-      maxChatId: o.max_chat_id,
-      city: o.city,
-      district: o.district,
-      serviceType: o.service_type,
+      maxChatId: o.max_chat_id ?? null,
+      city: o.city ?? "",
+      district: o.district ?? "",
+      serviceType: o.service_type ?? "",
       status: o.status,
-      daysSinceAssigned: Math.floor(daysSinceAssigned),
+      daysSinceAssigned: Math.floor(daysSinceRef),
       daysSinceUpdated: Math.floor(daysSinceUpdated),
+      hasReceipt,
       prepaidOk,
       amount,
       risk,
       reasons,
     };
 
-    if (risk === "critical") { critical.push(entry); criticalAmount += amount; }
-    else if (risk === "warning") { warning.push(entry); warningAmount += amount; }
+    if (risk === "critical") critical.push(entry);
+    else if (risk === "warning") warning.push(entry);
     else ok.push(entry);
   }
 
-  return { critical, warning, ok, totalAmount: { critical: criticalAmount, warning: warningAmount } };
+  return {
+    critical, warning, ok,
+    totalAmount: {
+      critical: critical.reduce((s, e) => s + e.amount, 0),
+      warning: warning.reduce((s, e) => s + e.amount, 0),
+    },
+  };
 }
 
 // ─── Scenario 4: Price Analysis ───────────────────────────────────────────────
@@ -537,7 +581,7 @@ export async function runTemplateScenario(
     let result: any;
     if (scenarioId === "broadcast-orders") result = await runBroadcastOrders();
     else if (scenarioId === "payment-reminders") result = await runPaymentReminders(runType);
-    else if (scenarioId === "order-diagnostics") result = await runOrderDiagnostics();
+    else if (scenarioId === "order-diagnostics") result = await runOrderDiagnostics(runType);
     else if (scenarioId === "price-analysis") result = await runPriceAnalysis();
     else if (scenarioId === "orders-without-receipts") result = await runOrdersWithoutReceipts(runType);
     else throw new Error(`Unknown scenario: ${scenarioId}`);
@@ -1061,25 +1105,55 @@ router.get("/template-scenarios/orders-without-receipts/live", async (_req, res)
   }
 });
 
+// GET /api/ai-office/template-scenarios/order-diagnostics/live
+router.get("/template-scenarios/order-diagnostics/live", async (_req, res) => {
+  try {
+    const data = await runOrderDiagnostics("manual");
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
 // POST /api/ai-office/template-scenarios/order-diagnostics/:orderId/message-master
 router.post("/template-scenarios/order-diagnostics/:orderId/message-master", async (req, res) => {
   const orderId = Number(req.params.orderId);
   try {
     const rows = await db.execute(sql`
       SELECT o.id, o.service_type, o.district, o.city, o.status,
+             COALESCE(o.assigned_at, o.created_at) AS ref_time,
              EXTRACT(EPOCH FROM (NOW() - o.updated_at)) / 86400 AS days_no_update,
+             r.id AS receipt_id, r.created_at AS receipt_created_at,
+             r.prepayment_submitted_at,
              m.id AS master_id, m.alias AS master_alias, m.max_chat_id
       FROM orders o
       JOIN masters m ON m.id = o.master_id
+      LEFT JOIN receipts r ON r.order_id = o.id
       WHERE o.id = ${orderId} AND o.deleted_at IS NULL
     `);
     const o = rows.rows[0] as any;
-    if (!o) return res.status(404).json({ error: "Order not found" });
-    if (!o.max_chat_id) return res.status(400).json({ error: "Master has no Max chat" });
+    if (!o) return res.status(404).json({ error: "Заказ не найден" });
+    if (!o.max_chat_id) return res.status(400).json({ error: "У мастера нет Max-чата" });
 
-    const days = Math.floor(Number(o.days_no_update));
-    const msg =
-      `${o.master_alias}, по заказу #${o.id} (${o.service_type}, ${o.district || o.city}) нет обновлений уже ${days} дн.\n\nПодскажите что со статусом?\nВсё в порядке?`;
+    const location = o.district || o.city;
+    const hasReceipt = !!o.receipt_id;
+    const prepaidOk = !!o.prepayment_submitted_at;
+    const refTime = new Date(o.ref_time);
+    const hoursRef = (Date.now() - refTime.getTime()) / 3_600_000;
+    const daysUpdated = Math.floor(Number(o.days_no_update));
+
+    let msg: string;
+    if (o.status === "master_assigned") {
+      msg = `${o.master_alias}, вы назначены на заказ #${o.id} (${o.service_type}, ${location}).\n\nПожалуйста подтвердите что готовы взяться за заказ и свяжитесь с клиентом.`;
+    } else if (o.status === "in_progress" && !hasReceipt) {
+      msg = `${o.master_alias}, по заказу #${o.id} (${o.service_type}, ${location}) смета ещё не отправлена клиенту.\n\nПожалуйста отправьте смету через приложение — без неё клиент не сможет внести предоплату.`;
+    } else if (hasReceipt && !prepaidOk) {
+      const h = Math.floor(hoursRef);
+      msg = `${o.master_alias}, по заказу #${o.id} (${o.service_type}, ${location}) предоплата не поступила уже ${h} часов.\n\nУточните у клиента, когда он планирует внести предоплату, и сообщите нам.`;
+    } else {
+      msg = `${o.master_alias}, по заказу #${o.id} (${o.service_type}, ${location}) нет обновлений уже ${daysUpdated} дн.\n\nПодскажите, что со статусом работ?`;
+    }
+
     await sendAndSaveMasterMessage(o.master_id, o.max_chat_id, msg, "🔍 Диагностика заказов");
     res.json({ ok: true });
   } catch (e) {

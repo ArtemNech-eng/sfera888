@@ -147,6 +147,7 @@ interface ScenarioLog {
   created_at: string;
 }
 
+interface DiagReason { text: string; recommendation: string }
 interface DiagEntry {
   orderId: number;
   masterAlias: string;
@@ -157,10 +158,11 @@ interface DiagEntry {
   status: string;
   daysSinceAssigned: number;
   daysSinceUpdated: number;
+  hasReceipt: boolean;
   prepaidOk: boolean;
   amount: number;
   risk: string;
-  reasons: string[];
+  reasons: DiagReason[];
 }
 
 // ─── Memory Types ──────────────────────────────────────────────────────────
@@ -369,6 +371,9 @@ export default function AiOfficePage() {
   const [expandedLogs, setExpandedLogs] = useState<string | null>(null);
   const [scenarioLogs, setScenarioLogs] = useState<Record<string, ScenarioLog[]>>({});
   const [diagResult, setDiagResult] = useState<{ critical: DiagEntry[]; warning: DiagEntry[]; ok: DiagEntry[]; totalAmount: { critical: number; warning: number } } | null>(null);
+  const [diagLiveResult, setDiagLiveResult] = useState<{ critical: DiagEntry[]; warning: DiagEntry[]; ok: DiagEntry[]; totalAmount: { critical: number; warning: number } } | null>(null);
+  const [diagLiveLoading, setDiagLiveLoading] = useState(false);
+  const [diagMsgSent, setDiagMsgSent] = useState<Set<number>>(new Set());
   const [messagingOrderId, setMessagingOrderId] = useState<number | null>(null);
 
   // Payment-reminders state
@@ -639,6 +644,19 @@ export default function AiOfficePage() {
     }
   }, []);
 
+  const fetchDiagLive = useCallback(async () => {
+    setDiagLiveLoading(true);
+    try {
+      const res = await fetch(`${BASE}/api/ai-office/template-scenarios/order-diagnostics/live`, { credentials: "include" });
+      const data = await res.json();
+      setDiagLiveResult(data);
+    } catch (e) {
+      toast({ title: "Ошибка загрузки", description: String(e), variant: "destructive" });
+    } finally {
+      setDiagLiveLoading(false);
+    }
+  }, []);
+
   const handleMessageMaster = useCallback(async (orderId: number) => {
     setMessagingOrderId(orderId);
     try {
@@ -647,6 +665,7 @@ export default function AiOfficePage() {
         credentials: "include",
       });
       if (!res.ok) throw new Error((await res.json()).error);
+      setDiagMsgSent(prev => new Set(prev).add(orderId));
       toast({ title: "Сообщение отправлено мастеру ✓" });
     } catch (e) {
       toast({ title: "Ошибка", description: String(e), variant: "destructive" });
@@ -1642,39 +1661,97 @@ export default function AiOfficePage() {
                             );
                           })()}
 
-                          {/* Diagnostics result inline */}
-                          {scenario.id === "order-diagnostics" && diagResult && diagResult.critical.length > 0 && (
-                            <div className="rounded-xl border border-red-200 dark:border-red-800/40 overflow-hidden">
-                              <div className="bg-red-50 dark:bg-red-950/20 px-3 py-2 flex items-center justify-between">
-                                <span className="text-xs font-semibold text-red-700 dark:text-red-400">
-                                  🔴 Критичные заказы ({diagResult.critical.length})
-                                </span>
-                                <span className="text-[10px] text-red-500">~{Math.round(diagResult.totalAmount.critical / 1000)}к ₽</span>
-                              </div>
-                              <div className="divide-y divide-border max-h-48 overflow-y-auto">
-                                {diagResult.critical.map(entry => (
-                                  <div key={entry.orderId} className="px-3 py-2 flex items-start gap-2">
-                                    <div className="flex-1 min-w-0">
-                                      <p className="text-xs font-medium">#{entry.orderId} {entry.serviceType}</p>
-                                      <p className="text-[11px] text-muted-foreground">{entry.masterAlias} · {entry.district || entry.city}</p>
-                                      {entry.reasons.map((r, i) => (
-                                        <p key={i} className="text-[11px] text-red-600 dark:text-red-400">{r}</p>
-                                      ))}
-                                    </div>
-                                    {entry.maxChatId && (
-                                      <button
-                                        onClick={() => handleMessageMaster(entry.orderId)}
-                                        disabled={messagingOrderId === entry.orderId}
-                                        className="shrink-0 text-[10px] px-2 py-1 rounded-lg bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:opacity-80 transition-opacity disabled:opacity-50"
-                                      >
-                                        {messagingOrderId === entry.orderId ? "…" : "Написать"}
-                                      </button>
-                                    )}
+                          {/* Diagnostics live panel */}
+                          {scenario.id === "order-diagnostics" && (() => {
+                            const data = diagLiveResult ?? (diagResult ?? null);
+                            const allCritical = data?.critical ?? [];
+                            const allWarning = data?.warning ?? [];
+                            const allOk = data?.ok ?? [];
+                            const total = allCritical.length + allWarning.length + allOk.length;
+                            const allItems = [...allCritical, ...allWarning];
+                            return (
+                              <div className="space-y-3">
+                                {/* Stats cards */}
+                                <div className="grid grid-cols-4 gap-1.5">
+                                  <div className="rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/30 px-2 py-2 text-center">
+                                    <p className="text-[10px] text-red-500 dark:text-red-400 font-medium">🔴 Критично</p>
+                                    <p className="text-base font-bold text-red-700 dark:text-red-400">{allCritical.length}</p>
                                   </div>
-                                ))}
+                                  <div className="rounded-xl bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-100 dark:border-yellow-900/30 px-2 py-2 text-center">
+                                    <p className="text-[10px] text-yellow-600 dark:text-yellow-400 font-medium">🟡 Внимание</p>
+                                    <p className="text-base font-bold text-yellow-700 dark:text-yellow-400">{allWarning.length}</p>
+                                  </div>
+                                  <div className="rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/30 px-2 py-2 text-center">
+                                    <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">🟢 Норма</p>
+                                    <p className="text-base font-bold text-emerald-700 dark:text-emerald-400">{allOk.length}</p>
+                                  </div>
+                                  <div className="rounded-xl bg-muted/50 border border-border px-2 py-2 text-center">
+                                    <p className="text-[10px] text-muted-foreground font-medium">📋 Всего</p>
+                                    <p className="text-base font-bold">{total}</p>
+                                  </div>
+                                </div>
+
+                                {/* Refresh row */}
+                                <div className="flex items-center gap-2 text-xs">
+                                  {total === 0 && data && (
+                                    <span className="px-2 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 font-semibold">✅ Все заказы в норме</span>
+                                  )}
+                                  <button onClick={fetchDiagLive} disabled={diagLiveLoading}
+                                    className="ml-auto flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors">
+                                    <RefreshCw className={`w-3 h-3 ${diagLiveLoading ? "animate-spin" : ""}`} />
+                                    <span>Обновить</span>
+                                  </button>
+                                </div>
+
+                                {/* Orders with problems */}
+                                {allItems.length > 0 && (
+                                  <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
+                                    {allItems.map(entry => {
+                                      const isCrit = entry.risk === "critical";
+                                      const msgSent = diagMsgSent.has(entry.orderId);
+                                      return (
+                                        <div key={entry.orderId} className={`px-3 py-2.5 ${isCrit ? "bg-red-50/40 dark:bg-red-950/10" : "bg-yellow-50/20 dark:bg-yellow-950/10"}`}>
+                                          <div className="flex items-start gap-2">
+                                            <div className="flex-1 min-w-0">
+                                              <div className="flex items-center gap-1.5 flex-wrap">
+                                                <span className="text-xs font-semibold">#{entry.orderId}</span>
+                                                <span className="text-xs text-muted-foreground">{entry.serviceType}</span>
+                                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${entry.status === "master_assigned" ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400" : "bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400"}`}>
+                                                  {entry.status === "master_assigned" ? "Назначен" : "В работе"}
+                                                </span>
+                                              </div>
+                                              <p className="text-[11px] text-muted-foreground mt-0.5">{entry.masterAlias} · {entry.district || entry.city}</p>
+                                              <div className="mt-1.5 space-y-1">
+                                                {entry.reasons.map((r, i) => (
+                                                  <div key={i} className="space-y-0.5">
+                                                    <p className={`text-[11px] font-medium ${isCrit ? "text-red-600 dark:text-red-400" : "text-yellow-700 dark:text-yellow-400"}`}>
+                                                      {isCrit ? "🔴" : "🟡"} {r.text}
+                                                    </p>
+                                                    <p className="text-[10px] text-muted-foreground pl-3">💡 {r.recommendation}</p>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            </div>
+                                          </div>
+                                          {entry.maxChatId && (
+                                            <div className="mt-2 flex gap-1.5">
+                                              <button
+                                                onClick={() => handleMessageMaster(entry.orderId)}
+                                                disabled={messagingOrderId === entry.orderId || msgSent}
+                                                className={`text-[11px] px-2.5 py-1 rounded-lg font-medium transition-opacity disabled:opacity-50 ${msgSent ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400" : isCrit ? "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:opacity-80" : "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 hover:opacity-80"}`}
+                                              >
+                                                {messagingOrderId === entry.orderId ? "…" : msgSent ? "✓ Отправлено" : "📨 Написать мастеру"}
+                                              </button>
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
                               </div>
-                            </div>
-                          )}
+                            );
+                          })()}
 
                           {/* History toggle */}
                           <button
