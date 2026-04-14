@@ -246,8 +246,6 @@ async function runPaymentReminders(runType: "manual" | "auto" = "auto") {
   let adminNotified = 0;
   let totalAmount = 0;
 
-  let autoReturned = 0;
-
   for (const r of rows.rows as any[]) {
     const hoursElapsed = Math.floor((now.getTime() - new Date(r.receipt_created_at).getTime()) / 3600_000);
     const tier = hoursElapsed >= 72 ? "super" : hoursElapsed >= 48 ? "critical" : "warning";
@@ -272,38 +270,32 @@ async function runPaymentReminders(runType: "manual" | "auto" = "auto") {
     if (tier === "super") {
       superCritical.push(entry);
       if (runType === "auto") {
-        // ── Auto-return to pool at 72h+ ──────────────────────────────────────
-        const alreadyReturned = await wasNotified("payment-reminders", r.order_id, r.master_id, "auto-returned");
-        if (!alreadyReturned) {
-          await db.execute(sql`
-            UPDATE orders
-            SET status = 'waiting_master', master_id = NULL, assigned_at = NULL, updated_at = NOW()
-            WHERE id = ${r.order_id} AND status NOT IN ('completed', 'cancelled', 'waiting_master')
-          `);
+        // ── Escalation alert to admin at 72h+ ────────────────────────────────
+        const alreadyAlerted = await wasNotified("payment-reminders", r.order_id, r.master_id, "super");
+        if (!alreadyAlerted) {
           if (r.max_chat_id) {
             await sendAndSaveMasterMessage(
               r.master_id, r.max_chat_id,
-              `Заказ #${r.order_id} возвращён в пул — клиент не оплатил предоплату в течение 72 часов.\n\n` +
-              `Из 10 клиентов 8 оплачивают без проблем — те кто не платит, обычно проблемные.\n\n` +
-              `Готовим для вас новый заказ 👍`,
+              `${r.master_alias}, по заказу #${r.order_id} предоплата не поступила уже ${hoursElapsed} часов.\n\n` +
+              `Уточните у клиента, когда он планирует внести предоплату, и сообщите нам.`,
               "💰 Напомнить об оплате"
             );
             await sleep(MSG_DELAY_MS);
           }
-          await recordNotification("payment-reminders", r.order_id, r.master_id, "auto-returned");
-          autoReturned++;
+          await sendAdminMax(
+            `⚠️ ПРЕДОПЛАТА НЕ ОПЛАЧЕНА 72+ ЧАСОВ\n\n` +
+            `Заказ: #${r.order_id}\n` +
+            `Вид работ: ${r.service_type}\n` +
+            `Город: ${r.city}${r.district ? ", " + r.district : ""}\n` +
+            `Мастер: ${r.master_alias}\n` +
+            `Клиент: ${r.client_name}\n` +
+            `Часов без оплаты: ${hoursElapsed}\n\n` +
+            `Решение принимается в ИИ Офис → Напомнить об оплате`
+          );
+          await recordNotification("payment-reminders", r.order_id, r.master_id, "super");
+          adminNotified++;
+          await sleep(MSG_DELAY_MS);
         }
-        await sendAdminMax(
-          `⚠️ ПРЕДОПЛАТА НЕ ОПЛАЧЕНА 72+ ЧАСОВ — ЗАКАЗ ВОЗВРАЩЁН В ПУЛ АВТОМАТИЧЕСКИ\n\n` +
-          `Заказ: #${r.order_id}\n` +
-          `Вид работ: ${r.service_type}\n` +
-          `Город: ${r.city}${r.district ? ", " + r.district : ""}\n` +
-          `Мастер: ${r.master_alias}\n` +
-          `Клиент: ${r.client_name}\n` +
-          `Часов без оплаты: ${hoursElapsed}`
-        );
-        adminNotified++;
-        await sleep(MSG_DELAY_MS);
       }
     } else {
       if (tier === "critical") critical.push(entry);
@@ -335,7 +327,7 @@ async function runPaymentReminders(runType: "manual" | "auto" = "auto") {
     }
   }
 
-  return { warning, critical, superCritical, adminNotified, totalAmount, autoReturned };
+  return { warning, critical, superCritical, adminNotified, totalAmount };
 }
 
 // ─── Scenario 3: Order Diagnostics ────────────────────────────────────────────
@@ -617,8 +609,6 @@ async function runOrdersWithoutReceipts(runType: "manual" | "auto" = "auto"): Pr
   const warning: OrderWithoutReceipt[] = [];
   let adminNotified = 0;
 
-  let autoReassigned = 0;
-
   for (const r of rows.rows as any[]) {
     const hours = Math.floor(Number(r.hours_without_receipt));
     const tier = hours >= 72 ? "critical-72" : hours >= 48 ? "critical" : "warning";
@@ -642,40 +632,31 @@ async function runOrdersWithoutReceipts(runType: "manual" | "auto" = "auto"): Pr
       const location = r.district || r.city;
 
       if (hours >= 96) {
-        // ── Auto-reassign to pool at 96h+ (4 days without receipt) ───────────
-        const alreadyReassigned = await wasNotified("orders-without-receipts", r.id, r.master_id, "auto-reassigned");
-        if (!alreadyReassigned) {
-          await db.execute(sql`
-            UPDATE orders
-            SET status = 'waiting_master', master_id = NULL, assigned_at = NULL, updated_at = NOW()
-            WHERE id = ${r.id} AND status NOT IN ('completed', 'cancelled', 'waiting_master')
-          `);
+        // ── Critical Max alert at 96h+ — admin decides manually ───────────────
+        const alreadyAlerted96 = await wasNotified("orders-without-receipts", r.id, r.master_id, "alert-96");
+        if (!alreadyAlerted96) {
           if (r.max_chat_id) {
             await sendAndSaveMasterMessage(
               r.master_id, r.max_chat_id,
-              `Заказ #${r.id} (${r.service_type}, ${location}) возвращён в пул — смета не была отправлена в течение 4 дней.\n\n` +
-              `Если вы уже выполнили работы — пожалуйста свяжитесь с нами.\n\n` +
-              `Готовим для вас новый заказ 👍`,
+              `⚠️ ${r.master_alias}, по заказу #${r.id} (${r.service_type}, ${location}) смета не отправлена уже ${hours} часов.\n\n` +
+              `Если вы не можете взять этот заказ — пожалуйста сообщите нам.\n\nВопрос передан руководителю.`,
               "📄 Заказы без сметы"
             );
             await sleep(MSG_DELAY_MS);
           }
-          await recordNotification("orders-without-receipts", r.id, r.master_id, "auto-reassigned");
-          autoReassigned++;
           await sendAdminMax(
-            `🔄 ЗАКАЗ БЕЗ СМЕТЫ 96+ ЧАСОВ — ВОЗВРАЩЁН В ПУЛ АВТОМАТИЧЕСКИ\n\n` +
-            `Заказ: #${r.id}\nВид работ: ${r.service_type}\nГород: ${r.city}\nМастер: ${r.master_alias}\nЧасов без сметы: ${hours}`
+            `🚨 ЗАКАЗ БЕЗ СМЕТЫ 96+ ЧАСОВ\n\n` +
+            `Заказ: #${r.id}\nВид работ: ${r.service_type}\nГород: ${r.city}, ${r.district ?? "—"}\nМастер: ${r.master_alias}\nЧасов без сметы: ${hours}\n\n` +
+            `Требуется ручное решение: ИИ Офис → Заказы без сметы`
           );
+          await recordNotification("orders-without-receipts", r.id, r.master_id, "alert-96");
           adminNotified++;
           await sleep(MSG_DELAY_MS);
         }
       } else if (hours >= 72) {
-        // Admin alert + escalating message to master
+        // ── Max alert at 72h+ + escalating message to master ─────────────────
         const alreadySentAlert = await wasNotified("orders-without-receipts", r.id, r.master_id, "critical-72");
         if (!alreadySentAlert) {
-          await sendAdminTelegram(
-            `⚠️ <b>ЗАКАЗ БЕЗ СМЕТЫ 72+ ЧАСОВ</b>\n\nЗаказ: #${r.id}\nВид работ: ${r.service_type}\nГород: ${r.city}, ${r.district ?? "—"}\nМастер: ${r.master_alias}\nЧасов без сметы: ${hours}\n\nЕсли смета не будет отправлена в течение 24ч — заказ будет возвращён в пул автоматически`
-          ).catch(() => {});
           if (r.max_chat_id) {
             await sendAndSaveMasterMessage(
               r.master_id, r.max_chat_id,
@@ -684,8 +665,14 @@ async function runOrdersWithoutReceipts(runType: "manual" | "auto" = "auto"): Pr
             );
             await sleep(MSG_DELAY_MS);
           }
+          await sendAdminMax(
+            `⚠️ ЗАКАЗ БЕЗ СМЕТЫ 72+ ЧАСОВ\n\n` +
+            `Заказ: #${r.id}\nВид работ: ${r.service_type}\nГород: ${r.city}, ${r.district ?? "—"}\nМастер: ${r.master_alias}\nЧасов без сметы: ${hours}\n\n` +
+            `Решение принимается в ИИ Офис → Заказы без сметы`
+          );
           await recordNotification("orders-without-receipts", r.id, r.master_id, "critical-72");
           adminNotified++;
+          await sleep(MSG_DELAY_MS);
         }
       } else {
         // Send tiered message to master (warning/critical) with dedup
@@ -713,7 +700,7 @@ async function runOrdersWithoutReceipts(runType: "manual" | "auto" = "auto"): Pr
     }
   }
 
-  return { critical, warning, adminNotified, autoReassigned };
+  return { critical, warning, adminNotified };
 }
 
 // ─── Public runner (used by cron in index.ts) ──────────────────────────────────
