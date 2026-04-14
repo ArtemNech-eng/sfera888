@@ -323,12 +323,13 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettin
     });
   }, [itemsWithPeriodStats, totalPeriodViews, periodSpending, spending, crmItemMap]);
 
-  // Available cities — union of CRM order cities and Avito item location names
+  // Available cities — union of CRM order cities and Avito item location names (deduplicated by normalized key)
   const availableCities = useMemo(() => {
-    const cities = new Set<string>();
-    (analyticsData?.crmByCity ?? []).forEach(r => { if (r.city) cities.add(r.city); });
-    itemRows.forEach(r => { if (r.city && r.city !== "—") cities.add(r.city); });
-    return Array.from(cities).sort();
+    const map = new Map<string, string>(); // normalized key → display value
+    const add = (c: string) => { const k = c.trim().toLowerCase(); if (k) map.set(k, c.trim()); };
+    (analyticsData?.crmByCity ?? []).forEach(r => { if (r.city) add(r.city); });
+    itemRows.forEach(r => { if (r.city && r.city !== "—") add(r.city); });
+    return Array.from(map.values()).sort();
   }, [analyticsData, itemRows]);
 
   // City table rows
