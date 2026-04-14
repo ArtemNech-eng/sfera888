@@ -179,7 +179,7 @@ async function runBroadcastOrders() {
 
 // ─── Scenario 2: Payment Reminders ────────────────────────────────────────────
 
-async function runPaymentReminders() {
+async function runPaymentReminders(runType: "manual" | "auto" = "auto") {
   const now = new Date();
   const h24ago = new Date(now.getTime() - 24 * 3600_000).toISOString();
 
@@ -225,21 +225,22 @@ async function runPaymentReminders() {
 
     if (hoursElapsed >= 72) {
       superCritical.push(entry);
-      // Inform admin only — master notifications are sent manually by admin
-      await sendAdminMax(
-        `⚠️ ПРЕДОПЛАТА НЕ ОПЛАЧЕНА 72+ ЧАСОВ\n\n` +
-        `Заказ: #${r.order_id}\n` +
-        `Вид работ: ${r.service_type}\n` +
-        `Город: ${r.city}${r.district ? ", " + r.district : ""}\n` +
-        `Мастер: ${r.master_alias}\n` +
-        `Клиент: ${r.client_name}\n` +
-        `Смета отправлена: ${new Date(r.receipt_created_at).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" })}\n` +
-        `Сумма заказа: ${Number(r.total_amount ?? 0).toLocaleString("ru-RU")}₽\n` +
-        `Предоплата: 5 000₽\n` +
-        `Часов без оплаты: ${hoursElapsed}\n\n` +
-        `Решение принимается в ИИ Офис → Напомнить об оплате`
-      );
-      adminNotified++;
+      if (runType === "auto") {
+        await sendAdminMax(
+          `⚠️ ПРЕДОПЛАТА НЕ ОПЛАЧЕНА 72+ ЧАСОВ\n\n` +
+          `Заказ: #${r.order_id}\n` +
+          `Вид работ: ${r.service_type}\n` +
+          `Город: ${r.city}${r.district ? ", " + r.district : ""}\n` +
+          `Мастер: ${r.master_alias}\n` +
+          `Клиент: ${r.client_name}\n` +
+          `Смета отправлена: ${new Date(r.receipt_created_at).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" })}\n` +
+          `Сумма заказа: ${Number(r.total_amount ?? 0).toLocaleString("ru-RU")}₽\n` +
+          `Предоплата: 5 000₽\n` +
+          `Часов без оплаты: ${hoursElapsed}\n\n` +
+          `Решение принимается в ИИ Офис → Напомнить об оплате`
+        );
+        adminNotified++;
+      }
     } else if (hoursElapsed >= 48) {
       critical.push(entry);
     } else {
@@ -458,10 +459,9 @@ interface OrderWithoutReceipt {
   masterPhone: string | null;
 }
 
-async function runOrdersWithoutReceipts(): Promise<{
+async function runOrdersWithoutReceipts(runType: "manual" | "auto" = "auto"): Promise<{
   critical: OrderWithoutReceipt[];
   warning: OrderWithoutReceipt[];
-  totalNotified: number;
   adminNotified: number;
 }> {
   const now = new Date();
@@ -504,8 +504,8 @@ async function runOrdersWithoutReceipts(): Promise<{
     if (hours >= 48) critical.push(entry);
     else warning.push(entry);
 
-    // Admin Telegram alert for 72h+ only — master notifications sent manually
-    if (hours >= 72) {
+    // Admin Telegram alert for 72h+ only — only during auto-run
+    if (hours >= 72 && runType === "auto") {
       const assignedDate = new Date(r.assigned_at).toLocaleDateString("ru-RU", {
         day: "numeric", month: "long", hour: "2-digit", minute: "2-digit",
       });
@@ -536,10 +536,10 @@ export async function runTemplateScenario(
   try {
     let result: any;
     if (scenarioId === "broadcast-orders") result = await runBroadcastOrders();
-    else if (scenarioId === "payment-reminders") result = await runPaymentReminders();
+    else if (scenarioId === "payment-reminders") result = await runPaymentReminders(runType);
     else if (scenarioId === "order-diagnostics") result = await runOrderDiagnostics();
     else if (scenarioId === "price-analysis") result = await runPriceAnalysis();
-    else if (scenarioId === "orders-without-receipts") result = await runOrdersWithoutReceipts();
+    else if (scenarioId === "orders-without-receipts") result = await runOrdersWithoutReceipts(runType);
     else throw new Error(`Unknown scenario: ${scenarioId}`);
     await saveScenarioRun(scenarioId, runType, "success", result, null, Date.now() - start);
     return result;
