@@ -32,6 +32,7 @@ interface AvitoItem {
   title: string;
   status: string;
   url: string;
+  address?: string;
   category?: { id: number; name: string };
   location?: { name?: string };
   stats?: {
@@ -308,7 +309,7 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettin
       const crmRevenue = crm?.revenue ?? 0;
       const cpo = itemSpend !== null && crmOrders > 0 ? Math.round(itemSpend / crmOrders) : null;
       const roi = itemSpend !== null && itemSpend > 0 && crmRevenue > 0 ? crmRevenue / itemSpend : null;
-      const city = (item as any).location?.name || (item as any).addresses?.[0]?.city || "—";
+      const city = item.address?.split(",")[0].trim() || (item as any).location?.name || "—";
       const category = (item as any).category?.name || "—";
       return { ...item, views, contacts, conv, itemSpend, cpc, cpo, roi, crmLeads, crmOrders, crmRevenue, city, category };
     });
