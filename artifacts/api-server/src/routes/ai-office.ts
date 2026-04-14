@@ -128,10 +128,10 @@ async function notifyAdminError(scenario: string, error: string) {
   }
 }
 
-// ─── Scenario 1: Broadcast Open Orders — Wave System ──────────────────────────
+// ─── Scenario 1: Broadcast Open Orders — Send to all at once ──────────────────
 
-// Wave timings (minutes since wave 1)
-const WAVE_DELAYS = [0, 15, 30, 45, 75]; // wave1, wave2, wave3, wave4, admin-alert
+// Alert admin if no response after this many minutes
+const ADMIN_ALERT_MINUTES = 75;
 
 function computeConversion(m: any): number {
   const received = Number(m.total_leads_received ?? 0);
@@ -139,21 +139,12 @@ function computeConversion(m: any): number {
   return Number(m.accepted_orders ?? 0) / received;
 }
 
-function conversionTier(conv: number): 1 | 2 | 3 | 4 {
-  if (conv >= 0.8) return 1;
-  if (conv >= 0.6) return 2;
-  if (conv >= 0.3) return 3;
-  return 4;
-}
-
-function computeMasterScore(m: any, order: any): number {
-  const ratingScore = Math.min(Number(m.rating ?? 3) / 5, 1);
-  const loadScore = Math.max(0, (3 - Number(m.active_orders ?? 0)) / 3);
-  const districts: string[] = Array.isArray(m.preferred_districts) ? m.preferred_districts : [];
-  const districtScore = order.district && districts.includes(order.district) ? 1 : 0;
-  const avgMin = Number(m.avg_response_minutes ?? 30);
-  const speedScore = Math.max(0, Math.min(1, (60 - avgMin) / 60));
-  return 0.4 * ratingScore + 0.3 * loadScore + 0.2 * districtScore + 0.1 * speedScore;
+// Ranking score for send order: 50% conversion + 50% rating
+// Best masters get the message first → more likely to respond quickly
+function computeBroadcastScore(m: any): number {
+  const conv = computeConversion(m);
+  const rating = Math.min(Number(m.rating ?? 3) / 5, 1);
+  return 0.5 * conv + 0.5 * rating;
 }
 
 function normalizeRu(s: string) {
@@ -178,7 +169,7 @@ function masterMatchesOrder(m: any, order: any): boolean {
   );
 }
 
-/** Returns set of master IDs already notified about this order in any wave */
+/** Returns set of master IDs already notified about this order */
 async function getAlreadyNotifiedForOrder(orderId: number): Promise<Set<number>> {
   const rows = await db.execute(sql`
     SELECT DISTINCT master_id FROM scenario_notifications
@@ -187,36 +178,12 @@ async function getAlreadyNotifiedForOrder(orderId: number): Promise<Set<number>>
   return new Set((rows.rows as any[]).map(r => Number(r.master_id)));
 }
 
-function buildWaveMessage(m: any, order: any, wave: number): string {
+function buildBroadcastMessage(order: any): string {
   const areaStr = order.area ? `${Number(order.area).toFixed(0)} м²` : "—";
   const scheduledText = order.scheduled_at
     ? new Date(order.scheduled_at).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })
     : "по договорённости";
   const location = order.district ? `${order.city}, ${order.district}` : order.city;
-
-  if (wave === 1) {
-    const conv = Math.round(computeConversion(m) * 100);
-    return (
-      `🔔 Новый заказ!\n\n` +
-      `📍 ${location}\n` +
-      `🔨 ${order.service_type}\n` +
-      `📐 ${areaStr}\n` +
-      `📅 ${scheduledText}\n\n` +
-      `Вы в приоритете — ваша конверсия ${conv}% 🔥\n\n` +
-      `Откликнитесь в приложении 👍`
-    );
-  }
-  if (wave === 4) {
-    return (
-      `🔔 Заказ ещё свободен!\n\n` +
-      `📍 ${location}\n` +
-      `🔨 ${order.service_type}\n` +
-      `📐 ${areaStr}\n` +
-      `📅 ${scheduledText}\n\n` +
-      `Никто не взял — ваш шанс!\n\n` +
-      `Откликнитесь в приложении 👍`
-    );
-  }
   return (
     `🔔 Новый заказ!\n\n` +
     `📍 ${location}\n` +
@@ -227,69 +194,22 @@ function buildWaveMessage(m: any, order: any, wave: number): string {
   );
 }
 
-async function sendWaveToMasters(
-  masters: any[], order: any, wave: number
-): Promise<number> {
-  let sent = 0;
-  for (const m of masters) {
-    await sendAndSaveMasterMessage(
-      m.id, m.max_chat_id,
-      buildWaveMessage(m, order, wave),
-      "📋 Рассылка заказов"
-    );
-    await recordNotification("broadcast-orders", order.id, m.id, `wave-${wave}`);
-    await db.execute(sql`
-      UPDATE masters SET total_leads_received = COALESCE(total_leads_received, 0) + 1
-      WHERE id = ${m.id}
-    `);
-    sent++;
-    await sleep(MSG_DELAY_MS);
-  }
-  return sent;
-}
-
-async function upsertWave1(orderId: number, count: number): Promise<void> {
+async function upsertBroadcastRecord(orderId: number, count: number): Promise<void> {
   await db.execute(sql`
     INSERT INTO order_broadcast_waves (order_id, current_wave, wave_1_sent_at, wave_1_count)
     VALUES (${orderId}, 1, NOW(), ${count})
     ON CONFLICT (order_id) DO UPDATE
-    SET current_wave = 1, wave_1_sent_at = NOW(), wave_1_count = ${count}, updated_at = NOW()
-  `);
-}
-async function upsertWave2(orderId: number, count: number): Promise<void> {
-  await db.execute(sql`
-    INSERT INTO order_broadcast_waves (order_id, current_wave, wave_2_sent_at, wave_2_count)
-    VALUES (${orderId}, 2, NOW(), ${count})
-    ON CONFLICT (order_id) DO UPDATE
-    SET current_wave = 2, wave_2_sent_at = NOW(), wave_2_count = ${count}, updated_at = NOW()
-  `);
-}
-async function upsertWave3(orderId: number, count: number): Promise<void> {
-  await db.execute(sql`
-    INSERT INTO order_broadcast_waves (order_id, current_wave, wave_3_sent_at, wave_3_count)
-    VALUES (${orderId}, 3, NOW(), ${count})
-    ON CONFLICT (order_id) DO UPDATE
-    SET current_wave = 3, wave_3_sent_at = NOW(), wave_3_count = ${count}, updated_at = NOW()
-  `);
-}
-async function upsertWave4(orderId: number, count: number): Promise<void> {
-  await db.execute(sql`
-    INSERT INTO order_broadcast_waves (order_id, current_wave, wave_4_sent_at, wave_4_count)
-    VALUES (${orderId}, 4, NOW(), ${count})
-    ON CONFLICT (order_id) DO UPDATE
-    SET current_wave = 4, wave_4_sent_at = NOW(), wave_4_count = ${count}, updated_at = NOW()
+    SET wave_1_count = order_broadcast_waves.wave_1_count + ${count}, updated_at = NOW()
   `);
 }
 
 async function runBroadcastOrders() {
   const now = new Date();
 
-  // 1. Load open orders with their wave state
+  // 1. Load open orders with their broadcast state
   const ordersResult = await db.execute(sql`
     SELECT o.id, o.city, o.district, o.service_type, o.area, o.scheduled_at, o.created_at,
-           w.current_wave, w.wave_1_sent_at, w.wave_2_sent_at,
-           w.wave_3_sent_at, w.wave_4_sent_at, w.admin_alerted_at,
-           w.wave_1_count, w.wave_2_count, w.wave_3_count, w.wave_4_count
+           w.wave_1_sent_at, w.wave_1_count, w.admin_alerted_at
     FROM orders o
     LEFT JOIN order_broadcast_waves w ON w.order_id = o.id
     WHERE o.status = 'waiting_master' AND o.deleted_at IS NULL
@@ -297,16 +217,14 @@ async function runBroadcastOrders() {
   `);
 
   if ((ordersResult.rows as any[]).length === 0) {
-    return { totalOrders: 0, totalSent: 0, newOrders: 0, wavesAdvanced: 0, adminAlerts: 0 };
+    return { totalOrders: 0, totalSent: 0, newOrders: 0, adminAlerts: 0 };
   }
 
-  // 2. Load all eligible active masters with scores
+  // 2. Load all eligible active masters sorted by broadcast score (conv + rating)
   const mastersResult = await db.execute(sql`
-    SELECT m.id, m.alias, m.city, m.district, m.specialization, m.specializations,
+    SELECT m.id, m.alias, m.city, m.specialization, m.specializations,
            m.max_chat_id, m.rating, m.accepted_orders, m.total_leads_received,
-           m.preferred_districts,
-           COALESCE(active.cnt, 0) AS active_orders,
-           COALESCE(resp_speed.avg_minutes, 30) AS avg_response_minutes
+           COALESCE(active.cnt, 0) AS active_orders
     FROM masters m
     LEFT JOIN (
       SELECT master_id, COUNT(*) AS cnt
@@ -314,81 +232,49 @@ async function runBroadcastOrders() {
       WHERE status IN ('master_assigned', 'in_progress') AND deleted_at IS NULL
       GROUP BY master_id
     ) active ON active.master_id = m.id
-    LEFT JOIN (
-      SELECT master_id,
-        AVG(EXTRACT(EPOCH FROM (responded_at - created_at)) / 60) AS avg_minutes
-      FROM order_dispatches
-      WHERE status IN ('responded', 'assigned') AND responded_at IS NOT NULL
-      GROUP BY master_id
-    ) resp_speed ON resp_speed.master_id = m.id
     WHERE m.status = 'active' AND m.deleted_at IS NULL AND m.max_chat_id IS NOT NULL
   `);
 
   const allMasters = mastersResult.rows as any[];
   let totalSent = 0;
   let newOrders = 0;
-  let wavesAdvanced = 0;
   let adminAlerts = 0;
 
   for (const order of ordersResult.rows as any[]) {
-    const wave1Time = order.wave_1_sent_at ? new Date(order.wave_1_sent_at) : null;
-    const elapsedMin = wave1Time ? (now.getTime() - wave1Time.getTime()) / 60000 : -1;
+    const sentTime = order.wave_1_sent_at ? new Date(order.wave_1_sent_at) : null;
+    const elapsedMin = sentTime ? (now.getTime() - sentTime.getTime()) / 60000 : -1;
 
-    // Eligible masters for this order (city + specialty + active < 3 + rating >= 3.0)
-    const eligible = allMasters
-      .filter(m => masterMatchesOrder(m, order))
-      .sort((a, b) => computeMasterScore(b, order) - computeMasterScore(a, order));
+    if (!sentTime) {
+      // ── New order: send to ALL eligible masters at once ────────────────────
+      // Sorted by score so the best masters get the message first (faster response)
+      const notified = await getAlreadyNotifiedForOrder(order.id);
+      const toSend = allMasters
+        .filter(m => masterMatchesOrder(m, order) && !notified.has(m.id))
+        .sort((a, b) => computeBroadcastScore(b) - computeBroadcastScore(a));
 
-    if (!wave1Time) {
-      // ── Wave 1: conv >= 80%, max 5 masters ────────────────────────────────
-      const wave1 = eligible
-        .filter(m => conversionTier(computeConversion(m)) === 1)
-        .slice(0, 5);
-
-      const sent1 = await sendWaveToMasters(wave1, order, 1);
-      await upsertWave1(order.id, sent1);
-      totalSent += sent1;
+      const message = buildBroadcastMessage(order);
+      let sent = 0;
+      for (const m of toSend) {
+        await sendAndSaveMasterMessage(m.id, m.max_chat_id, message, "📋 Рассылка заказов");
+        await recordNotification("broadcast-orders", order.id, m.id, "sent");
+        await db.execute(sql`
+          UPDATE masters SET total_leads_received = COALESCE(total_leads_received, 0) + 1
+          WHERE id = ${m.id}
+        `);
+        sent++;
+        await sleep(MSG_DELAY_MS);
+      }
+      await upsertBroadcastRecord(order.id, sent);
+      totalSent += sent;
       newOrders++;
 
-    } else if (!order.wave_2_sent_at && elapsedMin >= WAVE_DELAYS[1]) {
-      // ── Wave 2: conv 60-79%, skip already notified ─────────────────────────
-      const notified = await getAlreadyNotifiedForOrder(order.id);
-      const wave2 = eligible.filter(m =>
-        !notified.has(m.id) && conversionTier(computeConversion(m)) === 2
-      );
-      const sent2 = await sendWaveToMasters(wave2, order, 2);
-      await upsertWave2(order.id, sent2);
-      totalSent += sent2;
-      wavesAdvanced++;
-
-    } else if (!order.wave_3_sent_at && elapsedMin >= WAVE_DELAYS[2]) {
-      // ── Wave 3: conv 30-59%, skip already notified ─────────────────────────
-      const notified = await getAlreadyNotifiedForOrder(order.id);
-      const wave3 = eligible.filter(m =>
-        !notified.has(m.id) && conversionTier(computeConversion(m)) === 3
-      );
-      const sent3 = await sendWaveToMasters(wave3, order, 3);
-      await upsertWave3(order.id, sent3);
-      totalSent += sent3;
-      wavesAdvanced++;
-
-    } else if (!order.wave_4_sent_at && elapsedMin >= WAVE_DELAYS[3]) {
-      // ── Wave 4: all remaining, skip already notified ────────────────────────
-      const notified = await getAlreadyNotifiedForOrder(order.id);
-      const wave4 = eligible.filter(m => !notified.has(m.id));
-      const sent4 = await sendWaveToMasters(wave4, order, 4);
-      await upsertWave4(order.id, sent4);
-      totalSent += sent4;
-      wavesAdvanced++;
-
-    } else if (!order.admin_alerted_at && elapsedMin >= WAVE_DELAYS[4]) {
-      // ── Wave 5: admin alert in Max ─────────────────────────────────────────
+    } else if (!order.admin_alerted_at && elapsedMin >= ADMIN_ALERT_MINUTES) {
+      // ── No response after 75 min → alert admin in Max ─────────────────────
       const cityMasters = allMasters.filter(m => m.city === order.city).length;
-      const freeMasters = allMasters.filter(m => m.city === order.city && Number(m.active_orders ?? 0) < 3).length;
-      const w1c = order.wave_1_count ?? 0;
-      const w2c = order.wave_2_count ?? 0;
-      const w3c = order.wave_3_count ?? 0;
-      const w4c = order.wave_4_count ?? 0;
+      const freeMasters = allMasters.filter(m =>
+        m.city === order.city && Number(m.active_orders ?? 0) < 3
+      ).length;
+      const sentCount = Number(order.wave_1_count ?? 0);
       const location = order.district ? `${order.city}, ${order.district}` : order.city;
       const areaStr = order.area ? `${Number(order.area).toFixed(0)} м²` : "—";
       const scheduledText = order.scheduled_at
@@ -398,9 +284,8 @@ async function runBroadcastOrders() {
       await sendAdminMax(
         `⚠️ ЗАКАЗ БЕЗ МАСТЕРА\n\n` +
         `Заказ: #${order.id}\nВид работ: ${order.service_type}\nГород: ${location}\nПлощадь: ${areaStr}\nКогда нужно: ${scheduledText}\n\n` +
-        `Рассылка прошла 4 волны — никто не откликнулся.\n\n` +
-        `Мастеров в городе: ${cityMasters}\nСвободных: ${freeMasters}\n` +
-        `Получили уведомление: ${w1c + w2c + w3c + w4c} мастеров\n\n` +
+        `Разослано ${sentCount} мастерам — никто не откликнулся за 75 минут.\n\n` +
+        `Мастеров в городе: ${cityMasters}\nСвободных: ${freeMasters}\n\n` +
         `Решение в ИИ Офис → Открытые заказы`
       );
       await db.execute(sql`
@@ -409,12 +294,10 @@ async function runBroadcastOrders() {
       `);
       adminAlerts++;
     }
+    // else: already sent, waiting for master response — nothing to do
   }
 
-  return {
-    totalOrders: (ordersResult.rows as any[]).length,
-    totalSent, newOrders, wavesAdvanced, adminAlerts,
-  };
+  return { totalOrders: (ordersResult.rows as any[]).length, totalSent, newOrders, adminAlerts };
 }
 
 // ─── Scenario 2: Payment Reminders ────────────────────────────────────────────

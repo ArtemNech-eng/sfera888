@@ -1422,12 +1422,9 @@ export default function AiOfficePage() {
                             const stats = data?.stats ?? { openCount: 0, assignedTodayCount: 0, awaitingCount: 0, stuckCount: 0 };
 
                             function waveInfo(o: BroadcastOrderEntry): { label: string; color: string; bg: string } {
-                              if (o.adminAlerted) return { label: "⚫ Без ответа", color: "text-gray-600", bg: "bg-red-50/80 dark:bg-red-950/20" };
-                              if (!o.currentWave) return { label: "⏳ Новый", color: "text-gray-400", bg: "" };
-                              const wl = ["", "🟢 Волна 1", "🟡 Волна 2", "🟠 Волна 3", "🔴 Волна 4"];
-                              const wc = ["", "text-green-600", "text-yellow-600", "text-orange-600", "text-red-600"];
-                              const wb = ["", "", "", "", "bg-amber-50/60 dark:bg-amber-950/10"];
-                              return { label: wl[o.currentWave] ?? `Волна ${o.currentWave}`, color: wc[o.currentWave] ?? "", bg: wb[o.currentWave] ?? "" };
+                              if (o.adminAlerted) return { label: "⚫ Без ответа 75мин+", color: "text-gray-600 dark:text-gray-400", bg: "bg-red-50/80 dark:bg-red-950/20" };
+                              if (o.totalNotified > 0) return { label: `📬 Разослано`, color: "text-blue-600 dark:text-blue-400", bg: "" };
+                              return { label: "⏳ Новый", color: "text-gray-400", bg: "" };
                             }
 
                             function elapsedLabel(min: number): string {
