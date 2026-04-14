@@ -1374,20 +1374,38 @@ router.get("/items-with-stats", async (req, res) => {
       const statItems: any[] = statsData?.result?.items ?? [];
       console.log(`[avito:items-with-stats] statItems count=${statItems.length}`);
       if (statItems[0]) {
-        console.log(`[avito:items-with-stats] SAMPLE:`, JSON.stringify(statItems[0]).slice(0, 500));
+        // Full dump of first item so we can see both `stats` and `fields` keys
+        const sampleStr = JSON.stringify(statItems[0]);
+        console.log(`[avito:items-with-stats] SAMPLE (${sampleStr.length} chars):`, sampleStr.slice(0, 2000));
+        console.log(`[avito:items-with-stats] SAMPLE-KEYS:`, Object.keys(statItems[0]).join(","));
       }
 
       for (const s of statItems) {
         const id = Number(s.itemId);
 
-        // Build daily array — handle both formats Avito may return:
-        //  A) stats: [{date, uniqViews, uniqContacts, uniqFavorites}, ...]  ← preferred daily breakdown
-        //  B) fields: {uniqViews: N, ...}                                   ← aggregate for whole range
+        // Avito Stats v1 may return either or both formats:
+        //  A) stats: [{date, uniqViews, uniqContacts, uniqFavorites}, ...]  ← daily breakdown (has 1-3 day lag)
+        //  B) fields: {uniqViews: N, ...}                                   ← range aggregate (more up-to-date)
+        // We ALWAYS extract both when present. For period TOTALS (month/week) we prefer the
+        // aggregate from `fields` because it includes recently processed days not yet in the
+        // daily breakdown, fixing the "51 vs 54" type discrepancy.
         type DayEntry = { date: string; uniqViews: number; uniqContacts: number; uniqFavorites: number };
-        let daily: DayEntry[] = [];
 
+        // ── Parse fields aggregate ──────────────────────────────────────
+        let aggViews = 0, aggContacts = 0, aggFavs = 0, hasAgg = false;
+        if (s.fields) {
+          const fld = s.fields;
+          const gv = (k: string) => { const raw = fld[k]; return typeof raw === "object" ? (raw?.value ?? 0) : (Number(raw) || 0); };
+          aggViews    = gv("uniqViews");
+          aggContacts = gv("uniqContacts");
+          aggFavs     = gv("uniqFavorites");
+          hasAgg = aggViews > 0 || aggContacts > 0 || aggFavs > 0;
+          console.log(`[avito:items-with-stats] id=${id} FIELDS-AGG views=${aggViews} contacts=${aggContacts} favs=${aggFavs}`);
+        }
+
+        // ── Parse daily stats array ──────────────────────────────────────
+        let daily: DayEntry[] = [];
         if (Array.isArray(s.stats) && s.stats.length > 0) {
-          // Format A: proper daily array
           daily = s.stats.map((d: any) => ({
             date:          String(d.date ?? ""),
             uniqViews:     Number(d.uniqViews)    || 0,
@@ -1395,30 +1413,30 @@ router.get("/items-with-stats", async (req, res) => {
             uniqFavorites: Number(d.uniqFavorites) || 0,
           })).filter((d: DayEntry) => d.date.length === 10);
           daily.sort((a, b) => a.date.localeCompare(b.date));
-        } else if (s.fields) {
-          // Format B: aggregate → synthesise a single entry dated to rangeTo so
-          // it counts toward month/week/today calculations below.
-          const fld = s.fields;
-          const gv = (k: string) => {
-            const raw = fld[k];
-            return typeof raw === "object" ? (raw?.value ?? 0) : (Number(raw) || 0);
-          };
-          // Put this aggregate under rangeTo so it lands inside every filter window
-          daily = [{ date: rangeTo, uniqViews: gv("uniqViews"), uniqContacts: gv("uniqContacts"), uniqFavorites: gv("uniqFavorites") }];
-          console.log(`[avito:items-with-stats] id=${id} FORMAT-B aggregate views=${gv("uniqViews")} contacts=${gv("uniqContacts")}`);
+          const dailySum = daily.reduce((acc, d) => acc + d.uniqContacts, 0);
+          console.log(`[avito:items-with-stats] id=${id} DAILY entries=${daily.length} sum-contacts=${dailySum} range=${daily[0]?.date}..${daily[daily.length-1]?.date}`);
+        } else if (!hasAgg) {
+          // No data in either format — item has zero stats
+          console.log(`[avito:items-with-stats] id=${id} NO-DATA (empty stats + no fields)`);
+        }
+
+        // If ONLY Format B (no daily), synthesise a single entry at rangeTo for fallback calcs
+        if (daily.length === 0 && hasAgg) {
+          daily = [{ date: rangeTo, uniqViews: aggViews, uniqContacts: aggContacts, uniqFavorites: aggFavs }];
+          console.log(`[avito:items-with-stats] id=${id} FORMAT-B-ONLY synthesised daily entry`);
         }
 
         const sum = (key: keyof DayEntry, arr: DayEntry[]) =>
-          arr.reduce((acc, d) => acc + d[key] as number, 0);
+          arr.reduce((acc, d) => acc + (d[key] as number), 0);
 
         let viewsDay = 0, contactsDay = 0, favsDay = 0;
         let viewsYesterday = 0, contactsYesterday = 0;
 
         if (isCustom) {
-          // Custom period: total for the requested range
-          viewsDay     = sum("uniqViews",    daily);
-          contactsDay  = sum("uniqContacts", daily);
-          favsDay      = sum("uniqFavorites",daily);
+          // Custom period: use aggregate if available (most accurate), else sum all daily
+          viewsDay    = hasAgg ? aggViews    : sum("uniqViews",    daily);
+          contactsDay = hasAgg ? aggContacts : sum("uniqContacts", daily);
+          favsDay     = hasAgg ? aggFavs     : sum("uniqFavorites",daily);
         } else {
           // TODAY: find today's exact date entry (Avito may not have it yet — stays 0)
           const todayEntry = daily.find(d => d.date === todayStr);
@@ -1431,19 +1449,32 @@ router.get("/items-with-stats", async (req, res) => {
           contactsYesterday = yEntry?.uniqContacts  ?? 0;
         }
 
-        // WEEK: sum entries where date >= 7 days ago
-        const weekData  = isCustom ? daily : daily.filter(d => d.date >= weekStartStr);
+        // WEEK: sum daily entries for the last 7 days
+        // (daily data has 1-3 day lag so last few days may be 0, but aggregate only covers full range)
+        const weekData     = isCustom ? daily : daily.filter(d => d.date >= weekStartStr);
         const viewsWeek    = sum("uniqViews",    weekData);
         const contactsWeek = sum("uniqContacts", weekData);
         const favsWeek     = sum("uniqFavorites",weekData);
 
-        // MONTH (or full custom range): sum entries where date >= start of current month
-        const monthData    = isCustom ? daily : daily.filter(d => d.date >= monthStartStr);
-        const viewsMonth    = sum("uniqViews",    monthData);
-        const contactsMonth = sum("uniqContacts", monthData);
-        const favsMonth     = sum("uniqFavorites",monthData);
+        // MONTH: prefer the fields aggregate (authoritative total including lag-pending days)
+        // Fall back to summing daily entries if no aggregate available.
+        const monthDataDaily = isCustom ? daily : daily.filter(d => d.date >= monthStartStr);
+        const dailyMonthContacts = sum("uniqContacts", monthDataDaily);
+        const dailyMonthViews    = sum("uniqViews",    monthDataDaily);
+        const dailyMonthFavs     = sum("uniqFavorites",monthDataDaily);
 
-        // lastDataDate: most recent date with actual data
+        // Use aggregate ONLY when: it's not a custom period, it's available, and the aggregate
+        // covers (at least) the month range (rangeFrom <= monthStartStr).
+        const useAggForMonth = !isCustom && hasAgg && rangeFrom <= monthStartStr;
+        const viewsMonth    = useAggForMonth ? aggViews    : dailyMonthViews;
+        const contactsMonth = useAggForMonth ? aggContacts : dailyMonthContacts;
+        const favsMonth     = useAggForMonth ? aggFavs     : dailyMonthFavs;
+
+        if (useAggForMonth && aggContacts !== dailyMonthContacts) {
+          console.log(`[avito:items-with-stats] id=${id} MONTH agg=${aggContacts}c (daily-sum=${dailyMonthContacts}c, diff=${aggContacts - dailyMonthContacts} contacts in lag)`);
+        }
+
+        // lastDataDate: most recent day with actual daily data
         const lastDataDate = daily.length ? daily[daily.length - 1].date : todayStr;
 
         statsMap[id] = {
@@ -1458,7 +1489,7 @@ router.get("/items-with-stats", async (req, res) => {
           isCustom,
           daily,
         };
-        console.log(`[avito:items-with-stats] id=${id} lastData=${lastDataDate} D=${contactsDay}c/${viewsDay}v Yd=${contactsYesterday}c W=${contactsWeek}c M=${contactsMonth}c`);
+        console.log(`[avito:items-with-stats] id=${id} FINAL: D=${contactsDay}c/${viewsDay}v Yd=${contactsYesterday}c W=${contactsWeek}c M=${contactsMonth}c (useAgg=${useAggForMonth})`);
       }
       console.log(`[avito:items-with-stats] done: ${Object.keys(statsMap).length} items with stats`);
     } catch (e: any) {
