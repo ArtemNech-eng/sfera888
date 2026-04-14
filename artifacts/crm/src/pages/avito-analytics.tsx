@@ -309,7 +309,15 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettin
       const crmRevenue = crm?.revenue ?? 0;
       const cpo = itemSpend !== null && crmOrders > 0 ? Math.round(itemSpend / crmOrders) : null;
       const roi = itemSpend !== null && itemSpend > 0 && crmRevenue > 0 ? crmRevenue / itemSpend : null;
-      const city = item.address?.split(",")[0].trim() || (item as any).location?.name || "—";
+      const cityFromAddress = (() => {
+        if (!item.address) return null;
+        const regionKeywords = /край|область|республика|округ|oblast|district/i;
+        const parts = item.address.split(",").map(s => s.trim()).filter(Boolean);
+        // Skip leading region/oblast/krai parts, return first non-region part
+        const cityPart = parts.find(p => !regionKeywords.test(p));
+        return cityPart || parts[0] || null;
+      })();
+      const city = cityFromAddress || (item as any).location?.name || "—";
       const category = (item as any).category?.name || "—";
       return { ...item, views, contacts, conv, itemSpend, cpc, cpo, roi, crmLeads, crmOrders, crmRevenue, city, category };
     });
