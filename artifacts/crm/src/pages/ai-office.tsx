@@ -903,6 +903,14 @@ export default function AiOfficePage() {
     return () => { if (autoPollingRef.current) clearInterval(autoPollingRef.current); };
   }, [tab, fetchAutoSessions, fetchScenarios, fetchTemplateScenarios]);
 
+  // Auto-fetch live data for action scenarios when their lastRun summary is loaded
+  useEffect(() => {
+    const hasPayment = templateScenarios.find(s => s.id === "payment-reminders")?.lastRun?.summary;
+    const hasReceipt = templateScenarios.find(s => s.id === "orders-without-receipts")?.lastRun?.summary;
+    if (hasPayment) fetchPaymentLive();
+    if (hasReceipt) fetchNoReceiptLive();
+  }, [templateScenarios]); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   return (
     <AppLayout>
