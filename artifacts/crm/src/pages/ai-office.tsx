@@ -377,7 +377,7 @@ export default function AiOfficePage() {
   const [messagingOrderId, setMessagingOrderId] = useState<number | null>(null);
 
   // Payment-reminders state
-  interface PaymentEntry { orderId: number; masterAlias: string; maxChatId: string | null; clientName: string; clientPhone: string | null; city: string; district: string; serviceType: string; receiptSentAt: string; hoursWithoutPayment: number; totalAmount: number; risk: "super" | "critical" | "warning" }
+  interface PaymentEntry { orderId: number; masterAlias: string; maxChatId: string | null; clientName: string; clientPhone: string | null; city: string; district: string; serviceType: string; receiptSentAt: string; hoursWithoutPayment: number; totalAmount: number; commission: number; risk: "super" | "critical" | "warning" }
   const [paymentResult, setPaymentResult] = useState<{ warning: PaymentEntry[]; critical: PaymentEntry[]; superCritical: PaymentEntry[]; totalAmount: number } | null>(null);
   const [paymentLiveLoading, setPaymentLiveLoading] = useState(false);
   const [paymentActionLoading, setPaymentActionLoading] = useState<Record<number, string>>({});
@@ -1354,6 +1354,7 @@ export default function AiOfficePage() {
                             const totalAmt: number = data?.totalAmount ?? 0;
                             const total = superCritical.length + critical.length + warning.length;
                             const allItems = [...superCritical, ...critical, ...warning];
+                            const totalCommission: number = allItems.reduce((s, e) => s + (Number(e.commission) || 0), 0);
 
                             return (
                               <div className="space-y-2">
@@ -1374,6 +1375,9 @@ export default function AiOfficePage() {
                                   <div className="rounded-lg px-2.5 py-2 bg-emerald-100/80 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/40 text-center">
                                     <p className="text-[11px] text-emerald-600 font-semibold">💰 Ожидается</p>
                                     <p className="text-sm font-bold text-emerald-700 dark:text-emerald-400">{totalAmt.toLocaleString("ru-RU")}₽</p>
+                                    {totalCommission > 0 && (
+                                      <p className="text-[10px] text-violet-500 dark:text-violet-400 font-medium">+{totalCommission.toLocaleString("ru-RU")}₽ ком.</p>
+                                    )}
                                   </div>
                                 </div>
 
@@ -1445,8 +1449,11 @@ export default function AiOfficePage() {
                                                     {isSuper ? "⚫" : isCrit ? "🔴" : "🟡"} #{entry.orderId}
                                                   </span>
                                                   <span className="text-xs text-muted-foreground">{entry.serviceType}</span>
-                                                  <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 ml-auto">
-                                                    {Number(entry.totalAmount).toLocaleString("ru-RU")}₽
+                                                  <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 ml-auto flex flex-col items-end leading-tight">
+                                                    <span>{Number(entry.totalAmount).toLocaleString("ru-RU")}₽</span>
+                                                    {entry.commission > 0 && (
+                                                      <span className="text-violet-500 dark:text-violet-400">+{Number(entry.commission).toLocaleString("ru-RU")}₽ ком.</span>
+                                                    )}
                                                   </span>
                                                 </div>
                                                 <p className="text-[11px] text-muted-foreground mt-0.5">

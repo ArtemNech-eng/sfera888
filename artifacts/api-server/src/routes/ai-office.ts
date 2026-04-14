@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { sql, and, eq, isNull, inArray, lt } from "drizzle-orm";
 import { mastersTable, ordersTable, masterMessagesTable } from "@workspace/db";
 import { sendMaxMessage } from "../maxBot.js";
+import { calculateCommission, getCommissionSettings } from "../lib/commission.js";
 
 const router = Router();
 
@@ -182,6 +183,7 @@ async function runBroadcastOrders() {
 async function runPaymentReminders(runType: "manual" | "auto" = "auto") {
   const now = new Date();
   const h24ago = new Date(now.getTime() - 24 * 3600_000).toISOString();
+  const commissionSettings = await getCommissionSettings();
 
   const rows = await db.execute(sql`
     SELECT r.order_id, r.created_at AS receipt_created_at,
@@ -219,6 +221,7 @@ async function runPaymentReminders(runType: "manual" | "auto" = "auto") {
       receiptSentAt: r.receipt_created_at,
       hoursWithoutPayment: hoursElapsed,
       totalAmount: Number(r.total_amount ?? 0),
+      commission: calculateCommission(Number(r.total_amount ?? 0), commissionSettings),
       risk: hoursElapsed >= 72 ? "super" : hoursElapsed >= 48 ? "critical" : "warning",
     };
     totalAmount += entry.totalAmount;
@@ -751,6 +754,7 @@ router.get("/template-scenarios/payment-reminders/live", async (_req, res) => {
   try {
     const now = new Date();
     const h24ago = new Date(now.getTime() - 24 * 3600_000).toISOString();
+    const commissionSettings = await getCommissionSettings();
     const rows = await db.execute(sql`
       SELECT r.order_id, r.created_at AS receipt_created_at,
              r.service_type, r.district, r.city, r.client_name, r.client_phone,
@@ -780,6 +784,7 @@ router.get("/template-scenarios/payment-reminders/live", async (_req, res) => {
         receiptSentAt: r.receipt_created_at,
         hoursWithoutPayment: h,
         totalAmount: Number(r.total_amount ?? 0),
+        commission: calculateCommission(Number(r.total_amount ?? 0), commissionSettings),
         risk: h >= 72 ? "super" : h >= 48 ? "critical" : "warning",
       };
     });
