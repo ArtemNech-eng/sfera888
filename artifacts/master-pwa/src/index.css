@@ -208,3 +208,5 @@
     overscroll-behavior-y: contain;
   }
 }
+
+.replit-badge { display: none !important; }

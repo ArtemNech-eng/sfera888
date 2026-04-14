@@ -224,3 +224,5 @@ main [class*="rounded"] {
   scrollbar-width: thin;
   scrollbar-color: rgba(124, 58, 237, 0.10) transparent;
 }
+
+.replit-badge { display: none !important; }
