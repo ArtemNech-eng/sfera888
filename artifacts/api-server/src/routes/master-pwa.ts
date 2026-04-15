@@ -1191,6 +1191,22 @@ router.post("/push/subscribe", requireMasterPwa, async (req: any, res: any) => {
   res.json({ ok: true });
 });
 
+// ─── DELETE /api/master-pwa/max-link — master self-unlinks Max ───────────────
+
+router.delete("/max-link", requireMasterPwa, async (req: any, res: any) => {
+  const masterId = (req.session as any).masterId;
+  const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
+  if (!master) return res.status(404).json({ error: "Мастер не найден" });
+  if (!master.maxChatId) return res.status(400).json({ error: "Max-аккаунт не привязан" });
+
+  await db.update(mastersTable).set({ maxChatId: null }).where(eq(mastersTable.id, masterId));
+
+  const { logMaxEvent } = await import("../maxBot.js");
+  logMaxEvent(masterId, Number(master.maxChatId), "unlinked_self", `Мастер ${master.alias} отвязал Max из приложения`).catch(() => {});
+
+  res.json({ ok: true });
+});
+
 // ─── DELETE /api/master-pwa/push/unsubscribe ─────────────────────────────────
 
 router.delete("/push/unsubscribe", requireMasterPwa, async (req: any, res: any) => {

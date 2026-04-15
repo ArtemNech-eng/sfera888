@@ -40,6 +40,8 @@ interface ProfileData {
     paymentRate: number;
   };
   createdAt: string;
+  maxChatId: string | null;
+  maxBotLink: string | null;
 }
 
 
@@ -673,6 +675,7 @@ export default function ProfilePage() {
   const [data, setData] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [unlinkingMax, setUnlinkingMax] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -876,6 +879,72 @@ export default function ProfilePage() {
           </div>
         </div>
       )}
+
+      {/* ─── Max Bot Connection ───────────────────────────────────────────── */}
+      <div className="bg-card border border-border rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border/60">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold">Бот Max</span>
+            {data.maxChatId
+              ? <span className="text-[10px] bg-green-100 text-green-700 font-semibold px-1.5 py-0.5 rounded-full">Подключён</span>
+              : <span className="text-[10px] bg-muted text-muted-foreground font-medium px-1.5 py-0.5 rounded-full">Не привязан</span>
+            }
+          </div>
+        </div>
+
+        {data.maxChatId ? (
+          <div className="px-4 py-3 space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Уведомления о заказах и сообщения от оператора приходят в приложение Max.
+            </p>
+            <button
+              onClick={async () => {
+                if (!confirm("Отвязать аккаунт Max? Вы перестанете получать уведомления о заказах.")) return;
+                setUnlinkingMax(true);
+                try {
+                  const r = await fetch("/api/master-pwa/max-link", { method: "DELETE", credentials: "include" });
+                  if (!r.ok) throw new Error((await r.json()).error ?? "Ошибка");
+                  setData(d => d ? { ...d, maxChatId: null } : d);
+                  toast.success("Аккаунт Max отвязан");
+                } catch (e: any) {
+                  toast.error(e.message ?? "Не удалось отвязать");
+                } finally {
+                  setUnlinkingMax(false);
+                }
+              }}
+              disabled={unlinkingMax}
+              className="w-full flex items-center justify-center gap-2 h-10 rounded-xl border border-destructive/40 text-destructive text-sm font-medium active:opacity-80 disabled:opacity-50"
+            >
+              {unlinkingMax
+                ? <div className="w-4 h-4 border-2 border-destructive border-t-transparent rounded-full animate-spin" />
+                : <X size={14} />}
+              Отвязать аккаунт Max
+            </button>
+          </div>
+        ) : (
+          <div className="px-4 py-3 space-y-2">
+            <p className="text-xs text-muted-foreground">
+              Чтобы получать уведомления о заказах, привяжите аккаунт Max:
+            </p>
+            <ol className="text-xs text-muted-foreground space-y-1 pl-4 list-decimal">
+              <li>Откройте бот <strong>Честный мастер</strong> в приложении Max</li>
+              <li>Отправьте ваш номер телефона: <strong>{data.phone ?? "укажите в профиле"}</strong></li>
+              <li>Подтвердите привязку, ответив <strong>ДА</strong></li>
+            </ol>
+            {data.maxBotLink && (
+              <a
+                href={data.maxBotLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full flex items-center justify-center gap-2 h-10 rounded-xl bg-primary text-primary-foreground text-sm font-semibold active:opacity-80"
+              >
+                <ExternalLink size={14} />
+                Открыть бот Max
+              </a>
+            )}
+          </div>
+        )}
+      </div>
 
       <button
         onClick={() => navigate("/work-rules")}
