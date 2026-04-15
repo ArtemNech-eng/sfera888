@@ -270,10 +270,11 @@ export default function Finance() {
   if (estRange.from)  estParams.set("from",   new Date(estRange.from).toISOString());
   if (estRange.to)    estParams.set("to",     new Date(estRange.to).toISOString());
   if (estSearch)      estParams.set("search", estSearch);
-  if (estCity)        estParams.set("city",   estCity);
+  // estCity is NOT sent to server — city filtering is done client-side so the city dropdown
+  // always shows all available cities regardless of current selection.
 
   const { data: estimates, isLoading: estLoading } = useQuery<Estimate[]>({
-    queryKey: [`${BASE}/api/finance/estimates`, estRange.from, estRange.to, estSearch, estCity],
+    queryKey: [`${BASE}/api/finance/estimates`, estRange.from, estRange.to, estSearch],
     queryFn: () => fetch(`${BASE}/api/finance/estimates?${estParams}`, { credentials: "include" }).then(r => r.json()),
     enabled: pageTab === "estimates",
     staleTime: 30_000,
@@ -346,10 +347,14 @@ export default function Finance() {
   const filteredEst = useMemo(() => {
     if (!estimates) return [];
     if (estStatus === "no-receipt") return []; // handled by separate no-receipt table
-    if (estStatus === "all") return estimates;
-    if (estStatus === "cancelled") return estimates.filter(e => e.orderStatus === "cancelled");
-    return estimates.filter(e => e.status === estStatus);
-  }, [estimates, estStatus]);
+    let list = estStatus === "all"
+      ? estimates
+      : estStatus === "cancelled"
+        ? estimates.filter(e => e.orderStatus === "cancelled")
+        : estimates.filter(e => e.status === estStatus);
+    if (estCity) list = list.filter(e => e.city === estCity);
+    return list;
+  }, [estimates, estStatus, estCity]);
 
   const estCities = useMemo(() => {
     const fromEstimates = (estimates ?? []).map(e => e.city);
@@ -478,10 +483,8 @@ export default function Finance() {
   const handleNrMessage = async (orderId: number) => {
     setNrActionLoading(p => ({ ...p, [orderId]: "message" }));
     try {
-      const r = await fetch(`${BASE}/api/ai-office/template-scenarios/orders-without-receipts/message-master`, {
+      const r = await fetch(`${BASE}/api/ai-office/template-scenarios/orders-without-receipts/${orderId}/message-master`, {
         method: "POST", credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId }),
       });
       if (!r.ok) throw new Error();
       setNrMsgSent(p => new Set(p).add(orderId));
@@ -493,10 +496,8 @@ export default function Finance() {
   const handleNrReassign = async (orderId: number) => {
     setNrActionLoading(p => ({ ...p, [orderId]: "reassign" }));
     try {
-      const r = await fetch(`${BASE}/api/ai-office/template-scenarios/orders-without-receipts/reassign`, {
+      const r = await fetch(`${BASE}/api/ai-office/template-scenarios/orders-without-receipts/${orderId}/reassign`, {
         method: "POST", credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId }),
       });
       if (!r.ok) throw new Error();
       toast.success("Заказ отправлен на переназначение");
@@ -508,10 +509,8 @@ export default function Finance() {
   const handleNrCancel = async (orderId: number) => {
     setNrActionLoading(p => ({ ...p, [orderId]: "cancel" }));
     try {
-      const r = await fetch(`${BASE}/api/ai-office/template-scenarios/orders-without-receipts/cancel`, {
+      const r = await fetch(`${BASE}/api/ai-office/template-scenarios/orders-without-receipts/${orderId}/cancel`, {
         method: "POST", credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId }),
       });
       if (!r.ok) throw new Error();
       toast.success("Заказ отменён");
