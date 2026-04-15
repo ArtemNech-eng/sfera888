@@ -158,14 +158,32 @@ function MoneyBlock() {
   const cards = [
     { label: "Доход сегодня", value: data?.today ?? 0, cmp: data?.todayVsYesterday, sub: "vs вчера" },
     { label: "Доход за неделю", value: data?.week ?? 0, cmp: data?.weekVsPrev, sub: "vs прошлая неделя" },
-    { label: "Доход за месяц", value: data?.month ?? 0, cmp: data?.monthVsPrev, sub: "vs прошлый месяц" },
     { label: "Средний доход в день", value: data?.avgDay ?? 0, cmp: null, sub: "текущий месяц" },
   ];
+
+  const prepayHeld: number = data?.prepayHeld ?? 0;
 
   return (
     <div>
       <SectionHeader icon={DollarSign} title="Деньги" subtitle="Фактически полученные комиссии" />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        {/* Доход за месяц — с остатком предоплат */}
+        <div className="bg-card rounded-2xl border border-border/50 shadow-sm p-5">
+          <p className="text-xs text-muted-foreground mb-1">Доход за месяц</p>
+          <p className="text-2xl font-display font-bold text-foreground">{formatRub(data?.month ?? 0)}</p>
+          {data?.monthVsPrev !== null && data?.monthVsPrev !== undefined && (
+            <div className={`flex items-center gap-1 mt-1 text-xs font-medium ${pctColor(data.monthVsPrev)}`}>
+              {pctIcon(data.monthVsPrev)}
+              <span>{data.monthVsPrev > 0 ? "+" : ""}{data.monthVsPrev}% vs прошлый месяц</span>
+            </div>
+          )}
+          {prepayHeld > 0 && (
+            <div className="mt-2 pt-2 border-t border-border/50">
+              <p className="text-xs text-muted-foreground font-medium">+ {formatRub(prepayHeld)} в остатке</p>
+              <p className="text-[10px] text-muted-foreground/70">предоплаты по незакрытым</p>
+            </div>
+          )}
+        </div>
         {cards.map(c => (
           <div key={c.label} className="bg-card rounded-2xl border border-border/50 shadow-sm p-5">
             <p className="text-xs text-muted-foreground mb-1">{c.label}</p>

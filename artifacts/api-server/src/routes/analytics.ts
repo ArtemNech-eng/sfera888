@@ -238,8 +238,13 @@ router.get("/revenue", adminOnly, async (req, res) => {
     const month = calcIncome(monthStart, new Date(todayStart.getTime() + 86400000));
     const prevMonth = calcIncome(prevMonthStart, prevMonthEnd);
 
-    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     const avgDay = month / Math.max(now.getDate(), 1);
+
+    // Prepayments held: prepaymentDeducted from pending/overdue transactions created this month.
+    // These are real money received but the full commission isn't settled yet.
+    const prepayHeld = txRows
+      .filter(t => t.paymentStatus !== "paid" && t.createdAt >= monthStart)
+      .reduce((s, t) => s + Number(t.prepaymentDeducted ?? 0), 0);
 
     // Daily chart: last 30 days
     const daily: { date: string; income: number }[] = [];
@@ -256,6 +261,7 @@ router.get("/revenue", adminOnly, async (req, res) => {
       week, weekVsPrev: pct(week, prevWeek),
       month, monthVsPrev: pct(month, prevMonth),
       avgDay: Math.round(avgDay),
+      prepayHeld,
       daily,
     });
   } catch (e: any) {
