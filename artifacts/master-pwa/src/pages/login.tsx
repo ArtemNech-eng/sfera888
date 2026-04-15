@@ -164,7 +164,7 @@ export default function LoginPage() {
   const { login, register } = useAuth();
   // Max bot ID from URL (?max=<chatId>) — set during registration/login to auto-link bot
   const maxChatId = new URLSearchParams(window.location.search).get("max");
-  const [tab, setTab] = useState<"login" | "register">(maxChatId ? "register" : "login");
+  const [tab, setTab] = useState<"login" | "register">("login");
 
   // Login form
   const [form, setForm] = useState({ login: "", password: "" });
@@ -459,6 +459,26 @@ export default function LoginPage() {
           )
         ) : (
         <>
+        {/* Max bot banner — shown when coming from bot link */}
+        {maxChatId && regStep === "info" && (
+          <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
+            <span className="text-lg leading-none mt-0.5">🤖</span>
+            <p className="text-sm text-foreground/80 leading-snug">
+              {tab === "login"
+                ? "Войдите в аккаунт — бот подключится автоматически."
+                : "Заполните форму — после регистрации бот подключится автоматически."
+              }
+              {tab === "login" && (
+                <> Нет аккаунта?{" "}
+                  <button type="button" onClick={() => setTab("register")} className="text-primary font-semibold underline-offset-2 hover:underline">
+                    Зарегистрируйтесь
+                  </button>
+                </>
+              )}
+            </p>
+          </div>
+        )}
+
         {/* Tabs — hidden on prices step */}
         {regStep === "info" && (
           <div className="flex rounded-xl bg-muted p-1 gap-1">
