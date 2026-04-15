@@ -240,11 +240,14 @@ router.get("/revenue", adminOnly, async (req, res) => {
 
     const avgDay = month / Math.max(now.getDate(), 1);
 
-    // Prepayments held: prepaymentDeducted from pending/overdue transactions created this month.
-    // These are real money received but the full commission isn't settled yet.
-    const prepayHeld = txRows
-      .filter(t => t.paymentStatus !== "paid" && t.createdAt >= monthStart)
-      .reduce((s, t) => s + Number(t.prepaymentDeducted ?? 0), 0);
+    // remainingDebt = sum of netPayable (commission - prepayDeducted) across all unclosed transactions.
+    // This is what masters still owe us — money not yet received.
+    const remainingDebt = txRows
+      .filter(t => t.paymentStatus !== "paid")
+      .reduce((s, t) => {
+        const net = Math.max(0, Number(t.commission) - Number(t.prepaymentDeducted ?? 0));
+        return s + net;
+      }, 0);
 
     // Daily chart: last 30 days
     const daily: { date: string; income: number }[] = [];
@@ -261,7 +264,7 @@ router.get("/revenue", adminOnly, async (req, res) => {
       week, weekVsPrev: pct(week, prevWeek),
       month, monthVsPrev: pct(month, prevMonth),
       avgDay: Math.round(avgDay),
-      prepayHeld,
+      remainingDebt,
       daily,
     });
   } catch (e: any) {

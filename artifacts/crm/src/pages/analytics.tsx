@@ -161,13 +161,13 @@ function MoneyBlock() {
     { label: "Средний доход в день", value: data?.avgDay ?? 0, cmp: null, sub: "текущий месяц" },
   ];
 
-  const prepayHeld: number = data?.prepayHeld ?? 0;
+  const remainingDebt: number = data?.remainingDebt ?? 0;
 
   return (
     <div>
       <SectionHeader icon={DollarSign} title="Деньги" subtitle="Фактически полученные комиссии" />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {/* Доход за месяц — с остатком предоплат */}
+        {/* Доход за месяц — с остатком к доплате */}
         <div className="bg-card rounded-2xl border border-border/50 shadow-sm p-5">
           <p className="text-xs text-muted-foreground mb-1">Доход за месяц</p>
           <p className="text-2xl font-display font-bold text-foreground">{formatRub(data?.month ?? 0)}</p>
@@ -177,10 +177,10 @@ function MoneyBlock() {
               <span>{data.monthVsPrev > 0 ? "+" : ""}{data.monthVsPrev}% vs прошлый месяц</span>
             </div>
           )}
-          {prepayHeld > 0 && (
+          {remainingDebt > 0 && (
             <div className="mt-2 pt-2 border-t border-border/50">
-              <p className="text-xs text-muted-foreground font-medium">+ {formatRub(prepayHeld)} в остатке</p>
-              <p className="text-[10px] text-muted-foreground/70">предоплаты по незакрытым</p>
+              <p className="text-xs text-muted-foreground font-medium">+ {formatRub(remainingDebt)} в остатке</p>
+              <p className="text-[10px] text-muted-foreground/70">мастера ещё не доплатили</p>
             </div>
           )}
         </div>

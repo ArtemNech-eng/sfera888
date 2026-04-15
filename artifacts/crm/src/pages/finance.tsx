@@ -324,14 +324,14 @@ export default function Finance() {
     const earned = filtered
       .filter(t => t.paymentStatus === "paid")
       .reduce((s, t) => s + t.commission, 0);
-    // prepayHeld = предоплаты по незакрытым заказам (деньги получены, но заказ ещё не закрыт)
-    const prepayHeld = filtered
+    // remainingDebt = сколько мастера ещё должны доплатить по незакрытым заказам
+    const remainingDebt = filtered
       .filter(t => t.paymentStatus !== "paid")
-      .reduce((s, t) => s + t.prepaymentDeducted, 0);
+      .reduce((s, t) => s + Math.max(0, t.commission - t.prepaymentDeducted), 0);
     return {
       earned,
-      prepayHeld,
-      income: earned + prepayHeld, // итого всех полученных денег
+      remainingDebt,
+      income: earned, // реально заработанное (только закрытые)
       pending: filtered.filter(t => t.paymentStatus === "pending").reduce((s, t) => s + t.netPayable, 0),
       overdue: filtered.filter(t => t.paymentStatus === "overdue").reduce((s, t) => s + t.netPayable, 0),
       avg:     filtered.length ? filtered.reduce((s, t) => s + t.commission, 0) / filtered.length : 0,
@@ -600,10 +600,10 @@ export default function Finance() {
                   <p className="text-emerald-50 text-xs font-medium mb-1">💰 Заработано</p>
                   <p className="text-2xl font-bold">{formatCurrency(txSummary.earned)}</p>
                   <p className="text-emerald-100 text-[11px] mt-0.5">{txSummary.paidCount} закрытых комиссий</p>
-                  {txSummary.prepayHeld > 0 && (
+                  {txSummary.remainingDebt > 0 && (
                     <div className="mt-2 pt-2 border-t border-emerald-400/40">
-                      <p className="text-emerald-100 text-xs font-medium">+ {formatCurrency(txSummary.prepayHeld)} в остатке</p>
-                      <p className="text-emerald-200 text-[10px]">предоплаты по незакрытым</p>
+                      <p className="text-emerald-100 text-xs font-medium">+ {formatCurrency(txSummary.remainingDebt)} в остатке</p>
+                      <p className="text-emerald-200 text-[10px]">мастера ещё не доплатили</p>
                     </div>
                   )}
                 </div>
