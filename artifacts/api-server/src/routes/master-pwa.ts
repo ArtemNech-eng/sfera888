@@ -81,7 +81,7 @@ function normalizeLoginInput(raw: string): string {
 }
 
 router.post("/auth/login", async (req, res) => {
-  const { login, password } = req.body;
+  const { login, password, maxChatId } = req.body;
   if (!login || !password) return res.status(400).json({ error: "Укажите логин и пароль" });
 
   const normalizedLogin = normalizeLoginInput(login);
@@ -115,6 +115,13 @@ router.post("/auth/login", async (req, res) => {
   }
 
   (req.session as any).masterId = master.id;
+
+  // Link Max bot if maxChatId provided and not already set
+  if (maxChatId && !master.maxChatId) {
+    await db.update(mastersTable)
+      .set({ maxChatId: String(maxChatId) })
+      .where(eq(mastersTable.id, master.id));
+  }
 
   res.json({
     id: master.id,
@@ -955,7 +962,7 @@ router.post("/profile/avatar", requireMasterPwa, avatarUpload.single("avatar"), 
 // ─── REGISTRATION ─────────────────────────────────────────────────────────────
 
 router.post("/auth/register", async (req, res) => {
-  const { alias, phone, city, specialization, specializations: specsArr, login, password, servicePrices: pricesRaw } = req.body;
+  const { alias, phone, city, specialization, specializations: specsArr, login, password, servicePrices: pricesRaw, maxChatId } = req.body;
   if (!alias || !city || !login || !password) {
     return res.status(400).json({ error: "Заполните все обязательные поля" });
   }
@@ -1009,6 +1016,7 @@ router.post("/auth/register", async (req, res) => {
     pwaLogin: normalizedLogin,
     pwaPasswordHash: passwordHash,
     voronkaColumnId: firstCol?.id ?? null,
+    maxChatId: maxChatId ? String(maxChatId) : null,
     status: "pending_contract",
     contractLink: "https://desktop.doki.online/contract/6916b2861ea1593f469a6786",
     telegramId: null,

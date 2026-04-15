@@ -16,9 +16,9 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
 
 export const api = {
   auth: {
-    login: (login: string, password: string) =>
-      req<any>("POST", "/auth/login", { login, password }),
-    register: (data: { alias: string; phone?: string; city: string; specialization: string; specializations?: string[]; login: string; password: string; servicePrices?: { service: string; priceFrom: number }[] }) =>
+    login: (login: string, password: string, maxChatId?: string | null) =>
+      req<any>("POST", "/auth/login", { login, password, ...(maxChatId ? { maxChatId } : {}) }),
+    register: (data: { alias: string; phone?: string; city: string; specialization: string; specializations?: string[]; login: string; password: string; servicePrices?: { service: string; priceFrom: number }[]; maxChatId?: string | null }) =>
       req<any>("POST", "/auth/register", data),
     me: () => req<any>("GET", "/auth/me"),
     logout: () => req<any>("POST", "/auth/logout"),

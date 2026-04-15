@@ -28,139 +28,20 @@ function clearPending(userId: number) {
   pendingLinks.delete(userId);
 }
 
-// ─── Registration wizard (in-memory, 30 min TTL) ──────────────────────────────
-
-type RegStep = "name" | "phone" | "city" | "specialty" | "confirm";
-
-interface RegSession {
-  step: RegStep;
-  name?: string;
-  phone?: string;
-  city?: string;
-  specialty?: string;
-  expiry: number;
-}
-
-const regSessions = new Map<number, RegSession>();
-
-function getRegSession(userId: number): RegSession | null {
-  const s = regSessions.get(userId);
-  if (!s) return null;
-  if (Date.now() > s.expiry) { regSessions.delete(userId); return null; }
-  return s;
-}
-
-function setRegSession(userId: number, data: Omit<RegSession, "expiry">) {
-  regSessions.set(userId, { ...data, expiry: Date.now() + 30 * 60_000 });
-}
-
-function clearRegSession(userId: number) {
-  regSessions.delete(userId);
-}
-
-// Starts the registration wizard from step 1
-async function startRegistrationWizard(userId: number): Promise<void> {
-  setRegSession(userId, { step: "name" });
-  await sendMaxMessage(
-    userId,
-    `👋 Добро пожаловать в **Честный мастер**!\n\nЯ помогу вам зарегистрироваться и начать получать заказы на ремонт. Это займёт 1 минуту.\n\n📝 Шаг 1/4 — Как вас зовут? (Имя или имя + фамилия)`
+// Sends the app registration link with the Max user ID embedded
+async function sendAppLink(chatId: number): Promise<void> {
+  await sendMaxMessageToChat(
+    chatId,
+    `👋 Добро пожаловать в **Честный мастер**!\n\nЗарегистрируйтесь в приложении, чтобы начать получать заказы на ремонт:\n\n📲 https://sfera-master.ru/master-pwa?max=${chatId}\n\n_Откройте ссылку, заполните форму — это займёт 1 минуту. После регистрации бот будет автоматически привязан к вашему аккаунту._`
   );
 }
 
-// Completes registration: creates master in DB, links Max, sends credentials
-async function finalizeRegistration(userId: number, session: RegSession): Promise<void> {
-  clearRegSession(userId);
-
-  const { db, mastersTable, voronkaColumnsTable } = await import("@workspace/db");
-  const { asc, isNull, eq } = await import("drizzle-orm");
-  const { hashPassword } = await import("./lib/auth.js");
-  const { notifyManagerNewMaster } = await import("./managerBot.js");
-
-  const rawPhone = session.phone!;
-  const phoneDigits = rawPhone.replace(/\D/g, "");
-
-  // Normalize to 11-digit Russian format for pwaLogin
-  let normalizedLogin: string;
-  if (phoneDigits.length === 10) normalizedLogin = "7" + phoneDigits;
-  else if (phoneDigits.length === 11 && phoneDigits[0] === "8") normalizedLogin = "7" + phoneDigits.slice(1);
-  else normalizedLogin = phoneDigits;
-
-  // Check for duplicate login
-  const allMasters = await db.select().from(mastersTable).where(isNull(mastersTable.deletedAt));
-  const dup = allMasters.find(m => m.pwaLogin === normalizedLogin);
-  if (dup) {
-    if (!dup.maxChatId) {
-      await db.update(mastersTable).set({ maxChatId: String(userId) }).where(eq(mastersTable.id, dup.id));
-      await sendMaxMessage(userId, `✅ Аккаунт с этим номером уже существует. Профиль привязан к боту, **${dup.alias}**!\n\n📲 Войдите в приложение:\nhttps://sfera-master.ru/master-pwa`);
-    } else {
-      await sendMaxMessage(userId, `⚠️ Мастер с этим номером уже зарегистрирован и привязан к другому аккаунту.\n\nОбратитесь к администратору.`);
-    }
-    return;
-  }
-
-  // Generate random 8-char password
-  const chars = "abcdefghjkmnpqrstuvwxyz23456789";
-  const password = Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
-  const passwordHash = await hashPassword(password);
-
-  // First voronka column
-  const cols = await db.select().from(voronkaColumnsTable).orderBy(asc(voronkaColumnsTable.position));
-  const firstCol = cols[0] ?? null;
-
-  const spec = session.specialty!;
-
-  const [master] = await db.insert(mastersTable).values({
-    alias:            session.name!,
-    phone:            rawPhone,
-    city:             session.city!,
-    specialization:   spec,
-    specializations:  [spec],
-    servicePrices:    [{ service: spec, priceFrom: 1500 }],
-    pwaLogin:         normalizedLogin,
-    pwaPasswordHash:  passwordHash,
-    voronkaColumnId:  firstCol?.id ?? null,
-    maxChatId:        String(userId),  // linked immediately
-    status:           "pending_contract",
-    contractLink:     "https://desktop.doki.online/contract/6916b2861ea1593f469a6786",
-    telegramId:       null,
-    isTestMaster:     false,
-    rating:           "3",
-    debt:             "0",
-    totalOrders:      0,
-    acceptedOrders:   0,
-    tags:             [],
-  }).returning();
-
-  logMaxEvent(master.id, userId, "registered_via_bot", `Зарегистрирован через бота: ${session.name}, ${session.city}`).catch(() => {});
-
-  notifyManagerNewMaster({
-    id: master.id,
-    alias: master.alias,
-    city: master.city,
-    specialization: master.specialization,
-    phone: master.phone ?? null,
-  }).catch(() => {});
-
-  await sendMaxMessage(
-    userId,
-    `🎉 **Вы успешно зарегистрированы!**\n\n` +
-    `📲 Войдите в приложение:\nhttps://sfera-master.ru/master-pwa\n\n` +
-    `🔑 **Ваши данные для входа:**\n` +
-    `Логин: \`${rawPhone}\`\n` +
-    `Пароль: \`${password}\`\n\n` +
-    `_Сохраните пароль — он понадобится для входа в приложение. Изменить можно в профиле._`
+// Sends the app link for an already-registered master (login link)
+async function sendLoginLink(chatId: number, alias: string): Promise<void> {
+  await sendMaxMessageToChat(
+    chatId,
+    `👋 С возвращением, **${alias}**!\n\n📲 Войдите в приложение:\nhttps://sfera-master.ru/master-pwa\n\nЕсли забыли пароль — воспользуйтесь восстановлением на странице входа.`
   );
-
-  setTimeout(async () => {
-    await sendMaxMessage(
-      userId,
-      `📋 **Что сделать после входа:**\n\n` +
-      `1️⃣ Подписать договор (ссылка в приложении)\n` +
-      `2️⃣ Прочитать правила работы:\nhttps://sfera-master.ru/master-pwa/work-rules\n` +
-      `3️⃣ Указать цены на свои услуги в профиле\n\n` +
-      `После этого вы начнёте получать заказы! 🔥`
-    );
-  }, 3000);
 }
 
 // ─── Logging ──────────────────────────────────────────────────────────────────
@@ -417,42 +298,6 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
 
       if (!userId) return;
 
-      // ── Registration: specialty selection ─────────────────────────────────
-      if (payload.startsWith("reg:spec:")) {
-        const specialty = payload.replace("reg:spec:", "");
-        const regSess = getRegSession(userId);
-        if (!regSess || regSess.step !== "specialty") return;
-        setRegSession(userId, { ...regSess, step: "confirm", specialty });
-        await sendMaxWithButtons(
-          userId,
-          `📋 **Проверьте данные:**\n\n` +
-          `👤 Имя: **${regSess.name}**\n` +
-          `📱 Телефон: **${regSess.phone}**\n` +
-          `🏙 Город: **${regSess.city}**\n` +
-          `🔧 Специализация: **${specialty}**\n\n` +
-          `Всё верно?`,
-          [[
-            { text: "✅ Да, зарегистрировать", payload: "reg:confirm:yes" },
-            { text: "❌ Нет, заново", payload: "reg:confirm:no" },
-          ]]
-        );
-        return;
-      }
-
-      // ── Registration: confirm / restart ───────────────────────────────────
-      if (payload.startsWith("reg:confirm:")) {
-        const answer = payload.replace("reg:confirm:", "");
-        const regSess = getRegSession(userId);
-        if (!regSess) return;
-        if (answer === "yes") {
-          await finalizeRegistration(userId, regSess);
-        } else {
-          clearRegSession(userId);
-          await startRegistrationWizard(userId);
-        }
-        return;
-      }
-
       if (!payload.startsWith("checkin:")) return;
 
       const { db, mastersTable, masterCheckinsTable } = await import("@workspace/db");
@@ -534,21 +379,15 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
       console.log("[maxBot] bot_started, chatId:", chatId, "keys:", Object.keys(u).join(","));
       if (!chatId) return;
 
-      // Check if already linked
       const { db: dbBs, mastersTable: mtBs } = await import("@workspace/db");
       const { isNotNull: inBs } = await import("drizzle-orm");
       const allBs = await dbBs.select().from(mtBs).where(inBs(mtBs.maxChatId));
       const alreadyLinked = allBs.find(m => m.maxChatId === String(chatId));
 
       if (alreadyLinked) {
-        await sendMaxMessageToChat(chatId, `👋 С возвращением, **${alreadyLinked.alias}**! Чем могу помочь?`);
+        await sendLoginLink(chatId, alreadyLinked.alias);
       } else {
-        // New user — start registration wizard
-        setRegSession(chatId, { step: "name" });
-        await sendMaxMessageToChat(
-          chatId,
-          `👋 Добро пожаловать в **Честный мастер**!\n\nЯ помогу вам зарегистрироваться и начать получать заказы на ремонт. Это займёт 1 минуту.\n\n📝 Шаг 1/4 — Как вас зовут? (Имя или имя + фамилия)`
-        );
+        await sendAppLink(chatId);
       }
       return;
     }
@@ -574,113 +413,18 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
 
     // ── /start or "регистрация" ───────────────────────────────────────────────
     if (text.startsWith("/start") || ["регистрация", "зарегистрироваться", "register"].includes(lc)) {
-      // Check if already linked
       const { db: dbSt, mastersTable: mtSt } = await import("@workspace/db");
       const { isNotNull: inSt } = await import("drizzle-orm");
       const allSt = await dbSt.select().from(mtSt).where(inSt(mtSt.maxChatId));
       const alreadyLinkedSt = allSt.find(m => m.maxChatId === String(userId));
       if (alreadyLinkedSt) {
-        await sendMaxMessage(userId, `👋 С возвращением, **${alreadyLinkedSt.alias}**! Аккаунт уже подключён.`);
+        await sendMaxMessage(userId, `👋 С возвращением, **${alreadyLinkedSt.alias}**!\n\n📲 Войдите в приложение:\nhttps://sfera-master.ru/master-pwa`);
       } else {
-        await startRegistrationWizard(userId);
+        await sendMaxMessage(userId,
+          `📲 Зарегистрируйтесь в приложении:\nhttps://sfera-master.ru/master-pwa?max=${userId}\n\n_После регистрации бот будет автоматически привязан к вашему аккаунту._`
+        );
       }
       return;
-    }
-
-    // ── Registration wizard steps ─────────────────────────────────────────────
-    const regSess = getRegSession(userId);
-    if (regSess) {
-      if (["отмена", "стоп", "cancel", "stop"].includes(lc)) {
-        clearRegSession(userId);
-        await sendMaxMessage(userId, "❌ Регистрация отменена. Напишите **регистрация** или **/start** чтобы начать заново.");
-        return;
-      }
-      switch (regSess.step) {
-        case "name": {
-          if (text.length < 2) {
-            await sendMaxMessage(userId, "⚠️ Введите ваше имя (минимум 2 символа).");
-            return;
-          }
-          if (regSess.phone) {
-            // Phone was pre-filled (came from "not found" flow) — skip phone step
-            setRegSession(userId, { ...regSess, step: "city", name: text });
-            await sendMaxMessage(userId, `✅ Отлично, **${text}**!\n\n📝 Шаг 2/3 — Из какого вы города?\n(например: Краснодар, Москва, Сочи)`);
-          } else {
-            setRegSession(userId, { ...regSess, step: "phone", name: text });
-            await sendMaxMessage(userId, `✅ Отлично, **${text}**!\n\n📝 Шаг 2/4 — Введите ваш номер телефона\n(например: +79001234567)`);
-          }
-          return;
-        }
-        case "phone": {
-          const digs = text.replace(/\D/g, "");
-          if (digs.length < 10) {
-            await sendMaxMessage(userId, "⚠️ Введите корректный номер телефона (например: +79001234567).");
-            return;
-          }
-          // Check if phone already taken
-          const { db: dbRp, mastersTable: mtRp } = await import("@workspace/db");
-          const { isNull: ilRp } = await import("drizzle-orm");
-          const allRp = await dbRp.select().from(mtRp).where(ilRp(mtRp.deletedAt));
-          const dups = allRp.find(m => m.phone?.replace(/\D/g, "").slice(-10) === digs.slice(-10));
-          if (dups) {
-            await sendMaxMessage(userId, `⚠️ Мастер с этим номером уже зарегистрирован.\n\nЕсли это ваш аккаунт — напишите *отмена* и введите номер напрямую для привязки.`);
-            return;
-          }
-          setRegSession(userId, { ...regSess, step: "city", phone: text });
-          await sendMaxMessage(userId, `📱 Телефон принят!\n\n📝 Шаг 3/4 — Из какого вы города?\n(например: Краснодар, Москва, Сочи)`);
-          return;
-        }
-        case "city": {
-          if (text.length < 2) {
-            await sendMaxMessage(userId, "⚠️ Введите название города.");
-            return;
-          }
-          setRegSession(userId, { ...regSess, step: "specialty", city: text });
-          await sendMaxWithButtons(
-            userId,
-            `🏙 Город: **${text}**\n\n📝 Шаг 4/4 — Выберите специализацию или напишите свою:`,
-            [
-              [{ text: "🎨 Поклейка обоев",      payload: "reg:spec:Поклейка обоев" },       { text: "🟦 Укладка плитки",  payload: "reg:spec:Укладка плитки" }],
-              [{ text: "🖌 Покраска стен",         payload: "reg:spec:Покраска стен" },        { text: "🔲 Натяжные потолки", payload: "reg:spec:Натяжные потолки" }],
-              [{ text: "⚡ Электрика",             payload: "reg:spec:Электрика" },            { text: "🔧 Сантехника",      payload: "reg:spec:Сантехника" }],
-              [{ text: "🪵 Ламинат / паркет",     payload: "reg:spec:Ламинат/паркет" },       { text: "🔨 Штукатурка",      payload: "reg:spec:Штукатурка/шпаклёвка" }],
-              [{ text: "🏠 Комплексный ремонт",   payload: "reg:spec:Комплексный ремонт" },   { text: "🚿 Демонтаж",        payload: "reg:spec:Демонтажные работы" }],
-            ]
-          );
-          return;
-        }
-        case "specialty": {
-          // Free-text specialty (button clicks handled via callback)
-          if (text.length < 2) {
-            await sendMaxMessage(userId, "⚠️ Введите специализацию.");
-            return;
-          }
-          setRegSession(userId, { ...regSess, step: "confirm", specialty: text });
-          await sendMaxWithButtons(
-            userId,
-            `📋 **Проверьте данные:**\n\n` +
-            `👤 Имя: **${regSess.name}**\n` +
-            `📱 Телефон: **${regSess.phone}**\n` +
-            `🏙 Город: **${regSess.city}**\n` +
-            `🔧 Специализация: **${text}**\n\n` +
-            `Всё верно?`,
-            [[
-              { text: "✅ Да, зарегистрировать", payload: "reg:confirm:yes" },
-              { text: "❌ Нет, заново",           payload: "reg:confirm:no" },
-            ]]
-          );
-          return;
-        }
-        case "confirm": {
-          if (["да", "yes", "ок", "ok", "+"].includes(lc)) {
-            await finalizeRegistration(userId, regSess);
-          } else {
-            clearRegSession(userId);
-            await startRegistrationWizard(userId);
-          }
-          return;
-        }
-      }
     }
 
     // ── Если мастер уже привязан → сохраняем сообщение в CRM чат ─────────────
@@ -846,12 +590,10 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
           `🔍 Найден аккаунт: **${master.alias}**${master.city ? ` (${master.city})` : ""}.\n\nПодтвердите привязку — ответьте **ДА** или **НЕТ**.\n\n_Запрос действителен 5 минут._`
         );
       } else {
-        logMaxEvent(null, userId, "not_found_start_reg", `Телефон не найден, предложена регистрация: ${text}`).catch(() => {});
-        // Phone not found → offer registration, pre-fill phone
-        setRegSession(userId, { step: "name", phone: text });
+        logMaxEvent(null, userId, "not_found_send_link", `Телефон не найден, отправлена ссылка на регистрацию: ${text}`).catch(() => {});
         await sendMaxMessage(
           userId,
-          `❌ Мастер с номером **${text}** не найден в базе.\n\n📝 Давайте зарегистрируем вас прямо сейчас!\n\nКак вас зовут? (Имя или имя + фамилия)\n\n_Напишите «отмена» если хотите прервать_`
+          `❌ Мастер с номером **${text}** не найден.\n\n📲 Зарегистрируйтесь в приложении:\nhttps://sfera-master.ru/master-pwa?max=${userId}\n\n_После регистрации бот будет автоматически привязан._`
         );
       }
       return;

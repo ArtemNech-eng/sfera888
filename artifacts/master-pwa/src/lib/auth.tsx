@@ -18,8 +18,8 @@ interface Master {
 interface AuthCtx {
   master: Master | null;
   loading: boolean;
-  login: (login: string, password: string) => Promise<void>;
-  register: (data: { alias: string; phone?: string; city: string; specialization: string; specializations?: string[]; login: string; password: string; servicePrices?: { service: string; priceFrom: number }[] }) => Promise<void>;
+  login: (login: string, password: string, maxChatId?: string | null) => Promise<void>;
+  register: (data: { alias: string; phone?: string; city: string; specialization: string; specializations?: string[]; login: string; password: string; servicePrices?: { service: string; priceFrom: number }[]; maxChatId?: string | null }) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -49,8 +49,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     refresh().finally(() => setLoading(false));
   }, []);
 
-  const login = async (login: string, password: string) => {
-    const m = await api.auth.login(login, password);
+  const login = async (login: string, password: string, maxChatId?: string | null) => {
+    const m = await api.auth.login(login, password, maxChatId);
     setMaster(m);
   };
 

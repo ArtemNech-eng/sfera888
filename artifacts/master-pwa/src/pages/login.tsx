@@ -162,7 +162,9 @@ function PricesStep({
 // ── Main page ──────────────────────────────────────────────────────────────
 export default function LoginPage() {
   const { login, register } = useAuth();
-  const [tab, setTab] = useState<"login" | "register">("login");
+  // Max bot ID from URL (?max=<chatId>) — set during registration/login to auto-link bot
+  const maxChatId = new URLSearchParams(window.location.search).get("max");
+  const [tab, setTab] = useState<"login" | "register">(maxChatId ? "register" : "login");
 
   // Login form
   const [form, setForm] = useState({ login: "", password: "" });
@@ -230,7 +232,7 @@ export default function LoginPage() {
     if (!form.login || !form.password) { toast.error("Введите логин и пароль"); return; }
     setLoading(true);
     try {
-      await login(form.login, form.password);
+      await login(form.login, form.password, maxChatId);
     } catch (err: any) {
       toast.error(err.message ?? "Ошибка входа");
     } finally {
@@ -292,6 +294,7 @@ export default function LoginPage() {
         login: phoneNorm,
         password: reg.password,
         servicePrices,
+        ...(maxChatId ? { maxChatId } : {}),
       });
     } catch (err: any) {
       toast.error(err.message ?? "Ошибка регистрации");
