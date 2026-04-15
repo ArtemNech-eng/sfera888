@@ -1,0 +1,171 @@
+/**
+ * Safe, non-interactive database migration script.
+ * Runs as part of build:prod to ensure production DB schema is in sync
+ * before Replit's drizzle-kit check runs.
+ * All statements are idempotent (IF NOT EXISTS / IF EXISTS).
+ */
+import { pool } from "@workspace/db";
+
+const queries: string[] = [
+  // ── receipts: align unique constraint name with drizzle-kit expectation ────
+  // 1. Drop the stray UNIQUE INDEX (created by old migration attempt)
+  // 2. Rename the auto-named constraint 'receipts_token_key' → 'receipts_token_unique'
+  `DO $$ BEGIN
+    -- Step 1: drop stray index if it exists and is NOT a constraint
+    IF EXISTS (
+      SELECT 1 FROM pg_indexes
+      WHERE tablename = 'receipts' AND indexname = 'receipts_token_unique'
+    ) AND NOT EXISTS (
+      SELECT 1 FROM pg_constraint WHERE conname = 'receipts_token_unique' AND conrelid = 'receipts'::regclass
+    ) THEN
+      DROP INDEX receipts_token_unique;
+    END IF;
+
+    -- Step 2: rename old auto-named constraint to what drizzle-kit expects
+    IF EXISTS (
+      SELECT 1 FROM pg_constraint WHERE conname = 'receipts_token_key' AND conrelid = 'receipts'::regclass
+    ) AND NOT EXISTS (
+      SELECT 1 FROM pg_constraint WHERE conname = 'receipts_token_unique' AND conrelid = 'receipts'::regclass
+    ) THEN
+      ALTER TABLE receipts RENAME CONSTRAINT receipts_token_key TO receipts_token_unique;
+    END IF;
+  END $$`,
+
+  // ── transaction_payments ───────────────────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS transaction_payments (
+    id SERIAL PRIMARY KEY,
+    transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+    amount NUMERIC(12,2) NOT NULL,
+    note TEXT,
+    paid_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  )`,
+
+  // ── max_bot_logs ───────────────────────────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS max_bot_logs (
+    id SERIAL PRIMARY KEY,
+    master_id INTEGER,
+    max_user_id VARCHAR(50),
+    event VARCHAR(100) NOT NULL,
+    note TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  )`,
+
+  // ── master_reviews ─────────────────────────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS master_reviews (
+    id SERIAL PRIMARY KEY,
+    master_id INTEGER NOT NULL REFERENCES masters(id) ON DELETE CASCADE,
+    order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+    rating INTEGER NOT NULL,
+    comment TEXT,
+    client_name TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  )`,
+
+  // ── master_tasks ───────────────────────────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS master_tasks (
+    id SERIAL PRIMARY KEY,
+    master_id INTEGER NOT NULL REFERENCES masters(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    description TEXT,
+    due_date TIMESTAMP,
+    completed BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  )`,
+
+  // ── dispatcher_followups ───────────────────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS dispatcher_followups (
+    id SERIAL PRIMARY KEY,
+    master_id INTEGER NOT NULL REFERENCES masters(id) ON DELETE CASCADE,
+    order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+    question TEXT NOT NULL,
+    answer TEXT,
+    asked_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    answered_at TIMESTAMP
+  )`,
+
+  // ── client_support_messages ────────────────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS client_support_messages (
+    id SERIAL PRIMARY KEY,
+    order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+    sender_name TEXT NOT NULL,
+    text TEXT NOT NULL,
+    from_client BOOLEAN NOT NULL DEFAULT TRUE,
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  )`,
+
+  // ── general_support_messages ───────────────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS general_support_messages (
+    id SERIAL PRIMARY KEY,
+    sender_name TEXT NOT NULL,
+    text TEXT NOT NULL,
+    from_client BOOLEAN NOT NULL DEFAULT TRUE,
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  )`,
+
+  // ── push_subscriptions ─────────────────────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id SERIAL PRIMARY KEY,
+    master_id INTEGER NOT NULL REFERENCES masters(id) ON DELETE CASCADE,
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  )`,
+
+  // ── masters: additional columns ────────────────────────────────────────────
+  `ALTER TABLE masters
+    ADD COLUMN IF NOT EXISTS custom_avatar_url TEXT,
+    ADD COLUMN IF NOT EXISTS voronka_column_id INTEGER,
+    ADD COLUMN IF NOT EXISTS pwa_login TEXT,
+    ADD COLUMN IF NOT EXISTS pwa_password_hash TEXT,
+    ADD COLUMN IF NOT EXISTS working_hours JSONB,
+    ADD COLUMN IF NOT EXISTS preferred_districts TEXT[],
+    ADD COLUMN IF NOT EXISTS min_area INTEGER NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS telegram_id TEXT,
+    ADD COLUMN IF NOT EXISTS suspended_at TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS suspension_reason TEXT,
+    ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS total_leads_received INTEGER NOT NULL DEFAULT 0`,
+
+  // ── orders: additional columns ─────────────────────────────────────────────
+  `ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS avito_lead_id TEXT,
+    ADD COLUMN IF NOT EXISTS avito_chat_id TEXT,
+    ADD COLUMN IF NOT EXISTS client_name TEXT,
+    ADD COLUMN IF NOT EXISTS client_phone TEXT,
+    ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS area NUMERIC(10,2),
+    ADD COLUMN IF NOT EXISTS district TEXT,
+    ADD COLUMN IF NOT EXISTS rooms_count INTEGER,
+    ADD COLUMN IF NOT EXISTS prepayment_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS prepayment_deducted BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS client_rating INTEGER,
+    ADD COLUMN IF NOT EXISTS client_review TEXT,
+    ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS master_comment TEXT,
+    ADD COLUMN IF NOT EXISTS photos TEXT[],
+    ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'crm'`,
+];
+
+async function run() {
+  console.log("[db-migrate] Applying schema changes...");
+  const client = await pool.connect();
+  try {
+    for (const q of queries) {
+      await client.query(q);
+    }
+    console.log("[db-migrate] Done — all schema changes applied.");
+  } finally {
+    client.release();
+    await pool.end();
+  }
+  process.exit(0);
+}
+
+run().catch(e => {
+  console.error("[db-migrate] Error:", e.message);
+  process.exit(1);
+});

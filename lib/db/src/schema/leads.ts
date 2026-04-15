@@ -29,6 +29,8 @@ export const leadsTable = pgTable("leads", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   deletedAt: timestamp("deleted_at"),
+  cancellationReason: text("cancellation_reason"),
+  statusUpdatedAt: timestamp("status_updated_at"),
 });
 
 export const insertLeadSchema = createInsertSchema(leadsTable).omit({ id: true, createdAt: true, updatedAt: true });
