@@ -351,9 +351,13 @@ export default function Finance() {
     return estimates.filter(e => e.status === estStatus);
   }, [estimates, estStatus]);
 
-  const estCities = useMemo(() =>
-    [...new Set((estimates ?? []).map(e => e.city).filter(Boolean))].sort(),
-  [estimates]);
+  const estCities = useMemo(() => {
+    const fromEstimates = (estimates ?? []).map(e => e.city);
+    const fromNr = nrData
+      ? [...nrData.critical, ...nrData.warning].map(e => e.city)
+      : [];
+    return [...new Set([...fromEstimates, ...fromNr].filter(Boolean))].sort();
+  }, [estimates, nrData]);
 
   const totalEstPages = Math.max(1, Math.ceil(filteredEst.length / 20));
   const safeEstPage   = Math.min(estPage, totalEstPages);
@@ -992,7 +996,9 @@ export default function Finance() {
                     </div>
                   ) : (
                     <div className="divide-y divide-border/50">
-                      {([...nrData.critical.map(e => ({ ...e, risk: "critical" as const })), ...nrData.warning.map(e => ({ ...e, risk: "warning" as const }))]).map(entry => {
+                      {([...nrData.critical.map(e => ({ ...e, risk: "critical" as const })), ...nrData.warning.map(e => ({ ...e, risk: "warning" as const }))])
+                        .filter(entry => !estCity || entry.city === estCity)
+                        .map(entry => {
                         const isCritical = entry.risk === "critical";
                         const msgLoading = nrActionLoading[entry.orderId] === "message";
                         const reassignLoading = nrActionLoading[entry.orderId] === "reassign";
