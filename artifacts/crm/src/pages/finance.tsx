@@ -43,6 +43,7 @@ interface MasterStat {
   paidCommission: number; pendingCommission: number; overdueCommission: number;
   paidCount: number; pendingCount: number; overdueCount: number;
   lastPaidAt: string | null; debtTotal: number;
+  totalIncome: number; // paid→full commission + pending/overdue→prepaymentDeducted
 }
 
 interface LineItem { description: string; unit?: string; quantity?: number; price: number }
@@ -374,12 +375,13 @@ export default function Finance() {
 
   const statsSummary = useMemo(() => {
     return msList.reduce((acc, m) => ({
+      totalIncome:  acc.totalIncome  + (m.totalIncome ?? m.paidCommission), // fallback for old data
       totalPaid:    acc.totalPaid    + m.paidCommission,
       totalPending: acc.totalPending + m.pendingCommission,
       totalOverdue: acc.totalOverdue + m.overdueCommission,
       totalDebt:    acc.totalDebt    + m.debtTotal,
       debtors:      acc.debtors     + (m.debtTotal > 0 ? 1 : 0),
-    }), { totalPaid: 0, totalPending: 0, totalOverdue: 0, totalDebt: 0, debtors: 0 });
+    }), { totalIncome: 0, totalPaid: 0, totalPending: 0, totalOverdue: 0, totalDebt: 0, debtors: 0 });
   }, [msList]);
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
@@ -793,7 +795,7 @@ export default function Finance() {
               {/* 4 summary cards */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {[
-                  { label: "💰 Общий доход", value: statsSummary.totalPaid, color: "emerald", icon: <TrendingUp className="w-4 h-4 text-emerald-500" /> },
+                  { label: "💰 Общий доход", value: statsSummary.totalIncome, color: "emerald", icon: <TrendingUp className="w-4 h-4 text-emerald-500" /> },
                   { label: "⏳ Долг мастеров", value: statsSummary.totalDebt, color: statsSummary.totalDebt > 0 ? "red" : "slate", icon: <DebtIcon className="w-4 h-4 text-red-500" /> },
                   { label: "⚠️ Просрочено транз.", value: msList.reduce((s, m) => s + m.overdueCount, 0), color: "red", icon: <AlertCircle className="w-4 h-4 text-red-500" />, isCount: true },
                   { label: "👷 Должников", value: statsSummary.debtors, color: "amber", icon: <Users className="w-4 h-4 text-amber-500" />, isCount: true },

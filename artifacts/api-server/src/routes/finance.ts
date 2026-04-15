@@ -472,12 +472,15 @@ router.get("/master-stats", opsAndAdmin, async (req, res) => {
     paidCommission: number; pendingCommission: number; overdueCommission: number;
     paidCount: number; pendingCount: number; overdueCount: number;
     lastPaidAt: string | null; debtTotal: number;
+    // Actual cash received: paid → full commission; pending/overdue → prepaymentDeducted only
+    totalIncome: number;
   };
 
   const map = new Map<number, Agg>();
   for (const t of rows.rows as any[]) {
-    const commission = Number(t.commission);
-    const netPayable = Math.max(0, commission - Number(t.prepayment_deducted ?? 0));
+    const commission       = Number(t.commission);
+    const prepayDeducted   = Number(t.prepayment_deducted ?? 0);
+    const netPayable       = Math.max(0, commission - prepayDeducted);
     if (!map.has(t.master_id)) {
       map.set(t.master_id, {
         masterId: t.master_id, alias: t.alias ?? "Неизвестен",
@@ -485,7 +488,7 @@ router.get("/master-stats", opsAndAdmin, async (req, res) => {
         orderCount: 0, totalOrderAmount: 0, totalCommission: 0,
         paidCommission: 0, pendingCommission: 0, overdueCommission: 0,
         paidCount: 0, pendingCount: 0, overdueCount: 0,
-        lastPaidAt: null, debtTotal: 0,
+        lastPaidAt: null, debtTotal: 0, totalIncome: 0,
       });
     }
     const a = map.get(t.master_id)!;
@@ -494,14 +497,23 @@ router.get("/master-stats", opsAndAdmin, async (req, res) => {
     a.totalCommission  += commission;
     if (t.payment_status === "paid") {
       a.paidCommission += commission; a.paidCount++;
+      a.totalIncome    += commission; // full commission received
       // Normalise to ISO string with Z so browsers interpret it as UTC correctly
       const paidAtIso = t.paid_at instanceof Date
         ? t.paid_at.toISOString()
         : t.paid_at ? new Date(t.paid_at + (String(t.paid_at).endsWith("Z") ? "" : "Z")).toISOString() : null;
       if (paidAtIso && (!a.lastPaidAt || paidAtIso > a.lastPaidAt)) a.lastPaidAt = paidAtIso;
     }
-    if (t.payment_status === "pending") { a.pendingCommission += commission; a.pendingCount++; a.debtTotal += netPayable; }
-    if (t.payment_status === "overdue") { a.overdueCommission += commission; a.overdueCount++; a.debtTotal += netPayable; }
+    if (t.payment_status === "pending") {
+      a.pendingCommission += commission; a.pendingCount++;
+      a.debtTotal  += netPayable;
+      a.totalIncome += prepayDeducted; // only the prepayment already received
+    }
+    if (t.payment_status === "overdue") {
+      a.overdueCommission += commission; a.overdueCount++;
+      a.debtTotal  += netPayable;
+      a.totalIncome += prepayDeducted; // only the prepayment already received
+    }
   }
 
   const result = Array.from(map.values())
