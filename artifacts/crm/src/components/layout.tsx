@@ -119,10 +119,12 @@ export function Layout({ children }: LayoutProps) {
       {/* Sidebar Desktop */}
       <aside className="hidden md:flex w-64 flex-col fixed inset-y-0 left-0 bg-sidebar border-r border-sidebar-border z-20">
         <div className="p-6 flex items-center gap-3 border-b border-sidebar-border">
-          <div className="h-8 w-8 bg-primary rounded-lg flex items-center justify-center text-primary-foreground font-display font-bold">
-            R
-          </div>
-          <span className="font-display font-bold text-xl text-sidebar-foreground tracking-tight">RepairCRM</span>
+          <img
+            src={`${import.meta.env.BASE_URL}images/logo.png`}
+            alt="Честный мастер"
+            className="h-8 w-8 object-contain"
+          />
+          <span className="font-display font-bold text-xl text-sidebar-foreground tracking-tight">Честный мастер</span>
         </div>
         <div className="flex-1 py-6 px-4 space-y-1 overflow-y-auto">
           {filteredNav.map((item) => {
@@ -220,8 +222,12 @@ export function Layout({ children }: LayoutProps) {
         {/* Mobile Header */}
         <header className="md:hidden flex items-center justify-between p-4 bg-card border-b border-border z-20">
           <div className="flex items-center gap-2">
-            <div className="h-8 w-8 bg-primary rounded-lg flex items-center justify-center text-primary-foreground font-display font-bold">R</div>
-            <span className="font-display font-bold text-lg">RepairCRM</span>
+            <img
+              src={`${import.meta.env.BASE_URL}images/logo.png`}
+              alt="Честный мастер"
+              className="h-8 w-8 object-contain"
+            />
+            <span className="font-display font-bold text-lg">Честный мастер</span>
           </div>
           <button onClick={() => setIsMobileOpen(!isMobileOpen)} className="p-2 relative">
             <Menu className="w-6 h-6" />
