@@ -88,6 +88,10 @@ interface PendingTransaction {
   orderId: number;
   orderAmount: number;
   commission: number;
+  netPayable: number;
+  prepaymentDeducted: number;
+  totalPartialPaid: number;
+  partialPayments: { id: number; amount: number; note: string | null; paidAt: string }[];
   paymentStatus: string;
   createdAt: string;
 }
@@ -141,6 +145,10 @@ export default function MasterChat() {
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [editAmountId, setEditAmountId] = useState<number | null>(null);
   const [editAmountValue, setEditAmountValue] = useState("");
+  const [partialPayTx, setPartialPayTx]     = useState<PendingTransaction | null>(null);
+  const [partialAmount, setPartialAmount]   = useState("");
+  const [partialNote, setPartialNote]       = useState("");
+  const [partialLoading, setPartialLoading] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deletingDialog, setDeletingDialog] = useState(false);
 
@@ -390,6 +398,30 @@ export default function MasterChat() {
       }
     },
   });
+
+  const doPartialPay = async () => {
+    if (!partialPayTx) return;
+    const amt = parseFloat(partialAmount.replace(",", "."));
+    if (isNaN(amt) || amt <= 0) { toast({ title: "Введите корректную сумму", variant: "destructive" }); return; }
+    setPartialLoading(true);
+    try {
+      const r = await fetch(`/api/finance/transactions/${partialPayTx.id}/partial-payment`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: amt, note: partialNote.trim() || undefined }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error ?? "Ошибка");
+      if (data.fullyPaid) {
+        toast({ title: `✅ Комиссия по заказу #${partialPayTx.orderId} полностью погашена!` });
+      } else {
+        toast({ title: `✅ Принято ${amt.toLocaleString("ru-RU")} ₽. Остаток: ${data.remaining?.toLocaleString("ru-RU")} ₽` });
+      }
+      setPartialPayTx(null); setPartialAmount(""); setPartialNote("");
+      if (selectedId) { fetchConversation(selectedId); fetchThreads(); }
+    } catch (e: any) { toast({ title: e?.message ?? "Ошибка", variant: "destructive" }); }
+    finally { setPartialLoading(false); }
+  };
 
   const setAmountMutation = useMutation({
     mutationFn: async ({ orderId, amount }: { orderId: number; amount: number }) => {
@@ -956,6 +988,53 @@ export default function MasterChat() {
                     </div>
                   )}
 
+                  {/* Partial payment modal */}
+                  {partialPayTx && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+                      <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-base font-semibold text-gray-800">Частичный платёж · заказ #{partialPayTx.orderId}</h3>
+                          <button onClick={() => setPartialPayTx(null)} className="text-gray-400 hover:text-gray-700">
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <div className="bg-slate-50 rounded-xl p-3 text-sm space-y-1.5">
+                          <div className="flex justify-between text-xs"><span className="text-gray-500">Комиссия</span><span className="font-medium">{fmt(partialPayTx.commission)}</span></div>
+                          {partialPayTx.prepaymentDeducted > 0 && <div className="flex justify-between text-xs"><span className="text-gray-500">Предоплата</span><span className="text-emerald-600">−{fmt(partialPayTx.prepaymentDeducted)}</span></div>}
+                          {partialPayTx.totalPartialPaid > 0 && <div className="flex justify-between text-xs"><span className="text-gray-500">Оплачено частями</span><span className="text-blue-600">−{fmt(partialPayTx.totalPartialPaid)}</span></div>}
+                          <div className="flex justify-between text-xs border-t border-gray-200 pt-1.5"><span className="font-medium">Остаток</span><span className="font-bold text-red-600">{fmt(partialPayTx.netPayable)}</span></div>
+                          <div className="w-full bg-gray-200 rounded-full h-1.5">
+                            <div className="bg-blue-500 h-1.5 rounded-full" style={{ width: `${Math.min(100, ((partialPayTx.prepaymentDeducted + partialPayTx.totalPartialPaid) / partialPayTx.commission) * 100)}%` }} />
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <div>
+                            <label className="text-xs font-medium text-gray-500 mb-1 block">Сумма, ₽</label>
+                            <input type="number" value={partialAmount} onChange={e => setPartialAmount(e.target.value)}
+                              placeholder={`до ${partialPayTx.netPayable.toLocaleString("ru-RU")}`}
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-gray-500 mb-1 block">Комментарий</label>
+                            <input type="text" value={partialNote} onChange={e => setPartialNote(e.target.value)}
+                              placeholder="Наличные, перевод..."
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => setPartialPayTx(null)}
+                            className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+                            Отмена
+                          </button>
+                          <button onClick={doPartialPay} disabled={partialLoading || !partialAmount}
+                            className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5">
+                            {partialLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Принять платёж"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Delete dialog confirmation modal */}
                   {showDeleteDialog && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
@@ -1149,19 +1228,80 @@ export default function MasterChat() {
                             </div>
                             <div className="border-t border-dashed border-gray-100 my-1" />
                             <div className="flex justify-between items-center text-xs">
-                              <span className="text-gray-500">Комиссия (к оплате)</span>
-                              <span className="font-bold text-violet-700 text-sm">{fmt(tx.commission)}</span>
+                              <span className="text-gray-500">Комиссия</span>
+                              <span className="font-semibold text-gray-800">{fmt(tx.commission)}</span>
                             </div>
+                            {tx.prepaymentDeducted > 0 && (
+                              <div className="flex justify-between items-center text-xs">
+                                <span className="text-gray-500">Предоплата зачтена</span>
+                                <span className="text-emerald-600">−{fmt(tx.prepaymentDeducted)}</span>
+                              </div>
+                            )}
+                            {tx.totalPartialPaid > 0 && (
+                              <div className="flex justify-between items-center text-xs">
+                                <span className="text-gray-500">Оплачено частями</span>
+                                <span className="text-blue-600">−{fmt(tx.totalPartialPaid)}</span>
+                              </div>
+                            )}
                             <div className="border-t border-dashed border-gray-100 my-1" />
                             <div className="flex justify-between items-center text-xs">
-                              <span className="text-gray-500">Реквизиты для перевода</span>
-                              <span className="font-mono font-semibold text-gray-800 select-all">89892860863 · Альфа Банк · Игорь К.</span>
+                              <span className="text-gray-500 font-medium">К оплате</span>
+                              <span className="font-bold text-violet-700 text-sm">{fmt(tx.netPayable)}</span>
+                            </div>
+                            {/* Progress bar */}
+                            {tx.commission > 0 && (tx.prepaymentDeducted > 0 || tx.totalPartialPaid > 0) && (
+                              <div className="w-full bg-gray-100 rounded-full h-1 mt-1">
+                                <div className="bg-violet-500 h-1 rounded-full" style={{ width: `${Math.min(100, ((tx.prepaymentDeducted + tx.totalPartialPaid) / tx.commission) * 100)}%` }} />
+                              </div>
+                            )}
+                            <div className="border-t border-dashed border-gray-100 my-1" />
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-gray-500">Реквизиты</span>
+                              <span className="font-mono font-semibold text-gray-800 select-all text-[10px]">89892860863 · Альфа Банк · Игорь К.</span>
                             </div>
                           </div>
 
+                          {/* Partial payment history */}
+                          {tx.partialPayments?.length > 0 && (
+                            <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 space-y-1">
+                              <p className="text-[10px] font-semibold text-blue-700 uppercase tracking-wide">Принятые платежи</p>
+                              {tx.partialPayments.map((p, i) => (
+                                <div key={p.id} className="flex items-center justify-between text-xs">
+                                  <span className="text-blue-500">#{i + 1} · {new Date(p.paidAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}</span>
+                                  <span className="font-semibold text-blue-800">{fmt(p.amount)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Action buttons */}
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => { setPartialPayTx(tx); setPartialAmount(""); setPartialNote(""); }}
+                              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-100 text-blue-700 hover:bg-blue-600 hover:text-white rounded-lg font-medium text-xs transition-colors"
+                            >
+                              <DollarSign className="w-3 h-3" /> Частично
+                            </button>
+                            {conv?.hasPaymentProof && conv.paymentProofUrl ? (
+                              <button
+                                onClick={() => confirmPaymentMutation.mutate(tx.id)}
+                                disabled={confirmPaymentMutation.isPending}
+                                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-violet-600 text-white hover:bg-violet-700 rounded-lg font-medium text-xs transition-colors disabled:opacity-50"
+                              >
+                                {confirmPaymentMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                                Полностью
+                              </button>
+                            ) : (
+                              <div className="flex-1 flex items-center gap-1.5 px-3 py-2 bg-amber-50 border border-amber-100 rounded-lg">
+                                <Loader2 className="w-3 h-3 text-amber-400 flex-shrink-0" />
+                                <p className="text-[10px] text-amber-700">Ждём скриншот</p>
+                              </div>
+                            )}
+                          </div>
+
                           {/* Payment proof screenshot */}
-                          {conv?.hasPaymentProof && conv.paymentProofUrl ? (
-                            <div className="space-y-2">
+                          {conv?.hasPaymentProof && conv.paymentProofUrl && (
+                            <div className="space-y-1.5">
                               <p className="text-[10px] font-semibold text-emerald-600 uppercase tracking-wide flex items-center gap-1">
                                 <Check className="w-3 h-3" /> Скриншот оплаты получен
                               </p>
@@ -1172,21 +1312,6 @@ export default function MasterChat() {
                                   className="w-full rounded-lg border border-emerald-200 object-cover max-h-40 hover:opacity-90 transition-opacity cursor-zoom-in"
                                 />
                               </a>
-                              <button
-                                onClick={() => confirmPaymentMutation.mutate(tx.id)}
-                                disabled={confirmPaymentMutation.isPending}
-                                className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-violet-600 text-white hover:bg-violet-700 rounded-lg font-medium text-xs transition-colors disabled:opacity-50"
-                              >
-                                {confirmPaymentMutation.isPending
-                                  ? <Loader2 className="w-3 h-3 animate-spin" />
-                                  : <Check className="w-3 h-3" />}
-                                Подтвердить оплату
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-100 rounded-lg">
-                              <Loader2 className="w-3 h-3 text-amber-400 flex-shrink-0" />
-                              <p className="text-[11px] text-amber-700">Ожидаем скриншот оплаты от мастера</p>
                             </div>
                           )}
                         </div>

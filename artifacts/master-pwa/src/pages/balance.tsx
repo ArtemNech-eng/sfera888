@@ -6,6 +6,13 @@ import {
   Copy, Camera, Loader2, ChevronDown, ChevronUp,
 } from "lucide-react";
 
+interface PartialPayment {
+  id: number;
+  amount: number;
+  note: string | null;
+  paidAt: string;
+}
+
 interface Transaction {
   id: number;
   orderId: number;
@@ -13,6 +20,10 @@ interface Transaction {
   orderCity: string | null;
   orderAmount: number;
   commission: number;
+  netPayable: number;
+  prepaymentDeducted: number;
+  totalPartialPaid: number;
+  partialPayments: PartialPayment[];
   paymentStatus: string;
   createdAt: string;
   paidAt: string | null;
@@ -131,6 +142,83 @@ function PaymentSection({ debt }: { debt: number }) {
   );
 }
 
+function TxCard({ tx }: { tx: Transaction }) {
+  const [expanded, setExpanded] = useState(false);
+  const s = statusLabel[tx.paymentStatus] ?? { label: tx.paymentStatus, color: "text-muted-foreground" };
+  const hasParts = tx.partialPayments?.length > 0;
+  const paidFraction = tx.commission > 0
+    ? Math.min(1, ((tx.prepaymentDeducted ?? 0) + (tx.totalPartialPaid ?? 0)) / tx.commission)
+    : 0;
+  const fmt = (n: number) => n.toLocaleString("ru-RU");
+
+  return (
+    <div className="bg-card border border-border rounded-xl p-3.5 space-y-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="space-y-0.5 flex-1 min-w-0">
+          <p className="font-medium text-sm truncate">
+            {tx.orderServiceType ?? "Заказ"} #{tx.orderId}
+          </p>
+          <p className="text-xs text-muted-foreground">{tx.orderCity ?? ""}</p>
+          <p className="text-xs text-muted-foreground">
+            {new Date(tx.createdAt).toLocaleDateString("ru-RU", {
+              day: "numeric", month: "short", year: "numeric",
+            })}
+          </p>
+        </div>
+        <div className="text-right space-y-1 shrink-0">
+          <p className="font-bold text-base">{fmt(tx.orderAmount)} ₽</p>
+          <p className="text-xs text-muted-foreground">Комиссия: {fmt(tx.commission)} ₽</p>
+          {tx.netPayable !== undefined && tx.paymentStatus !== "paid" && tx.netPayable < tx.commission && (
+            <p className="text-xs text-blue-600 font-medium">Остаток: {fmt(tx.netPayable)} ₽</p>
+          )}
+          <div className={`flex items-center gap-1 justify-end text-xs font-medium ${s.color}`}>
+            {tx.paymentStatus === "paid" ? <CheckCircle2 size={12} /> : <Clock size={12} />}
+            {s.label}
+          </div>
+        </div>
+      </div>
+
+      {/* Progress bar (only for partially paid) */}
+      {paidFraction > 0 && paidFraction < 1 && (
+        <div className="space-y-1">
+          <div className="w-full bg-muted rounded-full h-1.5">
+            <div className="bg-blue-500 h-1.5 rounded-full transition-all" style={{ width: `${paidFraction * 100}%` }} />
+          </div>
+          <p className="text-[10px] text-muted-foreground">Оплачено {Math.round(paidFraction * 100)}%</p>
+        </div>
+      )}
+
+      {/* Expand partial payment history */}
+      {hasParts && (
+        <button
+          onClick={() => setExpanded(v => !v)}
+          className="w-full flex items-center justify-between text-xs text-blue-600 py-1 active:opacity-70"
+        >
+          <span>Частичные платежи ({tx.partialPayments.length})</span>
+          {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+        </button>
+      )}
+      {expanded && hasParts && (
+        <div className="border-t border-border pt-2 space-y-1.5">
+          {tx.partialPayments.map((p, i) => (
+            <div key={p.id} className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">
+                #{i + 1} · {new Date(p.paidAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" } as any)}
+                {p.note && ` · ${p.note}`}
+              </span>
+              <span className="font-semibold text-blue-700">{fmt(p.amount)} ₽</span>
+            </div>
+          ))}
+          <div className="flex justify-between text-xs border-t border-border/50 pt-1">
+            <span className="text-muted-foreground">Итого частями</span>
+            <span className="font-semibold">{fmt(tx.totalPartialPaid)} ₽</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function BalancePage() {
   const [data, setData] = useState<BalanceData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -221,38 +309,7 @@ export default function BalancePage() {
             Транзакций пока нет
           </div>
         ) : (
-          data.transactions.map(tx => {
-            const s = statusLabel[tx.paymentStatus] ?? { label: tx.paymentStatus, color: "text-muted-foreground" };
-            return (
-              <div key={tx.id} className="bg-card border border-border rounded-xl p-3.5">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="space-y-0.5 flex-1 min-w-0">
-                    <p className="font-medium text-sm truncate">
-                      {tx.orderServiceType ?? "Заказ"} #{tx.orderId}
-                    </p>
-                    <p className="text-xs text-muted-foreground">{tx.orderCity ?? ""}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(tx.createdAt).toLocaleDateString("ru-RU", {
-                        day: "numeric", month: "short", year: "numeric",
-                      })}
-                    </p>
-                  </div>
-                  <div className="text-right space-y-1 shrink-0">
-                    <p className="font-bold text-base">{tx.orderAmount.toLocaleString("ru-RU")} ₽</p>
-                    <p className="text-xs text-muted-foreground">
-                      Комиссия: {tx.commission.toLocaleString("ru-RU")} ₽
-                    </p>
-                    <div className={`flex items-center gap-1 justify-end text-xs font-medium ${s.color}`}>
-                      {tx.paymentStatus === "paid"
-                        ? <CheckCircle2 size={12} />
-                        : <Clock size={12} />}
-                      {s.label}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })
+          data.transactions.map(tx => <TxCard key={tx.id} tx={tx} />)
         )}
       </section>
     </div>

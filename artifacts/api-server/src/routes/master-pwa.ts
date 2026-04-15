@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, mastersTable, ordersTable, orderDispatchesTable, transactionsTable, leadsTable, voronkaColumnsTable, masterMessagesTable, pushSubscriptionsTable, masterCheckinsTable } from "@workspace/db";
+import { db, mastersTable, ordersTable, orderDispatchesTable, transactionsTable, leadsTable, voronkaColumnsTable, masterMessagesTable, pushSubscriptionsTable, masterCheckinsTable, transactionPaymentsTable } from "@workspace/db";
 import { maybeEarlyAssign } from "../lib/priorityAssign.js";
 import { eq, and, inArray, isNull, ne, asc, desc, gte } from "drizzle-orm";
 import { verifyPassword, hashPassword } from "../lib/auth.js";
@@ -773,6 +773,19 @@ router.get("/balance", requireMasterPwa, async (req, res) => {
 
   const realTxs = txRows.filter(t => Number(t.commission) > 0);
 
+  // Fetch partial payments for all transactions
+  const txIds = realTxs.map(t => t.id);
+  const partials = txIds.length > 0
+    ? await db.select().from(transactionPaymentsTable)
+        .where(inArray(transactionPaymentsTable.transactionId, txIds))
+    : [];
+  const partialsMap = new Map<number, typeof partials>();
+  for (const p of partials) {
+    const arr = partialsMap.get(p.transactionId) ?? [];
+    arr.push(p);
+    partialsMap.set(p.transactionId, arr);
+  }
+
   const paidTxs = realTxs.filter(t => t.paymentStatus === "paid");
   const pendingTxs = realTxs.filter(t => t.paymentStatus === "pending" || t.paymentStatus === "debt");
 
@@ -789,13 +802,26 @@ router.get("/balance", requireMasterPwa, async (req, res) => {
     pendingEarnings,
     transactions: realTxs.map(t => {
       const order = orderMap.get(t.orderId);
+      const txPartials = partialsMap.get(t.id) ?? [];
+      const prepaymentDeducted = Number(t.prepaymentDeducted ?? 0);
+      const totalPartialPaid = txPartials.reduce((s, p) => s + Number(p.amount), 0);
+      const commission = Number(t.commission);
       return {
         id: t.id,
         orderId: t.orderId,
         orderServiceType: order?.serviceType ?? null,
         orderCity: order?.city ?? null,
         orderAmount: Number(t.orderAmount),
-        commission: Number(t.commission),
+        commission,
+        prepaymentDeducted,
+        totalPartialPaid,
+        netPayable: Math.max(0, commission - prepaymentDeducted - totalPartialPaid),
+        partialPayments: txPartials.map(p => ({
+          id: p.id,
+          amount: Number(p.amount),
+          note: p.note ?? null,
+          paidAt: p.paidAt,
+        })),
         paymentStatus: t.paymentStatus,
         createdAt: t.createdAt,
         paidAt: t.paidAt ?? null,

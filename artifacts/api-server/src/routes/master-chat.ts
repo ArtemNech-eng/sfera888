@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, masterMessagesTable, mastersTable, telegramChatsTable, transactionsTable, usersTable } from "@workspace/db";
+import { db, masterMessagesTable, mastersTable, telegramChatsTable, transactionsTable, transactionPaymentsTable, usersTable } from "@workspace/db";
 import { eq, desc, and, inArray } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
 import { sendPushToMaster } from "../lib/push.js";
@@ -149,6 +149,19 @@ router.get("/:masterId", requireRole("admin", "master_operator", "lead_operator"
   const pendingTx = await db.select().from(transactionsTable)
     .where(and(eq(transactionsTable.masterId, masterId), eq(transactionsTable.paymentStatus, "pending")));
 
+  // Fetch partial payments for pending transactions
+  const pendingTxIds = pendingTx.map(t => t.id);
+  const partials = pendingTxIds.length > 0
+    ? await db.select().from(transactionPaymentsTable)
+        .where(inArray(transactionPaymentsTable.transactionId, pendingTxIds))
+    : [];
+  const partialsMap = new Map<number, typeof partials>();
+  for (const p of partials) {
+    const arr = partialsMap.get(p.transactionId) ?? [];
+    arr.push(p);
+    partialsMap.set(p.transactionId, arr);
+  }
+
   // Detect payment proof screenshot: a message from master that has a photo
   // and text matching the payment proof pattern sent by the bot.
   // We look for the LATEST such proof so the operator sees the most recent one.
@@ -168,13 +181,23 @@ router.get("/:masterId", requireRole("admin", "master_operator", "lead_operator"
     paymentProofUrl,
     pendingTransactions: pendingTx.map(t => {
       const prepaymentDeducted = Number(t.prepaymentDeducted ?? 0);
+      const txPartials = partialsMap.get(t.id) ?? [];
+      const totalPartialPaid = txPartials.reduce((s, p) => s + Number(p.amount), 0);
+      const commission = Number(t.commission);
       return {
         id: t.id,
         orderId: t.orderId,
         orderAmount: Number(t.orderAmount),
-        commission: Number(t.commission),
+        commission,
         prepaymentDeducted,
-        netPayable: Math.max(0, Number(t.commission) - prepaymentDeducted),
+        totalPartialPaid,
+        netPayable: Math.max(0, commission - prepaymentDeducted - totalPartialPaid),
+        partialPayments: txPartials.map(p => ({
+          id: p.id,
+          amount: Number(p.amount),
+          note: p.note ?? null,
+          paidAt: p.paidAt,
+        })),
         paymentStatus: t.paymentStatus,
         createdAt: t.createdAt,
       };
