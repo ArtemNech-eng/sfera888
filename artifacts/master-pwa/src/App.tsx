@@ -43,6 +43,7 @@ import PendingContractPage from "@/pages/pending-contract";
 import WorkRulesPage from "@/pages/work-rules";
 import { ShieldBan, LogOut } from "lucide-react";
 import MaxBotBanner from "@/components/max-bot-banner";
+import RulesPopup from "@/components/rules-popup";
 
 function SuspendedScreen() {
   const { logout } = useAuth();
@@ -118,6 +119,7 @@ function AppRoutes() {
   return (
     <div className="flex flex-col min-h-dvh">
       {master && !isPending && !isSuspended && <MaxBotBanner />}
+      {master && !isPending && !isSuspended && <RulesPopup />}
       <main className={`flex-1 overflow-auto ${master && !isPending && !isSuspended ? "pb-20" : ""}`}>
         <AuthGuard>
           <Switch>
