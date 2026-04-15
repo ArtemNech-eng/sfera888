@@ -370,15 +370,17 @@ export default function Finance() {
 
   // ─── Derived: master stats summary ───────────────────────────────────────
 
+  const msList = Array.isArray(masterStats) ? masterStats : [];
+
   const statsSummary = useMemo(() => {
-    if (!masterStats) return { totalPaid: 0, totalPending: 0, totalOverdue: 0, debtors: 0 };
-    return masterStats.reduce((acc, m) => ({
+    return msList.reduce((acc, m) => ({
       totalPaid:    acc.totalPaid    + m.paidCommission,
       totalPending: acc.totalPending + m.pendingCommission,
       totalOverdue: acc.totalOverdue + m.overdueCommission,
+      totalDebt:    acc.totalDebt    + m.debtTotal,
       debtors:      acc.debtors     + (m.debtTotal > 0 ? 1 : 0),
-    }), { totalPaid: 0, totalPending: 0, totalOverdue: 0, debtors: 0 });
-  }, [masterStats]);
+    }), { totalPaid: 0, totalPending: 0, totalOverdue: 0, totalDebt: 0, debtors: 0 });
+  }, [msList]);
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
 
@@ -530,14 +532,14 @@ export default function Finance() {
   }, [filtered]);
 
   const exportMasterCSV = useCallback(() => {
-    if (!masterStats) return;
+    if (msList.length === 0) return;
     const headers = ["Мастер", "Город", "Заказов", "Оборот", "Оплачено", "Ожидает", "Просрочено", "Долг итого"];
-    const rows = masterStats.map(m => [
+    const rows = msList.map(m => [
       m.alias, m.city, String(m.orderCount), String(m.totalOrderAmount),
       String(m.paidCommission), String(m.pendingCommission), String(m.overdueCommission), String(m.debtTotal),
     ]);
     downloadCSV("по_мастерам.csv", rows, headers);
-  }, [masterStats]);
+  }, [msList]);
 
   const exportEstCSV = useCallback(() => {
     if (!filteredEst) return;
@@ -792,8 +794,8 @@ export default function Finance() {
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {[
                   { label: "💰 Общий доход", value: statsSummary.totalPaid, color: "emerald", icon: <TrendingUp className="w-4 h-4 text-emerald-500" /> },
-                  { label: "⏳ Долг мастеров", value: statsSummary.totalPending + statsSummary.totalOverdue, color: statsSummary.totalPending + statsSummary.totalOverdue > 0 ? "red" : "slate", icon: <DebtIcon className="w-4 h-4 text-red-500" /> },
-                  { label: "⚠️ Просрочено транз.", value: (masterStats ?? []).reduce((s, m) => s + m.overdueCount, 0), color: "red", icon: <AlertCircle className="w-4 h-4 text-red-500" />, isCount: true },
+                  { label: "⏳ Долг мастеров", value: statsSummary.totalDebt, color: statsSummary.totalDebt > 0 ? "red" : "slate", icon: <DebtIcon className="w-4 h-4 text-red-500" /> },
+                  { label: "⚠️ Просрочено транз.", value: msList.reduce((s, m) => s + m.overdueCount, 0), color: "red", icon: <AlertCircle className="w-4 h-4 text-red-500" />, isCount: true },
                   { label: "👷 Должников", value: statsSummary.debtors, color: "amber", icon: <Users className="w-4 h-4 text-amber-500" />, isCount: true },
                 ].map(card => (
                   <div key={card.label} className="bg-card border border-border/50 rounded-2xl p-4 shadow-sm">
@@ -833,9 +835,9 @@ export default function Finance() {
                     <tbody className="divide-y divide-border/50">
                       {statsLoading ? (
                         <tr><td colSpan={10} className="py-12 text-center"><Loader2 className="w-6 h-6 animate-spin text-primary mx-auto" /></td></tr>
-                      ) : !masterStats || masterStats.length === 0 ? (
+                      ) : msList.length === 0 ? (
                         <tr><td colSpan={10} className="py-12 text-center text-muted-foreground text-sm">Нет данных за выбранный период</td></tr>
-                      ) : masterStats.map(m => {
+                      ) : msList.map(m => {
                         const rowBg = m.overdueCommission > 0 ? "bg-red-50/40 hover:bg-red-50/70"
                                     : m.pendingCommission > 0 ? "bg-amber-50/30 hover:bg-amber-50/60"
                                     : "bg-emerald-50/20 hover:bg-emerald-50/50";
