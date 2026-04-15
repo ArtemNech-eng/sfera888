@@ -214,11 +214,15 @@ router.get("/revenue", adminOnly, async (req, res) => {
 
     const txRows = await db.select().from(transactionsTable);
 
-    // Income = only fully paid commissions (paymentStatus === "paid").
-    // Pending/overdue are NOT counted — money is not yet in pocket.
+    // Income = only fully paid commissions, filtered by paidAt (when money was actually received).
+    // Using paidAt (not createdAt) ensures transactions paid this week/month are counted
+    // in the correct period, even if the order was created earlier.
     function calcIncome(start: Date, end: Date) {
       return txRows
-        .filter(t => t.paymentStatus === "paid" && t.createdAt >= start && t.createdAt < end)
+        .filter(t => {
+          if (t.paymentStatus !== "paid" || !t.paidAt) return false;
+          return t.paidAt >= start && t.paidAt < end;
+        })
         .reduce((s, t) => s + Number(t.commission), 0);
     }
 
