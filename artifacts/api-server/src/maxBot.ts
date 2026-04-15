@@ -28,11 +28,42 @@ function clearPending(userId: number) {
   pendingLinks.delete(userId);
 }
 
-// Sends the app registration link with the Max user ID embedded
-async function sendAppLink(chatId: number): Promise<void> {
+// Asks new (unlinked) user if they're already registered — first contact
+async function sendNewUserGreeting(chatId: number): Promise<void> {
+  await sendMaxWithButtonsToChat(
+    chatId,
+    `👋 Добро пожаловать в **Честный мастер**!\n\nВы уже зарегистрированы в нашем приложении?`,
+    [[
+      { text: "✅ Да, есть аккаунт", payload: "new:yes" },
+      { text: "❌ Нет, впервые", payload: "new:no" },
+    ]]
+  );
+}
+
+// Sends the full onboarding pitch + app link for new masters
+async function sendOnboarding(chatId: number): Promise<void> {
+  // Message 1 — what we offer
   await sendMaxMessageToChat(
     chatId,
-    `👋 Добро пожаловать в **Честный мастер**!\n\nЗарегистрируйтесь в приложении, чтобы начать получать заказы на ремонт:\n\n📲 https://sfera-master.ru/master-pwa?max=${chatId}\n\n_Откройте ссылку, заполните форму — это займёт 1 минуту. После регистрации бот будет автоматически привязан к вашему аккаунту._`
+    `📌 **ЧТО МЫ ДАЁМ**\n\n` +
+    `Стабильный поток заказов — 10-15 заявок в месяц на одного мастера.\n` +
+    `Все клиенты частные, объекты разные — маленькие и большие.\n\n` +
+    `________________________________\n\n` +
+    `Работаем так:\n` +
+    `• Заказ от 15 000₽ до 50 000₽ → берём фиксировано **5 000₽** с заказа\n` +
+    `• Заказ свыше 50 000₽ → берём **15%** от суммы сметы\n\n` +
+    `________________________________\n\n` +
+    `Чтобы начать сотрудничать, нужно установить приложение и заполнить договор.`
+  );
+  // Message 2 — passport info
+  await sendMaxMessageToChat(
+    chatId,
+    `При регистрации нужен будет паспорт. Паспорт — это стандартная процедура в сфере услуг: мы работаем с людьми и должны понимать, кого отправляем на объект.`
+  );
+  // Message 3 — app link
+  await sendMaxMessageToChat(
+    chatId,
+    `Вот ссылка на наше приложение:\nhttps://sfera-master.ru/master-pwa?max=${chatId}`
   );
 }
 
@@ -247,6 +278,37 @@ export async function sendMaxWithButtons(
   }
 }
 
+// Same but uses chat_id= (for bot_started events where we only have chat_id)
+async function sendMaxWithButtonsToChat(
+  chatId: number,
+  text: string,
+  buttons: { text: string; payload: string }[][]
+): Promise<void> {
+  const token = getToken();
+  if (!token) return;
+  try {
+    const res = await fetch(`${MAX_API}/messages?chat_id=${chatId}`, {
+      method: "POST",
+      headers: { Authorization: token, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text,
+        format: "markdown",
+        attachments: [{
+          type: "inline_keyboard",
+          payload: {
+            buttons: buttons.map(row =>
+              row.map(btn => ({ type: "callback", text: btn.text, payload: btn.payload }))
+            ),
+          },
+        }],
+      }),
+    });
+    if (!res.ok) console.error("[maxBot] sendWithButtonsToChat failed:", res.status, await res.text());
+  } catch (e) {
+    console.error("[maxBot] sendWithButtonsToChat error:", e);
+  }
+}
+
 // ─── Webhook handler ──────────────────────────────────────────────────────────
 
 // ── Dedup: Max sometimes delivers the same webhook twice (with delays up to 10+ min) ─────
@@ -297,6 +359,19 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
       const payload: string = callback?.payload ?? "";
 
       if (!userId) return;
+
+      // ── New user: "already registered?" response ──────────────────────────
+      if (payload === "new:yes") {
+        await sendMaxMessage(userId,
+          `Отлично! Войдите в приложение — после входа бот подключится автоматически:\nhttps://sfera-master.ru/master-pwa?max=${userId}`
+        );
+        return;
+      }
+
+      if (payload === "new:no") {
+        await sendOnboarding(userId);
+        return;
+      }
 
       if (!payload.startsWith("checkin:")) return;
 
@@ -387,7 +462,7 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
       if (alreadyLinked) {
         await sendLoginLink(chatId, alreadyLinked.alias);
       } else {
-        await sendAppLink(chatId);
+        await sendNewUserGreeting(chatId);
       }
       return;
     }
@@ -420,8 +495,12 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
       if (alreadyLinkedSt) {
         await sendMaxMessage(userId, `👋 С возвращением, **${alreadyLinkedSt.alias}**!\n\n📲 Войдите в приложение:\nhttps://sfera-master.ru/master-pwa`);
       } else {
-        await sendMaxMessage(userId,
-          `📲 Зарегистрируйтесь в приложении:\nhttps://sfera-master.ru/master-pwa?max=${userId}\n\n_После регистрации бот будет автоматически привязан к вашему аккаунту._`
+        await sendMaxWithButtons(userId,
+          `👋 Добро пожаловать в **Честный мастер**!\n\nВы уже зарегистрированы в нашем приложении?`,
+          [[
+            { text: "✅ Да, есть аккаунт", payload: "new:yes" },
+            { text: "❌ Нет, впервые", payload: "new:no" },
+          ]]
         );
       }
       return;
