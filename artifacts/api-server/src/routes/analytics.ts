@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { db, leadsTable, ordersTable, mastersTable, transactionsTable, receiptsTable } from "@workspace/db";
+import { db, leadsTable, ordersTable, mastersTable, transactionsTable, transactionPaymentsTable, receiptsTable } from "@workspace/db";
 import { requirePermission } from "../middlewares/requireAuth.js";
-import { isNull, isNotNull } from "drizzle-orm";
+import { isNull, isNotNull, inArray } from "drizzle-orm";
 
 const router = Router();
 const adminOnly = requirePermission("analytics");
@@ -29,6 +29,16 @@ router.get("/dashboard", adminOnly, async (req, res) => {
     prepaymentAmount: receiptsTable.prepaymentAmount,
     prepaymentSubmittedAt: receiptsTable.prepaymentSubmittedAt,
   }).from(receiptsTable).where(isNotNull(receiptsTable.prepaymentSubmittedAt));
+
+  // Partial payments — needed for accurate debt calculation
+  const txIds = transactions.map(t => t.id);
+  const dashboardPartials = txIds.length > 0
+    ? await db.select().from(transactionPaymentsTable).where(inArray(transactionPaymentsTable.transactionId, txIds))
+    : [];
+  const dashboardPartialsMap = new Map<number, number>();
+  for (const p of dashboardPartials) {
+    dashboardPartialsMap.set(p.transactionId, (dashboardPartialsMap.get(p.transactionId) ?? 0) + Number(p.amount));
+  }
 
   const leadsToday = leads.filter(l => l.createdAt >= todayStart).length;
   const leadsWeek = leads.filter(l => l.createdAt >= weekStart).length;
@@ -66,7 +76,8 @@ router.get("/dashboard", adminOnly, async (req, res) => {
     : null;
 
   const totalDebt = transactions.filter(t => t.paymentStatus !== "paid").reduce((s, t) => {
-    const netPayable = Math.max(0, Number(t.commission) - Number(t.prepaymentDeducted ?? 0));
+    const totalPartialPaid = dashboardPartialsMap.get(t.id) ?? 0;
+    const netPayable = Math.max(0, Number(t.commission) - Number(t.prepaymentDeducted ?? 0) - totalPartialPaid);
     return s + netPayable;
   }, 0);
 
@@ -214,6 +225,16 @@ router.get("/revenue", adminOnly, async (req, res) => {
 
     const txRows = await db.select().from(transactionsTable);
 
+    // Partial payments — needed for accurate remainingDebt
+    const revTxIds = txRows.map(t => t.id);
+    const revPartials = revTxIds.length > 0
+      ? await db.select().from(transactionPaymentsTable).where(inArray(transactionPaymentsTable.transactionId, revTxIds))
+      : [];
+    const revPartialsMap = new Map<number, number>();
+    for (const p of revPartials) {
+      revPartialsMap.set(p.transactionId, (revPartialsMap.get(p.transactionId) ?? 0) + Number(p.amount));
+    }
+
     // Income = only fully paid commissions, filtered by paidAt (when money was actually received).
     // Using paidAt (not createdAt) ensures transactions paid this week/month are counted
     // in the correct period, even if the order was created earlier.
@@ -240,12 +261,13 @@ router.get("/revenue", adminOnly, async (req, res) => {
 
     const avgDay = month / Math.max(now.getDate(), 1);
 
-    // remainingDebt = sum of netPayable (commission - prepayDeducted) across all unclosed transactions.
-    // This is what masters still owe us — money not yet received.
+    // remainingDebt = sum of netPayable across all unclosed transactions.
+    // Accounts for prepayment AND partial payments already received.
     const remainingDebt = txRows
       .filter(t => t.paymentStatus !== "paid")
       .reduce((s, t) => {
-        const net = Math.max(0, Number(t.commission) - Number(t.prepaymentDeducted ?? 0));
+        const totalPartialPaid = revPartialsMap.get(t.id) ?? 0;
+        const net = Math.max(0, Number(t.commission) - Number(t.prepaymentDeducted ?? 0) - totalPartialPaid);
         return s + net;
       }, 0);
 

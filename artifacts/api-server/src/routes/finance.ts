@@ -442,9 +442,21 @@ router.get("/summary", opsAndAdmin, async (req, res) => {
   const pending = transactions.filter(t => t.paymentStatus === "pending");
   const overdue = transactions.filter(t => t.paymentStatus === "overdue");
 
+  // Fetch partial payments to accurately compute remaining debt
+  const unpaidIds = [...pending, ...overdue].map(t => t.id);
+  const summaryPartials = unpaidIds.length > 0
+    ? await db.select().from(transactionPaymentsTable).where(inArray(transactionPaymentsTable.transactionId, unpaidIds))
+    : [];
+  const summaryPartialsMap = new Map<number, number>();
+  for (const p of summaryPartials) {
+    summaryPartialsMap.set(p.transactionId, (summaryPartialsMap.get(p.transactionId) ?? 0) + Number(p.amount));
+  }
+
+  const netPayable = (t: typeof transactions[0]) =>
+    Math.max(0, Number(t.commission) - Number(t.prepaymentDeducted ?? 0) - (summaryPartialsMap.get(t.id) ?? 0));
+
   const totalIncome  = paid.reduce((s, t) => s + Number(t.commission), 0);
-  const totalDebt    = [...pending, ...overdue].reduce((s, t) =>
-    s + Math.max(0, Number(t.commission) - Number(t.prepaymentDeducted ?? 0)), 0);
+  const totalDebt    = [...pending, ...overdue].reduce((s, t) => s + netPayable(t), 0);
   const avgCommission = transactions.length > 0
     ? transactions.reduce((s, t) => s + Number(t.commission), 0) / transactions.length
     : 0;
@@ -455,8 +467,8 @@ router.get("/summary", opsAndAdmin, async (req, res) => {
     pendingCount: pending.length,
     overdueCount: overdue.length,
     totalCount:   transactions.length,
-    pendingAmount: pending.reduce((s, t) => s + Math.max(0, Number(t.commission) - Number(t.prepaymentDeducted ?? 0)), 0),
-    overdueAmount: overdue.reduce((s, t) => s + Math.max(0, Number(t.commission) - Number(t.prepaymentDeducted ?? 0)), 0),
+    pendingAmount: pending.reduce((s, t) => s + netPayable(t), 0),
+    overdueAmount: overdue.reduce((s, t) => s + netPayable(t), 0),
   });
 });
 
@@ -564,7 +576,7 @@ router.get("/master-stats", opsAndAdmin, async (req, res) => {
   if (toDate)   whereClause = sql`${whereClause} AND t.created_at <= ${toDate.toISOString()}`;
 
   const rows = await db.execute(sql`
-    SELECT t.master_id, t.commission, t.order_amount, t.prepayment_deducted,
+    SELECT t.id, t.master_id, t.commission, t.order_amount, t.prepayment_deducted,
            t.payment_status, t.paid_at,
            m.alias, m.city, m.phone
     FROM transactions t
@@ -573,13 +585,23 @@ router.get("/master-stats", opsAndAdmin, async (req, res) => {
     ORDER BY t.created_at DESC
   `);
 
+  // Fetch partial payments for all returned transactions
+  const statsAllTxIds = (rows.rows as any[]).map((t: any) => t.id).filter(Boolean);
+  const statsPartials = statsAllTxIds.length > 0
+    ? await db.select().from(transactionPaymentsTable).where(inArray(transactionPaymentsTable.transactionId, statsAllTxIds))
+    : [];
+  const statsPartialsMap = new Map<number, number>();
+  for (const p of statsPartials) {
+    statsPartialsMap.set(p.transactionId, (statsPartialsMap.get(p.transactionId) ?? 0) + Number(p.amount));
+  }
+
   type Agg = {
     masterId: number; alias: string; city: string; phone: string | null;
     orderCount: number; totalOrderAmount: number; totalCommission: number;
     paidCommission: number; pendingCommission: number; overdueCommission: number;
     paidCount: number; pendingCount: number; overdueCount: number;
     lastPaidAt: string | null; debtTotal: number;
-    // Actual cash received: paid → full commission; pending/overdue → prepaymentDeducted only
+    // Actual cash received: paid → full commission; pending/overdue → prepay + partial payments received
     totalIncome: number;
   };
 
@@ -587,7 +609,8 @@ router.get("/master-stats", opsAndAdmin, async (req, res) => {
   for (const t of rows.rows as any[]) {
     const commission       = Number(t.commission);
     const prepayDeducted   = Number(t.prepayment_deducted ?? 0);
-    const netPayable       = Math.max(0, commission - prepayDeducted);
+    const totalPartialPaid = statsPartialsMap.get(t.id) ?? 0;
+    const netPayable       = Math.max(0, commission - prepayDeducted - totalPartialPaid);
     if (!map.has(t.master_id)) {
       map.set(t.master_id, {
         masterId: t.master_id, alias: t.alias ?? "Неизвестен",
@@ -614,12 +637,12 @@ router.get("/master-stats", opsAndAdmin, async (req, res) => {
     if (t.payment_status === "pending") {
       a.pendingCommission += commission; a.pendingCount++;
       a.debtTotal  += netPayable;
-      a.totalIncome += prepayDeducted; // only the prepayment already received
+      a.totalIncome += prepayDeducted + totalPartialPaid; // prepay + partial payments received
     }
     if (t.payment_status === "overdue") {
       a.overdueCommission += commission; a.overdueCount++;
       a.debtTotal  += netPayable;
-      a.totalIncome += prepayDeducted; // only the prepayment already received
+      a.totalIncome += prepayDeducted + totalPartialPaid; // prepay + partial payments received
     }
   }
 
