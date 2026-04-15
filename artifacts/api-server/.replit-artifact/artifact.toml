@@ -16,8 +16,8 @@ run = "pnpm --filter @workspace/api-server run dev"
 PORT = "8080"
 
 [services.production]
-build = "pnpm --filter @workspace/api-server run build"
-run = "node artifacts/api-server/dist/index.cjs"
+build = ["pnpm", "--filter", "@workspace/api-server", "run", "build"]
+run = ["node", "artifacts/api-server/dist/index.cjs"]
 
 [services.production.health.startup]
 path = "/api/healthz"
