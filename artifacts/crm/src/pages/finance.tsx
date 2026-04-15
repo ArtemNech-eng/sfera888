@@ -320,16 +320,18 @@ export default function Finance() {
   }, [txList, statusFilter, cityFilter, search, orderSearch, txPeriod, txFrom, txTo]);
 
   const txSummary = useMemo(() => {
-    // "Общий доход" = деньги фактически полученные:
-    //   - для оплаченных транзакций: полная комиссия
-    //   - для ожидающих/просроченных: только уже полученная предоплата (prepaymentDeducted)
-    //   Т.е. НЕ считаем неоплаченный остаток (netPayable) по ожидающим транзакциям
-    const income = filtered.reduce((s, t) => {
-      if (t.paymentStatus === "paid") return s + t.commission;
-      return s + t.prepaymentDeducted; // только предоплата, остаток не считаем
-    }, 0);
+    // earned = закрытые комиссии (реально заработанное)
+    const earned = filtered
+      .filter(t => t.paymentStatus === "paid")
+      .reduce((s, t) => s + t.commission, 0);
+    // prepayHeld = предоплаты по незакрытым заказам (деньги получены, но заказ ещё не закрыт)
+    const prepayHeld = filtered
+      .filter(t => t.paymentStatus !== "paid")
+      .reduce((s, t) => s + t.prepaymentDeducted, 0);
     return {
-      income,
+      earned,
+      prepayHeld,
+      income: earned + prepayHeld, // итого всех полученных денег
       pending: filtered.filter(t => t.paymentStatus === "pending").reduce((s, t) => s + t.netPayable, 0),
       overdue: filtered.filter(t => t.paymentStatus === "overdue").reduce((s, t) => s + t.netPayable, 0),
       avg:     filtered.length ? filtered.reduce((s, t) => s + t.commission, 0) / filtered.length : 0,
@@ -595,9 +597,15 @@ export default function Finance() {
               {/* 5 summary cards */}
               <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
                 <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl p-4 text-white shadow-lg shadow-emerald-500/20 col-span-2 lg:col-span-1">
-                  <p className="text-emerald-50 text-xs font-medium mb-1">💰 Общий доход</p>
-                  <p className="text-2xl font-bold">{formatCurrency(txSummary.income)}</p>
-                  <p className="text-emerald-100 text-[11px] mt-1">{filtered.length} транзакций · {txSummary.paidCount} оплачено</p>
+                  <p className="text-emerald-50 text-xs font-medium mb-1">💰 Заработано</p>
+                  <p className="text-2xl font-bold">{formatCurrency(txSummary.earned)}</p>
+                  <p className="text-emerald-100 text-[11px] mt-0.5">{txSummary.paidCount} закрытых комиссий</p>
+                  {txSummary.prepayHeld > 0 && (
+                    <div className="mt-2 pt-2 border-t border-emerald-400/40">
+                      <p className="text-emerald-100 text-xs font-medium">+ {formatCurrency(txSummary.prepayHeld)} в остатке</p>
+                      <p className="text-emerald-200 text-[10px]">предоплаты по незакрытым</p>
+                    </div>
+                  )}
                 </div>
                 <div className={`rounded-2xl p-4 border shadow-sm ${txSummary.pending > 0 ? "bg-amber-50 border-amber-200" : "bg-card border-border/50"}`}>
                   <p className="text-xs font-medium text-amber-700 mb-1">⏳ Ожидает оплаты</p>
