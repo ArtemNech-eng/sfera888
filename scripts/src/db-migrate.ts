@@ -7,30 +7,6 @@
 import { pool } from "@workspace/db";
 
 const queries: string[] = [
-  // ── receipts: align unique constraint name with drizzle-kit expectation ────
-  // 1. Drop the stray UNIQUE INDEX (created by old migration attempt)
-  // 2. Rename the auto-named constraint 'receipts_token_key' → 'receipts_token_unique'
-  `DO $$ BEGIN
-    -- Step 1: drop stray index if it exists and is NOT a constraint
-    IF EXISTS (
-      SELECT 1 FROM pg_indexes
-      WHERE tablename = 'receipts' AND indexname = 'receipts_token_unique'
-    ) AND NOT EXISTS (
-      SELECT 1 FROM pg_constraint WHERE conname = 'receipts_token_unique' AND conrelid = 'receipts'::regclass
-    ) THEN
-      DROP INDEX receipts_token_unique;
-    END IF;
-
-    -- Step 2: rename old auto-named constraint to what drizzle-kit expects
-    IF EXISTS (
-      SELECT 1 FROM pg_constraint WHERE conname = 'receipts_token_key' AND conrelid = 'receipts'::regclass
-    ) AND NOT EXISTS (
-      SELECT 1 FROM pg_constraint WHERE conname = 'receipts_token_unique' AND conrelid = 'receipts'::regclass
-    ) THEN
-      ALTER TABLE receipts RENAME CONSTRAINT receipts_token_key TO receipts_token_unique;
-    END IF;
-  END $$`,
-
   // ── transaction_payments ───────────────────────────────────────────────────
   `CREATE TABLE IF NOT EXISTS transaction_payments (
     id SERIAL PRIMARY KEY,

@@ -11,7 +11,7 @@ export interface LineItem {
 
 export const receiptsTable = pgTable("receipts", {
   id: serial("id").primaryKey(),
-  token: varchar("token", { length: 64 }).notNull().unique(),
+  token: varchar("token", { length: 64 }).notNull().unique("receipts_token_key"),
   orderId: integer("order_id").notNull().references(() => ordersTable.id),
   masterId: integer("master_id").notNull().references(() => mastersTable.id),
   clientName: text("client_name").notNull(),
