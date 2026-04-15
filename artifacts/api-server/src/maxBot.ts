@@ -41,10 +41,11 @@ async function sendNewUserGreeting(chatId: number): Promise<void> {
 }
 
 // Sends the full onboarding pitch + app link for new masters
-async function sendOnboarding(chatId: number): Promise<void> {
+// userId is always user_id (from callback or message), NOT chat_id
+async function sendOnboarding(userId: number): Promise<void> {
   // Message 1 — what we offer
-  await sendMaxMessageToChat(
-    chatId,
+  await sendMaxMessage(
+    userId,
     `📌 **ЧТО МЫ ДАЁМ**\n\n` +
     `Стабильный поток заказов — 10-15 заявок в месяц на одного мастера.\n` +
     `Все клиенты частные, объекты разные — маленькие и большие.\n\n` +
@@ -56,14 +57,14 @@ async function sendOnboarding(chatId: number): Promise<void> {
     `Чтобы начать сотрудничать, нужно установить приложение и заполнить договор.`
   );
   // Message 2 — passport info
-  await sendMaxMessageToChat(
-    chatId,
+  await sendMaxMessage(
+    userId,
     `При регистрации нужен будет паспорт. Паспорт — это стандартная процедура в сфере услуг: мы работаем с людьми и должны понимать, кого отправляем на объект.`
   );
   // Message 3 — app link + back button
-  await sendMaxWithButtonsToChat(
-    chatId,
-    `Вот ссылка на наше приложение:\nhttps://sfera-master.ru/master-pwa?max=${chatId}`,
+  await sendMaxWithButtons(
+    userId,
+    `Вот ссылка на наше приложение:\nhttps://sfera-master.ru/master-pwa?max=${userId}`,
     [[{ text: "← Уже есть аккаунт", payload: "new:yes" }]]
   );
 }
