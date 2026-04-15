@@ -10,11 +10,12 @@ interface PendingLink {
   masterId: number;
   masterName: string;
   expiry: number;
+  override?: boolean; // true when replacing an existing maxChatId
 }
 const pendingLinks = new Map<number, PendingLink>();
 
-function setPending(userId: number, masterId: number, masterName: string) {
-  pendingLinks.set(userId, { masterId, masterName, expiry: Date.now() + 5 * 60_000 });
+function setPending(userId: number, masterId: number, masterName: string, override = false) {
+  pendingLinks.set(userId, { masterId, masterName, expiry: Date.now() + 5 * 60_000, override });
 }
 
 function getPending(userId: number): PendingLink | null {
@@ -596,12 +597,16 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
         // Новый номер — начинаем заново
         clearPending(userId);
       } else if (["да", "yes", "+", "ок", "ok", "подтверждаю"].includes(lc)) {
-        // Подтверждение
+        // Подтверждение (обычная привязка или замена старого аккаунта)
         await db.update(mastersTable)
           .set({ maxChatId: String(userId) })
           .where(eq(mastersTable.id, pending.masterId));
 
-        logMaxEvent(pending.masterId, userId, "linked", `Мастер ${pending.masterName} подтвердил привязку аккаунта`).catch(() => {});
+        const eventType = pending.override ? "relinked" : "linked";
+        const eventNote = pending.override
+          ? `Мастер ${pending.masterName} заменил привязку на новый аккаунт Max`
+          : `Мастер ${pending.masterName} подтвердил привязку аккаунта`;
+        logMaxEvent(pending.masterId, userId, eventType, eventNote).catch(() => {});
         clearPending(userId);
 
         await sendMaxMessage(
@@ -645,15 +650,6 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
       });
 
       if (master) {
-        // Уже привязан другой аккаунт Max?
-        if (master.maxChatId && master.maxChatId !== String(userId)) {
-          await sendMaxMessage(
-            userId,
-            `⚠️ Аккаунт **${master.alias}** уже привязан к другому пользователю Max.\n\nОбратитесь к администратору.`
-          );
-          return;
-        }
-
         // Уже привязан этот же userId
         if (master.maxChatId === String(userId)) {
           await sendMaxMessage(userId, `✅ Аккаунт **${master.alias}** уже привязан к вам.`);
@@ -662,7 +658,18 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
 
         const name = master.contractFullName?.split(" ")[0] || master.alias;
 
-        // Сохраняем ожидание подтверждения
+        // Привязан другой аккаунт Max — предлагаем заменить
+        if (master.maxChatId && master.maxChatId !== String(userId)) {
+          setPending(userId, master.id, name, true /* override */);
+          logMaxEvent(master.id, userId, "override_pending", `Мастер ${master.alias} запросил переподвязку аккаунта`).catch(() => {});
+          await sendMaxMessage(
+            userId,
+            `⚠️ Аккаунт **${master.alias}** уже привязан к другому профилю Max.\n\nЕсли это ваш аккаунт и вы хотите перенести привязку на этот профиль — ответьте **ДА**.\n\nЧтобы отменить — ответьте **НЕТ**.\n\n_Запрос действителен 5 минут._`
+          );
+          return;
+        }
+
+        // Сохраняем ожидание подтверждения (обычная привязка)
         setPending(userId, master.id, name);
         logMaxEvent(master.id, userId, "confirm_pending", `Найден мастер ${master.alias}, ожидает подтверждения`).catch(() => {});
 
