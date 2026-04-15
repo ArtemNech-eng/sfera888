@@ -60,10 +60,11 @@ async function sendOnboarding(chatId: number): Promise<void> {
     chatId,
     `При регистрации нужен будет паспорт. Паспорт — это стандартная процедура в сфере услуг: мы работаем с людьми и должны понимать, кого отправляем на объект.`
   );
-  // Message 3 — app link
-  await sendMaxMessageToChat(
+  // Message 3 — app link + back button
+  await sendMaxWithButtonsToChat(
     chatId,
-    `Вот ссылка на наше приложение:\nhttps://sfera-master.ru/master-pwa?max=${chatId}`
+    `Вот ссылка на наше приложение:\nhttps://sfera-master.ru/master-pwa?max=${chatId}`,
+    [[{ text: "← Уже есть аккаунт", payload: "new:yes" }]]
   );
 }
 
