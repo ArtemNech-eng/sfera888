@@ -213,17 +213,17 @@ router.get("/revenue", adminOnly, async (req, res) => {
     const prevMonthEnd = monthStart;
 
     const txRows = await db.select().from(transactionsTable);
-    const receiptRows = await db.select({
-      prepaymentAmount: receiptsTable.prepaymentAmount,
-      prepaymentSubmittedAt: receiptsTable.prepaymentSubmittedAt,
-    }).from(receiptsTable).where(isNotNull(receiptsTable.prepaymentSubmittedAt));
 
+    // Income = paid commissions (full) + prepaymentDeducted on pending/overdue (partial already received).
+    // We do NOT add receipt prepayments separately — they are already embedded in the commission amounts,
+    // and adding them again would cause double-counting.
     function calcIncome(start: Date, end: Date) {
-      const tx = txRows.filter(t => t.paymentStatus === "paid" && t.createdAt >= start && t.createdAt < end)
-        .reduce((s, t) => s + Number(t.commission), 0);
-      const pr = receiptRows.filter(r => r.prepaymentSubmittedAt! >= start && r.prepaymentSubmittedAt! < end)
-        .reduce((s, r) => s + Number(r.prepaymentAmount), 0);
-      return tx + pr;
+      return txRows
+        .filter(t => t.createdAt >= start && t.createdAt < end)
+        .reduce((s, t) => {
+          if (t.paymentStatus === "paid") return s + Number(t.commission);
+          return s + Number(t.prepaymentDeducted ?? 0); // pending/overdue: only cash already received
+        }, 0);
     }
 
     function pct(cur: number, prev: number) {

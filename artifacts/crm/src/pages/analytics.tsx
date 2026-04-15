@@ -164,7 +164,7 @@ function MoneyBlock() {
 
   return (
     <div>
-      <SectionHeader icon={DollarSign} title="Деньги" subtitle="Оплаченные предоплаты и комиссии" />
+      <SectionHeader icon={DollarSign} title="Деньги" subtitle="Фактически полученные комиссии" />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {cards.map(c => (
           <div key={c.label} className="bg-card rounded-2xl border border-border/50 shadow-sm p-5">
