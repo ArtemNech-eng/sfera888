@@ -201,7 +201,7 @@ export default function Finance() {
   const [pageTab, setPageTab] = useState<PageTab>("transactions");
 
   // ── Tab 1 state ──
-  const [txPeriod, setTxPeriod]       = useState<Period>("all");
+  const [txPeriod, setTxPeriod]       = useState<Period>("month");
   const [txFrom, setTxFrom]           = useState("");
   const [txTo, setTxTo]               = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
