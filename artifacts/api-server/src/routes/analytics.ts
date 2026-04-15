@@ -214,16 +214,12 @@ router.get("/revenue", adminOnly, async (req, res) => {
 
     const txRows = await db.select().from(transactionsTable);
 
-    // Income = paid commissions (full) + prepaymentDeducted on pending/overdue (partial already received).
-    // We do NOT add receipt prepayments separately — they are already embedded in the commission amounts,
-    // and adding them again would cause double-counting.
+    // Income = only fully paid commissions (paymentStatus === "paid").
+    // Pending/overdue are NOT counted — money is not yet in pocket.
     function calcIncome(start: Date, end: Date) {
       return txRows
-        .filter(t => t.createdAt >= start && t.createdAt < end)
-        .reduce((s, t) => {
-          if (t.paymentStatus === "paid") return s + Number(t.commission);
-          return s + Number(t.prepaymentDeducted ?? 0); // pending/overdue: only cash already received
-        }, 0);
+        .filter(t => t.paymentStatus === "paid" && t.createdAt >= start && t.createdAt < end)
+        .reduce((s, t) => s + Number(t.commission), 0);
     }
 
     function pct(cur: number, prev: number) {
