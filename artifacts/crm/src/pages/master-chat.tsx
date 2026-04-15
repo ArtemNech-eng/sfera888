@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { Layout } from "@/components/layout";
 import { ProtectedRoute } from "@/hooks/use-auth";
 import { useAuth } from "@/hooks/use-auth";
-import { Send, MessageSquare, RefreshCw, Check, CheckCheck, Paperclip, X, Camera, DollarSign, AlertCircle, RotateCcw, Pencil, Loader2, UserCheck, MapPin, Smile, ChevronRight, User2, Trash2, Search, Phone, ChevronDown, Filter, Megaphone, Zap, Users, Building2, ListChecks } from "lucide-react";
+import { Send, MessageSquare, RefreshCw, Check, CheckCheck, Paperclip, X, Camera, DollarSign, AlertCircle, RotateCcw, Pencil, Loader2, UserCheck, MapPin, Smile, ChevronRight, User2, Trash2, Search, Phone, ChevronDown, ChevronUp, Filter, Megaphone, Zap, Users, Building2, ListChecks } from "lucide-react";
 import { MasterDrawer, type DrawerMaster, type DrawerColumn } from "@/components/master-drawer";
 import { format, formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -145,10 +145,11 @@ export default function MasterChat() {
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [editAmountId, setEditAmountId] = useState<number | null>(null);
   const [editAmountValue, setEditAmountValue] = useState("");
-  const [partialPayTx, setPartialPayTx]     = useState<PendingTransaction | null>(null);
-  const [partialAmount, setPartialAmount]   = useState("");
-  const [partialNote, setPartialNote]       = useState("");
-  const [partialLoading, setPartialLoading] = useState(false);
+  const [partialPayTx, setPartialPayTx]         = useState<PendingTransaction | null>(null);
+  const [partialAmount, setPartialAmount]       = useState("");
+  const [partialNote, setPartialNote]           = useState("");
+  const [partialLoading, setPartialLoading]     = useState(false);
+  const [collapsedTxIds, setCollapsedTxIds]     = useState<Set<number>>(new Set());
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deletingDialog, setDeletingDialog] = useState(false);
 
@@ -1214,12 +1215,29 @@ export default function MasterChat() {
                   {(conv?.pendingTransactions ?? []).length > 0 && (
                     <div className="border-t border-gray-100 px-4 py-3 space-y-2 flex-shrink-0">
                       {(conv?.pendingTransactions ?? []).map(tx => (
-                        <div key={tx.id} className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 space-y-3">
-                          {/* Header */}
-                          <div className="flex items-center gap-2">
-                            <DollarSign className="w-4 h-4 text-violet-600 flex-shrink-0" />
-                            <span className="text-xs font-semibold text-violet-800">Оплата комиссии по заказу #{tx.orderId}</span>
-                          </div>
+                        <div key={tx.id} className="rounded-xl border border-violet-200 bg-violet-50 overflow-hidden">
+                          {/* Header — click to collapse/expand */}
+                          <button
+                            onClick={() => setCollapsedTxIds(prev => {
+                              const next = new Set(prev);
+                              next.has(tx.id) ? next.delete(tx.id) : next.add(tx.id);
+                              return next;
+                            })}
+                            className="w-full flex items-center justify-between gap-2 px-4 py-3 hover:bg-violet-100 transition-colors"
+                          >
+                            <div className="flex items-center gap-2">
+                              <DollarSign className="w-4 h-4 text-violet-600 flex-shrink-0" />
+                              <span className="text-xs font-semibold text-violet-800">Оплата комиссии по заказу #{tx.orderId}</span>
+                              {collapsedTxIds.has(tx.id) && (
+                                <span className="text-xs font-bold text-violet-700 ml-1">{fmt(tx.netPayable)}</span>
+                              )}
+                            </div>
+                            {collapsedTxIds.has(tx.id)
+                              ? <ChevronDown className="w-3.5 h-3.5 text-violet-400 flex-shrink-0" />
+                              : <ChevronUp className="w-3.5 h-3.5 text-violet-400 flex-shrink-0" />}
+                          </button>
+                          {/* Collapsible body */}
+                          {!collapsedTxIds.has(tx.id) && <div className="px-4 pb-3 space-y-3">
                           {/* Receipt body */}
                           <div className="bg-white rounded-lg border border-violet-100 px-3 py-2.5 space-y-1.5">
                             <div className="flex justify-between items-center text-xs">
@@ -1314,6 +1332,7 @@ export default function MasterChat() {
                               </a>
                             </div>
                           )}
+                          </div>}
                         </div>
                       ))}
                     </div>
