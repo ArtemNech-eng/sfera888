@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { Layout } from "@/components/layout";
 import { ProtectedRoute } from "@/hooks/use-auth";
 import { formatDate, formatCurrency } from "@/lib/utils";
@@ -20,7 +20,14 @@ import {
 type StatusFilter  = "all" | "pending" | "overdue" | "paid";
 type PageTab       = "transactions" | "by-master" | "estimates";
 type Period        = "today" | "week" | "month" | "quarter" | "year" | "all" | "custom";
-type EstimateStatus = "all" | "paid" | "pending" | "unpaid";
+type EstimateStatus = "all" | "paid" | "pending" | "unpaid" | "no-receipt" | "cancelled";
+
+interface NoReceiptEntry {
+  orderId: number; masterAlias: string; maxChatId: string | null;
+  city: string; district: string; serviceType: string;
+  assignedAt: string; hoursWithoutReceipt: number;
+  risk: "critical" | "warning"; masterPhone: string | null;
+}
 
 interface Transaction {
   id: number; orderId: number | null; masterId: number; masterAlias: string;
@@ -48,7 +55,7 @@ interface Estimate {
   notes: string | null; createdAt: string;
   clientSubmittedName: string | null; prepaymentSubmittedAt: string | null;
   prepaymentScreenshotUrl: string | null; prepaymentSeenAt: string | null;
-  status: EstimateStatus; hoursAgo: number;
+  status: "paid" | "pending" | "unpaid"; orderStatus: string | null; hoursAgo: number;
 }
 
 interface FinanceSummary {
@@ -225,6 +232,13 @@ export default function Finance() {
   const [confirmEst, setConfirmEst]   = useState<Estimate | null>(null);
   const [estConfirmLoading, setEstConfirmLoading] = useState<number | null>(null);
 
+  // ── No-receipt orders state (shared with AI Office) ──
+  const [nrData, setNrData]           = useState<{ critical: NoReceiptEntry[]; warning: NoReceiptEntry[] } | null>(null);
+  const [nrLoading, setNrLoading]     = useState(false);
+  const [nrActionLoading, setNrActionLoading] = useState<Record<number, string>>({});
+  const [nrConfirm, setNrConfirm]     = useState<{ orderId: number; type: "reassign" | "cancel"; masterAlias: string } | null>(null);
+  const [nrMsgSent, setNrMsgSent]     = useState<Set<number>>(new Set());
+
   // ─── Data fetching ────────────────────────────────────────────────────────
 
   const { data: summary, refetch: refetchSummary } = useQuery<FinanceSummary>({
@@ -274,13 +288,14 @@ export default function Finance() {
 
   // ─── Derived: transactions ────────────────────────────────────────────────
 
+  const txList = Array.isArray(transactions) ? transactions : [];
+
   const allCities = useMemo(() =>
-    [...new Set((transactions ?? []).map(t => t.city).filter(Boolean))].sort(),
-  [transactions]);
+    [...new Set(txList.map(t => t.city).filter(Boolean))].sort(),
+  [txList]);
 
   const filtered = useMemo(() => {
-    if (!transactions) return [];
-    let list = [...transactions];
+    let list = [...txList];
     if (statusFilter !== "all") list = list.filter(t => t.paymentStatus === statusFilter);
     if (cityFilter)  list = list.filter(t => t.city === cityFilter);
     if (search.trim()) {
@@ -300,7 +315,7 @@ export default function Finance() {
       });
     }
     return list;
-  }, [transactions, statusFilter, cityFilter, search, orderSearch, txPeriod, txFrom, txTo]);
+  }, [txList, statusFilter, cityFilter, search, orderSearch, txPeriod, txFrom, txTo]);
 
   const txSummary = useMemo(() => {
     // "Общий доход" = деньги фактически полученные:
@@ -330,7 +345,10 @@ export default function Finance() {
 
   const filteredEst = useMemo(() => {
     if (!estimates) return [];
-    return estStatus === "all" ? estimates : estimates.filter(e => e.status === estStatus);
+    if (estStatus === "no-receipt") return []; // handled by separate no-receipt table
+    if (estStatus === "all") return estimates;
+    if (estStatus === "cancelled") return estimates.filter(e => e.orderStatus === "cancelled");
+    return estimates.filter(e => e.status === estStatus);
   }, [estimates, estStatus]);
 
   const estCities = useMemo(() =>
@@ -434,6 +452,68 @@ export default function Finance() {
       queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/master-stats`] });
     } catch { toast.error("Ошибка при подтверждении сметы"); }
     finally { setEstConfirmLoading(null); setConfirmEst(null); }
+  };
+
+  // ─── No-receipt handlers ──────────────────────────────────────────────────
+
+  const fetchNoReceipt = useCallback(async () => {
+    setNrLoading(true);
+    try {
+      const r = await fetch(`${BASE}/api/ai-office/template-scenarios/orders-without-receipts/live`, { credentials: "include" });
+      if (!r.ok) throw new Error();
+      const data = await r.json();
+      setNrData(data);
+    } catch { toast.error("Не удалось загрузить заказы без сметы"); }
+    finally { setNrLoading(false); }
+  }, [BASE]);
+
+  useEffect(() => {
+    if (pageTab === "estimates") fetchNoReceipt();
+  }, [pageTab]); // intentionally omit fetchNoReceipt to avoid infinite loop
+
+  const handleNrMessage = async (orderId: number) => {
+    setNrActionLoading(p => ({ ...p, [orderId]: "message" }));
+    try {
+      const r = await fetch(`${BASE}/api/ai-office/template-scenarios/orders-without-receipts/message-master`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId }),
+      });
+      if (!r.ok) throw new Error();
+      setNrMsgSent(p => new Set(p).add(orderId));
+      toast.success("Сообщение отправлено мастеру");
+    } catch { toast.error("Не удалось отправить сообщение"); }
+    finally { setNrActionLoading(p => { const n = { ...p }; delete n[orderId]; return n; }); }
+  };
+
+  const handleNrReassign = async (orderId: number) => {
+    setNrActionLoading(p => ({ ...p, [orderId]: "reassign" }));
+    try {
+      const r = await fetch(`${BASE}/api/ai-office/template-scenarios/orders-without-receipts/reassign`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId }),
+      });
+      if (!r.ok) throw new Error();
+      toast.success("Заказ отправлен на переназначение");
+      fetchNoReceipt();
+    } catch { toast.error("Не удалось переназначить заказ"); }
+    finally { setNrActionLoading(p => { const n = { ...p }; delete n[orderId]; return n; }); setNrConfirm(null); }
+  };
+
+  const handleNrCancel = async (orderId: number) => {
+    setNrActionLoading(p => ({ ...p, [orderId]: "cancel" }));
+    try {
+      const r = await fetch(`${BASE}/api/ai-office/template-scenarios/orders-without-receipts/cancel`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId }),
+      });
+      if (!r.ok) throw new Error();
+      toast.success("Заказ отменён");
+      fetchNoReceipt();
+    } catch { toast.error("Не удалось отменить заказ"); }
+    finally { setNrActionLoading(p => { const n = { ...p }; delete n[orderId]; return n; }); setNrConfirm(null); }
   };
 
   const exportTxCSV = useCallback(() => {
@@ -813,6 +893,32 @@ export default function Finance() {
           {pageTab === "estimates" && (
             <div className="space-y-5">
 
+              {/* No-receipt alert banner */}
+              {(() => {
+                const nrTotal = (nrData?.critical.length ?? 0) + (nrData?.warning.length ?? 0);
+                if (!nrTotal && !nrLoading) return null;
+                return (
+                  <div className={`flex items-center justify-between gap-3 rounded-2xl px-4 py-3 border shadow-sm
+                    ${nrData?.critical.length ? "bg-red-50 border-red-200 text-red-800" : "bg-amber-50 border-amber-200 text-amber-800"}`}>
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      {nrLoading
+                        ? <span className="text-sm font-medium">Проверка заказов без сметы...</span>
+                        : <span className="text-sm font-medium">
+                            Заказов без сметы: <strong>{nrTotal}</strong>
+                            {nrData?.critical.length ? <span className="ml-2 text-xs">({nrData.critical.length} критических 🔴)</span> : null}
+                          </span>}
+                    </div>
+                    {!nrLoading && nrTotal > 0 && estStatus !== "no-receipt" && (
+                      <button onClick={() => { setEstStatus("no-receipt"); setEstPage(1); }}
+                        className="text-xs font-semibold underline underline-offset-2 hover:opacity-70 transition-opacity shrink-0">
+                        Показать →
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
+
               {/* 5 summary cards */}
               {estStats && (
                 <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
@@ -842,10 +948,15 @@ export default function Finance() {
                   onCustomTo={v => { setEstTo(v); setEstPage(1); }} />
                 <div className="flex flex-wrap gap-2">
                   <div className="flex rounded-xl border border-border/60 overflow-hidden bg-background text-xs">
-                    {(["all", "paid", "pending", "unpaid"] as EstimateStatus[]).map(s => (
+                    {(["all", "paid", "pending", "unpaid", "no-receipt", "cancelled"] as EstimateStatus[]).map(s => (
                       <button key={s} onClick={() => { setEstStatus(s); setEstPage(1); }}
                         className={`px-3 py-2 font-medium transition-colors ${estStatus === s ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
-                        {s === "all" ? "Все" : s === "paid" ? "Оплачены" : s === "pending" ? "Ожидают" : "Не оплачены"}
+                        {s === "all" ? "Все"
+                          : s === "paid" ? "Оплачены"
+                          : s === "pending" ? "Ожидают"
+                          : s === "unpaid" ? "Не оплачены"
+                          : s === "no-receipt" ? "⚠️ Без сметы"
+                          : "❌ Отменённые"}
                       </button>
                     ))}
                   </div>
@@ -869,7 +980,83 @@ export default function Finance() {
                 </div>
               </div>
 
+              {/* No-receipt table (shown instead of estimates when filter = "no-receipt") */}
+              {estStatus === "no-receipt" && (
+                <div className="bg-card border border-border/50 rounded-2xl overflow-hidden shadow-sm">
+                  {nrLoading ? (
+                    <div className="py-12 text-center"><Loader2 className="w-6 h-6 animate-spin text-primary mx-auto" /></div>
+                  ) : (!nrData || (nrData.critical.length === 0 && nrData.warning.length === 0)) ? (
+                    <div className="py-12 text-center">
+                      <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
+                      <p className="text-sm text-muted-foreground">Все заказы со сметами — молодцы! 🎉</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-border/50">
+                      {([...nrData.critical.map(e => ({ ...e, risk: "critical" as const })), ...nrData.warning.map(e => ({ ...e, risk: "warning" as const }))]).map(entry => {
+                        const isCritical = entry.risk === "critical";
+                        const msgLoading = nrActionLoading[entry.orderId] === "message";
+                        const reassignLoading = nrActionLoading[entry.orderId] === "reassign";
+                        const cancelLoading = nrActionLoading[entry.orderId] === "cancel";
+                        const anyLoading = !!nrActionLoading[entry.orderId];
+                        const msgSent = nrMsgSent.has(entry.orderId);
+                        return (
+                          <div key={entry.orderId} className={`px-4 py-3 ${isCritical ? "bg-red-50/40" : "bg-amber-50/20"}`}>
+                            <div className="flex items-start gap-3 flex-wrap">
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                                <span className="text-base">{isCritical ? "🔴" : "🟡"}</span>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-semibold text-sm text-foreground">Заказ #{entry.orderId}</span>
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${isCritical ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>
+                                      {entry.hoursWithoutReceipt}ч без сметы
+                                    </span>
+                                  </div>
+                                  <div className="text-xs text-muted-foreground mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
+                                    <span>{entry.masterAlias}</span>
+                                    <span>{entry.city}{entry.district ? `, ${entry.district}` : ""}</span>
+                                    <span>{entry.serviceType}</span>
+                                    {entry.masterPhone && <span>📞 {entry.masterPhone}</span>}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                                <button
+                                  onClick={() => !msgSent && handleNrMessage(entry.orderId)}
+                                  disabled={anyLoading || msgSent}
+                                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-colors
+                                    ${msgSent ? "bg-emerald-100 text-emerald-700 cursor-default" : "bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"}`}>
+                                  {msgLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : msgSent ? "✅ Отправлено" : "💬 Написать"}
+                                </button>
+                                <button
+                                  onClick={() => setNrConfirm({ orderId: entry.orderId, type: "reassign", masterAlias: entry.masterAlias })}
+                                  disabled={anyLoading}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 text-white text-xs font-medium hover:bg-amber-600 disabled:opacity-50 transition-colors">
+                                  {reassignLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "🔄 Переназначить"}
+                                </button>
+                                <button
+                                  onClick={() => setNrConfirm({ orderId: entry.orderId, type: "cancel", masterAlias: entry.masterAlias })}
+                                  disabled={anyLoading}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-500 text-white text-xs font-medium hover:bg-red-600 disabled:opacity-50 transition-colors">
+                                  {cancelLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "✕ Отменить"}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div className="px-4 py-2 border-t border-border/50 flex justify-end gap-2">
+                    <button onClick={fetchNoReceipt} disabled={nrLoading}
+                      className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50">
+                      <RefreshCw className={`w-3.5 h-3.5 ${nrLoading ? "animate-spin" : ""}`} /> Обновить
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Estimates table */}
+              {estStatus !== "no-receipt" && (
               <div className="bg-card border border-border/50 rounded-2xl overflow-hidden shadow-sm">
                 {estLoading ? (
                   <div className="py-12 text-center"><Loader2 className="w-6 h-6 animate-spin text-primary mx-auto" /></div>
@@ -1017,6 +1204,7 @@ export default function Finance() {
                   </div>
                 )}
               </div>
+              )}
 
               {/* Analytics block */}
               {estStats && estStats.total > 0 && (
@@ -1148,6 +1336,37 @@ export default function Finance() {
                   disabled={masterActionLoading?.id === confirmPayAll.masterId}
                   className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 transition-colors">
                   {masterActionLoading?.id === confirmPayAll.masterId ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : "Да, оплатить всё"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── No-receipt confirm dialog ─────────────────────────────────────── */}
+        {nrConfirm && (
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4">
+              <h3 className="text-lg font-display font-semibold">
+                {nrConfirm.type === "reassign" ? "🔄 Переназначить заказ" : "✕ Отменить заказ"}
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                {nrConfirm.type === "reassign"
+                  ? <>Заказ <strong>#{nrConfirm.orderId}</strong> будет снят с мастера <strong>{nrConfirm.masterAlias}</strong> и отправлен на переназначение. Мастер получит уведомление.</>
+                  : <>Заказ <strong>#{nrConfirm.orderId}</strong> будет отменён (мастер: <strong>{nrConfirm.masterAlias}</strong>). Действие необратимо.</>}
+              </p>
+              <div className="flex gap-3">
+                <button onClick={() => setNrConfirm(null)}
+                  className="flex-1 py-2.5 rounded-xl border border-border text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                  Отмена
+                </button>
+                <button
+                  onClick={() => nrConfirm.type === "reassign" ? handleNrReassign(nrConfirm.orderId) : handleNrCancel(nrConfirm.orderId)}
+                  disabled={!!nrActionLoading[nrConfirm.orderId]}
+                  className={`flex-1 py-2.5 rounded-xl text-white text-sm font-medium disabled:opacity-50 transition-colors
+                    ${nrConfirm.type === "reassign" ? "bg-amber-500 hover:bg-amber-600" : "bg-red-600 hover:bg-red-700"}`}>
+                  {nrActionLoading[nrConfirm.orderId]
+                    ? <Loader2 className="w-4 h-4 animate-spin mx-auto" />
+                    : nrConfirm.type === "reassign" ? "Да, переназначить" : "Да, отменить"}
                 </button>
               </div>
             </div>

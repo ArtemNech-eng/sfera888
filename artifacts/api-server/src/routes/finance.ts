@@ -521,9 +521,11 @@ router.get("/estimates", opsAndAdmin, async (req, res) => {
            r.prepayment_amount, r.notes, r.created_at,
            r.client_submitted_name, r.prepayment_submitted_at,
            r.prepayment_screenshot_url, r.prepayment_seen_at,
-           m.alias AS master_alias
+           m.alias AS master_alias,
+           o.status AS order_status
     FROM receipts r
     LEFT JOIN masters m ON m.id = r.master_id
+    LEFT JOIN orders o ON o.id = r.order_id
     ORDER BY r.created_at DESC
   `);
 
@@ -579,14 +581,18 @@ router.get("/estimates", opsAndAdmin, async (req, res) => {
       prepaymentScreenshotUrl: r.prepayment_screenshot_url ?? null,
       prepaymentSeenAt:       r.prepayment_seen_at ?? null,
       status:                 estimateStatus,
+      orderStatus:            r.order_status ?? null,
       hoursAgo,
     };
   });
 
   // Status filter after mapping (since status is derived)
-  const finalList = status && status !== "all"
-    ? mapped.filter(r => r.status === status)
-    : mapped;
+  // "cancelled" is a special case: filter by order status, not estimate status
+  const finalList = !status || status === "all"
+    ? mapped
+    : status === "cancelled"
+      ? mapped.filter(r => r.orderStatus === "cancelled")
+      : mapped.filter(r => r.status === status);
 
   res.json(finalList);
 });
