@@ -314,6 +314,9 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
   const [activatingContract, setActivatingContract] = useState(false);
   const [markingExternal, setMarkingExternal] = useState(false);
   const [suspending, setSuspending] = useState(false);
+  const [editingPhone, setEditingPhone] = useState(false);
+  const [phoneInput, setPhoneInput]   = useState(master.phone ?? "");
+  const [savingPhone, setSavingPhone] = useState(false);
   const [verifyingPassport, setVerifyingPassport] = useState(false);
   const [verifyNote, setVerifyNote] = useState("");
   const [reply, setReply] = useState("");
@@ -356,6 +359,27 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
       }
     } finally {
       setUnlinkingMax(false);
+    }
+  };
+
+  // ── Save phone ────────────────────────────────────────────────────────────
+  const savePhone = async () => {
+    const trimmed = phoneInput.trim();
+    if (!trimmed) return;
+    setSavingPhone(true);
+    try {
+      const r = await fetch(`/api/masters/${master.id}`, {
+        method: "PATCH", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: trimmed }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error ?? "Ошибка");
+      onMasterUpdate(master.id, { phone: trimmed });
+      setEditingPhone(false);
+    } catch (e: any) {
+      alert(e.message ?? "Не удалось сохранить номер");
+    } finally {
+      setSavingPhone(false);
     }
   };
 
@@ -824,9 +848,37 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
             <div className="p-5 space-y-5">
               <div className="space-y-3">
                 <Row icon={<Phone className="w-4 h-4 text-gray-400" />} label="Телефон">
-                  {master.phone
-                    ? <a href={`tel:${master.phone}`} className="text-blue-600 font-medium hover:underline text-sm">{master.phone}</a>
-                    : <span className="text-gray-300 text-sm">Не указан</span>}
+                  {editingPhone ? (
+                    <div className="flex items-center gap-1.5 flex-1">
+                      <input
+                        type="tel"
+                        value={phoneInput}
+                        onChange={e => setPhoneInput(e.target.value)}
+                        onKeyDown={e => { if (e.key === "Enter") savePhone(); if (e.key === "Escape") setEditingPhone(false); }}
+                        autoFocus
+                        placeholder="+7 (999) 999-99-99"
+                        className="flex-1 text-sm border border-blue-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                      />
+                      <button onClick={savePhone} disabled={savingPhone}
+                        className="px-2 py-1 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 disabled:opacity-50">
+                        {savingPhone ? <Loader2 className="w-3 h-3 animate-spin" /> : "Сохранить"}
+                      </button>
+                      <button onClick={() => { setEditingPhone(false); setPhoneInput(master.phone ?? ""); }}
+                        className="px-2 py-1 border border-gray-200 text-gray-500 rounded-lg text-xs hover:bg-gray-50">
+                        Отмена
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      {master.phone
+                        ? <a href={`tel:${master.phone}`} className="text-blue-600 font-medium hover:underline text-sm">{master.phone}</a>
+                        : <span className="text-gray-300 text-sm">Не указан</span>}
+                      <button onClick={() => { setPhoneInput(master.phone ?? ""); setEditingPhone(true); }}
+                        className="text-gray-400 hover:text-gray-700 transition-colors" title="Изменить номер">
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
                 </Row>
                 <Row icon={<MapPin className="w-4 h-4 text-gray-400" />} label="Город">
                   <span className="text-gray-700 text-sm">{master.city}</span>
@@ -1178,19 +1230,43 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                         <p className="text-[10px] text-green-600">ID: {master.maxChatId}</p>
                       </div>
                     </div>
-                    <button
-                      onClick={unlinkMax}
-                      disabled={unlinkingMax}
-                      className="w-full py-1.5 border border-red-200 text-red-500 rounded-lg text-xs font-medium hover:bg-red-50 disabled:opacity-40 transition-colors flex items-center justify-center gap-1"
-                    >
-                      {unlinkingMax ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
-                      Отвязать аккаунт Max
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={async () => {
+                          if (!confirm("Сменить Max-аккаунт? Текущая привязка будет удалена. Мастер должен будет написать боту с нового номера.")) return;
+                          await unlinkMax();
+                          setTab("profile");
+                          setPhoneInput(master.phone ?? "");
+                          setEditingPhone(true);
+                        }}
+                        disabled={unlinkingMax}
+                        className="flex-1 py-1.5 border border-amber-200 text-amber-600 rounded-lg text-xs font-medium hover:bg-amber-50 disabled:opacity-40 transition-colors flex items-center justify-center gap-1"
+                      >
+                        <Phone className="w-3 h-3" />
+                        Сменить аккаунт
+                      </button>
+                      <button
+                        onClick={unlinkMax}
+                        disabled={unlinkingMax}
+                        className="flex-1 py-1.5 border border-red-200 text-red-500 rounded-lg text-xs font-medium hover:bg-red-50 disabled:opacity-40 transition-colors flex items-center justify-center gap-1"
+                      >
+                        {unlinkingMax ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
+                        Отвязать Max
+                      </button>
+                    </div>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-2 p-2 bg-gray-50 border border-gray-200 rounded-lg">
-                    <span className="w-2 h-2 rounded-full bg-gray-300 flex-shrink-0" />
-                    <p className="text-xs text-gray-500">Не подключён — мастер должен написать боту и отправить номер телефона</p>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 p-2 bg-gray-50 border border-gray-200 rounded-lg">
+                      <span className="w-2 h-2 rounded-full bg-gray-300 flex-shrink-0" />
+                      <p className="text-xs text-gray-500">Не подключён — мастер должен написать боту с нужного номера</p>
+                    </div>
+                    <button
+                      onClick={() => { setTab("profile"); setPhoneInput(master.phone ?? ""); setEditingPhone(true); }}
+                      className="w-full py-1.5 border border-blue-200 text-blue-600 rounded-lg text-xs font-medium hover:bg-blue-50 transition-colors flex items-center justify-center gap-1"
+                    >
+                      <Pencil className="w-3 h-3" /> Сменить номер телефона
+                    </button>
                   </div>
                 )}
                 {maxLogsLoaded && maxLogs.length > 0 && (
