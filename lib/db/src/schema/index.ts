@@ -4,6 +4,7 @@ export * from "./masters";
 export * from "./orders";
 export * from "./order-dispatches";
 export * from "./transactions";
+export * from "./transaction-payments";
 export * from "./settings";
 export * from "./telegram";
 export * from "./voronka";

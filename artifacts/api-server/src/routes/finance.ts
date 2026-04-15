@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { db, transactionsTable, mastersTable, ordersTable, receiptsTable } from "@workspace/db";
-import { eq, and, gte, lte, sql } from "drizzle-orm";
+import { db, transactionsTable, mastersTable, ordersTable, receiptsTable, transactionPaymentsTable } from "@workspace/db";
+import { eq, and, gte, lte, sql, inArray } from "drizzle-orm";
 import { requirePermission } from "../middlewares/requireAuth.js";
 import { sendPushToMaster } from "../lib/push.js";
 import { checkOverdueTransactions, countActiveMasterOrders, getColumnIdForActiveCount } from "../lib/orderEligibility.js";
@@ -109,10 +109,24 @@ router.get("/transactions", opsAndAdmin, async (req, res) => {
   if (from)     list = list.filter(t => new Date(t.created_at) >= new Date(from as string));
   if (to)       list = list.filter(t => new Date(t.created_at) <= new Date(to as string));
 
+  // Fetch all partial payments for these transactions in one query
+  const txIds = list.map(t => t.id);
+  const partialRows = txIds.length > 0
+    ? (await db.select().from(transactionPaymentsTable).where(inArray(transactionPaymentsTable.transactionId, txIds))).sort((a, b) => a.paidAt.getTime() - b.paidAt.getTime())
+    : [];
+  const paymentsByTxId = new Map<number, typeof partialRows>();
+  for (const p of partialRows) {
+    const arr = paymentsByTxId.get(p.transactionId) ?? [];
+    arr.push(p);
+    paymentsByTxId.set(p.transactionId, arr);
+  }
+
   res.json(list.map(t => {
     const prepaymentDeducted = Number(t.prepayment_deducted ?? 0);
     const commission         = Number(t.commission);
-    const netPayable         = Math.max(0, commission - prepaymentDeducted);
+    const partials           = paymentsByTxId.get(t.id) ?? [];
+    const totalPartialPaid   = partials.reduce((s, p) => s + Number(p.amount), 0);
+    const netPayable         = Math.max(0, commission - prepaymentDeducted - totalPartialPaid);
     const createdAt          = new Date(t.created_at);
     const daysOverdue        = t.payment_status === "overdue" ? computeDaysOverdue(createdAt, now) : 0;
     return {
@@ -126,6 +140,7 @@ router.get("/transactions", opsAndAdmin, async (req, res) => {
       orderAmount:         Number(t.order_amount),
       commission,
       prepaymentDeducted,
+      totalPartialPaid,
       netPayable,
       paymentStatus:       t.payment_status,
       sourceType:          t.source_type ?? null,
@@ -133,6 +148,10 @@ router.get("/transactions", opsAndAdmin, async (req, res) => {
       paidAt:              t.paid_at ? toIsoUtc(t.paid_at) : null,
       dueDate:             computeDueDate(createdAt).toISOString(),
       daysOverdue,
+      partialPayments:     partials.map(p => ({
+        id: p.id, amount: Number(p.amount), note: p.note ?? null,
+        paidAt: toIsoUtc(p.paidAt),
+      })),
     };
   }));
 });
@@ -198,6 +217,94 @@ router.patch("/transactions/:id", opsAndAdmin, async (req, res) => {
     prepaymentDeducted, netPayable: Math.max(0, Number(t.commission) - prepaymentDeducted),
     paymentStatus: t.paymentStatus, sourceType: t.sourceType ?? null,
     createdAt: toIsoUtc(t.createdAt), paidAt: t.paidAt ? toIsoUtc(t.paidAt) : null,
+  });
+});
+
+// ─── POST /api/finance/transactions/:id/partial-payment ──────────────────────
+
+router.post("/transactions/:id/partial-payment", opsAndAdmin, async (req, res) => {
+  const id = parseInt(req.params.id);
+  const { amount, note } = req.body;
+
+  if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+    return res.status(400).json({ error: "amount must be a positive number" });
+  }
+
+  const txRows = await db.select().from(transactionsTable).where(eq(transactionsTable.id, id));
+  const tx = txRows[0];
+  if (!tx) return res.status(404).json({ error: "Transaction not found" });
+  if (tx.paymentStatus === "paid") return res.status(400).json({ error: "Transaction already paid" });
+
+  // Insert the partial payment
+  const [payment] = await db.insert(transactionPaymentsTable).values({
+    transactionId: id,
+    amount: String(Number(amount)),
+    note: note ?? null,
+    paidAt: new Date(),
+  }).returning();
+
+  // Recalculate: prepaymentDeducted + all partial payments
+  const allPartials = await db.select().from(transactionPaymentsTable)
+    .where(eq(transactionPaymentsTable.transactionId, id));
+  const totalPartialPaid = allPartials.reduce((s, p) => s + Number(p.amount), 0);
+  const commission = Number(tx.commission);
+  const prepaymentDeducted = Number(tx.prepaymentDeducted ?? 0);
+  const remaining = Math.max(0, commission - prepaymentDeducted - totalPartialPaid);
+
+  // If fully paid, mark as paid
+  if (remaining === 0) {
+    await db.update(transactionsTable)
+      .set({ paymentStatus: "paid", paidAt: new Date() })
+      .where(eq(transactionsTable.id, id));
+
+    // Update master debt
+    const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, tx.masterId));
+    const master = masterRows[0];
+    if (master) {
+      const newDebt = Math.max(0, Number(master.debt) - Number(amount));
+      const activeCount = await countActiveMasterOrders(tx.masterId);
+      const targetColId = await getColumnIdForActiveCount(activeCount);
+      await db.update(mastersTable).set({
+        debt: String(newDebt),
+        isTestMaster: false,
+        ...(targetColId ? { voronkaColumnId: targetColId } : {}),
+      }).where(eq(mastersTable.id, tx.masterId));
+
+      const maxText = newDebt > 0
+        ? `✅ Частичная оплата по заказу #${tx.orderId} принята.\n\nОплачено: ${Number(amount).toLocaleString("ru-RU")} ₽\nОсталось: ${newDebt.toLocaleString("ru-RU")} ₽\n\nКомиссия полностью закрыта! 🟢`
+        : `✅ Комиссия по заказу #${tx.orderId} полностью погашена частями.\n\nИтого оплачено: ${(prepaymentDeducted + totalPartialPaid).toLocaleString("ru-RU")} ₽\n\nДолг погашен. Продолжайте работу! 🟢`;
+      await sendMasterMax(tx.masterId, maxText).catch(console.error);
+
+      sendPushToMaster(tx.masterId, {
+        title: "✅ Оплата принята",
+        body: `Частичная оплата ${Number(amount).toLocaleString("ru-RU")} ₽ принята. ${newDebt > 0 ? `Остаток: ${newDebt.toLocaleString("ru-RU")} ₽` : "Долг погашен!"}`,
+        url: "/balance",
+      }).catch(() => {});
+    }
+  } else {
+    // Partial: reduce master debt by this payment amount
+    const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, tx.masterId));
+    const master = masterRows[0];
+    if (master) {
+      const newDebt = Math.max(0, Number(master.debt) - Number(amount));
+      await db.update(mastersTable).set({ debt: String(newDebt) }).where(eq(mastersTable.id, tx.masterId));
+
+      const maxText = `✅ Частичная оплата по заказу #${tx.orderId} принята.\n\nОплачено: ${Number(amount).toLocaleString("ru-RU")} ₽\nОстаток по этому заказу: ${remaining.toLocaleString("ru-RU")} ₽`;
+      await sendMasterMax(tx.masterId, maxText).catch(console.error);
+
+      sendPushToMaster(tx.masterId, {
+        title: "✅ Частичная оплата принята",
+        body: `Принято ${Number(amount).toLocaleString("ru-RU")} ₽. Остаток: ${remaining.toLocaleString("ru-RU")} ₽`,
+        url: "/balance",
+      }).catch(() => {});
+    }
+  }
+
+  res.json({
+    payment: { id: payment.id, amount: Number(payment.amount), note: payment.note, paidAt: toIsoUtc(payment.paidAt) },
+    totalPartialPaid,
+    remaining,
+    fullyPaid: remaining === 0,
   });
 });
 

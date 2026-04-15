@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { Layout } from "@/components/layout";
 import { ProtectedRoute } from "@/hooks/use-auth";
 import { formatDate, formatCurrency } from "@/lib/utils";
@@ -29,12 +29,16 @@ interface NoReceiptEntry {
   risk: "critical" | "warning"; masterPhone: string | null;
 }
 
+interface PartialPayment { id: number; amount: number; note: string | null; paidAt: string; }
+
 interface Transaction {
   id: number; orderId: number | null; masterId: number; masterAlias: string;
   city: string; serviceType: string; area: number | null;
-  orderAmount: number; commission: number; prepaymentDeducted: number; netPayable: number;
+  orderAmount: number; commission: number; prepaymentDeducted: number;
+  totalPartialPaid: number; netPayable: number;
   paymentStatus: string; sourceType: string | null;
   createdAt: string; paidAt: string | null; dueDate: string; daysOverdue: number;
+  partialPayments: PartialPayment[];
 }
 
 interface MasterStat {
@@ -210,9 +214,14 @@ export default function Finance() {
   const [orderSearch, setOrderSearch] = useState("");
   const [txPage, setTxPage]           = useState(1);
   const [pageSize, setPageSize]       = useState(20);
-  const [confirmPay, setConfirmPay]   = useState<Transaction | null>(null);
-  const [remindSent, setRemindSent]   = useState<Set<number>>(new Set());
-  const [payLoading, setPayLoading]   = useState<number | null>(null);
+  const [confirmPay, setConfirmPay]         = useState<Transaction | null>(null);
+  const [remindSent, setRemindSent]         = useState<Set<number>>(new Set());
+  const [payLoading, setPayLoading]         = useState<number | null>(null);
+  const [partialPayTx, setPartialPayTx]     = useState<Transaction | null>(null);
+  const [partialAmount, setPartialAmount]   = useState("");
+  const [partialNote, setPartialNote]       = useState("");
+  const [partialLoading, setPartialLoading] = useState(false);
+  const [expandedTx, setExpandedTx]         = useState<Set<number>>(new Set());
 
   // ── Tab 2 state ──
   const [statsPeriod, setStatsPeriod] = useState<Period>("month");
@@ -324,10 +333,10 @@ export default function Finance() {
     const earned = filtered
       .filter(t => t.paymentStatus === "paid")
       .reduce((s, t) => s + t.commission, 0);
-    // remainingDebt = сколько мастера ещё должны доплатить по незакрытым заказам
+    // remainingDebt = сколько мастера ещё должны доплатить (netPayable уже учитывает частичные платежи)
     const remainingDebt = filtered
       .filter(t => t.paymentStatus !== "paid")
-      .reduce((s, t) => s + Math.max(0, t.commission - t.prepaymentDeducted), 0);
+      .reduce((s, t) => s + t.netPayable, 0);
     return {
       earned,
       remainingDebt,
@@ -403,6 +412,32 @@ export default function Finance() {
       queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/master-stats`] });
     } catch { toast.error("Ошибка при обновлении транзакции"); }
     finally { setPayLoading(null); setConfirmPay(null); }
+  };
+
+  const doPartialPay = async () => {
+    if (!partialPayTx) return;
+    const amt = parseFloat(partialAmount.replace(",", "."));
+    if (isNaN(amt) || amt <= 0) { toast.error("Введите корректную сумму"); return; }
+    setPartialLoading(true);
+    try {
+      const r = await fetch(`${BASE}/api/finance/transactions/${partialPayTx.id}/partial-payment`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: amt, note: partialNote.trim() || undefined }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error ?? "Ошибка");
+      if (data.fullyPaid) {
+        toast.success(`Комиссия по заказу #${partialPayTx.orderId} полностью погашена!`);
+      } else {
+        toast.success(`Принято ${formatCurrency(amt)}. Остаток: ${formatCurrency(data.remaining)}`);
+      }
+      queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/transactions`] });
+      queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/summary`] });
+      queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/master-stats`] });
+      setPartialPayTx(null); setPartialAmount(""); setPartialNote("");
+    } catch (e: any) { toast.error(e?.message ?? "Ошибка при проведении платежа"); }
+    finally { setPartialLoading(false); }
   };
 
   const doRemind = async (tx: Transaction) => {
@@ -707,7 +742,8 @@ export default function Finance() {
                         const isLoading = payLoading === tx.id;
                         const reminded  = remindSent.has(tx.id);
                         return (
-                          <tr key={tx.id} className={`transition-colors ${rowBg}`}>
+                          <React.Fragment key={tx.id}>
+                          <tr className={`transition-colors ${rowBg}`}>
                             <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{formatDate(tx.createdAt)}</td>
                             <td className="px-4 py-3">
                               <span className="font-medium text-foreground">#{tx.orderId ?? "—"}</span>
@@ -734,6 +770,15 @@ export default function Finance() {
                               {tx.prepaymentDeducted > 0 && (
                                 <div className="text-[10px] text-emerald-600">−{formatCurrency(tx.prepaymentDeducted)} предоплата</div>
                               )}
+                              {tx.totalPartialPaid > 0 && (
+                                <div className="text-[10px] text-blue-600">−{formatCurrency(tx.totalPartialPaid)} частями</div>
+                              )}
+                              {tx.paymentStatus !== "paid" && tx.commission > 0 && (
+                                <div className="mt-1.5 w-full bg-gray-200 rounded-full h-1.5">
+                                  <div className="bg-blue-500 h-1.5 rounded-full transition-all"
+                                    style={{ width: `${Math.min(100, ((tx.prepaymentDeducted + tx.totalPartialPaid) / tx.commission) * 100)}%` }} />
+                                </div>
+                              )}
                             </td>
                             <td className="px-4 py-3 text-xs whitespace-nowrap">
                               <div className="text-muted-foreground">{new Date(tx.dueDate).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}</div>
@@ -745,7 +790,11 @@ export default function Finance() {
                                 {(tx.paymentStatus === "pending" || tx.paymentStatus === "overdue") && <>
                                   <button onClick={() => setConfirmPay(tx)} disabled={isLoading}
                                     className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-emerald-100 text-emerald-700 hover:bg-emerald-600 hover:text-white rounded-lg text-[11px] font-medium transition-colors disabled:opacity-50">
-                                    {isLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />} Оплачено
+                                    {isLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />} Полностью
+                                  </button>
+                                  <button onClick={() => { setPartialPayTx(tx); setPartialAmount(""); setPartialNote(""); }}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-blue-100 text-blue-700 hover:bg-blue-600 hover:text-white rounded-lg text-[11px] font-medium transition-colors">
+                                    <Banknote className="w-3 h-3" /> Частично
                                   </button>
                                   <button onClick={() => doRemind(tx)}
                                     className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
@@ -754,6 +803,13 @@ export default function Finance() {
                                     <Bell className="w-3 h-3" /> {reminded ? "Отправлено" : "Напомнить"}
                                   </button>
                                 </>}
+                                {tx.partialPayments?.length > 0 && (
+                                  <button onClick={() => setExpandedTx(s => { const n = new Set(s); n.has(tx.id) ? n.delete(tx.id) : n.add(tx.id); return n; })}
+                                    className="inline-flex items-center gap-1 px-2 py-1.5 bg-slate-100 text-slate-500 hover:text-slate-800 rounded-lg text-[11px] transition-colors">
+                                    {expandedTx.has(tx.id) ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                    {tx.partialPayments.length}
+                                  </button>
+                                )}
                                 {tx.orderId && (
                                   <a href={`/orders?id=${tx.orderId}`}
                                     className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 text-slate-600 hover:bg-slate-600 hover:text-white rounded-lg text-[11px] font-medium transition-colors">
@@ -763,6 +819,28 @@ export default function Finance() {
                               </div>
                             </td>
                           </tr>
+                          {/* Partial payment history row */}
+                          {expandedTx.has(tx.id) && tx.partialPayments?.length > 0 && (
+                            <tr className="bg-blue-50/60">
+                              <td colSpan={10} className="px-6 py-3">
+                                <div className="text-xs font-medium text-blue-700 mb-2">История частичных платежей:</div>
+                                <div className="flex flex-wrap gap-2">
+                                  {tx.partialPayments.map((p, i) => (
+                                    <div key={p.id} className="flex items-center gap-2 bg-white border border-blue-200 rounded-lg px-3 py-1.5 text-xs">
+                                      <span className="text-blue-500 font-medium">#{i + 1}</span>
+                                      <span className="font-semibold text-foreground">{formatCurrency(p.amount)}</span>
+                                      <span className="text-muted-foreground">{new Date(p.paidAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+                                      {p.note && <span className="text-muted-foreground italic">· {p.note}</span>}
+                                    </div>
+                                  ))}
+                                  <div className="flex items-center gap-1 bg-blue-100 rounded-lg px-3 py-1.5 text-xs font-semibold text-blue-800">
+                                    Итого: {formatCurrency(tx.totalPartialPaid)}
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                          </React.Fragment>
                         );
                       })}
                     </tbody>
@@ -1306,6 +1384,67 @@ export default function Finance() {
         </div>
 
         {/* ── Confirm: mark paid ────────────────────────────────────────────── */}
+        {/* ── Partial payment modal ─────────────────────────────────────────── */}
+        {partialPayTx && (
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-display font-semibold">Частичная оплата</h3>
+                <button onClick={() => setPartialPayTx(null)} className="text-muted-foreground hover:text-foreground">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3 text-sm space-y-1">
+                <div className="flex justify-between"><span className="text-muted-foreground">Заказ</span><span className="font-medium">#{partialPayTx.orderId}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Мастер</span><span className="font-medium">{partialPayTx.masterAlias}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Комиссия</span><span className="font-medium">{formatCurrency(partialPayTx.commission)}</span></div>
+                {partialPayTx.prepaymentDeducted > 0 && (
+                  <div className="flex justify-between"><span className="text-muted-foreground">Предоплата</span><span className="text-emerald-600">−{formatCurrency(partialPayTx.prepaymentDeducted)}</span></div>
+                )}
+                {partialPayTx.totalPartialPaid > 0 && (
+                  <div className="flex justify-between"><span className="text-muted-foreground">Оплачено частями</span><span className="text-blue-600">−{formatCurrency(partialPayTx.totalPartialPaid)}</span></div>
+                )}
+                <div className="flex justify-between border-t border-border/50 pt-1 mt-1">
+                  <span className="font-medium">Остаток</span>
+                  <span className="font-bold text-red-600">{formatCurrency(partialPayTx.netPayable)}</span>
+                </div>
+                {/* progress */}
+                <div className="w-full bg-gray-200 rounded-full h-1.5 mt-1">
+                  <div className="bg-blue-500 h-1.5 rounded-full"
+                    style={{ width: `${Math.min(100, ((partialPayTx.prepaymentDeducted + partialPayTx.totalPartialPaid) / partialPayTx.commission) * 100)}%` }} />
+                </div>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Сумма платежа, ₽</label>
+                  <input type="number" value={partialAmount} onChange={e => setPartialAmount(e.target.value)}
+                    placeholder={`До ${formatCurrency(partialPayTx.netPayable)}`}
+                    className="w-full px-3 py-2.5 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Комментарий (необязательно)</label>
+                  <input type="text" value={partialNote} onChange={e => setPartialNote(e.target.value)}
+                    placeholder="Наличные, перевод..."
+                    className="w-full px-3 py-2.5 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground bg-blue-50 rounded-xl p-3">
+                Мастеру придёт уведомление. Если сумма закрывает весь остаток — комиссия помечается оплаченной.
+              </p>
+              <div className="flex gap-3">
+                <button onClick={() => setPartialPayTx(null)}
+                  className="flex-1 py-2.5 rounded-xl border border-border text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                  Отмена
+                </button>
+                <button onClick={doPartialPay} disabled={partialLoading || !partialAmount}
+                  className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors">
+                  {partialLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : "Принять платёж"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {confirmPay && (
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4">
