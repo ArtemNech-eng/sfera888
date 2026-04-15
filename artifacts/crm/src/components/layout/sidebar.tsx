@@ -11,7 +11,6 @@ import {
   Settings, 
   UserCog,
   LogOut,
-  Wrench,
   Trash2,
   Smartphone,
   MessagesSquare,
@@ -55,9 +54,11 @@ export function Sidebar() {
   return (
     <div className="flex flex-col w-64 bg-sidebar text-sidebar-foreground border-r border-sidebar-border min-h-screen">
       <div className="p-6 flex items-center gap-3 border-b border-sidebar-border/50">
-        <div className="w-8 h-8 rounded-lg bg-sidebar-primary flex items-center justify-center text-sidebar-primary-foreground shadow-lg shadow-sidebar-primary/20">
-          <Wrench className="w-4 h-4" />
-        </div>
+        <img
+          src={`${import.meta.env.BASE_URL}images/logo.png`}
+          alt="Честный мастер"
+          className="w-8 h-8 object-contain"
+        />
         <span className="font-display font-bold text-xl tracking-tight">Честный мастер</span>
       </div>
 

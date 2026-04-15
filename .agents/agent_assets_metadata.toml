@@ -1,5 +1,10 @@
 uploads = []
-generated = []
+
+[[generated]]
+id = "ukMr2Jf2GX3CTyOpTRVVR"
+uri = "file://artifacts/crm/public/images/logo.png"
+type = "image"
+title = "generated_image"
 
 [[outputs]]
 id = "wqwBA_AQtVRvGnFns1FfF"
