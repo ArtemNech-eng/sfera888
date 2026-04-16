@@ -388,7 +388,7 @@ export default function Leads() {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
     const q = archiveSearch.toLowerCase();
-    return orders.filter(o => {
+    const filtered = orders.filter(o => {
       if (o.status !== "cancelled" && o.status !== "completed") return false;
       if (archiveStatusFilter !== "all" && o.status !== archiveStatusFilter) return false;
       if (archiveCityFilter !== "all" && o.city !== archiveCityFilter) return false;
@@ -397,13 +397,20 @@ export default function Leads() {
         if (!m) return false;
       }
       if (archiveDateFilter !== "all") {
-        const created = new Date(o.createdAt);
-        if (archiveDateFilter === "today" && created < today) return false;
-        if (archiveDateFilter === "yesterday" && (created < yesterday || created >= today)) return false;
-        if (archiveDateFilter === "week" && created < weekAgo) return false;
-        if (archiveDateFilter === "month" && created < monthStart) return false;
+        // Filter by updatedAt (когда заказ был завершён/отменён), not createdAt
+        const changed = new Date((o as any).updatedAt ?? o.createdAt);
+        if (archiveDateFilter === "today" && changed < today) return false;
+        if (archiveDateFilter === "yesterday" && (changed < yesterday || changed >= today)) return false;
+        if (archiveDateFilter === "week" && changed < weekAgo) return false;
+        if (archiveDateFilter === "month" && changed < monthStart) return false;
       }
       return true;
+    });
+    // Sort by updatedAt DESC — recently completed orders appear first
+    return filtered.sort((a, b) => {
+      const ta = new Date((a as any).updatedAt ?? a.createdAt).getTime();
+      const tb = new Date((b as any).updatedAt ?? b.createdAt).getTime();
+      return tb - ta;
     });
   }, [orders, archiveStatusFilter, archiveCityFilter, archiveDateFilter, archiveSearch]);
 
@@ -1192,7 +1199,7 @@ export default function Leads() {
                     <thead className="bg-slate-50/50 text-muted-foreground font-medium border-b border-border/50 text-xs">
                       <tr>
                         <th className="px-3 py-2.5 pl-4">ID</th>
-                        <th className="px-3 py-2.5">Дата</th>
+                        <th className="px-3 py-2.5">Завершён</th>
                         <th className="px-3 py-2.5">Город · Услуга</th>
                         <th className="px-3 py-2.5">Клиент</th>
                         <th className="px-3 py-2.5">Мастер</th>
@@ -1217,7 +1224,10 @@ export default function Leads() {
                               <span className="font-semibold text-foreground">#{order.leadId ?? order.id}</span>
                             </td>
                             <td className="px-3 py-2.5 whitespace-nowrap">
-                              <p className="text-xs text-foreground">{formatDate(order.createdAt)}</p>
+                              <p className="text-xs text-foreground">{formatDate((order as any).updatedAt ?? order.createdAt)}</p>
+                              {(order as any).updatedAt && (order as any).updatedAt !== order.createdAt && (
+                                <p className="text-[10px] text-muted-foreground/60">создан {formatDate(order.createdAt)}</p>
+                              )}
                             </td>
                             <td className="px-3 py-2.5 max-w-[200px]">
                               <p className="font-medium text-foreground truncate">{order.serviceType}</p>
