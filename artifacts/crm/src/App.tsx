@@ -49,7 +49,7 @@ function Router() {
       <Route path="/" component={RootRedirect} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/leads" component={Leads} />
-      <Route path="/orders" component={Orders} />
+      <Route path="/orders" component={() => <InAppRedirect to="/leads?tab=work" />} />
       <Route path="/masters" component={Masters} />
       <Route path="/finance" component={Finance} />
       <Route path="/analytics" component={Analytics} />

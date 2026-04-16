@@ -88,13 +88,28 @@ export function Layout({ children }: LayoutProps) {
   });
   const unreadDialogs = dialogStats?.count ?? 0;
 
+  const { data: leadsBadgeData } = useQuery<{ newLeads: number; problemOrders: number }>({
+    queryKey: ["/api/leads/badge-stats"],
+    queryFn: async () => {
+      const [leadsResp, ordersResp] = await Promise.all([
+        fetch("/api/leads?status=new", { credentials: "include" }),
+        fetch("/api/orders?status=cancellation_requested", { credentials: "include" }),
+      ]);
+      const leads = leadsResp.ok ? await leadsResp.json() : [];
+      const orders = ordersResp.ok ? await ordersResp.json() : [];
+      return { newLeads: Array.isArray(leads) ? leads.filter((l: any) => l.status === "new").length : 0, problemOrders: Array.isArray(orders) ? orders.filter((o: any) => o.status === "cancellation_requested").length : 0 };
+    },
+    enabled: !!user,
+    refetchInterval: 15_000,
+  });
+  const leadsBadge = (leadsBadgeData?.newLeads ?? 0) + (leadsBadgeData?.problemOrders ?? 0);
+
   const navItems = [
     { href: "/dashboard",      label: "Дашборд",              icon: LayoutDashboard,  permKey: "dashboard" },
     { href: "/master-chat",    label: "Чат с мастерами",       icon: MessagesSquare,   permKey: "master-chat",  badge: unreadCount > 0 ? unreadCount : null },
     { href: "/dialogs",        label: "Диалоги с клиентами",   icon: MessageCircle,    permKey: "orders",       badge: unreadDialogs > 0 ? unreadDialogs : null },
 
-    { href: "/leads",          label: "Заявки",                icon: Inbox,            permKey: "leads" },
-    { href: "/orders",      label: "Буфер заказов",        icon: Briefcase,       permKey: "orders" },
+    { href: "/leads",          label: "Заявки",                icon: Inbox,            permKey: "leads",        badge: leadsBadge > 0 ? leadsBadge : null },
     { href: "/masters",     label: "Мастера",              icon: Users,           permKey: "masters" },
     { href: "/checkins",    label: "Готовность",           icon: CalendarCheck,   permKey: "masters" },
     { href: "/tasks",       label: "Задачи",               icon: ClipboardList,   permKey: "tasks",       badge: openTasksCount > 0 ? openTasksCount : null },
