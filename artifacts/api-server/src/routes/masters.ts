@@ -466,6 +466,25 @@ router.delete("/:id", requireRole("admin"), async (req, res) => {
   res.json({ success: true });
 });
 
+// POST /api/masters/:id/purge — TEMPORARY: hard delete all master data
+router.post("/:id/purge", requireRole("admin"), async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+
+  await db.execute(sql`UPDATE orders SET master_id = NULL WHERE master_id = ${id}`);
+  await db.execute(sql`DELETE FROM order_dispatches WHERE master_id = ${id}`);
+  await db.execute(sql`DELETE FROM transactions WHERE master_id = ${id}`);
+  await db.execute(sql`DELETE FROM receipts WHERE master_id = ${id}`);
+  await db.execute(sql`DELETE FROM master_messages WHERE master_id = ${id}`);
+  await db.execute(sql`DELETE FROM chat_cases WHERE master_id = ${id}`);
+  await db.execute(sql`DELETE FROM fomo_events WHERE master_id = ${id}`);
+  await db.execute(sql`DELETE FROM master_tasks WHERE master_id = ${id}`);
+  await db.execute(sql`DELETE FROM master_checkins WHERE master_id = ${id}`);
+  await db.execute(sql`DELETE FROM masters WHERE id = ${id}`);
+
+  res.json({ success: true, purgedMasterId: id });
+});
+
 // ─── Tags ─────────────────────────────────────────────────────────────────────
 
 // PATCH /api/masters/:id/tags — update full tags array
