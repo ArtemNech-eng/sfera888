@@ -10,7 +10,7 @@ import {
   DollarSign, Check, Pencil, AlertCircle, MessageSquare, Trash2, Search,
   ClipboardList, CalendarDays, ChevronDown, Filter, Settings, AlertTriangle,
   FileText, History, Timer, RefreshCw, CopyX, XCircle, ReceiptText, ExternalLink, Plus, Copy,
-  LayoutList, Kanban, Bell, Printer,
+  LayoutList, Kanban, Bell, Printer, Lock,
 } from "lucide-react";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -493,6 +493,19 @@ export default function Orders() {
       return r.json();
     },
     enabled: !!openDispatchId,
+  });
+
+  const { data: fomoPresses } = useQuery<Array<{
+    id: number; masterId: number; masterAlias: string | null; reason: string | null; createdAt: string;
+  }>>({
+    queryKey: ["/api/orders", openDispatchId, "fomo-presses"],
+    queryFn: async () => {
+      const r = await fetch(`/api/orders/${openDispatchId}/fomo-presses`, { credentials: "include" });
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+    enabled: !!openDispatchId,
+    refetchInterval: 15_000,
   });
 
   const deleteReceiptMutation = useMutation({
@@ -1632,6 +1645,23 @@ export default function Orders() {
                         <div className="flex flex-wrap gap-1.5">
                           {pendingDispatched.map(d => (
                             <span key={d.id} className="text-xs bg-gray-100 text-gray-600 rounded-lg px-2 py-0.5">{d.masterName}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* FOMO blocked button presses */}
+                    {(fomoPresses?.length ?? 0) > 0 && (
+                      <div className="space-y-1.5">
+                        <p className="text-xs font-semibold text-orange-500 uppercase tracking-wide flex items-center gap-1">
+                          <Lock className="w-3 h-3" /> Заблокированные попытки ({fomoPresses!.length})
+                        </p>
+                        <div className="space-y-1">
+                          {fomoPresses!.map(p => (
+                            <div key={p.id} className="flex items-center justify-between bg-orange-50 border border-orange-100 rounded-lg px-2.5 py-1.5">
+                              <span className="text-xs font-medium text-orange-800">{p.masterAlias ?? `Мастер #${p.masterId}`}</span>
+                              <span className="text-[10px] text-orange-500">{new Date(p.createdAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+                            </div>
                           ))}
                         </div>
                       </div>

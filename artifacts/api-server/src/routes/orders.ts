@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, ordersTable, mastersTable, transactionsTable, voronkaColumnsTable, orderDispatchesTable, leadsTable, masterMessagesTable, orderStatusLogsTable, usersTable, receiptsTable } from "@workspace/db";
+import { db, ordersTable, mastersTable, transactionsTable, voronkaColumnsTable, orderDispatchesTable, leadsTable, masterMessagesTable, orderStatusLogsTable, usersTable, receiptsTable, fomoEventsTable } from "@workspace/db";
 import { eq, inArray, and, ne, isNull, isNotNull, desc } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { calculateCommission, getCommissionSettings } from "../lib/commission.js";
@@ -896,6 +896,27 @@ router.get("/:id/status-log", allOrderRoles, async (req, res) => {
     .orderBy(desc(orderStatusLogsTable.createdAt));
 
   res.json(logs);
+});
+
+// GET /api/orders/:id/fomo-presses — FOMO button press events for an order
+router.get("/:id/fomo-presses", allOrderRoles, async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid order id" });
+
+  const events = await db
+    .select({
+      id: fomoEventsTable.id,
+      masterId: fomoEventsTable.masterId,
+      masterAlias: mastersTable.alias,
+      reason: fomoEventsTable.reason,
+      createdAt: fomoEventsTable.createdAt,
+    })
+    .from(fomoEventsTable)
+    .leftJoin(mastersTable, eq(fomoEventsTable.masterId, mastersTable.id))
+    .where(and(eq(fomoEventsTable.orderId, id), eq(fomoEventsTable.eventType, "button_press")))
+    .orderBy(desc(fomoEventsTable.createdAt));
+
+  res.json(events);
 });
 
 // DELETE /api/orders/:id — soft delete (move to trash)
