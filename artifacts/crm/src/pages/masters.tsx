@@ -8,7 +8,7 @@ import {
   FileSignature, FileText, Trash2, Smartphone, ChevronDown, Tag, ArrowUpDown, XCircle,
   LayoutList, Columns, Settings, ArrowRight, Edit2, Banknote, User,
   ChevronUp, RefreshCw, AlertCircle, Clock, Check, UserCheck, SlidersHorizontal, CheckCircle2,
-  Bot, KeyRound,
+  Bot, KeyRound, Lock, Unlock,
 } from "lucide-react";
 import { Avatar, MasterDrawer, OnlineBadge } from "@/components/master-drawer";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
@@ -808,6 +808,32 @@ export default function Masters() {
     if (res.ok) setColumns(await res.json());
   };
 
+  // ── Global FOMO toggle ───────────────────────────────────────────────────────
+  const [togglingFomoAll, setTogglingFomoAll] = useState(false);
+  const allFomoDisabled = masters.length > 0 && masters.every(m => m.fomoDisabled);
+
+  const handleToggleFomoAll = async () => {
+    const newDisabled = !allFomoDisabled;
+    const msg = newDisabled
+      ? `Снять ФОМО-блокировку для ВСЕХ мастеров (${masters.length})? Все смогут откликаться независимо от смет.`
+      : `Включить ФОМО-блокировку для ВСЕХ мастеров (${masters.length})? Обычные правила вернутся.`;
+    if (!confirm(msg)) return;
+    setTogglingFomoAll(true);
+    try {
+      const r = await fetch("/api/masters/fomo-all", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ disabled: newDisabled }),
+      });
+      if (r.ok) {
+        setMasters(p => p.map(m => ({ ...m, fomoDisabled: newDisabled })));
+      }
+    } finally {
+      setTogglingFomoAll(false);
+    }
+  };
+
   // ── Filters & sort ───────────────────────────────────────────────────────────
   const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get("search") ?? "");
   const [cityFilter, setCityFilter] = useState("all");
@@ -952,6 +978,22 @@ export default function Masters() {
               </div>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
+              {/* Global FOMO toggle */}
+              <button
+                onClick={handleToggleFomoAll}
+                disabled={togglingFomoAll}
+                title={allFomoDisabled ? "Включить ФОМО-блокировку для всех мастеров" : "Снять ФОМО-блокировку для всех мастеров"}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-sm font-medium transition-all ${allFomoDisabled ? "bg-orange-500 text-white border-orange-500 hover:bg-orange-600" : "bg-white text-orange-500 border-orange-300 hover:bg-orange-50"} disabled:opacity-50`}
+              >
+                {togglingFomoAll
+                  ? <Loader2 className="w-4 h-4 animate-spin" />
+                  : allFomoDisabled
+                    ? <Unlock className="w-4 h-4" />
+                    : <Lock className="w-4 h-4" />
+                }
+                <span className="hidden sm:inline">{allFomoDisabled ? "ФОМО вкл" : "ФОМО выкл"}</span>
+              </button>
+
               {/* Collapse filters toggle */}
               <button
                 onClick={e => { e.stopPropagation(); toggleFilters(); }}

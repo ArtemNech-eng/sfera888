@@ -291,6 +291,18 @@ router.get("/fomo-blocked", allMasterRoles, async (_req, res) => {
   res.json(blocked);
 });
 
+// POST /api/masters/fomo-all — set fomoDisabled for ALL active masters at once
+router.post("/fomo-all", requireRole("admin", "master_operator"), async (req, res) => {
+  const { disabled } = req.body;
+  if (typeof disabled !== "boolean") return res.status(400).json({ error: "disabled (boolean) required" });
+
+  const result = await db.update(mastersTable)
+    .set({ fomoDisabled: disabled })
+    .where(isNull(mastersTable.deletedAt));
+
+  res.json({ ok: true, fomoDisabled: disabled });
+});
+
 // GET /api/masters/:id
 router.get("/:id", allMasterRoles, async (req, res) => {
   const id = parseInt(req.params.id);
