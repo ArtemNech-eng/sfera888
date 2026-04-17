@@ -8,7 +8,7 @@ import {
   Send, Paperclip, Check, CheckCheck, Calendar, DollarSign, Loader2, CheckCircle2,
   ClipboardList, ExternalLink, ThumbsUp, ThumbsDown, Minus, Sparkles, MessageCircle,
   Smartphone, KeyRound, Eye, EyeOff, FlaskConical, ShieldCheck, ShieldAlert, FileSignature,
-  ShieldBan, ShieldOff, CalendarCheck, XCircle, Pencil,
+  ShieldBan, ShieldOff, CalendarCheck, XCircle, Pencil, Lock, Unlock,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -151,6 +151,7 @@ export interface DrawerMaster {
   contractAddress?: string | null;
   lastSeenAt?: string | null;
   servicePrices?: { service: string; priceFrom: number }[] | null;
+  fomoDisabled?: boolean;
 }
 
 interface MasterTask { id: number; masterId: number; text: string; dueAt: string | null; isCompleted: boolean; createdBy: string | null; createdAt: string; }
@@ -575,6 +576,28 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
       }
     } finally {
       setSuspending(false);
+    }
+  };
+
+  const [togglingFomo, setTogglingFomo] = useState(false);
+  const handleToggleFomo = async () => {
+    const isDisabled = master.fomoDisabled ?? false;
+    const confirmMsg = isDisabled
+      ? `Включить ФОМО-блокировку для ${master.alias}? Если есть просроченные условия — он снова будет заблокирован.`
+      : `Снять ФОМО-блокировку для ${master.alias}? Он сможет откликаться на заказы независимо от просроченных смет.`;
+    if (!confirm(confirmMsg)) return;
+    setTogglingFomo(true);
+    try {
+      const r = await fetch(`/api/masters/${master.id}/toggle-fomo`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (r.ok) {
+        const { fomoDisabled } = await r.json();
+        onMasterUpdate(master.id, { fomoDisabled });
+      }
+    } finally {
+      setTogglingFomo(false);
     }
   };
 
@@ -1340,6 +1363,35 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                     {suspending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldBan className="w-3.5 h-3.5" />}
                     Заблокировать мастера
                   </button>
+                )}
+              </div>
+
+              {/* FOMO toggle */}
+              <div className="border-t border-gray-100 pt-3">
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1">
+                  <Lock className="w-3 h-3" /> ФОМО-блокировка
+                </p>
+                {master.fomoDisabled ? (
+                  <button
+                    onClick={handleToggleFomo}
+                    disabled={togglingFomo}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-xs font-semibold transition-colors disabled:opacity-50"
+                  >
+                    {togglingFomo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Lock className="w-3.5 h-3.5" />}
+                    Включить ФОМО-блокировку
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleToggleFomo}
+                    disabled={togglingFomo}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-orange-50 hover:bg-orange-100 text-orange-600 border border-orange-200 rounded-xl text-xs font-semibold transition-colors disabled:opacity-50"
+                  >
+                    {togglingFomo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Unlock className="w-3.5 h-3.5" />}
+                    Снять ФОМО-блокировку
+                  </button>
+                )}
+                {master.fomoDisabled && (
+                  <p className="text-[10px] text-orange-500 mt-1.5 text-center">Блокировка отключена — мастер может откликаться свободно</p>
                 )}
               </div>
 

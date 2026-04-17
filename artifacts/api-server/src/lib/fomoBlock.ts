@@ -25,6 +25,17 @@ const FORTY_EIGHT_HOURS = 48 * 60 * 60 * 1000;
 const SEVENTY_TWO_HOURS = 72 * 60 * 60 * 1000;
 
 export async function getFomoBlock(masterId: number, _isTestMaster: boolean): Promise<FomoBlockResult> {
+  // Check if FOMO is manually disabled for this master
+  const [masterRow] = await db
+    .select({ fomoDisabled: mastersTable.fomoDisabled })
+    .from(mastersTable)
+    .where(eq(mastersTable.id, masterId))
+    .limit(1);
+
+  if (masterRow?.fomoDisabled) {
+    return { isBlocked: false, type: null, reason: null, orderId: null, hoursElapsed: null };
+  }
+
   const now = new Date();
 
   // Fetch all active orders for this master

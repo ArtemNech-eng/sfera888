@@ -114,6 +114,7 @@ function formatMaster(m: any) {
     contractAddress: m.contractAddress ?? null,
     lastSeenAt: m.lastSeenAt ?? null,
     servicePrices: m.servicePrices ?? null,
+    fomoDisabled: m.fomoDisabled ?? false,
   };
 }
 
@@ -652,6 +653,22 @@ router.post("/:id/reset-pwa", allMasterRoles, async (req, res) => {
     .where(eq(mastersTable.id, masterId));
 
   res.json({ success: true });
+});
+
+// POST /api/masters/:id/toggle-fomo — admin: enable/disable FOMO block for a master
+router.post("/:id/toggle-fomo", requireRole("admin", "master_operator"), async (req, res) => {
+  const masterId = parseInt(req.params.id);
+  if (isNaN(masterId)) return res.status(400).json({ error: "Invalid id" });
+
+  const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
+  if (!master) return res.status(404).json({ error: "Master not found" });
+
+  const newValue = !(master.fomoDisabled ?? false);
+  await db.update(mastersTable)
+    .set({ fomoDisabled: newValue })
+    .where(eq(mastersTable.id, masterId));
+
+  res.json({ fomoDisabled: newValue });
 });
 
 // POST /api/masters/reset-all-passwords — admin only: reset every master's password to their phone (pwaLogin)

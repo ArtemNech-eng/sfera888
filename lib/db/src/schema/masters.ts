@@ -47,6 +47,7 @@ export const mastersTable = pgTable("masters", {
   servicePrices: jsonb("service_prices").$type<{ service: string; priceFrom: number }[]>(),
   suspendedAt: timestamp("suspended_at"),
   suspensionReason: text("suspension_reason"),
+  fomoDisabled: boolean("fomo_disabled").notNull().default(false),
 });
 
 export const insertMasterSchema = createInsertSchema(mastersTable).omit({ id: true, createdAt: true });

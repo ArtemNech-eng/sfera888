@@ -40,6 +40,7 @@ interface Master {
   paidOrdersCount?: number;
   contractSignedAt?: string | null;
   passportVerified?: boolean;
+  fomoDisabled?: boolean;
 }
 
 interface VoronkaColumn {
