@@ -272,6 +272,56 @@ router.post("/:orderId/broadcast", ops, async (req, res) => {
   res.json({ ok: true, sent: result.sent, skipped: result.skipped });
 });
 
+// ─── POST /api/dispatch/:orderId/add-master/:masterId — add a single master to dispatch ──
+router.post("/:orderId/add-master/:masterId", ops, async (req, res) => {
+  const orderId = parseInt(req.params.orderId);
+  const masterId = parseInt(req.params.masterId);
+  if (isNaN(orderId) || isNaN(masterId)) return res.status(400).json({ error: "Invalid id" });
+
+  const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
+  if (!order) return res.status(404).json({ error: "Order not found" });
+
+  const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
+  if (!master) return res.status(404).json({ error: "Master not found" });
+
+  // Check if already dispatched
+  const existing = await db.select().from(orderDispatchesTable)
+    .where(and(eq(orderDispatchesTable.orderId, orderId), eq(orderDispatchesTable.masterId, masterId)));
+  if (existing.length > 0) return res.status(409).json({ error: "Already dispatched to this master", status: existing[0].status });
+
+  // Send notification
+  const TELEGRAM_API = `https://api.telegram.org/bot${process.env["TELEGRAM_BOT_TOKEN"]}`;
+  let msgId: string | null = null;
+
+  if (master.telegramId) {
+    const cardText = `📋 <b>Рассылка заказов</b>\n🔔 Новый заказ!\n\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n🔧 ${order.serviceType}\n📐 ${order.area} м²\n\n<i>Откликнитесь в приложении 👆</i>`;
+    const replyMarkup = { inline_keyboard: [[{ text: "Откликнуться 🙋", callback_data: `respond_order_${orderId}` }]] };
+    try {
+      const r = await fetch(`${TELEGRAM_API}/sendMessage`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: master.telegramId, text: cardText, parse_mode: "HTML", reply_markup: replyMarkup }) });
+      const j = await r.json() as any;
+      msgId = j?.result?.message_id?.toString() ?? null;
+    } catch {}
+  }
+  if (master.maxChatId) {
+    await sendMaxMessage(master.maxChatId,
+      `📋 Рассылка заказов\n🔔 Новый заказ!\n\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n🔧 ${order.serviceType}\n📐 ${order.area} м²\n\n👉 Откликнитесь в приложении:\nhttps://sfera-master.ru/master-pwa/orders`
+    ).catch(() => {});
+  }
+  if (master.pwaLogin) {
+    await sendPushToMaster(master.id, { type: "new_order", title: "Новый заказ", body: `${order.city} · ${order.serviceType}`, orderId }).catch(() => {});
+  }
+
+  await db.insert(orderDispatchesTable).values({
+    orderId, masterId,
+    telegramChatId: master.telegramId || `pwa_${master.id}`,
+    telegramMessageId: msgId || null,
+    status: "sent",
+  });
+  await db.update(mastersTable).set({ totalLeadsReceived: sql`${mastersTable.totalLeadsReceived} + 1` }).where(eq(mastersTable.id, masterId));
+
+  res.json({ ok: true, orderId, masterId, masterAlias: master.alias });
+});
+
 // ─── POST /api/dispatch/:orderId/assign/:masterId ──────────────────────────────
 
 router.post("/:orderId/assign/:masterId", ops, async (req, res) => {
