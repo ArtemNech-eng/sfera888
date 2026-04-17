@@ -4,6 +4,7 @@ import { sendMaxMessage } from "../maxBot.js";
 import { eq, and, isNull, isNotNull, desc } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { calculateCommission, getCommissionSettings } from "../lib/commission.js";
+import { checkFomoTransition } from "../lib/fomoBlock.js";
 import crypto from "crypto";
 
 const router = Router();
@@ -297,6 +298,12 @@ router.patch("/:id", async (req: any, res) => {
     notes: notes?.trim() || null,
   }).where(eq(receiptsTable.id, id)).returning();
 
+  // Sync proposed_amount to order so FOMO block is lifted
+  await db.update(ordersTable)
+    .set({ proposedAmount: String(totalAmount), updatedAt: new Date() })
+    .where(eq(ordersTable.id, updated.orderId));
+  checkFomoTransition(updated.masterId, false).catch(() => {});
+
   const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, updated.masterId));
   res.json(await buildReceiptResponse(updated, master, req));
 });
@@ -333,6 +340,12 @@ router.post("/crm", requireRole("admin", "master_operator"), async (req, res) =>
     prepaymentAmount: String(Number(prepaymentAmount)),
     notes: notes?.trim() || null,
   }).returning();
+
+  // Sync proposed_amount to order so FOMO block is lifted
+  await db.update(ordersTable)
+    .set({ proposedAmount: String(totalAmount), updatedAt: new Date() })
+    .where(eq(ordersTable.id, orderId));
+  checkFomoTransition(order.masterId, false).catch(() => {});
 
   const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, order.masterId));
 
@@ -389,6 +402,12 @@ router.post("/", async (req: any, res) => {
     prepaymentAmount: String(Number(prepaymentAmount)),
     notes: notes?.trim() || null,
   }).returning();
+
+  // Sync proposed_amount to order so FOMO block is lifted
+  await db.update(ordersTable)
+    .set({ proposedAmount: String(totalAmount), updatedAt: new Date() })
+    .where(eq(ordersTable.id, orderId));
+  checkFomoTransition(masterId, false).catch(() => {});
 
   const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
 
