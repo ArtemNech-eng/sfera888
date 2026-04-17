@@ -477,10 +477,13 @@ router.post("/:id/purge", requireRole("admin"), async (req, res) => {
 
   if (orderIds.length > 0) {
     const idList = orderIds.join(",");
-    // Delete everything linked to those orders
+    // Delete everything linked to those orders (respect FK order)
     await db.execute(sql.raw(`DELETE FROM order_dispatches WHERE order_id IN (${idList})`));
     await db.execute(sql.raw(`DELETE FROM order_status_logs WHERE order_id IN (${idList})`));
     await db.execute(sql.raw(`DELETE FROM fomo_events WHERE order_id IN (${idList})`));
+    await db.execute(sql.raw(`DELETE FROM master_reviews WHERE order_id IN (${idList})`));
+    await db.execute(sql.raw(`DELETE FROM system_tasks WHERE related_order_id IN (${idList})`));
+    await db.execute(sql.raw(`DELETE FROM chat_cases WHERE order_id IN (${idList})`));
     await db.execute(sql.raw(`DELETE FROM receipts WHERE order_id IN (${idList})`));
     await db.execute(sql.raw(`DELETE FROM transactions WHERE order_id IN (${idList})`));
     await db.execute(sql.raw(`DELETE FROM orders WHERE id IN (${idList})`));
