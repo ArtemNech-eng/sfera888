@@ -28,6 +28,8 @@ import avitoRouter from "./avito.js";
 import aiOfficeRouter from "./ai-office.js";
 import autonomousRouter from "./autonomous.js";
 import memoryRouter from "./memory.js";
+import chatCasesRouter from "./chat-cases.js";
+import { processCases, scheduleDigest } from "../lib/casesEngine.js";
 
 const router = Router();
 
@@ -59,6 +61,7 @@ router.use("/avito", avitoRouter);
 router.use("/ai-office", aiOfficeRouter);
 router.use("/autonomous", autonomousRouter);
 router.use("/agent-memory", memoryRouter);
+router.use("/chat-cases", chatCasesRouter);
 
 // Seed popular repair services on startup (INSERT ... ON CONFLICT DO NOTHING)
 async function seedServices() {
@@ -79,5 +82,10 @@ seedServices().catch(console.error);
 // Run trash cleanup on startup, then every hour
 runTrashCleanup().catch(console.error);
 setInterval(() => runTrashCleanup().catch(console.error), 60 * 60 * 1000);
+
+// Cases engine: process on startup, then every 5 minutes
+setTimeout(() => processCases().catch(console.error), 10_000);
+setInterval(() => processCases().catch(console.error), 5 * 60 * 1000);
+scheduleDigest();
 
 export default router;
