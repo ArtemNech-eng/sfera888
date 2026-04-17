@@ -24,9 +24,8 @@ export interface FomoBlockResult {
 const FORTY_EIGHT_HOURS = 48 * 60 * 60 * 1000;
 const SEVENTY_TWO_HOURS = 72 * 60 * 60 * 1000;
 
-export async function getFomoBlock(masterId: number, isTestMaster: boolean): Promise<FomoBlockResult> {
+export async function getFomoBlock(masterId: number, _isTestMaster: boolean): Promise<FomoBlockResult> {
   const now = new Date();
-  const limit = isTestMaster ? 1 : 2;
 
   // Fetch all active orders for this master
   const activeOrders = await db
@@ -40,18 +39,7 @@ export async function getFomoBlock(masterId: number, isTestMaster: boolean): Pro
       )
     );
 
-  // Priority 1: check limit
-  if (activeOrders.length >= limit) {
-    return {
-      isBlocked: true,
-      type: "limit_reached",
-      reason: `У вас уже ${activeOrders.length} активных заказа. Завершите хотя бы один, чтобы снова откликаться.`,
-      orderId: null,
-      hoursElapsed: null,
-    };
-  }
-
-  // Priority 2: no estimate 48h+ (status = master_assigned, assignedAt > 48h, no proposedAmount)
+  // Priority 1: no estimate 48h+ (status = master_assigned, assignedAt > 48h, no proposedAmount)
   for (const order of activeOrders) {
     if (order.status !== "master_assigned") continue;
     const hasEstimate = order.proposedAmount != null && Number(order.proposedAmount) > 0;

@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/layout";
 import {
@@ -402,6 +403,7 @@ export default function MasterControlPage() {
   const [page, setPage] = useState(1);
   const [messageCase, setMessageCase] = useState<ChatCase | null>(null);
   const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
 
   const { data, isLoading, isFetching } = useQuery<ApiResponse>({
     queryKey: ["/api/chat-cases", activeTab, page],
@@ -550,10 +552,14 @@ export default function MasterControlPage() {
                       {fomoData.map(f => (
                         <tr key={f.masterId} className="border-b border-border/30 hover:bg-slate-50/60 transition-colors">
                           <td className="px-3 py-3 pl-4">
-                            <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => setLocation(`/masters?openMaster=${f.masterId}`)}
+                              className="flex items-center gap-2 hover:underline text-left group"
+                            >
                               <Lock className="w-3.5 h-3.5 text-orange-500 shrink-0" />
-                              <span className="font-medium text-foreground">{f.alias}</span>
-                            </div>
+                              <span className="font-medium text-foreground group-hover:text-primary">{f.alias}</span>
+                              <ExternalLink className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </button>
                           </td>
                           <td className="px-3 py-3 text-muted-foreground text-xs">{f.city}</td>
                           <td className="px-3 py-3">
