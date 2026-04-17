@@ -466,43 +466,6 @@ router.delete("/:id", requireRole("admin"), async (req, res) => {
   res.json({ success: true });
 });
 
-// POST /api/masters/:id/purge — TEMPORARY: hard delete master + all linked orders and finances
-router.post("/:id/purge", requireRole("admin"), async (req, res) => {
-  const id = parseInt(req.params.id);
-  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
-
-  // Get order IDs linked to this master
-  const orderRows = await db.execute(sql`SELECT id FROM orders WHERE master_id = ${id}`);
-  const orderIds: number[] = (orderRows as any).rows?.map((r: any) => r.id) ?? [];
-
-  if (orderIds.length > 0) {
-    const idList = orderIds.join(",");
-    // Delete everything linked to those orders (respect FK order)
-    await db.execute(sql.raw(`DELETE FROM order_dispatches WHERE order_id IN (${idList})`));
-    await db.execute(sql.raw(`DELETE FROM order_status_logs WHERE order_id IN (${idList})`));
-    await db.execute(sql.raw(`DELETE FROM fomo_events WHERE order_id IN (${idList})`));
-    await db.execute(sql.raw(`DELETE FROM master_reviews WHERE order_id IN (${idList})`));
-    await db.execute(sql.raw(`DELETE FROM system_tasks WHERE related_order_id IN (${idList})`));
-    await db.execute(sql.raw(`DELETE FROM chat_cases WHERE order_id IN (${idList})`));
-    await db.execute(sql.raw(`DELETE FROM receipts WHERE order_id IN (${idList})`));
-    await db.execute(sql.raw(`DELETE FROM transactions WHERE order_id IN (${idList})`));
-    await db.execute(sql.raw(`DELETE FROM orders WHERE id IN (${idList})`));
-  }
-
-  // Delete master-level data not linked to specific orders
-  await db.execute(sql`DELETE FROM order_dispatches WHERE master_id = ${id}`);
-  await db.execute(sql`DELETE FROM transactions WHERE master_id = ${id}`);
-  await db.execute(sql`DELETE FROM receipts WHERE master_id = ${id}`);
-  await db.execute(sql`DELETE FROM master_messages WHERE master_id = ${id}`);
-  await db.execute(sql`DELETE FROM chat_cases WHERE master_id = ${id}`);
-  await db.execute(sql`DELETE FROM fomo_events WHERE master_id = ${id}`);
-  await db.execute(sql`DELETE FROM master_tasks WHERE master_id = ${id}`);
-  await db.execute(sql`DELETE FROM master_checkins WHERE master_id = ${id}`);
-  await db.execute(sql`DELETE FROM masters WHERE id = ${id}`);
-
-  res.json({ success: true, purgedMasterId: id, deletedOrderIds: orderIds });
-});
-
 // ─── Tags ─────────────────────────────────────────────────────────────────────
 
 // PATCH /api/masters/:id/tags — update full tags array
