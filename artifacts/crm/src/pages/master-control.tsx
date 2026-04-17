@@ -4,7 +4,7 @@ import { Layout } from "@/components/layout";
 import {
   Brain, AlertTriangle, Eye, Shield, HelpCircle, Archive,
   RefreshCw, CheckCircle, RotateCcw, MessageSquare, Phone,
-  ExternalLink, ChevronRight, Loader2, Copy, Send, X
+  ExternalLink, ChevronRight, Loader2, Copy, Send, X, Lock
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -393,6 +393,7 @@ const TABS = [
   { key: "watch", label: "Под наблюдением", icon: Eye },
   { key: "bypass", label: "Риск обхода", icon: Shield },
   { key: "ambiguous", label: "Нужно уточнение", icon: HelpCircle },
+  { key: "fomo", label: "Ограниченные", icon: Lock },
   { key: "archive", label: "Архив", icon: Archive },
 ] as const;
 
@@ -408,6 +409,16 @@ export default function MasterControlPage() {
       fetch(`/api/chat-cases?tab=${activeTab}&page=${page}&limit=50`, { credentials: "include" })
         .then(r => r.json()),
     refetchInterval: 30_000,
+  });
+
+  const { data: fomoData } = useQuery<Array<{
+    masterId: number; alias: string; city: string; type: string; reason: string;
+    orderId: number | null; hoursElapsed: number | null;
+  }>>({
+    queryKey: ["/api/masters/fomo-blocked"],
+    queryFn: () => fetch("/api/masters/fomo-blocked", { credentials: "include" }).then(r => r.json()),
+    refetchInterval: 30_000,
+    enabled: activeTab === "fomo",
   });
 
   const triggerMutation = useMutation({
@@ -427,6 +438,7 @@ export default function MasterControlPage() {
     watch: stats?.yellow ?? 0,
     bypass: stats?.bypass ?? 0,
     ambiguous: stats?.ambiguous ?? 0,
+    fomo: fomoData?.length ?? 0,
     archive: 0,
   };
 
@@ -509,7 +521,69 @@ export default function MasterControlPage() {
 
         {/* Table */}
         <div className="flex-1 p-6">
-          {isLoading ? (
+          {/* FOMO blocked masters tab */}
+          {activeTab === "fomo" ? (
+            fomoData == null ? (
+              <div className="flex items-center justify-center py-24">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+              </div>
+            ) : fomoData.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-24 text-muted-foreground">
+                <Lock className="w-12 h-12 mb-4 opacity-20" />
+                <p className="text-lg font-medium">Нет заблокированных мастеров</p>
+                <p className="text-sm mt-1">Все мастера могут откликаться на заявки</p>
+              </div>
+            ) : (
+              <div className="bg-card rounded-2xl border border-border/50 shadow-sm overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-slate-50/80 text-muted-foreground font-medium border-b border-border/50 text-xs">
+                      <tr>
+                        <th className="px-3 py-3 pl-4">Мастер</th>
+                        <th className="px-3 py-3">Город</th>
+                        <th className="px-3 py-3">Причина</th>
+                        <th className="px-3 py-3">Заказ</th>
+                        <th className="px-3 py-3">Просрочка</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {fomoData.map(f => (
+                        <tr key={f.masterId} className="border-b border-border/30 hover:bg-slate-50/60 transition-colors">
+                          <td className="px-3 py-3 pl-4">
+                            <div className="flex items-center gap-2">
+                              <Lock className="w-3.5 h-3.5 text-orange-500 shrink-0" />
+                              <span className="font-medium text-foreground">{f.alias}</span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-3 text-muted-foreground text-xs">{f.city}</td>
+                          <td className="px-3 py-3">
+                            <span className={cn(
+                              "text-xs px-2 py-0.5 rounded-full font-medium",
+                              f.type === "no_estimate" ? "bg-yellow-100 text-yellow-700" :
+                              f.type === "no_payment" ? "bg-orange-100 text-orange-700" :
+                              f.type === "limit_reached" ? "bg-blue-100 text-blue-700" :
+                              "bg-red-100 text-red-700"
+                            )}>
+                              {f.type === "no_estimate" ? "Нет сметы 48ч+" :
+                               f.type === "no_payment" ? "Нет оплаты 72ч+" :
+                               f.type === "limit_reached" ? "Лимит заказов" :
+                               "Задолженность"}
+                            </span>
+                          </td>
+                          <td className="px-3 py-3 text-muted-foreground text-xs">
+                            {f.orderId ? `#${f.orderId}` : "—"}
+                          </td>
+                          <td className="px-3 py-3 text-muted-foreground text-xs">
+                            {f.hoursElapsed ? `${f.hoursElapsed} ч` : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )
+          ) : isLoading ? (
             <div className="flex items-center justify-center py-24">
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
             </div>

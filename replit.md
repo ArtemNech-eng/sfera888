@@ -48,6 +48,8 @@ artifacts-monorepo/
 - `orders` — Orders sent to buffer from leads
 - `masters` — Masters with voronka_column_id, is_test_master, telegram_id
 - `transactions` — Commission transactions
+- `chat_cases` — Master Control Center cases (bypass/conflict/delay detection)
+- `fomo_events` — FOMO block events log (blocked/unblocked/button_press)
 - `cities`, `service_types` — Settings
 - `telegram_chats`, `telegram_messages` — Telegram operator chat history
 - `voronka_columns` — Configurable Kanban columns for masters board

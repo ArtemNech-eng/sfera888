@@ -8,6 +8,7 @@ import multer from "multer";
 import { objectStorageClient } from "../lib/objectStorage.js";
 import { getBotLink, sendOnboardingMemo } from "../maxBot.js";
 import { notifyManagerMasterResponse, notifyManagerNewMaster } from "../managerBot.js";
+import { getFomoBlock, logFomoEvent, checkFomoTransition } from "../lib/fomoBlock.js";
 
 const avatarUpload = multer({
   storage: multer.memoryStorage(),
@@ -401,6 +402,11 @@ router.get("/home", requireMasterPwa, async (req, res) => {
     taken: todayOrders.filter(o => ["master_assigned", "in_progress", "completed"].includes(o.status)).length,
   };
 
+  // FOMO block status
+  const fomoBlock = await getFomoBlock(masterId, master.isTestMaster);
+  // Background: check if status changed (for unblock notifications)
+  checkFomoTransition(masterId, master.isTestMaster).catch(() => {});
+
   res.json({
     master: {
       id: master.id,
@@ -414,6 +420,7 @@ router.get("/home", requireMasterPwa, async (req, res) => {
       orderLimit,
       activeOrdersCount: activeOrders.length,
     },
+    fomoBlock,
     availableOrders,
     pendingOrders,
     missedOrders,
@@ -615,6 +622,13 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
   const master = await getMasterById(masterId);
   if (!master) return res.status(404).json({ error: "Мастер не найден" });
 
+  // FOMO block check — highest priority, before eligibility
+  const fomoStatus = await getFomoBlock(masterId, master.isTestMaster);
+  if (fomoStatus.isBlocked) {
+    await logFomoEvent(masterId, "button_press", fomoStatus.reason, fomoStatus.orderId ?? undefined);
+    return res.status(403).json({ error: fomoStatus.reason, fomoBlocked: true, fomoType: fomoStatus.type, fomoOrderId: fomoStatus.orderId });
+  }
+
   // Check order eligibility (limit + debt + overdue)
   const allActive = await db.select().from(ordersTable)
     .where(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
@@ -654,6 +668,14 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
   maybeEarlyAssign(orderId).catch(e => console.error("[respond] maybeEarlyAssign error:", e));
 
   res.json({ success: true });
+});
+
+// Log FOMO button press
+router.post("/fomo-block-press", requireMasterPwa, async (req, res) => {
+  const masterId = (req.session as any).masterId;
+  const { orderId, reason } = req.body ?? {};
+  await logFomoEvent(masterId, "button_press", reason ?? null, orderId ?? null);
+  res.json({ ok: true });
 });
 
 // Reject order

@@ -9,7 +9,7 @@ import {
   MapPin, Calendar, MessageSquare, Clock,
   ChevronRight, X, Images, Wrench, Zap, PauseCircle,
   PlayCircle, Navigation, Users, Heart, ChevronDown, Briefcase,
-  Eye, EyeOff,
+  Eye, EyeOff, Lock,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -47,6 +47,74 @@ interface MissedOrder {
   area: number;
   takenAt: string;
   wasDispatched: boolean;
+}
+
+interface FomoBlock {
+  isBlocked: boolean;
+  type: string | null;
+  reason: string | null;
+  orderId: number | null;
+  hoursElapsed: number | null;
+}
+
+// ─── FOMO modal ───────────────────────────────────────────────────────────────
+
+function FomoModal({ fomoBlock, onClose }: { fomoBlock: FomoBlock; onClose: () => void }) {
+  const typeMessages: Record<string, { title: string; body: string; icon: string }> = {
+    no_estimate: {
+      title: "Нужна смета",
+      body: `По одному из заказов смета не отправлена уже более 48 часов.\nОтправьте смету менеджеру, чтобы разблокировать отклики.`,
+      icon: "⏱️",
+    },
+    no_payment: {
+      title: "Ожидается предоплата",
+      body: `По одному из заказов предоплата не поступила уже более 72 часов.\nДождитесь оплаты или уточните статус у менеджера.`,
+      icon: "💳",
+    },
+    limit_reached: {
+      title: "Достигнут лимит заказов",
+      body: `У вас уже максимальное количество активных заказов.\nЗавершите хотя бы один заказ, чтобы снова откликаться на новые.`,
+      icon: "📦",
+    },
+    overdue_debt: {
+      title: "Есть задолженность",
+      body: `Оплатите задолженность, чтобы снова получить возможность откликаться на заявки.`,
+      icon: "💸",
+    },
+  };
+  const info = fomoBlock.type ? typeMessages[fomoBlock.type] : null;
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 backdrop-blur-sm px-4 pb-6" onClick={onClose}>
+      <div className="w-full max-w-sm bg-background rounded-3xl shadow-xl overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="bg-orange-50 dark:bg-orange-900/30 px-6 pt-7 pb-5 border-b border-orange-100 dark:border-orange-800 text-center">
+          <div className="text-5xl mb-3">{info?.icon ?? "🔒"}</div>
+          <h2 className="font-bold text-lg text-orange-800 dark:text-orange-300">
+            {info?.title ?? "Отклик недоступен"}
+          </h2>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          <p className="text-sm text-muted-foreground whitespace-pre-line text-center leading-relaxed">
+            {info?.body ?? fomoBlock.reason ?? "Выполните условия, чтобы снова откликаться на заявки."}
+          </p>
+          {fomoBlock.hoursElapsed && (
+            <div className="flex items-center justify-center gap-2 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-xl px-4 py-2">
+              <Clock size={14} className="text-orange-500 shrink-0" />
+              <span className="text-xs font-semibold text-orange-700 dark:text-orange-400">
+                Просрочено на {fomoBlock.hoursElapsed} ч
+              </span>
+            </div>
+          )}
+          {fomoBlock.orderId && (
+            <p className="text-xs text-center text-muted-foreground">Заказ #{fomoBlock.orderId}</p>
+          )}
+          <button onClick={onClose}
+            className="w-full h-12 rounded-2xl bg-primary text-primary-foreground font-bold text-sm">
+            Понятно
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 interface TodayActivity {
@@ -335,16 +403,24 @@ function RejectReasonSheet({ onConfirm, onCancel }: {
 
 // ─── Order Detail Sheet ───────────────────────────────────────────────────────
 
-function OrderDetailSheet({ order, onRespond, onReject, onClose }: {
+function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
   order: OrderCard; onRespond: () => void; onReject: () => void; onClose: () => void;
+  fomoBlock?: FomoBlock | null;
 }) {
   const [state, setState] = useState<"idle" | "loading" | "success" | "rejecting">("idle");
   const [showRejectSheet, setShowRejectSheet] = useState(false);
   const [showPriceNote, setShowPriceNote] = useState(false);
   const [priceNote, setPriceNote] = useState("");
+  const [showFomoModal, setShowFomoModal] = useState(false);
   const services = parseServices(order.services);
+  const isFomoBlocked = fomoBlock?.isBlocked === true;
 
   const handleRespond = async () => {
+    if (isFomoBlocked) {
+      setShowFomoModal(true);
+      api.fomoBlockPress(order.id, fomoBlock?.reason ?? null).catch(() => {});
+      return;
+    }
     setState("loading");
     try {
       await api.orders.respond(order.id, priceNote.trim() || undefined);
@@ -494,13 +570,21 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose }: {
 
       {state !== "success" && (
         <div className="shrink-0 bg-card border-t border-border px-4 py-4 space-y-2">
-          <button onClick={handleRespond} disabled={state !== "idle"}
-            className="w-full h-14 rounded-2xl bg-primary text-primary-foreground font-bold text-base flex items-center justify-center gap-2 disabled:opacity-60">
-            {state === "loading"
-              ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              : <CheckCircle2 size={22} />}
-            Откликнуться{priceNote.trim() ? " с предложением" : ""}
-          </button>
+          {isFomoBlocked ? (
+            <button onClick={handleRespond}
+              className="w-full h-14 rounded-2xl bg-orange-500 text-white font-bold text-base flex items-center justify-center gap-2">
+              <Lock size={20} />
+              Отклик заблокирован
+            </button>
+          ) : (
+            <button onClick={handleRespond} disabled={state !== "idle"}
+              className="w-full h-14 rounded-2xl bg-primary text-primary-foreground font-bold text-base flex items-center justify-center gap-2 disabled:opacity-60">
+              {state === "loading"
+                ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                : <CheckCircle2 size={22} />}
+              Откликнуться{priceNote.trim() ? " с предложением" : ""}
+            </button>
+          )}
           <button onClick={() => setShowRejectSheet(true)} disabled={state !== "idle"}
             className="w-full h-11 rounded-xl text-destructive font-medium text-sm flex items-center justify-center gap-1.5 disabled:opacity-50">
             {state === "rejecting"
@@ -516,6 +600,9 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose }: {
           onConfirm={handleRejectConfirm}
           onCancel={() => setShowRejectSheet(false)}
         />
+      )}
+      {showFomoModal && fomoBlock && (
+        <FomoModal fomoBlock={fomoBlock} onClose={() => setShowFomoModal(false)} />
       )}
     </div>
   );
@@ -856,6 +943,13 @@ export default function HomePage() {
   const dismissSwipeHint = () => { localStorage.setItem(SWIPE_HINT_KEY, "1"); setShowSwipeHint(false); };
 
   const handleSwipeRespond = async (order: OrderCard) => {
+    const fomoBlock: FomoBlock | null = data?.fomoBlock ?? null;
+    if (fomoBlock?.isBlocked) {
+      api.fomoBlockPress(order.id, fomoBlock.reason ?? null).catch(() => {});
+      toast.error("Отклик заблокирован. Откройте заявку для деталей.", { duration: 3000 });
+      setSelectedAvail(order);
+      return;
+    }
     try { await api.orders.respond(order.id); toast.success(`Отклик на заявку #${order.id} отправлен!`); load(); }
     catch (e: any) { toast.error(e.message ?? "Ошибка"); }
   };
@@ -881,6 +975,7 @@ export default function HomePage() {
   const orderLimit: number = data?.master?.orderLimit ?? 2;
   const hasActiveOrders = active.length > 0;
   const atLimit = active.length >= orderLimit;
+  const fomoBlock: FomoBlock | null = data?.fomoBlock ?? null;
 
   const workStatusLabels: Record<string, string> = {
     accepted: "Принят", on_way: "Еду на объект", on_site: "На объекте",
@@ -950,6 +1045,17 @@ export default function HomePage() {
           <div>
             <p className="text-sm font-semibold text-red-700 dark:text-red-400">Задолженность</p>
             <p className="text-xs text-red-600 dark:text-red-500">{(master.debt ?? 0).toLocaleString("ru-RU")} ₽ — свяжитесь с менеджером</p>
+          </div>
+        </div>
+      )}
+
+      {/* FOMO block banner */}
+      {fomoBlock?.isBlocked && available.length > 0 && (
+        <div className="flex items-start gap-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-300 dark:border-orange-700 rounded-xl p-3">
+          <Lock size={18} className="text-orange-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-orange-700 dark:text-orange-400">Отклики заблокированы</p>
+            <p className="text-xs text-orange-600 dark:text-orange-500 mt-0.5">{fomoBlock.reason}</p>
           </div>
         </div>
       )}
@@ -1091,6 +1197,7 @@ export default function HomePage() {
           onRespond={() => { setSelectedAvail(null); load(); }}
           onReject={() => { setSelectedAvail(null); load(); }}
           onClose={() => setSelectedAvail(null)}
+          fomoBlock={fomoBlock}
         />
       )}
       {selectedPending && (

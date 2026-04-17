@@ -159,9 +159,10 @@ function StatusPill({ master }: { master: Master }) {
 
 // ─── Compact list row ─────────────────────────────────────────────────────────
 
-function MasterRow({ master, onOpenDrawer, onDelete, onGoToChat }: {
+function MasterRow({ master, onOpenDrawer, onDelete, onGoToChat, isFomoBlocked }: {
   master: Master; onOpenDrawer: (m: Master) => void;
   onDelete?: (id: number) => void; onGoToChat: (id: number) => void;
+  isFomoBlocked?: boolean;
 }) {
   const specs = master.specializations.length > 0 ? master.specializations : master.specialization ? [master.specialization] : [];
   const tags = master.tags ?? [];
@@ -192,6 +193,11 @@ function MasterRow({ master, onOpenDrawer, onDelete, onGoToChat }: {
           {(master.cancelCount30d ?? 0) >= 3 && (
             <span className="text-[10px] bg-red-50 text-red-500 rounded-full px-1.5 py-0.5 font-semibold flex items-center gap-0.5">
               <XCircle className="w-2.5 h-2.5" />{master.cancelCount30d} отмен
+            </span>
+          )}
+          {isFomoBlocked && (
+            <span title="FOMO-блок: мастер не может откликаться" className="text-[10px] bg-orange-50 text-orange-600 border border-orange-200 rounded-full px-1.5 py-0.5 font-semibold flex items-center gap-0.5">
+              🔒 Блок
             </span>
           )}
         </div>
@@ -710,6 +716,7 @@ export default function Masters() {
   const [columns, setColumns] = useState<VoronkaColumn[]>([]);
   const [loading, setLoading] = useState(true);
   const [drawerMaster, setDrawerMaster] = useState<Master | null>(null);
+  const [fomoBlockedIds, setFomoBlockedIds] = useState<Set<number>>(new Set());
   const [draggingId, setDraggingId] = useState<number | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -717,9 +724,10 @@ export default function Masters() {
   const { data: cities } = useGetCities();
 
   const fetchAll = useCallback(async (initial = false) => {
-    const [mR, cR] = await Promise.all([
+    const [mR, cR, fR] = await Promise.all([
       fetch("/api/voronka/masters", { credentials: "include" }),
       fetch("/api/voronka/columns", { credentials: "include" }),
+      fetch("/api/masters/fomo-blocked", { credentials: "include" }),
     ]);
     if (mR.ok) {
       const list: Master[] = await mR.json();
@@ -731,6 +739,10 @@ export default function Masters() {
       }
     } else if (initial) setLoading(false);
     if (cR.ok) setColumns(await cR.json());
+    if (fR.ok) {
+      const blocked: { masterId: number }[] = await fR.json();
+      setFomoBlockedIds(new Set(blocked.map(b => b.masterId)));
+    }
   }, []);
 
   useEffect(() => { fetchAll(true); const t = setInterval(() => fetchAll(), 8000); return () => clearInterval(t); }, [fetchAll]);
@@ -1234,6 +1246,7 @@ export default function Masters() {
               ) : filtered.map(m => (
                 <MasterRow key={m.id} master={m}
                   onOpenDrawer={setDrawerMaster}
+                  isFomoBlocked={fomoBlockedIds.has(m.id)}
                   onDelete={isAdmin ? id => deleteMasterMutation.mutate(id) : undefined}
                   onGoToChat={id => setLocation(`/master-chat?masterId=${id}`)}
                 />

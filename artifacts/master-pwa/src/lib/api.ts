@@ -39,6 +39,8 @@ export const api = {
       req<any>("POST", `/orders/${id}/complete`, { proposedAmount }),
   },
   setAvailability: (available: boolean) => req<any>("PATCH", "/availability", { available }),
+  fomoBlockPress: (orderId: number | null, reason?: string | null) =>
+    req<any>("POST", "/fomo-block-press", { orderId, reason }),
   dispatchHistory: () => req<any>("GET", "/dispatches/history"),
   analytics: () => req<any>("GET", "/analytics"),
   balance: () => req<any>("GET", "/balance"),

@@ -283,6 +283,13 @@ router.put("/assignment-mode", requireRole("admin", "master_operator"), async (r
   res.json({ ok: true, mode });
 });
 
+// GET /api/masters/fomo-blocked — list currently FOMO-blocked masters for CRM
+router.get("/fomo-blocked", allMasterRoles, async (_req, res) => {
+  const { getAllFomoBlockedMasters } = await import("../lib/fomoBlock.js");
+  const blocked = await getAllFomoBlockedMasters();
+  res.json(blocked);
+});
+
 // GET /api/masters/:id
 router.get("/:id", allMasterRoles, async (req, res) => {
   const id = parseInt(req.params.id);
