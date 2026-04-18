@@ -4,7 +4,8 @@ import { ProtectedRoute } from "@/hooks/use-auth";
 import {
   Loader2, RefreshCw, FileText, Clock, CreditCard, AlertTriangle,
   Phone, MessageSquare, Eye, ClipboardList, RotateCcw, XCircle,
-  ChevronLeft, ChevronRight, Search, MapPin, User, Lock,
+  ChevronLeft, ChevronRight, Search, MapPin, User, Lock, X,
+  CheckCircle2, AlertCircle, Building2, Ruler, Calendar, UserCheck,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -116,6 +117,7 @@ export default function WorkMonitor() {
   const [cityFilter, setCityFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [sendingTo, setSendingTo] = useState<number | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<WorkOrder | null>(null);
   const { toast } = useToast();
 
   const fetchData = useCallback(async (silent = false) => {
@@ -373,7 +375,8 @@ export default function WorkMonitor() {
                     {paginated.map(o => (
                       <tr
                         key={o.id}
-                        className={`border-b border-gray-50 hover:brightness-95 transition-colors ${
+                        onClick={() => setSelectedOrder(o)}
+                        className={`border-b border-gray-50 hover:brightness-95 transition-colors cursor-pointer ${
                           o.status === "cancellation_requested"
                             ? "bg-orange-50"
                             : subTab === "problematic"
@@ -442,6 +445,10 @@ export default function WorkMonitor() {
 
         </div>
       </Layout>
+
+      {selectedOrder && (
+        <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} />
+      )}
     </ProtectedRoute>
   );
 }
@@ -787,4 +794,197 @@ function ProblematicRow({ o, onNotify, sendingTo, estimateText, paymentText }: A
       </div>
     </td>
   </>;
+}
+
+// ── Order Detail Modal ───────────────────────────────────────────────────────
+const STATUS_LABELS: Record<string, { label: string; cls: string }> = {
+  waiting_master:         { label: "Ждёт мастера",   cls: "bg-amber-100 text-amber-800" },
+  master_assigned:        { label: "Мастер назначен", cls: "bg-blue-100 text-blue-800" },
+  in_progress:            { label: "В работе",        cls: "bg-green-100 text-green-800" },
+  cancellation_requested: { label: "Запрос отмены",   cls: "bg-orange-100 text-orange-800" },
+  completed:              { label: "Завершён",         cls: "bg-gray-100 text-gray-700" },
+  cancelled:              { label: "Отменён",          cls: "bg-red-100 text-red-800" },
+};
+
+function OrderDetailModal({ order: o, onClose }: { order: WorkOrder; onClose: () => void }) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  const st = STATUS_LABELS[o.status] ?? { label: o.status, cls: "bg-gray-100 text-gray-700" };
+  const fmtDate = (s: string | null) => s
+    ? new Date(s).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
+    : "—";
+
+  const payStatus = !o.receiptId
+    ? null
+    : o.receiptPrepaymentPaidAt
+      ? { label: "✅ Подтверждено оператором", cls: "text-green-700 bg-green-50" }
+      : o.receiptPrepaymentSubmittedAt
+        ? { label: "📸 Ждёт проверки оператора", cls: "text-blue-700 bg-blue-50" }
+        : { label: "⏳ Ожидает оплаты клиентом",  cls: "text-amber-700 bg-amber-50" };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+      <div
+        className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between px-5 pt-5 pb-3 border-b border-gray-100">
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-lg font-bold text-gray-900">#{o.leadId ?? o.id}</h2>
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${st.cls}`}>{st.label}</span>
+            </div>
+            <p className="text-sm text-gray-500 mt-0.5">{o.serviceType} · {o.city}{o.district ? `, ${o.district}` : ""}</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-gray-100 transition-colors ml-2 flex-shrink-0">
+            <X className="w-4 h-4 text-gray-500" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
+          {/* Basic info */}
+          <div className="grid grid-cols-2 gap-3">
+            <InfoBlock icon={MapPin} label="Адрес" value={`${o.city}${o.district ? `, ${o.district}` : ""}`} />
+            <InfoBlock icon={Ruler} label="Площадь" value={`${o.area} м²`} />
+            <InfoBlock icon={Calendar} label="Назначен" value={fmtDate(o.assignedAt ?? o.updatedAt)} />
+            {o.hoursWithoutEstimate !== null && !o.receiptId && (
+              <InfoBlock icon={Clock} label="Без сметы" value={fmtHours(o.hoursWithoutEstimate)}
+                valueClass={o.hoursWithoutEstimate >= 48 ? "text-red-600 font-bold" : o.hoursWithoutEstimate >= 24 ? "text-amber-600 font-semibold" : "text-gray-700"} />
+            )}
+          </div>
+
+          {/* Master */}
+          {(o.masterAlias || o.masterPhone) && (
+            <div className="bg-blue-50 rounded-xl p-3">
+              <p className="text-[10px] uppercase tracking-wider font-semibold text-blue-400 mb-2">Мастер</p>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <User className="w-4 h-4 text-blue-500" />
+                  <span className="font-semibold text-blue-800">{o.masterAlias ?? "—"}</span>
+                </div>
+                {o.masterPhone && (
+                  <a href={`tel:${o.masterPhone}`} onClick={e => e.stopPropagation()}
+                    className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800">
+                    <Phone className="w-3.5 h-3.5" />{o.masterPhone}
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Client */}
+          {(o.clientName || o.clientPhone) && (
+            <div className="bg-gray-50 rounded-xl p-3">
+              <p className="text-[10px] uppercase tracking-wider font-semibold text-gray-400 mb-2">Клиент</p>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <User className="w-4 h-4 text-gray-500" />
+                  <span className="font-semibold text-gray-800">{o.clientName ?? "—"}</span>
+                </div>
+                {o.clientPhone && (
+                  <a href={`tel:${o.clientPhone}`} onClick={e => e.stopPropagation()}
+                    className="flex items-center gap-1 text-xs font-medium text-gray-600 hover:text-gray-900">
+                    <Phone className="w-3.5 h-3.5" />{o.clientPhone}
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Estimate & payment */}
+          {o.receiptId && (
+            <div className="bg-emerald-50 rounded-xl p-3 space-y-2">
+              <p className="text-[10px] uppercase tracking-wider font-semibold text-emerald-500 mb-1">Смета и оплата</p>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-gray-600">Итого</span>
+                <span className="font-bold text-emerald-700">{fmt(o.receiptTotalAmount ?? 0)}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-gray-600">Предоплата</span>
+                <span className="font-semibold text-gray-800">{fmt(o.receiptPrepaymentAmount ?? 0)}</span>
+              </div>
+              {o.receiptCreatedAt && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-600">Смета создана</span>
+                  <span className="text-gray-700">{fmtDate(o.receiptCreatedAt)}</span>
+                </div>
+              )}
+              {payStatus && (
+                <div className={`flex items-center gap-2 text-xs font-semibold px-2.5 py-1.5 rounded-lg mt-1 ${payStatus.cls}`}>
+                  {payStatus.label}
+                  {o.hoursWithoutPayment !== null && !o.receiptPrepaymentPaidAt && (
+                    <span className="ml-auto font-normal opacity-75">{fmtHours(o.hoursWithoutPayment)} ожидания</span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Commission */}
+          {o.commission && (
+            <div className="flex items-center justify-between text-sm px-1">
+              <span className="text-gray-500">Ожид. комиссия</span>
+              <span className="font-semibold text-gray-700">{fmt(o.commission)}</span>
+            </div>
+          )}
+
+          {/* Problem reasons */}
+          {o.problemReasons.length > 0 && (
+            <div className="bg-red-50 rounded-xl p-3">
+              <div className="flex items-center gap-1.5 mb-2">
+                <AlertTriangle className="w-3.5 h-3.5 text-red-500" />
+                <p className="text-[10px] uppercase tracking-wider font-semibold text-red-400">Проблемы</p>
+              </div>
+              <div className="space-y-1">
+                {o.problemReasons.map((r, i) => (
+                  <p key={i} className="text-sm text-red-700 font-medium">{r}</p>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-3 border-t border-gray-100 flex gap-2 flex-shrink-0">
+          {o.receiptToken && (
+            <button onClick={e => { e.stopPropagation(); window.open(`/receipt/${o.receiptToken}`, "_blank"); }}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-sm font-medium transition-colors">
+              <Eye className="w-4 h-4" />Смета
+            </button>
+          )}
+          {o.clientPhone && (
+            <a href={`tel:${o.clientPhone}`} onClick={e => e.stopPropagation()}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-gray-50 text-gray-700 hover:bg-gray-100 text-sm font-medium transition-colors">
+              <Phone className="w-4 h-4" />Клиент
+            </a>
+          )}
+          <button onClick={e => { e.stopPropagation(); window.open(`/leads?openOrder=${o.id}`, "_blank"); }}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 text-sm font-medium transition-colors">
+            <ClipboardList className="w-4 h-4" />Открыть заказ
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InfoBlock({ icon: Icon, label, value, valueClass = "text-gray-700" }: {
+  icon: React.ElementType; label: string; value: string; valueClass?: string;
+}) {
+  return (
+    <div className="flex items-start gap-2">
+      <Icon className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" />
+      <div>
+        <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wide">{label}</p>
+        <p className={`text-sm font-semibold ${valueClass}`}>{value}</p>
+      </div>
+    </div>
+  );
 }
