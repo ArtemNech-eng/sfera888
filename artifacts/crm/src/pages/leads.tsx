@@ -17,10 +17,27 @@ import {
   CheckCircle2, Clock, ArrowRight, ExternalLink, AlertTriangle, History, Send, Users,
   UserCheck, DollarSign, Check, AlertCircle, FileText, Timer, RefreshCw, XCircle,
   ReceiptText, Copy, Bell, Archive, Inbox, Briefcase, CopyX, ClipboardList,
-  CalendarDays, ChevronRight
+  CalendarDays, ChevronRight, Eye, Lock, Activity,
 } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
+
+type WMTab = "all" | "with_estimate" | "without_estimate" | "waiting_payment" | "problematic";
+
+type WorkOrder = {
+  id: number; leadId: number | null; status: string;
+  city: string; district: string; serviceType: string; area: number;
+  commission: number | null; proposedAmount: number | null;
+  assignedAt: string | null; updatedAt: string | null;
+  masterId: number | null; masterAlias: string | null;
+  masterPhone: string | null; masterMaxChatId: string | null; masterFomoDisabled: boolean;
+  clientName: string | null; clientPhone: string | null;
+  receiptId: number | null; receiptTotalAmount: number | null;
+  receiptPrepaymentAmount: number | null; receiptCreatedAt: string | null;
+  receiptPrepaymentPaidAt: string | null; receiptToken: string | null;
+  hoursWithoutEstimate: number | null; hoursWithoutPayment: number | null;
+  problemReasons: string[];
+};
 
 interface ServiceRow {
   type: string;
@@ -196,6 +213,11 @@ export default function Leads() {
   // ── Orders (Tab 2) state ──────────────────────────────────────────────────
   const [orderSubFilter, setOrderSubFilter] = useState<"all" | "waiting_master" | "master_assigned" | "in_progress" | "cancellation_requested">("all");
   const [orderSearch, setOrderSearch] = useState("");
+  const [wmTab, setWmTab] = useState<WMTab>("all");
+  const [wmData, setWmData] = useState<WorkOrder[]>([]);
+  const [wmLoading, setWmLoading] = useState(false);
+  const [wmSearch, setWmSearch] = useState("");
+  const [wmSendingTo, setWmSendingTo] = useState<number | null>(null);
   const [openDispatchId, setOpenDispatchId] = useState<number | null>(() => {
     const p = new URLSearchParams(window.location.search);
     const hl = parseInt(p.get("highlight") ?? "");
@@ -321,6 +343,51 @@ export default function Leads() {
       if (found) { setSelectedLead(found); window.history.replaceState({}, "", window.location.pathname); }
     }
   }, [leads]);
+
+  // ── Work Monitor fetch ────────────────────────────────────────────────────
+  const fetchWm = useCallback(async () => {
+    setWmLoading(true);
+    try {
+      const res = await fetch("/api/work-monitor", { credentials: "include" });
+      if (res.ok) { const json = await res.json(); setWmData(json.orders ?? []); }
+    } catch {}
+    finally { setWmLoading(false); }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "work") { fetchWm(); }
+  }, [activeTab, fetchWm]);
+
+  const wmFiltered = useMemo(() => {
+    let list = wmData;
+    if (wmTab === "with_estimate") list = list.filter(o => o.receiptId !== null);
+    else if (wmTab === "without_estimate") list = list.filter(o => o.receiptId === null && (o.hoursWithoutEstimate ?? 0) > 24);
+    else if (wmTab === "waiting_payment") list = list.filter(o => o.receiptId !== null && !o.receiptPrepaymentPaidAt);
+    else if (wmTab === "problematic") list = list.filter(o => o.problemReasons.length > 0);
+    if (wmSearch.trim()) {
+      const q = wmSearch.toLowerCase();
+      list = list.filter(o =>
+        String(o.leadId ?? o.id).includes(q) ||
+        (o.masterAlias ?? "").toLowerCase().includes(q) ||
+        (o.clientName ?? "").toLowerCase().includes(q) ||
+        o.city.toLowerCase().includes(q) ||
+        o.serviceType.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [wmData, wmTab, wmSearch]);
+
+  const wmStats = useMemo(() => {
+    const withEst = wmData.filter(o => o.receiptId !== null);
+    const withoutEst = wmData.filter(o => o.receiptId === null && (o.hoursWithoutEstimate ?? 0) > 24);
+    const waitPay = wmData.filter(o => o.receiptId !== null && !o.receiptPrepaymentPaidAt);
+    const prob = wmData.filter(o => o.problemReasons.length > 0);
+    const sumWithEst = withEst.reduce((s, o) => s + (o.receiptTotalAmount ?? 0), 0);
+    const sumWithoutEst = withoutEst.reduce((s, o) => s + (o.commission ?? 0), 0);
+    const sumWaitPay = waitPay.reduce((s, o) => s + (o.receiptPrepaymentAmount ?? 0), 0);
+    const sumProb = prob.reduce((s, o) => s + (o.receiptTotalAmount ?? o.commission ?? 0), 0);
+    return { withEst, withoutEst, waitPay, prob, sumWithEst, sumWithoutEst, sumWaitPay, sumProb };
+  }, [wmData]);
 
   // ── Computed ──────────────────────────────────────────────────────────────
   const openOrder = openDispatchId ? orders?.find(o => o.id === openDispatchId) : null;
@@ -941,19 +1008,48 @@ export default function Leads() {
           ══════════════════════════════════════════════════════════ */}
           {activeTab === "work" && (
             <>
-              {/* Summary stats */}
+              {/* Work Monitor summary cards */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {[
-                  { label: "Ждут мастера", count: subFilterCounts.waiting_master, color: "amber" },
-                  { label: "Мастер назначен", count: subFilterCounts.master_assigned, color: "blue" },
-                  { label: "В работе", count: subFilterCounts.in_progress, color: "green" },
-                  { label: "Проблемные", count: subFilterCounts.cancellation_requested, color: "red" },
-                ].map(stat => (
-                  <div key={stat.label} className="bg-card rounded-2xl border border-border/50 px-4 py-3">
-                    <p className={`text-xl font-bold ${stat.count > 0 && stat.color === "red" ? "text-red-600" : stat.count > 0 && stat.color === "amber" ? "text-amber-600" : "text-foreground"}`}>{stat.count}</p>
-                    <p className="text-xs text-muted-foreground">{stat.label}</p>
+                <button onClick={() => setWmTab("with_estimate")}
+                  className={`bg-card rounded-2xl border px-4 py-3 text-left transition-all hover:shadow-md ${wmTab === "with_estimate" ? "border-emerald-400 ring-2 ring-emerald-200" : "border-border/50"}`}
+                >
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <ReceiptText className="w-3.5 h-3.5 text-emerald-600" />
+                    <p className="text-[11px] text-muted-foreground font-medium">Со сметой</p>
                   </div>
-                ))}
+                  <p className="text-xl font-bold text-emerald-600">{wmLoading ? "…" : wmStats.withEst.length}</p>
+                  {wmStats.sumWithEst > 0 && <p className="text-[11px] text-muted-foreground mt-0.5">{fmtMoney(wmStats.sumWithEst)}</p>}
+                </button>
+                <button onClick={() => setWmTab("without_estimate")}
+                  className={`bg-card rounded-2xl border px-4 py-3 text-left transition-all hover:shadow-md ${wmTab === "without_estimate" ? "border-amber-400 ring-2 ring-amber-200" : "border-border/50"}`}
+                >
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Timer className="w-3.5 h-3.5 text-amber-600" />
+                    <p className="text-[11px] text-muted-foreground font-medium">Без сметы &gt;24ч</p>
+                  </div>
+                  <p className={`text-xl font-bold ${wmStats.withoutEst.length > 0 ? "text-amber-600" : "text-foreground"}`}>{wmLoading ? "…" : wmStats.withoutEst.length}</p>
+                  {wmStats.sumWithoutEst > 0 && <p className="text-[11px] text-muted-foreground mt-0.5">~{fmtMoney(wmStats.sumWithoutEst)} комиссии</p>}
+                </button>
+                <button onClick={() => setWmTab("waiting_payment")}
+                  className={`bg-card rounded-2xl border px-4 py-3 text-left transition-all hover:shadow-md ${wmTab === "waiting_payment" ? "border-blue-400 ring-2 ring-blue-200" : "border-border/50"}`}
+                >
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <DollarSign className="w-3.5 h-3.5 text-blue-600" />
+                    <p className="text-[11px] text-muted-foreground font-medium">Ждут оплату</p>
+                  </div>
+                  <p className={`text-xl font-bold ${wmStats.waitPay.length > 0 ? "text-blue-600" : "text-foreground"}`}>{wmLoading ? "…" : wmStats.waitPay.length}</p>
+                  {wmStats.sumWaitPay > 0 && <p className="text-[11px] text-muted-foreground mt-0.5">{fmtMoney(wmStats.sumWaitPay)} предоплата</p>}
+                </button>
+                <button onClick={() => setWmTab("problematic")}
+                  className={`bg-card rounded-2xl border px-4 py-3 text-left transition-all hover:shadow-md ${wmTab === "problematic" ? "border-red-400 ring-2 ring-red-200" : "border-border/50"}`}
+                >
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
+                    <p className="text-[11px] text-muted-foreground font-medium">Проблемные</p>
+                  </div>
+                  <p className={`text-xl font-bold ${wmStats.prob.length > 0 ? "text-red-600" : "text-foreground"}`}>{wmLoading ? "…" : wmStats.prob.length}</p>
+                  {wmStats.sumProb > 0 && <p className="text-[11px] text-muted-foreground mt-0.5">{fmtMoney(wmStats.sumProb)} зависло</p>}
+                </button>
               </div>
 
               {/* Cancellation requests banner */}
@@ -1049,27 +1145,155 @@ export default function Leads() {
                 </div>
               )}
 
-              {/* Sub-filter pills + search */}
+              {/* Monitor sub-tabs + table */}
               <div className="bg-card rounded-2xl border border-border/50 shadow-sm overflow-hidden">
-                <div className="p-4 border-b border-border/50 space-y-3">
-                  <div className="flex flex-wrap gap-2">
-                    {subFilters.map(sf => (
-                      <button key={sf.key} onClick={() => setOrderSubFilter(sf.key)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors ${orderSubFilter === sf.key ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border/60 text-muted-foreground hover:bg-slate-100"}`}
+                <div className="p-3 border-b border-border/50">
+                  <div className="flex flex-wrap gap-2 items-center">
+                    {([
+                      { key: "all",               label: "📋 Все заказы",       count: orders?.length ?? 0 },
+                      { key: "with_estimate",      label: "📄 Со сметой",        count: wmStats.withEst.length },
+                      { key: "without_estimate",   label: "⏰ Без сметы >24ч",   count: wmStats.withoutEst.length },
+                      { key: "waiting_payment",    label: "💰 Ждут оплату",      count: wmStats.waitPay.length },
+                      { key: "problematic",        label: "🔴 Проблемные",       count: wmStats.prob.length },
+                    ] as { key: WMTab; label: string; count: number }[]).map(t => (
+                      <button key={t.key} onClick={() => setWmTab(t.key)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors ${wmTab === t.key ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border/60 text-muted-foreground hover:bg-slate-100"}`}
                       >
-                        {sf.label}
-                        {subFilterCounts[sf.key] > 0 && <span className="ml-1.5 font-bold">{subFilterCounts[sf.key]}</span>}
+                        {t.label}
+                        {t.count > 0 && <span className={`ml-1.5 font-bold ${wmTab === t.key ? "opacity-80" : ""}`}>{t.count}</span>}
                       </button>
                     ))}
                     <div className="relative ml-auto">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-                      <input value={orderSearch} onChange={e => setOrderSearch(e.target.value)} placeholder="Поиск..." className="w-full pl-8 pr-8 py-1.5 text-sm bg-background border border-border/60 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30" />
-                      {orderSearch && <button onClick={() => setOrderSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="w-3.5 h-3.5" /></button>}
+                      {wmTab === "all"
+                        ? <><input value={orderSearch} onChange={e => setOrderSearch(e.target.value)} placeholder="Поиск..." className="w-full pl-8 pr-8 py-1.5 text-sm bg-background border border-border/60 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                          {orderSearch && <button onClick={() => setOrderSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="w-3.5 h-3.5" /></button>}</>
+                        : <><input value={wmSearch} onChange={e => setWmSearch(e.target.value)} placeholder="Поиск..." className="w-full pl-8 pr-8 py-1.5 text-sm bg-background border border-border/60 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                          {wmSearch && <button onClick={() => setWmSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="w-3.5 h-3.5" /></button>}</>
+                      }
                     </div>
+                    <button onClick={fetchWm} title="Обновить" className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-slate-100 transition-colors">
+                      {wmLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                    </button>
                   </div>
+                  {wmTab === "all" && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {subFilters.map(sf => (
+                        <button key={sf.key} onClick={() => setOrderSubFilter(sf.key)}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-colors ${orderSubFilter === sf.key ? "bg-slate-700 text-white border-slate-700" : "bg-background border-border/60 text-muted-foreground hover:bg-slate-100"}`}
+                        >
+                          {sf.label}
+                          {subFilterCounts[sf.key] > 0 && <span className="ml-1">{subFilterCounts[sf.key]}</span>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Orders table */}
+                {wmTab !== "all" ? (
+                  /* ── MONITORING TABLE ─────────────────────────────────── */
+                  <div className="overflow-x-auto">
+                    {wmLoading ? (
+                      <div className="py-12 text-center"><Loader2 className="w-6 h-6 animate-spin text-primary mx-auto" /></div>
+                    ) : wmFiltered.length === 0 ? (
+                      <div className="py-12 text-center text-muted-foreground text-sm">
+                        {wmSearch ? "Ничего не найдено" : "Заказов в этой категории нет"}
+                      </div>
+                    ) : (
+                      <table className="w-full text-sm text-left">
+                        <thead className="bg-slate-50/50 text-muted-foreground font-medium border-b border-border/50 text-xs">
+                          <tr>
+                            <th className="px-3 py-2.5 pl-4">ID</th>
+                            <th className="px-3 py-2.5">Услуга · Город</th>
+                            <th className="px-3 py-2.5">Мастер</th>
+                            <th className="px-3 py-2.5">Смета</th>
+                            <th className="px-3 py-2.5">Ожидание</th>
+                            {wmTab === "problematic" && <th className="px-3 py-2.5">Проблема</th>}
+                            <th className="px-3 py-2.5 pr-4 text-right">Уведомить Max</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border/50">
+                          {wmFiltered.map(o => {
+                            const rowBg = o.problemReasons.length > 0 ? "bg-red-50/40" : o.receiptId && !o.receiptPrepaymentPaidAt ? "bg-blue-50/30" : o.receiptId ? "bg-emerald-50/20" : (o.hoursWithoutEstimate ?? 0) > 48 ? "bg-red-50/30" : (o.hoursWithoutEstimate ?? 0) > 24 ? "bg-amber-50/30" : "";
+                            const hoursLabel = (h: number | null) => {
+                              if (!h) return "—";
+                              if (h < 1) return "<1ч";
+                              if (h < 24) return `${Math.round(h)}ч`;
+                              return `${Math.floor(h/24)}д ${Math.round(h%24)}ч`;
+                            };
+                            const getTemplate = () => {
+                              if (wmTab === "without_estimate") return `Привет! По заказу #${o.leadId ?? o.id} (${o.serviceType}, ${o.city}) смета не отправлена уже ${hoursLabel(o.hoursWithoutEstimate)}. Пожалуйста, отправьте смету клиенту как можно скорее.`;
+                              if (wmTab === "waiting_payment") return `По заказу #${o.leadId ?? o.id} (${o.serviceType}, ${o.city}) ожидается предоплата ${fmtMoney(o.receiptPrepaymentAmount ?? 0)}. Уточните статус оплаты у клиента.`;
+                              if (wmTab === "problematic") return `По заказу #${o.leadId ?? o.id}: ${o.problemReasons.join(", ")}. Требуется ваше внимание.`;
+                              return `По заказу #${o.leadId ?? o.id} (${o.serviceType}, ${o.city}) — смета на ${fmtMoney(o.receiptTotalAmount ?? 0)} принята. Координируйте оплату с клиентом.`;
+                            };
+                            return (
+                              <tr key={o.id} className={`transition-colors hover:bg-slate-50 cursor-pointer ${rowBg}`}
+                                onClick={() => { setOpenDispatchId(o.id); setActiveTab("work"); }}
+                              >
+                                <td className="px-3 py-2.5 pl-4 whitespace-nowrap">
+                                  <span className="font-semibold text-foreground">#{o.leadId ?? o.id}</span>
+                                </td>
+                                <td className="px-3 py-2.5 max-w-[200px]">
+                                  <p className="font-medium text-foreground truncate text-xs">{o.serviceType}</p>
+                                  <p className="text-[11px] text-muted-foreground">{o.city}{o.district ? `, ${o.district}` : ""}</p>
+                                </td>
+                                <td className="px-3 py-2.5">
+                                  {o.masterAlias
+                                    ? <span className="text-xs font-medium text-blue-600">{o.masterAlias}</span>
+                                    : <span className="text-xs text-muted-foreground/50">не назначен</span>}
+                                </td>
+                                <td className="px-3 py-2.5 whitespace-nowrap">
+                                  {o.receiptId
+                                    ? <span className="text-xs font-semibold text-emerald-600">{fmtMoney(o.receiptTotalAmount ?? 0)}</span>
+                                    : <span className="text-xs text-muted-foreground/40">нет сметы</span>}
+                                  {o.receiptPrepaymentPaidAt && <div className="text-[10px] text-emerald-500 mt-0.5">✓ оплачено</div>}
+                                  {o.receiptId && !o.receiptPrepaymentPaidAt && <div className="text-[10px] text-amber-500 mt-0.5">💰 ждёт оплаты</div>}
+                                </td>
+                                <td className="px-3 py-2.5 whitespace-nowrap">
+                                  {o.receiptId
+                                    ? <span className={`text-xs ${!o.receiptPrepaymentPaidAt ? "text-amber-600 font-medium" : "text-muted-foreground"}`}>{hoursLabel(o.hoursWithoutPayment)}</span>
+                                    : <span className={`text-xs ${(o.hoursWithoutEstimate ?? 0) > 48 ? "text-red-600 font-bold" : (o.hoursWithoutEstimate ?? 0) > 24 ? "text-amber-600 font-medium" : "text-muted-foreground"}`}>{hoursLabel(o.hoursWithoutEstimate)}</span>}
+                                </td>
+                                {wmTab === "problematic" && (
+                                  <td className="px-3 py-2.5 max-w-[180px]">
+                                    <p className="text-[11px] text-red-600 truncate">{o.problemReasons.join(", ")}</p>
+                                  </td>
+                                )}
+                                <td className="px-3 py-2.5 pr-4 text-right" onClick={e => e.stopPropagation()}>
+                                  {o.masterMaxChatId ? (
+                                    <button
+                                      disabled={wmSendingTo === o.id}
+                                      onClick={async (e) => {
+                                        e.stopPropagation();
+                                        const msg = prompt("Сообщение мастеру:", getTemplate());
+                                        if (!msg) return;
+                                        setWmSendingTo(o.id);
+                                        try {
+                                          await fetch("/api/max-bot/send", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chatId: o.masterMaxChatId, message: msg }) });
+                                          toast({ title: "Сообщение отправлено", description: o.masterAlias ?? "" });
+                                        } catch { toast({ title: "Ошибка отправки", variant: "destructive" }); }
+                                        finally { setWmSendingTo(null); }
+                                      }}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg text-[11px] font-medium disabled:opacity-50"
+                                    >
+                                      {wmSendingTo === o.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <MessageSquare className="w-3 h-3" />}
+                                      Max
+                                    </button>
+                                  ) : (
+                                    <span className="text-[11px] text-muted-foreground/40">нет чата</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                ) : (
+                  /* ── STANDARD ORDERS TABLE ────────────────────────────── */
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm text-left">
                     <thead className="bg-slate-50/50 text-muted-foreground font-medium border-b border-border/50 text-xs">
@@ -1148,6 +1372,7 @@ export default function Leads() {
                     </tbody>
                   </table>
                 </div>
+                )}
               </div>
             </>
           )}
