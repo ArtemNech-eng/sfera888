@@ -112,12 +112,12 @@ export function Layout({ children }: LayoutProps) {
 
     { href: "/leads",          label: "Заявки",                icon: Inbox,            permKey: "leads",        badge: leadsBadge > 0 ? leadsBadge : null },
     { href: "/work-monitor",   label: "В работе",             icon: Activity,         permKey: "orders" },
+    { href: "/finance",     label: "Финансы",              icon: Wallet,          permKey: "finance" },
     { href: "/masters",         label: "Мастера",              icon: Users,           permKey: "masters" },
     { href: "/master-control",  label: "Контроль мастеров",    icon: Brain,           permKey: "masters" },
     { href: "/checkins",        label: "Готовность",           icon: CalendarCheck,   permKey: "masters" },
     { href: "/tasks",       label: "Задачи",               icon: ClipboardList,   permKey: "tasks",       badge: openTasksCount > 0 ? openTasksCount : null },
     { href: "__traffic__",  label: "__group__",            icon: TrendingUp,      permKey: "leads" },
-    { href: "/finance",     label: "Финансы",              icon: Wallet,          permKey: "finance" },
     { href: "/analytics",   label: "Аналитика",            icon: BarChart3,       permKey: "analytics" },
     { href: "/trash",       label: "Корзина",              icon: Trash2,          permKey: "trash" },
     { href: "/ai-office",   label: "ИИ Офис",              icon: Bot,             permKey: "ai-office" },
