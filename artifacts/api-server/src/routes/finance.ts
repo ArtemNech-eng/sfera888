@@ -4,7 +4,7 @@ import { eq, and, gte, lte, sql, inArray } from "drizzle-orm";
 import { requirePermission } from "../middlewares/requireAuth.js";
 import { sendPushToMaster } from "../lib/push.js";
 import { checkOverdueTransactions, countActiveMasterOrders, getColumnIdForActiveCount } from "../lib/orderEligibility.js";
-import { sendMaxMessage } from "../maxBot.js";
+import { sendMaxMessage, sendMaxWithButtons } from "../maxBot.js";
 
 const router = Router();
 const adminOnly   = requirePermission("finance");
@@ -61,6 +61,41 @@ function computeDaysOverdue(createdAt: Date, now = new Date()): number {
 const REMIND_DEDUP_HOURS  = 24;
 const REMIND_ALL_DEDUP_H  = 8;
 
+async function isTransactionSnoozed(txId: number): Promise<{ snoozed: boolean; until: Date | null; note: string | null }> {
+  const r = await db.execute(sql`
+    SELECT snooze_until, snooze_note FROM transactions WHERE id = ${txId}
+  `);
+  const row = r.rows[0] as any;
+  if (!row?.snooze_until) return { snoozed: false, until: null, note: null };
+  const until = new Date(row.snooze_until);
+  return { snoozed: until > new Date(), until, note: row.snooze_note ?? null };
+}
+
+async function isMasterSnoozed(masterId: number): Promise<{ snoozed: boolean; until: Date | null }> {
+  const r = await db.execute(sql`
+    SELECT MAX(snooze_until) AS max_snooze FROM transactions
+    WHERE master_id = ${masterId} AND payment_status IN ('pending', 'overdue')
+      AND snooze_until > NOW()
+  `);
+  const maxSnooze = (r.rows[0] as any)?.max_snooze;
+  if (!maxSnooze) return { snoozed: false, until: null };
+  return { snoozed: true, until: new Date(maxSnooze) };
+}
+
+function remindButtons(txId: number | string): { text: string; payload: string }[][] {
+  const ref = String(txId);
+  return [
+    [
+      { text: "✅ Уже оплатил", payload: `fin:paid:${ref}` },
+      { text: "📅 Через 3 дня",  payload: `fin:snooze:3:${ref}` },
+    ],
+    [
+      { text: "📅 Через неделю", payload: `fin:snooze:7:${ref}` },
+      { text: "✏️ Указать дату",  payload: `fin:snooze:custom:${ref}` },
+    ],
+  ];
+}
+
 async function wasFinanceReminded(
   scenario: string, orderId: number, masterId: number, hours: number
 ): Promise<boolean> {
@@ -94,7 +129,7 @@ router.get("/transactions", opsAndAdmin, async (req, res) => {
   const rows = await db.execute(sql`
     SELECT t.id, t.order_id, t.master_id, t.order_amount, t.commission,
            t.prepayment_deducted, t.payment_status, t.source_type,
-           t.created_at, t.paid_at,
+           t.created_at, t.paid_at, t.snooze_until, t.snooze_note,
            m.alias AS master_alias, m.city AS master_city, m.phone AS master_phone,
            o.service_type, o.city AS order_city, o.area, o.district,
            o.client_name, o.client_phone, o.lead_id,
@@ -157,6 +192,8 @@ router.get("/transactions", opsAndAdmin, async (req, res) => {
       paidAt:              t.paid_at ? toIsoUtc(t.paid_at) : null,
       dueDate:             computeDueDate(createdAt).toISOString(),
       daysOverdue,
+      snoozeUntil:         t.snooze_until ? toIsoUtc(t.snooze_until) : null,
+      snoozeNote:          t.snooze_note ?? null,
       partialPayments:     partials.map(p => ({
         id: p.id, amount: Number(p.amount), note: p.note ?? null,
         paidAt: toIsoUtc(p.paidAt),
@@ -334,6 +371,16 @@ router.post("/transactions/:id/remind", opsAndAdmin, async (req, res) => {
   if (t.payment_status === "paid") return res.status(400).json({ error: "Already paid" });
   if (!t.max_chat_id) return res.status(400).json({ error: "Мастер не подключён к Max" });
 
+  // ── Snooze check ────────────────────────────────────────────────────────────
+  const snoozeInfo = await isTransactionSnoozed(id);
+  if (snoozeInfo.snoozed && snoozeInfo.until) {
+    const snoozeDate = snoozeInfo.until.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+    return res.status(429).json({
+      error: `Мастер отложил оплату до ${snoozeDate}${snoozeInfo.note ? ` (${snoozeInfo.note})` : ""}`,
+      snoozedUntil: snoozeInfo.until.toISOString(),
+    });
+  }
+
   // ── Dedup: не слать чаще раза в 24ч по одной транзакции ────────────────────
   const alreadySent = await wasFinanceReminded(
     "finance-remind", t.order_id, t.master_id, REMIND_DEDUP_HOURS
@@ -357,7 +404,7 @@ router.post("/transactions/:id/remind", opsAndAdmin, async (req, res) => {
     `Срок: ${dueDateStr}\n\n` +
     `Оплатите на реквизиты в приложении → раздел Оплата.`;
 
-  await sendMaxMessage(t.max_chat_id, text).catch(console.error);
+  await sendMaxWithButtons(t.max_chat_id, text, remindButtons(id)).catch(console.error);
   await recordFinanceRemind("finance-remind", t.order_id, t.master_id);
   res.json({ ok: true });
 });
@@ -383,8 +430,17 @@ router.post("/masters/:masterId/remind-all", opsAndAdmin, async (req, res) => {
   const master = txList[0];
   if (!master.max_chat_id) return res.status(400).json({ error: "Мастер не подключён к Max" });
 
+  // ── Snooze check ────────────────────────────────────────────────────────────
+  const masterSnooze = await isMasterSnoozed(masterId);
+  if (masterSnooze.snoozed && masterSnooze.until) {
+    const snoozeDate = masterSnooze.until.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+    return res.status(429).json({
+      error: `Мастер отложил оплату до ${snoozeDate}`,
+      snoozedUntil: masterSnooze.until.toISOString(),
+    });
+  }
+
   // ── Dedup: не слать сводку чаще раза в 8ч на одного мастера ───────────────
-  // Используем orderId = 0 как "сводное" напоминание без привязки к конкретному заказу
   const alreadySent = await wasFinanceReminded(
     "finance-remind-all", 0, masterId, REMIND_ALL_DEDUP_H
   );
@@ -395,21 +451,75 @@ router.post("/masters/:masterId/remind-all", opsAndAdmin, async (req, res) => {
     });
   }
 
-  const total    = txList.reduce((s, t) => s + Number(t.commission), 0);
-  const orderLines = txList.map(t =>
+  // Skip snoozed transactions from the summary
+  const activeTxList = txList.filter(t => !t.snooze_until || new Date(t.snooze_until) <= new Date());
+  const listToShow = activeTxList.length > 0 ? activeTxList : txList;
+
+  const total      = listToShow.reduce((s, t) => s + Number(t.commission), 0);
+  const orderLines = listToShow.map(t =>
     `Заказ #${t.order_id}: ${Number(t.commission).toLocaleString("ru-RU")} ₽`
   ).join("\n");
 
   const text =
     `💰 Сводка задолженности\n\n` +
-    `${master.alias}, у вас ${txList.length} неоплаченных комиссий:\n\n` +
+    `${master.alias}, у вас ${listToShow.length} неоплаченных комиссий:\n\n` +
     `${orderLines}\n\n` +
     `Итого: ${total.toLocaleString("ru-RU")} ₽\n\n` +
     `Оплатите на реквизиты в приложении → раздел Оплата.`;
 
-  await sendMaxMessage(master.max_chat_id, text).catch(console.error);
+  await sendMaxWithButtons(master.max_chat_id, text, remindButtons(`all:${masterId}`)).catch(console.error);
   await recordFinanceRemind("finance-remind-all", 0, masterId);
-  res.json({ ok: true, count: txList.length, total });
+  res.json({ ok: true, count: listToShow.length, total });
+});
+
+// ─── POST /api/finance/transactions/:id/snooze (set snooze from CRM or bot) ──
+
+router.post("/transactions/:id/snooze", opsAndAdmin, async (req, res) => {
+  const id = parseInt(req.params.id);
+  const { days, date, note } = req.body;
+  let snoozeUntil: Date;
+  if (date) {
+    snoozeUntil = new Date(date);
+    if (isNaN(snoozeUntil.getTime())) return res.status(400).json({ error: "Неверный формат даты" });
+  } else {
+    snoozeUntil = new Date(Date.now() + (Number(days ?? 3)) * 86400_000);
+  }
+  await db.execute(sql`
+    UPDATE transactions
+    SET snooze_until = ${snoozeUntil.toISOString()}, snooze_note = ${note ?? null}
+    WHERE id = ${id}
+  `);
+  res.json({ ok: true, snoozeUntil: snoozeUntil.toISOString() });
+});
+
+// ─── DELETE /api/finance/transactions/:id/snooze (clear snooze from CRM) ─────
+
+router.delete("/transactions/:id/snooze", opsAndAdmin, async (req, res) => {
+  const id = parseInt(req.params.id);
+  await db.execute(sql`
+    UPDATE transactions SET snooze_until = NULL, snooze_note = NULL WHERE id = ${id}
+  `);
+  res.json({ ok: true });
+});
+
+// ─── POST /api/finance/masters/:masterId/snooze (snooze all unpaid for master) ─
+
+router.post("/masters/:masterId/snooze", opsAndAdmin, async (req, res) => {
+  const masterId = parseInt(req.params.masterId);
+  const { days, date, note } = req.body;
+  let snoozeUntil: Date;
+  if (date) {
+    snoozeUntil = new Date(date);
+    if (isNaN(snoozeUntil.getTime())) return res.status(400).json({ error: "Неверный формат даты" });
+  } else {
+    snoozeUntil = new Date(Date.now() + (Number(days ?? 3)) * 86400_000);
+  }
+  const result = await db.execute(sql`
+    UPDATE transactions
+    SET snooze_until = ${snoozeUntil.toISOString()}, snooze_note = ${note ?? null}
+    WHERE master_id = ${masterId} AND payment_status IN ('pending', 'overdue')
+  `);
+  res.json({ ok: true, snoozeUntil: snoozeUntil.toISOString(), updated: result.rowCount });
 });
 
 // ─── POST /api/finance/masters/:masterId/pay-all ─────────────────────────────

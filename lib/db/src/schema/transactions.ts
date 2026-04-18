@@ -17,6 +17,8 @@ export const transactionsTable = pgTable("transactions", {
   sourceType: text("source_type"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   paidAt: timestamp("paid_at"),
+  snoozeUntil: timestamp("snooze_until"),
+  snoozeNote: text("snooze_note"),
 });
 
 export const insertTransactionSchema = createInsertSchema(transactionsTable).omit({ id: true, createdAt: true });

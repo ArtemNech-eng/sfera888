@@ -41,6 +41,7 @@ interface Transaction {
   totalPartialPaid: number; netPayable: number;
   paymentStatus: string; sourceType: string | null;
   createdAt: string; paidAt: string | null; dueDate: string; daysOverdue: number;
+  snoozeUntil: string | null; snoozeNote: string | null;
   partialPayments: PartialPayment[];
 }
 
@@ -460,9 +461,20 @@ export default function Finance() {
         return;
       }
       if (!r.ok) { const b = await r.json().catch(() => ({})); throw new Error(b.error); }
-      toast.success("Напоминание отправлено");
+      toast.success("Напоминание отправлено мастеру в Max");
       setRemindSent(s => new Set([...s, tx.id]));
     } catch (e: any) { toast.error(e?.message ?? "Не удалось отправить напоминание"); }
+  };
+
+  const doClearSnooze = async (txId: number) => {
+    try {
+      const r = await fetch(`${BASE}/api/finance/transactions/${txId}/snooze`, {
+        method: "DELETE", credentials: "include",
+      });
+      if (!r.ok) throw new Error();
+      toast.success("Отсрочка снята");
+      queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/transactions`] });
+    } catch { toast.error("Не удалось снять отсрочку"); }
   };
 
   const doRemindAll = async (m: MasterStat) => {
@@ -817,7 +829,15 @@ export default function Finance() {
                               <div className="text-muted-foreground">{new Date(tx.dueDate).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}</div>
                               {tx.daysOverdue > 0 && <div className="text-red-600 font-semibold">+{tx.daysOverdue}д</div>}
                             </td>
-                            <td className="px-2 py-2"><StatusBadge status={tx.paymentStatus} /></td>
+                            <td className="px-2 py-2">
+                              <StatusBadge status={tx.paymentStatus} />
+                              {tx.snoozeUntil && new Date(tx.snoozeUntil) > new Date() && (
+                                <div className="flex items-center gap-1 mt-1 text-[10px] text-violet-600 bg-violet-50 rounded px-1 py-0.5 whitespace-nowrap">
+                                  <Clock className="w-2.5 h-2.5" />
+                                  до {new Date(tx.snoozeUntil).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}
+                                </div>
+                              )}
+                            </td>
                             <td className="px-2 py-2">
                               <div className="flex items-center gap-1 justify-end">
                                 {(tx.paymentStatus === "pending" || tx.paymentStatus === "overdue") && <>
@@ -834,6 +854,13 @@ export default function Finance() {
                                     disabled={reminded}>
                                     <Bell className="w-3.5 h-3.5" />
                                   </button>
+                                  {tx.snoozeUntil && new Date(tx.snoozeUntil) > new Date() && (
+                                    <button onClick={() => doClearSnooze(tx.id)}
+                                      title={`Снять отсрочку (до ${new Date(tx.snoozeUntil!).toLocaleDateString("ru-RU")})`}
+                                      className="p-1.5 rounded-lg bg-violet-100 text-violet-700 hover:bg-violet-600 hover:text-white transition-colors">
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
                                 </>}
                                 {tx.partialPayments?.length > 0 && (
                                   <button onClick={() => setExpandedTx(s => { const n = new Set(s); n.has(tx.id) ? n.delete(tx.id) : n.add(tx.id); return n; })}

@@ -312,6 +312,61 @@ async function sendMaxWithButtonsToChat(
   }
 }
 
+// ─── Finance snooze helpers ───────────────────────────────────────────────────
+
+// Pending "указать дату" state: userId → { txRef, expiry }
+const pendingSnoozeInput = new Map<number, { txRef: string; expiry: number }>();
+
+function parseSnoozeDate(text: string): Date | null {
+  const t = text.trim().toLowerCase();
+  // "через N дней/недель"
+  const throughMatch = t.match(/через\s+(\d+)\s*(день|дня|дней|неделю|недели|недель|нед\.?|д\.?)/);
+  if (throughMatch) {
+    const n = parseInt(throughMatch[1]);
+    const isWeeks = /нед/.test(throughMatch[2]);
+    return new Date(Date.now() + n * (isWeeks ? 7 : 1) * 86400_000);
+  }
+  // Just a number → treat as days
+  if (/^\d+$/.test(t)) {
+    const days = parseInt(t);
+    if (days > 0 && days <= 365) return new Date(Date.now() + days * 86400_000);
+  }
+  // dd.mm or dd.mm.yyyy
+  const dateMatch = t.match(/^(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?$/);
+  if (dateMatch) {
+    const day = parseInt(dateMatch[1]);
+    const month = parseInt(dateMatch[2]) - 1;
+    const year = dateMatch[3] ? parseInt(dateMatch[3]) : new Date().getFullYear();
+    const d = new Date(year, month, day);
+    if (!isNaN(d.getTime())) {
+      if (d > new Date()) return d;
+      // If date is in the past, try next year
+      return new Date(year + 1, month, day);
+    }
+  }
+  return null;
+}
+
+async function applyFinanceSnooze(txRef: string, masterId: number, snoozeUntil: Date, note: string): Promise<void> {
+  const { db: fdb, transactionsTable: ftt } = await import("@workspace/db");
+  const { eq, and, inArray: fIn, sql: fsql } = await import("drizzle-orm");
+  if (txRef.startsWith("all:")) {
+    await fdb.execute(fsql`
+      UPDATE transactions
+      SET snooze_until = ${snoozeUntil.toISOString()}, snooze_note = ${note}
+      WHERE master_id = ${masterId} AND payment_status IN ('pending', 'overdue')
+    `);
+  } else {
+    const txId = parseInt(txRef);
+    if (isNaN(txId)) return;
+    await fdb.execute(fsql`
+      UPDATE transactions
+      SET snooze_until = ${snoozeUntil.toISOString()}, snooze_note = ${note}
+      WHERE id = ${txId} AND master_id = ${masterId}
+    `);
+  }
+}
+
 // ─── Webhook handler ──────────────────────────────────────────────────────────
 
 // ── Dedup: Max sometimes delivers the same webhook twice (with delays up to 10+ min) ─────
@@ -373,6 +428,50 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
 
       if (payload === "new:no") {
         await sendOnboarding(userId);
+        return;
+      }
+
+      // ── Finance snooze callbacks ────────────────────────────────────────────
+      if (payload.startsWith("fin:")) {
+        const { db: fdb, mastersTable: fMt } = await import("@workspace/db");
+        const { isNotNull: fIn } = await import("drizzle-orm");
+        const allMasters = await fdb.select().from(fMt).where(fIn(fMt.maxChatId));
+        const master = allMasters.find(m => m.maxChatId === String(userId));
+        if (!master) {
+          await sendMaxMessage(userId, "❌ Аккаунт не найден.");
+          return;
+        }
+
+        if (payload.startsWith("fin:paid:")) {
+          await sendMaxMessage(userId,
+            `✅ Принято! Мы проверим поступление в течение 24 часов.\n\nЕсли возникнут вопросы — свяжемся с вами.`
+          );
+          return;
+        }
+
+        if (payload.startsWith("fin:snooze:custom:")) {
+          const txRef = payload.replace("fin:snooze:custom:", "");
+          pendingSnoozeInput.set(userId, { txRef, expiry: Date.now() + 10 * 60_000 });
+          await sendMaxMessage(userId,
+            `📅 Укажите дату, до которой планируете перевести оплату.\n\n` +
+            `Можно написать:\n• **25.04** или **25.04.2026**\n• **через 10 дней** или **через 2 недели**`
+          );
+          return;
+        }
+
+        // fin:snooze:N:txRef
+        const parts = payload.split(":");
+        if (parts[0] === "fin" && parts[1] === "snooze") {
+          const days = parseInt(parts[2]);
+          const txRef = parts.slice(3).join(":");
+          const snoozeUntil = new Date(Date.now() + days * 86400_000);
+          const snoozeLabel = snoozeUntil.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+          await applyFinanceSnooze(txRef, master.id, snoozeUntil, `Мастер запросил отсрочку на ${days} дней`);
+          await sendMaxMessage(userId,
+            `✅ Принято! Следующее напоминание придёт **${snoozeLabel}**.\n\nЕсли закроете раньше — просто переведите комиссию в приложении.`
+          );
+          return;
+        }
         return;
       }
 
@@ -488,6 +587,37 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
     const { eq, isNotNull } = await import("drizzle-orm");
 
     const lc = text.toLowerCase();
+
+    // ── Pending snooze date input ─────────────────────────────────────────────
+    const pendingSnooze = pendingSnoozeInput.get(userId);
+    if (pendingSnooze) {
+      if (Date.now() > pendingSnooze.expiry) {
+        pendingSnoozeInput.delete(userId);
+      } else {
+        pendingSnoozeInput.delete(userId);
+        const parsed = parseSnoozeDate(text);
+        if (!parsed) {
+          await sendMaxMessage(userId,
+            `❌ Не смог разобрать дату. Попробуйте написать:\n• **25.04** или **25.04.2026**\n• **через 7 дней** или **через 2 недели**`
+          );
+          return;
+        }
+        // Find the master
+        const { db: sdb, mastersTable: smt } = await import("@workspace/db");
+        const { isNotNull: sIn } = await import("drizzle-orm");
+        const allM = await sdb.select().from(smt).where(sIn(smt.maxChatId));
+        const snoozeM = allM.find(m => m.maxChatId === String(userId));
+        if (snoozeM) {
+          await applyFinanceSnooze(pendingSnooze.txRef, snoozeM.id, parsed,
+            `Дата указана мастером: ${text}`);
+        }
+        const label = parsed.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+        await sendMaxMessage(userId,
+          `✅ Принято! Напомним об оплате **${label}**.\n\nЕсли закроете раньше — просто переведите комиссию в приложении.`
+        );
+        return;
+      }
+    }
 
     // ── /start or "регистрация" ───────────────────────────────────────────────
     if (text.startsWith("/start") || ["регистрация", "зарегистрироваться", "register"].includes(lc)) {
