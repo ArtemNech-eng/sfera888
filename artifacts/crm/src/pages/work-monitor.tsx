@@ -471,10 +471,10 @@ function SummaryCard({ icon, label, count, amount, amountLabel, urgent, onClick 
 // ── Shared cells ────────────────────────────────────────────────────────────
 function OrderNumCell({ o }: { o: WorkOrder }) {
   return (
-    <td className="px-3 py-2 whitespace-nowrap">
+    <td className="px-2 py-1.5 whitespace-nowrap">
       <a
         href={`/leads?openOrder=${o.id}`}
-        className="font-semibold text-blue-600 hover:underline"
+        className="font-semibold text-blue-600 hover:underline text-xs"
         onClick={e => e.stopPropagation()}
       >
         #{o.leadId ?? o.id}
@@ -485,15 +485,15 @@ function OrderNumCell({ o }: { o: WorkOrder }) {
 
 function MasterCell({ o }: { o: WorkOrder }) {
   return (
-    <td className="px-3 py-2">
+    <td className="px-2 py-1.5 max-w-[130px]">
       <div className="flex items-center gap-1">
-        <span className="font-medium text-gray-800 whitespace-nowrap">{o.masterAlias ?? "—"}</span>
+        <span className="font-medium text-gray-800 text-xs truncate">{o.masterAlias ?? "—"}</span>
         {!o.masterFomoDisabled && o.hoursWithoutEstimate !== null && o.hoursWithoutEstimate >= 24 && (
-          <Lock className="w-3 h-3 text-orange-500" title="Возможна ФОМО-блокировка" />
+          <Lock className="w-3 h-3 flex-shrink-0 text-orange-500" />
         )}
       </div>
       {o.masterPhone && (
-        <a href={`tel:${o.masterPhone}`} className="text-[11px] text-emerald-600 hover:underline">
+        <a href={`tel:${o.masterPhone}`} className="text-[10px] text-emerald-600 hover:underline">
           {o.masterPhone}
         </a>
       )}
@@ -501,35 +501,22 @@ function MasterCell({ o }: { o: WorkOrder }) {
   );
 }
 
-function ClientCell({ o }: { o: WorkOrder }) {
+function ClientCityCell({ o }: { o: WorkOrder }) {
   return (
-    <td className="px-3 py-2">
-      <p className="font-medium text-gray-800 whitespace-nowrap text-xs">{o.clientName ?? "—"}</p>
-      {o.clientPhone && (
-        <a href={`tel:${o.clientPhone}`} className="text-[11px] text-emerald-600 hover:underline">
-          {o.clientPhone}
-        </a>
-      )}
-    </td>
-  );
-}
-
-function CityCell({ o }: { o: WorkOrder }) {
-  return (
-    <td className="px-3 py-2 text-xs text-gray-600 whitespace-nowrap">
-      <div className="flex items-center gap-0.5">
-        <MapPin className="w-3 h-3" />
-        {o.city}
+    <td className="px-2 py-1.5 max-w-[140px]">
+      <p className="font-medium text-gray-800 text-xs truncate">{o.clientName ?? "—"}</p>
+      <div className="flex items-center gap-0.5 text-[10px] text-gray-400">
+        <MapPin className="w-2.5 h-2.5 flex-shrink-0" />
+        <span className="truncate">{o.city}{o.district ? `, ${o.district}` : ""}</span>
       </div>
-      <div className="text-[10px] text-gray-400">{o.district}</div>
     </td>
   );
 }
 
 function ServiceCell({ o }: { o: WorkOrder }) {
   return (
-    <td className="px-3 py-2 text-xs text-gray-600">
-      <p className="whitespace-nowrap max-w-[120px] truncate">{o.serviceType}</p>
+    <td className="px-2 py-1.5 max-w-[140px]">
+      <p className="text-xs text-gray-700 truncate">{o.serviceType}</p>
       {o.area > 0 && <p className="text-[10px] text-gray-400">{o.area} м²</p>}
     </td>
   );
@@ -546,15 +533,13 @@ type ActionProps = {
 // ── ALL tab ────────────────────────────────────────────────────────────────
 function AllHeaders() {
   return <>
-    <th className="px-3 py-2 text-left">№</th>
-    <th className="px-3 py-2 text-left">Мастер</th>
-    <th className="px-3 py-2 text-left">Клиент</th>
-    <th className="px-3 py-2 text-left">Город</th>
-    <th className="px-3 py-2 text-left">Вид работ</th>
-    <th className="px-3 py-2 text-left">Смета</th>
-    <th className="px-3 py-2 text-left">Предоплата</th>
-    <th className="px-3 py-2 text-left">Статус</th>
-    <th className="px-3 py-2 text-left">Действия</th>
+    <th className="px-2 py-2 text-left">№</th>
+    <th className="px-2 py-2 text-left">Мастер</th>
+    <th className="px-2 py-2 text-left">Клиент · Город</th>
+    <th className="px-2 py-2 text-left">Вид работ</th>
+    <th className="px-2 py-2 text-left">Смета · Оплата</th>
+    <th className="px-2 py-2 text-left">Статус</th>
+    <th className="px-2 py-2 text-left">Действия</th>
   </>;
 }
 
@@ -562,58 +547,40 @@ function AllRow({ o, onNotify, sendingTo, estimateText, paymentText }: ActionPro
   return <>
     <OrderNumCell o={o} />
     <MasterCell o={o} />
-    <ClientCell o={o} />
-    <CityCell o={o} />
+    <ClientCityCell o={o} />
     <ServiceCell o={o} />
-    <td className="px-3 py-2 text-xs">
+    <td className="px-2 py-1.5 text-xs whitespace-nowrap">
       {o.receiptId
-        ? <span className="text-[#34C759] font-semibold">{fmt(o.receiptTotalAmount ?? 0)}</span>
+        ? <>
+            <div className="text-[#34C759] font-semibold">{fmt(o.receiptTotalAmount ?? 0)}</div>
+            <div className="text-[10px]">
+              {o.receiptPrepaymentPaidAt
+                ? <span className="text-[#34C759]">✅ оплачена</span>
+                : <span className="text-amber-600">⏳ {fmtHours(o.hoursWithoutPayment ?? 0)}</span>}
+            </div>
+          </>
         : o.hoursWithoutEstimate !== null
           ? <span className={o.hoursWithoutEstimate >= 48 ? "text-red-500 font-semibold" : "text-amber-600"}>
-              {fmtHours(o.hoursWithoutEstimate)} нет
+              {fmtHours(o.hoursWithoutEstimate)} без сметы
             </span>
           : <span className="text-gray-400">—</span>
       }
     </td>
-    <td className="px-3 py-2 text-xs">
-      {o.receiptPrepaymentPaidAt
-        ? <span className="text-[#34C759]">✅ Оплачена</span>
-        : o.receiptId
-          ? <span className="text-amber-600">⏳ {fmtHours(o.hoursWithoutPayment ?? 0)}</span>
-          : <span className="text-gray-400">—</span>
-      }
-    </td>
-    <td className="px-3 py-2">
+    <td className="px-2 py-1.5">
       {o.problemReasons.length > 0
         ? <Badge label="⚠ Проблема" color="bg-red-100 text-red-700" />
-        : <Badge label="✓ В норме" color="bg-green-100 text-green-700" />
+        : <Badge label="✓ Норма" color="bg-green-100 text-green-700" />
       }
     </td>
-    <td className="px-3 py-2">
+    <td className="px-2 py-1.5">
       <div className="flex items-center gap-1">
         {o.masterMaxChatId && (
-          <ActionBtn
-            onClick={() => onNotify(o, !o.receiptId ? estimateText! : paymentText!)}
-            color="bg-blue-100 text-blue-600 hover:bg-blue-200"
-            icon={MessageSquare}
-            title="Написать мастеру"
-            disabled={sendingTo === o.id}
-          />
+          <ActionBtn onClick={() => onNotify(o, !o.receiptId ? estimateText! : paymentText!)} color="bg-blue-100 text-blue-600 hover:bg-blue-200" icon={MessageSquare} title="Написать мастеру" disabled={sendingTo === o.id} />
         )}
         {o.clientPhone && (
-          <ActionBtn
-            onClick={() => window.open(`tel:${o.clientPhone}`)}
-            color="bg-green-100 text-green-600 hover:bg-green-200"
-            icon={Phone}
-            title="Позвонить клиенту"
-          />
+          <ActionBtn onClick={() => window.open(`tel:${o.clientPhone}`)} color="bg-green-100 text-green-600 hover:bg-green-200" icon={Phone} title="Позвонить клиенту" />
         )}
-        <ActionBtn
-          onClick={() => window.open(`/leads?openOrder=${o.id}`, "_blank")}
-          color="bg-gray-100 text-gray-600 hover:bg-gray-200"
-          icon={ClipboardList}
-          title="Открыть заказ"
-        />
+        <ActionBtn onClick={() => window.open(`/leads?openOrder=${o.id}`, "_blank")} color="bg-gray-100 text-gray-600 hover:bg-gray-200" icon={ClipboardList} title="Открыть заказ" />
       </div>
     </td>
   </>;
@@ -622,18 +589,14 @@ function AllRow({ o, onNotify, sendingTo, estimateText, paymentText }: ActionPro
 // ── WITH ESTIMATE tab ───────────────────────────────────────────────────────
 function EstimateHeaders() {
   return <>
-    <th className="px-3 py-2 text-left">№</th>
-    <th className="px-3 py-2 text-left">Дата сметы</th>
-    <th className="px-3 py-2 text-left">Мастер</th>
-    <th className="px-3 py-2 text-left">Клиент</th>
-    <th className="px-3 py-2 text-left">Город</th>
-    <th className="px-3 py-2 text-left">Вид работ</th>
-    <th className="px-3 py-2 text-left">Пл. м²</th>
-    <th className="px-3 py-2 text-left">Сумма сметы</th>
-    <th className="px-3 py-2 text-left">Предоплата</th>
-    <th className="px-3 py-2 text-left">Ждём</th>
-    <th className="px-3 py-2 text-left">Остаток</th>
-    <th className="px-3 py-2 text-left">Действия</th>
+    <th className="px-2 py-2 text-left">№</th>
+    <th className="px-2 py-2 text-left">Мастер</th>
+    <th className="px-2 py-2 text-left">Клиент · Город</th>
+    <th className="px-2 py-2 text-left">Вид работ</th>
+    <th className="px-2 py-2 text-left">Смета</th>
+    <th className="px-2 py-2 text-left">Предоплата</th>
+    <th className="px-2 py-2 text-left">Ждём</th>
+    <th className="px-2 py-2 text-left">Действия</th>
   </>;
 }
 
@@ -644,62 +607,32 @@ function EstimateRow({ o, onNotify, sendingTo, paymentText }: ActionProps) {
   const total = o.receiptTotalAmount ?? 0;
   return <>
     <OrderNumCell o={o} />
-    <td className="px-3 py-2 text-xs text-gray-600">{formatDate(o.receiptCreatedAt)}</td>
     <MasterCell o={o} />
-    <ClientCell o={o} />
-    <CityCell o={o} />
+    <ClientCityCell o={o} />
     <ServiceCell o={o} />
-    <td className="px-3 py-2 text-xs text-gray-600">{o.area > 0 ? o.area : "—"}</td>
-    <td className="px-3 py-2 text-xs font-semibold text-gray-800">{fmt(total)}</td>
-    <td className="px-3 py-2 text-xs">
+    <td className="px-2 py-1.5 text-xs font-semibold text-gray-800 whitespace-nowrap">
+      {fmt(total)}
+      {o.receiptCreatedAt && <div className="text-[10px] text-gray-400 font-normal">{formatDate(o.receiptCreatedAt)}</div>}
+    </td>
+    <td className="px-2 py-1.5 text-xs whitespace-nowrap">
       {paid
         ? <span className="text-[#34C759] font-semibold">✅ Оплачена</span>
         : <span className="text-amber-600">⏳ {fmt(prepay)}</span>
       }
     </td>
-    <td className="px-3 py-2 text-xs">
-      {paid ? "—" : hoursWaiting !== null ? (
+    <td className="px-2 py-1.5 text-xs whitespace-nowrap">
+      {paid ? <span className="text-gray-400">—</span> : hoursWaiting !== null ? (
         <span className={hoursWaiting >= 48 ? "text-red-600 font-semibold" : hoursWaiting >= 24 ? "text-amber-600" : "text-gray-600"}>
           {fmtHours(hoursWaiting)}
         </span>
-      ) : "—"}
+      ) : <span className="text-gray-400">—</span>}
     </td>
-    <td className="px-3 py-2 text-xs font-semibold text-gray-800">
-      {paid ? "—" : fmt(Math.max(0, total - prepay))}
-    </td>
-    <td className="px-3 py-2">
+    <td className="px-2 py-1.5">
       <div className="flex items-center gap-1">
-        {o.masterMaxChatId && !paid && (
-          <ActionBtn
-            onClick={() => onNotify(o, paymentText!)}
-            color="bg-blue-100 text-blue-600 hover:bg-blue-200"
-            icon={MessageSquare}
-            title="Напомнить мастеру про оплату"
-            disabled={sendingTo === o.id}
-          />
-        )}
-        {o.clientPhone && (
-          <ActionBtn
-            onClick={() => window.open(`tel:${o.clientPhone}`)}
-            color="bg-green-100 text-green-600 hover:bg-green-200"
-            icon={Phone}
-            title="Позвонить клиенту"
-          />
-        )}
-        {o.receiptToken && (
-          <ActionBtn
-            onClick={() => window.open(`/receipt/${o.receiptToken}`, "_blank")}
-            color="bg-gray-100 text-gray-600 hover:bg-gray-200"
-            icon={Eye}
-            title="Открыть смету"
-          />
-        )}
-        <ActionBtn
-          onClick={() => window.open(`/leads?openOrder=${o.id}`, "_blank")}
-          color="bg-gray-100 text-gray-600 hover:bg-gray-200"
-          icon={ClipboardList}
-          title="Открыть заказ"
-        />
+        {o.masterMaxChatId && !paid && <ActionBtn onClick={() => onNotify(o, paymentText!)} color="bg-blue-100 text-blue-600 hover:bg-blue-200" icon={MessageSquare} title="Напомнить мастеру про оплату" disabled={sendingTo === o.id} />}
+        {o.clientPhone && <ActionBtn onClick={() => window.open(`tel:${o.clientPhone}`)} color="bg-green-100 text-green-600 hover:bg-green-200" icon={Phone} title="Позвонить клиенту" />}
+        {o.receiptToken && <ActionBtn onClick={() => window.open(`/receipt/${o.receiptToken}`, "_blank")} color="bg-gray-100 text-gray-600 hover:bg-gray-200" icon={Eye} title="Открыть смету" />}
+        <ActionBtn onClick={() => window.open(`/leads?openOrder=${o.id}`, "_blank")} color="bg-gray-100 text-gray-600 hover:bg-gray-200" icon={ClipboardList} title="Открыть заказ" />
       </div>
     </td>
   </>;
@@ -708,16 +641,13 @@ function EstimateRow({ o, onNotify, sendingTo, paymentText }: ActionProps) {
 // ── WITHOUT ESTIMATE tab ────────────────────────────────────────────────────
 function NoEstimateHeaders() {
   return <>
-    <th className="px-3 py-2 text-left">№</th>
-    <th className="px-3 py-2 text-left">Назначен</th>
-    <th className="px-3 py-2 text-left">Мастер</th>
-    <th className="px-3 py-2 text-left">Город</th>
-    <th className="px-3 py-2 text-left">Вид работ</th>
-    <th className="px-3 py-2 text-left">Пл. м²</th>
-    <th className="px-3 py-2 text-left">Прим. сумма</th>
-    <th className="px-3 py-2 text-left">Без сметы</th>
-    <th className="px-3 py-2 text-left">Риск</th>
-    <th className="px-3 py-2 text-left">Действия</th>
+    <th className="px-2 py-2 text-left">№</th>
+    <th className="px-2 py-2 text-left">Мастер</th>
+    <th className="px-2 py-2 text-left">Город · Назначен</th>
+    <th className="px-2 py-2 text-left">Вид работ</th>
+    <th className="px-2 py-2 text-left">Без сметы</th>
+    <th className="px-2 py-2 text-left">Риск</th>
+    <th className="px-2 py-2 text-left">Действия</th>
   </>;
 }
 
@@ -725,52 +655,30 @@ function NoEstimateRow({ o, onNotify, sendingTo, estimateText }: ActionProps) {
   const h = o.hoursWithoutEstimate ?? 0;
   return <>
     <OrderNumCell o={o} />
-    <td className="px-3 py-2 text-xs text-gray-600">{timeAgo(o.assignedAt)}</td>
     <MasterCell o={o} />
-    <CityCell o={o} />
-    <ServiceCell o={o} />
-    <td className="px-3 py-2 text-xs text-gray-600">{o.area > 0 ? o.area : "—"}</td>
-    <td className="px-3 py-2 text-xs text-gray-600">
-      {o.proposedAmount ? fmt(o.proposedAmount) : o.commission ? fmt(o.commission) : "—"}
+    <td className="px-2 py-1.5 text-xs text-gray-600">
+      <div className="flex items-center gap-0.5"><MapPin className="w-2.5 h-2.5" />{o.city}</div>
+      <div className="text-[10px] text-gray-400">{timeAgo(o.assignedAt)}</div>
     </td>
-    <td className="px-3 py-2 text-xs">
+    <ServiceCell o={o} />
+    <td className="px-2 py-1.5 text-xs whitespace-nowrap">
       <span className={h >= 72 ? "text-red-600 font-bold" : h >= 48 ? "text-red-500 font-semibold" : "text-amber-600"}>
         {fmtHours(h)}
       </span>
     </td>
-    <td className="px-3 py-2">
+    <td className="px-2 py-1.5">
       {h >= 72
-        ? <Badge label="🔴 Блок лимита" color="bg-red-100 text-red-700" />
+        ? <Badge label="🔴 Блок" color="bg-red-100 text-red-700" />
         : h >= 48
           ? <Badge label="🔴 Критично" color="bg-red-100 text-red-700" />
           : <Badge label="🟡 Внимание" color="bg-yellow-100 text-yellow-700" />
       }
     </td>
-    <td className="px-3 py-2">
+    <td className="px-2 py-1.5">
       <div className="flex items-center gap-1">
-        {o.masterMaxChatId && (
-          <ActionBtn
-            onClick={() => onNotify(o, estimateText!)}
-            color="bg-blue-100 text-blue-600 hover:bg-blue-200"
-            icon={MessageSquare}
-            title="Напомнить про смету"
-            disabled={sendingTo === o.id}
-          />
-        )}
-        {o.masterPhone && (
-          <ActionBtn
-            onClick={() => window.open(`tel:${o.masterPhone}`)}
-            color="bg-green-100 text-green-600 hover:bg-green-200"
-            icon={Phone}
-            title="Позвонить мастеру"
-          />
-        )}
-        <ActionBtn
-          onClick={() => window.open(`/leads?openOrder=${o.id}`, "_blank")}
-          color="bg-gray-100 text-gray-600 hover:bg-gray-200"
-          icon={ClipboardList}
-          title="Открыть заказ"
-        />
+        {o.masterMaxChatId && <ActionBtn onClick={() => onNotify(o, estimateText!)} color="bg-blue-100 text-blue-600 hover:bg-blue-200" icon={MessageSquare} title="Напомнить про смету" disabled={sendingTo === o.id} />}
+        {o.masterPhone && <ActionBtn onClick={() => window.open(`tel:${o.masterPhone}`)} color="bg-green-100 text-green-600 hover:bg-green-200" icon={Phone} title="Позвонить мастеру" />}
+        <ActionBtn onClick={() => window.open(`/leads?openOrder=${o.id}`, "_blank")} color="bg-gray-100 text-gray-600 hover:bg-gray-200" icon={ClipboardList} title="Открыть заказ" />
       </div>
     </td>
   </>;
@@ -779,17 +687,13 @@ function NoEstimateRow({ o, onNotify, sendingTo, estimateText }: ActionProps) {
 // ── WAITING PAYMENT tab ─────────────────────────────────────────────────────
 function WaitingPaymentHeaders() {
   return <>
-    <th className="px-3 py-2 text-left">№</th>
-    <th className="px-3 py-2 text-left">Дата сметы</th>
-    <th className="px-3 py-2 text-left">Мастер</th>
-    <th className="px-3 py-2 text-left">Клиент</th>
-    <th className="px-3 py-2 text-left">Город</th>
-    <th className="px-3 py-2 text-left">Вид работ</th>
-    <th className="px-3 py-2 text-left">Сумма сметы</th>
-    <th className="px-3 py-2 text-left">Предоплата</th>
-    <th className="px-3 py-2 text-left">Без оплаты</th>
-    <th className="px-3 py-2 text-left">Риск</th>
-    <th className="px-3 py-2 text-left">Действия</th>
+    <th className="px-2 py-2 text-left">№</th>
+    <th className="px-2 py-2 text-left">Мастер</th>
+    <th className="px-2 py-2 text-left">Клиент · Город</th>
+    <th className="px-2 py-2 text-left">Вид работ</th>
+    <th className="px-2 py-2 text-left">Смета · Предоплата</th>
+    <th className="px-2 py-2 text-left">Без оплаты · Риск</th>
+    <th className="px-2 py-2 text-left">Действия</th>
   </>;
 }
 
@@ -797,59 +701,30 @@ function WaitingPaymentRow({ o, onNotify, sendingTo, paymentText }: ActionProps)
   const h = o.hoursWithoutPayment ?? 0;
   return <>
     <OrderNumCell o={o} />
-    <td className="px-3 py-2 text-xs text-gray-600">{formatDate(o.receiptCreatedAt)}</td>
     <MasterCell o={o} />
-    <ClientCell o={o} />
-    <CityCell o={o} />
+    <ClientCityCell o={o} />
     <ServiceCell o={o} />
-    <td className="px-3 py-2 text-xs font-semibold text-gray-800">{fmt(o.receiptTotalAmount ?? 0)}</td>
-    <td className="px-3 py-2 text-xs text-amber-600">⏳ {fmt(o.receiptPrepaymentAmount ?? 5000)}</td>
-    <td className="px-3 py-2 text-xs">
-      <span className={h >= 72 ? "text-red-600 font-bold" : h >= 48 ? "text-red-500 font-semibold" : h >= 24 ? "text-amber-600" : "text-gray-600"}>
-        {fmtHours(h)}
-      </span>
+    <td className="px-2 py-1.5 text-xs whitespace-nowrap">
+      <div className="font-semibold text-gray-800">{fmt(o.receiptTotalAmount ?? 0)}</div>
+      <div className="text-amber-600">⏳ {fmt(o.receiptPrepaymentAmount ?? 5000)}</div>
     </td>
-    <td className="px-3 py-2">
-      {h >= 48
-        ? <Badge label="🔴 Критично" color="bg-red-100 text-red-700" />
-        : h >= 24
-          ? <Badge label="🟡 Внимание" color="bg-yellow-100 text-yellow-700" />
-          : <Badge label="✓ Норма" color="bg-green-100 text-green-700" />
-      }
+    <td className="px-2 py-1.5 text-xs whitespace-nowrap">
+      <div className={h >= 72 ? "text-red-600 font-bold" : h >= 48 ? "text-red-500 font-semibold" : h >= 24 ? "text-amber-600" : "text-gray-600"}>{fmtHours(h)}</div>
+      <div>
+        {h >= 48
+          ? <Badge label="🔴 Критично" color="bg-red-100 text-red-700" />
+          : h >= 24
+            ? <Badge label="🟡 Внимание" color="bg-yellow-100 text-yellow-700" />
+            : <Badge label="✓ Норма" color="bg-green-100 text-green-700" />
+        }
+      </div>
     </td>
-    <td className="px-3 py-2">
+    <td className="px-2 py-1.5">
       <div className="flex items-center gap-1">
-        {o.masterMaxChatId && (
-          <ActionBtn
-            onClick={() => onNotify(o, paymentText!)}
-            color="bg-blue-100 text-blue-600 hover:bg-blue-200"
-            icon={MessageSquare}
-            title="Напомнить про оплату"
-            disabled={sendingTo === o.id}
-          />
-        )}
-        {o.clientPhone && (
-          <ActionBtn
-            onClick={() => window.open(`tel:${o.clientPhone}`)}
-            color="bg-green-100 text-green-600 hover:bg-green-200"
-            icon={Phone}
-            title="Позвонить клиенту"
-          />
-        )}
-        {o.receiptToken && (
-          <ActionBtn
-            onClick={() => window.open(`/receipt/${o.receiptToken}`, "_blank")}
-            color="bg-gray-100 text-gray-600 hover:bg-gray-200"
-            icon={Eye}
-            title="Открыть смету"
-          />
-        )}
-        <ActionBtn
-          onClick={() => window.open(`/leads?openOrder=${o.id}`, "_blank")}
-          color="bg-gray-100 text-gray-600 hover:bg-gray-200"
-          icon={ClipboardList}
-          title="Открыть заказ"
-        />
+        {o.masterMaxChatId && <ActionBtn onClick={() => onNotify(o, paymentText!)} color="bg-blue-100 text-blue-600 hover:bg-blue-200" icon={MessageSquare} title="Напомнить про оплату" disabled={sendingTo === o.id} />}
+        {o.clientPhone && <ActionBtn onClick={() => window.open(`tel:${o.clientPhone}`)} color="bg-green-100 text-green-600 hover:bg-green-200" icon={Phone} title="Позвонить клиенту" />}
+        {o.receiptToken && <ActionBtn onClick={() => window.open(`/receipt/${o.receiptToken}`, "_blank")} color="bg-gray-100 text-gray-600 hover:bg-gray-200" icon={Eye} title="Открыть смету" />}
+        <ActionBtn onClick={() => window.open(`/leads?openOrder=${o.id}`, "_blank")} color="bg-gray-100 text-gray-600 hover:bg-gray-200" icon={ClipboardList} title="Открыть заказ" />
       </div>
     </td>
   </>;
@@ -858,61 +733,39 @@ function WaitingPaymentRow({ o, onNotify, sendingTo, paymentText }: ActionProps)
 // ── PROBLEMATIC tab ─────────────────────────────────────────────────────────
 function ProblematicHeaders() {
   return <>
-    <th className="px-3 py-2 text-left">№</th>
-    <th className="px-3 py-2 text-left">Мастер</th>
-    <th className="px-3 py-2 text-left">Клиент</th>
-    <th className="px-3 py-2 text-left">Город</th>
-    <th className="px-3 py-2 text-left">Вид работ</th>
-    <th className="px-3 py-2 text-left">Сумма</th>
-    <th className="px-3 py-2 text-left">Причина</th>
-    <th className="px-3 py-2 text-left">Действия</th>
+    <th className="px-2 py-2 text-left">№</th>
+    <th className="px-2 py-2 text-left">Мастер</th>
+    <th className="px-2 py-2 text-left">Клиент · Город</th>
+    <th className="px-2 py-2 text-left">Вид работ · Сумма</th>
+    <th className="px-2 py-2 text-left">Причина</th>
+    <th className="px-2 py-2 text-left">Действия</th>
   </>;
 }
 
 function ProblematicRow({ o, onNotify, sendingTo, estimateText, paymentText }: ActionProps) {
-  const mainReason = o.problemReasons[0] ?? "—";
   const notifyText = !o.receiptId ? estimateText! : paymentText!;
   return <>
     <OrderNumCell o={o} />
     <MasterCell o={o} />
-    <ClientCell o={o} />
-    <CityCell o={o} />
-    <ServiceCell o={o} />
-    <td className="px-3 py-2 text-xs font-semibold text-gray-800">
-      {o.receiptTotalAmount ? fmt(o.receiptTotalAmount) : o.proposedAmount ? fmt(o.proposedAmount) : o.commission ? fmt(o.commission) : "—"}
+    <ClientCityCell o={o} />
+    <td className="px-2 py-1.5 max-w-[140px]">
+      <p className="text-xs text-gray-700 truncate">{o.serviceType}</p>
+      <p className="text-[10px] text-gray-500 font-semibold">
+        {o.receiptTotalAmount ? fmt(o.receiptTotalAmount) : o.proposedAmount ? fmt(o.proposedAmount) : o.commission ? fmt(o.commission) : "—"}
+      </p>
     </td>
-    <td className="px-3 py-2">
+    <td className="px-2 py-1.5 max-w-[160px]">
       <div className="flex flex-col gap-0.5">
         {o.problemReasons.map((r, i) => (
-          <span key={i} className="text-[11px] text-red-700 font-medium whitespace-nowrap">{r}</span>
+          <span key={i} className="text-[11px] text-red-700 font-medium">{r}</span>
         ))}
       </div>
     </td>
-    <td className="px-3 py-2">
+    <td className="px-2 py-1.5">
       <div className="flex items-center gap-1">
-        {o.masterMaxChatId && (
-          <ActionBtn
-            onClick={() => onNotify(o, notifyText)}
-            color="bg-blue-100 text-blue-600 hover:bg-blue-200"
-            icon={MessageSquare}
-            title="Написать мастеру"
-            disabled={sendingTo === o.id}
-          />
-        )}
-        {o.masterPhone && (
-          <ActionBtn
-            onClick={() => window.open(`tel:${o.masterPhone}`)}
-            color="bg-green-100 text-green-600 hover:bg-green-200"
-            icon={Phone}
-            title="Позвонить мастеру"
-          />
-        )}
-        <ActionBtn
-          onClick={() => window.open(`/leads?openOrder=${o.id}`, "_blank")}
-          color="bg-gray-100 text-gray-600 hover:bg-gray-200"
-          icon={ClipboardList}
-          title="Открыть заказ"
-        />
+        {o.masterMaxChatId && <ActionBtn onClick={() => onNotify(o, notifyText)} color="bg-blue-100 text-blue-600 hover:bg-blue-200" icon={MessageSquare} title="Написать мастеру" disabled={sendingTo === o.id} />}
+        {o.masterPhone && <ActionBtn onClick={() => window.open(`tel:${o.masterPhone}`)} color="bg-green-100 text-green-600 hover:bg-green-200" icon={Phone} title="Позвонить мастеру" />}
+        <ActionBtn onClick={() => window.open(`/leads?openOrder=${o.id}`, "_blank")} color="bg-gray-100 text-gray-600 hover:bg-gray-200" icon={ClipboardList} title="Открыть заказ" />
       </div>
     </td>
   </>;
