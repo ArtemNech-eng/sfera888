@@ -496,11 +496,12 @@ export default function Finance() {
     const due = new Date(tx.dueDate);
     const dueDateStr = due.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
     return (
-      `💰 Напоминание об оплате\n\n` +
-      `По заказу #${tx.orderId ?? "—"} (${tx.serviceType ?? "заказ"}) ожидается оплата комиссии.\n\n` +
-      `Сумма: ${Number(tx.commission).toLocaleString("ru-RU")} ₽\n` +
-      `Срок: ${dueDateStr}\n\n` +
-      `Оплатите на реквизиты в приложении → раздел Оплата.`
+      `💰 Напоминание о комиссии\n\n` +
+      `${tx.masterAlias ?? "Мастер"}, объекты закрываются поэтапно — это нормально.\n\n` +
+      `По заказу #${tx.orderId ?? "—"} (${tx.serviceType ?? "заказ"}) вы уже выполнили часть работы и получили оплату от клиента. Теперь нужно перевести нашу комиссию.\n\n` +
+      `Сумма комиссии: ${Number(tx.commission).toLocaleString("ru-RU")} ₽\n` +
+      `Срок оплаты: ${dueDateStr}\n\n` +
+      `Переведите на реквизиты в приложении → раздел **Оплата**.`
     );
   };
 
@@ -516,11 +517,12 @@ export default function Finance() {
       : m.debtTotal;
     const count = unpaid.length > 0 ? unpaid.length : m.pendingCount + m.overdueCount;
     return (
-      `💰 Сводка задолженности\n\n` +
-      `${m.alias}, у вас ${count} неоплаченных комиссий:\n\n` +
+      `💰 Сводка задолженности по комиссиям\n\n` +
+      `${m.alias}, напоминаем — объекты закрываются поэтапно. По каждому заказу вы уже получили оплату от клиента, теперь нужно перевести нашу комиссию.\n\n` +
+      `Незакрытых позиций: ${count}\n\n` +
       `${lines}\n\n` +
-      `Итого: ${Number(total).toLocaleString("ru-RU")} ₽\n\n` +
-      `Оплатите на реквизиты в приложении → раздел Оплата.`
+      `Итого к переводу: ${Number(total).toLocaleString("ru-RU")} ₽\n\n` +
+      `Переведите на реквизиты в приложении → раздел **Оплата**.`
     );
   };
 

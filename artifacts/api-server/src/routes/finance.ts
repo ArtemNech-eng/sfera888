@@ -398,11 +398,12 @@ router.post("/transactions/:id/remind", opsAndAdmin, async (req, res) => {
   const serviceType = t.service_type ?? "заказ";
 
   const text =
-    `💰 Напоминание об оплате\n\n` +
-    `По заказу #${t.order_id} (${serviceType}) ожидается оплата комиссии.\n\n` +
-    `Сумма: ${commission.toLocaleString("ru-RU")} ₽\n` +
-    `Срок: ${dueDateStr}\n\n` +
-    `Оплатите на реквизиты в приложении → раздел Оплата.`;
+    `💰 Напоминание о комиссии\n\n` +
+    `${t.alias ?? "Мастер"}, объекты закрываются поэтапно — это нормально.\n\n` +
+    `По заказу #${t.order_id} (${serviceType}) вы уже выполнили часть работы и получили оплату от клиента. Теперь нужно перевести нашу комиссию.\n\n` +
+    `Сумма комиссии: ${commission.toLocaleString("ru-RU")} ₽\n` +
+    `Срок оплаты: ${dueDateStr}\n\n` +
+    `Переведите на реквизиты в приложении → раздел **Оплата**.`;
 
   await sendMaxWithButtons(t.max_chat_id, text, remindButtons(id)).catch(console.error);
   await recordFinanceRemind("finance-remind", t.order_id, t.master_id);
@@ -461,11 +462,12 @@ router.post("/masters/:masterId/remind-all", opsAndAdmin, async (req, res) => {
   ).join("\n");
 
   const text =
-    `💰 Сводка задолженности\n\n` +
-    `${master.alias}, у вас ${listToShow.length} неоплаченных комиссий:\n\n` +
+    `💰 Сводка задолженности по комиссиям\n\n` +
+    `${master.alias}, напоминаем — объекты закрываются поэтапно. По каждому заказу вы уже получили оплату от клиента, теперь нужно перевести нашу комиссию.\n\n` +
+    `Незакрытых позиций: ${listToShow.length}\n\n` +
     `${orderLines}\n\n` +
-    `Итого: ${total.toLocaleString("ru-RU")} ₽\n\n` +
-    `Оплатите на реквизиты в приложении → раздел Оплата.`;
+    `Итого к переводу: ${total.toLocaleString("ru-RU")} ₽\n\n` +
+    `Переведите на реквизиты в приложении → раздел **Оплата**.`;
 
   await sendMaxWithButtons(master.max_chat_id, text, remindButtons(`all:${masterId}`)).catch(console.error);
   await recordFinanceRemind("finance-remind-all", 0, masterId);
