@@ -1958,9 +1958,42 @@ export default function Leads() {
                                 </div>
                               </div>
                             ))}
-                            {receipts?.filter(r => r.prepaymentSubmittedAt).length ? (
-                              <p className="text-xs text-muted-foreground text-center">{receipts.filter(r => r.prepaymentSubmittedAt).length} смет оплачено</p>
-                            ) : null}
+                            {receipts?.filter(r => r.prepaymentSubmittedAt).map(r => (
+                              <div key={r.id} className="rounded-xl p-3 space-y-1.5 bg-emerald-50/60 border border-emerald-100">
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <span className="text-xs text-muted-foreground">Бронь: </span>
+                                    <span className="text-sm font-bold text-emerald-700">{Number(r.prepaymentAmount).toLocaleString("ru-RU")} ₽</span>
+                                    <span className="text-xs text-muted-foreground ml-1">/ {Number(r.totalAmount).toLocaleString("ru-RU")} ₽</span>
+                                  </div>
+                                  <span className="text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="flex items-center gap-1 text-xs text-emerald-600 font-medium"><CheckCircle2 className="w-3 h-3" />Оплачено</span>
+                                  {r.clientSubmittedName && <span className="text-xs text-muted-foreground">· {r.clientSubmittedName}</span>}
+                                </div>
+                                {r.lineItems?.length > 0 && (
+                                  <div className="space-y-0.5 pt-1 border-t border-emerald-100">
+                                    {r.lineItems.map((li, i) => (
+                                      <div key={i} className="flex justify-between text-xs text-muted-foreground">
+                                        <span className="truncate max-w-[140px]">{li.description}</span>
+                                        <span className="font-medium text-foreground ml-2 flex-shrink-0">{Number(li.price).toLocaleString("ru-RU")} ₽</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                {r.prepaymentScreenshotUrl && (
+                                  <a href={r.prepaymentScreenshotUrl} target="_blank" rel="noopener noreferrer" className="block">
+                                    <img src={r.prepaymentScreenshotUrl} alt="Скриншот оплаты" className="max-h-32 rounded-lg border object-contain bg-muted" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                                  </a>
+                                )}
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <a href={r.publicUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs text-blue-500 hover:underline"><ExternalLink className="w-3 h-3" />Открыть</a>
+                                  <button onClick={() => { navigator.clipboard.writeText(r.publicUrl); toast({ title: "Ссылка скопирована!" }); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><Copy className="w-3 h-3" />Ссылка</button>
+                                  <button onClick={() => { if (!window.confirm("Удалить смету?")) return; deleteReceiptMutation.mutate(r.id); }} disabled={deleteReceiptMutation.isPending} className="flex items-center gap-1 text-xs text-destructive hover:opacity-80 disabled:opacity-50 ml-auto"><Trash2 className="w-3 h-3" /></button>
+                                </div>
+                              </div>
+                            ))}
                             {!showCreateReceipt && !crmCreatedUrl && (
                               <button onClick={() => { setShowCreateReceipt(true); setCrmCreatedUrl(null); setCrmCopied(false); }} className="w-full flex items-center justify-center gap-1.5 text-xs text-primary font-semibold py-2 border border-dashed border-primary/40 rounded-xl hover:bg-primary/5 transition-colors">
                                 <Plus className="w-3.5 h-3.5" />Создать смету
