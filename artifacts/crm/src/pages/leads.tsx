@@ -351,7 +351,7 @@ export default function Leads() {
     setWmLoading(true);
     try {
       const res = await fetch("/api/work-monitor", { credentials: "include" });
-      if (res.ok) { const json = await res.json(); setWmData(json.orders ?? []); }
+      if (res.ok) { const json = await res.json(); setWmData(Array.isArray(json) ? json : json.orders ?? []); }
     } catch {}
     finally { setWmLoading(false); }
   }, []);

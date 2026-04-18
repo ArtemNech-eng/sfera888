@@ -92,11 +92,21 @@ router.get("/", requireAuth, async (_req, res) => {
     const lead = leadMap.get(o.leadId);
     const receipt = receiptMap.get(o.id) ?? null;
 
-    const assignedMs = o.assignedAt ? new Date(o.assignedAt).getTime() : null;
-    const hoursWithoutEstimate = !receipt && assignedMs
+    // Use assignedAt, falling back to updatedAt then createdAt for orders
+    // that have a master but were assigned via an old code path
+    const assignedMs = o.masterId
+      ? (o.assignedAt
+          ? new Date(o.assignedAt).getTime()
+          : o.updatedAt
+            ? new Date(o.updatedAt).getTime()
+            : new Date(o.createdAt).getTime())
+      : null;
+
+    const hoursWithoutEstimate = !receipt && assignedMs !== null
       ? Math.floor((now - assignedMs) / 3_600_000)
       : null;
 
+    // hoursWithoutPayment: time since receipt created (if not yet paid)
     const receiptCreatedMs = receipt && !receipt.prepaymentSubmittedAt
       ? new Date(receipt.createdAt).getTime()
       : null;
@@ -109,12 +119,12 @@ router.get("/", requireAuth, async (_req, res) => {
 
     const problemReasons: string[] = [];
     if (hoursWithoutEstimate !== null && hoursWithoutEstimate >= 48) {
-      problemReasons.push(`🔴 Без сметы ${hoursWithoutEstimate}ч`);
+      problemReasons.push(`🔴 Без сметы ${Math.floor(hoursWithoutEstimate / 24)}д ${hoursWithoutEstimate % 24}ч`);
     }
-    if (hoursWithoutPayment !== null && hoursWithoutPayment >= 72) {
-      problemReasons.push(`🔴 Без оплаты ${hoursWithoutPayment}ч`);
+    if (hoursWithoutPayment !== null && hoursWithoutPayment >= 48) {
+      problemReasons.push(`🔴 Без оплаты ${Math.floor(hoursWithoutPayment / 24)}д ${hoursWithoutPayment % 24}ч`);
     }
-    if (daysSinceUpdate !== null && daysSinceUpdate >= 7 && o.status === "in_progress") {
+    if (daysSinceUpdate !== null && daysSinceUpdate >= 7) {
       problemReasons.push(`🔴 Нет обновлений ${Math.floor(daysSinceUpdate)} дн.`);
     }
 
