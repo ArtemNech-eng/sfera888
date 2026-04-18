@@ -93,17 +93,15 @@ router.get("/", requireAuth, async (_req, res) => {
     const lead = leadMap.get(o.leadId);
     const receipt = receiptMap.get(o.id) ?? null;
 
-    // Use assignedAt, falling back to updatedAt then createdAt for orders
-    // that have a master but were assigned via an old code path
-    const assignedMs = o.masterId
-      ? (o.assignedAt
-          ? new Date(o.assignedAt).getTime()
-          : o.updatedAt
-            ? new Date(o.updatedAt).getTime()
-            : new Date(o.createdAt).getTime())
-      : null;
+    // Time since master was assigned (or order created as fallback)
+    // Do NOT gate on masterId — orders with null masterId still need monitoring
+    const assignedMs = o.assignedAt
+      ? new Date(o.assignedAt).getTime()
+      : o.updatedAt
+        ? new Date(o.updatedAt).getTime()
+        : new Date(o.createdAt).getTime();
 
-    const hoursWithoutEstimate = !receipt && assignedMs !== null
+    const hoursWithoutEstimate = !receipt
       ? Math.floor((now - assignedMs) / 3_600_000)
       : null;
 
