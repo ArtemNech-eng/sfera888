@@ -35,7 +35,7 @@ interface Transaction {
   id: number; orderId: number | null; leadId: number | null;
   masterId: number; masterAlias: string; masterPhone: string | null;
   city: string; district: string | null; serviceType: string; area: number | null;
-  clientName: string | null; clientPhone: string | null; notes: string | null;
+  clientName: string | null; clientPhone: string | null;
   orderStatus: string | null; assignedAt: string | null;
   orderAmount: number; commission: number; prepaymentDeducted: number;
   totalPartialPaid: number; netPayable: number;
@@ -1679,14 +1679,6 @@ function TransactionDetailModal({ tx, onClose }: { tx: Transaction; onClose: () 
               <p className="font-semibold text-gray-800 text-xs">{fmtD(tx.createdAt)}</p>
             </div>
           </div>
-
-          {/* Notes */}
-          {tx.notes && (
-            <div className="bg-amber-50 rounded-xl p-3">
-              <p className="text-[10px] uppercase tracking-wider font-semibold text-amber-500 mb-1">Примечания</p>
-              <p className="text-sm text-gray-700">{tx.notes}</p>
-            </div>
-          )}
 
           {/* Finance summary */}
           <div className="bg-emerald-50 rounded-xl p-3 space-y-1.5">

@@ -97,7 +97,7 @@ router.get("/transactions", opsAndAdmin, async (req, res) => {
            t.created_at, t.paid_at,
            m.alias AS master_alias, m.city AS master_city, m.phone AS master_phone,
            o.service_type, o.city AS order_city, o.area, o.district,
-           o.client_name, o.client_phone, o.notes, o.lead_id,
+           o.client_name, o.client_phone, o.lead_id,
            o.status AS order_status, o.assigned_at
     FROM transactions t
     LEFT JOIN masters m ON m.id = t.master_id
@@ -144,7 +144,6 @@ router.get("/transactions", opsAndAdmin, async (req, res) => {
       area:                t.area ? Number(t.area) : null,
       clientName:          t.client_name ?? null,
       clientPhone:         t.client_phone ?? null,
-      notes:               t.notes ?? null,
       orderStatus:         t.order_status ?? null,
       assignedAt:          t.assigned_at ? toIsoUtc(t.assigned_at) : null,
       orderAmount:         Number(t.order_amount),
