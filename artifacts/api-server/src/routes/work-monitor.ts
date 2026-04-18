@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, ordersTable, mastersTable, leadsTable, receiptsTable } from "@workspace/db";
+import { db, ordersTable, mastersTable, leadsTable, receiptsTable, transactionsTable } from "@workspace/db";
 import { inArray, isNull, eq, and } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
 
@@ -34,6 +34,7 @@ export type WorkOrder = {
   hoursWithoutEstimate: number | null;
   hoursWithoutPayment: number | null;
   problemReasons: string[];
+  commissionPaid: boolean;
 };
 
 // GET /api/work-monitor
@@ -57,7 +58,7 @@ router.get("/", requireAuth, async (_req, res) => {
   const leadIds = [...new Set(orders.map(o => o.leadId))];
   const orderIds = orders.map(o => o.id);
 
-  const [masters, leads, receipts] = await Promise.all([
+  const [masters, leads, receipts, transactions] = await Promise.all([
     masterIds.length > 0
       ? db.select({
           id: mastersTable.id,
@@ -75,7 +76,20 @@ router.get("/", requireAuth, async (_req, res) => {
         }).from(leadsTable).where(inArray(leadsTable.id, leadIds))
       : Promise.resolve([]),
     db.select().from(receiptsTable).where(inArray(receiptsTable.orderId, orderIds)),
+    db.select({
+      orderId: transactionsTable.orderId,
+      paymentStatus: transactionsTable.paymentStatus,
+      commission: transactionsTable.commission,
+    }).from(transactionsTable).where(inArray(transactionsTable.orderId, orderIds)),
   ]);
+
+  // Map orderIds to commission payment status
+  const txByOrder = new Map<number, typeof transactions>();
+  for (const tx of transactions) {
+    const arr = txByOrder.get(tx.orderId) ?? [];
+    arr.push(tx);
+    txByOrder.set(tx.orderId, arr);
+  }
 
   const masterMap = new Map(masters.map(m => [m.id, m]));
   const leadMap = new Map(leads.map(l => [l.id, l]));
@@ -163,10 +177,59 @@ router.get("/", requireAuth, async (_req, res) => {
       hoursWithoutEstimate,
       hoursWithoutPayment,
       problemReasons,
+      commissionPaid: (() => {
+        const txs = txByOrder.get(o.id) ?? [];
+        if (txs.length === 0) return false;
+        // All transactions with real commission must be paid
+        const real = txs.filter(t => Number(t.commission) > 0);
+        if (real.length === 0) return false;
+        return real.every(t => t.paymentStatus === "paid");
+      })(),
     };
   });
 
   res.json(result);
+});
+
+// POST /api/work-monitor/complete-order/:id — operator completes order on behalf of master
+router.post("/complete-order/:id", requireAuth, async (req, res) => {
+  const orderId = parseInt(req.params.id);
+  if (isNaN(orderId)) return res.status(400).json({ error: "Неверный ID заказа" });
+
+  // Check order exists and is active
+  const [order] = await db.select().from(ordersTable)
+    .where(and(eq(ordersTable.id, orderId), isNull(ordersTable.deletedAt)));
+  if (!order) return res.status(404).json({ error: "Заказ не найден" });
+
+  const activeStatuses = ["master_assigned", "in_progress", "cancellation_requested"];
+  if (!activeStatuses.includes(order.status)) {
+    return res.status(400).json({ error: `Заказ уже ${order.status === "completed" ? "завершён" : "отменён"}` });
+  }
+
+  // Check commission is fully paid
+  const txs = await db.select({
+    id: transactionsTable.id,
+    commission: transactionsTable.commission,
+    paymentStatus: transactionsTable.paymentStatus,
+  }).from(transactionsTable).where(eq(transactionsTable.orderId, orderId));
+
+  const realTxs = txs.filter(t => Number(t.commission) > 0);
+  if (realTxs.length === 0) {
+    return res.status(400).json({ error: "По заказу нет транзакций с комиссией. Сначала подтвердите сумму заказа." });
+  }
+  const unpaid = realTxs.filter(t => t.paymentStatus !== "paid");
+  if (unpaid.length > 0) {
+    return res.status(400).json({ error: "Комиссия ещё не оплачена. Завершить заказ можно только после полной оплаты комиссии." });
+  }
+
+  // Complete the order
+  await db.update(ordersTable).set({
+    status: "completed",
+    masterWorkStatus: "completed",
+    updatedAt: new Date(),
+  }).where(eq(ordersTable.id, orderId));
+
+  res.json({ ok: true });
 });
 
 // POST /api/work-monitor/notify-master — send reminder via Max

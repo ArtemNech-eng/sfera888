@@ -6,6 +6,7 @@ import {
   Phone, MessageSquare, Eye, ClipboardList, RotateCcw, XCircle,
   ChevronLeft, ChevronRight, Search, MapPin, User, Lock, X,
   CheckCircle2, AlertCircle, Building2, Ruler, Calendar, UserCheck, Wallet,
+  CheckSquare,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -38,6 +39,7 @@ type WorkOrder = {
   hoursWithoutEstimate: number | null;
   hoursWithoutPayment: number | null;
   problemReasons: string[];
+  commissionPaid: boolean;
 };
 
 type SubTab = "all" | "with_estimate" | "without_estimate" | "waiting_payment" | "problematic";
@@ -118,6 +120,8 @@ export default function WorkMonitor() {
   const [page, setPage] = useState(1);
   const [sendingTo, setSendingTo] = useState<number | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<WorkOrder | null>(null);
+  const [confirmComplete, setConfirmComplete] = useState<WorkOrder | null>(null);
+  const [completing, setCompleting] = useState(false);
   const { toast } = useToast();
 
   const fetchData = useCallback(async (silent = false) => {
@@ -205,6 +209,27 @@ export default function WorkMonitor() {
       else toast({ title: "Ошибка отправки", variant: "destructive" });
     } finally {
       setSendingTo(null);
+    }
+  };
+
+  const doCompleteOrder = async (o: WorkOrder) => {
+    setCompleting(true);
+    try {
+      const r = await fetch(`/api/work-monitor/complete-order/${o.id}`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        toast({ title: body.error ?? "Не удалось завершить заказ", variant: "destructive" });
+        return;
+      }
+      toast({ title: `Заказ #${o.leadId ?? o.id} завершён` });
+      setConfirmComplete(null);
+      setSelectedOrder(null);
+      fetchData(true);
+    } finally {
+      setCompleting(false);
     }
   };
 
@@ -393,23 +418,23 @@ export default function WorkMonitor() {
                         }`}
                       >
                         {subTab === "all" && (
-                          <AllRow o={o} onNotify={notifyMaster} sendingTo={sendingTo}
+                          <AllRow o={o} onNotify={notifyMaster} onComplete={setConfirmComplete} sendingTo={sendingTo}
                             estimateText={estimateReminderText(o)} paymentText={paymentReminderText(o)} />
                         )}
                         {subTab === "with_estimate" && (
-                          <EstimateRow o={o} onNotify={notifyMaster} sendingTo={sendingTo}
+                          <EstimateRow o={o} onNotify={notifyMaster} onComplete={setConfirmComplete} sendingTo={sendingTo}
                             paymentText={paymentReminderText(o)} />
                         )}
                         {subTab === "without_estimate" && (
-                          <NoEstimateRow o={o} onNotify={notifyMaster} sendingTo={sendingTo}
+                          <NoEstimateRow o={o} onNotify={notifyMaster} onComplete={setConfirmComplete} sendingTo={sendingTo}
                             estimateText={estimateReminderText(o)} />
                         )}
                         {subTab === "waiting_payment" && (
-                          <WaitingPaymentRow o={o} onNotify={notifyMaster} sendingTo={sendingTo}
+                          <WaitingPaymentRow o={o} onNotify={notifyMaster} onComplete={setConfirmComplete} sendingTo={sendingTo}
                             paymentText={paymentReminderText(o)} />
                         )}
                         {subTab === "problematic" && (
-                          <ProblematicRow o={o} onNotify={notifyMaster} sendingTo={sendingTo}
+                          <ProblematicRow o={o} onNotify={notifyMaster} onComplete={setConfirmComplete} sendingTo={sendingTo}
                             estimateText={estimateReminderText(o)} paymentText={paymentReminderText(o)} />
                         )}
                       </tr>
@@ -447,7 +472,51 @@ export default function WorkMonitor() {
       </Layout>
 
       {selectedOrder && (
-        <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} />
+        <OrderDetailModal
+          order={selectedOrder}
+          onClose={() => setSelectedOrder(null)}
+          onComplete={o => { setSelectedOrder(null); setConfirmComplete(o); }}
+        />
+      )}
+
+      {/* Confirm complete dialog */}
+      {confirmComplete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setConfirmComplete(null)}>
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+          <div
+            className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in zoom-in-95 duration-200"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                <CheckSquare className="w-5 h-5 text-emerald-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900">Завершить заказ</h3>
+                <p className="text-sm text-gray-500">#{confirmComplete.leadId ?? confirmComplete.id} · {confirmComplete.masterAlias ?? "Мастер"}</p>
+              </div>
+            </div>
+            <p className="text-sm text-gray-600 mb-5">
+              Заказ будет отмечен как завершённый. Это действие аналогично тому, как если бы мастер сам закрыл его в приложении.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setConfirmComplete(null)}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={() => doCompleteOrder(confirmComplete)}
+                disabled={completing}
+                className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                {completing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckSquare className="w-4 h-4" />}
+                Завершить
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </ProtectedRoute>
   );
@@ -535,6 +604,7 @@ function ServiceCell({ o }: { o: WorkOrder }) {
 type ActionProps = {
   o: WorkOrder;
   onNotify: (o: WorkOrder, text: string) => void;
+  onComplete: (o: WorkOrder) => void;
   sendingTo: number | null;
   estimateText?: string;
   paymentText?: string;
@@ -553,7 +623,7 @@ function AllHeaders() {
   </>;
 }
 
-function AllRow({ o, onNotify, sendingTo, estimateText, paymentText }: ActionProps) {
+function AllRow({ o, onNotify, onComplete, sendingTo, estimateText, paymentText }: ActionProps) {
   return <>
     <OrderNumCell o={o} />
     <MasterCell o={o} />
@@ -595,6 +665,13 @@ function AllRow({ o, onNotify, sendingTo, estimateText, paymentText }: ActionPro
           <ActionBtn onClick={() => window.open(`tel:${o.clientPhone}`)} color="bg-green-100 text-green-600 hover:bg-green-200" icon={Phone} title="Позвонить клиенту" />
         )}
         <ActionBtn onClick={() => window.open(`/leads?openOrder=${o.id}`, "_blank")} color="bg-gray-100 text-gray-600 hover:bg-gray-200" icon={ClipboardList} title="Открыть заказ" />
+        <ActionBtn
+          onClick={() => onComplete(o)}
+          color={o.commissionPaid ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-600 hover:text-white" : "bg-gray-100 text-gray-400"}
+          icon={CheckSquare}
+          title={o.commissionPaid ? "Завершить заказ" : "Завершить нельзя: комиссия не оплачена"}
+          disabled={!o.commissionPaid}
+        />
       </div>
     </td>
   </>;
@@ -614,7 +691,7 @@ function EstimateHeaders() {
   </>;
 }
 
-function EstimateRow({ o, onNotify, sendingTo, paymentText }: ActionProps) {
+function EstimateRow({ o, onNotify, onComplete, sendingTo, paymentText }: ActionProps) {
   const confirmed = !!o.receiptPrepaymentPaidAt;       // operator confirmed
   const submitted = !!o.receiptPrepaymentSubmittedAt;  // client sent screenshot
   const hoursWaiting = o.hoursWithoutPayment;
@@ -650,6 +727,7 @@ function EstimateRow({ o, onNotify, sendingTo, paymentText }: ActionProps) {
         {o.clientPhone && <ActionBtn onClick={() => window.open(`tel:${o.clientPhone}`)} color="bg-green-100 text-green-600 hover:bg-green-200" icon={Phone} title="Позвонить клиенту" />}
         {o.receiptToken && <ActionBtn onClick={() => window.open(`/receipt/${o.receiptToken}`, "_blank")} color="bg-gray-100 text-gray-600 hover:bg-gray-200" icon={Eye} title="Открыть смету" />}
         <ActionBtn onClick={() => window.open(`/leads?openOrder=${o.id}`, "_blank")} color="bg-gray-100 text-gray-600 hover:bg-gray-200" icon={ClipboardList} title="Открыть заказ" />
+        <ActionBtn onClick={() => onComplete(o)} color={o.commissionPaid ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-600 hover:text-white" : "bg-gray-100 text-gray-400"} icon={CheckSquare} title={o.commissionPaid ? "Завершить заказ" : "Завершить нельзя: комиссия не оплачена"} disabled={!o.commissionPaid} />
       </div>
     </td>
   </>;
@@ -668,7 +746,7 @@ function NoEstimateHeaders() {
   </>;
 }
 
-function NoEstimateRow({ o, onNotify, sendingTo, estimateText }: ActionProps) {
+function NoEstimateRow({ o, onNotify, onComplete, sendingTo, estimateText }: ActionProps) {
   const h = o.hoursWithoutEstimate ?? 0;
   return <>
     <OrderNumCell o={o} />
@@ -700,6 +778,7 @@ function NoEstimateRow({ o, onNotify, sendingTo, estimateText }: ActionProps) {
         {o.masterMaxChatId && <ActionBtn onClick={() => onNotify(o, estimateText!)} color="bg-blue-100 text-blue-600 hover:bg-blue-200" icon={MessageSquare} title="Напомнить про смету" disabled={sendingTo === o.id} />}
         {o.masterPhone && <ActionBtn onClick={() => window.open(`tel:${o.masterPhone}`)} color="bg-green-100 text-green-600 hover:bg-green-200" icon={Phone} title="Позвонить мастеру" />}
         <ActionBtn onClick={() => window.open(`/leads?openOrder=${o.id}`, "_blank")} color="bg-gray-100 text-gray-600 hover:bg-gray-200" icon={ClipboardList} title="Открыть заказ" />
+        <ActionBtn onClick={() => onComplete(o)} color={o.commissionPaid ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-600 hover:text-white" : "bg-gray-100 text-gray-400"} icon={CheckSquare} title={o.commissionPaid ? "Завершить заказ" : "Завершить нельзя: комиссия не оплачена"} disabled={!o.commissionPaid} />
       </div>
     </td>
   </>;
@@ -718,7 +797,7 @@ function WaitingPaymentHeaders() {
   </>;
 }
 
-function WaitingPaymentRow({ o, onNotify, sendingTo, paymentText }: ActionProps) {
+function WaitingPaymentRow({ o, onNotify, onComplete, sendingTo, paymentText }: ActionProps) {
   const h = o.hoursWithoutPayment ?? 0;
   const submitted = !!o.receiptPrepaymentSubmittedAt;
   return <>
@@ -750,6 +829,7 @@ function WaitingPaymentRow({ o, onNotify, sendingTo, paymentText }: ActionProps)
         {o.clientPhone && <ActionBtn onClick={() => window.open(`tel:${o.clientPhone}`)} color="bg-green-100 text-green-600 hover:bg-green-200" icon={Phone} title="Позвонить клиенту" />}
         {o.receiptToken && <ActionBtn onClick={() => window.open(`/receipt/${o.receiptToken}`, "_blank")} color="bg-gray-100 text-gray-600 hover:bg-gray-200" icon={Eye} title="Открыть смету" />}
         <ActionBtn onClick={() => window.open(`/leads?openOrder=${o.id}`, "_blank")} color="bg-gray-100 text-gray-600 hover:bg-gray-200" icon={ClipboardList} title="Открыть заказ" />
+        <ActionBtn onClick={() => onComplete(o)} color={o.commissionPaid ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-600 hover:text-white" : "bg-gray-100 text-gray-400"} icon={CheckSquare} title={o.commissionPaid ? "Завершить заказ" : "Завершить нельзя: комиссия не оплачена"} disabled={!o.commissionPaid} />
       </div>
     </td>
   </>;
@@ -767,7 +847,7 @@ function ProblematicHeaders() {
   </>;
 }
 
-function ProblematicRow({ o, onNotify, sendingTo, estimateText, paymentText }: ActionProps) {
+function ProblematicRow({ o, onNotify, onComplete, sendingTo, estimateText, paymentText }: ActionProps) {
   const notifyText = !o.receiptId ? estimateText! : paymentText!;
   return <>
     <OrderNumCell o={o} />
@@ -791,6 +871,7 @@ function ProblematicRow({ o, onNotify, sendingTo, estimateText, paymentText }: A
         {o.masterMaxChatId && <ActionBtn onClick={() => onNotify(o, notifyText)} color="bg-blue-100 text-blue-600 hover:bg-blue-200" icon={MessageSquare} title="Написать мастеру" disabled={sendingTo === o.id} />}
         {o.masterPhone && <ActionBtn onClick={() => window.open(`tel:${o.masterPhone}`)} color="bg-green-100 text-green-600 hover:bg-green-200" icon={Phone} title="Позвонить мастеру" />}
         <ActionBtn onClick={() => window.open(`/leads?openOrder=${o.id}`, "_blank")} color="bg-gray-100 text-gray-600 hover:bg-gray-200" icon={ClipboardList} title="Открыть заказ" />
+        <ActionBtn onClick={() => onComplete(o)} color={o.commissionPaid ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-600 hover:text-white" : "bg-gray-100 text-gray-400"} icon={CheckSquare} title={o.commissionPaid ? "Завершить заказ" : "Завершить нельзя: комиссия не оплачена"} disabled={!o.commissionPaid} />
       </div>
     </td>
   </>;
@@ -806,7 +887,7 @@ const STATUS_LABELS: Record<string, { label: string; cls: string }> = {
   cancelled:              { label: "Отменён",          cls: "bg-red-100 text-red-800" },
 };
 
-function OrderDetailModal({ order: o, onClose }: { order: WorkOrder; onClose: () => void }) {
+function OrderDetailModal({ order: o, onClose, onComplete }: { order: WorkOrder; onClose: () => void; onComplete: (o: WorkOrder) => void }) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", handler);
@@ -974,6 +1055,19 @@ function OrderDetailModal({ order: o, onClose }: { order: WorkOrder; onClose: ()
           <button onClick={e => { e.stopPropagation(); window.open(`/leads?openOrder=${o.id}`, "_blank"); }}
             className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 text-sm font-medium transition-colors min-w-[90px]">
             <ClipboardList className="w-4 h-4" />Открыть заказ
+          </button>
+          <button
+            onClick={e => { e.stopPropagation(); onComplete(o); }}
+            disabled={!o.commissionPaid}
+            title={!o.commissionPaid ? "Комиссия не оплачена" : "Завершить заказ за мастера"}
+            className={`w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-medium transition-colors ${
+              o.commissionPaid
+                ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                : "bg-gray-100 text-gray-400 cursor-not-allowed"
+            }`}
+          >
+            <CheckSquare className="w-4 h-4" />
+            {o.commissionPaid ? "Завершить заказ" : "Завершить нельзя — комиссия не оплачена"}
           </button>
         </div>
       </div>
