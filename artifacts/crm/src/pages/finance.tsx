@@ -725,16 +725,16 @@ export default function Finance() {
                   <table className="w-full text-sm text-left">
                     <thead className="bg-slate-50/50 text-muted-foreground font-medium border-b border-border/50 text-xs">
                       <tr>
-                        <th className="px-4 py-3">Дата</th>
-                        <th className="px-4 py-3">Заказ</th>
-                        <th className="px-4 py-3">Мастер</th>
-                        <th className="px-4 py-3">Город / Вид работ</th>
-                        <th className="px-4 py-3 text-right">Сумма заказа</th>
-                        <th className="px-4 py-3 text-right">Комиссия</th>
-                        <th className="px-4 py-3 text-right">К оплате</th>
-                        <th className="px-4 py-3">Срок / Просрочка</th>
-                        <th className="px-4 py-3">Статус</th>
-                        <th className="px-4 py-3 text-right">Действия</th>
+                        <th className="px-2 py-2">Дата</th>
+                        <th className="px-2 py-2">Заказ</th>
+                        <th className="px-2 py-2">Мастер</th>
+                        <th className="px-2 py-2">Город / Вид работ</th>
+                        <th className="px-2 py-2 text-right">Сумма</th>
+                        <th className="px-2 py-2 text-right">Комиссия</th>
+                        <th className="px-2 py-2 text-right">К оплате</th>
+                        <th className="px-2 py-2">Срок</th>
+                        <th className="px-2 py-2">Статус</th>
+                        <th className="px-2 py-2 text-right">Действия</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border/50">
@@ -751,80 +751,72 @@ export default function Finance() {
                         return (
                           <React.Fragment key={tx.id}>
                           <tr className={`transition-colors ${rowBg}`}>
-                            <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{formatDate(tx.createdAt)}</td>
-                            <td className="px-4 py-3">
-                              <span className="font-medium text-foreground">#{tx.orderId ?? "—"}</span>
-                              {tx.sourceType === "receipt" && <div className="text-[10px] text-violet-600 mt-0.5">📋 Из сметы</div>}
+                            <td className="px-2 py-2 text-xs text-muted-foreground whitespace-nowrap">{formatDate(tx.createdAt)}</td>
+                            <td className="px-2 py-2">
+                              <span className="font-medium text-foreground text-xs">#{tx.orderId ?? "—"}</span>
+                              {tx.sourceType === "receipt" && <div className="text-[10px] text-violet-600 mt-0.5">из сметы</div>}
                             </td>
-                            <td className="px-4 py-3 font-medium text-foreground whitespace-nowrap">{tx.masterAlias}</td>
-                            <td className="px-4 py-3">
-                              <div className="text-xs text-muted-foreground">{tx.city}</div>
-                              <div className="text-xs text-foreground truncate max-w-[160px]">{tx.serviceType}</div>
+                            <td className="px-2 py-2 text-xs font-medium text-foreground whitespace-nowrap">{tx.masterAlias}</td>
+                            <td className="px-2 py-2">
+                              <div className="text-[10px] text-muted-foreground">{tx.city}</div>
+                              <div className="text-xs text-foreground truncate max-w-[120px]">{tx.serviceType}</div>
                             </td>
-                            <td className="px-4 py-3 text-right text-foreground whitespace-nowrap">
-                              {tx.orderAmount > 0 ? formatCurrency(tx.orderAmount) : <span className="text-muted-foreground italic text-xs">—</span>}
+                            <td className="px-2 py-2 text-right text-xs text-foreground whitespace-nowrap">
+                              {tx.orderAmount > 0 ? formatCurrency(tx.orderAmount) : <span className="text-muted-foreground italic">—</span>}
                             </td>
-                            <td className="px-4 py-3 text-right">
+                            <td className="px-2 py-2 text-right text-xs">
                               <span className="font-medium">{formatCurrency(tx.commission)}</span>
-                              {tx.orderAmount > 50_000
-                                ? <div className="text-[10px] text-violet-500">15%</div>
-                                : <div className="text-[10px] text-muted-foreground">фикс.</div>}
+                              <div className="text-[10px] text-muted-foreground">{tx.orderAmount > 50_000 ? "15%" : "фикс."}</div>
                             </td>
-                            <td className="px-4 py-3 text-right">
+                            <td className="px-2 py-2 text-right text-xs">
                               <span className={`font-bold ${tx.netPayable > 0 ? "text-foreground" : "text-emerald-600"}`}>
                                 {tx.netPayable > 0 ? formatCurrency(tx.netPayable) : "Погашено"}
                               </span>
                               {tx.prepaymentDeducted > 0 && (
-                                <div className="text-[10px] text-emerald-600">−{formatCurrency(tx.prepaymentDeducted)} предоплата</div>
+                                <div className="text-[10px] text-emerald-600">−{formatCurrency(tx.prepaymentDeducted)}</div>
                               )}
                               {tx.totalPartialPaid > 0 && (
-                                <div className="text-[10px] text-blue-600">−{formatCurrency(tx.totalPartialPaid)} частями</div>
-                              )}
-                              {tx.paymentStatus !== "paid" && tx.commission > 0 && (
-                                <div className="mt-1.5 w-full bg-gray-200 rounded-full h-1.5">
-                                  <div className="bg-blue-500 h-1.5 rounded-full transition-all"
-                                    style={{ width: `${Math.min(100, ((tx.prepaymentDeducted + tx.totalPartialPaid) / tx.commission) * 100)}%` }} />
-                                </div>
+                                <div className="text-[10px] text-blue-600">−{formatCurrency(tx.totalPartialPaid)}</div>
                               )}
                             </td>
-                            <td className="px-4 py-3 text-xs whitespace-nowrap">
+                            <td className="px-2 py-2 text-xs whitespace-nowrap">
                               <div className="text-muted-foreground">{new Date(tx.dueDate).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}</div>
-                              {tx.daysOverdue > 0 && <div className="text-red-600 font-semibold">+{tx.daysOverdue} дн.</div>}
+                              {tx.daysOverdue > 0 && <div className="text-red-600 font-semibold">+{tx.daysOverdue}д</div>}
                             </td>
-                            <td className="px-4 py-3"><StatusBadge status={tx.paymentStatus} /></td>
-                            <td className="px-4 py-3">
-                              <div className="flex items-center gap-1 justify-end flex-wrap">
+                            <td className="px-2 py-2"><StatusBadge status={tx.paymentStatus} /></td>
+                            <td className="px-2 py-2">
+                              <div className="flex items-center gap-1 justify-end">
                                 {(tx.paymentStatus === "pending" || tx.paymentStatus === "overdue") && <>
-                                  <button onClick={() => setConfirmPay(tx)} disabled={isLoading}
-                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-emerald-100 text-emerald-700 hover:bg-emerald-600 hover:text-white rounded-lg text-[11px] font-medium transition-colors disabled:opacity-50">
-                                    {isLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />} Полностью
+                                  <button onClick={() => setConfirmPay(tx)} disabled={isLoading} title="Оплачено полностью"
+                                    className="p-1.5 bg-emerald-100 text-emerald-700 hover:bg-emerald-600 hover:text-white rounded-lg transition-colors disabled:opacity-50">
+                                    {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
                                   </button>
-                                  <button onClick={() => { setPartialPayTx(tx); setPartialAmount(""); setPartialNote(""); }}
-                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-blue-100 text-blue-700 hover:bg-blue-600 hover:text-white rounded-lg text-[11px] font-medium transition-colors">
-                                    <Banknote className="w-3 h-3" /> Частично
+                                  <button onClick={() => { setPartialPayTx(tx); setPartialAmount(""); setPartialNote(""); }} title="Частичная оплата"
+                                    className="p-1.5 bg-blue-100 text-blue-700 hover:bg-blue-600 hover:text-white rounded-lg transition-colors">
+                                    <Banknote className="w-3.5 h-3.5" />
                                   </button>
-                                  <button onClick={() => doRemind(tx)}
-                                    className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
-                                      reminded ? "bg-blue-50 text-blue-500 cursor-default" : "bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white"}`}
+                                  <button onClick={() => doRemind(tx)} title={reminded ? "Напоминание отправлено" : "Напомнить мастеру"}
+                                    className={`p-1.5 rounded-lg transition-colors ${reminded ? "bg-blue-50 text-blue-400 cursor-default" : "bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white"}`}
                                     disabled={reminded}>
-                                    <Bell className="w-3 h-3" /> {reminded ? "Отправлено" : "Напомнить"}
+                                    <Bell className="w-3.5 h-3.5" />
                                   </button>
                                 </>}
                                 {tx.partialPayments?.length > 0 && (
                                   <button onClick={() => setExpandedTx(s => { const n = new Set(s); n.has(tx.id) ? n.delete(tx.id) : n.add(tx.id); return n; })}
-                                    className="inline-flex items-center gap-1 px-2 py-1.5 bg-slate-100 text-slate-500 hover:text-slate-800 rounded-lg text-[11px] transition-colors">
+                                    title="История платежей"
+                                    className="inline-flex items-center gap-0.5 px-1.5 py-1.5 bg-slate-100 text-slate-500 hover:text-slate-800 rounded-lg text-[11px] transition-colors">
                                     {expandedTx.has(tx.id) ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                                     {tx.partialPayments.length}
                                   </button>
                                 )}
-                                <button onClick={() => setSelectedTx(tx)}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-violet-50 text-violet-700 hover:bg-violet-600 hover:text-white rounded-lg text-[11px] font-medium transition-colors">
-                                  <Search className="w-3 h-3" /> О заказе
+                                <button onClick={() => setSelectedTx(tx)} title="О заказе"
+                                  className="p-1.5 bg-violet-50 text-violet-700 hover:bg-violet-600 hover:text-white rounded-lg transition-colors">
+                                  <Search className="w-3.5 h-3.5" />
                                 </button>
                                 {tx.orderId && (
-                                  <a href={`/orders?id=${tx.orderId}`}
-                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 text-slate-600 hover:bg-slate-600 hover:text-white rounded-lg text-[11px] font-medium transition-colors">
-                                    📋 Заказ
+                                  <a href={`/orders?id=${tx.orderId}`} title="Открыть заказ"
+                                    className="p-1.5 bg-slate-100 text-slate-600 hover:bg-slate-600 hover:text-white rounded-lg transition-colors">
+                                    <FileText className="w-3.5 h-3.5" />
                                   </a>
                                 )}
                               </div>
@@ -919,16 +911,16 @@ export default function Finance() {
                   <table className="w-full text-sm text-left">
                     <thead className="bg-slate-50/50 text-muted-foreground font-medium border-b border-border/50 text-xs">
                       <tr>
-                        <th className="px-4 py-3">Мастер</th>
-                        <th className="px-4 py-3">Город</th>
-                        <th className="px-4 py-3 text-right">Заказов</th>
-                        <th className="px-4 py-3 text-right">Оборот</th>
-                        <th className="px-4 py-3 text-right">Оплачено</th>
-                        <th className="px-4 py-3 text-right">Ожидает</th>
-                        <th className="px-4 py-3 text-right">Просрочено</th>
-                        <th className="px-4 py-3 text-right">Долг итого</th>
-                        <th className="px-4 py-3">Посл. оплата</th>
-                        <th className="px-4 py-3 text-right">Действия</th>
+                        <th className="px-2 py-2">Мастер</th>
+                        <th className="px-2 py-2">Город</th>
+                        <th className="px-2 py-2 text-right">Заказов</th>
+                        <th className="px-2 py-2 text-right">Оборот</th>
+                        <th className="px-2 py-2 text-right">Оплачено</th>
+                        <th className="px-2 py-2 text-right">Ожидает</th>
+                        <th className="px-2 py-2 text-right">Просрочено</th>
+                        <th className="px-2 py-2 text-right">Долг итого</th>
+                        <th className="px-2 py-2">Посл. оплата</th>
+                        <th className="px-2 py-2 text-right">Действия</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border/50">
@@ -945,40 +937,40 @@ export default function Finance() {
                         const hasDebt     = m.debtTotal > 0;
                         return (
                           <tr key={m.masterId} className={`transition-colors ${rowBg}`}>
-                            <td className="px-4 py-3">
-                              <div className="font-medium text-foreground">{m.alias}</div>
-                              {m.phone && <div className="text-[11px] text-muted-foreground flex items-center gap-1 mt-0.5"><Phone className="w-3 h-3" />{m.phone}</div>}
+                            <td className="px-2 py-2">
+                              <div className="font-medium text-foreground text-xs">{m.alias}</div>
+                              {m.phone && <div className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5"><Phone className="w-3 h-3" />{m.phone}</div>}
                             </td>
-                            <td className="px-4 py-3"><div className="flex items-center gap-1 text-muted-foreground text-xs"><MapPin className="w-3 h-3" />{m.city}</div></td>
-                            <td className="px-4 py-3 text-right font-medium">{m.orderCount}</td>
-                            <td className="px-4 py-3 text-right">{formatCurrency(m.totalOrderAmount)}</td>
-                            <td className="px-4 py-3 text-right">
-                              {m.paidCommission > 0 ? <div><span className="text-emerald-700 font-medium">{formatCurrency(m.paidCommission)}</span><div className="text-[10px] text-muted-foreground">{m.paidCount} транз.</div></div> : <span className="text-muted-foreground">—</span>}
+                            <td className="px-2 py-2 text-xs"><div className="flex items-center gap-1 text-muted-foreground"><MapPin className="w-3 h-3" />{m.city}</div></td>
+                            <td className="px-2 py-2 text-right text-xs font-medium">{m.orderCount}</td>
+                            <td className="px-2 py-2 text-right text-xs">{formatCurrency(m.totalOrderAmount)}</td>
+                            <td className="px-2 py-2 text-right text-xs">
+                              {m.paidCommission > 0 ? <div><span className="text-emerald-700 font-medium">{formatCurrency(m.paidCommission)}</span><div className="text-[10px] text-muted-foreground">{m.paidCount}т</div></div> : <span className="text-muted-foreground">—</span>}
                             </td>
-                            <td className="px-4 py-3 text-right">
-                              {m.pendingCommission > 0 ? <div><span className="text-amber-700 font-medium">{formatCurrency(m.pendingCommission)}</span><div className="text-[10px] text-muted-foreground">{m.pendingCount} транз.</div></div> : <span className="text-muted-foreground">—</span>}
+                            <td className="px-2 py-2 text-right text-xs">
+                              {m.pendingCommission > 0 ? <div><span className="text-amber-700 font-medium">{formatCurrency(m.pendingCommission)}</span><div className="text-[10px] text-muted-foreground">{m.pendingCount}т</div></div> : <span className="text-muted-foreground">—</span>}
                             </td>
-                            <td className="px-4 py-3 text-right">
-                              {m.overdueCommission > 0 ? <div><span className="text-red-700 font-bold">{formatCurrency(m.overdueCommission)}</span><div className="text-[10px] text-muted-foreground">{m.overdueCount} транз.</div></div> : <span className="text-muted-foreground">—</span>}
+                            <td className="px-2 py-2 text-right text-xs">
+                              {m.overdueCommission > 0 ? <div><span className="text-red-700 font-bold">{formatCurrency(m.overdueCommission)}</span><div className="text-[10px] text-muted-foreground">{m.overdueCount}т</div></div> : <span className="text-muted-foreground">—</span>}
                             </td>
-                            <td className="px-4 py-3 text-right">
+                            <td className="px-2 py-2 text-right text-xs">
                               <span className={`font-bold ${m.debtTotal > 0 ? "text-red-700" : "text-emerald-600"}`}>
-                                {m.debtTotal > 0 ? formatCurrency(m.debtTotal) : "Нет долга"}
+                                {m.debtTotal > 0 ? formatCurrency(m.debtTotal) : "—"}
                               </span>
                             </td>
-                            <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                            <td className="px-2 py-2 text-xs text-muted-foreground whitespace-nowrap">
                               {m.lastPaidAt ? formatDate(m.lastPaidAt) : "—"}
                             </td>
-                            <td className="px-4 py-3">
+                            <td className="px-2 py-2">
                               {hasDebt && (
                                 <div className="flex items-center gap-1 justify-end">
-                                  <button onClick={() => doRemindAll(m)} disabled={!!masterActionLoading}
-                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg text-[11px] font-medium transition-colors disabled:opacity-50">
-                                    {isReminding ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bell className="w-3 h-3" />} Напомнить
+                                  <button onClick={() => doRemindAll(m)} disabled={!!masterActionLoading} title="Напомнить мастеру"
+                                    className="p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg transition-colors disabled:opacity-50">
+                                    {isReminding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bell className="w-3.5 h-3.5" />}
                                   </button>
-                                  <button onClick={() => setConfirmPayAll(m)} disabled={!!masterActionLoading}
-                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-emerald-100 text-emerald-700 hover:bg-emerald-600 hover:text-white rounded-lg text-[11px] font-medium transition-colors disabled:opacity-50">
-                                    {isPaying ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />} Оплатить всё
+                                  <button onClick={() => setConfirmPayAll(m)} disabled={!!masterActionLoading} title="Оплатить всё"
+                                    className="p-1.5 bg-emerald-100 text-emerald-700 hover:bg-emerald-600 hover:text-white rounded-lg transition-colors disabled:opacity-50">
+                                    {isPaying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
                                   </button>
                                 </div>
                               )}
