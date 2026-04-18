@@ -29,6 +29,7 @@ import aiOfficeRouter from "./ai-office.js";
 import autonomousRouter from "./autonomous.js";
 import memoryRouter from "./memory.js";
 import chatCasesRouter from "./chat-cases.js";
+import workMonitorRouter from "./work-monitor.js";
 import { processCases, scheduleDigest } from "../lib/casesEngine.js";
 
 const router = Router();
@@ -62,6 +63,7 @@ router.use("/ai-office", aiOfficeRouter);
 router.use("/autonomous", autonomousRouter);
 router.use("/agent-memory", memoryRouter);
 router.use("/chat-cases", chatCasesRouter);
+router.use("/work-monitor", workMonitorRouter);
 
 // Seed popular repair services on startup (INSERT ... ON CONFLICT DO NOTHING)
 async function seedServices() {

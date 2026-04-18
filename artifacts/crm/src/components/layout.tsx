@@ -22,6 +22,7 @@ import {
   ChevronDown,
   Bot,
   Brain,
+  Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect, useRef } from "react";
@@ -110,6 +111,7 @@ export function Layout({ children }: LayoutProps) {
     { href: "/dialogs",        label: "Диалоги с клиентами",   icon: MessageCircle,    permKey: "orders",       badge: unreadDialogs > 0 ? unreadDialogs : null },
 
     { href: "/leads",          label: "Заявки",                icon: Inbox,            permKey: "leads",        badge: leadsBadge > 0 ? leadsBadge : null },
+    { href: "/work-monitor",   label: "В работе",             icon: Activity,         permKey: "orders" },
     { href: "/masters",         label: "Мастера",              icon: Users,           permKey: "masters" },
     { href: "/master-control",  label: "Контроль мастеров",    icon: Brain,           permKey: "masters" },
     { href: "/checkins",        label: "Готовность",           icon: CalendarCheck,   permKey: "masters" },

@@ -24,6 +24,7 @@ import AvitoPage from "@/pages/avito";
 import AvitoMessagesPage from "@/pages/avito-messages";
 import AiOfficePage from "@/pages/ai-office";
 import MasterControlPage from "@/pages/master-control";
+import WorkMonitorPage from "@/pages/work-monitor";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -67,6 +68,7 @@ function Router() {
       <Route path="/avito-messages" component={AvitoMessagesPage} />
       <Route path="/ai-office" component={AiOfficePage} />
       <Route path="/master-control" component={MasterControlPage} />
+      <Route path="/work-monitor" component={WorkMonitorPage} />
       <Route component={NotFound} />
     </Switch>
   );
