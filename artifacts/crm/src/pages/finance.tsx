@@ -222,6 +222,8 @@ export default function Finance() {
   const [pageSize, setPageSize]       = useState(20);
   const [confirmPay, setConfirmPay]         = useState<Transaction | null>(null);
   const [remindSent, setRemindSent]         = useState<Set<number>>(new Set());
+  const [remindPreviewTx, setRemindPreviewTx]         = useState<Transaction | null>(null);
+  const [remindPreviewMaster, setRemindPreviewMaster] = useState<MasterStat | null>(null);
   const [payLoading, setPayLoading]         = useState<number | null>(null);
   const [partialPayTx, setPartialPayTx]     = useState<Transaction | null>(null);
   const [partialAmount, setPartialAmount]   = useState("");
@@ -476,6 +478,38 @@ export default function Finance() {
       toast.success(`Напоминание отправлено мастеру ${m.alias}`);
     } catch (e: any) { toast.error(e?.message ?? "Ошибка при отправке напоминания"); }
     finally { setMasterActionLoading(null); }
+  };
+
+  const buildRemindText = (tx: Transaction): string => {
+    const due = new Date(tx.dueDate);
+    const dueDateStr = due.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+    return (
+      `💰 Напоминание об оплате\n\n` +
+      `По заказу #${tx.orderId ?? "—"} (${tx.serviceType ?? "заказ"}) ожидается оплата комиссии.\n\n` +
+      `Сумма: ${Number(tx.commission).toLocaleString("ru-RU")} ₽\n` +
+      `Срок: ${dueDateStr}\n\n` +
+      `Оплатите на реквизиты в приложении → раздел Оплата.`
+    );
+  };
+
+  const buildRemindAllText = (m: MasterStat): string => {
+    const unpaid = (transactions ?? []).filter(
+      t => t.masterId === m.masterId && (t.paymentStatus === "pending" || t.paymentStatus === "overdue")
+    );
+    const lines = unpaid.length > 0
+      ? unpaid.map(t => `Заказ #${t.orderId}: ${Number(t.commission).toLocaleString("ru-RU")} ₽`).join("\n")
+      : `[${(m.pendingCount + m.overdueCount)} заказов]`;
+    const total = unpaid.length > 0
+      ? unpaid.reduce((s, t) => s + Number(t.commission), 0)
+      : m.debtTotal;
+    const count = unpaid.length > 0 ? unpaid.length : m.pendingCount + m.overdueCount;
+    return (
+      `💰 Сводка задолженности\n\n` +
+      `${m.alias}, у вас ${count} неоплаченных комиссий:\n\n` +
+      `${lines}\n\n` +
+      `Итого: ${Number(total).toLocaleString("ru-RU")} ₽\n\n` +
+      `Оплатите на реквизиты в приложении → раздел Оплата.`
+    );
   };
 
   const doPayAll = async (m: MasterStat) => {
@@ -795,7 +829,7 @@ export default function Finance() {
                                     className="p-1.5 bg-blue-100 text-blue-700 hover:bg-blue-600 hover:text-white rounded-lg transition-colors">
                                     <Banknote className="w-3.5 h-3.5" />
                                   </button>
-                                  <button onClick={() => doRemind(tx)} title={reminded ? "Напоминание отправлено" : "Напомнить мастеру"}
+                                  <button onClick={() => setRemindPreviewTx(tx)} title={reminded ? "Напоминание отправлено" : "Напомнить мастеру"}
                                     className={`p-1.5 rounded-lg transition-colors ${reminded ? "bg-blue-50 text-blue-400 cursor-default" : "bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white"}`}
                                     disabled={reminded}>
                                     <Bell className="w-3.5 h-3.5" />
@@ -964,7 +998,7 @@ export default function Finance() {
                             <td className="px-2 py-2">
                               {hasDebt && (
                                 <div className="flex items-center gap-1 justify-end">
-                                  <button onClick={() => doRemindAll(m)} disabled={!!masterActionLoading} title="Напомнить мастеру"
+                                  <button onClick={() => setRemindPreviewMaster(m)} disabled={!!masterActionLoading} title="Напомнить мастеру"
                                     className="p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg transition-colors disabled:opacity-50">
                                     {isReminding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bell className="w-3.5 h-3.5" />}
                                   </button>
@@ -1390,7 +1424,51 @@ export default function Finance() {
           )}
         </div>
 
-        {/* ── Confirm: mark paid ────────────────────────────────────────────── */}
+        {/* ── Remind preview modal ──────────────────────────────────────────── */}
+        {(remindPreviewTx || remindPreviewMaster) && (() => {
+          const isMaster = !!remindPreviewMaster;
+          const alias   = isMaster ? remindPreviewMaster!.alias : remindPreviewTx!.masterAlias;
+          const text    = isMaster ? buildRemindAllText(remindPreviewMaster!) : buildRemindText(remindPreviewTx!);
+          const onClose = () => { setRemindPreviewTx(null); setRemindPreviewMaster(null); };
+          const onSend  = async () => {
+            onClose();
+            if (remindPreviewTx)     await doRemind(remindPreviewTx);
+            if (remindPreviewMaster) await doRemindAll(remindPreviewMaster);
+          };
+          return (
+            <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-display font-semibold flex items-center gap-2">
+                    <Bell className="w-5 h-5 text-blue-500" /> Напоминание мастеру
+                  </h3>
+                  <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  Получатель: <span className="font-medium text-foreground">{alias}</span>
+                  {isMaster && <span className="ml-2 text-xs text-blue-600">(все долги)</span>}
+                </div>
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                  <p className="text-[11px] text-muted-foreground uppercase tracking-wide mb-2 font-medium">Текст сообщения (Max)</p>
+                  <pre className="text-sm text-foreground whitespace-pre-wrap font-sans leading-relaxed">{text}</pre>
+                </div>
+                <div className="flex gap-2 justify-end pt-1">
+                  <button onClick={onClose}
+                    className="px-4 py-2 rounded-xl border border-border text-sm text-muted-foreground hover:bg-slate-50 transition-colors">
+                    Отмена
+                  </button>
+                  <button onClick={onSend}
+                    className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors flex items-center gap-2">
+                    <Bell className="w-4 h-4" /> Отправить
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* ── Partial payment modal ─────────────────────────────────────────── */}
         {partialPayTx && (
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
