@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, ordersTable, mastersTable, leadsTable, receiptsTable, transactionsTable } from "@workspace/db";
+import { db, ordersTable, mastersTable, leadsTable, receiptsTable, transactionsTable, masterMessagesTable } from "@workspace/db";
 import { inArray, isNull, eq, and } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
 
@@ -232,13 +232,13 @@ router.post("/complete-order/:id", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
-// POST /api/work-monitor/notify-master — send reminder via Max
+// POST /api/work-monitor/notify-master — send reminder via Max + save to dialog
 router.post("/notify-master", requireAuth, async (req, res) => {
-  const { masterId, text } = req.body;
+  const { masterId, text } = req.body as { masterId: number; text: string };
   if (!masterId || !text) return res.status(400).json({ error: "masterId and text required" });
 
   const [master] = await db
-    .select({ maxChatId: mastersTable.maxChatId })
+    .select({ maxChatId: mastersTable.maxChatId, telegramId: mastersTable.telegramId })
     .from(mastersTable)
     .where(eq(mastersTable.id, masterId));
 
@@ -246,6 +246,18 @@ router.post("/notify-master", requireAuth, async (req, res) => {
 
   const { sendMaxMessage } = await import("../maxBot.js");
   await sendMaxMessage(master.maxChatId, text);
+
+  // Save to master dialog so it appears in CRM chat
+  const chatId = master.maxChatId ?? master.telegramId ?? String(masterId);
+  const senderName = (req as any).user?.username ?? "Оператор";
+  await db.insert(masterMessagesTable).values({
+    masterId,
+    telegramChatId: chatId,
+    text,
+    fromMaster: false,
+    senderName,
+    isRead: true,
+  });
 
   res.json({ ok: true });
 });

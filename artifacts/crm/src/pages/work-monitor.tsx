@@ -6,7 +6,7 @@ import {
   Phone, MessageSquare, Eye, ClipboardList, RotateCcw, XCircle,
   ChevronLeft, ChevronRight, Search, MapPin, User, Lock, X,
   CheckCircle2, AlertCircle, Building2, Ruler, Calendar, UserCheck, Wallet,
-  CheckSquare,
+  CheckSquare, Send,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -119,6 +119,7 @@ export default function WorkMonitor() {
   const [cityFilter, setCityFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [sendingTo, setSendingTo] = useState<number | null>(null);
+  const [notifyPreview, setNotifyPreview] = useState<{ order: WorkOrder; text: string } | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<WorkOrder | null>(null);
   const [confirmComplete, setConfirmComplete] = useState<WorkOrder | null>(null);
   const [completing, setCompleting] = useState(false);
@@ -418,23 +419,23 @@ export default function WorkMonitor() {
                         }`}
                       >
                         {subTab === "all" && (
-                          <AllRow o={o} onNotify={notifyMaster} onComplete={setConfirmComplete} sendingTo={sendingTo}
+                          <AllRow o={o} onNotify={(o, t) => setNotifyPreview({ order: o, text: t })} onComplete={setConfirmComplete} sendingTo={sendingTo}
                             estimateText={estimateReminderText(o)} paymentText={paymentReminderText(o)} />
                         )}
                         {subTab === "with_estimate" && (
-                          <EstimateRow o={o} onNotify={notifyMaster} onComplete={setConfirmComplete} sendingTo={sendingTo}
+                          <EstimateRow o={o} onNotify={(o, t) => setNotifyPreview({ order: o, text: t })} onComplete={setConfirmComplete} sendingTo={sendingTo}
                             paymentText={paymentReminderText(o)} />
                         )}
                         {subTab === "without_estimate" && (
-                          <NoEstimateRow o={o} onNotify={notifyMaster} onComplete={setConfirmComplete} sendingTo={sendingTo}
+                          <NoEstimateRow o={o} onNotify={(o, t) => setNotifyPreview({ order: o, text: t })} onComplete={setConfirmComplete} sendingTo={sendingTo}
                             estimateText={estimateReminderText(o)} />
                         )}
                         {subTab === "waiting_payment" && (
-                          <WaitingPaymentRow o={o} onNotify={notifyMaster} onComplete={setConfirmComplete} sendingTo={sendingTo}
+                          <WaitingPaymentRow o={o} onNotify={(o, t) => setNotifyPreview({ order: o, text: t })} onComplete={setConfirmComplete} sendingTo={sendingTo}
                             paymentText={paymentReminderText(o)} />
                         )}
                         {subTab === "problematic" && (
-                          <ProblematicRow o={o} onNotify={notifyMaster} onComplete={setConfirmComplete} sendingTo={sendingTo}
+                          <ProblematicRow o={o} onNotify={(o, t) => setNotifyPreview({ order: o, text: t })} onComplete={setConfirmComplete} sendingTo={sendingTo}
                             estimateText={estimateReminderText(o)} paymentText={paymentReminderText(o)} />
                         )}
                       </tr>
@@ -477,6 +478,62 @@ export default function WorkMonitor() {
           onClose={() => setSelectedOrder(null)}
           onComplete={o => { setSelectedOrder(null); setConfirmComplete(o); }}
         />
+      )}
+
+      {/* Notify preview dialog */}
+      {notifyPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setNotifyPreview(null)}>
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+          <div
+            className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md animate-in zoom-in-95 duration-200"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center gap-3 px-5 pt-5 pb-3 border-b border-gray-100">
+              <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                <MessageSquare className="w-4 h-4 text-blue-600" />
+              </div>
+              <div className="min-w-0">
+                <p className="font-semibold text-gray-900 text-sm">Напоминание мастеру</p>
+                <p className="text-xs text-gray-500 truncate">
+                  {notifyPreview.order.masterAlias ?? "Мастер"} · #{notifyPreview.order.leadId ?? notifyPreview.order.id}
+                </p>
+              </div>
+            </div>
+
+            {/* Message preview */}
+            <div className="px-5 py-4">
+              <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Сообщение</p>
+              <div className="bg-blue-50 rounded-xl px-4 py-3 text-sm text-gray-800 whitespace-pre-wrap leading-relaxed border border-blue-100 max-h-64 overflow-y-auto">
+                {notifyPreview.text}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-2 px-5 pb-5">
+              <button
+                onClick={() => setNotifyPreview(null)}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={async () => {
+                  const { order, text } = notifyPreview;
+                  setNotifyPreview(null);
+                  await notifyMaster(order, text);
+                }}
+                disabled={sendingTo === notifyPreview.order.id}
+                className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                {sendingTo === notifyPreview.order.id
+                  ? <><Loader2 className="w-4 h-4 animate-spin" />Отправка…</>
+                  : <><Send className="w-4 h-4" />Отправить</>
+                }
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Confirm complete dialog */}
