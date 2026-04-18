@@ -1127,18 +1127,30 @@ export default function Leads() {
                     {pendingAmountOrders.length === 1 ? "1 заказ ожидает подтверждения суммы" : `${pendingAmountOrders.length} заказа ожидают подтверждения`}
                   </div>
                   {pendingAmountOrders.map(order => (
-                    <div key={order.id} className="flex items-start justify-between gap-3 bg-white rounded-xl border border-amber-100 px-4 py-3">
-                      <div>
-                        <span className="font-medium text-foreground">#{order.leadId ?? order.id}</span>
+                    <div key={order.id}
+                      onClick={() => { setOpenDispatchId(order.id); broadcastMutation.reset(); }}
+                      className="flex items-start justify-between gap-3 bg-white rounded-xl border border-amber-100 px-4 py-3 cursor-pointer hover:bg-amber-50/50 transition-colors"
+                    >
+                      <div className="min-w-0">
+                        <span className="font-semibold text-foreground">#{order.leadId ?? order.id}</span>
                         <span className="mx-2 text-muted-foreground">·</span>
                         <span className="text-foreground">{order.serviceType}</span>
+                        {order.city && <><span className="mx-2 text-muted-foreground">·</span><span className="text-muted-foreground text-xs">{order.city}</span></>}
                         <span className="mx-2 text-muted-foreground">·</span>
                         <span className="text-amber-700 font-semibold">{fmtMoney(Number((order as any).proposedAmount))}</span>
-                        {order.masterName && <button onClick={() => order.masterId && openMasterChat(order.masterId)} className="ml-2 text-xs text-blue-600 hover:underline">мастер {order.masterName}</button>}
+                        {order.masterName && <span className="ml-2 text-xs text-muted-foreground">мастер {order.masterName}</span>}
                       </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
+                      <div className="flex items-center gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
                         {order.masterId && <button onClick={() => openMasterChat(order.masterId!)} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-amber-200 text-amber-700 hover:bg-amber-50 rounded-lg font-medium text-xs"><MessageSquare className="w-3 h-3" />Чат</button>}
-                        <button onClick={() => { if (confirm(`Принять сумму ${fmtMoney(Number((order as any).proposedAmount))}?`)) acceptProposedMutation.mutate(order.id); }} disabled={acceptProposedMutation.isPending} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-500 text-white hover:bg-amber-600 rounded-lg font-medium text-xs disabled:opacity-50">{acceptProposedMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}Принять</button>
+                        <button
+                          onClick={() => { if (confirm(`Принять сумму ${fmtMoney(Number((order as any).proposedAmount))} по заказу #${order.leadId ?? order.id}?`)) acceptProposedMutation.mutate(order.id); }}
+                          disabled={acceptProposedMutation.isPending}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-500 text-white hover:bg-amber-600 rounded-lg font-medium text-xs disabled:opacity-50"
+                        >
+                          {acceptProposedMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                          Принять
+                        </button>
+                        <button onClick={() => { setOpenDispatchId(order.id); broadcastMutation.reset(); }} className="inline-flex items-center gap-1 px-2 py-1.5 bg-white border border-amber-200 text-amber-700 hover:bg-amber-50 rounded-lg font-medium text-xs" title="Открыть заказ"><ChevronRight className="w-3.5 h-3.5" /></button>
                       </div>
                     </div>
                   ))}
