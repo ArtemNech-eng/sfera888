@@ -5,7 +5,7 @@ import {
   Loader2, RefreshCw, FileText, Clock, CreditCard, AlertTriangle,
   Phone, MessageSquare, Eye, ClipboardList, RotateCcw, XCircle,
   ChevronLeft, ChevronRight, Search, MapPin, User, Lock, X,
-  CheckCircle2, AlertCircle, Building2, Ruler, Calendar, UserCheck,
+  CheckCircle2, AlertCircle, Building2, Ruler, Calendar, UserCheck, Wallet,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -952,21 +952,27 @@ function OrderDetailModal({ order: o, onClose }: { order: WorkOrder; onClose: ()
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 border-t border-gray-100 flex gap-2 flex-shrink-0">
+        <div className="px-5 py-3 border-t border-gray-100 flex gap-2 flex-shrink-0 flex-wrap">
           {o.receiptToken && (
             <button onClick={e => { e.stopPropagation(); window.open(`/receipt/${o.receiptToken}`, "_blank"); }}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-sm font-medium transition-colors">
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-sm font-medium transition-colors min-w-[90px]">
               <Eye className="w-4 h-4" />Смета
             </button>
           )}
           {o.clientPhone && (
             <a href={`tel:${o.clientPhone}`} onClick={e => e.stopPropagation()}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-gray-50 text-gray-700 hover:bg-gray-100 text-sm font-medium transition-colors">
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-gray-50 text-gray-700 hover:bg-gray-100 text-sm font-medium transition-colors min-w-[90px]">
               <Phone className="w-4 h-4" />Клиент
             </a>
           )}
+          {o.receiptId && (
+            <button onClick={e => { e.stopPropagation(); window.open(`/finance?orderId=${o.id}`, "_blank"); }}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-violet-50 text-violet-700 hover:bg-violet-100 text-sm font-medium transition-colors min-w-[90px]">
+              <Wallet className="w-4 h-4" />Финансы
+            </button>
+          )}
           <button onClick={e => { e.stopPropagation(); window.open(`/leads?openOrder=${o.id}`, "_blank"); }}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 text-sm font-medium transition-colors">
+            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 text-sm font-medium transition-colors min-w-[90px]">
             <ClipboardList className="w-4 h-4" />Открыть заказ
           </button>
         </div>

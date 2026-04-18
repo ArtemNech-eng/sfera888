@@ -202,7 +202,10 @@ export default function Finance() {
   const queryClient = useQueryClient();
   const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
 
-  const [pageTab, setPageTab] = useState<PageTab>("transactions");
+  const [pageTab, setPageTab] = useState<PageTab>(() => {
+    const p = new URLSearchParams(window.location.search);
+    return p.has("orderId") ? "estimates" : "transactions";
+  });
 
   // ── Tab 1 state ──
   const [txPeriod, setTxPeriod]       = useState<Period>("month");
@@ -231,11 +234,11 @@ export default function Finance() {
   const [masterActionLoading, setMasterActionLoading] = useState<{ id: number; action: string } | null>(null);
 
   // ── Tab 3 state ──
-  const [estPeriod, setEstPeriod]     = useState<Period>("month");
+  const [estPeriod, setEstPeriod]     = useState<Period>(() => new URLSearchParams(window.location.search).has("orderId") ? "all" : "month");
   const [estFrom, setEstFrom]         = useState("");
   const [estTo, setEstTo]             = useState("");
   const [estStatus, setEstStatus]     = useState<EstimateStatus>("all");
-  const [estSearch, setEstSearch]     = useState("");
+  const [estSearch, setEstSearch]     = useState(() => new URLSearchParams(window.location.search).get("orderId") ?? "");
   const [estCity, setEstCity]         = useState("");
   const [expandedEst, setExpandedEst] = useState<number | null>(null);
   const [estPage, setEstPage]         = useState(1);
@@ -1282,6 +1285,10 @@ export default function Finance() {
                                         📋 Открыть заказ
                                       </a>
                                     )}
+                                    <a href="/work-monitor"
+                                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-blue-300 text-xs font-medium text-blue-700 hover:bg-blue-50 transition-colors">
+                                      📡 В мониторинге
+                                    </a>
                                   </div>
                                 </div>
                               </div>
