@@ -828,6 +828,15 @@ export default function Masters() {
       });
       if (r.ok) {
         setMasters(p => p.map(m => ({ ...m, fomoDisabled: newDisabled })));
+        // immediately clear/refresh blocked badges
+        if (newDisabled) {
+          setFomoBlockedIds(new Set());
+        } else {
+          fetch("/api/masters/fomo-blocked", { credentials: "include" })
+            .then(r2 => r2.json())
+            .then((blocked: { masterId: number }[]) => setFomoBlockedIds(new Set(blocked.map(b => b.masterId))))
+            .catch(() => {});
+        }
       }
     } finally {
       setTogglingFomoAll(false);
@@ -991,7 +1000,7 @@ export default function Masters() {
                     ? <Unlock className="w-4 h-4" />
                     : <Lock className="w-4 h-4" />
                 }
-                <span className="hidden sm:inline">{allFomoDisabled ? "ФОМО вкл" : "ФОМО выкл"}</span>
+                <span className="hidden sm:inline">{allFomoDisabled ? "ФОМО выкл" : "ФОМО вкл"}</span>
               </button>
 
               {/* Collapse filters toggle */}
