@@ -218,6 +218,8 @@ export default function Leads() {
   const [wmLoading, setWmLoading] = useState(false);
   const [wmSearch, setWmSearch] = useState("");
   const [wmSendingTo, setWmSendingTo] = useState<number | null>(null);
+  const [confirmAcceptId, setConfirmAcceptId] = useState<number | null>(null);
+  const [confirmCancelAction, setConfirmCancelAction] = useState<{ id: number; action: "reassign" | "cancel" } | null>(null);
   const [openDispatchId, setOpenDispatchId] = useState<number | null>(() => {
     const p = new URLSearchParams(window.location.search);
     const hl = parseInt(p.get("highlight") ?? "");
@@ -1074,8 +1076,28 @@ export default function Leads() {
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
                           {order.masterId && <button onClick={() => openMasterChat(order.masterId!)} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded-lg font-medium text-xs"><MessageSquare className="w-3 h-3" />Чат</button>}
-                          <button onClick={() => { if (confirm(`Назначить другого мастера?`)) rejectCancellationMutation.mutate(order.id); }} disabled={rejectCancellationMutation.isPending} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-blue-200 text-blue-600 hover:bg-blue-50 rounded-lg font-medium text-xs disabled:opacity-50"><RefreshCw className="w-3 h-3" />Назначить другого</button>
-                          <button onClick={() => { if (confirm(`Отменить заказ?`)) approveCancellationMutation.mutate(order.id); }} disabled={approveCancellationMutation.isPending} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-red-500 text-white hover:bg-red-600 rounded-lg font-medium text-xs disabled:opacity-50"><XCircle className="w-3 h-3" />Отменить</button>
+                          {confirmCancelAction?.id === order.id ? (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs text-red-700 font-medium">{confirmCancelAction.action === "cancel" ? "Отменить заказ?" : "Назначить другого?"}</span>
+                              <button
+                                onClick={() => {
+                                  if (confirmCancelAction.action === "reassign") rejectCancellationMutation.mutate(order.id);
+                                  else approveCancellationMutation.mutate(order.id);
+                                  setConfirmCancelAction(null);
+                                }}
+                                disabled={rejectCancellationMutation.isPending || approveCancellationMutation.isPending}
+                                className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg font-medium text-xs text-white disabled:opacity-50 ${confirmCancelAction.action === "cancel" ? "bg-red-600 hover:bg-red-700" : "bg-blue-600 hover:bg-blue-700"}`}
+                              >
+                                <Check className="w-3 h-3" />Да
+                              </button>
+                              <button onClick={() => setConfirmCancelAction(null)} className="inline-flex items-center px-2.5 py-1.5 bg-white border border-border text-muted-foreground hover:bg-slate-100 rounded-lg font-medium text-xs">Нет</button>
+                            </div>
+                          ) : (
+                            <>
+                              <button onClick={() => setConfirmCancelAction({ id: order.id, action: "reassign" })} disabled={rejectCancellationMutation.isPending} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-blue-200 text-blue-600 hover:bg-blue-50 rounded-lg font-medium text-xs disabled:opacity-50"><RefreshCw className="w-3 h-3" />Назначить другого</button>
+                              <button onClick={() => setConfirmCancelAction({ id: order.id, action: "cancel" })} disabled={approveCancellationMutation.isPending} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-red-500 text-white hover:bg-red-600 rounded-lg font-medium text-xs disabled:opacity-50"><XCircle className="w-3 h-3" />Отменить</button>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1142,14 +1164,27 @@ export default function Leads() {
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
                         {order.masterId && <button onClick={() => openMasterChat(order.masterId!)} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-amber-200 text-amber-700 hover:bg-amber-50 rounded-lg font-medium text-xs"><MessageSquare className="w-3 h-3" />Чат</button>}
-                        <button
-                          onClick={() => { if (confirm(`Принять сумму ${fmtMoney(Number((order as any).proposedAmount))} по заказу #${order.leadId ?? order.id}?`)) acceptProposedMutation.mutate(order.id); }}
-                          disabled={acceptProposedMutation.isPending}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-500 text-white hover:bg-amber-600 rounded-lg font-medium text-xs disabled:opacity-50"
-                        >
-                          {acceptProposedMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-                          Принять
-                        </button>
+                        {confirmAcceptId === order.id ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs text-amber-800 font-medium">{fmtMoney(Number((order as any).proposedAmount))}?</span>
+                            <button
+                              onClick={() => { acceptProposedMutation.mutate(order.id); setConfirmAcceptId(null); }}
+                              disabled={acceptProposedMutation.isPending}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-green-600 text-white hover:bg-green-700 rounded-lg font-medium text-xs disabled:opacity-50"
+                            >
+                              {acceptProposedMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}Да
+                            </button>
+                            <button onClick={() => setConfirmAcceptId(null)} className="inline-flex items-center px-2.5 py-1.5 bg-white border border-border text-muted-foreground hover:bg-slate-100 rounded-lg font-medium text-xs">Нет</button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setConfirmAcceptId(order.id)}
+                            disabled={acceptProposedMutation.isPending}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-500 text-white hover:bg-amber-600 rounded-lg font-medium text-xs disabled:opacity-50"
+                          >
+                            <Check className="w-3 h-3" />Принять
+                          </button>
+                        )}
                         <button onClick={() => { setOpenDispatchId(order.id); broadcastMutation.reset(); }} className="inline-flex items-center gap-1 px-2 py-1.5 bg-white border border-amber-200 text-amber-700 hover:bg-amber-50 rounded-lg font-medium text-xs" title="Открыть заказ"><ChevronRight className="w-3.5 h-3.5" /></button>
                       </div>
                     </div>
