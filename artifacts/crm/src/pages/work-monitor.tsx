@@ -31,6 +31,7 @@ type WorkOrder = {
   receiptTotalAmount: number | null;
   receiptPrepaymentAmount: number | null;
   receiptCreatedAt: string | null;
+  receiptPrepaymentSubmittedAt: string | null;
   receiptPrepaymentPaidAt: string | null;
   receiptToken: string | null;
   hoursWithoutEstimate: number | null;
@@ -555,8 +556,10 @@ function AllRow({ o, onNotify, sendingTo, estimateText, paymentText }: ActionPro
             <div className="text-[#34C759] font-semibold">{fmt(o.receiptTotalAmount ?? 0)}</div>
             <div className="text-[10px]">
               {o.receiptPrepaymentPaidAt
-                ? <span className="text-[#34C759]">✅ оплачена</span>
-                : <span className="text-amber-600">⏳ {fmtHours(o.hoursWithoutPayment ?? 0)}</span>}
+                ? <span className="text-[#34C759]">✅ подтверждено</span>
+                : o.receiptPrepaymentSubmittedAt
+                  ? <span className="text-blue-600">📸 ждёт проверки</span>
+                  : <span className="text-amber-600">⏳ {fmtHours(o.hoursWithoutPayment ?? 0)}</span>}
             </div>
           </>
         : o.hoursWithoutEstimate !== null
@@ -601,7 +604,8 @@ function EstimateHeaders() {
 }
 
 function EstimateRow({ o, onNotify, sendingTo, paymentText }: ActionProps) {
-  const paid = !!o.receiptPrepaymentPaidAt;
+  const confirmed = !!o.receiptPrepaymentPaidAt;       // operator confirmed
+  const submitted = !!o.receiptPrepaymentSubmittedAt;  // client sent screenshot
   const hoursWaiting = o.hoursWithoutPayment;
   const prepay = o.receiptPrepaymentAmount ?? 5000;
   const total = o.receiptTotalAmount ?? 0;
@@ -615,13 +619,15 @@ function EstimateRow({ o, onNotify, sendingTo, paymentText }: ActionProps) {
       {o.receiptCreatedAt && <div className="text-[10px] text-gray-400 font-normal">{formatDate(o.receiptCreatedAt)}</div>}
     </td>
     <td className="px-2 py-1.5 text-xs whitespace-nowrap">
-      {paid
-        ? <span className="text-[#34C759] font-semibold">✅ Оплачена</span>
-        : <span className="text-amber-600">⏳ {fmt(prepay)}</span>
+      {confirmed
+        ? <span className="text-[#34C759] font-semibold">✅ Подтверждено</span>
+        : submitted
+          ? <span className="text-blue-600 font-semibold">📸 Ждёт проверки</span>
+          : <span className="text-amber-600">⏳ {fmt(prepay)}</span>
       }
     </td>
     <td className="px-2 py-1.5 text-xs whitespace-nowrap">
-      {paid ? <span className="text-gray-400">—</span> : hoursWaiting !== null ? (
+      {confirmed ? <span className="text-gray-400">—</span> : hoursWaiting !== null ? (
         <span className={hoursWaiting >= 48 ? "text-red-600 font-semibold" : hoursWaiting >= 24 ? "text-amber-600" : "text-gray-600"}>
           {fmtHours(hoursWaiting)}
         </span>
@@ -629,7 +635,7 @@ function EstimateRow({ o, onNotify, sendingTo, paymentText }: ActionProps) {
     </td>
     <td className="px-2 py-1.5">
       <div className="flex items-center gap-1">
-        {o.masterMaxChatId && !paid && <ActionBtn onClick={() => onNotify(o, paymentText!)} color="bg-blue-100 text-blue-600 hover:bg-blue-200" icon={MessageSquare} title="Напомнить мастеру про оплату" disabled={sendingTo === o.id} />}
+        {o.masterMaxChatId && !confirmed && <ActionBtn onClick={() => onNotify(o, paymentText!)} color="bg-blue-100 text-blue-600 hover:bg-blue-200" icon={MessageSquare} title="Напомнить мастеру про оплату" disabled={sendingTo === o.id} />}
         {o.clientPhone && <ActionBtn onClick={() => window.open(`tel:${o.clientPhone}`)} color="bg-green-100 text-green-600 hover:bg-green-200" icon={Phone} title="Позвонить клиенту" />}
         {o.receiptToken && <ActionBtn onClick={() => window.open(`/receipt/${o.receiptToken}`, "_blank")} color="bg-gray-100 text-gray-600 hover:bg-gray-200" icon={Eye} title="Открыть смету" />}
         <ActionBtn onClick={() => window.open(`/leads?openOrder=${o.id}`, "_blank")} color="bg-gray-100 text-gray-600 hover:bg-gray-200" icon={ClipboardList} title="Открыть заказ" />
@@ -699,6 +705,7 @@ function WaitingPaymentHeaders() {
 
 function WaitingPaymentRow({ o, onNotify, sendingTo, paymentText }: ActionProps) {
   const h = o.hoursWithoutPayment ?? 0;
+  const submitted = !!o.receiptPrepaymentSubmittedAt;
   return <>
     <OrderNumCell o={o} />
     <MasterCell o={o} />
@@ -706,7 +713,10 @@ function WaitingPaymentRow({ o, onNotify, sendingTo, paymentText }: ActionProps)
     <ServiceCell o={o} />
     <td className="px-2 py-1.5 text-xs whitespace-nowrap">
       <div className="font-semibold text-gray-800">{fmt(o.receiptTotalAmount ?? 0)}</div>
-      <div className="text-amber-600">⏳ {fmt(o.receiptPrepaymentAmount ?? 5000)}</div>
+      {submitted
+        ? <div className="text-blue-600">📸 ждёт проверки</div>
+        : <div className="text-amber-600">⏳ {fmt(o.receiptPrepaymentAmount ?? 5000)}</div>
+      }
     </td>
     <td className="px-2 py-1.5 text-xs whitespace-nowrap">
       <div className={h >= 72 ? "text-red-600 font-bold" : h >= 48 ? "text-red-500 font-semibold" : h >= 24 ? "text-amber-600" : "text-gray-600"}>{fmtHours(h)}</div>
@@ -721,7 +731,7 @@ function WaitingPaymentRow({ o, onNotify, sendingTo, paymentText }: ActionProps)
     </td>
     <td className="px-2 py-1.5">
       <div className="flex items-center gap-1">
-        {o.masterMaxChatId && <ActionBtn onClick={() => onNotify(o, paymentText!)} color="bg-blue-100 text-blue-600 hover:bg-blue-200" icon={MessageSquare} title="Напомнить про оплату" disabled={sendingTo === o.id} />}
+        {o.masterMaxChatId && !submitted && <ActionBtn onClick={() => onNotify(o, paymentText!)} color="bg-blue-100 text-blue-600 hover:bg-blue-200" icon={MessageSquare} title="Напомнить про оплату" disabled={sendingTo === o.id} />}
         {o.clientPhone && <ActionBtn onClick={() => window.open(`tel:${o.clientPhone}`)} color="bg-green-100 text-green-600 hover:bg-green-200" icon={Phone} title="Позвонить клиенту" />}
         {o.receiptToken && <ActionBtn onClick={() => window.open(`/receipt/${o.receiptToken}`, "_blank")} color="bg-gray-100 text-gray-600 hover:bg-gray-200" icon={Eye} title="Открыть смету" />}
         <ActionBtn onClick={() => window.open(`/leads?openOrder=${o.id}`, "_blank")} color="bg-gray-100 text-gray-600 hover:bg-gray-200" icon={ClipboardList} title="Открыть заказ" />

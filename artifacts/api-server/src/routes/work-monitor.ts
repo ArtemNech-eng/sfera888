@@ -28,7 +28,8 @@ export type WorkOrder = {
   receiptTotalAmount: number | null;
   receiptPrepaymentAmount: number | null;
   receiptCreatedAt: string | null;
-  receiptPrepaymentPaidAt: string | null;
+  receiptPrepaymentSubmittedAt: string | null; // client sent screenshot
+  receiptPrepaymentPaidAt: string | null;      // operator confirmed
   receiptToken: string | null;
   hoursWithoutEstimate: number | null;
   hoursWithoutPayment: number | null;
@@ -106,8 +107,8 @@ router.get("/", requireAuth, async (_req, res) => {
       ? Math.floor((now - assignedMs) / 3_600_000)
       : null;
 
-    // hoursWithoutPayment: time since receipt created (if not yet paid)
-    const receiptCreatedMs = receipt && !receipt.prepaymentSubmittedAt
+    // hoursWithoutPayment: time since receipt created (if operator hasn't confirmed yet)
+    const receiptCreatedMs = receipt && !receipt.prepaymentSeenAt
       ? new Date(receipt.createdAt).getTime()
       : null;
     const hoursWithoutPayment = receiptCreatedMs
@@ -122,7 +123,10 @@ router.get("/", requireAuth, async (_req, res) => {
       problemReasons.push(`🔴 Без сметы ${Math.floor(hoursWithoutEstimate / 24)}д ${hoursWithoutEstimate % 24}ч`);
     }
     if (hoursWithoutPayment !== null && hoursWithoutPayment >= 48) {
-      problemReasons.push(`🔴 Без оплаты ${Math.floor(hoursWithoutPayment / 24)}д ${hoursWithoutPayment % 24}ч`);
+      const payLabel = receipt?.prepaymentSubmittedAt
+        ? `🔴 Не подтверждено ${Math.floor(hoursWithoutPayment / 24)}д ${hoursWithoutPayment % 24}ч`
+        : `🔴 Без оплаты ${Math.floor(hoursWithoutPayment / 24)}д ${hoursWithoutPayment % 24}ч`;
+      problemReasons.push(payLabel);
     }
     if (daysSinceUpdate !== null && daysSinceUpdate >= 7) {
       problemReasons.push(`🔴 Нет обновлений ${Math.floor(daysSinceUpdate)} дн.`);
@@ -151,8 +155,11 @@ router.get("/", requireAuth, async (_req, res) => {
       receiptTotalAmount: receipt ? Number(receipt.totalAmount) : null,
       receiptPrepaymentAmount: receipt ? Number(receipt.prepaymentAmount) : null,
       receiptCreatedAt: receipt ? receipt.createdAt.toISOString() : null,
-      receiptPrepaymentPaidAt: receipt?.prepaymentSubmittedAt
+      receiptPrepaymentSubmittedAt: receipt?.prepaymentSubmittedAt
         ? receipt.prepaymentSubmittedAt.toISOString()
+        : null,
+      receiptPrepaymentPaidAt: receipt?.prepaymentSeenAt
+        ? receipt.prepaymentSeenAt.toISOString()
         : null,
       receiptToken: receipt?.token ?? null,
       hoursWithoutEstimate,

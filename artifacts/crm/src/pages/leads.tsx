@@ -34,7 +34,7 @@ type WorkOrder = {
   clientName: string | null; clientPhone: string | null;
   receiptId: number | null; receiptTotalAmount: number | null;
   receiptPrepaymentAmount: number | null; receiptCreatedAt: string | null;
-  receiptPrepaymentPaidAt: string | null; receiptToken: string | null;
+  receiptPrepaymentSubmittedAt: string | null; receiptPrepaymentPaidAt: string | null; receiptToken: string | null;
   hoursWithoutEstimate: number | null; hoursWithoutPayment: number | null;
   problemReasons: string[];
 };
@@ -1303,8 +1303,9 @@ export default function Leads() {
                                   {o.receiptId
                                     ? <span className="text-xs font-semibold text-emerald-600">{fmtMoney(o.receiptTotalAmount ?? 0)}</span>
                                     : <span className="text-xs text-muted-foreground/40">нет сметы</span>}
-                                  {o.receiptPrepaymentPaidAt && <div className="text-[10px] text-emerald-500 mt-0.5">✓ оплачено</div>}
-                                  {o.receiptId && !o.receiptPrepaymentPaidAt && <div className="text-[10px] text-amber-500 mt-0.5">💰 ждёт оплаты</div>}
+                                  {o.receiptPrepaymentPaidAt && <div className="text-[10px] text-emerald-500 mt-0.5">✓ подтверждено</div>}
+                                  {o.receiptId && !o.receiptPrepaymentPaidAt && o.receiptPrepaymentSubmittedAt && <div className="text-[10px] text-blue-500 mt-0.5">📸 ждёт проверки</div>}
+                                  {o.receiptId && !o.receiptPrepaymentPaidAt && !o.receiptPrepaymentSubmittedAt && <div className="text-[10px] text-amber-500 mt-0.5">💰 ждёт оплаты</div>}
                                 </td>
                                 <td className="px-3 py-2.5 whitespace-nowrap">
                                   {o.receiptId
