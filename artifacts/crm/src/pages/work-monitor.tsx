@@ -374,17 +374,19 @@ export default function WorkMonitor() {
                       <tr
                         key={o.id}
                         className={`border-b border-gray-50 hover:brightness-95 transition-colors ${
-                          subTab === "problematic"
-                            ? "bg-[#FFF0F0]"
-                            : subTab === "with_estimate"
-                              ? o.receiptPrepaymentPaidAt
-                                ? "bg-green-50"
-                                : rowColor(o.hoursWithoutPayment, "payment")
-                              : subTab === "without_estimate"
-                                ? rowColor(o.hoursWithoutEstimate, "estimate")
-                                : subTab === "waiting_payment"
-                                  ? rowColor(o.hoursWithoutPayment, "payment")
-                                  : ""
+                          o.status === "cancellation_requested"
+                            ? "bg-orange-50"
+                            : subTab === "problematic"
+                              ? "bg-[#FFF0F0]"
+                              : subTab === "with_estimate"
+                                ? o.receiptPrepaymentPaidAt
+                                  ? "bg-green-50"
+                                  : rowColor(o.hoursWithoutPayment, "payment")
+                                : subTab === "without_estimate"
+                                  ? rowColor(o.hoursWithoutEstimate, "estimate")
+                                  : subTab === "waiting_payment"
+                                    ? rowColor(o.hoursWithoutPayment, "payment")
+                                    : ""
                         }`}
                       >
                         {subTab === "all" && (
@@ -570,9 +572,11 @@ function AllRow({ o, onNotify, sendingTo, estimateText, paymentText }: ActionPro
       }
     </td>
     <td className="px-2 py-1.5">
-      {o.problemReasons.length > 0
-        ? <Badge label="⚠ Проблема" color="bg-red-100 text-red-700" />
-        : <Badge label="✓ Норма" color="bg-green-100 text-green-700" />
+      {o.status === "cancellation_requested"
+        ? <Badge label="🚫 Отмена" color="bg-orange-100 text-orange-700" />
+        : o.problemReasons.length > 0
+          ? <Badge label="⚠ Проблема" color="bg-red-100 text-red-700" />
+          : <Badge label="✓ Норма" color="bg-green-100 text-green-700" />
       }
     </td>
     <td className="px-2 py-1.5">
@@ -673,11 +677,15 @@ function NoEstimateRow({ o, onNotify, sendingTo, estimateText }: ActionProps) {
       </span>
     </td>
     <td className="px-2 py-1.5">
-      {h >= 72
-        ? <Badge label="🔴 Блок" color="bg-red-100 text-red-700" />
-        : h >= 48
-          ? <Badge label="🔴 Критично" color="bg-red-100 text-red-700" />
-          : <Badge label="🟡 Внимание" color="bg-yellow-100 text-yellow-700" />
+      {o.status === "cancellation_requested"
+        ? <><Badge label="🚫 Отмена" color="bg-orange-100 text-orange-700" />{h >= 48 && <div className="mt-0.5"><Badge label="🔴" color="bg-red-100 text-red-700" /></div>}</>
+        : h >= 72
+          ? <Badge label="🔴 Блок" color="bg-red-100 text-red-700" />
+          : h >= 48
+            ? <Badge label="🔴 Критично" color="bg-red-100 text-red-700" />
+            : h >= 24
+              ? <Badge label="🟡 Внимание" color="bg-yellow-100 text-yellow-700" />
+              : <Badge label="🟢 Новый" color="bg-green-100 text-green-700" />
       }
     </td>
     <td className="px-2 py-1.5">

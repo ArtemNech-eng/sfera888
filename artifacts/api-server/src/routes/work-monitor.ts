@@ -46,7 +46,7 @@ router.get("/", requireAuth, async (_req, res) => {
     .from(ordersTable)
     .where(
       and(
-        inArray(ordersTable.status, ["master_assigned", "in_progress"]),
+        inArray(ordersTable.status, ["master_assigned", "in_progress", "cancellation_requested"]),
         isNull(ordersTable.deletedAt)
       )
     );
