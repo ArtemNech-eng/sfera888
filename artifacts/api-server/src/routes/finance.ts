@@ -95,8 +95,10 @@ router.get("/transactions", opsAndAdmin, async (req, res) => {
     SELECT t.id, t.order_id, t.master_id, t.order_amount, t.commission,
            t.prepayment_deducted, t.payment_status, t.source_type,
            t.created_at, t.paid_at,
-           m.alias AS master_alias, m.city AS master_city,
-           o.service_type, o.city AS order_city, o.area
+           m.alias AS master_alias, m.city AS master_city, m.phone AS master_phone,
+           o.service_type, o.city AS order_city, o.area, o.district,
+           o.client_name, o.client_phone, o.notes, o.lead_id,
+           o.status AS order_status, o.assigned_at
     FROM transactions t
     LEFT JOIN masters m ON m.id = t.master_id
     LEFT JOIN orders  o ON o.id = t.order_id
@@ -132,11 +134,19 @@ router.get("/transactions", opsAndAdmin, async (req, res) => {
     return {
       id:                  t.id,
       orderId:             t.order_id,
+      leadId:              t.lead_id ?? null,
       masterId:            t.master_id,
       masterAlias:         t.master_alias ?? "Неизвестен",
+      masterPhone:         t.master_phone ?? null,
       city:                t.order_city ?? t.master_city ?? "—",
+      district:            t.district ?? null,
       serviceType:         t.service_type ?? "—",
       area:                t.area ? Number(t.area) : null,
+      clientName:          t.client_name ?? null,
+      clientPhone:         t.client_phone ?? null,
+      notes:               t.notes ?? null,
+      orderStatus:         t.order_status ?? null,
+      assignedAt:          t.assigned_at ? toIsoUtc(t.assigned_at) : null,
       orderAmount:         Number(t.order_amount),
       commission,
       prepaymentDeducted,
