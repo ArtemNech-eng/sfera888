@@ -363,7 +363,7 @@ export default function Leads() {
   const wmFiltered = useMemo(() => {
     let list = wmData;
     if (wmTab === "with_estimate") list = list.filter(o => o.receiptId !== null);
-    else if (wmTab === "without_estimate") list = list.filter(o => o.receiptId === null && (o.hoursWithoutEstimate ?? 0) > 24);
+    else if (wmTab === "without_estimate") list = list.filter(o => o.receiptId === null);
     else if (wmTab === "waiting_payment") list = list.filter(o => o.receiptId !== null && !o.receiptPrepaymentPaidAt);
     else if (wmTab === "problematic") list = list.filter(o => o.problemReasons.length > 0);
     if (wmSearch.trim()) {
@@ -381,7 +381,7 @@ export default function Leads() {
 
   const wmStats = useMemo(() => {
     const withEst = wmData.filter(o => o.receiptId !== null);
-    const withoutEst = wmData.filter(o => o.receiptId === null && (o.hoursWithoutEstimate ?? 0) > 24);
+    const withoutEst = wmData.filter(o => o.receiptId === null);
     const waitPay = wmData.filter(o => o.receiptId !== null && !o.receiptPrepaymentPaidAt);
     const prob = wmData.filter(o => o.problemReasons.length > 0);
     const sumWithEst = withEst.reduce((s, o) => s + (o.receiptTotalAmount ?? 0), 0);
@@ -1030,7 +1030,7 @@ export default function Leads() {
                 >
                   <div className="flex items-center gap-1.5 mb-1">
                     <Timer className="w-3.5 h-3.5 text-amber-600" />
-                    <p className="text-[11px] text-muted-foreground font-medium">Без сметы &gt;24ч</p>
+                    <p className="text-[11px] text-muted-foreground font-medium">Без сметы</p>
                   </div>
                   <p className={`text-xl font-bold ${wmStats.withoutEst.length > 0 ? "text-amber-600" : "text-foreground"}`}>{wmLoading ? "…" : wmStats.withoutEst.length}</p>
                   {wmStats.sumWithoutEst > 0 && <p className="text-[11px] text-muted-foreground mt-0.5">~{fmtMoney(wmStats.sumWithoutEst)} комиссии</p>}
@@ -1207,7 +1207,7 @@ export default function Leads() {
                     {([
                       { key: "all",               label: "📋 Все заказы",       count: orders?.length ?? 0 },
                       { key: "with_estimate",      label: "📄 Со сметой",        count: wmStats.withEst.length },
-                      { key: "without_estimate",   label: "⏰ Без сметы >24ч",   count: wmStats.withoutEst.length },
+                      { key: "without_estimate",   label: "⏰ Без сметы",          count: wmStats.withoutEst.length },
                       { key: "waiting_payment",    label: "💰 Ждут оплату",      count: wmStats.waitPay.length },
                       { key: "problematic",        label: "🔴 Проблемные",       count: wmStats.prob.length },
                     ] as { key: WMTab; label: string; count: number }[]).map(t => (

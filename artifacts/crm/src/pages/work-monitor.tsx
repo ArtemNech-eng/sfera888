@@ -141,13 +141,13 @@ export default function WorkMonitor() {
   const hasEstimate = (o: WorkOrder) => o.receiptId !== null;
   const waitingPayment = (o: WorkOrder) =>
     o.receiptId !== null && !o.receiptPrepaymentPaidAt;
-  const withoutEstimateOver24 = (o: WorkOrder) =>
-    o.hoursWithoutEstimate !== null && o.hoursWithoutEstimate >= 24;
+  const withoutEstimate = (o: WorkOrder) =>
+    o.hoursWithoutEstimate !== null;
 
   const subsets = useMemo(() => ({
     all: orders,
     with_estimate: orders.filter(hasEstimate),
-    without_estimate: orders.filter(withoutEstimateOver24),
+    without_estimate: orders.filter(withoutEstimate),
     waiting_payment: orders.filter(waitingPayment),
     problematic: orders.filter(isProblematic),
   }), [orders]);
@@ -215,7 +215,7 @@ export default function WorkMonitor() {
   const tabs: { key: SubTab; label: string; icon: string }[] = [
     { key: "all", label: "Все", icon: "📋" },
     { key: "with_estimate", label: "Со сметой", icon: "📄" },
-    { key: "without_estimate", label: "Без сметы >24ч", icon: "⏰" },
+    { key: "without_estimate", label: "Без сметы", icon: "⏰" },
     { key: "waiting_payment", label: "Ждут оплату", icon: "💰" },
     { key: "problematic", label: "Проблемные", icon: "🔴" },
   ];
@@ -272,7 +272,7 @@ export default function WorkMonitor() {
             />
             <SummaryCard
               icon="⏰"
-              label="Без сметы >24ч"
+              label="Без сметы"
               count={summary.withoutEstimateCount}
               amount={summary.withoutEstimateCommission}
               amountLabel="Ожид. комиссия"
