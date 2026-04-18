@@ -1076,6 +1076,11 @@ export default function Leads() {
                             <span className="text-muted-foreground text-xs">{order.city}</span>
                           </div>
                           {order.masterName && <button onClick={() => order.masterId && openMasterChat(order.masterId)} className="text-xs text-blue-600 hover:underline mt-0.5">мастер {order.masterName}</button>}
+                          {(order as any).operatorNote && (
+                            <p className="text-xs text-red-700 mt-1">
+                              <span className="font-medium">Причина:</span> {(order as any).operatorNote}
+                            </p>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
                           {order.masterId && <button onClick={() => openMasterChat(order.masterId!)} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded-lg font-medium text-xs"><MessageSquare className="w-3 h-3" />Чат</button>}
