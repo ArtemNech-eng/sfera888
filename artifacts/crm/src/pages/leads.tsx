@@ -628,11 +628,14 @@ export default function Leads() {
 
   const acceptProposedMutation = useMutation({
     mutationFn: async (orderId: number) => {
-      const r = await fetch(`/api/orders/${orderId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ acceptProposedAmount: true }) });
+      const r = await fetch(`/api/orders/${orderId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ acceptProposed: true }) });
       if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Ошибка"); }
       return r.json();
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/orders"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      fetchWm();
+    },
   });
 
   const setAmountMutation = useMutation({

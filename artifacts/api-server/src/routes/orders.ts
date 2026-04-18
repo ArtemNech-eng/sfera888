@@ -252,6 +252,7 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
   // ── Update/create transaction when commission is confirmed ──────────────────
   const commissionConfirmed = (acceptProposed && current.proposedAmount) ||
     (orderAmount !== undefined && orderAmount !== null);
+  let autoCompleteOrder = false;
   if (commissionConfirmed && o.masterId && o.orderAmount && o.commission) {
     const existingTxRows = await db.select().from(transactionsTable).where(eq(transactionsTable.orderId, id));
     const existingTx = existingTxRows[0];
@@ -265,6 +266,7 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
     const prepaymentDeducted = Math.min(totalPrepaid, commissionValue);
     const netPayable = Math.max(0, commissionValue - prepaymentDeducted);
     const fullyPaidByPrepayment = netPayable === 0;
+    if (acceptProposed && fullyPaidByPrepayment) autoCompleteOrder = true;
 
     if (existingTx) {
       const wasPlaceholder = Number(existingTx.commission) === 0;
@@ -399,6 +401,31 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
         }
       }
     }
+  }
+
+  // ── Auto-complete order if commission fully covered by prepayment ─────────────
+  if (autoCompleteOrder && o.status !== "completed") {
+    await db.update(ordersTable)
+      .set({ status: "completed", updatedAt: new Date() })
+      .where(eq(ordersTable.id, id));
+    const sessionUser = (req as any).session?.userId ?? null;
+    let userAlias = "система";
+    if (sessionUser) {
+      const userRows = await db.select().from(usersTable).where(eq(usersTable.id, sessionUser));
+      userAlias = userRows[0]?.name ?? userRows[0]?.login ?? "система";
+    }
+    await db.insert(orderStatusLogsTable).values({
+      orderId: id,
+      oldStatus: o.status,
+      newStatus: "completed",
+      userId: sessionUser,
+      userAlias,
+    }).catch(() => {});
+    // Also mark transaction as paid
+    await db.update(transactionsTable)
+      .set({ paymentStatus: "paid", paidAt: new Date() })
+      .where(and(eq(transactionsTable.orderId, id), eq(transactionsTable.paymentStatus as any, "pending")))
+      .catch(() => {});
   }
 
   // ── Delete placeholder transaction when order is cancelled ───────────────────
