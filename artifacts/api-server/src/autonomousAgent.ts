@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { db } from "@workspace/db";
+import { db, masterMessagesTable } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import {
   extractAndSaveMemories,
@@ -422,6 +422,14 @@ async function runMastersOutreachScenario(sessionId: number): Promise<void> {
       await sendMaxMessage(mc.master.max_chat_id, msg);
       sent++;
       sendLog.push(`${mc.master.alias} (${mc.master.city}): ✅ — ${mc.cityOrders.length} заказ${mc.cityOrders.length === 1 ? "" : "ов"}`);
+      db.insert(masterMessagesTable).values({
+        masterId: mc.master.id,
+        telegramChatId: `max_${mc.master.max_chat_id}`,
+        text: `[ИИ-диспетчер]: ${msg}`,
+        fromMaster: false,
+        senderName: "Диспетчер",
+        isRead: true,
+      }).catch(e => console.error("[autonomousAgent] saveToCRM error:", e));
       await new Promise(r => setTimeout(r, 400)); // rate limit
     } catch {
       sendLog.push(`${mc.master.alias}: ⚠️ ошибка отправки`);
@@ -735,6 +743,14 @@ async function runMasterFollowupScenario(sessionId: number): Promise<void> {
       await sendMaxMessage(m.maxChatId, msg);
       sent++;
       sendLog.push(`${m.alias} (${m.city}): ✅ ${riskLabel(m.risk)} — ${m.orders.length} заказ${m.orders.length === 1 ? "" : "а"}`);
+      db.insert(masterMessagesTable).values({
+        masterId: m.id,
+        telegramChatId: `max_${m.maxChatId}`,
+        text: `[ИИ-диспетчер]: ${msg}`,
+        fromMaster: false,
+        senderName: "Диспетчер",
+        isRead: true,
+      }).catch(e => console.error("[autonomousAgent] saveToCRM error:", e));
       await new Promise(r => setTimeout(r, 400));
     } catch {
       sendLog.push(`${m.alias}: ⚠️ ошибка отправки`);
