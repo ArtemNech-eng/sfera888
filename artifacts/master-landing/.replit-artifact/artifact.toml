@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/master-landing/"
+title = "Лендинг для мастеров"
+version = "1.0.0"
+id = "artifacts/master-landing"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/master-landing/" ]
+localPort = 18954
+
+[services.development]
+run = "pnpm --filter @workspace/master-landing run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/master-landing", "run", "build" ]
+publicDir = "artifacts/master-landing/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18954"
+BASE_PATH = "/master-landing/"

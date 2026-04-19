@@ -1,0 +1,125 @@
+@import "tailwindcss";
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background-color: #ffffff;
+  color: #1A1A1A;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.btn-primary {
+  background-color: #34C759;
+  color: #ffffff;
+  font-weight: 700;
+  border-radius: 14px;
+  padding: 16px 32px;
+  font-size: 17px;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 400px;
+}
+
+.btn-primary:hover {
+  background-color: #2daf4e;
+  box-shadow: 0 8px 24px rgba(52, 199, 89, 0.35);
+  transform: translateY(-1px);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-secondary {
+  background-color: transparent;
+  color: #34C759;
+  font-weight: 700;
+  border-radius: 14px;
+  padding: 16px 32px;
+  font-size: 17px;
+  border: 2px solid #34C759;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.1s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 400px;
+}
+
+.btn-secondary:hover {
+  background-color: #34C759;
+  color: white;
+  transform: translateY(-1px);
+}
+
+.card {
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.07);
+  padding: 28px 24px;
+}
+
+.section-bg {
+  background-color: #F5F5F5;
+}
+
+.accordion-item {
+  border-bottom: 1px solid #E5E5EA;
+}
+
+.accordion-item:last-child {
+  border-bottom: none;
+}
+
+.arrow-flow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.6s ease forwards;
+}
+
+.stat-number {
+  font-size: 48px;
+  font-weight: 900;
+  color: #34C759;
+  line-height: 1;
+}
+
+@keyframes pulse-green {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(52, 199, 89, 0.4); }
+  50% { box-shadow: 0 0 0 12px rgba(52, 199, 89, 0); }
+}
+
+.pulse-btn {
+  animation: pulse-green 2.5s ease infinite;
+}
