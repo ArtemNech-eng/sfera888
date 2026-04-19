@@ -407,19 +407,45 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
   order: OrderCard; onRespond: () => void; onReject: () => void; onClose: () => void;
   fomoBlock?: FomoBlock | null;
 }) {
-  const [state, setState] = useState<"idle" | "loading" | "success" | "at_limit" | "rejecting">("idle");
+  const [state, setState] = useState<"idle" | "loading" | "success" | "at_limit" | "fomo_blocked" | "rejecting">("idle");
   const [atLimitOrderId, setAtLimitOrderId] = useState<number | null>(null);
   const [showRejectSheet, setShowRejectSheet] = useState(false);
   const [showPriceNote, setShowPriceNote] = useState(false);
   const [priceNote, setPriceNote] = useState("");
-  const [showFomoModal, setShowFomoModal] = useState(false);
   const services = parseServices(order.services);
   const isFomoBlocked = fomoBlock?.isBlocked === true;
 
+  const fomoTypeInfo: Record<string, { title: string; body: string; icon: string; action: string }> = {
+    no_estimate: {
+      title: "Нужна смета",
+      body: "По одному из заказов смета не отправлена уже более 48 часов.\nОтправьте смету менеджеру, чтобы снова откликаться на заявки.",
+      icon: "⏱️",
+      action: "Отправить смету менеджеру",
+    },
+    no_payment: {
+      title: "Ожидается предоплата",
+      body: "По одному из заказов предоплата не поступила уже более 72 часов.\nДождитесь оплаты или уточните статус у менеджера.",
+      icon: "💳",
+      action: "Написать менеджеру",
+    },
+    limit_reached: {
+      title: "Достигнут лимит заказов",
+      body: "У вас уже максимальное количество активных заказов.\nЗавершите хотя бы один заказ, чтобы снова откликаться.",
+      icon: "📦",
+      action: "Понял, закрою текущий заказ",
+    },
+    overdue_debt: {
+      title: "Есть задолженность",
+      body: "Оплатите задолженность, чтобы снова получить возможность откликаться на заявки.",
+      icon: "💸",
+      action: "Написать менеджеру",
+    },
+  };
+
   const handleRespond = async () => {
     if (isFomoBlocked) {
-      setShowFomoModal(true);
       api.fomoBlockPress(order.id, fomoBlock?.reason ?? null).catch(() => {});
+      setState("fomo_blocked");
       return;
     }
     setState("loading");
@@ -468,7 +494,41 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {state === "at_limit" ? (
+        {state === "fomo_blocked" && fomoBlock ? (() => {
+          const info = fomoBlock.type ? fomoTypeInfo[fomoBlock.type] : null;
+          return (
+            <div className="flex flex-col items-center justify-center min-h-[70vh] px-6 text-center space-y-5">
+              <div className="text-6xl">{info?.icon ?? "🔒"}</div>
+              <div>
+                <h2 className="text-xl font-bold mb-1">{info?.title ?? "Отклик недоступен"}</h2>
+                <p className="text-sm text-muted-foreground">Отклик на заявку #{order.id} временно ограничен</p>
+              </div>
+              <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 rounded-2xl px-4 py-4 text-left w-full max-w-sm space-y-3">
+                <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line leading-relaxed">
+                  {info?.body ?? fomoBlock.reason ?? "Выполните условия, чтобы снова откликаться на заявки."}
+                </p>
+                {fomoBlock.hoursElapsed && (
+                  <div className="flex items-center gap-2 bg-orange-100 dark:bg-orange-900/30 rounded-xl px-3 py-2">
+                    <Clock size={14} className="text-orange-500 shrink-0" />
+                    <span className="text-xs font-semibold text-orange-700 dark:text-orange-400">
+                      Просрочено на {fomoBlock.hoursElapsed} ч
+                    </span>
+                  </div>
+                )}
+                {fomoBlock.orderId && (
+                  <p className="text-xs text-muted-foreground">Заказ #{fomoBlock.orderId}</p>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground px-2">
+                Как только устраните причину — заявка #{order.id} по-прежнему будет доступна в ленте.
+              </p>
+              <button onClick={onClose}
+                className="w-full max-w-sm h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm">
+                {info?.action ?? "Понятно"}
+              </button>
+            </div>
+          );
+        })() : state === "at_limit" ? (
           <div className="flex flex-col items-center justify-center min-h-[70vh] px-6 text-center space-y-5">
             <div className="w-20 h-20 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
               <Briefcase size={40} className="text-amber-500" />
@@ -608,7 +668,7 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
         )}
       </div>
 
-      {state !== "success" && state !== "at_limit" && (
+      {state !== "success" && state !== "at_limit" && state !== "fomo_blocked" && (
         <div className="shrink-0 bg-card border-t border-border px-4 py-4 space-y-2">
           {isFomoBlocked ? (
             <button onClick={handleRespond}
@@ -640,9 +700,6 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
           onConfirm={handleRejectConfirm}
           onCancel={() => setShowRejectSheet(false)}
         />
-      )}
-      {showFomoModal && fomoBlock && (
-        <FomoModal fomoBlock={fomoBlock} onClose={() => setShowFomoModal(false)} />
       )}
     </div>
   );
