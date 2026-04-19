@@ -1155,7 +1155,7 @@ export default function MasterChat() {
                                   </div>
                                 </div>
                               ) : (
-                                msg.text && <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text.replace(/^\[ИИ-диспетчер\]:\s*/, "")}</p>
+                                (() => { const t = (msg.text ?? "").replace(/^\[ИИ-диспетчер\]:\s*/, "").trim(); return t ? <p className="text-sm leading-relaxed whitespace-pre-wrap">{t}</p> : null; })()
                               )}
                               <div className={`flex items-center gap-1 mt-1 ${isMaster ? "justify-start" : "justify-end"}`}>
                                 <span className={`text-[10px] ${isMaster ? "text-gray-400" : "text-blue-100"}`}>{timeStamp(msg.createdAt)}</span>

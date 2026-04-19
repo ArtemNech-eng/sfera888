@@ -1620,7 +1620,7 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                             <img src={resolvePhotoUrl(msg.photoUrl)} alt="фото" className="rounded-xl max-w-full max-h-40 object-cover" />
                           </a>
                         )}
-                        {msg.text && <p className="text-xs leading-relaxed">{msg.text}</p>}
+                        {(() => { const t = (msg.text ?? "").replace(/^\[ИИ-диспетчер\]:\s*/, "").trim(); return t ? <p className="text-xs leading-relaxed whitespace-pre-wrap">{t}</p> : null; })()}
                         <div className={`flex items-center gap-1 mt-1 ${isMaster ? "justify-start" : "justify-end"}`}>
                           <span className={`text-[9px] ${isMaster ? "text-gray-400" : "text-blue-100"}`}>{ts(msg.createdAt)}</span>
                           {!isMaster && (msg.isRead ? <CheckCheck className="w-2.5 h-2.5 text-blue-200" /> : <Check className="w-2.5 h-2.5 text-blue-200" />)}
