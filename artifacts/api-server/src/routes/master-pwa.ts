@@ -343,7 +343,7 @@ router.get("/home", requireMasterPwa, async (req, res) => {
     if (colRows[0]) isAvailable = colRows[0].receivesOrders ?? false;
   }
 
-  const orderLimit = master.isTestMaster ? 1 : 2;
+  const orderLimit = master.maxActiveOrders ?? 1;
 
   // ─── Missed orders & today's activity (FOMO feed) ────────────────────────
   const since48h = new Date(Date.now() - 48 * 60 * 60 * 1000);

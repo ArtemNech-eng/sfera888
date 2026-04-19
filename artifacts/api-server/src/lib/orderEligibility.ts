@@ -84,9 +84,10 @@ export async function getOverdueMasterIds(): Promise<Set<number>> {
  * Determines if a master is eligible to take a new order.
  *
  * Rules:
+ *  - BLOCK if passport not verified
  *  - BLOCK if master has any overdue transactions
  *  - BLOCK if master is still in test period (isTestMaster) AND has unpaid commission debt > 0
- *  - ALLOW within limit: test masters → 1, regular → 2
+ *  - ALLOW within limit: master.maxActiveOrders (default 1); operators can grant up to 2
  */
 export function getMasterEligibility(
   master: {
@@ -94,12 +95,14 @@ export function getMasterEligibility(
     isTestMaster: boolean;
     debt: string | number;
     passportVerified?: boolean | null;
+    maxActiveOrders?: number | null;
   },
   currentActiveCount: number,
   overdueMasterIds: Set<number>,
 ): EligibilityResult {
   const debt = Number(master.debt);
   const isOverdue = overdueMasterIds.has(master.id);
+  const limit = master.maxActiveOrders ?? 1;
 
   // Admin must verify passport before master can accept orders
   if (master.passportVerified !== true) {
@@ -122,17 +125,15 @@ export function getMasterEligibility(
     return {
       canAccept: false,
       reason: `Тестовый период: имеется неоплаченная комиссия (${debt.toLocaleString("ru")} ₽). Оплатите комиссию за первый заказ, чтобы продолжить работу.`,
-      limit: 1,
+      limit,
     };
   }
-
-  const limit = master.isTestMaster ? 1 : 2;
 
   if (currentActiveCount >= limit) {
     return {
       canAccept: false,
-      reason: master.isTestMaster
-        ? `Тестовый период: максимум 1 активный заказ одновременно.`
+      reason: limit === 1
+        ? "Вы уже работаете по заказу. Завершите его, чтобы получить новый."
         : `Достигнут лимит активных заказов (${limit}).`,
       limit,
     };

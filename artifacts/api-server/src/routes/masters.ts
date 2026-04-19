@@ -115,6 +115,7 @@ function formatMaster(m: any) {
     lastSeenAt: m.lastSeenAt ?? null,
     servicePrices: m.servicePrices ?? null,
     fomoDisabled: m.fomoDisabled ?? false,
+    maxActiveOrders: m.maxActiveOrders ?? 1,
   };
 }
 
@@ -321,7 +322,7 @@ router.get("/:id", allMasterRoles, async (req, res) => {
 // PATCH /api/masters/:id
 router.patch("/:id", requireRole("admin", "master_operator"), async (req, res) => {
   const id = parseInt(req.params.id);
-  const { alias, city, specialization, specializations, telegramId, phone, status, isTestMaster, tags, rating, servicePrices } = req.body;
+  const { alias, city, specialization, specializations, telegramId, phone, status, isTestMaster, tags, rating, servicePrices, maxActiveOrders } = req.body;
 
   // Get old status before update for notifications
   const oldRows = await db.select().from(mastersTable).where(eq(mastersTable.id, id));
@@ -338,6 +339,7 @@ router.patch("/:id", requireRole("admin", "master_operator"), async (req, res) =
   if (isTestMaster !== undefined) updates.isTestMaster = isTestMaster;
   if (tags !== undefined) updates.tags = tags;
   if (rating !== undefined) updates.rating = String(rating);
+  if (maxActiveOrders !== undefined) updates.maxActiveOrders = Math.min(2, Math.max(1, Number(maxActiveOrders)));
   if (servicePrices !== undefined) updates.servicePrices = Array.isArray(servicePrices)
     ? servicePrices.filter((p: any) => p.service && typeof p.priceFrom === "number" && p.priceFrom > 0)
     : null;

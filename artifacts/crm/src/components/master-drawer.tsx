@@ -152,6 +152,7 @@ export interface DrawerMaster {
   lastSeenAt?: string | null;
   servicePrices?: { service: string; priceFrom: number }[] | null;
   fomoDisabled?: boolean;
+  maxActiveOrders?: number;
 }
 
 interface MasterTask { id: number; masterId: number; text: string; dueAt: string | null; isCompleted: boolean; createdBy: string | null; createdAt: string; }
@@ -598,6 +599,30 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
       }
     } finally {
       setTogglingFomo(false);
+    }
+  };
+
+  const [togglingMaxOrders, setTogglingMaxOrders] = useState(false);
+  const handleToggleMaxOrders = async () => {
+    const current = master.maxActiveOrders ?? 1;
+    const next = current >= 2 ? 1 : 2;
+    const confirmMsg = next === 2
+      ? `Разрешить ${master.alias} брать до 2 заказов одновременно?`
+      : `Вернуть ${master.alias} стандартный лимит (1 заказ одновременно)?`;
+    if (!confirm(confirmMsg)) return;
+    setTogglingMaxOrders(true);
+    try {
+      const r = await fetch(`/api/masters/${master.id}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ maxActiveOrders: next }),
+      });
+      if (r.ok) {
+        onMasterUpdate(master.id, { maxActiveOrders: next });
+      }
+    } finally {
+      setTogglingMaxOrders(false);
     }
   };
 
@@ -1364,6 +1389,36 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                     Заблокировать мастера
                   </button>
                 )}
+              </div>
+
+              {/* Max active orders toggle */}
+              <div className="border-t border-gray-100 pt-3">
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-2">
+                  Лимит заказов
+                </p>
+                <div className="flex items-center justify-between bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-200">
+                  <div>
+                    <p className="text-xs font-semibold text-gray-800">
+                      {(master.maxActiveOrders ?? 1) >= 2 ? "До 2 заказов одновременно" : "1 заказ одновременно"}
+                    </p>
+                    <p className="text-[10px] text-gray-500 mt-0.5">
+                      {(master.maxActiveOrders ?? 1) >= 2
+                        ? "Мастер может взять второй заказ не дожидаясь завершения первого"
+                        : "Новый заказ только после сдачи текущего"}
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleToggleMaxOrders}
+                    disabled={togglingMaxOrders}
+                    className={`ml-3 flex-shrink-0 relative w-11 h-6 rounded-full transition-colors disabled:opacity-50 focus:outline-none ${
+                      (master.maxActiveOrders ?? 1) >= 2 ? "bg-emerald-500" : "bg-gray-300"
+                    }`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                      (master.maxActiveOrders ?? 1) >= 2 ? "translate-x-5" : "translate-x-0"
+                    }`} />
+                  </button>
+                </div>
               </div>
 
               {/* FOMO toggle */}

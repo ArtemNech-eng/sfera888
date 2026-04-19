@@ -48,6 +48,7 @@ export const mastersTable = pgTable("masters", {
   suspendedAt: timestamp("suspended_at"),
   suspensionReason: text("suspension_reason"),
   fomoDisabled: boolean("fomo_disabled").notNull().default(false),
+  maxActiveOrders: integer("max_active_orders").notNull().default(1),
 });
 
 export const insertMasterSchema = createInsertSchema(mastersTable).omit({ id: true, createdAt: true });
