@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { sql, and, eq, isNull, inArray, lt } from "drizzle-orm";
-import { mastersTable, ordersTable, masterMessagesTable } from "@workspace/db";
+import { mastersTable, ordersTable, masterMessagesTable, orderDispatchesTable } from "@workspace/db";
 import { sendMaxMessage } from "../maxBot.js";
 import { calculateCommission, getCommissionSettings } from "../lib/commission.js";
 
@@ -1366,6 +1366,20 @@ router.post("/template-scenarios/orders-without-receipts/:orderId/reassign", asy
       SET status = 'waiting_master', master_id = NULL, assigned_at = NULL, updated_at = NOW()
       WHERE id = ${orderId} AND status NOT IN ('completed', 'cancelled')
     `);
+
+    // Block the reassigned master from getting this order again
+    if (o.master_id) {
+      const chatIdForBlock = o.max_chat_id ?? `pwa_${o.master_id}`;
+      await db.insert(orderDispatchesTable)
+        .values({
+          orderId,
+          masterId: o.master_id,
+          telegramChatId: chatIdForBlock,
+          status: "rejected",
+          rejectionReason: "Мастер переназначен оператором (нет сметы)",
+        })
+        .onConflictDoNothing();
+    }
 
     if (o.max_chat_id && o.master_id) {
       await sendAndSaveMasterMessage(

@@ -514,6 +514,18 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
     // Delete old dispatch records so we can re-broadcast
     await db.delete(orderDispatchesTable).where(eq(orderDispatchesTable.orderId, id));
 
+    // Permanently block the cancelling master from receiving this order again
+    // (broadcastOrder checks for "rejected" records and skips those masters)
+    const chatIdForRejected =
+      rejectedMaster?.maxChatId ?? rejectedMaster?.telegramId ?? `pwa_${rejectedMasterId}`;
+    await db.insert(orderDispatchesTable).values({
+      orderId: id,
+      masterId: rejectedMasterId,
+      telegramChatId: chatIdForRejected,
+      status: "rejected",
+      rejectionReason: "Мастер запросил отмену — оператор отклонил и переназначил заказ",
+    });
+
     // Re-broadcast to eligible masters in the same city (excluding the one who tried to cancel)
     const allMasters = await db.select().from(mastersTable)
       .where(and(eq(mastersTable.status, "active"), eq(mastersTable.city, o.city)));
