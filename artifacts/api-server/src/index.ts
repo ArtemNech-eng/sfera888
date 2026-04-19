@@ -409,6 +409,7 @@ async function recalculateMasterVoronkaColumns() {
 }
 
 // Auto-close orders that have been in "waiting_master" for 48+ hours.
+// Uses updatedAt (not createdAt) so the timer resets when an order is returned to the pool.
 // Sets status="cancelled", cancelType="no_master_found".
 async function autoCloseNoMasterOrders() {
   const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000);
@@ -416,7 +417,7 @@ async function autoCloseNoMasterOrders() {
     .from(ordersTable)
     .where(and(
       eq(ordersTable.status, "waiting_master"),
-      lte(ordersTable.createdAt, cutoff),
+      lte(ordersTable.updatedAt, cutoff),
       isNull(ordersTable.deletedAt),
     ));
 
