@@ -407,7 +407,8 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
   order: OrderCard; onRespond: () => void; onReject: () => void; onClose: () => void;
   fomoBlock?: FomoBlock | null;
 }) {
-  const [state, setState] = useState<"idle" | "loading" | "success" | "rejecting">("idle");
+  const [state, setState] = useState<"idle" | "loading" | "success" | "at_limit" | "rejecting">("idle");
+  const [atLimitOrderId, setAtLimitOrderId] = useState<number | null>(null);
   const [showRejectSheet, setShowRejectSheet] = useState(false);
   const [showPriceNote, setShowPriceNote] = useState(false);
   const [priceNote, setPriceNote] = useState("");
@@ -423,8 +424,13 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
     }
     setState("loading");
     try {
-      await api.orders.respond(order.id, priceNote.trim() || undefined);
-      setState("success");
+      const result = await api.orders.respond(order.id, priceNote.trim() || undefined);
+      if (result?.atLimit) {
+        setAtLimitOrderId(result.activeOrderId ?? null);
+        setState("at_limit");
+      } else {
+        setState("success");
+      }
     } catch (e: any) {
       toast.error(e.message ?? "Ошибка");
       setState("idle");
@@ -462,7 +468,41 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {state === "success" ? (
+        {state === "at_limit" ? (
+          <div className="flex flex-col items-center justify-center min-h-[70vh] px-6 text-center space-y-5">
+            <div className="w-20 h-20 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+              <Briefcase size={40} className="text-amber-500" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold mb-1">Отклик зафиксирован!</h2>
+              <p className="text-sm text-muted-foreground">Мы знаем, что заявка #{order.id} вам интересна.</p>
+            </div>
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-2xl px-4 py-4 text-left w-full max-w-sm space-y-3">
+              <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Чтобы принять эту заявку, нужно сначала закрыть текущий заказ:</p>
+              <div className="flex items-start gap-2.5">
+                <span className="mt-0.5 w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center flex-shrink-0">
+                  <CheckCircle2 size={14} className="text-emerald-600" />
+                </span>
+                <p className="text-sm text-gray-700 dark:text-gray-300">
+                  <span className="font-medium">Завершить{atLimitOrderId ? ` заказ #${atLimitOrderId}` : " текущий заказ"}</span> и оплатить комиссию — рейтинг сохранится
+                </p>
+              </div>
+              <div className="flex items-start gap-2.5">
+                <span className="mt-0.5 w-6 h-6 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center flex-shrink-0">
+                  <XCircle size={14} className="text-red-500" />
+                </span>
+                <p className="text-sm text-gray-700 dark:text-gray-300">
+                  <span className="font-medium">Отменить текущий заказ</span> — тогда рейтинг будет снижен
+                </p>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground px-2">Как только закроете предыдущий заказ — напишите нам, и мы вернёмся к этой заявке.</p>
+            <button onClick={onClose}
+              className="w-full max-w-sm h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm">
+              Понял, закрою текущий заказ
+            </button>
+          </div>
+        ) : state === "success" ? (
           <div className="flex flex-col items-center justify-center min-h-[70vh] px-6 text-center space-y-4">
             <div className="w-20 h-20 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
               <CheckCircle2 size={44} className="text-green-500" />
@@ -568,7 +608,7 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
         )}
       </div>
 
-      {state !== "success" && (
+      {state !== "success" && state !== "at_limit" && (
         <div className="shrink-0 bg-card border-t border-border px-4 py-4 space-y-2">
           {isFomoBlocked ? (
             <button onClick={handleRespond}

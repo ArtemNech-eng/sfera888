@@ -632,9 +632,53 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
   // Check order eligibility (limit + debt + overdue)
   const allActive = await db.select().from(ordersTable)
     .where(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
-  const myActiveCount = allActive.filter(o => o.masterId === masterId).length;
+  const myActiveForRespond = allActive.filter(o => o.masterId === masterId);
+  const myActiveCount = myActiveForRespond.length;
   const overdueMasterIds = await getOverdueMasterIds();
   const eligibility = getMasterEligibility(master, myActiveCount, overdueMasterIds);
+
+  // ── AT LIMIT: special flow — register interest, send info message, return atLimit flag
+  if (!eligibility.canAccept && myActiveCount >= (master.maxActiveOrders ?? 1) && !overdueMasterIds.has(masterId)) {
+    // Still mark respond so operator sees the interest
+    await db.update(orderDispatchesTable)
+      .set({ status: "responded", respondedAt: new Date(), responseNote: "⚠️ Откликнулся при активном заказе" })
+      .where(eq(orderDispatchesTable.id, dispatches[0].id));
+
+    // Build info message for master
+    const activeOrder = myActiveForRespond.find(o => o.masterId === masterId);
+    const activeOrderRef = activeOrder ? ` (заказ #${activeOrder.id})` : "";
+    const infoMsg = `Вы откликнулись на заявку #${orderId}! 👍\n\nЧтобы мы могли вас назначить, сначала нужно:\n\n✅ Завершить текущий заказ${activeOrderRef} и оплатить комиссию\n\nили\n\n❌ Отменить текущий заказ — но тогда ваш рейтинг будет снижен.\n\nКак только закроете предыдущий заказ — напишите нам, и мы вернёмся к этой заявке.`;
+
+    const telegramChatId = master.maxChatId ? `max_${master.maxChatId}` : (master.telegramId ?? `pwa_${masterId}`);
+    // Save to CRM dialog
+    await db.insert(masterMessagesTable).values({
+      masterId,
+      telegramChatId,
+      text: `[ИИ-диспетчер]: ${infoMsg}`,
+      fromMaster: false,
+      senderName: "Диспетчер",
+      isRead: true,
+    });
+    // Also send via Max if available
+    if (master.maxChatId) {
+      const { sendMaxMessage } = await import("../maxBot.js");
+      sendMaxMessage(master.maxChatId, infoMsg).catch(() => {});
+    }
+    // Also save master's respond event in CRM
+    await db.insert(masterMessagesTable).values({
+      masterId,
+      telegramChatId,
+      text: `🙋 Откликнулся на заявку #${orderId} (${order.serviceType}, ${order.city}${order.district ? ", " + order.district : ""}) — но уже на активном заказе`,
+      fromMaster: true,
+      senderName: master.alias,
+      isRead: false,
+    });
+
+    notifyManagerMasterResponse(orderId, master.alias, true).catch(() => {});
+    return res.json({ atLimit: true, activeOrderId: activeOrder?.id ?? null });
+  }
+
+  // ── BLOCKED for other reasons (debt / overdue / not verified)
   if (!eligibility.canAccept) {
     return res.status(400).json({ error: eligibility.reason });
   }
