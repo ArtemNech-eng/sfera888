@@ -610,8 +610,22 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
   const orderId = parseInt(req.params.id);
 
   const dispatches = await db.select().from(orderDispatchesTable)
-    .where(and(eq(orderDispatchesTable.masterId, masterId), eq(orderDispatchesTable.orderId, orderId), eq(orderDispatchesTable.status, "sent")));
+    .where(and(eq(orderDispatchesTable.masterId, masterId), eq(orderDispatchesTable.orderId, orderId), inArray(orderDispatchesTable.status, ["sent", "responded"])));
   if (!dispatches[0]) return res.status(404).json({ error: "Заявка не найдена или вы уже откликнулись" });
+
+  // Idempotent: already responded normally → return success without re-processing
+  if (dispatches[0].status === "responded") {
+    const wasAtLimit = (dispatches[0].responseNote ?? "").startsWith("⚠️");
+    if (wasAtLimit) {
+      // Still at limit — return same at_limit screen, no extra DB writes
+      const allActive = await db.select().from(ordersTable)
+        .where(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
+      const myActive = allActive.filter(o => o.masterId === masterId);
+      return res.json({ atLimit: true, activeOrderId: myActive[0]?.id ?? null });
+    }
+    // Already fully responded — treat as success
+    return res.json({ success: true, alreadyResponded: true });
+  }
 
   const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
   const order = orderRows[0];
