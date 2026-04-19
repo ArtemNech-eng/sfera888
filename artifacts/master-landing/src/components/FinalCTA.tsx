@@ -25,7 +25,7 @@ export default function FinalCTA({ onCtaClick }: FinalCTAProps) {
             Начать получать заказы
             <ArrowRight size={18} strokeWidth={2.5} />
           </button>
-          <span className="text-sm text-gray-500">Регистрация через бот за 2 минуты</span>
+          <span className="text-sm text-gray-500">Регистрация в приложении за 2 минуты</span>
         </div>
       </div>
     </section>

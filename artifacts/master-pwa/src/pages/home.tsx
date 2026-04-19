@@ -9,7 +9,7 @@ import {
   MapPin, Calendar, MessageSquare, Clock,
   ChevronRight, X, Images, Wrench, Zap, PauseCircle,
   PlayCircle, Navigation, Users, Heart, ChevronDown, Briefcase,
-  Eye, EyeOff, Lock,
+  Eye, EyeOff, Lock, FileText, Bot,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -407,8 +407,10 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
   order: OrderCard; onRespond: () => void; onReject: () => void; onClose: () => void;
   fomoBlock?: FomoBlock | null;
 }) {
-  const [state, setState] = useState<"idle" | "loading" | "success" | "at_limit" | "fomo_blocked" | "rejecting">("idle");
+  const [state, setState] = useState<"idle" | "loading" | "success" | "at_limit" | "fomo_blocked" | "needs_contract" | "rejecting">("idle");
   const [atLimitOrderId, setAtLimitOrderId] = useState<number | null>(null);
+  const [contractFlags, setContractFlags] = useState<{ contractSigned: boolean; passportVerified: boolean }>({ contractSigned: false, passportVerified: false });
+  const [, setSheetLocation] = useLocation();
   const [showRejectSheet, setShowRejectSheet] = useState(false);
   const [showPriceNote, setShowPriceNote] = useState(false);
   const [priceNote, setPriceNote] = useState("");
@@ -451,7 +453,10 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
     setState("loading");
     try {
       const result = await api.orders.respond(order.id, priceNote.trim() || undefined);
-      if (result?.atLimit) {
+      if (result?.needsContract) {
+        setContractFlags({ contractSigned: !!result.contractSigned, passportVerified: !!result.passportVerified });
+        setState("needs_contract");
+      } else if (result?.atLimit) {
         setAtLimitOrderId(result.activeOrderId ?? null);
         setState("at_limit");
       } else {
@@ -528,7 +533,45 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
               </button>
             </div>
           );
-        })() : state === "at_limit" ? (
+        })() : state === "needs_contract" ? (
+          <div className="flex flex-col items-center justify-center min-h-[70vh] px-6 text-center space-y-5">
+            <div className="w-20 h-20 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+              <FileText size={40} className="text-blue-500" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold mb-1">Нужно заключить договор</h2>
+              <p className="text-sm text-muted-foreground">Чтобы откликнуться на заявку #{order.id}, сначала заключите договор с платформой.</p>
+            </div>
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-2xl px-4 py-4 text-left w-full max-w-sm space-y-3">
+              <div className="flex items-start gap-2.5">
+                <span className={`mt-0.5 w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${contractFlags.contractSigned ? "bg-emerald-100 dark:bg-emerald-900/30" : "bg-gray-200 dark:bg-gray-700"}`}>
+                  {contractFlags.contractSigned
+                    ? <CheckCircle2 size={14} className="text-emerald-600" />
+                    : <span className="text-xs font-bold text-gray-500">1</span>}
+                </span>
+                <p className="text-sm text-gray-700 dark:text-gray-300">
+                  <span className="font-medium">Подписать договор</span> и загрузить паспорт
+                </p>
+              </div>
+              <div className="flex items-start gap-2.5">
+                <span className={`mt-0.5 w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${contractFlags.passportVerified ? "bg-emerald-100 dark:bg-emerald-900/30" : "bg-gray-200 dark:bg-gray-700"}`}>
+                  {contractFlags.passportVerified
+                    ? <CheckCircle2 size={14} className="text-emerald-600" />
+                    : <span className="text-xs font-bold text-gray-500">2</span>}
+                </span>
+                <p className="text-sm text-gray-700 dark:text-gray-300">
+                  <span className="font-medium">Дождаться проверки</span> документов менеджером
+                </p>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground px-2">Это разовая процедура. После проверки вы сможете откликаться на любые заявки.</p>
+            <button
+              onClick={() => { onClose(); setSheetLocation("/pending-contract"); }}
+              className="w-full max-w-sm h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm">
+              {contractFlags.contractSigned ? "Открыть статус договора" : "Заключить договор"}
+            </button>
+          </div>
+        ) : state === "at_limit" ? (
           <div className="flex flex-col items-center justify-center min-h-[70vh] px-6 text-center space-y-5">
             <div className="w-20 h-20 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
               <Briefcase size={40} className="text-amber-500" />
@@ -668,7 +711,7 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
         )}
       </div>
 
-      {state !== "success" && state !== "at_limit" && state !== "fomo_blocked" && (
+      {state !== "success" && state !== "at_limit" && state !== "fomo_blocked" && state !== "needs_contract" && (
         <div className="shrink-0 bg-card border-t border-border px-4 py-4 space-y-2">
           {isFomoBlocked ? (
             <button onClick={handleRespond}
@@ -1001,6 +1044,55 @@ function DailyCheckinCard() {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
+function MaxBindPostRegPrompt({ botUrl, onClose }: { botUrl: string; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/50 px-4 pb-4 sm:pb-0">
+      <div className="w-full max-w-sm bg-card rounded-t-2xl sm:rounded-2xl p-6 space-y-5 animate-in slide-in-from-bottom duration-300">
+        <div className="flex flex-col items-center text-center space-y-3">
+          <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+            <Bot size={32} className="text-emerald-600" />
+          </div>
+          <h2 className="text-lg font-bold">Подключите бот в Max</h2>
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            Уведомления о новых заказах будут приходить мгновенно — прямо в мессенджер Max. Без бота вы будете видеть заказы только когда зайдёте в приложение.
+          </p>
+        </div>
+        <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-xl px-4 py-3 space-y-2">
+          <div className="flex items-start gap-2">
+            <CheckCircle2 size={14} className="text-emerald-600 mt-0.5 shrink-0" />
+            <span className="text-xs text-gray-700 dark:text-gray-300">Новые заявки в вашем городе</span>
+          </div>
+          <div className="flex items-start gap-2">
+            <CheckCircle2 size={14} className="text-emerald-600 mt-0.5 shrink-0" />
+            <span className="text-xs text-gray-700 dark:text-gray-300">Назначения и сообщения от менеджера</span>
+          </div>
+          <div className="flex items-start gap-2">
+            <CheckCircle2 size={14} className="text-emerald-600 mt-0.5 shrink-0" />
+            <span className="text-xs text-gray-700 dark:text-gray-300">Подтверждения оплат</span>
+          </div>
+        </div>
+        <div className="space-y-2">
+          <a
+            href={botUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={onClose}
+            className="block w-full h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm flex items-center justify-center gap-2"
+          >
+            <Bot size={18} /> Привязать бот
+          </a>
+          <button
+            onClick={onClose}
+            className="w-full h-10 text-sm text-muted-foreground font-medium"
+          >
+            Позже
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function HomePage() {
   const { master } = useAuth();
   const [, setLocation] = useLocation();
@@ -1010,6 +1102,13 @@ export default function HomePage() {
   const [selectedPending, setSelectedPending] = useState<PendingCard | null>(null);
   const [isAvailable, setIsAvailable] = useState(true);
   const [showSwipeHint, setShowSwipeHint] = useState(() => !localStorage.getItem(SWIPE_HINT_KEY));
+  const [showMaxPrompt, setShowMaxPrompt] = useState(() => {
+    try { return localStorage.getItem("showMaxBindPrompt") === "1"; } catch { return false; }
+  });
+  const dismissMaxPrompt = () => {
+    try { localStorage.removeItem("showMaxBindPrompt"); } catch {}
+    setShowMaxPrompt(false);
+  };
 
   const prevOrderIds = useRef<Set<number>>(new Set());
   const firstLoad = useRef(true);
@@ -1084,6 +1183,13 @@ export default function HomePage() {
 
   return (
     <div className="px-4 pt-5 pb-4 space-y-5">
+
+      {showMaxPrompt && !master?.maxChatId && (
+        <MaxBindPostRegPrompt
+          botUrl={(master as any)?.maxBotLink ?? "https://max.ru"}
+          onClose={dismissMaxPrompt}
+        />
+      )}
 
       {/* Header */}
       <div className="flex items-center justify-between">

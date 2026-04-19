@@ -56,6 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const register = async (data: Parameters<typeof api.auth.register>[0]) => {
     const m = await api.auth.register(data);
+    try { localStorage.setItem("showMaxBindPrompt", "1"); } catch {}
     setMaster(m);
   };
 

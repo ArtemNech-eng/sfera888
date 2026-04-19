@@ -107,8 +107,10 @@ router.post("/auth/login", async (req, res) => {
   // status is still pending_contract due to a race/bug — auto-activate now.
   // NOTE: contractSignedAt alone is NOT enough — passportVerified must be true
   // (set by admin in CRM), otherwise we'd auto-activate before admin review.
+  // Contract is no longer required upfront — auto-activate any legacy
+  // pending_contract masters on login. Contract gating now happens at /respond.
   let effectiveStatus = master.status;
-  if (master.contractSignedAt && master.passportVerified && master.status === "pending_contract") {
+  if (master.status === "pending_contract") {
     await db.update(mastersTable)
       .set({ status: "active" })
       .where(eq(mastersTable.id, master.id));
@@ -528,6 +530,15 @@ router.post("/orders/:id/accept", requireMasterPwa, async (req, res) => {
   const master = await getMasterById(masterId);
   if (!master) return res.status(404).json({ error: "Мастер не найден" });
 
+  // Contract gate — must have signed contract AND admin-verified passport
+  if (!master.contractSignedAt || !master.passportVerified) {
+    return res.json({
+      needsContract: true,
+      contractSigned: !!master.contractSignedAt,
+      passportVerified: !!master.passportVerified,
+    });
+  }
+
   // Check the dispatch exists
   const dispatches = await db.select().from(orderDispatchesTable)
     .where(and(eq(orderDispatchesTable.masterId, masterId), eq(orderDispatchesTable.orderId, orderId), eq(orderDispatchesTable.status, "sent")));
@@ -635,6 +646,15 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
 
   const master = await getMasterById(masterId);
   if (!master) return res.status(404).json({ error: "Мастер не найден" });
+
+  // Contract gate — must have signed contract AND admin-verified passport before responding
+  if (!master.contractSignedAt || !master.passportVerified) {
+    return res.json({
+      needsContract: true,
+      contractSigned: !!master.contractSignedAt,
+      passportVerified: !!master.passportVerified,
+    });
+  }
 
   // FOMO block check — highest priority, before eligibility
   const fomoStatus = await getFomoBlock(masterId, master.isTestMaster);
@@ -1099,10 +1119,6 @@ router.post("/auth/register", async (req, res) => {
   // Check login uniqueness
   const existing = await db.select().from(mastersTable).where(and(eq(mastersTable.pwaLogin, normalizedLogin), isNull(mastersTable.deletedAt)));
   if (existing.length > 0) {
-    const m = existing[0];
-    if (m.status === "pending_contract") {
-      return res.status(400).json({ error: "Этот номер уже зарегистрирован и ожидает подписания договора. Войдите с этим номером и паролем." });
-    }
     return res.status(400).json({ error: "Этот номер телефона уже зарегистрирован. Войдите через вкладку «Вход»." });
   }
 
@@ -1123,7 +1139,7 @@ router.post("/auth/register", async (req, res) => {
     pwaPasswordHash: passwordHash,
     voronkaColumnId: firstCol?.id ?? null,
     maxChatId: maxChatId ? String(maxChatId) : null,
-    status: "pending_contract",
+    status: "active",
     contractLink: "https://desktop.doki.online/contract/6916b2861ea1593f469a6786",
     telegramId: null,
     isTestMaster: false,

@@ -57,7 +57,7 @@ export default function Hero({ onCtaClick }: HeroProps) {
           >
             Начать получать заказы
           </button>
-          <span className="text-sm text-[#8E8E93]">Регистрация через бот за 2 минуты</span>
+          <span className="text-sm text-[#8E8E93]">Регистрация в приложении за 2 минуты</span>
         </div>
       </div>
     </section>

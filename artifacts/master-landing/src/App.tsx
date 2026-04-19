@@ -12,13 +12,11 @@ import Trust from './components/Trust';
 import FinalCTA from './components/FinalCTA';
 import Footer from './components/Footer';
 
-const BOT_URL = import.meta.env.VITE_MAX_BOT_URL || 'https://max.ru/sfera_master';
+const PWA_URL = import.meta.env.VITE_PWA_URL || '/master-pwa/';
 
 export function openBot() {
-  const url = BOT_URL.includes('?')
-    ? `${BOT_URL}&start=landing`
-    : `${BOT_URL}?start=landing`;
-  window.open(url, '_blank', 'noopener,noreferrer');
+  const sep = PWA_URL.includes('?') ? '&' : '?';
+  window.location.href = `${PWA_URL}${sep}ref=landing`;
 }
 
 export default function App() {

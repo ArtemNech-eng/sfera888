@@ -89,23 +89,14 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   if (!master && location !== "/login") {
     return <Redirect to="/login" />;
   }
-  // Logged in + on login page → redirect
+  // Logged in + on login page → redirect home
   if (master && location === "/login") {
     if (master.status === "suspended") return <SuspendedScreen />;
-    const target = master.status === "pending_contract" ? "/pending-contract" : "/";
-    return <Redirect to={target} />;
+    return <Redirect to="/" />;
   }
   // Suspended master → show blocked screen regardless of route
   if (master && master.status === "suspended") {
     return <SuspendedScreen />;
-  }
-  // Logged in but pending contract → only allow /pending-contract
-  if (master && master.status === "pending_contract" && location !== "/pending-contract") {
-    return <Redirect to="/pending-contract" />;
-  }
-  // Active master on pending-contract page → redirect home
-  if (master && master.status !== "pending_contract" && location === "/pending-contract") {
-    return <Redirect to="/" />;
   }
 
   return <>{children}</>;
@@ -113,14 +104,14 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
 function AppRoutes() {
   const { master } = useAuth();
-  const isPending = master?.status === "pending_contract";
   const isSuspended = master?.status === "suspended";
+  const showChrome = !!master && !isSuspended;
 
   return (
     <div className="flex flex-col min-h-dvh">
-      {master && !isPending && !isSuspended && <MaxBotBanner />}
-      {master && !isPending && !isSuspended && <RulesPopup />}
-      <main className={`flex-1 overflow-auto ${master && !isPending && !isSuspended ? "pb-20" : ""}`}>
+      {showChrome && <MaxBotBanner />}
+      {showChrome && <RulesPopup />}
+      <main className={`flex-1 overflow-auto ${showChrome ? "pb-20" : ""}`}>
         <AuthGuard>
           <Switch>
             <Route path="/login" component={LoginPage} />
@@ -134,7 +125,7 @@ function AppRoutes() {
           </Switch>
         </AuthGuard>
       </main>
-      {master && !isPending && !isSuspended && <BottomNav />}
+      {showChrome && <BottomNav />}
     </div>
   );
 }
