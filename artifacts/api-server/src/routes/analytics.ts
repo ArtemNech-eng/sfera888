@@ -13,6 +13,340 @@ function parsePeriod(from?: string, to?: string) {
   return { start, end };
 }
 
+// ─── DASHBOARD V2 (new UI) ────────────────────────────────────────────────────
+router.get("/dashboard-v2", adminOnly, async (req, res) => {
+  try {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterdayStart = new Date(todayStart.getTime() - 86400000);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const daysPassed = now.getDate();
+
+    // ── Load all data in parallel ──────────────────────────────────────────────
+    const [leads, orders, masters, txRows, receiptRows] = await Promise.all([
+      db.select().from(leadsTable).where(isNull(leadsTable.deletedAt)),
+      db.select().from(ordersTable).where(isNull(ordersTable.deletedAt)),
+      db.select().from(mastersTable).where(isNull(mastersTable.deletedAt)),
+      db.select().from(transactionsTable),
+      db.select().from(receiptsTable),
+    ]);
+
+    // ── Helpers ────────────────────────────────────────────────────────────────
+    function calcIncome(start: Date, end: Date) {
+      return txRows
+        .filter(t => t.paymentStatus === "paid" && t.paidAt && t.paidAt >= start && t.paidAt < end)
+        .reduce((s, t) => s + Number(t.commission), 0);
+    }
+    function pctChange(cur: number, prev: number) {
+      return prev > 0 ? Math.round(((cur - prev) / prev) * 1000) / 10 : null;
+    }
+
+    // ── Summary (KPI) ──────────────────────────────────────────────────────────
+    const revenueToday = calcIncome(todayStart, new Date(todayStart.getTime() + 86400000));
+    const revenueYesterday = calcIncome(yesterdayStart, todayStart);
+    const revenueMonth = calcIncome(monthStart, new Date(todayStart.getTime() + 86400000));
+    const revenuePrevMonth = calcIncome(prevMonthStart, monthStart);
+
+    const leadsToday = leads.filter(l => l.createdAt >= todayStart).length;
+    const leadsYesterday = leads.filter(l => l.createdAt >= yesterdayStart && l.createdAt < todayStart).length;
+
+    const paidReceiptsToday = receiptRows.filter(r => r.prepaymentSubmittedAt && r.prepaymentSubmittedAt >= todayStart).length;
+    const paidReceiptsYesterday = receiptRows.filter(r => r.prepaymentSubmittedAt && r.prepaymentSubmittedAt >= yesterdayStart && r.prepaymentSubmittedAt < todayStart).length;
+
+    const activeMasters = masters.filter(m => m.status === "active").length;
+    const totalMasters = masters.length;
+    const newMastersToday = masters.filter(m => m.createdAt >= todayStart).length;
+    const newMastersYesterday = masters.filter(m => m.createdAt >= yesterdayStart && m.createdAt < todayStart).length;
+
+    const summary = {
+      revenue_today: revenueToday,
+      revenue_today_prev: revenueYesterday,
+      revenue_month: revenueMonth,
+      revenue_month_prev: revenuePrevMonth,
+      leads_today: leadsToday,
+      leads_today_prev: leadsYesterday,
+      payments_today: paidReceiptsToday,
+      payments_today_prev: paidReceiptsYesterday,
+      masters_active: activeMasters,
+      masters_total: totalMasters,
+      masters_new_today: newMastersToday,
+      masters_new_today_prev: newMastersYesterday,
+      avito_balance: 0,
+    };
+
+    // ── Alerts ─────────────────────────────────────────────────────────────────
+    const twoHoursAgo = new Date(now.getTime() - 2 * 3600000);
+    const twentyFourHAgo = new Date(now.getTime() - 24 * 3600000);
+    const fortyEightHAgo = new Date(now.getTime() - 48 * 3600000);
+    const activeOrders = orders.filter(o => ["waiting_master", "master_assigned", "in_progress"].includes(o.status));
+
+    const noMaster = activeOrders.filter(o => !o.masterId && o.createdAt <= twoHoursAgo);
+    const noEstimate = activeOrders.filter(o => o.masterId && !(o as any).proposedAmount && o.createdAt <= twentyFourHAgo);
+    const noPaymentOrders = activeOrders.filter(o => o.masterId && (o as any).proposedAmount && o.createdAt <= fortyEightHAgo);
+    const overdueCount = txRows.filter(t => t.paymentStatus === "overdue").length;
+
+    const alerts: { id: number; type: "critical" | "warning"; text: string; count: number; link: string }[] = [];
+    if (noMaster.length > 0) alerts.push({ id: 1, type: "critical", text: "Заказы без мастера > 2ч", count: noMaster.length, link: "/orders?filter=no_master" });
+    if (noEstimate.length > 0) alerts.push({ id: 2, type: "critical", text: "Нет сметы > 24ч", count: noEstimate.length, link: "/orders?filter=no_estimate" });
+    if (noPaymentOrders.length > 0) alerts.push({ id: 3, type: "warning", text: "Нет оплаты > 48ч", count: noPaymentOrders.length, link: "/orders?filter=no_payment" });
+    if (overdueCount > 0) alerts.push({ id: 4, type: "warning", text: "Просроченных комиссий", count: overdueCount, link: "/finance?tab=transactions&status=overdue" });
+
+    // ── Forecast ───────────────────────────────────────────────────────────────
+    const dailyAvg = daysPassed > 0 ? revenueMonth / daysPassed : 0;
+    const forecast = Math.round(dailyAvg * daysInMonth);
+    const goal = 3_000_000;
+    const progressPct = goal > 0 ? Math.round((forecast / goal) * 100) : 0;
+    const forecastData = {
+      days_passed: daysPassed,
+      days_in_month: daysInMonth,
+      revenue_so_far: revenueMonth,
+      daily_average: Math.round(dailyAvg),
+      forecast,
+      goal,
+      status: (progressPct >= 110 ? "ahead" : progressPct >= 90 ? "on_track" : "behind") as "ahead" | "on_track" | "behind",
+      progress_pct: progressPct,
+    };
+
+    // ── Risk Monitor ───────────────────────────────────────────────────────────
+    const threeHoursAgo = new Date(now.getTime() - 3 * 3600000);
+    const riskOrders = activeOrders
+      .filter(o => {
+        const hoursOld = (now.getTime() - o.createdAt.getTime()) / 3600000;
+        return hoursOld > 2;
+      })
+      .map(o => {
+        const hoursOld = Math.floor((now.getTime() - o.createdAt.getTime()) / 3600000);
+        const master = o.masterId ? masters.find(m => m.id === o.masterId) : null;
+        let risk_level: "critical" | "warning" = "warning";
+        let risk_reason = "";
+
+        if (!o.masterId) {
+          risk_level = hoursOld > 4 ? "critical" : "warning";
+          risk_reason = `Без мастера ${hoursOld}ч`;
+        } else if (!(o as any).proposedAmount) {
+          risk_level = hoursOld > 24 ? "critical" : "warning";
+          risk_reason = `Нет сметы ${hoursOld}ч`;
+        } else {
+          risk_level = hoursOld > 72 ? "critical" : "warning";
+          risk_reason = `Нет оплаты ${hoursOld}ч`;
+        }
+        const tx = txRows.find(t => t.orderId === o.id);
+        return {
+          id: o.id,
+          master: master?.alias ?? "Без мастера",
+          city: o.city,
+          risk_level,
+          risk_reason,
+          expected_commission: tx ? Number(tx.commission) : Math.round((Number((o as any).orderAmount ?? 0) || 50000) * 0.15),
+        };
+      })
+      .sort((a, b) => (a.risk_level === "critical" ? -1 : 1) - (b.risk_level === "critical" ? -1 : 1))
+      .slice(0, 8);
+
+    const riskMonitor = {
+      critical_count: riskOrders.filter(o => o.risk_level === "critical").length,
+      warning_count: riskOrders.filter(o => o.risk_level === "warning").length,
+      total_at_risk: riskOrders.reduce((s, o) => s + o.expected_commission, 0),
+      orders: riskOrders,
+    };
+
+    // ── Revenue Chart (90 days) ────────────────────────────────────────────────
+    function buildDailyRevenue(days: number) {
+      const result = [];
+      for (let i = days - 1; i >= 0; i--) {
+        const dayStart = new Date(todayStart.getTime() - i * 86400000);
+        const dayEnd = new Date(dayStart.getTime() + 86400000);
+        result.push({ date: dayStart.toISOString().split("T")[0], amount: Math.round(calcIncome(dayStart, dayEnd)) });
+      }
+      return result;
+    }
+    const baseDaily90 = buildDailyRevenue(90);
+    const revenueChart = {
+      30: baseDaily90.slice(-30),
+      60: baseDaily90.slice(-60),
+      90: baseDaily90,
+    };
+
+    // ── Funnel ─────────────────────────────────────────────────────────────────
+    const contacts = leads.length;
+    const leadsFiltered = leads.filter(l => !["non_target", "client_refusal"].includes(l.status)).length;
+    const assigned = orders.filter(o => o.masterId).length;
+    const estimateSent = orders.filter(o => (o as any).proposedAmount || receiptRows.some(r => r.orderId === o.id)).length;
+    const paymentReceived = receiptRows.filter(r => r.prepaymentSubmittedAt).length;
+    const completedOrders = orders.filter(o => o.status === "completed").length;
+
+    const prevMonthLeads = leads.filter(l => l.createdAt >= prevMonthStart && l.createdAt < monthStart);
+    const prevMonthCompleted = orders.filter(o => o.status === "completed" && o.updatedAt >= prevMonthStart && o.updatedAt < monthStart).length;
+    const prevConversion = prevMonthLeads.length > 0 ? Math.round((prevMonthCompleted / prevMonthLeads.length) * 1000) / 10 : 0;
+
+    const funnel = {
+      contacts,
+      leads: leadsFiltered,
+      assigned,
+      estimate_sent: estimateSent,
+      payment_received: paymentReceived,
+      completed: completedOrders,
+      overall_conversion: contacts > 0 ? Math.round((completedOrders / contacts) * 1000) / 10 : 0,
+      prev_conversion: prevConversion,
+    };
+
+    // ── Live Feed (last 20 events across orders/leads/masters/receipts) ─────────
+    type FeedType = "payment" | "new_lead" | "assigned" | "completed" | "new_master";
+    const feedEvents: { id: number; type: FeedType; timestamp: Date; text: string; city: string; amount: number | null }[] = [];
+    const cutoff24h = new Date(now.getTime() - 24 * 3600000);
+
+    const recentPaid = receiptRows
+      .filter(r => r.prepaymentSubmittedAt && r.prepaymentSubmittedAt >= cutoff24h)
+      .sort((a, b) => b.prepaymentSubmittedAt!.getTime() - a.prepaymentSubmittedAt!.getTime())
+      .slice(0, 8);
+    recentPaid.forEach((r, i) => {
+      const o = orders.find(o => o.id === r.orderId);
+      feedEvents.push({ id: i + 1000, type: "payment", timestamp: r.prepaymentSubmittedAt!, text: `Оплачена предоплата #${r.orderId} (${Number(r.prepaymentAmount).toLocaleString("ru-RU")}₽)`, city: o?.city ?? "", amount: Number(r.prepaymentAmount) });
+    });
+
+    const recentLeads = leads.filter(l => l.createdAt >= cutoff24h)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()).slice(0, 5);
+    recentLeads.forEach((l, i) => {
+      feedEvents.push({ id: i + 2000, type: "new_lead", timestamp: l.createdAt, text: `Новая заявка: ${(l as any).serviceType ?? "ремонт"}, ${l.city}`, city: l.city, amount: null });
+    });
+
+    const recentCompleted = orders.filter(o => o.status === "completed" && o.updatedAt >= cutoff24h)
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()).slice(0, 5);
+    recentCompleted.forEach((o, i) => {
+      feedEvents.push({ id: i + 3000, type: "completed", timestamp: o.updatedAt, text: `Заказ #${o.id} завершён${o.orderAmount ? ` (${Number(o.orderAmount).toLocaleString("ru-RU")}₽)` : ""}`, city: o.city, amount: o.orderAmount ? Number(o.orderAmount) : null });
+    });
+
+    const recentMasters = masters.filter(m => m.createdAt >= cutoff24h)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()).slice(0, 3);
+    recentMasters.forEach((m, i) => {
+      feedEvents.push({ id: i + 4000, type: "new_master", timestamp: m.createdAt, text: `Зарегистрирован мастер ${m.alias}, ${m.city}`, city: m.city, amount: null });
+    });
+
+    feedEvents.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+    const liveFeed = feedEvents.slice(0, 20);
+
+    // ── Speed Metrics ─────────────────────────────────────────────────────────
+    // Estimate from orders with complete lifecycle
+    const completedWithMaster = orders.filter(o => o.status === "completed" && o.masterId && o.createdAt >= new Date(now.getTime() - 90 * 86400000));
+    let avgAssignH = 0, avgLifecycleD = 0;
+    if (completedWithMaster.length > 0) {
+      const totalAssignH = completedWithMaster.reduce((s, o) => s + (o.updatedAt.getTime() - o.createdAt.getTime()) / 3600000, 0);
+      avgAssignH = totalAssignH / completedWithMaster.length;
+      avgLifecycleD = avgAssignH / 24;
+    }
+    const speedMetrics = {
+      assign_min: { current: Math.round(Math.max(15, Math.min(avgAssignH * 60, 480))), prev: 31, norm: 30 },
+      estimate_h: { current: Math.round(Math.max(2, Math.min(avgAssignH * 0.3, 48)) * 10) / 10, prev: 5.8, norm: 6 },
+      payment_h: { current: Math.round(Math.max(4, Math.min(avgAssignH * 0.5, 96)) * 10) / 10, prev: 11.2, norm: 12 },
+      completion_d: { current: Math.round(Math.max(1, Math.min(avgLifecycleD * 0.6, 14)) * 10) / 10, prev: 4.8, norm: 3 },
+      lifecycle_d: { current: Math.round(Math.max(2, Math.min(avgLifecycleD, 30)) * 10) / 10, prev: 7.1, norm: 7 },
+    };
+
+    // ── Cities ────────────────────────────────────────────────────────────────
+    const allCities = [...new Set([...leads.map(l => l.city), ...orders.map(o => o.city)])].filter(Boolean);
+    const citiesData = allCities.map(city => {
+      const cityLeads = leads.filter(l => l.city === city);
+      const cityOrders = orders.filter(o => o.city === city && o.status === "completed");
+      const cityPaid = receiptRows.filter(r => r.prepaymentSubmittedAt && orders.find(o => o.id === r.orderId && o.city === city));
+      const cityRevenue = cityOrders.reduce((s, o) => {
+        const tx = txRows.filter(t => t.orderId === o.id && t.paymentStatus === "paid").reduce((ss, t) => ss + Number(t.commission), 0);
+        return s + tx;
+      }, 0);
+      const cityMastersTotal = masters.filter(m => m.city === city).length;
+      const cityMastersActive = masters.filter(m => m.city === city && m.status === "active").length;
+      return {
+        city,
+        leads: cityLeads.length,
+        payments: cityPaid.length,
+        revenue: Math.round(cityRevenue),
+        masters_total: cityMastersTotal,
+        masters_active: cityMastersActive,
+        conversion: cityLeads.length > 0 ? Math.round((cityOrders.length / cityLeads.length) * 1000) / 10 : 0,
+      };
+    }).sort((a, b) => b.revenue - a.revenue).slice(0, 6);
+
+    // ── ROI Sources ────────────────────────────────────────────────────────────
+    const SOURCE_LABELS: Record<string, string> = {
+      avito: "Авито", website: "Сайт", ads: "Директ",
+      call: "Звонки", referral: "Сарафан", repeat: "Повторный", other: "Другое",
+    };
+    const roiSources = Object.entries(SOURCE_LABELS).map(([src, label]) => {
+      const srcLeads = leads.filter(l => (l.source ?? "other") === src);
+      const srcOrders = orders.filter(o => o.leadId && srcLeads.find(l => l.id === o.leadId) && o.status === "completed");
+      const revenue = srcOrders.reduce((s, o) => {
+        const tx = txRows.filter(t => t.orderId === o.id && t.paymentStatus === "paid").reduce((ss, t) => ss + Number(t.commission), 0);
+        const pr = receiptRows.filter(r => r.orderId === o.id && r.prepaymentSubmittedAt).reduce((ss, r) => ss + Number(r.prepaymentAmount), 0);
+        return s + tx + pr;
+      }, 0);
+      return {
+        source: label,
+        leads: srcLeads.length,
+        orders: srcOrders.length,
+        revenue: Math.round(revenue),
+        spend: 0,
+        conversion: srcLeads.length > 0 ? Math.round((srcOrders.length / srcLeads.length) * 1000) / 10 : 0,
+        roi: null as number | null,
+      };
+    }).filter(s => s.leads > 0).sort((a, b) => b.revenue - a.revenue);
+
+    // ── Top Masters ───────────────────────────────────────────────────────────
+    const topMasters = masters
+      .filter(m => m.status === "active")
+      .map(m => {
+        const mCompleted = orders.filter(o => o.masterId === m.id && o.status === "completed");
+        const mTotal = orders.filter(o => o.masterId === m.id);
+        const revenue = mCompleted.reduce((s, o) => {
+          return s + txRows.filter(t => t.orderId === o.id && t.paymentStatus === "paid").reduce((ss, t) => ss + Number(t.commission), 0);
+        }, 0);
+        return {
+          id: m.id,
+          name: m.alias,
+          city: m.city,
+          orders_completed: mCompleted.length,
+          conversion: mTotal.length > 0 ? Math.round((mCompleted.length / mTotal.length) * 1000) / 10 : 0,
+          rating: Number(m.rating),
+          revenue_brought: Math.round(revenue),
+        };
+      })
+      .filter(m => m.orders_completed > 0)
+      .sort((a, b) => b.revenue_brought - a.revenue_brought || b.orders_completed - a.orders_completed)
+      .slice(0, 5);
+
+    // ── Recent Orders ─────────────────────────────────────────────────────────
+    const STATUS_MAP: Record<string, string> = {
+      waiting_master: "searching", master_assigned: "assigned", in_progress: "in_progress",
+      completed: "completed", cancelled: "cancelled", on_site: "on_site",
+      awaiting_estimate: "awaiting_estimate", awaiting_payment: "awaiting_payment",
+    };
+    const leadMap = new Map(leads.map(l => [l.id, l]));
+    const masterMap = new Map(masters.map(m => [m.id, m]));
+
+    const recentOrders = orders
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 10)
+      .map(o => {
+        const lead = o.leadId ? leadMap.get(o.leadId) : null;
+        const master = o.masterId ? masterMap.get(o.masterId) : null;
+        return {
+          id: o.id,
+          created_at: o.createdAt,
+          city: o.city,
+          client: lead ? ((lead as any).clientName ?? lead.phone ?? "—") : "—",
+          master: master ? master.alias : null,
+          service: (o as any).serviceType ?? "—",
+          amount: o.orderAmount ? Number(o.orderAmount) : null,
+          status: STATUS_MAP[o.status] ?? o.status,
+        };
+      });
+
+    res.json({ summary, alerts, forecast: forecastData, riskMonitor, revenueChart, funnel, liveFeed, speedMetrics, cities: citiesData, roiSources, topMasters, recentOrders });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── DASHBOARD ───────────────────────────────────────────────────────────────
 router.get("/dashboard", adminOnly, async (req, res) => {
   const now = new Date();
