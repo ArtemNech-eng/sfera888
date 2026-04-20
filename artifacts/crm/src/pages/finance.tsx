@@ -1337,7 +1337,7 @@ export default function Finance() {
                                       className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-border/60 text-xs font-medium text-foreground hover:bg-muted/50 transition-colors">
                                       👁 Смета для клиента
                                     </a>
-                                    {e.status !== "paid" && (
+                                    {!e.prepaymentSeenAt && (
                                       <button
                                         onClick={() => setConfirmEst(e)}
                                         className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-emerald-500/60 text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors">
