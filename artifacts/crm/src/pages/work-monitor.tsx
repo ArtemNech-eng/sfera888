@@ -182,6 +182,8 @@ export default function WorkMonitor() {
       const q = search.toLowerCase();
       list = list.filter(o =>
         String(o.leadId ?? o.id).includes(q) ||
+        String(o.id).includes(q) ||
+        (o.leadId ? String(o.leadId).includes(q) : false) ||
         o.masterAlias?.toLowerCase().includes(q) ||
         o.clientName?.toLowerCase().includes(q) ||
         o.clientPhone?.includes(q)

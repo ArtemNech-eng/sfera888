@@ -1797,8 +1797,9 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                           href={`/orders?openOrder=${o.id}`}
                           onClick={e => e.stopPropagation()}
                           className="text-xs font-semibold text-blue-600 hover:underline"
+                          title={`Заказ #${o.id}${o.leadId ? ` / Заявка #${o.leadId}` : ""}`}
                         >
-                          #{o.id}
+                          #{o.leadId ?? o.id}
                         </a>
                         <span className="text-xs font-semibold text-gray-700">· {o.serviceType}</span>
                       </div>
