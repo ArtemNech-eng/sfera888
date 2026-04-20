@@ -1054,7 +1054,7 @@ function MaxBindPostRegPrompt({ botUrl, onClose }: { botUrl: string; onClose: ()
           </div>
           <h2 className="text-lg font-bold">Подключите бот в Max</h2>
           <p className="text-sm text-muted-foreground leading-relaxed">
-            Уведомления о новых заказах будут приходить мгновенно — прямо в мессенджер Max. Без бота вы будете видеть заказы только когда зайдёте в приложение.
+            Уведомления о новых заказах будут приходить мгновенно. Без привязки бота вы будете видеть заказы только в приложении.
           </p>
         </div>
         <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-xl px-4 py-3 space-y-2">
@@ -1079,7 +1079,7 @@ function MaxBindPostRegPrompt({ botUrl, onClose }: { botUrl: string; onClose: ()
             onClick={onClose}
             className="block w-full h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm flex items-center justify-center gap-2"
           >
-            <Bot size={18} /> Привязать бот
+            <Bot size={18} /> Привязать бот Max
           </a>
           <button
             onClick={onClose}

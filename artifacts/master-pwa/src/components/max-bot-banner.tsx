@@ -17,7 +17,7 @@ export default function MaxBotBanner() {
     }
   };
 
-  const botHref = master.maxBotLink ?? "https://max.ru";
+  const botHref = master.maxBotLink ?? "/master-pwa/";
 
   return (
     <div className="bg-amber-50 border-b border-amber-200 px-4 py-3">
@@ -30,7 +30,7 @@ export default function MaxBotBanner() {
             Подключите бот уведомлений
           </p>
           <p className="text-xs text-amber-700 mt-0.5 leading-relaxed">
-            Откройте бот{" "}
+            Откройте ссылку на бот{" "}
             <a
               href={botHref}
               target="_blank"
