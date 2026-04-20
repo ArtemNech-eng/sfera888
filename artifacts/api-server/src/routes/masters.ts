@@ -529,7 +529,7 @@ router.patch("/:id/tags", allMasterRoles, async (req, res) => {
 router.get("/:id/orders", allMasterRoles, async (req, res) => {
   const masterId = parseInt(req.params.id);
   const orders = await db.select().from(ordersTable)
-    .where(eq(ordersTable.masterId, masterId))
+    .where(and(eq(ordersTable.masterId, masterId), isNull(ordersTable.deletedAt)))
     .orderBy(desc(ordersTable.createdAt));
 
   const leadIds = [...new Set(orders.map(o => o.leadId).filter(Boolean))];

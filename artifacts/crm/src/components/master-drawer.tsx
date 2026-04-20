@@ -207,13 +207,30 @@ function Row({ icon, label, children }: { icon: React.ReactNode; label: string; 
 
 function OrderStatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
-    new: "bg-blue-100 text-blue-700", assigned: "bg-amber-100 text-amber-700",
-    in_progress: "bg-purple-100 text-purple-700", completed: "bg-green-100 text-green-700",
+    new: "bg-blue-100 text-blue-700",
+    assigned: "bg-amber-100 text-amber-700",
+    waiting_master: "bg-amber-100 text-amber-700",
+    master_assigned: "bg-blue-100 text-blue-800",
+    in_progress: "bg-indigo-100 text-indigo-700",
+    completed: "bg-green-100 text-green-700",
     cancelled: "bg-gray-100 text-gray-500",
+    cancellation_requested: "bg-orange-100 text-orange-700",
+    on_site: "bg-yellow-100 text-yellow-700",
+    awaiting_estimate: "bg-purple-100 text-purple-700",
+    awaiting_payment: "bg-violet-100 text-violet-700",
   };
   const labels: Record<string, string> = {
-    new: "Новый", assigned: "Назначен", in_progress: "В работе",
-    completed: "Завершён", cancelled: "Отменён",
+    new: "Новый",
+    assigned: "Назначен",
+    waiting_master: "Ожидает мастера",
+    master_assigned: "Назначен мастер",
+    in_progress: "В работе",
+    completed: "Завершён",
+    cancelled: "Отменён",
+    cancellation_requested: "Запрос на отмену",
+    on_site: "На объекте",
+    awaiting_estimate: "Ожидает смету",
+    awaiting_payment: "Ожидает оплату",
   };
   return (
     <span className={`text-[10px] font-semibold rounded-full px-2 py-0.5 ${map[status] ?? "bg-gray-100 text-gray-500"}`}>
