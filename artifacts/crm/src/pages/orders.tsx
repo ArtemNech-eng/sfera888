@@ -2163,6 +2163,19 @@ export default function Orders() {
                               <img src={r.prepaymentScreenshotUrl} alt="Скриншот оплаты" className="max-h-32 rounded-lg border object-contain bg-muted" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
                             </a>
                           )}
+                          {!r.prepaymentSeenAt && (
+                            <button
+                              onClick={async () => {
+                                if (!window.confirm(`Подтвердить получение оплаты от ${r.clientSubmittedName ?? "клиента"}?`)) return;
+                                const resp = await fetch(`/api/receipts/${r.id}/confirm`, { method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ operatorNote: "Подтверждено оператором" }) });
+                                if (resp.ok) { toast({ title: "✅ Оплата подтверждена!" }); queryClient.invalidateQueries({ queryKey: ["/api/receipts/order", openDispatchId] }); queryClient.invalidateQueries({ queryKey: ["/api/receipts/dialogs/unread-count"] }); }
+                                else toast({ title: "Ошибка подтверждения", variant: "destructive" });
+                              }}
+                              className="w-full flex items-center justify-center gap-1.5 text-xs bg-green-600 text-white px-3 py-2 rounded-xl font-semibold hover:bg-green-700"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" /> Подтвердить оплату
+                            </button>
+                          )}
                           <div className="flex items-center gap-2 flex-wrap">
                             <a href={r.publicUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs text-blue-500 hover:underline"><ExternalLink className="w-3 h-3" />Открыть</a>
                             <button onClick={() => { navigator.clipboard.writeText(r.publicUrl); toast({ title: "Ссылка скопирована!" }); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><Copy className="w-3 h-3" />Ссылка</button>
