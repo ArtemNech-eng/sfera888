@@ -9,6 +9,7 @@ import {
   CheckSquare, Send,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 type WorkOrder = {
   id: number;
@@ -124,6 +125,7 @@ export default function WorkMonitor() {
   const [confirmComplete, setConfirmComplete] = useState<WorkOrder | null>(null);
   const [completing, setCompleting] = useState(false);
   const { toast } = useToast();
+  const isMobile = useIsMobile();
 
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setRefreshing(true);
@@ -355,13 +357,13 @@ export default function WorkMonitor() {
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
-              <div className="relative">
+              <div className="relative flex-1 min-w-[180px]">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
                 <input
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   placeholder="№ заказа, мастер, клиент..."
-                  className="pl-7 pr-3 py-1.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#34C759]/30 w-52"
+                  className="pl-7 pr-3 py-1.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#34C759]/30 w-full"
                 />
               </div>
               {cities.length > 0 && (
@@ -380,12 +382,28 @@ export default function WorkMonitor() {
             </div>
           </div>
 
-          {/* Table */}
+          {/* Table / Cards */}
           <div className="flex-1 overflow-auto">
             {paginated.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-40 text-gray-400">
                 <ClipboardList className="w-10 h-10 mb-2 opacity-30" />
                 <p className="text-sm">Нет заказов в этой категории</p>
+              </div>
+            ) : isMobile ? (
+              <div className="flex flex-col gap-2">
+                {paginated.map(o => (
+                  <MobileOrderCard
+                    key={o.id}
+                    o={o}
+                    subTab={subTab}
+                    sendingTo={sendingTo}
+                    onSelect={() => setSelectedOrder(o)}
+                    onNotify={(o, t) => setNotifyPreview({ order: o, text: t })}
+                    onComplete={setConfirmComplete}
+                    estimateText={estimateReminderText(o)}
+                    paymentText={paymentReminderText(o)}
+                  />
+                ))}
               </div>
             ) : (
               <div className="overflow-x-auto rounded-xl border border-gray-100">
@@ -1143,6 +1161,120 @@ function InfoBlock({ icon: Icon, label, value, valueClass = "text-gray-700" }: {
       <div>
         <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wide">{label}</p>
         <p className={`text-sm font-semibold ${valueClass}`}>{value}</p>
+      </div>
+    </div>
+  );
+}
+
+function MobileOrderCard({ o, subTab, sendingTo, onSelect, onNotify, onComplete, estimateText, paymentText }: {
+  o: WorkOrder; subTab: SubTab; sendingTo: number | null;
+  onSelect: () => void;
+  onNotify: (o: WorkOrder, text: string) => void;
+  onComplete: (o: WorkOrder) => void;
+  estimateText: string; paymentText: string;
+}) {
+  const bgClass = o.status === "cancellation_requested"
+    ? "border-orange-300 bg-orange-50"
+    : subTab === "problematic"
+      ? "border-red-200 bg-red-50"
+      : subTab === "with_estimate" && o.receiptPrepaymentPaidAt
+        ? "border-green-200 bg-green-50"
+        : "border-gray-100 bg-white";
+
+  const payStatus = o.receiptId
+    ? o.receiptPrepaymentPaidAt
+      ? { text: "✅ Подтверждено", cls: "text-green-600" }
+      : o.receiptPrepaymentSubmittedAt
+        ? { text: "📸 Ждёт проверки", cls: "text-blue-600" }
+        : { text: `⏳ ${fmtHours(o.hoursWithoutPayment ?? 0)} без оплаты`, cls: "text-amber-600" }
+    : o.hoursWithoutEstimate !== null
+      ? { text: `${fmtHours(o.hoursWithoutEstimate)} без сметы`, cls: o.hoursWithoutEstimate >= 48 ? "text-red-500 font-bold" : "text-amber-600" }
+      : null;
+
+  return (
+    <div
+      className={`rounded-2xl border shadow-sm overflow-hidden ${bgClass}`}
+      onClick={onSelect}
+    >
+      <div className="px-4 pt-3 pb-2">
+        <div className="flex items-start justify-between gap-2 mb-2">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-xs font-bold text-blue-600">#{o.leadId ?? o.id}</span>
+              {o.status === "cancellation_requested" && (
+                <span className="text-[10px] font-semibold bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full">🚫 Отмена</span>
+              )}
+              {subTab === "problematic" && o.problemReasons.length > 0 && (
+                <span className="text-[10px] font-semibold bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full">⚠ Проблема</span>
+              )}
+              {subTab === "with_estimate" && o.receiptPrepaymentPaidAt && (
+                <span className="text-[10px] font-semibold bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">✅ Оплачено</span>
+              )}
+            </div>
+            <p className="text-sm font-semibold text-gray-800 mt-0.5 truncate">{o.serviceType}</p>
+            <p className="text-xs text-gray-400 flex items-center gap-0.5">
+              <MapPin className="w-3 h-3" />{o.city}{o.district ? `, ${o.district}` : ""}
+            </p>
+          </div>
+          {o.receiptTotalAmount ? (
+            <div className="text-right flex-shrink-0">
+              <p className="text-sm font-bold text-green-600">{fmt(o.receiptTotalAmount)}</p>
+              {payStatus && <p className={`text-[10px] ${payStatus.cls}`}>{payStatus.text}</p>}
+            </div>
+          ) : payStatus ? (
+            <p className={`text-xs flex-shrink-0 ${payStatus.cls}`}>{payStatus.text}</p>
+          ) : null}
+        </div>
+
+        <div className="flex items-center justify-between text-xs gap-2">
+          <div className="flex items-center gap-1 min-w-0">
+            <User className="w-3 h-3 text-gray-400 flex-shrink-0" />
+            <span className="text-gray-700 font-medium truncate">{o.masterAlias ?? "Мастер не назначен"}</span>
+            {!o.masterFomoDisabled && o.hoursWithoutEstimate !== null && o.hoursWithoutEstimate >= 24 && (
+              <Lock className="w-3 h-3 text-orange-500 flex-shrink-0" />
+            )}
+          </div>
+          {o.clientName && (
+            <span className="text-gray-500 truncate">{o.clientName}</span>
+          )}
+        </div>
+      </div>
+
+      <div
+        className="flex border-t border-gray-100 divide-x divide-gray-100"
+        onClick={e => e.stopPropagation()}
+      >
+        {o.masterMaxChatId && (
+          <button
+            onClick={() => onNotify(o, !o.receiptId ? estimateText : paymentText)}
+            disabled={sendingTo === o.id}
+            className="flex-1 flex items-center justify-center gap-1 py-2.5 text-blue-600 hover:bg-blue-50 text-xs font-medium disabled:opacity-40"
+          >
+            <MessageSquare className="w-3.5 h-3.5" />Написать
+          </button>
+        )}
+        {o.clientPhone && (
+          <a
+            href={`tel:${o.clientPhone}`}
+            className="flex-1 flex items-center justify-center gap-1 py-2.5 text-green-600 hover:bg-green-50 text-xs font-medium"
+          >
+            <Phone className="w-3.5 h-3.5" />Клиент
+          </a>
+        )}
+        {o.masterPhone && (
+          <a
+            href={`tel:${o.masterPhone}`}
+            className="flex-1 flex items-center justify-center gap-1 py-2.5 text-gray-600 hover:bg-gray-50 text-xs font-medium"
+          >
+            <Phone className="w-3.5 h-3.5" />Мастер
+          </a>
+        )}
+        <button
+          onClick={onSelect}
+          className="flex-1 flex items-center justify-center gap-1 py-2.5 text-gray-500 hover:bg-gray-50 text-xs font-medium"
+        >
+          <Eye className="w-3.5 h-3.5" />Детали
+        </button>
       </div>
     </div>
   );

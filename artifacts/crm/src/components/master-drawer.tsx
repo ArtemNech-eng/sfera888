@@ -808,7 +808,7 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
     <>
     <div className="fixed inset-0 z-50 flex" onClick={onClose}>
       <div className="flex-1 bg-black/30 backdrop-blur-[2px]" />
-      <div className="w-[420px] bg-white flex flex-col shadow-2xl border-l border-gray-100 h-full overflow-hidden"
+      <div className="w-full sm:w-[420px] bg-white flex flex-col shadow-2xl border-l border-gray-100 h-full overflow-hidden"
         onClick={e => e.stopPropagation()}>
 
         {/* Header */}
