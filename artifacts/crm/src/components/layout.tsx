@@ -11,7 +11,6 @@ import {
   Settings, 
   UserCog,
   LogOut,
-  Menu,
   MessagesSquare,
   Trash2,
   ClipboardList,
@@ -23,10 +22,13 @@ import {
   Bot,
   Brain,
   Activity,
+  MoreHorizontal,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { MobileNav } from "./layout/mobile-nav";
 
 interface LayoutProps {
   children: ReactNode;
@@ -35,7 +37,6 @@ interface LayoutProps {
 export function Layout({ children }: LayoutProps) {
   const { user, logout } = useAuth();
   const [location] = useLocation();
-  const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [trafficOpen, setTrafficOpen] = useState(false);
 
   const isTrafficActive = location.startsWith("/avito") && !location.startsWith("/avito-messages");
@@ -133,7 +134,7 @@ export function Layout({ children }: LayoutProps) {
   });
 
   return (
-    <div className="h-screen overflow-hidden bg-background flex">
+    <div className="bg-background flex min-h-screen">
       {/* Sidebar Desktop */}
       <aside className="hidden md:flex w-64 flex-col fixed inset-y-0 left-0 bg-sidebar border-r border-sidebar-border z-20">
         <div className="p-6 flex items-center gap-3 border-b border-sidebar-border">
@@ -146,7 +147,6 @@ export function Layout({ children }: LayoutProps) {
         </div>
         <div className="flex-1 py-6 px-4 space-y-1 overflow-y-auto">
           {filteredNav.map((item) => {
-            // ── Traffic sources group ──────────────────────────────────────
             if (item.href === "__traffic__") {
               return (
                 <div
@@ -170,8 +170,6 @@ export function Layout({ children }: LayoutProps) {
                       trafficOpen ? "rotate-180" : ""
                     )} />
                   </button>
-
-                  {/* Dropdown sub-menu */}
                   {trafficOpen && (
                     <div className="mt-1 ml-3 pl-4 border-l-2 border-sidebar-border space-y-0.5 pb-1">
                       <Link
@@ -192,7 +190,6 @@ export function Layout({ children }: LayoutProps) {
               );
             }
 
-            // ── Regular nav item ───────────────────────────────────────────
             const isActive = location === item.href;
             return (
               <Link 
@@ -236,83 +233,27 @@ export function Layout({ children }: LayoutProps) {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 md:pl-64 flex flex-col h-screen overflow-hidden">
+      <main className="flex-1 md:pl-64 flex flex-col min-h-screen">
         {/* Mobile Header */}
-        <header className="md:hidden flex items-center justify-between p-4 bg-card border-b border-border z-20">
-          <div className="flex items-center gap-2">
-            <img
-              src={`${import.meta.env.BASE_URL}images/logo.png`}
-              alt="Честный мастер"
-              className="h-8 w-8 object-contain"
-            />
-            <span className="font-display font-bold text-lg">Честный мастер</span>
-          </div>
-          <button onClick={() => setIsMobileOpen(!isMobileOpen)} className="p-2 relative">
-            <Menu className="w-6 h-6" />
-            {unreadCount > 0 && (
-              <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-destructive rounded-full" />
-            )}
-          </button>
+        <header className="md:hidden flex items-center gap-3 px-4 h-14 bg-card border-b border-border z-20 sticky top-0">
+          <img
+            src={`${import.meta.env.BASE_URL}images/logo.png`}
+            alt="Честный мастер"
+            className="h-7 w-7 object-contain flex-shrink-0"
+          />
+          <span className="font-display font-bold text-base flex-1 truncate">Честный мастер</span>
+          {(unreadCount > 0 || leadsBadge > 0) && (
+            <span className="w-2 h-2 bg-red-500 rounded-full flex-shrink-0" />
+          )}
         </header>
 
-        {/* Mobile Menu Dropdown */}
-        {isMobileOpen && (
-          <div className="md:hidden fixed inset-0 z-10 bg-background/95 backdrop-blur-sm pt-20 px-4 pb-4 flex flex-col">
-            <div className="flex-1 space-y-2">
-              {filteredNav.map((item) => {
-                // Traffic group in mobile menu
-                if (item.href === "__traffic__") {
-                  return (
-                    <div key="traffic-mobile">
-                      <div className="flex items-center gap-3 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                        <TrendingUp className="w-4 h-4" /> Источники трафика
-                      </div>
-                      <Link
-                        href="/avito"
-                        onClick={() => setIsMobileOpen(false)}
-                        className={cn(
-                          "flex items-center gap-3 px-4 py-3 rounded-xl text-base font-medium ml-4",
-                          location === "/avito" ? "bg-primary text-primary-foreground" : "bg-card text-foreground"
-                        )}
-                      >
-                        <Tag className="w-5 h-5 shrink-0" />
-                        <span>Авито</span>
-                      </Link>
-                    </div>
-                  );
-                }
-                const isActive = location === item.href;
-                return (
-                  <Link 
-                    key={item.href} 
-                    href={item.href}
-                    onClick={() => setIsMobileOpen(false)}
-                    className={cn(
-                      "flex items-center gap-3 px-4 py-3 rounded-xl text-base font-medium",
-                      isActive ? "bg-primary text-primary-foreground" : "bg-card text-foreground"
-                    )}
-                  >
-                    <item.icon className="w-5 h-5 shrink-0" />
-                    <span className="flex-1">{item.label}</span>
-                    {'badge' in item && item.badge != null && (
-                      <span className="min-w-[22px] h-5 px-1.5 flex items-center justify-center rounded-full bg-destructive text-white text-[11px] font-bold">
-                        {item.badge > 99 ? '99+' : item.badge}
-                      </span>
-                    )}
-                  </Link>
-                );
-              })}
-            </div>
-            <button onClick={logout} className="mt-auto w-full flex items-center justify-center gap-2 py-3 text-destructive font-medium bg-destructive/10 rounded-xl">
-              <LogOut className="w-5 h-5" /> Выйти
-            </button>
-          </div>
-        )}
-
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-20 md:pb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
           {children}
         </div>
       </main>
+
+      {/* Mobile Bottom Navigation */}
+      <MobileNav unreadCount={unreadCount} leadsBadge={leadsBadge} openTasksCount={openTasksCount} unreadDialogs={unreadDialogs} />
     </div>
   );
 }
