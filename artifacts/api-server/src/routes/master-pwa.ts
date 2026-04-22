@@ -626,6 +626,13 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
 
   // Idempotent: already responded → return success without re-processing
   if (dispatches[0].status === "responded") {
+    const wasAtLimit = (dispatches[0].responseNote ?? "").includes("Лимит");
+    if (wasAtLimit) {
+      const allActive = await db.select().from(ordersTable)
+        .where(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
+      const myActive = allActive.filter(o => o.masterId === masterId);
+      return res.json({ atLimit: true, activeOrderId: myActive[0]?.id ?? null });
+    }
     return res.json({ success: true, alreadyResponded: true });
   }
 
@@ -667,9 +674,33 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
     constraintTags.push("Долг");
   }
 
-  // At limit → just tag for CRM, no special message to master
+  // ── AT LIMIT: record interest, notify master, return atLimit flag ──────────
   if (myActiveCount >= (master.maxActiveOrders ?? 1)) {
     constraintTags.push("Лимит");
+    const noteTag = constraintTags.join(", ");
+    await db.update(orderDispatchesTable)
+      .set({ status: "responded", respondedAt: new Date(), responseNote: `⚠️ ${noteTag}` })
+      .where(eq(orderDispatchesTable.id, dispatches[0].id));
+
+    const activeOrder = myActiveForRespond.find(o => o.masterId === masterId);
+    const activeOrderRef = activeOrder ? ` (заказ #${activeOrder.id})` : "";
+    const infoMsg = `Вы откликнулись на заявку #${orderId}! 👍\n\nЧтобы мы могли вас назначить, сначала нужно:\n\n✅ Завершить текущий заказ${activeOrderRef} и оплатить комиссию\n\nили\n\n❌ Отменить текущий заказ — но тогда ваш рейтинг будет снижен.\n\nКак только закроете предыдущий заказ — напишите нам, и мы вернёмся к этой заявке.`;
+
+    const telegramChatId = master.maxChatId ? `max_${master.maxChatId}` : (master.telegramId ?? `pwa_${masterId}`);
+    if (master.maxChatId) {
+      sendMaxMessage(master.maxChatId, infoMsg).catch(() => {});
+    }
+    await db.insert(masterMessagesTable).values({
+      masterId,
+      telegramChatId,
+      text: `🙋 Откликнулся на заявку #${orderId} (${order.serviceType}, ${order.city}${order.district ? ", " + order.district : ""}) — ${noteTag}`,
+      fromMaster: true,
+      senderName: master.alias,
+      isRead: false,
+    });
+
+    notifyManagerMasterResponse(orderId, master.alias, true).catch(() => {});
+    return res.json({ atLimit: true, activeOrderId: activeOrder?.id ?? null });
   }
 
   // Any remaining eligibility block (e.g. test-master unpaid debt) → tag, not block
