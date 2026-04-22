@@ -186,6 +186,7 @@ export default function MasterChat() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+  const prevConvIdRef = useRef<number | null>(null);
 
   // ── Broadcast state ────────────────────────────────────────────────────────
   const [showBroadcast, setShowBroadcast] = useState(false);
@@ -239,8 +240,11 @@ export default function MasterChat() {
   }, [selectedId, fetchConversation]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [conv?.messages.length]);
+    if (!conv) return;
+    const isNewConv = prevConvIdRef.current !== conv.master.id;
+    prevConvIdRef.current = conv.master.id;
+    bottomRef.current?.scrollIntoView({ behavior: isNewConv ? "auto" : "smooth" });
+  }, [conv?.master.id, conv?.messages.length]);
 
   // Auto-select master from URL ?masterId=X
   useEffect(() => {
@@ -1087,6 +1091,9 @@ export default function MasterChat() {
                     onScroll={handleMessagesScroll}
                     className="flex-1 overflow-y-auto p-4 relative flex flex-col gap-2.5"
                   >
+                    {/* Spacer — pushes messages to the bottom when few exist */}
+                    <div className="flex-1" />
+
                     {/* Scroll to bottom button */}
                     {showScrollBtn && (
                       <button
