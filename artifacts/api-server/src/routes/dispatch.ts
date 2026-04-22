@@ -19,6 +19,55 @@ const ops = requireRole("admin", "master_operator");
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// Build a personalised rejection reason for a master who was not assigned
+async function buildRejectionReason(
+  master: { id: number; debt: string | null; contractSignedAt: Date | null; contractLink: string | null },
+  responseNote: string | null
+): Promise<string> {
+  // Parse constraint tags stored at response time
+  const tags: string[] = [];
+  if (responseNote) {
+    const m = responseNote.match(/⚠️\s*([^|]+)/);
+    if (m) m[1].split(",").forEach(t => { const s = t.trim(); if (s) tags.push(s); });
+  }
+
+  // Count cancellations in DB
+  const [row] = await db
+    .select({ cnt: sql<number>`count(*)::int` })
+    .from(ordersTable)
+    .where(and(eq(ordersTable.masterId, master.id), eq(ordersTable.status, "cancelled")));
+  const cancellations = row?.cnt ?? 0;
+
+  const bullets: string[] = [];
+
+  const debt = parseFloat(String(master.debt ?? "0"));
+  if (debt > 0) {
+    bullets.push(`💸 <b>Погасите задолженность</b> (${debt.toLocaleString("ru-RU")} ₽) — мастера без долгов получают приоритет`);
+  }
+
+  if (!master.contractSignedAt && !master.contractLink) {
+    bullets.push(`📄 <b>Оформите договор</b> с компанией — мастера с договором назначаются чаще`);
+  }
+
+  if (cancellations >= 3) {
+    bullets.push(`❌ <b>Снизьте отмены</b> — у вас ${cancellations} отменённых заказов, это снижает приоритет`);
+  }
+
+  if (tags.includes("ФОМО")) {
+    bullets.push(`⚡ <b>Отвечайте быстрее</b> — скорость отклика влияет на приоритет назначения`);
+  }
+
+  if (tags.includes("С лимитом")) {
+    bullets.push(`📋 <b>Расширьте лимит заявок</b> — обратитесь к оператору`);
+  }
+
+  if (bullets.length === 0) {
+    return `👍 Вы всё сделали правильно — на этот раз просто выбрали другого мастера. Продолжайте откликаться!`;
+  }
+
+  return `Что поможет получить следующий заказ:\n${bullets.map(b => `• ${b}`).join("\n")}`;
+}
+
 async function sendTg(chatId: string, text: string, replyMarkup?: object): Promise<string | null> {
   try {
     const body: any = { chat_id: chatId, text, parse_mode: "HTML" };
@@ -354,6 +403,15 @@ router.post("/:orderId/assign/:masterId", ops, async (req, res) => {
     .set({ status: "assigned" })
     .where(and(eq(orderDispatchesTable.orderId, orderId), eq(orderDispatchesTable.masterId, masterId)));
 
+  // Fetch respondents BEFORE status changes (for personalised rejection notifications)
+  const respondedDispatches = await db.select()
+    .from(orderDispatchesTable)
+    .where(and(
+      eq(orderDispatchesTable.orderId, orderId),
+      ne(orderDispatchesTable.masterId, masterId),
+      eq(orderDispatchesTable.status, "responded"),
+    ));
+
   await db.update(orderDispatchesTable)
     .set({ status: "rejected" })
     .where(and(eq(orderDispatchesTable.orderId, orderId), ne(orderDispatchesTable.masterId, masterId)));
@@ -426,6 +484,50 @@ router.post("/:orderId/assign/:masterId", ops, async (req, res) => {
   for (const d of others) {
     if (d.telegramMessageId) {
       await editTg(d.telegramChatId, d.telegramMessageId, takenText, { inline_keyboard: [] });
+    }
+  }
+
+  // ── Personalised rejection notifications for respondents ─────────────────
+  if (respondedDispatches.length > 0) {
+    const rejectedIds = respondedDispatches.map(d => d.masterId);
+    const rejectedMasters = rejectedIds.length > 0
+      ? await db.select().from(mastersTable).where(inArray(mastersTable.id, rejectedIds))
+      : [];
+
+    for (const rm of rejectedMasters) {
+      const disp = respondedDispatches.find(d => d.masterId === rm.id);
+      const responseNote = (disp as any)?.responseNote ?? null;
+
+      const reason = await buildRejectionReason(rm, responseNote);
+
+      const rejMsg =
+        `📋 <b>Заявка #${orderId}</b> — ${order.serviceType} · ${order.city}${order.district ? ", " + order.district : ""}\n\n` +
+        `К сожалению, эту заявку назначили другому мастеру.\n\n` +
+        reason;
+
+      // Telegram
+      if (rm.telegramId) sendTg(rm.telegramId, rejMsg).catch(() => {});
+
+      // PWA push
+      if (rm.pwaLogin) {
+        sendPushToMaster(rm.id, {
+          type: "order_rejected",
+          title: "📋 Заявка занята",
+          body: reason.replace(/<[^>]+>/g, "").slice(0, 120),
+          orderId,
+        } as any).catch(() => {});
+      }
+
+      // CRM chat log (visible to operators)
+      const logText = `⛔ Не назначен на заявку #${orderId}. ${reason.replace(/<[^>]+>/g, "").slice(0, 200)}`;
+      await db.insert(masterMessagesTable).values({
+        masterId: rm.id,
+        telegramChatId: rm.telegramId ?? `pwa_${rm.id}`,
+        text: logText,
+        fromMaster: false,
+        senderName: "system",
+        isRead: false,
+      }).catch(() => {});
     }
   }
 
