@@ -179,6 +179,8 @@ export default function MasterChat() {
     city: string;
     district: string | null;
     respondentCount: number;
+    respondedAt: string | null;
+    responseNote: string | null;
   }
   const [respondedOrders, setRespondedOrders] = useState<RespondedOrder[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -256,9 +258,20 @@ export default function MasterChat() {
       const r = await fetch("/api/dispatch/pending", { credentials: "include" });
       if (r.ok) {
         const all = await r.json();
-        const mine = all.filter((item: any) =>
-          item.respondents.some((resp: any) => resp.masterId === masterId)
-        );
+        const mine = all
+          .filter((item: any) => item.respondents.some((resp: any) => resp.masterId === masterId))
+          .map((item: any) => {
+            const myResp = item.respondents.find((resp: any) => resp.masterId === masterId);
+            return {
+              orderId: item.orderId,
+              serviceType: item.serviceType,
+              city: item.city,
+              district: item.district,
+              respondentCount: item.respondentCount,
+              respondedAt: myResp?.respondedAt ?? null,
+              responseNote: myResp?.responseNote ?? null,
+            };
+          });
         setRespondedOrders(mine);
       }
     } catch {}
@@ -1178,38 +1191,72 @@ export default function MasterChat() {
 
                   {/* Responded dispatch cards — assign master directly from chat */}
                   {respondedOrders.length > 0 && (
-                    <div className="border-t border-gray-100 px-4 py-3 space-y-2 flex-shrink-0">
-                      {respondedOrders.map(item => (
-                        <div key={item.orderId} className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 space-y-2">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <UserCheck className="w-4 h-4 text-green-600 flex-shrink-0" />
-                              <span className="text-xs font-semibold text-green-800">
-                                Откликнулся на заявку #{item.orderId}
-                              </span>
-                              <span className="text-xs text-gray-500 truncate">{item.serviceType}</span>
-                              <span className="inline-flex items-center gap-1 text-[10px] text-gray-500">
-                                <MapPin className="w-3 h-3" />{item.city}{item.district ? `, ${item.district}` : ""}
-                              </span>
-                              {item.respondentCount > 1 && (
-                                <span className="text-[10px] text-green-600 bg-green-100 rounded-full px-1.5 py-0.5 font-medium">
-                                  +{item.respondentCount - 1} ещё
-                                </span>
-                              )}
+                    <div className="border-t border-gray-100 flex-shrink-0">
+                      {/* Header */}
+                      <div className="px-4 pt-2.5 pb-1.5 flex items-center gap-1.5">
+                        <CheckCheck className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />
+                        <span className="text-[11px] font-bold text-green-600 uppercase tracking-wide">
+                          Откликнулся ({respondedOrders.length})
+                        </span>
+                      </div>
+                      <div className="px-3 pb-3 space-y-2">
+                        {respondedOrders.map(item => {
+                          // Parse constraint tags from responseNote: "⚠️ Tag1, Tag2 | note"
+                          const tags: string[] = [];
+                          if (item.responseNote) {
+                            const m = item.responseNote.match(/⚠️\s*([^|]+)/);
+                            if (m) m[1].split(",").forEach(t => { const s = t.trim(); if (s) tags.push(s); });
+                          }
+                          const TAG_COLOR: Record<string, string> = {
+                            "С лимитом": "bg-blue-100 text-blue-700 border-blue-200",
+                            "ФОМО": "bg-orange-100 text-orange-700 border-orange-200",
+                            "Без договора": "bg-red-100 text-red-700 border-red-200",
+                            "Просроч. долг": "bg-rose-100 text-rose-700 border-rose-200",
+                            "Ограничение": "bg-gray-100 text-gray-600 border-gray-200",
+                          };
+                          return (
+                            <div key={item.orderId} className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="text-xs font-bold text-gray-800">Заявка #{item.orderId}</span>
+                                    {item.respondedAt && (
+                                      <span className="text-[10px] text-gray-400">{timeStamp(item.respondedAt)}</span>
+                                    )}
+                                    {item.respondentCount > 1 && (
+                                      <span className="text-[10px] text-blue-600 bg-blue-50 rounded-full px-1.5 py-0.5 font-medium">
+                                        +{item.respondentCount - 1} ещё
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[11px] text-gray-500 mt-0.5 line-clamp-1">
+                                    {item.serviceType}{item.city ? ` · ${item.city}` : ""}{item.district ? `, ${item.district}` : ""}
+                                  </p>
+                                  {tags.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mt-1.5">
+                                      {tags.map((tag, i) => (
+                                        <span key={i} className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-semibold border ${TAG_COLOR[tag] ?? "bg-gray-100 text-gray-600 border-gray-200"}`}>
+                                          {tag}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                                <button
+                                  onClick={() => selectedId && assignMutation.mutate({ orderId: item.orderId, masterId: selectedId })}
+                                  disabled={assignMutation.isPending}
+                                  className="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-2 bg-green-500 text-white hover:bg-green-600 rounded-xl font-semibold text-xs transition-colors disabled:opacity-50 shadow-sm shadow-green-200"
+                                >
+                                  {assignMutation.isPending
+                                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    : <UserCheck className="w-3.5 h-3.5" />}
+                                  Назначить
+                                </button>
+                              </div>
                             </div>
-                            <button
-                              onClick={() => selectedId && assignMutation.mutate({ orderId: item.orderId, masterId: selectedId })}
-                              disabled={assignMutation.isPending}
-                              className="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-500 text-white hover:bg-green-600 rounded-lg font-medium text-xs transition-colors disabled:opacity-50"
-                            >
-                              {assignMutation.isPending
-                                ? <Loader2 className="w-3 h-3 animate-spin" />
-                                : <UserCheck className="w-3 h-3" />}
-                              Принять
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
 

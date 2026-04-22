@@ -134,6 +134,7 @@ router.get("/pending", ops, async (req, res) => {
         masterId: d.masterId,
         masterName: masterMap.get(d.masterId)?.alias ?? "?",
         respondedAt: d.respondedAt,
+        responseNote: (d as any).responseNote ?? null,
       })),
     };
   }));
