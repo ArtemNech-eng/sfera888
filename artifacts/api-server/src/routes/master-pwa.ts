@@ -6,7 +6,7 @@ import { verifyPassword, hashPassword } from "../lib/auth.js";
 import { getMasterEligibility, getOverdueMasterIds, countActiveMasterOrders, getColumnIdForActiveCount } from "../lib/orderEligibility.js";
 import multer from "multer";
 import { objectStorageClient } from "../lib/objectStorage.js";
-import { getBotLink, sendOnboardingMemo } from "../maxBot.js";
+import { getBotLink, sendOnboardingMemo, sendMaxMessage } from "../maxBot.js";
 import { notifyManagerMasterResponse, notifyManagerNewMaster } from "../managerBot.js";
 import { getFomoBlock, logFomoEvent, checkFomoTransition } from "../lib/fomoBlock.js";
 
