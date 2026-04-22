@@ -354,7 +354,7 @@ router.post("/ai-parse", allLeadRoles, async (req, res) => {
 - Дату/время переводи в ISO формат; если год не указан — текущий год`;
 
   try {
-    const TIMEOUT_MS = 18000;
+    const TIMEOUT_MS = 55000;
     const timeoutPromise = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error("TIMEOUT")), TIMEOUT_MS)
     );

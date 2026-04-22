@@ -219,7 +219,7 @@ export default function Leads() {
     setAiDone(false);
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 25000);
+      const timeout = setTimeout(() => controller.abort(), 60000);
       let resp: Response;
       try {
         resp = await fetch("/api/leads/ai-parse", {
