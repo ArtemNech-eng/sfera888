@@ -62,12 +62,12 @@ export function Layout({ children }: LayoutProps) {
     }
     if (unreadCount > prevUnread.current) {
       const diff = unreadCount - prevUnread.current;
-      if (Notification.permission === "granted") {
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
         new Notification("💬 Новые сообщения от мастеров", {
           body: `${diff} непрочитанных сообщений`,
           icon: "/favicon.ico",
         });
-      } else if (Notification.permission === "default") {
+      } else if (typeof Notification !== "undefined" && Notification.permission === "default") {
         Notification.requestPermission();
       }
     }
