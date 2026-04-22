@@ -8,7 +8,7 @@ import {
   TrendingUp, ShieldCheck, LogOut, ExternalLink,
   BadgeCheck, Camera, Pencil, Check, X, Loader2,
   BarChart2, Clock, Filter, ChevronDown, Plus, Download,
-  DollarSign, ChevronRight, BookOpen,
+  DollarSign, ChevronRight, BookOpen, FileSignature,
 } from "lucide-react";
 import { useInstallPrompt } from "@/lib/useInstallPrompt";
 
@@ -959,16 +959,34 @@ export default function ProfilePage() {
         <ChevronRight size={16} className="text-muted-foreground" />
       </button>
 
-      {data.contractSignedAt && (
+      {data.contractSignedAt ? (
         <a
           href={`/api/contract/view/${data.id}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-3 bg-card border border-border rounded-xl px-4 py-3 text-primary font-medium text-sm"
+          className="w-full flex items-center justify-between px-4 h-12 rounded-xl border border-border bg-card text-foreground font-semibold text-sm active:opacity-80 transition-colors"
         >
-          <ExternalLink size={16} />
-          Мой договор
+          <div className="flex items-center gap-2.5">
+            <span className="w-7 h-7 rounded-lg bg-green-500 flex items-center justify-center flex-shrink-0">
+              <ShieldCheck size={14} className="text-white" />
+            </span>
+            Мой договор
+          </div>
+          <ExternalLink size={16} className="text-muted-foreground" />
         </a>
+      ) : (
+        <button
+          onClick={() => navigate("/pending-contract")}
+          className="w-full flex items-center justify-between px-4 h-12 rounded-xl border border-amber-300 bg-amber-50 text-amber-800 font-semibold text-sm active:opacity-80 transition-colors"
+        >
+          <div className="flex items-center gap-2.5">
+            <span className="w-7 h-7 rounded-lg bg-amber-400 flex items-center justify-center flex-shrink-0">
+              <FileSignature size={14} className="text-white" />
+            </span>
+            Подписать договор
+          </div>
+          <ChevronRight size={16} className="text-amber-500" />
+        </button>
       )}
 
       <p className="text-xs text-muted-foreground text-center">
