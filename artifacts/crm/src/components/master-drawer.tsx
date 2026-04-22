@@ -829,9 +829,9 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                   </button>
                   {showActivatePopover && (
                     <div className="absolute left-0 top-6 z-50 bg-white border border-gray-200 rounded-xl shadow-xl p-2.5 w-56 space-y-1.5">
-                      {master.contractLink && (
+                      {master.contractSignedAt && (
                         <a
-                          href={master.contractLink}
+                          href={`/api/contract/view/${master.id}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="w-full flex items-center justify-center gap-1 bg-blue-50 hover:bg-blue-100 text-blue-700 text-[10px] font-semibold rounded-md px-2 py-1 transition-colors"

@@ -29,7 +29,7 @@ interface ProfileData {
   acceptedOrders: number;
   isTestMaster: boolean;
   customAvatarUrl: string | null;
-  contractLink: string | null;
+  contractSignedAt: string | null;
   tags: string[];
   workingHours: WorkingHours | null;
   preferredDistricts: string[];
@@ -959,9 +959,9 @@ export default function ProfilePage() {
         <ChevronRight size={16} className="text-muted-foreground" />
       </button>
 
-      {data.contractLink && (
+      {data.contractSignedAt && (
         <a
-          href={data.contractLink}
+          href={`/api/contract/view/${data.id}`}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-3 bg-card border border-border rounded-xl px-4 py-3 text-primary font-medium text-sm"
