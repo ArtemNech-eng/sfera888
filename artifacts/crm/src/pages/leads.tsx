@@ -218,12 +218,20 @@ export default function Leads() {
     setAiLoading(true);
     setAiDone(false);
     try {
-      const resp = await fetch("/api/leads/ai-parse", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: aiText }),
-        credentials: "include",
-      });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 25000);
+      let resp: Response;
+      try {
+        resp = await fetch("/api/leads/ai-parse", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: aiText }),
+          credentials: "include",
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
       const data = await resp.json();
       if (!resp.ok) throw new Error(data?.error ?? "Ошибка сервера");
 
@@ -2388,7 +2396,7 @@ export default function Leads() {
                               <button type="button" onClick={runAiParse} disabled={!aiText.trim() || aiLoading}
                                 className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white rounded-xl text-sm font-semibold transition-all shadow-sm shadow-violet-300">
                                 {aiLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                                {aiLoading ? "Анализирую…" : "Заполнить"}
+                                {aiLoading ? "Анализирую… ~10–20 сек" : "Заполнить"}
                               </button>
                             </div>
                           </>

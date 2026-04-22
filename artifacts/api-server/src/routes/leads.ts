@@ -354,22 +354,37 @@ router.post("/ai-parse", allLeadRoles, async (req, res) => {
 - Дату/время переводи в ISO формат; если год не указан — текущий год`;
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-5-mini",
-      max_completion_tokens: 1024,
+    const TIMEOUT_MS = 18000;
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("TIMEOUT")), TIMEOUT_MS)
+    );
+
+    // NOTE: gpt-5 is a reasoning model — reasoning tokens count toward max_completion_tokens.
+    // Use a high limit so there's room for both thinking and JSON output.
+    const callPromise = openai.chat.completions.create({
+      model: "gpt-5",
+      max_completion_tokens: 4096,
+      response_format: { type: "json_object" },
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: text.trim().slice(0, 3000) },
+        { role: "user", content: text.trim().slice(0, 2000) },
       ],
-    });
+    } as any);
 
-    const raw = completion.choices[0]?.message?.content ?? "{}";
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
+    const completion = await Promise.race([callPromise, timeoutPromise]);
+    const choice = completion.choices[0];
+    const raw = choice?.message?.content ?? "";
+
+    if (!raw) return res.status(500).json({ error: "ИИ вернул пустой ответ — попробуйте снова" });
+
+    const parsed = JSON.parse(raw);
     res.json(parsed);
   } catch (e: any) {
-    console.error("[ai-parse]", e?.message);
-    res.status(500).json({ error: "Не удалось распознать текст" });
+    console.error("[ai-parse] error:", e?.message ?? e);
+    if (e?.message === "TIMEOUT") {
+      return res.status(504).json({ error: "ИИ не ответил вовремя — попробуйте ещё раз" });
+    }
+    res.status(500).json({ error: "Ошибка: " + (e?.message ?? "unknown") });
   }
 });
 
