@@ -224,29 +224,38 @@ export default function Leads() {
         body: JSON.stringify({ text: aiText }),
         credentials: "include",
       });
-      if (!resp.ok) throw new Error("Ошибка сервера");
       const data = await resp.json();
+      if (!resp.ok) throw new Error(data?.error ?? "Ошибка сервера");
+
+      // Check if anything useful was extracted
+      const hasData = data.clientName || data.clientPhone || data.city || data.district ||
+        (Array.isArray(data.services) && data.services.some((s: any) => s.type));
+      if (!hasData) throw new Error("Не удалось распознать данные из текста");
+
       setFormData(prev => ({
-        clientName: data.clientName ?? prev.clientName,
-        clientPhone: data.clientPhone ?? prev.clientPhone,
-        city: data.city ?? prev.city,
-        district: data.district ?? prev.district,
-        scheduledAt: data.scheduledAt ?? prev.scheduledAt,
-        source: data.source ?? prev.source,
-        comment: data.comment ?? prev.comment,
+        clientName: data.clientName != null ? String(data.clientName) : prev.clientName,
+        clientPhone: data.clientPhone != null ? String(data.clientPhone) : prev.clientPhone,
+        city: data.city != null ? String(data.city) : prev.city,
+        district: data.district != null ? String(data.district) : prev.district,
+        scheduledAt: data.scheduledAt != null ? String(data.scheduledAt) : prev.scheduledAt,
+        source: data.source != null ? String(data.source) : prev.source,
+        comment: data.comment != null ? String(data.comment) : prev.comment,
       }));
       if (Array.isArray(data.services) && data.services.length > 0) {
-        setServiceRows(data.services.map((s: any) => ({
-          type: s.type ?? "",
-          area: s.area ? String(s.area) : "",
-          pricePerM2: s.pricePerM2 ? String(s.pricePerM2) : "",
-        })));
+        const parsed = data.services
+          .filter((s: any) => s.type)
+          .map((s: any) => ({
+            type: s.type ?? "",
+            area: s.area ? String(s.area) : "",
+            pricePerM2: s.pricePerM2 ? String(s.pricePerM2) : "",
+          }));
+        if (parsed.length > 0) setServiceRows(parsed);
       }
       setAiDone(true);
       setAiText("");
-      setTimeout(() => setAiOpen(false), 1200);
-    } catch {
-      toast({ title: "Не удалось разобрать текст", variant: "destructive" });
+      setTimeout(() => setAiOpen(false), 2000);
+    } catch (e: any) {
+      toast({ title: e?.message ?? "Не удалось разобрать текст", variant: "destructive" });
     } finally {
       setAiLoading(false);
     }
@@ -2358,9 +2367,12 @@ export default function Leads() {
                           </button>
                         </div>
                         {aiDone ? (
-                          <div className="flex items-center justify-center gap-2 py-4 text-emerald-600">
-                            <CheckCircle2 className="w-5 h-5" />
-                            <span className="text-sm font-semibold">Форма заполнена!</span>
+                          <div className="flex flex-col items-center justify-center gap-2 py-5">
+                            <div className="flex items-center gap-2 text-emerald-600">
+                              <CheckCircle2 className="w-5 h-5" />
+                              <span className="text-sm font-semibold">Форма заполнена!</span>
+                            </div>
+                            <p className="text-xs text-gray-400">Проверьте данные и при необходимости скорректируйте</p>
                           </div>
                         ) : (
                           <>
