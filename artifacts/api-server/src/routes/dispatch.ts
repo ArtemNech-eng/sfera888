@@ -19,7 +19,7 @@ const ops = requireRole("admin", "master_operator");
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-// Build a personalised rejection reason for a master who was not assigned
+// Build a personalised rejection reason for a master who was not assigned (plain text for Max)
 async function buildRejectionReason(
   master: { id: number; debt: string | null; contractSignedAt: Date | null; contractLink: string | null },
   responseNote: string | null
@@ -42,23 +42,23 @@ async function buildRejectionReason(
 
   const debt = parseFloat(String(master.debt ?? "0"));
   if (debt > 0) {
-    bullets.push(`💸 <b>Погасите задолженность</b> (${debt.toLocaleString("ru-RU")} ₽) — мастера без долгов получают приоритет`);
+    bullets.push(`💸 Погасите задолженность (${debt.toLocaleString("ru-RU")} ₽) — мастера без долгов получают приоритет`);
   }
 
   if (!master.contractSignedAt && !master.contractLink) {
-    bullets.push(`📄 <b>Оформите договор</b> с компанией — мастера с договором назначаются чаще`);
+    bullets.push(`📄 Оформите договор с компанией — мастера с договором назначаются чаще`);
   }
 
   if (cancellations >= 3) {
-    bullets.push(`❌ <b>Снизьте отмены</b> — у вас ${cancellations} отменённых заказов, это снижает приоритет`);
+    bullets.push(`❌ Снизьте отмены — у вас ${cancellations} отменённых заказов, это снижает приоритет`);
   }
 
   if (tags.includes("ФОМО")) {
-    bullets.push(`⚡ <b>Отвечайте быстрее</b> — скорость отклика влияет на приоритет назначения`);
+    bullets.push(`⚡ Отвечайте быстрее — скорость отклика влияет на приоритет назначения`);
   }
 
   if (tags.includes("С лимитом")) {
-    bullets.push(`📋 <b>Расширьте лимит заявок</b> — обратитесь к оператору`);
+    bullets.push(`📋 Расширьте лимит заявок — обратитесь к оператору`);
   }
 
   if (bullets.length === 0) {
@@ -501,12 +501,12 @@ router.post("/:orderId/assign/:masterId", ops, async (req, res) => {
       const reason = await buildRejectionReason(rm, responseNote);
 
       const rejMsg =
-        `📋 <b>Заявка #${orderId}</b> — ${order.serviceType} · ${order.city}${order.district ? ", " + order.district : ""}\n\n` +
+        `📋 Заявка #${orderId} — ${order.serviceType} · ${order.city}${order.district ? ", " + order.district : ""}\n\n` +
         `К сожалению, эту заявку назначили другому мастеру.\n\n` +
         reason;
 
-      // Telegram
-      if (rm.telegramId) sendTg(rm.telegramId, rejMsg).catch(() => {});
+      // Max bot
+      if (rm.maxChatId) sendMaxMessage(rm.maxChatId, rejMsg).catch(() => {});
 
       // PWA push
       if (rm.pwaLogin) {
