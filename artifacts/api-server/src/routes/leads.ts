@@ -1,8 +1,9 @@
 import { Router } from "express";
-import { db, leadsTable, ordersTable } from "@workspace/db";
+import { db, leadsTable, ordersTable, serviceTypesTable, citiesTable } from "@workspace/db";
 import { eq, and, isNull, desc, sql } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { notifyManagerNewLead } from "../managerBot.js";
+import OpenAI from "openai";
 
 const router = Router();
 
@@ -300,6 +301,76 @@ router.delete("/:id", allLeadRoles, async (req, res) => {
   const id = parseInt(req.params.id);
   await db.update(leadsTable).set({ deletedAt: new Date() }).where(eq(leadsTable.id, id));
   res.json({ success: true });
+});
+
+// POST /api/leads/ai-parse — parse unstructured text into order fields
+router.post("/ai-parse", allLeadRoles, async (req, res) => {
+  const { text } = req.body ?? {};
+  if (!text || typeof text !== "string" || text.trim().length < 5) {
+    return res.status(400).json({ error: "Текст слишком короткий" });
+  }
+
+  const [serviceRows, cityRows] = await Promise.all([
+    db.select().from(serviceTypesTable),
+    db.select().from(citiesTable),
+  ]);
+  const serviceList = serviceRows.map(s => s.name).join(", ");
+  const cityList = cityRows.map(c => c.name).join(", ");
+
+  const openai = new OpenAI({
+    baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+    apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+  });
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  const systemPrompt = `Ты помощник оператора строительной компании. Твоя задача — извлечь структурированные данные из произвольного текста (сообщение от клиента, переписка, голосовое расшифровано и т.д.) и вернуть JSON.
+
+Доступные города: ${cityList || "Краснодар, Москва, Санкт-Петербург"}
+Доступные типы услуг: ${serviceList || "Шпаклёвка стен и потолков, Укладка плитки, Поклейка обоев, Покраска стен"}
+Источники: call, website, ads, avito, whatsapp, referral, telegram, other
+Сегодня: ${today}
+
+Верни ТОЛЬКО валидный JSON без markdown без пояснений:
+{
+  "clientName": "имя или null",
+  "clientPhone": "телефон в формате +7XXXXXXXXXX или null",
+  "city": "название города из списка или null",
+  "district": "район/адрес или null",
+  "scheduledAt": "дата и время в формате YYYY-MM-DDTHH:MM или null",
+  "source": "один из допустимых source или null",
+  "comment": "дополнительный комментарий который не вошёл в другие поля или null",
+  "services": [
+    { "type": "название услуги из списка", "area": число_м2_или_0, "pricePerM2": цена_за_м2_или_0 }
+  ]
+}
+
+Правила:
+- services всегда массив (минимум один элемент если работа упомянута, иначе пустой массив)
+- Если площадь не указана — area: 0
+- Если цена не указана — pricePerM2: 0
+- Телефон очищай от пробелов, дефисов; если начинается с 8 — меняй на +7
+- Город из текста сопоставляй с доступными городами (нечёткое сопоставление)
+- Дату/время переводи в ISO формат; если год не указан — текущий год`;
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-5-mini",
+      max_completion_tokens: 1024,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: text.trim().slice(0, 3000) },
+      ],
+    });
+
+    const raw = completion.choices[0]?.message?.content ?? "{}";
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
+    res.json(parsed);
+  } catch (e: any) {
+    console.error("[ai-parse]", e?.message);
+    res.status(500).json({ error: "Не удалось распознать текст" });
+  }
 });
 
 export default router;

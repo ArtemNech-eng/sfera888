@@ -207,6 +207,51 @@ export default function Leads() {
   const [serviceRows, setServiceRows] = useState<ServiceRow[]>([{ type: "", area: "", pricePerM2: "" }]);
   const [photosPaths, setPhotosPaths] = useState<string[]>([]);
 
+  // AI parse panel
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiText, setAiText] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiDone, setAiDone] = useState(false);
+
+  const runAiParse = async () => {
+    if (!aiText.trim() || aiLoading) return;
+    setAiLoading(true);
+    setAiDone(false);
+    try {
+      const resp = await fetch("/api/leads/ai-parse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: aiText }),
+        credentials: "include",
+      });
+      if (!resp.ok) throw new Error("Ошибка сервера");
+      const data = await resp.json();
+      setFormData(prev => ({
+        clientName: data.clientName ?? prev.clientName,
+        clientPhone: data.clientPhone ?? prev.clientPhone,
+        city: data.city ?? prev.city,
+        district: data.district ?? prev.district,
+        scheduledAt: data.scheduledAt ?? prev.scheduledAt,
+        source: data.source ?? prev.source,
+        comment: data.comment ?? prev.comment,
+      }));
+      if (Array.isArray(data.services) && data.services.length > 0) {
+        setServiceRows(data.services.map((s: any) => ({
+          type: s.type ?? "",
+          area: s.area ? String(s.area) : "",
+          pricePerM2: s.pricePerM2 ? String(s.pricePerM2) : "",
+        })));
+      }
+      setAiDone(true);
+      setAiText("");
+      setTimeout(() => setAiOpen(false), 1200);
+    } catch {
+      toast({ title: "Не удалось разобрать текст", variant: "destructive" });
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   // Edit form
   const [editFormData, setEditFormData] = useState({ clientName: "", clientPhone: "", city: "", district: "", comment: "", scheduledAt: "", source: "", status: "" });
   const [editServiceRows, setEditServiceRows] = useState<ServiceRow[]>([{ type: "", area: "", pricePerM2: "" }]);
@@ -735,6 +780,9 @@ export default function Leads() {
     setServiceRows([{ type: "", area: "", pricePerM2: "" }]);
     setPhotosPaths([]);
     setPhoneCheckResult(null);
+    setAiOpen(false);
+    setAiText("");
+    setAiDone(false);
   };
 
   const openEditModal = (lead: LeadRow) => {
@@ -2283,6 +2331,60 @@ export default function Leads() {
               </div>
               <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-y-auto">
                 <div className="px-7 pb-6 space-y-5">
+
+                  {/* ── AI parse panel ─────────────────────────────────── */}
+                  <div className={`rounded-2xl border transition-all duration-200 overflow-hidden ${aiOpen ? "border-violet-200 bg-violet-50/60" : "border-dashed border-gray-200 bg-transparent"}`}>
+                    {!aiOpen ? (
+                      <button type="button" onClick={() => { setAiOpen(true); setAiDone(false); }}
+                        className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-gray-400 hover:text-violet-600 hover:bg-violet-50 transition-all rounded-2xl group">
+                        <div className="w-6 h-6 rounded-lg bg-violet-100 group-hover:bg-violet-200 flex items-center justify-center transition-colors">
+                          <Sparkles className="w-3.5 h-3.5 text-violet-500" />
+                        </div>
+                        <span className="font-medium">Заполнить по тексту через ИИ</span>
+                        <span className="ml-auto text-xs text-gray-300">вставьте переписку, голосовое, объявление…</span>
+                      </button>
+                    ) : (
+                      <div className="p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-lg bg-violet-200 flex items-center justify-center">
+                              <Sparkles className="w-3.5 h-3.5 text-violet-600" />
+                            </div>
+                            <span className="text-sm font-semibold text-violet-700">Заполнение через ИИ</span>
+                          </div>
+                          <button type="button" onClick={() => { setAiOpen(false); setAiText(""); setAiDone(false); }}
+                            className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-violet-100 text-violet-400 hover:text-violet-600 transition-colors">
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        {aiDone ? (
+                          <div className="flex items-center justify-center gap-2 py-4 text-emerald-600">
+                            <CheckCircle2 className="w-5 h-5" />
+                            <span className="text-sm font-semibold">Форма заполнена!</span>
+                          </div>
+                        ) : (
+                          <>
+                            <textarea
+                              value={aiText}
+                              onChange={e => setAiText(e.target.value)}
+                              placeholder={"Вставьте переписку, объявление или просто напишите:\n\nПример: «Вадим, 89095719524, Краснодар, Уральская 100, шпаклёвка стен и потолков 120 кв.м, по 250р/м2, с Авито»"}
+                              className="w-full h-28 px-3 py-2.5 rounded-xl border border-violet-200 bg-white text-sm resize-none outline-none focus:ring-2 focus:ring-violet-200 focus:border-violet-400 transition-all placeholder:text-gray-300"
+                              onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) runAiParse(); }}
+                            />
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] text-gray-400">Ctrl+Enter для отправки</span>
+                              <button type="button" onClick={runAiParse} disabled={!aiText.trim() || aiLoading}
+                                className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white rounded-xl text-sm font-semibold transition-all shadow-sm shadow-violet-300">
+                                {aiLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                                {aiLoading ? "Анализирую…" : "Заполнить"}
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
                   <div className="rounded-2xl border border-gray-100 bg-gray-50/60 p-4 space-y-4">
                     <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Клиент</p>
                     <div className="grid grid-cols-2 gap-3">
