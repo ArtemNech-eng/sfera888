@@ -1072,8 +1072,10 @@ export default function MasterChat() {
                   <div
                     ref={messagesAreaRef}
                     onScroll={handleMessagesScroll}
-                    className="flex-1 overflow-y-auto p-4 space-y-2.5 relative"
+                    className="flex-1 overflow-y-auto p-4 relative flex flex-col gap-2.5"
                   >
+                    {/* Spacer pushes messages to the bottom */}
+                    <div className="flex-1" />
                     {/* Scroll to bottom button */}
                     {showScrollBtn && (
                       <button
