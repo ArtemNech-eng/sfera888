@@ -671,9 +671,9 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
   const overdueMasterIds = await getOverdueMasterIds();
   const eligibility = getMasterEligibility(master, myActiveCount, overdueMasterIds);
 
-  // ── HARD BLOCK: overdue debt — do not allow response
+  // Overdue debt → tag, don't block (operator sees the reason in CRM)
   if (overdueMasterIds.has(masterId)) {
-    return res.status(400).json({ error: eligibility.reason });
+    constraintTags.push("Долг");
   }
 
   // ── AT LIMIT: register interest, send info message, return atLimit flag
@@ -715,9 +715,9 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
     return res.json({ atLimit: true, activeOrderId: activeOrder?.id ?? null });
   }
 
-  // ── BLOCKED for other eligibility reasons (debt checked above)
+  // Any remaining eligibility block (e.g. test-master unpaid debt) → tag, not block
   if (!eligibility.canAccept && constraintTags.length === 0) {
-    return res.status(400).json({ error: eligibility.reason });
+    constraintTags.push("Ограничение");
   }
 
   const { responseNote: bodyNote } = req.body ?? {};

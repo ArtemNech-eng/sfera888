@@ -151,14 +151,10 @@ export async function performBroadcast(
 
   const overdueMasterIds = await getOverdueMasterIds();
 
-  // Only hard-block masters with overdue debt — all other masters (at limit, without
-  // contract, FOMO-blocked) still receive the broadcast so they can express interest.
-  // Their responses will be tagged in the CRM (responseNote) by the respond endpoint.
-  const eligible = reachableFiltered.filter(master => {
-    if (!overdueMasterIds.has(master.id)) return true;
-    skipStats.notEligible++;
-    return false;
-  });
+  // No eligibility filter on broadcast — all reachable active masters in the city
+  // receive the order. Constraints (limit, debt, FOMO, no contract) are tagged in CRM
+  // when the master responds, so the operator sees the full picture.
+  const eligible = reachableFiltered;
 
   if (eligible.length === 0) {
     return { ok: false, sent: 0, skipped: reachable.length, error: "Нет доступных мастеров для рассылки", skipStats };

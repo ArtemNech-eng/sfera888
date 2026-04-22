@@ -1948,6 +1948,8 @@ export default function Leads() {
                                 const hasLimit = tags.some(t => t === "Лимит") || note.includes("активном заказе");
                                 const hasFomo = tags.some(t => t === "ФОМО");
                                 const noContract = tags.some(t => t === "Без договора");
+                                const hasDebt = tags.some(t => t === "Долг");
+                                const hasOther = tags.some(t => t === "Ограничение");
 
                                 const cardBg = isConstrained ? "bg-orange-50 border-orange-200" : "bg-green-50 border-green-100";
 
@@ -1962,11 +1964,15 @@ export default function Leads() {
                                         <button onClick={() => assignMutation.mutate({ orderId: openDispatchId!, masterId: d.masterId })} disabled={assignMutation.isPending} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-500 text-white hover:bg-green-600 rounded-lg font-medium text-xs disabled:opacity-50 flex-shrink-0">{assignMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserCheck className="w-3 h-3" />}Назначить</button>
                                       )}
                                     </div>
-                                    {tags.length > 0 && (
+                                    {(tags.length > 0 || (isConstrained && !hasLimit && !hasFomo && !noContract && !hasDebt && !hasOther)) && (
                                       <div className="flex flex-wrap gap-1">
                                         {hasLimit && <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 border border-orange-200">⏳ С лимитом</span>}
                                         {hasFomo && <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">⚡ ФОМО</span>}
                                         {noContract && <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200">📋 Без договора</span>}
+                                        {hasDebt && <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200">💳 Просроч. долг</span>}
+                                        {hasOther && <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 border border-gray-200">⚠️ Ограничение</span>}
+                                        {/* Legacy format fallback */}
+                                        {isConstrained && !hasLimit && !hasFomo && !noContract && !hasDebt && !hasOther && <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 border border-orange-200">⏳ С лимитом</span>}
                                       </div>
                                     )}
                                     {masterNote && <div className="bg-white/80 border border-current/10 rounded-lg px-3 py-2"><p className="text-[10px] text-muted-foreground font-semibold uppercase mb-1">Предложение</p><p className="text-xs text-gray-700">{masterNote}</p></div>}
