@@ -1936,18 +1936,44 @@ export default function Leads() {
                           {respondents.length > 0 && (
                             <div className="space-y-2">
                               <p className="text-xs font-semibold text-green-700 uppercase tracking-wide flex items-center gap-1"><Check className="w-3 h-3" />Откликнулись ({respondents.length})</p>
-                              {respondents.map(d => (
-                                <div key={d.id} className="p-3 bg-green-50 border border-green-100 rounded-xl space-y-2">
-                                  <div className="flex items-center justify-between">
-                                    <div><p className="text-sm font-semibold text-foreground">{d.masterName}</p>{d.respondedAt && <p className="text-xs text-muted-foreground">{new Date(d.respondedAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</p>}</div>
-                                    {(openOrder as any).dispatchStatus !== "assigned" && (
-                                      <button onClick={() => assignMutation.mutate({ orderId: openDispatchId!, masterId: d.masterId })} disabled={assignMutation.isPending} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-500 text-white hover:bg-green-600 rounded-lg font-medium text-xs disabled:opacity-50">{assignMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserCheck className="w-3 h-3" />}Назначить</button>
+                              {respondents.map(d => {
+                                const note = d.responseNote ?? "";
+                                const isConstrained = note.startsWith("⚠️");
+                                // Parse constraint tags from "⚠️ Лимит, ФОМО | заметка мастера"
+                                const [rawTags, masterNote] = isConstrained
+                                  ? note.replace(/^⚠️\s*/, "").split(" | ")
+                                  : [null, note || null];
+                                const tags = rawTags ? rawTags.split(",").map(t => t.trim()).filter(Boolean) : [];
+                                // Support both new ("Лимит") and legacy ("Откликнулся при активном заказе") format
+                                const hasLimit = tags.some(t => t === "Лимит") || note.includes("активном заказе");
+                                const hasFomo = tags.some(t => t === "ФОМО");
+                                const noContract = tags.some(t => t === "Без договора");
+
+                                const cardBg = isConstrained ? "bg-orange-50 border-orange-200" : "bg-green-50 border-green-100";
+
+                                return (
+                                  <div key={d.id} className={`p-3 border rounded-xl space-y-2 ${cardBg}`}>
+                                    <div className="flex items-center justify-between gap-2">
+                                      <div className="min-w-0">
+                                        <p className="text-sm font-semibold text-foreground truncate">{d.masterName}</p>
+                                        {d.respondedAt && <p className="text-xs text-muted-foreground">{new Date(d.respondedAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</p>}
+                                      </div>
+                                      {(openOrder as any).dispatchStatus !== "assigned" && (
+                                        <button onClick={() => assignMutation.mutate({ orderId: openDispatchId!, masterId: d.masterId })} disabled={assignMutation.isPending} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-500 text-white hover:bg-green-600 rounded-lg font-medium text-xs disabled:opacity-50 flex-shrink-0">{assignMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserCheck className="w-3 h-3" />}Назначить</button>
+                                      )}
+                                    </div>
+                                    {tags.length > 0 && (
+                                      <div className="flex flex-wrap gap-1">
+                                        {hasLimit && <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 border border-orange-200">⏳ С лимитом</span>}
+                                        {hasFomo && <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">⚡ ФОМО</span>}
+                                        {noContract && <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200">📋 Без договора</span>}
+                                      </div>
                                     )}
+                                    {masterNote && <div className="bg-white/80 border border-current/10 rounded-lg px-3 py-2"><p className="text-[10px] text-muted-foreground font-semibold uppercase mb-1">Предложение</p><p className="text-xs text-gray-700">{masterNote}</p></div>}
+                                    <button onClick={() => openMasterChat(d.masterId)} className="flex items-center gap-1 text-[10px] text-blue-500 hover:underline"><MessageSquare className="w-3 h-3" />Написать в чат</button>
                                   </div>
-                                  {d.responseNote && <div className="bg-white border border-green-200 rounded-lg px-3 py-2"><p className="text-[10px] text-green-700 font-semibold uppercase mb-1">Предложение</p><p className="text-xs text-gray-700">{d.responseNote}</p></div>}
-                                  <button onClick={() => openMasterChat(d.masterId)} className="flex items-center gap-1 text-[10px] text-blue-500 hover:underline"><MessageSquare className="w-3 h-3" />Написать в чат</button>
-                                </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           )}
                           {rejectedDispatches.length > 0 && (

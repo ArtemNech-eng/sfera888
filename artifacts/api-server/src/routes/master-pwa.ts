@@ -647,20 +647,20 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
   const master = await getMasterById(masterId);
   if (!master) return res.status(404).json({ error: "Мастер не найден" });
 
-  // Contract gate — must have signed contract AND admin-verified passport before responding
-  if (!master.contractSignedAt || !master.passportVerified) {
-    return res.json({
-      needsContract: true,
-      contractSigned: !!master.contractSignedAt,
-      passportVerified: !!master.passportVerified,
-    });
+  // Collect constraint tags — master can always respond, but operator sees their status
+  const constraintTags: string[] = [];
+
+  // Contract / passport check → tag, don't block
+  const noContract = !master.contractSignedAt || !master.passportVerified;
+  if (noContract) {
+    constraintTags.push("Без договора");
   }
 
-  // FOMO block check — highest priority, before eligibility
+  // FOMO block check → tag, don't block (still log event)
   const fomoStatus = await getFomoBlock(masterId, master.isTestMaster);
   if (fomoStatus.isBlocked) {
     await logFomoEvent(masterId, "button_press", fomoStatus.reason, fomoStatus.orderId ?? undefined);
-    return res.status(403).json({ error: fomoStatus.reason, fomoBlocked: true, fomoType: fomoStatus.type, fomoOrderId: fomoStatus.orderId });
+    constraintTags.push("ФОМО");
   }
 
   // Check order eligibility (limit + debt + overdue)
@@ -671,11 +671,17 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
   const overdueMasterIds = await getOverdueMasterIds();
   const eligibility = getMasterEligibility(master, myActiveCount, overdueMasterIds);
 
-  // ── AT LIMIT: special flow — register interest, send info message, return atLimit flag
-  if (!eligibility.canAccept && myActiveCount >= (master.maxActiveOrders ?? 1) && !overdueMasterIds.has(masterId)) {
-    // Still mark respond so operator sees the interest
+  // ── HARD BLOCK: overdue debt — do not allow response
+  if (overdueMasterIds.has(masterId)) {
+    return res.status(400).json({ error: eligibility.reason });
+  }
+
+  // ── AT LIMIT: register interest, send info message, return atLimit flag
+  if (myActiveCount >= (master.maxActiveOrders ?? 1)) {
+    constraintTags.push("Лимит");
+    const noteTag = constraintTags.join(", ");
     await db.update(orderDispatchesTable)
-      .set({ status: "responded", respondedAt: new Date(), responseNote: "⚠️ Откликнулся при активном заказе" })
+      .set({ status: "responded", respondedAt: new Date(), responseNote: `⚠️ ${noteTag}` })
       .where(eq(orderDispatchesTable.id, dispatches[0].id));
 
     // Build info message for master
@@ -684,7 +690,6 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
     const infoMsg = `Вы откликнулись на заявку #${orderId}! 👍\n\nЧтобы мы могли вас назначить, сначала нужно:\n\n✅ Завершить текущий заказ${activeOrderRef} и оплатить комиссию\n\nили\n\n❌ Отменить текущий заказ — но тогда ваш рейтинг будет снижен.\n\nКак только закроете предыдущий заказ — напишите нам, и мы вернёмся к этой заявке.`;
 
     const telegramChatId = master.maxChatId ? `max_${master.maxChatId}` : (master.telegramId ?? `pwa_${masterId}`);
-    // Save to CRM dialog
     await db.insert(masterMessagesTable).values({
       masterId,
       telegramChatId,
@@ -693,16 +698,14 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
       senderName: "Диспетчер",
       isRead: true,
     });
-    // Also send via Max if available
     if (master.maxChatId) {
       const { sendMaxMessage } = await import("../maxBot.js");
       sendMaxMessage(master.maxChatId, infoMsg).catch(() => {});
     }
-    // Also save master's respond event in CRM
     await db.insert(masterMessagesTable).values({
       masterId,
       telegramChatId,
-      text: `🙋 Откликнулся на заявку #${orderId} (${order.serviceType}, ${order.city}${order.district ? ", " + order.district : ""}) — но уже на активном заказе`,
+      text: `🙋 Откликнулся на заявку #${orderId} (${order.serviceType}, ${order.city}${order.district ? ", " + order.district : ""}) — ${noteTag}`,
       fromMaster: true,
       senderName: master.alias,
       isRead: false,
@@ -712,28 +715,34 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
     return res.json({ atLimit: true, activeOrderId: activeOrder?.id ?? null });
   }
 
-  // ── BLOCKED for other reasons (debt / overdue / not verified)
-  if (!eligibility.canAccept) {
+  // ── BLOCKED for other eligibility reasons (debt checked above)
+  if (!eligibility.canAccept && constraintTags.length === 0) {
     return res.status(400).json({ error: eligibility.reason });
   }
 
-  const { responseNote } = req.body ?? {};
+  const { responseNote: bodyNote } = req.body ?? {};
+
+  // Build final responseNote: constraint tags first, then master's own note
+  const tagPrefix = constraintTags.length > 0 ? `⚠️ ${constraintTags.join(", ")}` : null;
+  const masterNote = bodyNote ? String(bodyNote).trim().slice(0, 400) : null;
+  const finalNote = [tagPrefix, masterNote].filter(Boolean).join(" | ") || null;
 
   await db.update(orderDispatchesTable)
     .set({
       status: "responded",
       respondedAt: new Date(),
-      responseNote: responseNote ? String(responseNote).trim().slice(0, 500) : null,
+      responseNote: finalNote,
     })
     .where(eq(orderDispatchesTable.id, dispatches[0].id));
 
   // Notify operator — create a chat message so it appears in CRM master chat
   const chatId = master.telegramId ?? `pwa_${master.id}`;
-  const noteText = responseNote ? `\n💬 ${String(responseNote).trim()}` : "";
+  const noteText = masterNote ? `\n💬 ${masterNote}` : "";
+  const tagText = tagPrefix ? ` [${constraintTags.join(", ")}]` : "";
   await db.insert(masterMessagesTable).values({
     masterId,
     telegramChatId: chatId,
-    text: `🙋 Откликнулся на заявку #${orderId} (${order.serviceType}, ${order.city}${order.district ? ", " + order.district : ""})${noteText}`,
+    text: `🙋 Откликнулся на заявку #${orderId} (${order.serviceType}, ${order.city}${order.district ? ", " + order.district : ""})${tagText}${noteText}`,
     fromMaster: true,
     senderName: master.alias,
     isRead: false,
