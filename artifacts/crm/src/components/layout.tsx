@@ -233,9 +233,9 @@ export function Layout({ children }: LayoutProps) {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 md:pl-64 flex flex-col min-h-screen">
+      <main className="flex-1 md:pl-64 flex flex-col h-screen overflow-hidden">
         {/* Mobile Header */}
-        <header className="md:hidden flex items-center gap-3 px-4 h-14 bg-card border-b border-border z-20 sticky top-0">
+        <header className="md:hidden flex-shrink-0 flex items-center gap-3 px-4 h-14 bg-card border-b border-border z-20">
           <img
             src={`${import.meta.env.BASE_URL}images/logo.png`}
             alt="Честный мастер"
@@ -247,7 +247,7 @@ export function Layout({ children }: LayoutProps) {
           )}
         </header>
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-20 md:pb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-20 md:pb-8 min-h-0 animate-in fade-in slide-in-from-bottom-4 duration-500">
           {children}
         </div>
       </main>
