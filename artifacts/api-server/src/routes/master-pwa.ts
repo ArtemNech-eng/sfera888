@@ -754,7 +754,10 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
   // Early assignment if 5+ masters have responded
   maybeEarlyAssign(orderId).catch(e => console.error("[respond] maybeEarlyAssign error:", e));
 
-  res.json({ success: true });
+  res.json({
+    success: true,
+    ...(constraintTags.length > 0 ? { constraintTags, constraintNote: tagPrefix } : {}),
+  });
 });
 
 // Log FOMO button press

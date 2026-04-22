@@ -407,9 +407,10 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
   order: OrderCard; onRespond: () => void; onReject: () => void; onClose: () => void;
   fomoBlock?: FomoBlock | null;
 }) {
-  const [state, setState] = useState<"idle" | "loading" | "success" | "at_limit" | "fomo_blocked" | "needs_contract" | "rejecting">("idle");
+  const [state, setState] = useState<"idle" | "loading" | "success" | "constrained_success" | "at_limit" | "fomo_blocked" | "needs_contract" | "rejecting">("idle");
   const [atLimitOrderId, setAtLimitOrderId] = useState<number | null>(null);
   const [contractFlags, setContractFlags] = useState<{ contractSigned: boolean; passportVerified: boolean }>({ contractSigned: false, passportVerified: false });
+  const [constraintTags, setConstraintTags] = useState<string[]>([]);
   const [, setSheetLocation] = useLocation();
   const [showRejectSheet, setShowRejectSheet] = useState(false);
   const [showPriceNote, setShowPriceNote] = useState(false);
@@ -445,11 +446,6 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
   };
 
   const handleRespond = async () => {
-    if (isFomoBlocked) {
-      api.fomoBlockPress(order.id, fomoBlock?.reason ?? null).catch(() => {});
-      setState("fomo_blocked");
-      return;
-    }
     setState("loading");
     try {
       const result = await api.orders.respond(order.id, priceNote.trim() || undefined);
@@ -459,6 +455,9 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
       } else if (result?.atLimit) {
         setAtLimitOrderId(result.activeOrderId ?? null);
         setState("at_limit");
+      } else if (result?.constraintTags?.length) {
+        setConstraintTags(result.constraintTags);
+        setState("constrained_success");
       } else {
         setState("success");
       }
@@ -603,6 +602,42 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
             <button onClick={onClose}
               className="w-full max-w-sm h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm">
               Понял, закрою текущий заказ
+            </button>
+          </div>
+        ) : state === "constrained_success" ? (
+          <div className="flex flex-col items-center justify-center min-h-[70vh] px-6 text-center space-y-5">
+            <div className="w-20 h-20 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+              <CheckCircle2 size={44} className="text-amber-500" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold">Отклик принят!</h2>
+              <p className="text-sm text-muted-foreground mt-1">Заявка #{order.id} — менеджер рассмотрит вашу кандидатуру.</p>
+            </div>
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-2xl px-4 py-4 text-left w-full max-w-sm space-y-3">
+              <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Обратите внимание:</p>
+              {constraintTags.map(tag => {
+                const info: Record<string, { icon: string; text: string }> = {
+                  "Лимит": { icon: "📦", text: "У вас активный заказ — закройте его, чтобы повысить шансы на назначение." },
+                  "ФОМО": { icon: "⏱️", text: "По текущему заказу не отправлена смета или не поступила предоплата. Решите этот вопрос с менеджером." },
+                  "Без договора": { icon: "📋", text: "Ваш паспорт ещё не верифицирован или договор не заключён. Оформите документы в профиле." },
+                  "Долг": { icon: "💳", text: "Есть просроченная задолженность по комиссии. Оплатите долг, чтобы получать приоритет при назначении." },
+                  "Ограничение": { icon: "⚠️", text: "Есть техническое ограничение. Уточните у менеджера." },
+                };
+                const item = info[tag];
+                return item ? (
+                  <div key={tag} className="flex items-start gap-2.5">
+                    <span className="text-lg shrink-0">{item.icon}</span>
+                    <p className="text-sm text-gray-700 dark:text-gray-300">{item.text}</p>
+                  </div>
+                ) : null;
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground px-2">
+              Ваш отклик зафиксирован — менеджер его видит и примет решение.
+            </p>
+            <button onClick={onRespond}
+              className="w-full max-w-sm h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm">
+              Понял, спасибо
             </button>
           </div>
         ) : state === "success" ? (
