@@ -131,13 +131,16 @@ export async function scoreMasters(
   }
   const paidOrderIds = new Set(paidTx.map(t => t.orderId));
 
-  // 5. Скорость отклика — медиана по dispatch'ам за 30 дней с заполненным respondedAt
+  // 5. Скорость отклика — медиана по dispatch'ам за 30 дней с заполненным respondedAt.
+  // Drizzle разворачивает массив в кортеж параметров для ANY(), что ломает запрос,
+  // поэтому используем IN (...) с явным sql.join.
+  const idList = sql.join(masterIds.map(id => sql`${id}`), sql`, `);
   const speedRows = await db.execute<{ master_id: number; median_sec: number }>(sql`
     SELECT
       master_id,
       PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (responded_at - created_at)))::float AS median_sec
     FROM ${orderDispatchesTable}
-    WHERE master_id = ANY(${masterIds})
+    WHERE master_id IN (${idList})
       AND responded_at IS NOT NULL
       AND created_at >= ${since30}
       AND status IN ('responded', 'assigned')
