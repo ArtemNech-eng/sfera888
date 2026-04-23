@@ -122,6 +122,7 @@ function formatMaster(m: any) {
     blockedReason: m.blockedReason ?? null,
     lastCancelAt: m.lastCancelAt ?? null,
     lastCompletedAt: m.lastCompletedAt ?? null,
+    manualUnblocksCount: m.manualUnblocksCount ?? 0,
   };
 }
 

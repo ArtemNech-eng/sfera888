@@ -58,6 +58,10 @@ export const mastersTable = pgTable("masters", {
   blockedReason: text("blocked_reason"),
   lastCancelAt: timestamp("last_cancel_at"),
   lastCompletedAt: timestamp("last_completed_at"),
+  // Сколько раз оператор вручную снимал автоблок с этого мастера. Растёт при каждом
+  // unblockMaster(). Если значение >=2 — рецидивист, оператор должен подумать,
+  // прежде чем снимать блок снова.
+  manualUnblocksCount: integer("manual_unblocks_count").notNull().default(0),
 });
 
 export const REPUTATION_BLOCK_THRESHOLD = 2;

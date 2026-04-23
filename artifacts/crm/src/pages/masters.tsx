@@ -45,6 +45,7 @@ interface Master {
   blockedFromOrders?: boolean;
   blockedAt?: string | null;
   blockedReason?: string | null;
+  manualUnblocksCount?: number;
 }
 
 interface VoronkaColumn {
@@ -277,7 +278,13 @@ function MasterRow({ master, onOpenDrawer, onDelete, onGoToChat, isFomoBlocked }
             <button
               onClick={async e => {
                 e.stopPropagation();
-                if (!confirm(`Снять автоблок с мастера ${master.alias}? Счётчик подряд отменённых будет сброшен.`)) return;
+                const prevUnblocks = master.manualUnblocksCount ?? 0;
+                const recidivistWarning = prevUnblocks >= 2
+                  ? `\n\n⚠️ ВНИМАНИЕ: этого мастера уже разблокировали ${prevUnblocks} раз(а). Возможно, проблема системная.`
+                  : prevUnblocks === 1
+                    ? `\n\nЭтого мастера уже разблокировали 1 раз ранее.`
+                    : "";
+                if (!confirm(`Снять автоблок с мастера ${master.alias}? Счётчик подряд отменённых будет сброшен.${recidivistWarning}`)) return;
                 const r = await fetch(`/api/masters/${master.id}/unblock`, { method: "POST", credentials: "include" });
                 if (r.ok) window.location.reload();
                 else alert("Не удалось снять блок");

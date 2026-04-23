@@ -110,6 +110,7 @@ export async function unblockMaster(masterId: number, _operatorAlias: string): P
       blockedAt: null,
       blockedReason: null,
       consecutiveCancellations: 0,
+      manualUnblocksCount: sql`${mastersTable.manualUnblocksCount} + 1`,
     })
     .where(eq(mastersTable.id, masterId));
 }
