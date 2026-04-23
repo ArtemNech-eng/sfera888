@@ -650,6 +650,35 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
   const master = await getMasterById(masterId);
   if (!master) return res.status(404).json({ error: "Мастер не найден" });
 
+  // ── Репутация: автоблок (2+ подряд отменённых) ─────────────────────────────
+  // Заявку мастер видит (рассылка идёт всем для FOMO), но отклик не принимаем.
+  // Помечаем dispatch как "rejected" с причиной — оператор видит активность
+  // заблокированного как сигнал к разблоку, мастер получает понятный отказ.
+  if (master.blockedFromOrders) {
+    const { getBlockedRejectionMessage, BLOCKED_REJECTION_SHORT } = await import("../lib/masterReputation.js");
+    await db.update(orderDispatchesTable)
+      .set({
+        status: "rejected" as any,
+        respondedAt: new Date(),
+        responseNote: "Репутация: автоблок (2+ подряд отменённых заказа)",
+        rejectionReason: "blocked_reputation",
+      })
+      .where(eq(orderDispatchesTable.id, dispatches[0].id));
+
+    if (master.maxChatId) {
+      sendMaxMessage(master.maxChatId, getBlockedRejectionMessage(orderId, master.consecutiveCancellations ?? 0)).catch(() => {});
+    }
+    await db.insert(masterMessagesTable).values({
+      masterId,
+      telegramChatId: master.maxChatId ? `max_${master.maxChatId}` : (master.telegramId ?? `pwa_${masterId}`),
+      text: `🙋 Хотел откликнуться на заявку #${orderId} — заблокирован (автоблок репутации)`,
+      fromMaster: true,
+      senderName: master.alias,
+      isRead: false,
+    });
+    return res.status(403).json({ error: BLOCKED_REJECTION_SHORT, blocked: true });
+  }
+
   // Collect constraint tags — master can always respond, but operator sees their status
   const constraintTags: string[] = [];
 

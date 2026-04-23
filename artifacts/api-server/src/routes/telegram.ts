@@ -1028,6 +1028,27 @@ async function handleCallback(callbackQuery: any) {
       return;
     }
 
+    // ── Репутация: автоблок — отклик не принимаем, шлём причину ─────────────
+    if (master.blockedFromOrders) {
+      const { getBlockedRejectionMessage, BLOCKED_REJECTION_SHORT } = await import("../lib/masterReputation.js");
+      await answerCallback(cbId, BLOCKED_REJECTION_SHORT);
+      await db.update(orderDispatchesTable)
+        .set({
+          status: "rejected",
+          respondedAt: new Date(),
+          responseNote: "Репутация: автоблок (2+ подряд отменённых заказа)",
+          rejectionReason: "blocked_reputation",
+        } as any)
+        .where(eq(orderDispatchesTable.id, dispatch.id));
+      const blockedCard =
+        `📋 <b>Заявка #${orderId}</b>\n\n` +
+        `🔧 Услуга: ${order.serviceType}\n📍 Район: ${order.city}${order.district ? ", " + order.district : ""}\n\n` +
+        getBlockedRejectionMessage(orderId, master.consecutiveCancellations ?? 0);
+      await editMessage(chatId, messageId, blockedCard, { reply_markup: { inline_keyboard: [] } });
+      await logToChat(master.id, chatId, `🙋 Хотел откликнуться на заявку #${orderId} — заблокирован (автоблок репутации)`);
+      return;
+    }
+
     // Check active order limit — master may have taken another order since broadcast
     const activeOrders = await db.select().from(ordersTable)
       .where(inArray(ordersTable.status, ["master_assigned", "in_progress"]));

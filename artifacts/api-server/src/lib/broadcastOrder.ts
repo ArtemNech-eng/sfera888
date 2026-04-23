@@ -114,13 +114,15 @@ export async function performBroadcast(
       .where(eq(ordersTable.id, orderId));
   }
 
+  // Рассылаем заявку ВСЕМ активным мастерам в городе, включая заблокированных.
+  // Это создаёт ажиотаж/FOMO: все видят, что в городе есть работа.
+  // Фильтр репутации применяется на этапе отклика (см. master-pwa.ts /respond
+  // и telegram.ts respond_order_*) — заблокированный мастер получает понятное
+  // уведомление с причиной отказа, оператор видит активность как сигнал к разблоку.
   const allMasters = await db.select().from(mastersTable)
     .where(and(
       eq(mastersTable.status, "active"),
       eq(mastersTable.city, order.city),
-      // Репутация: не рассылаем заявки автозаблокированным мастерам
-      // (2 подряд отменённых заказа → блок до ручного снятия оператором).
-      eq(mastersTable.blockedFromOrders, false),
     ));
 
   const skipStats: BroadcastSkipStats = {
