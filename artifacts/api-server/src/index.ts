@@ -101,6 +101,23 @@ async function runMigrations() {
       ADD COLUMN IF NOT EXISTS reason TEXT
   `);
   await db.execute(sql`
+    DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'master_checkins_master_id_date_key'
+          AND conrelid = 'master_checkins'::regclass
+      ) THEN
+        DELETE FROM master_checkins a
+          USING master_checkins b
+          WHERE a.id < b.id
+            AND a.master_id = b.master_id
+            AND a.date = b.date;
+        ALTER TABLE master_checkins
+          ADD CONSTRAINT master_checkins_master_id_date_key UNIQUE (master_id, date);
+      END IF;
+    END $$
+  `);
+  await db.execute(sql`
     ALTER TABLE masters
       ADD COLUMN IF NOT EXISTS service_prices JSONB
   `);
