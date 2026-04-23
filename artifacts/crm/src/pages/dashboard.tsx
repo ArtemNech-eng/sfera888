@@ -5,6 +5,7 @@ import { Layout } from "@/components/layout";
 import { ProtectedRoute } from "@/hooks/use-auth";
 import { KPICards } from "../components/dashboard/KPICards";
 import { AlertsBlock } from "../components/dashboard/AlertsBlock";
+import { TasksFeed } from "../components/dashboard/TasksFeed";
 import { ForecastCard } from "../components/dashboard/ForecastCard";
 import { RiskMonitor } from "../components/dashboard/RiskMonitor";
 import { RevenueChart } from "../components/dashboard/RevenueChart";
@@ -145,6 +146,11 @@ function DashboardPage() {
               <RefreshCw size={16} color="#6B7280" />
             </button>
           </div>
+        </div>
+
+        {/* TASKS FEED — что делать прямо сейчас */}
+        <div className="mb-6">
+          <TasksFeed />
         </div>
 
         {/* KPI CARDS */}
