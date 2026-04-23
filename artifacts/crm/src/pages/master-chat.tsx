@@ -182,6 +182,9 @@ export default function MasterChat() {
     respondentCount: number;
     respondedAt: string | null;
     responseNote: string | null;
+    score: number | null;
+    segment: "platinum" | "gold" | "silver" | "starter" | "blocked" | null;
+    isCold: boolean;
   }
   const [respondedOrders, setRespondedOrders] = useState<RespondedOrder[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -275,6 +278,9 @@ export default function MasterChat() {
               respondentCount: item.respondentCount,
               respondedAt: myResp?.respondedAt ?? null,
               responseNote: myResp?.responseNote ?? null,
+              score: myResp?.score ?? null,
+              segment: myResp?.segment ?? null,
+              isCold: myResp?.isCold ?? false,
             };
           });
         setRespondedOrders(mine);
@@ -1237,6 +1243,25 @@ export default function MasterChat() {
                                 <div className="min-w-0 flex-1">
                                   <div className="flex items-center gap-1.5 flex-wrap">
                                     <span className="text-xs font-bold text-gray-800">Заявка #{item.orderId}</span>
+                                    {item.score != null && (() => {
+                                      const SEG_STYLE: Record<string, { bg: string; label: string; emoji: string }> = {
+                                        platinum: { bg: "bg-violet-100 text-violet-800 border-violet-300", label: "Платина", emoji: "💎" },
+                                        gold:     { bg: "bg-amber-100 text-amber-800 border-amber-300",   label: "Золото",  emoji: "🥇" },
+                                        silver:   { bg: "bg-slate-100 text-slate-700 border-slate-300",   label: "Серебро", emoji: "🥈" },
+                                        starter:  { bg: "bg-blue-50 text-blue-700 border-blue-200",       label: item.isCold ? "Новичок" : "Старт", emoji: item.isCold ? "🆕" : "🎯" },
+                                        blocked:  { bg: "bg-red-100 text-red-800 border-red-300",         label: "Блок",    emoji: "🛑" },
+                                      };
+                                      const seg = SEG_STYLE[item.segment ?? "starter"] ?? SEG_STYLE.starter;
+                                      return (
+                                        <span
+                                          title={`Score ${item.score}/100 — ${seg.label}${item.isCold ? " (новый мастер, статистики мало)" : ""}`}
+                                          className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-bold border cursor-help ${seg.bg}`}
+                                        >
+                                          <span>{seg.emoji}</span>
+                                          <span>{item.score}</span>
+                                        </span>
+                                      );
+                                    })()}
                                     {item.respondedAt && (
                                       <span className="text-[10px] text-gray-400">{timeStamp(item.respondedAt)}</span>
                                     )}

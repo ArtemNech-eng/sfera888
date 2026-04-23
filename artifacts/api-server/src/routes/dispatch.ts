@@ -170,8 +170,22 @@ router.get("/pending", ops, async (req, res) => {
     : [];
   const masterMap = new Map(masters.map(m => [m.id, m]));
 
+  // Скоринг: считаем для всех откликнувшихся мастеров одним батчем,
+  // район — для каждой заявки свой, поэтому считаем отдельно по orderId.
+  const { scoreMasters } = await import("../lib/masterScoring.js");
+  const scoresByOrder = new Map<number, Map<number, { total: number; segment: string; isCold: boolean }>>();
+  for (const o of pendingOrders) {
+    const orderMasterIds = responded.filter(d => d.orderId === o.id).map(d => d.masterId);
+    if (orderMasterIds.length === 0) continue;
+    const scoreMap = await scoreMasters(orderMasterIds, { district: o.district });
+    scoresByOrder.set(o.id, new Map([...scoreMap].map(([id, s]) => [id, {
+      total: s.total, segment: s.segment, isCold: s.isCold,
+    }])));
+  }
+
   res.json(pendingOrders.map(o => {
     const orderRespondents = responded.filter(d => d.orderId === o.id);
+    const scoreMap = scoresByOrder.get(o.id);
     return {
       orderId: o.id,
       leadId: o.leadId ?? null,
@@ -179,12 +193,18 @@ router.get("/pending", ops, async (req, res) => {
       city: o.city,
       district: o.district,
       respondentCount: orderRespondents.length,
-      respondents: orderRespondents.map(d => ({
-        masterId: d.masterId,
-        masterName: masterMap.get(d.masterId)?.alias ?? "?",
-        respondedAt: d.respondedAt,
-        responseNote: (d as any).responseNote ?? null,
-      })),
+      respondents: orderRespondents.map(d => {
+        const s = scoreMap?.get(d.masterId);
+        return {
+          masterId: d.masterId,
+          masterName: masterMap.get(d.masterId)?.alias ?? "?",
+          respondedAt: d.respondedAt,
+          responseNote: (d as any).responseNote ?? null,
+          score: s?.total ?? null,
+          segment: s?.segment ?? null,
+          isCold: s?.isCold ?? false,
+        };
+      }),
     };
   }));
 });
