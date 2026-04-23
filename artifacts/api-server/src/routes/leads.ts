@@ -3,7 +3,6 @@ import { db, leadsTable, ordersTable, serviceTypesTable, citiesTable } from "@wo
 import { eq, and, isNull, desc, sql } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { notifyManagerNewLead } from "../managerBot.js";
-import { performBroadcast } from "../lib/broadcastOrder.js";
 import OpenAI from "openai";
 
 const router = Router();
@@ -275,11 +274,6 @@ router.post("/:id/send-to-buffer", allLeadRoles, async (req, res) => {
 
   const userAlias = (req.session as any)?.user?.name ?? (req.session as any)?.user?.login ?? "оператор";
   await logLeadEvent(id, "sent_to_work", `Заявка отправлена в работу. Создан заказ #${order.leadId ?? order.id}`, userAlias);
-
-  // Автоматическая рассылка мастерам
-  performBroadcast(order.id).catch((err) => {
-    console.error(`[send-to-buffer] Ошибка рассылки для заказа ${order.id}:`, err);
-  });
 
   res.json({
     id: order.id,
