@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { AlertTriangle, Clock, Send, XCircle, DollarSign, ChevronRight, ListChecks, CheckCircle2, RefreshCw } from "lucide-react";
+import { AlertTriangle, Clock, Send, XCircle, DollarSign, ChevronRight, ListChecks, CheckCircle2, RefreshCw, Receipt } from "lucide-react";
 
-type TaskType = "send_to_work" | "no_master_response" | "cancel_request" | "price_proposal";
+type TaskType = "send_to_work" | "no_master_response" | "cancel_request" | "price_proposal" | "confirm_prepayment";
 type Priority = "critical" | "high" | "normal";
 
 interface Task {
@@ -28,6 +28,7 @@ const TYPE_ICON: Record<TaskType, React.ComponentType<{ className?: string; size
   no_master_response: AlertTriangle,
   cancel_request: XCircle,
   price_proposal: DollarSign,
+  confirm_prepayment: Receipt,
 };
 
 const PRIORITY_STYLES: Record<Priority, { bg: string; border: string; iconBg: string; iconColor: string; badge: string; badgeText: string }> = {

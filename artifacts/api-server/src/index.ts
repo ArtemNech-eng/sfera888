@@ -513,6 +513,12 @@ setInterval(() => runProactiveChecks().catch(console.error), 30 * 60 * 1000);
 // Priority assignment: check expired response windows every 60 seconds
 setInterval(() => checkResponseWindows().catch(console.error), 60 * 1000);
 console.log("[checkin] Priority assignment scheduler started");
+
+// Operator task escalations: notify admin via MAX about critical-overdue tasks every 5 min
+import("./lib/tasksEscalation.js").then(({ runTaskEscalations }) => {
+  setInterval(() => runTaskEscalations().catch(console.error), 5 * 60 * 1000);
+  console.log("[escalation] Operator task escalation scheduler started (MAX)");
+}).catch(err => console.error("[escalation] failed to load module:", err));
 // runQuickAutonomousCheck removed — caused spam to masters
 // runAutonomousCycle removed — caused spam to masters
 

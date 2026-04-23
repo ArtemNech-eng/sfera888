@@ -4,6 +4,7 @@ import { eq, and, isNull, desc, sql } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { notifyManagerNewLead } from "../managerBot.js";
 import { performBroadcast } from "../lib/broadcastOrder.js";
+import { getOperatorTasks } from "../lib/operatorTasks.js";
 import OpenAI from "openai";
 
 const router = Router();
@@ -145,169 +146,7 @@ router.post("/", allLeadRoles, async (req, res) => {
 // Возвращает приоритизированный список задач, требующих действий оператора.
 // ВАЖНО: должен идти ДО роута "/:id", иначе "tasks" попадёт в :id.
 router.get("/tasks", allLeadRoles, async (_req, res) => {
-  const SLA = {
-    sendToWork: 15,
-    masterResponse: 30,
-    cancelDecision: 60,
-    priceDecision: 60,
-  };
-
-  const now = Date.now();
-  const tasks: Array<{
-    id: string;
-    type: "send_to_work" | "no_master_response" | "cancel_request" | "price_proposal";
-    priority: "critical" | "high" | "normal";
-    title: string;
-    subtitle: string;
-    leadId: number | null;
-    orderId: number | null;
-    ageMinutes: number;
-    slaMinutes: number;
-    overdueMinutes: number;
-  }> = [];
-
-  // Все запросы выполняем параллельно. Каждый — один SQL вместо N+1.
-  const [newLeads, waitingOrders, cancelOrders, priceOrders] = await Promise.all([
-    // 1. Новые заявки, ждущие отправки
-    db.select({
-      id: leadsTable.id,
-      clientName: leadsTable.clientName,
-      city: leadsTable.city,
-      serviceType: leadsTable.serviceType,
-      createdAt: leadsTable.createdAt,
-    })
-      .from(leadsTable)
-      .where(and(eq(leadsTable.status, "new"), isNull(leadsTable.deletedAt))),
-
-    // 2. Заказы waiting_master с JOIN на lead для clientName (один запрос)
-    db.select({
-      orderId: ordersTable.id,
-      leadId: ordersTable.leadId,
-      city: ordersTable.city,
-      serviceType: ordersTable.serviceType,
-      createdAt: ordersTable.createdAt,
-      lastBroadcastAt: ordersTable.lastBroadcastAt,
-      clientName: leadsTable.clientName,
-    })
-      .from(ordersTable)
-      .leftJoin(leadsTable, eq(ordersTable.leadId, leadsTable.id))
-      .where(and(eq(ordersTable.status, "waiting_master"), isNull(ordersTable.deletedAt))),
-
-    // 3. Запросы отмены
-    db.select({
-      orderId: ordersTable.id,
-      leadId: ordersTable.leadId,
-      city: ordersTable.city,
-      serviceType: ordersTable.serviceType,
-      cancelReason: ordersTable.cancelReason,
-      updatedAt: ordersTable.updatedAt,
-      clientName: leadsTable.clientName,
-    })
-      .from(ordersTable)
-      .leftJoin(leadsTable, eq(ordersTable.leadId, leadsTable.id))
-      .where(and(eq(ordersTable.status, "cancellation_requested"), isNull(ordersTable.deletedAt))),
-
-    // 4. Предложения цены: фильтруем уже на уровне БД
-    db.select({
-      orderId: ordersTable.id,
-      leadId: ordersTable.leadId,
-      city: ordersTable.city,
-      serviceType: ordersTable.serviceType,
-      proposedAmount: ordersTable.proposedAmount,
-      updatedAt: ordersTable.updatedAt,
-      clientName: leadsTable.clientName,
-    })
-      .from(ordersTable)
-      .leftJoin(leadsTable, eq(ordersTable.leadId, leadsTable.id))
-      .where(and(
-        eq(ordersTable.status, "completed"),
-        isNull(ordersTable.deletedAt),
-        isNull(ordersTable.orderAmount),
-        sql`${ordersTable.proposedAmount} IS NOT NULL`,
-      )),
-  ]);
-
-  // 1. Новые заявки
-  for (const lead of newLeads) {
-    const ageMin = Math.floor((now - new Date(lead.createdAt).getTime()) / 60000);
-    const overdue = ageMin - SLA.sendToWork;
-    tasks.push({
-      id: `lead-${lead.id}-send`,
-      type: "send_to_work",
-      priority: overdue > SLA.sendToWork ? "critical" : overdue > 0 ? "high" : "normal",
-      title: `Заявка #${lead.id} — отправить мастерам`,
-      subtitle: `${lead.clientName} · ${lead.city} · ${lead.serviceType}`,
-      leadId: lead.id,
-      orderId: null,
-      ageMinutes: ageMin,
-      slaMinutes: SLA.sendToWork,
-      overdueMinutes: overdue,
-    });
-  }
-
-  // 2. Заказы без отклика мастера
-  for (const order of waitingOrders) {
-    const refTime = order.lastBroadcastAt ?? order.createdAt;
-    const ageMin = Math.floor((now - new Date(refTime).getTime()) / 60000);
-    if (ageMin < SLA.masterResponse * 0.5) continue;
-    const overdue = ageMin - SLA.masterResponse;
-    tasks.push({
-      id: `order-${order.orderId}-noresp`,
-      type: "no_master_response",
-      priority: overdue > SLA.masterResponse ? "critical" : overdue > 0 ? "high" : "normal",
-      title: `Заказ #${order.leadId ?? order.orderId} — никто не откликнулся`,
-      subtitle: `${order.clientName ?? "?"} · ${order.city} · ${order.serviceType}`,
-      leadId: order.leadId ?? null,
-      orderId: order.orderId,
-      ageMinutes: ageMin,
-      slaMinutes: SLA.masterResponse,
-      overdueMinutes: overdue,
-    });
-  }
-
-  // 3. Запросы отмены
-  for (const order of cancelOrders) {
-    const ageMin = Math.floor((now - new Date(order.updatedAt).getTime()) / 60000);
-    const overdue = ageMin - SLA.cancelDecision;
-    tasks.push({
-      id: `order-${order.orderId}-cancel`,
-      type: "cancel_request",
-      priority: overdue > SLA.cancelDecision ? "critical" : overdue > 0 ? "high" : "normal",
-      title: `Заказ #${order.leadId ?? order.orderId} — запрос отмены`,
-      subtitle: `${order.clientName ?? "?"} · ${order.city} · причина: ${order.cancelReason ?? "не указана"}`,
-      leadId: order.leadId ?? null,
-      orderId: order.orderId,
-      ageMinutes: ageMin,
-      slaMinutes: SLA.cancelDecision,
-      overdueMinutes: overdue,
-    });
-  }
-
-  // 4. Предложения цены
-  for (const order of priceOrders) {
-    const ageMin = Math.floor((now - new Date(order.updatedAt).getTime()) / 60000);
-    const overdue = ageMin - SLA.priceDecision;
-    tasks.push({
-      id: `order-${order.orderId}-price`,
-      type: "price_proposal",
-      priority: overdue > SLA.priceDecision ? "critical" : overdue > 0 ? "high" : "normal",
-      title: `Заказ #${order.leadId ?? order.orderId} — утвердить сумму ${Number(order.proposedAmount).toLocaleString("ru-RU")} ₽`,
-      subtitle: `${order.clientName ?? "?"} · ${order.city} · ${order.serviceType}`,
-      leadId: order.leadId ?? null,
-      orderId: order.orderId,
-      ageMinutes: ageMin,
-      slaMinutes: SLA.priceDecision,
-      overdueMinutes: overdue,
-    });
-  }
-
-  const priorityRank = { critical: 0, high: 1, normal: 2 };
-  tasks.sort((a, b) => {
-    const p = priorityRank[a.priority] - priorityRank[b.priority];
-    if (p !== 0) return p;
-    return b.overdueMinutes - a.overdueMinutes;
-  });
-
+  const tasks = await getOperatorTasks();
   res.json({
     tasks,
     counts: {
@@ -318,6 +157,7 @@ router.get("/tasks", allLeadRoles, async (_req, res) => {
     },
   });
 });
+
 
 router.get("/:id", allLeadRoles, async (req, res) => {
   const id = parseInt(req.params.id);
