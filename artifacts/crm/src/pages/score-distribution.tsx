@@ -65,23 +65,44 @@ export default function ScoreDistributionPage() {
 }
 
 function ScoreDistributionContent() {
-  const { data, isLoading, refetch, isFetching } = useQuery<ScoreDistribution>({
+  const { data, isLoading, error, refetch, isFetching } = useQuery<ScoreDistribution>({
     queryKey: ["score-distribution"],
     queryFn: async () => {
       const r = await fetch("/api/analytics/score-distribution", { credentials: "include" });
-      if (!r.ok) throw new Error("Не удалось загрузить распределение");
+      if (!r.ok) {
+        const body = await r.text();
+        throw new Error(`HTTP ${r.status}: ${body.slice(0, 500)}`);
+      }
       return r.json();
     },
+    retry: false,
   });
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+      <div className="p-6">
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+        </div>
       </div>
     );
   }
-  if (!data) return null;
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-800">
+          <p className="font-bold mb-2">Не удалось загрузить распределение</p>
+          <pre className="whitespace-pre-wrap text-xs">{(error as Error).message}</pre>
+          <button onClick={() => refetch()} className="mt-3 px-3 py-1.5 bg-red-100 hover:bg-red-200 rounded-lg text-xs font-semibold">
+            Повторить
+          </button>
+        </div>
+      </div>
+    );
+  }
+  if (!data) {
+    return <div className="p-6 text-sm text-gray-400">Нет данных</div>;
+  }
 
   const totalSegments = data.segments.platinum + data.segments.gold + data.segments.silver + data.segments.starter + data.segments.blocked;
 
