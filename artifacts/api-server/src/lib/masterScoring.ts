@@ -206,8 +206,21 @@ export async function scoreMasters(
         selfCancels += 1;
       }
     }
+    // Сырые ставки — для отображения и аналитики.
     const payRate = totalAssigned90d > 0 ? paySum / totalAssigned90d : 0;
     const selfCancelRate = totalAssigned90d > 0 ? selfCancels / totalAssigned90d : 0;
+
+    // Байесовское сглаживание для скоринга: при малой выборке тянет к базовой линии.
+    // Это убирает «2 заказа из 2 = платина» — у новичка эффективная ставка
+    // приближена к среднему по платформе, и доминировать начинает только после
+    // десятков заказов.
+    const SMOOTH_N = 10;       // сила сглаживания (≈ количество «виртуальных» заказов)
+    const PAY_PRIOR = 0.5;     // базовая доходимость (середина шкалы)
+    const CANCEL_PRIOR = 0.05; // базовый процент самоотмен
+    const payRateSmoothed =
+      (paySum + PAY_PRIOR * SMOOTH_N) / (totalAssigned90d + SMOOTH_N);
+    const selfCancelRateSmoothed =
+      (selfCancels + CANCEL_PRIOR * SMOOTH_N) / (totalAssigned90d + SMOOTH_N);
 
     // avgCommission
     const myPaid = paidByMaster.get(masterId) ?? [];
@@ -273,8 +286,11 @@ export async function scoreMasters(
 
     // Положительные компоненты (макс +100)
     let raw = 0;
-    raw += payRate * 50;                                    // макс +50
-    raw += Math.min(1, avgCommission / TARGET_COMMISSION) * 15;  // макс +15
+    raw += payRateSmoothed * 50;                            // макс +50, сглажено
+    // avgCommission учитываем тем сильнее, чем больше оплаченных транзакций.
+    // <5 транзакций — частичный вес, 5+ — полный.
+    const commConfidence = Math.min(1, myPaid.length / 5);
+    raw += Math.min(1, avgCommission / TARGET_COMMISSION) * 15 * commConfidence;
     if (responseSpeedSec != null) {
       // 0 сек = +10, 60 мин = 0, линейно
       const speedScore = Math.max(0, Math.min(1, 1 - responseSpeedSec / 3600));
@@ -284,7 +300,7 @@ export async function scoreMasters(
     if (hasContract) raw += 5;                              // +5
 
     // Штрафы (макс −55)
-    raw -= selfCancelRate * 30;                             // макс −30
+    raw -= selfCancelRateSmoothed * 30;                     // макс −30, сглажено
     raw -= Math.min(1, loadRatio) * 10;                     // макс −10
     if (hasOverdueDebt) raw -= 15;                          // −15
 
