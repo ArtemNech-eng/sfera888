@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, timestamp, numeric, pgEnum, boolean } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, numeric, pgEnum, boolean, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { leadsTable } from "./leads";
@@ -30,7 +30,7 @@ export const ordersTable = pgTable("orders", {
   commission: numeric("commission", { precision: 12, scale: 2 }),
   clientRating: integer("client_rating"),
   cancelReason: text("cancel_reason"),
-  cancelType: text("cancel_type"), // "client_refused" | "price_disagreement" | "master_cant" | "other"
+  cancelType: text("cancel_type"),
   dispatchStatus: text("dispatch_status").notNull().default("none"),
   masterWorkStatus: text("master_work_status"),
   operatorNote: text("operator_note"),
@@ -58,7 +58,17 @@ export const ordersTable = pgTable("orders", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   deletedAt: timestamp("deleted_at"),
-});
+}, (t) => ({
+  // Индексы для частых запросов:
+  // 1) Лента задач, мониторинг "ожидают мастера", фильтр по статусу
+  statusActiveIdx: index("orders_status_active_idx").on(t.status, t.deletedAt, t.lastBroadcastAt),
+  // 2) Поиск заказа по leadId (показ "перейти к заказу" в карточке заявки)
+  leadIdx: index("orders_lead_id_idx").on(t.leadId),
+  // 3) Активные заказы мастера (мобильное приложение, страница "Мои заказы")
+  masterStatusIdx: index("orders_master_status_idx").on(t.masterId, t.status, t.deletedAt),
+  // 4) Поиск завершённых для аналитики/комиссий
+  completedAtIdx: index("orders_completed_at_idx").on(t.completedAt),
+}));
 
 export const insertOrderSchema = createInsertSchema(ordersTable).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertOrder = z.infer<typeof insertOrderSchema>;

@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, numeric, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, timestamp, numeric, pgEnum, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -31,7 +31,12 @@ export const leadsTable = pgTable("leads", {
   deletedAt: timestamp("deleted_at"),
   cancellationReason: text("cancellation_reason"),
   statusUpdatedAt: timestamp("status_updated_at"),
-});
+}, (t) => ({
+  // Поддержка частых выборок: задачи "Что делать сейчас", лента активных заявок,
+  // быстрый поиск по телефону при создании заявки.
+  statusActiveIdx: index("leads_status_active_idx").on(t.status, t.deletedAt, t.createdAt),
+  phoneIdx: index("leads_phone_idx").on(t.clientPhone),
+}));
 
 export const insertLeadSchema = createInsertSchema(leadsTable).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertLead = z.infer<typeof insertLeadSchema>;

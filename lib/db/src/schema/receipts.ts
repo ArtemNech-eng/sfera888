@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, numeric, timestamp, varchar, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, numeric, timestamp, varchar, jsonb, index } from "drizzle-orm/pg-core";
 import { ordersTable } from "./orders";
 import { mastersTable } from "./masters";
 
@@ -29,6 +29,11 @@ export const receiptsTable = pgTable("receipts", {
   prepaymentSubmittedAt: timestamp("prepayment_submitted_at"),
   prepaymentScreenshotUrl: text("prepayment_screenshot_url"),
   prepaymentSeenAt: timestamp("prepayment_seen_at"),
-});
+}, (t) => ({
+  // Лента задач "подтвердить оплату сметы" и подсчёт непрочитанных
+  pendingConfirmIdx: index("receipts_pending_confirm_idx").on(t.prepaymentSubmittedAt, t.prepaymentSeenAt),
+  // Сметы по заказу (показ в карточке)
+  orderIdx: index("receipts_order_id_idx").on(t.orderId),
+}));
 
 export type Receipt = typeof receiptsTable.$inferSelect;

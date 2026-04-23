@@ -149,6 +149,8 @@ function timeBetween(start: string | Date, end: string | Date): string {
   return `${d}д ${h % 24}ч`;
 }
 
+// SLA для отправки новой/обрабатываемой заявки мастерам = 15 мин.
+// Цветовой код согласован с лентой "Что делать сейчас" на главной.
 function leadAge(lead: LeadRow): { label: string; urgent: boolean; warning: boolean } | null {
   if (lead.status !== "new" && lead.status !== "processing") return null;
   const ms = Date.now() - new Date(lead.createdAt).getTime();
@@ -157,7 +159,21 @@ function leadAge(lead: LeadRow): { label: string; urgent: boolean; warning: bool
   if (m < 60) label = `${m} мин`;
   else if (m < 1440) label = `${Math.floor(m / 60)} ч`;
   else label = `${Math.floor(m / 1440)} дн`;
-  return { label, urgent: m > 1440, warning: m > 480 && m <= 1440 };
+  // SLA = 15 мин: жёлтый = превышено, красный = >2×SLA (30 мин)
+  return { label, urgent: m > 30, warning: m > 15 && m <= 30 };
+}
+
+// SLA для ожидания отклика мастера = 30 мин (от последнего broadcast).
+function orderWaitAge(order: { status?: string; createdAt: string; lastBroadcastAt?: string | null }):
+  { label: string; urgent: boolean; warning: boolean } | null {
+  if (order.status !== "waiting_master") return null;
+  const ref = order.lastBroadcastAt ? new Date(order.lastBroadcastAt) : new Date(order.createdAt);
+  const m = Math.floor((Date.now() - ref.getTime()) / 60000);
+  let label: string;
+  if (m < 60) label = `${m} мин`;
+  else if (m < 1440) label = `${Math.floor(m / 60)} ч`;
+  else label = `${Math.floor(m / 1440)} дн`;
+  return { label, urgent: m > 60, warning: m > 30 && m <= 60 };
 }
 
 // ─── Subcomponent: DispatchBadge ────────────────────────────────────────────
@@ -1526,7 +1542,7 @@ export default function Leads() {
                         const ds = (order as any).dispatchStatus ?? "none";
                         const confirmed = (order as any).orderAmount ? Number((order as any).orderAmount) : null;
                         const proposed = (order as any).proposedAmount ? Number((order as any).proposedAmount) : null;
-                        const waitH = (Date.now() - new Date(order.createdAt).getTime()) / 3600000;
+                        const wait = orderWaitAge(order as any);
                         const rowBg = orderRowBg(order);
                         return (
                           <tr key={order.id} ref={order.id === highlightId ? highlightRowRef : undefined}
@@ -1536,9 +1552,9 @@ export default function Leads() {
                             <td className="px-3 py-2.5 pl-4">
                               <StatusBadge status={order.status} type="order" />
                               {ds !== "none" && <div className="mt-0.5"><DispatchBadge status={ds} /></div>}
-                              {order.status === "waiting_master" && (
-                                <div className={`flex items-center gap-1 mt-0.5 text-[10px] font-medium ${waitH > 2 ? "text-red-500" : waitH > 1 ? "text-amber-500" : "text-muted-foreground"}`}>
-                                  <Timer className="w-2.5 h-2.5" />{timeSince(order.createdAt)}{waitH > 2 && <AlertTriangle className="w-2.5 h-2.5" />}
+                              {wait && (
+                                <div className={`flex items-center gap-1 mt-0.5 text-[10px] font-medium ${wait.urgent ? "text-red-500" : wait.warning ? "text-amber-500" : "text-muted-foreground"}`}>
+                                  <Timer className="w-2.5 h-2.5" />{wait.label} ожидает{wait.urgent && <AlertTriangle className="w-2.5 h-2.5" />}
                                 </div>
                               )}
                             </td>
