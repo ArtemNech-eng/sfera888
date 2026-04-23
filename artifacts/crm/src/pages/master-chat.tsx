@@ -1214,11 +1214,22 @@ export default function MasterChat() {
                             if (m) m[1].split(",").forEach(t => { const s = t.trim(); if (s) tags.push(s); });
                           }
                           const TAG_COLOR: Record<string, string> = {
-                            "С лимитом": "bg-blue-100 text-blue-700 border-blue-200",
+                            "Лимит": "bg-blue-100 text-blue-700 border-blue-200",
                             "ФОМО": "bg-orange-100 text-orange-700 border-orange-200",
                             "Без договора": "bg-red-100 text-red-700 border-red-200",
-                            "Просроч. долг": "bg-rose-100 text-rose-700 border-rose-200",
+                            "Долг": "bg-rose-100 text-rose-700 border-rose-200",
+                            "Репутация": "bg-amber-100 text-amber-800 border-amber-300",
+                            "Автоблок": "bg-red-200 text-red-900 border-red-400 font-bold",
                             "Ограничение": "bg-gray-100 text-gray-600 border-gray-200",
+                          };
+                          const TAG_HINT: Record<string, string> = {
+                            "Лимит": "У мастера достигнут лимит активных заказов",
+                            "ФОМО": "По текущему заказу нет сметы или предоплаты",
+                            "Без договора": "Паспорт не верифицирован / договор не заключён",
+                            "Долг": "Просроченная задолженность по комиссии",
+                            "Репутация": "1 подряд отменённый заказ — приоритет ниже",
+                            "Автоблок": "2+ подряд отменённых — назначать не рекомендуется",
+                            "Ограничение": "Техническое ограничение — уточните у мастера",
                           };
                           return (
                             <div key={item.orderId} className="bg-amber-50 border border-amber-200 rounded-xl p-3">
@@ -1241,7 +1252,11 @@ export default function MasterChat() {
                                   {tags.length > 0 && (
                                     <div className="flex flex-wrap gap-1 mt-1.5">
                                       {tags.map((tag, i) => (
-                                        <span key={i} className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-semibold border ${TAG_COLOR[tag] ?? "bg-gray-100 text-gray-600 border-gray-200"}`}>
+                                        <span
+                                          key={i}
+                                          title={TAG_HINT[tag] ?? ""}
+                                          className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-semibold border cursor-help ${TAG_COLOR[tag] ?? "bg-gray-100 text-gray-600 border-gray-200"}`}
+                                        >
                                           {tag}
                                         </span>
                                       ))}
