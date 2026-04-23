@@ -924,6 +924,117 @@ router.get("/dynamics", adminOnly, async (req, res) => {
   }
 });
 
+// ─── SCORE DISTRIBUTION ─────────────────────────────────────────────────────
+// Гистограмма мастеров по score, сегментам, городам. Read-only — для калибровки
+// порогов скоринга. Считает score по всем активным мастерам (не удалённым).
+router.get("/score-distribution", adminOnly, async (_req, res) => {
+  try {
+    const { scoreMasters } = await import("../lib/masterScoring.js");
+    const masters = await db.select().from(mastersTable)
+      .where(isNull(mastersTable.deletedAt));
+    const masterIds = masters.map(m => m.id);
+    const scoreMap = await scoreMasters(masterIds);
+
+    // Гистограмма: 10 корзин по 10 баллов (0-9, 10-19, ..., 90-100)
+    const histogram = Array.from({ length: 10 }, (_, i) => ({
+      bucket: `${i * 10}–${i === 9 ? 100 : i * 10 + 9}`,
+      from: i * 10,
+      to: i === 9 ? 100 : i * 10 + 9,
+      count: 0,
+    }));
+
+    // Счётчики по сегментам
+    const segmentCounts = { platinum: 0, gold: 0, silver: 0, starter: 0, blocked: 0 };
+
+    // Аггрегаты по городам
+    const cityAgg = new Map<string, { sum: number; count: number; segments: Record<string, number> }>();
+
+    // Все мастера со score (для топ/бот)
+    interface MasterScore {
+      masterId: number;
+      alias: string;
+      city: string;
+      total: number;
+      segment: string;
+      isCold: boolean;
+      payRate: number;
+      avgCommission: number;
+      selfCancelRate: number;
+      totalCompletedAllTime: number;
+      blockedFromOrders: boolean;
+    }
+    const allScored: MasterScore[] = [];
+
+    for (const m of masters) {
+      const s = scoreMap.get(m.id);
+      if (!s) continue;
+      // Гистограмма
+      const bucketIdx = Math.min(9, Math.floor(s.total / 10));
+      histogram[bucketIdx].count++;
+      // Сегменты
+      segmentCounts[s.segment as keyof typeof segmentCounts]++;
+      // Города (только не-blocked, чтобы не искажать средний)
+      if (s.segment !== "blocked") {
+        const city = m.city || "—";
+        const agg = cityAgg.get(city) ?? { sum: 0, count: 0, segments: { platinum: 0, gold: 0, silver: 0, starter: 0 } };
+        agg.sum += s.total;
+        agg.count++;
+        if (agg.segments[s.segment] != null) agg.segments[s.segment]++;
+        cityAgg.set(city, agg);
+      }
+      allScored.push({
+        masterId: m.id,
+        alias: m.alias,
+        city: m.city || "—",
+        total: s.total,
+        segment: s.segment,
+        isCold: s.isCold,
+        payRate: s.components.payRate,
+        avgCommission: s.components.avgCommission,
+        selfCancelRate: s.components.selfCancelRate,
+        totalCompletedAllTime: s.components.totalCompletedAllTime,
+        blockedFromOrders: m.blockedFromOrders ?? false,
+      });
+    }
+
+    // Среднее по платформе (без blocked)
+    const nonBlocked = allScored.filter(s => s.segment !== "blocked");
+    const avgScore = nonBlocked.length > 0
+      ? nonBlocked.reduce((sum, s) => sum + s.total, 0) / nonBlocked.length
+      : 0;
+
+    const cities = [...cityAgg.entries()]
+      .map(([city, agg]) => ({
+        city,
+        count: agg.count,
+        avgScore: Math.round(agg.sum / agg.count),
+        ...agg.segments,
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 20);
+
+    // ТОП-10 / БОТ-10 (без cold-start, чтобы не путать)
+    const ranked = allScored
+      .filter(s => !s.isCold && s.segment !== "blocked")
+      .sort((a, b) => b.total - a.total);
+    const top10 = ranked.slice(0, 10);
+    const bottom10 = ranked.slice(-10).reverse();
+
+    res.json({
+      totalMasters: masters.length,
+      avgScore: Math.round(avgScore),
+      histogram,
+      segments: segmentCounts,
+      cities,
+      top10,
+      bottom10,
+      generatedAt: new Date().toISOString(),
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── CITIES LIST ─────────────────────────────────────────────────────────────
 router.get("/city-list", adminOnly, async (req, res) => {
   try {

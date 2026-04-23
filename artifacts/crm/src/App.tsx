@@ -56,6 +56,7 @@ import AvitoMessagesPage from "@/pages/avito-messages";
 import AiOfficePage from "@/pages/ai-office";
 import MasterControlPage from "@/pages/master-control";
 import WorkMonitorPage from "@/pages/work-monitor";
+import ScoreDistributionPage from "@/pages/score-distribution";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -86,6 +87,7 @@ function Router() {
       <Route path="/masters" component={Masters} />
       <Route path="/finance" component={Finance} />
       <Route path="/analytics" component={Analytics} />
+      <Route path="/analytics/score-distribution" component={ScoreDistributionPage} />
       <Route path="/settings" component={Settings} />
       <Route path="/users" component={Users} />
       {/* Redirect old /voronka URL to unified masters page with kanban view */}

@@ -120,6 +120,7 @@ export function Layout({ children }: LayoutProps) {
     { href: "/tasks",       label: "Задачи",               icon: ClipboardList,   permKey: "tasks",       badge: openTasksCount > 0 ? openTasksCount : null },
     { href: "__traffic__",  label: "__group__",            icon: TrendingUp,      permKey: "leads" },
     { href: "/analytics",   label: "Аналитика",            icon: BarChart3,       permKey: "analytics" },
+    { href: "/analytics/score-distribution", label: "Score мастеров",  icon: BarChart3,       permKey: "analytics" },
     { href: "/trash",       label: "Корзина",              icon: Trash2,          permKey: "trash" },
     { href: "/ai-office",   label: "ИИ Офис",              icon: Bot,             permKey: "ai-office" },
     { href: "/settings",    label: "Настройки",            icon: Settings,        permKey: null as null },
