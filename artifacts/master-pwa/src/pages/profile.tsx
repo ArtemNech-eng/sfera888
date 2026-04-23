@@ -7,7 +7,7 @@ import {
   User, Phone, MapPin, Star, Briefcase,
   TrendingUp, ShieldCheck, LogOut, ExternalLink,
   BadgeCheck, Camera, Pencil, Check, X, Loader2,
-  BarChart2, Clock, Filter, ChevronDown, Plus, Download,
+  BarChart2, Clock, Filter, ChevronDown, Plus, Download, FileText,
   DollarSign, ChevronRight, BookOpen, FileSignature,
 } from "lucide-react";
 import { useInstallPrompt } from "@/lib/useInstallPrompt";
@@ -988,6 +988,21 @@ export default function ProfilePage() {
           <ChevronRight size={16} className="text-amber-500" />
         </button>
       )}
+
+      <a
+        href={`${import.meta.env.BASE_URL}contract-template.pdf`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="w-full flex items-center justify-between px-4 h-12 rounded-xl border border-border bg-card text-foreground font-semibold text-sm active:opacity-80 transition-colors"
+      >
+        <div className="flex items-center gap-2.5">
+          <span className="w-7 h-7 rounded-lg bg-blue-500 flex items-center justify-center flex-shrink-0">
+            <FileText size={14} className="text-white" />
+          </span>
+          Договор с заказчиком (шаблон)
+        </div>
+        <Download size={16} className="text-muted-foreground" />
+      </a>
 
       <p className="text-xs text-muted-foreground text-center">
         В системе с {new Date(data.createdAt).toLocaleDateString("ru-RU", {
