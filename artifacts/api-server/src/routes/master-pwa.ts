@@ -291,6 +291,7 @@ router.get("/home", requireMasterPwa, async (req, res) => {
       const clientPhone = lead?.clientPhone ?? null;
       return {
         id: o.id,
+        leadId: o.leadId ?? null,
         city: o.city,
         district: o.district,
         serviceType: o.serviceType,
@@ -318,6 +319,7 @@ router.get("/home", requireMasterPwa, async (req, res) => {
     const dispatchByOrder = new Map(respondedDispatches.map(d => [d.orderId, d]));
     pendingOrders = orders.map(o => ({
       id: o.id,
+      leadId: o.leadId ?? null,
       city: o.city,
       district: o.district,
       serviceType: o.serviceType,
@@ -429,6 +431,7 @@ router.get("/home", requireMasterPwa, async (req, res) => {
     todayActivity,
     activeOrders: activeOrders.map(o => ({
       id: o.id,
+      leadId: o.leadId ?? null,
       city: o.city,
       district: o.district,
       serviceType: o.serviceType,
@@ -459,6 +462,7 @@ router.get("/orders/available", requireMasterPwa, async (req, res) => {
 
   res.json(orders.map(o => ({
     id: o.id,
+    leadId: o.leadId ?? null,
     city: o.city,
     district: o.district,
     serviceType: o.serviceType,
@@ -500,6 +504,7 @@ router.get("/orders/my", requireMasterPwa, async (req, res) => {
     const lead = leadMap.get(o.leadId);
     return {
       id: o.id,
+      leadId: o.leadId ?? null,
       city: o.city,
       district: o.district,
       serviceType: o.serviceType,

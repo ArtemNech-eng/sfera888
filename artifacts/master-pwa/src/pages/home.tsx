@@ -20,6 +20,7 @@ interface ServiceLine { type: string; area: number; pricePerM2?: number; }
 
 interface OrderCard {
   id: number;
+  leadId: number | null;
   city: string;
   district: string | null;
   serviceType: string;
@@ -36,7 +37,7 @@ interface OrderCard {
 interface PendingCard extends OrderCard { respondedAt: string | null; }
 
 interface ActiveOrder {
-  id: number; city: string; district: string | null;
+  id: number; leadId: number | null; city: string; district: string | null;
   serviceType: string; area: number; status: string; masterWorkStatus: string | null;
 }
 
@@ -484,7 +485,7 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
     <div className="fixed inset-0 z-50 flex flex-col bg-background">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card shrink-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-bold">Заявка #{order.id}</span>
+          <span className="font-bold">Заявка #{order.leadId ?? order.id}</span>
           <DispatchTimer dispatchedAt={order.dispatchedAt} />
           {order.isRepeatClient && (
             <span className="flex items-center gap-1 text-xs font-semibold text-pink-600 dark:text-pink-400 bg-pink-50 dark:bg-pink-900/20 px-2 py-0.5 rounded-full">
@@ -505,7 +506,7 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
               <div className="text-6xl">{info?.icon ?? "🔒"}</div>
               <div>
                 <h2 className="text-xl font-bold mb-1">{info?.title ?? "Отклик недоступен"}</h2>
-                <p className="text-sm text-muted-foreground">Отклик на заявку #{order.id} временно ограничен</p>
+                <p className="text-sm text-muted-foreground">Отклик на заявку #{order.leadId ?? order.id} временно ограничен</p>
               </div>
               <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 rounded-2xl px-4 py-4 text-left w-full max-w-sm space-y-3">
                 <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line leading-relaxed">
@@ -524,7 +525,7 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
                 )}
               </div>
               <p className="text-xs text-muted-foreground px-2">
-                Как только устраните причину — заявка #{order.id} по-прежнему будет доступна в ленте.
+                Как только устраните причину — заявка #{order.leadId ?? order.id} по-прежнему будет доступна в ленте.
               </p>
               <button onClick={onClose}
                 className="w-full max-w-sm h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm">
@@ -539,7 +540,7 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
             </div>
             <div>
               <h2 className="text-xl font-bold mb-1">Нужно заключить договор</h2>
-              <p className="text-sm text-muted-foreground">Чтобы откликнуться на заявку #{order.id}, сначала заключите договор с платформой.</p>
+              <p className="text-sm text-muted-foreground">Чтобы откликнуться на заявку #{order.leadId ?? order.id}, сначала заключите договор с платформой.</p>
             </div>
             <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-2xl px-4 py-4 text-left w-full max-w-sm space-y-3">
               <div className="flex items-start gap-2.5">
@@ -577,7 +578,7 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
             </div>
             <div>
               <h2 className="text-xl font-bold mb-1">Отклик зафиксирован!</h2>
-              <p className="text-sm text-muted-foreground">Мы знаем, что заявка #{order.id} вам интересна.</p>
+              <p className="text-sm text-muted-foreground">Мы знаем, что заявка #{order.leadId ?? order.id} вам интересна.</p>
             </div>
             <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-2xl px-4 py-4 text-left w-full max-w-sm space-y-3">
               <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Чтобы принять эту заявку, нужно сначала закрыть текущий заказ:</p>
@@ -611,7 +612,7 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
             </div>
             <div>
               <h2 className="text-xl font-bold">Отклик принят!</h2>
-              <p className="text-sm text-muted-foreground mt-1">Заявка #{order.id} — менеджер рассмотрит вашу кандидатуру.</p>
+              <p className="text-sm text-muted-foreground mt-1">Заявка #{order.leadId ?? order.id} — менеджер рассмотрит вашу кандидатуру.</p>
             </div>
             <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-2xl px-4 py-4 text-left w-full max-w-sm space-y-3">
               <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Обратите внимание:</p>
@@ -790,7 +791,7 @@ function RespondedSheet({ order, onClose }: { order: PendingCard; onClose: () =>
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card shrink-0">
-        <span className="font-bold">Заявка #{order.id}</span>
+        <span className="font-bold">Заявка #{order.leadId ?? order.id}</span>
         <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-muted"><X size={20} /></button>
       </div>
       <div className="flex-1 overflow-y-auto">
@@ -1318,7 +1319,7 @@ export default function HomePage() {
                 <div className="p-4 space-y-2">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="font-bold text-sm text-primary">Заявка #{order.id}</span>
+                      <span className="font-bold text-sm text-primary">Заявка #{order.leadId ?? order.id}</span>
                       {order.isRepeatClient && (
                         <span className="flex items-center gap-0.5 text-xs text-pink-500 font-semibold">
                           <Heart size={10} fill="currentColor" /> Ваш клиент
@@ -1378,7 +1379,7 @@ export default function HomePage() {
               )}
               <div className="p-4 space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-sm text-amber-800 dark:text-amber-300">Заявка #{order.id}</span>
+                  <span className="font-bold text-sm text-amber-800 dark:text-amber-300">Заявка #{order.leadId ?? order.id}</span>
                   <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
                     <CheckCircle2 size={12} /> Отклик отправлен
                   </span>
@@ -1408,7 +1409,7 @@ export default function HomePage() {
               className="w-full bg-card border border-border rounded-2xl p-4 text-left space-y-2 active:opacity-80">
               <div className="flex items-center justify-between">
                 <span className="font-semibold text-sm">{order.city}{order.district ? `, ${order.district}` : ""}</span>
-                <span className="text-xs text-muted-foreground">#{order.id}</span>
+                <span className="text-xs text-muted-foreground">#{order.leadId ?? order.id}</span>
               </div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground">

@@ -111,6 +111,7 @@ ${r.notes ? `<div class="notes"><strong>Примечания:</strong> ${r.notes
 
 interface Order {
   id: number;
+  leadId: number | null;
   city: string;
   district: string | null;
   serviceType: string;
@@ -187,10 +188,12 @@ function UploadButton({
 
 function CompleteModal({
   orderId,
+  displayId,
   onDone,
   onClose,
 }: {
   orderId: number;
+  displayId?: number;
   onDone: () => void;
   onClose: () => void;
 }) {
@@ -263,10 +266,12 @@ const CANCEL_OPTIONS = [
 
 function CancelModal({
   orderId,
+  displayId,
   onDone,
   onClose,
 }: {
   orderId: number;
+  displayId?: number;
   onDone: () => void;
   onClose: () => void;
 }) {
@@ -303,7 +308,7 @@ function CancelModal({
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
       <div className="w-full max-w-sm bg-card rounded-2xl p-5 space-y-4" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center">
-          <h3 className="font-bold text-lg text-destructive">Отмена заказа #{orderId}</h3>
+          <h3 className="font-bold text-lg text-destructive">Отмена заказа #{displayId ?? orderId}</h3>
           <button onClick={onClose} className="text-muted-foreground"><X size={20} /></button>
         </div>
         <p className="text-sm text-muted-foreground">
@@ -513,7 +518,7 @@ function ReceiptModal({
         <div className="flex justify-between items-center px-5 pt-2 pb-3 flex-shrink-0">
           <h3 className="font-bold text-base flex items-center gap-2">
             <ReceiptText size={18} className="text-primary" />
-            {isEdit ? "Изменить смету" : `Смета — заказ #${order.id}`}
+            {isEdit ? "Изменить смету" : `Смета — заказ #${order.leadId ?? order.id}`}
           </h3>
           <button onClick={onClose} className="text-muted-foreground p-1"><X size={20} /></button>
         </div>
@@ -802,7 +807,7 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
               <span className="font-semibold text-sm">
                 {order.city}{order.district ? `, ${order.district}` : ""}
               </span>
-              <span className="text-xs text-muted-foreground">#{order.id}</span>
+              <span className="text-xs text-muted-foreground">#{order.leadId ?? order.id}</span>
               <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
                 order.status === "completed"
                   ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
@@ -1106,6 +1111,7 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
       {showComplete && (
         <CompleteModal
           orderId={order.id}
+          displayId={order.leadId ?? order.id}
           onDone={() => { setShowComplete(false); onRefresh(); }}
           onClose={() => setShowComplete(false)}
         />
@@ -1113,6 +1119,7 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
       {showCancel && (
         <CancelModal
           orderId={order.id}
+          displayId={order.leadId ?? order.id}
           onDone={() => { setShowCancel(false); onRefresh(); }}
           onClose={() => setShowCancel(false)}
         />
