@@ -1182,7 +1182,7 @@ export default function HomePage() {
       setSelectedAvail(order);
       return;
     }
-    try { await api.orders.respond(order.id); toast.success(`Отклик на заявку #${order.id} отправлен!`); load(); }
+    try { await api.orders.respond(order.id); toast.success(`Отклик на заявку #${order.leadId ?? order.id} отправлен!`); load(); }
     catch (e: any) { toast.error(e.message ?? "Ошибка"); }
   };
 
