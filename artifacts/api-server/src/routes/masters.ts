@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, mastersTable, masterTasksTable, ordersTable, leadsTable, telegramChatsTable, voronkaColumnsTable, transactionsTable, maxBotLogsTable, masterCheckinsTable, systemSettingsTable } from "@workspace/db";
+import { db, mastersTable, masterTasksTable, ordersTable, leadsTable, telegramChatsTable, voronkaColumnsTable, transactionsTable, maxBotLogsTable, masterCheckinsTable, systemSettingsTable, usersTable } from "@workspace/db";
 import { eq, desc, inArray, isNull, isNotNull, ne, count, gte, avg, sql, and } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { notifyMasterActivated } from "../telegram-notify.js";
@@ -116,6 +116,12 @@ function formatMaster(m: any) {
     servicePrices: m.servicePrices ?? null,
     fomoDisabled: m.fomoDisabled ?? false,
     maxActiveOrders: m.maxActiveOrders ?? 1,
+    consecutiveCancellations: m.consecutiveCancellations ?? 0,
+    blockedFromOrders: m.blockedFromOrders ?? false,
+    blockedAt: m.blockedAt ?? null,
+    blockedReason: m.blockedReason ?? null,
+    lastCancelAt: m.lastCancelAt ?? null,
+    lastCompletedAt: m.lastCompletedAt ?? null,
   };
 }
 
@@ -434,6 +440,24 @@ router.post("/:id/mark-contract-external", requireRole("admin"), async (req, res
 
   autoSetPwaCredentials(id, master.phone ?? null).catch(() => {});
 
+  const [updated] = await db.select().from(mastersTable).where(eq(mastersTable.id, id));
+  res.json(formatMaster(updated));
+});
+
+// POST /api/masters/:id/unblock — снять автоблок мастера (после 2 подряд отменённых заказов)
+// Возвращает счётчик в 0 и убирает blockedFromOrders. Только админ или master_operator.
+router.post("/:id/unblock", requireRole("admin", "master_operator"), async (req, res) => {
+  const id = parseInt(req.params.id);
+  const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, id));
+  if (!master) return res.status(404).json({ error: "Мастер не найден" });
+  const sessionUser = (req as any).session?.userId ?? null;
+  let alias = "оператор";
+  if (sessionUser) {
+    const [u] = await db.select().from(usersTable).where(eq(usersTable.id, sessionUser));
+    alias = u?.name ?? u?.login ?? "оператор";
+  }
+  const { unblockMaster } = await import("../lib/masterReputation.js");
+  await unblockMaster(id, alias);
   const [updated] = await db.select().from(mastersTable).where(eq(mastersTable.id, id));
   res.json(formatMaster(updated));
 });

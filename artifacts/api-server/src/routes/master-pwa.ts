@@ -856,6 +856,12 @@ router.post("/orders/:id/complete", requireMasterPwa, async (req, res) => {
     updatedAt: new Date(),
   }).where(eq(ordersTable.id, orderId));
 
+  // Репутация: завершение из мобильного приложения сбрасывает счётчик подряд отменённых
+  const { recordOrderCompleted } = await import("../lib/masterReputation.js");
+  await recordOrderCompleted(masterId).catch(e =>
+    console.error("[master-pwa] recordOrderCompleted error:", e),
+  );
+
   res.json({ success: true });
 });
 

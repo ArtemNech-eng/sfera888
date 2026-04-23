@@ -9,6 +9,7 @@ import { performBroadcast } from "../lib/broadcastOrder.js";
 import { sendPushToMaster } from "../lib/push.js";
 import { sendMaxMessage } from "../maxBot.js";
 import { analyseOrderCancellation, sendFeedbackRequest } from "../lib/dispatcherAI.js";
+import { recordOrderCancelled, recordOrderCompleted, revertOrderCancellation } from "../lib/masterReputation.js";
 
 const TELEGRAM_API = `https://api.telegram.org/bot${process.env["TELEGRAM_BOT_TOKEN"]}`;
 
@@ -232,6 +233,32 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
   if (!result[0]) return res.status(404).json({ error: "Order not found" });
   const o = result[0];
 
+  // ── Репутация мастера: счётчик подряд отменённых заказов ───────────────────
+  // Завершённый заказ сбрасывает счётчик. Отменённый — увеличивает; на 2-м подряд
+  // мастер автоблокируется (см. lib/masterReputation.ts). rejectCancellation
+  // не считается отменой — мастер сохраняет заказ.
+  if (current.masterId && newStatus === "completed" && current.status !== "completed") {
+    await recordOrderCompleted(current.masterId).catch(e =>
+      console.error("[orders] recordOrderCompleted error:", e),
+    );
+  }
+  if (
+    current.masterId &&
+    !rejectCancellation &&
+    newStatus === "cancelled" &&
+    current.status !== "cancelled"
+  ) {
+    await recordOrderCancelled(current.masterId, id).catch(e =>
+      console.error("[orders] recordOrderCancelled error:", e),
+    );
+  }
+  // Восстановление ошибочно отменённого заказа — откатываем штраф
+  if (restoreOrder && current.status === "cancelled" && current.masterId) {
+    await revertOrderCancellation(current.masterId).catch(e =>
+      console.error("[orders] revertOrderCancellation error:", e),
+    );
+  }
+
   // ── Log status change ─────────────────────────────────────────────────────
   if (newStatus && newStatus !== current.status) {
     const sessionUser = (req as any).session?.userId ?? null;
@@ -408,6 +435,12 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
     await db.update(ordersTable)
       .set({ status: "completed", updatedAt: new Date() })
       .where(eq(ordersTable.id, id));
+    // Репутация: автозавершение тоже сбрасывает счётчик подряд отменённых
+    if (current.masterId) {
+      await recordOrderCompleted(current.masterId).catch(e =>
+        console.error("[orders] recordOrderCompleted (auto) error:", e),
+      );
+    }
     const sessionUser = (req as any).session?.userId ?? null;
     let userAlias = "система";
     if (sessionUser) {

@@ -115,7 +115,13 @@ export async function performBroadcast(
   }
 
   const allMasters = await db.select().from(mastersTable)
-    .where(and(eq(mastersTable.status, "active"), eq(mastersTable.city, order.city)));
+    .where(and(
+      eq(mastersTable.status, "active"),
+      eq(mastersTable.city, order.city),
+      // Репутация: не рассылаем заявки автозаблокированным мастерам
+      // (2 подряд отменённых заказа → блок до ручного снятия оператором).
+      eq(mastersTable.blockedFromOrders, false),
+    ));
 
   const skipStats: BroadcastSkipStats = {
     notReachable: 0, rejected: 0, notEligible: 0, wrongSpecialty: 0, notReady: 0,

@@ -41,6 +41,10 @@ interface Master {
   contractSignedAt?: string | null;
   passportVerified?: boolean;
   fomoDisabled?: boolean;
+  consecutiveCancellations?: number;
+  blockedFromOrders?: boolean;
+  blockedAt?: string | null;
+  blockedReason?: string | null;
 }
 
 interface VoronkaColumn {
@@ -196,6 +200,18 @@ function MasterRow({ master, onOpenDrawer, onDelete, onGoToChat, isFomoBlocked }
               <XCircle className="w-2.5 h-2.5" />{master.cancelCount30d} отмен
             </span>
           )}
+          {/* Репутация: автоблок (2 подряд отменённых) и предупреждение (1 подряд). */}
+          {master.blockedFromOrders ? (
+            <span title={master.blockedReason ?? "Автоблок: 2 подряд отменённых заказа"}
+              className="text-[10px] bg-red-100 text-red-700 border border-red-300 rounded-full px-1.5 py-0.5 font-bold flex items-center gap-0.5">
+              🚫 Заблокирован
+            </span>
+          ) : (master.consecutiveCancellations ?? 0) >= 1 ? (
+            <span title="1 подряд отменённый заказ. Следующая отмена → автоблок."
+              className="text-[10px] bg-amber-100 text-amber-700 border border-amber-300 rounded-full px-1.5 py-0.5 font-bold flex items-center gap-0.5">
+              ⚠️ Последний шанс
+            </span>
+          ) : null}
           {isFomoBlocked && (
             <span title="FOMO-блок: мастер не может откликаться" className="text-[10px] bg-orange-50 text-orange-600 border border-orange-200 rounded-full px-1.5 py-0.5 font-semibold flex items-center gap-0.5">
               🔒 Блок
@@ -257,6 +273,21 @@ function MasterRow({ master, onOpenDrawer, onDelete, onGoToChat, isFomoBlocked }
           </div>
         )}
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {master.blockedFromOrders && (
+            <button
+              onClick={async e => {
+                e.stopPropagation();
+                if (!confirm(`Снять автоблок с мастера ${master.alias}? Счётчик подряд отменённых будет сброшен.`)) return;
+                const r = await fetch(`/api/masters/${master.id}/unblock`, { method: "POST", credentials: "include" });
+                if (r.ok) window.location.reload();
+                else alert("Не удалось снять блок");
+              }}
+              className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[10px] font-semibold rounded-lg transition-colors"
+              title="Сбросить счётчик подряд отменённых и разрешить рассылки"
+            >
+              Разблокировать
+            </button>
+          )}
           <button
             onClick={e => { e.stopPropagation(); onGoToChat(master.id); }}
             className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-500 rounded-lg transition-colors"

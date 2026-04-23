@@ -536,7 +536,12 @@ async function toolGetAvailableMasters(city: string, serviceType?: string) {
   if (!city) return "Укажите город для поиска мастеров.";
 
   const masters = await db.select().from(mastersTable)
-    .where(and(eq(mastersTable.status, "active"), isNull(mastersTable.deletedAt)))
+    .where(and(
+      eq(mastersTable.status, "active"),
+      isNull(mastersTable.deletedAt),
+      // Не предлагаем владельцу автоблокированных мастеров (репутация)
+      eq(mastersTable.blockedFromOrders, false),
+    ))
     .orderBy(desc(mastersTable.rating));
 
   const cityLower = city.toLowerCase();

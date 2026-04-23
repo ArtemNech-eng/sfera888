@@ -49,7 +49,18 @@ export const mastersTable = pgTable("masters", {
   suspensionReason: text("suspension_reason"),
   fomoDisabled: boolean("fomo_disabled").notNull().default(false),
   maxActiveOrders: integer("max_active_orders").notNull().default(1),
+  // ── Репутация: счётчик подряд отменённых заказов ──────────────────────────
+  // 0 = активный, 1 = «последний шанс» (жёлтый бейдж), >=2 = автоблок.
+  // Любой выполненный заказ сбрасывает счётчик в 0.
+  consecutiveCancellations: integer("consecutive_cancellations").notNull().default(0),
+  blockedFromOrders: boolean("blocked_from_orders").notNull().default(false),
+  blockedAt: timestamp("blocked_at"),
+  blockedReason: text("blocked_reason"),
+  lastCancelAt: timestamp("last_cancel_at"),
+  lastCompletedAt: timestamp("last_completed_at"),
 });
+
+export const REPUTATION_BLOCK_THRESHOLD = 2;
 
 export const insertMasterSchema = createInsertSchema(mastersTable).omit({ id: true, createdAt: true });
 export type InsertMaster = z.infer<typeof insertMasterSchema>;

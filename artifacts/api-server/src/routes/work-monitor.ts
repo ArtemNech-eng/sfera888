@@ -229,6 +229,14 @@ router.post("/complete-order/:id", requireAuth, async (req, res) => {
     updatedAt: new Date(),
   }).where(eq(ordersTable.id, orderId));
 
+  // Репутация: сбрасываем счётчик подряд отменённых при ручном завершении
+  if (order.masterId) {
+    const { recordOrderCompleted } = await import("../lib/masterReputation.js");
+    await recordOrderCompleted(order.masterId).catch(e =>
+      console.error("[work-monitor] recordOrderCompleted error:", e),
+    );
+  }
+
   res.json({ ok: true });
 });
 

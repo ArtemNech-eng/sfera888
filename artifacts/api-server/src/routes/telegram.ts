@@ -1584,6 +1584,14 @@ router.post("/webhook", async (req, res) => {
         updatedAt: new Date(),
       }).where(eq(ordersTable.id, orderId));
 
+      // Репутация: завершение через Telegram-бота сбрасывает счётчик подряд отменённых
+      try {
+        const { recordOrderCompleted } = await import("../lib/masterReputation.js");
+        await recordOrderCompleted(amountMaster.id);
+      } catch (e) {
+        console.error("[telegram] recordOrderCompleted error:", e);
+      }
+
       // Move master to "Ожидает оплаты" — NOT to free column
       const awaitingCol = await getAwaitingPaymentColumn();
       if (awaitingCol) {
