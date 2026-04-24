@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  AlertTriangle, Bell, Bot, CheckCircle2, ChevronDown, ChevronRight, Clock,
-  Filter, Inbox, MapPin, Radio, RefreshCw, Search, Sparkles, TrendingUp,
-  User, Wallet, ArrowLeftCircle, MessageCircle, Phone,
+  AlertTriangle, Bell, Bot, CheckCircle2, ChevronRight, Clock,
+  Inbox, MapPin, Radio, RefreshCw, Search, TrendingUp,
+  User, Wallet,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -60,200 +60,246 @@ interface BoardData {
   generatedAt: string;
 }
 
-// ── Visual constants ─────────────────────────────────────────────────────────
+// ── Visual constants — matched to voronka.tsx palette ────────────────────────
 
-const COLUMN_ACCENT: Record<ColumnKey, string> = {
-  new: "border-l-sky-400",
-  waiting_master: "border-l-amber-400",
-  no_estimate: "border-l-violet-400",
-  estimate_unpaid: "border-l-emerald-400",
-  estimate_paid: "border-l-green-500",
-  commission_left: "border-l-yellow-400",
-  closed_24h: "border-l-slate-400",
-  problem: "border-l-red-500",
+interface ColumnStyle {
+  accent: string;       // top-border + ring color
+  headerBg: string;     // soft pastel header background
+  badgeBg: string;      // count pill bg
+  badgeText: string;    // count pill text
+}
+
+const COLUMN_STYLE: Record<ColumnKey, ColumnStyle> = {
+  new:             { accent: "#60a5fa", headerBg: "rgba(219,234,254,0.55)", badgeBg: "rgba(59,130,246,0.13)",  badgeText: "#1d4ed8" },
+  waiting_master:  { accent: "#fb923c", headerBg: "rgba(255,237,213,0.55)", badgeBg: "rgba(251,146,60,0.13)",  badgeText: "#c2410c" },
+  no_estimate:     { accent: "#a78bfa", headerBg: "rgba(237,233,254,0.55)", badgeBg: "rgba(167,139,250,0.13)", badgeText: "#5b21b6" },
+  estimate_unpaid: { accent: "#fbbf24", headerBg: "rgba(254,243,199,0.55)", badgeBg: "rgba(251,191,36,0.13)",  badgeText: "#92400e" },
+  estimate_paid:   { accent: "#34d399", headerBg: "rgba(209,250,229,0.55)", badgeBg: "rgba(52,211,153,0.13)",  badgeText: "#065f46" },
+  commission_left: { accent: "#2dd4bf", headerBg: "rgba(204,251,241,0.55)", badgeBg: "rgba(45,212,191,0.13)",  badgeText: "#0f766e" },
+  closed_24h:      { accent: "#94a3b8", headerBg: "rgba(241,245,249,0.55)", badgeBg: "rgba(148,163,184,0.13)", badgeText: "#475569" },
+  problem:         { accent: "#f87171", headerBg: "rgba(254,226,226,0.55)", badgeBg: "rgba(248,113,113,0.13)", badgeText: "#b91c1c" },
 };
 
+// Columns where return-to-pool action is meaningful (others have an active master / are paid / closed)
+const RETURNABLE_COLUMNS: ReadonlySet<ColumnKey> = new Set(["problem", "waiting_master"]);
+
 const BADGE_TONE: Record<BadgeTone, string> = {
-  ok: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  ok:   "bg-emerald-50 text-emerald-700 border-emerald-200",
   warn: "bg-amber-50 text-amber-700 border-amber-200",
-  bad: "bg-red-50 text-red-700 border-red-200",
+  bad:  "bg-red-50 text-red-700 border-red-200",
   info: "bg-sky-50 text-sky-700 border-sky-200",
 };
 
 const BOT_TONE: Record<BotTone, string> = {
-  ok: "bg-slate-50 text-slate-600 border-slate-200",
+  ok:   "bg-slate-50/80 text-slate-600 border-slate-200",
   warn: "bg-amber-50 text-amber-700 border-amber-200",
-  bad: "bg-red-50 text-red-700 border-red-200",
+  bad:  "bg-red-50 text-red-700 border-red-200",
 };
 
 const fmtMoney = (n: number) => new Intl.NumberFormat("ru-RU").format(Math.round(n)) + " ₽";
 
-// ── Mini card ────────────────────────────────────────────────────────────────
+// ── Order card (shared desktop + mobile) ─────────────────────────────────────
 
-function MiniCard({ card, onOpen }: { card: BoardCard; onOpen: (id: number) => void }) {
+function OrderCard({
+  card,
+  onOpen,
+  onReturnToPool,
+  returning,
+  showReturnButton,
+}: {
+  card: BoardCard;
+  onOpen: (id: number) => void;
+  onReturnToPool?: (id: number) => void;
+  returning?: boolean;
+  showReturnButton?: boolean;
+}) {
+  const [confirm, setConfirm] = useState(false);
+  const isProblem = !!card.problemReason || card.badge?.tone === "bad";
+
   return (
-    <button
-      type="button"
-      onClick={() => onOpen(card.orderId)}
-      aria-label={`Заявка #${card.leadId ?? card.orderId} — ${card.title}`}
-      className="block w-full text-left bg-white border border-slate-200 rounded-md p-2 text-[11px] leading-tight shadow-sm hover:shadow transition cursor-pointer space-y-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+    <div
+      className="rounded-xl overflow-hidden transition-all duration-150 hover:-translate-y-px"
+      style={{
+        background: "rgba(255,255,255,0.85)",
+        border: isProblem ? "1px solid rgba(248,113,113,0.45)" : "1px solid rgba(255,255,255,0.95)",
+        boxShadow: isProblem
+          ? "0 2px 10px rgba(248,113,113,0.10), 0 1px 3px rgba(0,0,0,0.04)"
+          : "0 2px 10px rgba(120,80,220,0.06), 0 1px 3px rgba(0,0,0,0.04)",
+      }}
     >
-      <div className="flex items-center justify-between">
-        <span className="font-mono text-[10px] text-slate-400">#{card.leadId ?? card.orderId}</span>
-        <span className="text-[10px] text-slate-400 flex items-center gap-0.5">
-          <Clock className="w-3 h-3" />
-          {card.timeInStage}
-        </span>
-      </div>
-      <div className="font-medium text-slate-800 line-clamp-2">{card.title}</div>
-      <div className="flex items-center gap-1 text-slate-500">
-        <MapPin className="w-3 h-3 shrink-0" />
-        <span className="truncate">{card.address}</span>
-      </div>
-      {card.master && (
-        <div className="flex items-center gap-1 text-slate-600">
-          <User className="w-3 h-3 shrink-0" />
-          <span className="truncate">{card.master}</span>
-        </div>
-      )}
-      {card.money && (
-        <div className={
-          "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold " +
-          (card.money.kind === "paid" ? "bg-emerald-100 text-emerald-700"
-           : card.money.kind === "commission" ? "bg-yellow-100 text-yellow-800"
-           : "bg-violet-100 text-violet-700")
-        }>
-          <Wallet className="w-3 h-3" />
-          {card.money.kind === "paid" && "оплачено "}
-          {card.money.kind === "commission" && "комиссия "}
-          {card.money.kind === "estimate" && "смета "}
-          {fmtMoney(card.money.amount)}
-        </div>
-      )}
-      {card.badge && (
-        <div className={"inline-flex ml-1 items-center px-1.5 py-0.5 rounded text-[10px] border " + BADGE_TONE[card.badge.tone]}>
-          {card.badge.text}
-        </div>
-      )}
-      {card.bot && (
-        <div className={"flex items-start gap-1 px-1.5 py-1 rounded border text-[10px] " + BOT_TONE[card.bot.tone]}>
-          <Bot className="w-3 h-3 mt-0.5 shrink-0" />
-          <span>
-            <span className="opacity-70">{card.bot.action}</span>{" "}
-            <span className="font-semibold">{card.bot.eta}</span>
-          </span>
-        </div>
-      )}
-    </button>
-  );
-}
-
-// ── Desktop column ───────────────────────────────────────────────────────────
-
-function DesktopColumn({ col, onOpen }: { col: BoardColumn; onOpen: (id: number) => void }) {
-  const [expanded, setExpanded] = useState(col.key === "problem");
-  const visible = expanded ? col.cards : col.cards.slice(0, 2);
-  const sum = col.sumPaid ?? col.sumPending;
-  return (
-    <div className="flex flex-col bg-slate-50 border border-slate-200 rounded-md min-w-[220px] flex-1">
       <button
         type="button"
-        onClick={() => setExpanded(v => !v)}
-        className={"flex items-start gap-1.5 p-2 border-b border-slate-200 border-l-4 " + COLUMN_ACCENT[col.key]}
+        onClick={() => onOpen(card.orderId)}
+        aria-label={`Заявка #${card.leadId ?? card.orderId} — ${card.title}`}
+        className="block w-full text-left px-3 pt-2.5 pb-2 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
       >
-        {expanded ? <ChevronDown className="w-3.5 h-3.5 text-slate-400 mt-0.5" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-400 mt-0.5" />}
-        <div className="flex-1 text-left">
-          <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-800">
-            <span>{col.emoji}</span>
-            <span>{col.title}</span>
-            <span className="ml-auto bg-white border border-slate-200 text-slate-600 rounded px-1 text-[10px]">{col.count}</span>
-          </div>
-          <div className="text-[10px] text-slate-500 mt-0.5">{col.hint}</div>
-          {sum !== undefined && sum > 0 && (
-            <div className={"text-[10px] mt-0.5 font-mono " + (col.sumPaid !== undefined ? "text-emerald-700" : "text-violet-700")}>
-              {fmtMoney(sum)}
-            </div>
+        <div className="flex items-center justify-between mb-1">
+          <span className="font-mono text-[11px] text-slate-400">#{card.leadId ?? card.orderId}</span>
+          <span className="text-[10px] text-slate-400 flex items-center gap-1">
+            <Clock className="w-3 h-3" />
+            {card.timeInStage}
+          </span>
+        </div>
+
+        <div className="font-semibold text-[12.5px] text-slate-800 leading-snug line-clamp-2 mb-1.5">
+          {card.title}
+        </div>
+
+        <div className="flex items-center gap-1 text-[11px] text-slate-500 mb-0.5 leading-tight">
+          <MapPin className="w-3 h-3 shrink-0 text-slate-400" />
+          <span className="truncate">{card.address}</span>
+        </div>
+
+        <div className="flex items-center gap-1 text-[11px] text-slate-600 leading-tight">
+          <User className="w-3 h-3 shrink-0 text-slate-400" />
+          <span className="truncate">{card.master ?? "не назначен"}</span>
+        </div>
+
+        <div className="flex items-center flex-wrap gap-1 mt-2">
+          {card.money && (
+            <span className={
+              "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10.5px] font-semibold " +
+              (card.money.kind === "paid" ? "bg-emerald-100 text-emerald-700"
+               : card.money.kind === "commission" ? "bg-yellow-100 text-yellow-800"
+               : "bg-violet-100 text-violet-700")
+            }>
+              <Wallet className="w-3 h-3" />
+              {card.money.kind === "paid" && "оплачено "}
+              {card.money.kind === "commission" && "комиссия "}
+              {card.money.kind === "estimate" && "смета "}
+              {fmtMoney(card.money.amount)}
+            </span>
           )}
-          {col.breakdown && (
-            <div className="text-[9px] mt-0.5 text-slate-500 leading-tight">{col.breakdown}</div>
+          {card.badge && (
+            <span className={"inline-flex items-center px-1.5 py-0.5 rounded-md text-[10.5px] border " + BADGE_TONE[card.badge.tone]}>
+              {card.badge.text}
+            </span>
           )}
         </div>
-      </button>
-      <div className="p-1.5 space-y-1.5 overflow-hidden">
-        {col.cards.length === 0 ? (
-          <div className="text-[10px] text-slate-400 py-3 text-center">пусто</div>
-        ) : (
-          <>
-            {visible.map(c => <MiniCard key={c.id} card={c} onOpen={onOpen} />)}
-            {col.cards.length > visible.length && (
-              <button
-                onClick={() => setExpanded(true)}
-                className="w-full text-[10px] text-slate-500 hover:text-slate-700 py-1 border border-dashed border-slate-300 rounded"
-              >
-                ещё {col.cards.length - visible.length}…
-              </button>
-            )}
-          </>
+
+        {card.bot && (
+          <div className={"mt-2 flex items-start gap-1.5 px-2 py-1.5 rounded-md border text-[10.5px] " + BOT_TONE[card.bot.tone]}>
+            <Bot className="w-3 h-3 mt-0.5 shrink-0" />
+            <span className="leading-tight">
+              <span className="opacity-70">{card.bot.action}</span>{" "}
+              <span className="font-semibold">{card.bot.eta}</span>
+            </span>
+          </div>
         )}
-      </div>
+
+        {card.problemReason && (
+          <div className="mt-2 text-[10.5px] text-red-700 bg-red-50 border border-red-200 rounded-md px-2 py-1.5 leading-tight">
+            <AlertTriangle className="w-3 h-3 inline mr-1 -mt-0.5" />
+            {card.problemReason}
+          </div>
+        )}
+      </button>
+
+      {showReturnButton && onReturnToPool && (
+        <div className="px-3 pb-2.5 -mt-0.5">
+          {confirm ? (
+            <div className="flex gap-1.5">
+              <button
+                onClick={() => { onReturnToPool(card.orderId); setConfirm(false); }}
+                disabled={returning}
+                className="flex-1 bg-amber-500 text-white text-[11px] py-1.5 rounded-md font-semibold disabled:opacity-50 hover:bg-amber-600 transition-colors"
+              >Подтвердить</button>
+              <button
+                onClick={() => setConfirm(false)}
+                className="bg-slate-100 text-slate-600 text-[11px] py-1.5 px-2.5 rounded-md hover:bg-slate-200 transition-colors"
+              >Отмена</button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirm(true)}
+              className="w-full bg-amber-50 text-amber-700 text-[11px] py-1.5 rounded-md font-medium hover:bg-amber-100 transition-colors"
+            >↩︎ Вернуть в пул</button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-// ── Mobile card ──────────────────────────────────────────────────────────────
+// ── Desktop column — voronka-style glass card ────────────────────────────────
 
-function MobileCard({ card, onOpen, onReturnToPool, returning }: {
-  card: BoardCard;
+function DesktopColumn({
+  col,
+  onOpen,
+  onReturnToPool,
+  returning,
+}: {
+  col: BoardColumn;
   onOpen: (id: number) => void;
   onReturnToPool: (id: number) => void;
   returning: boolean;
 }) {
-  const [confirm, setConfirm] = useState(false);
-  const isProblem = !!card.problemReason || card.badge?.tone === "bad";
+  const s = COLUMN_STYLE[col.key];
+  const sum = col.sumPaid ?? col.sumPending;
+  const sumColor = col.sumPaid !== undefined ? "text-emerald-700" : col.sumPending !== undefined ? "text-violet-700" : "text-slate-500";
+
   return (
-    <div className={"bg-white border border-slate-200 rounded-md p-2.5 shadow-sm border-l-4 " + (isProblem ? "border-l-red-500" : "border-l-slate-300")}>
-      <div className="flex items-center justify-between mb-1">
-        <span className="font-mono text-[10px] text-slate-400">#{card.leadId ?? card.orderId}</span>
-        <span className="text-[10px] text-slate-400 flex items-center gap-0.5">
-          <Clock className="w-3 h-3" /> {card.timeInStage}
-        </span>
-      </div>
-      <div className="font-semibold text-slate-900 text-[12px] leading-snug mb-1">{card.title}</div>
-      <div className="text-[11px] text-slate-500 flex items-center gap-1 mb-0.5">
-        <MapPin className="w-3 h-3 shrink-0" /> {card.address}
-      </div>
-      <div className="text-[11px] text-slate-500 flex items-center gap-1 mb-1.5">
-        <User className="w-3 h-3 shrink-0" /> Мастер: {card.master ?? "—"}
-      </div>
-      {card.money && (
-        <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-100 text-violet-700 mr-1">
-          <Wallet className="w-3 h-3" /> {card.money.kind === "paid" ? "оплачено " : card.money.kind === "commission" ? "комиссия " : "смета "}{fmtMoney(card.money.amount)}
+    <div
+      className="flex-shrink-0 w-[260px] flex flex-col rounded-2xl overflow-hidden"
+      style={{
+        background: "rgba(255,255,255,0.60)",
+        backdropFilter: "blur(20px) saturate(180%)",
+        WebkitBackdropFilter: "blur(20px) saturate(180%)",
+        border: "1px solid rgba(255,255,255,0.82)",
+        boxShadow: "0 4px 20px rgba(120,80,220,0.07), 0 1px 3px rgba(0,0,0,0.04)",
+        borderTop: `2px solid ${s.accent}`,
+      }}
+    >
+      {/* Header */}
+      <div
+        className="px-3 py-2.5"
+        style={{
+          background: s.headerBg,
+          borderBottom: "1px solid rgba(0,0,0,0.04)",
+        }}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-[14px] leading-none">{col.emoji}</span>
+            <span className="font-semibold text-[13px] text-slate-700 truncate">{col.title}</span>
+          </div>
+          <span
+            className="text-[11px] font-bold rounded-full min-w-[20px] h-[20px] flex items-center justify-center px-1.5 flex-shrink-0"
+            style={{ background: s.badgeBg, color: s.badgeText }}
+          >
+            {col.count}
+          </span>
         </div>
-      )}
-      {card.bot && (
-        <div className={"mt-2 flex items-start gap-1 px-2 py-1.5 rounded border text-[11px] " + BOT_TONE[card.bot.tone]}>
-          <Bot className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-          <span><span className="opacity-70">{card.bot.action}</span> <span className="font-semibold">{card.bot.eta}</span></span>
-        </div>
-      )}
-      {card.problemReason && (
-        <div className="mt-1.5 text-[11px] text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1.5">
-          <AlertTriangle className="w-3 h-3 inline mr-1" />{card.problemReason}
-        </div>
-      )}
-      <div className="mt-2 flex gap-1.5">
-        <button onClick={() => onOpen(card.orderId)} className="flex-1 bg-slate-900 text-white text-[11px] py-1.5 rounded font-semibold">Открыть</button>
-        {confirm ? (
-          <>
-            <button
-              onClick={() => { onReturnToPool(card.orderId); setConfirm(false); }}
-              disabled={returning}
-              className="bg-amber-500 text-white text-[11px] py-1.5 px-2 rounded font-semibold disabled:opacity-50"
-            >Подтвердить</button>
-            <button onClick={() => setConfirm(false)} className="bg-slate-200 text-slate-700 text-[11px] py-1.5 px-2 rounded">Отмена</button>
-          </>
+        <div className="text-[10.5px] text-slate-500 mt-0.5 leading-tight">{col.hint}</div>
+        {sum !== undefined && sum > 0 && (
+          <div className={"text-[11px] mt-1 font-semibold font-mono " + sumColor}>{fmtMoney(sum)}</div>
+        )}
+        {col.breakdown && (
+          <div className="text-[10px] mt-0.5 text-slate-500 leading-tight">{col.breakdown}</div>
+        )}
+      </div>
+
+      {/* Cards (scrollable, no forced collapse) */}
+      <div
+        className="voronka-scroll flex-1 overflow-y-auto p-2 space-y-2"
+        style={{ maxHeight: "calc(100vh - 280px)", minHeight: "120px" }}
+      >
+        {col.cards.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-8 text-slate-300">
+            <Inbox className="w-5 h-5 mb-1" />
+            <p className="text-[11px]">Пусто</p>
+          </div>
         ) : (
-          <button onClick={() => setConfirm(true)} className="bg-amber-100 text-amber-800 text-[11px] py-1.5 px-2 rounded">↩︎ В пул</button>
+          col.cards.map(c => (
+            <OrderCard
+              key={c.id}
+              card={c}
+              onOpen={onOpen}
+              onReturnToPool={onReturnToPool}
+              returning={returning}
+              showReturnButton={col.key === "problem" || col.key === "waiting_master"}
+            />
+          ))
         )}
       </div>
     </div>
@@ -333,10 +379,12 @@ export function WorkBoardKanban({ onOpenOrder }: { onOpenOrder: (orderId: number
 
   // ── Mobile view ────────────────────────────────────────────────────────────
   if (isMobile) {
-    const mobileCards: BoardCard[] = columns.flatMap(c =>
-      mobileChip === "all" ? c.cards :
-      mobileChip === c.key ? c.cards :
-      [],
+    // Tag each card with its source column so the return-to-pool button only
+    // appears where it makes sense (problem / waiting_master).
+    const mobileCards: Array<{ card: BoardCard; columnKey: ColumnKey }> = columns.flatMap(c =>
+      mobileChip === "all" || mobileChip === c.key
+        ? c.cards.map(card => ({ card, columnKey: c.key }))
+        : [],
     );
     const totalActive = data?.funnel.activeCount ?? 0;
     return (
@@ -415,86 +463,126 @@ export function WorkBoardKanban({ onOpenOrder }: { onOpenOrder: (orderId: number
           {!isLoading && mobileCards.length === 0 && (
             <div className="text-center py-6 text-muted-foreground text-sm">Заявок нет</div>
           )}
-          {mobileCards.map(c => (
-            <MobileCard key={c.id} card={c} onOpen={onOpenOrder}
-                        onReturnToPool={(id) => returnToPool.mutate(id)}
-                        returning={returnToPool.isPending} />
+          {mobileCards.map(({ card, columnKey }) => (
+            <OrderCard
+              key={card.id}
+              card={card}
+              onOpen={onOpenOrder}
+              onReturnToPool={(id) => returnToPool.mutate(id)}
+              returning={returnToPool.isPending}
+              showReturnButton={RETURNABLE_COLUMNS.has(columnKey)}
+            />
           ))}
         </div>
       </div>
     );
   }
 
-  // ── Desktop view ───────────────────────────────────────────────────────────
+  // ── Desktop view — voronka-style funnel header + glass kanban ─────────────
   const f = data?.funnel;
   return (
     <div className="space-y-3">
-      {/* Funnel header */}
-      <div className="bg-card border border-border/50 rounded-2xl p-3 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3 text-[11px]">
-        <div>
-          <div className="text-muted-foreground">Активных в работе</div>
-          <div className="text-2xl font-bold">{f?.activeCount ?? 0}</div>
-          <div className="text-[10px] text-muted-foreground">обновлено {updatedAgo}</div>
-        </div>
-        <div className="border-l border-border/50 pl-3">
-          <div className="text-muted-foreground flex items-center gap-1"><Wallet className="w-3 h-3" /> в работе</div>
-          <div className="text-xl font-bold text-violet-700">{f ? fmtMoney(f.sumInWork) : "—"}</div>
-          <div className="text-[10px] text-muted-foreground">смета без оплаты</div>
-        </div>
-        <div className="border-l border-border/50 pl-3">
-          <div className="text-muted-foreground flex items-center gap-1"><CheckCircle2 className="w-3 h-3 text-emerald-500" /> оплачено</div>
-          <div className="text-xl font-bold text-emerald-700">{f ? fmtMoney(f.sumPaid) : "—"}</div>
-          <div className="text-[10px] text-muted-foreground">комиссия: {f ? fmtMoney(f.expectedCommission) : "—"} · 5к до 50к / 15% выше</div>
-        </div>
-        <div className="border-l border-border/50 pl-3">
-          <div className="text-muted-foreground flex items-center gap-1"><TrendingUp className="w-3 h-3" /> доходимость</div>
-          <div className="text-xl font-bold">{f?.conversionPct ?? 0}%</div>
-          <div className="text-[10px] text-muted-foreground">завершено / в работе</div>
-        </div>
-        <div className="border-l border-border/50 pl-3">
-          <div className="text-muted-foreground flex items-center gap-1"><Bot className="w-3 h-3" /> бот ведёт</div>
-          <div className="text-xl font-bold">{(f?.activeCount ?? 0) - (f?.problemCount ?? 0)}</div>
-          <div className="text-[10px] text-muted-foreground">авто-сценарии</div>
-        </div>
-        <div className="border-l border-border/50 pl-3">
-          <div className="text-muted-foreground flex items-center gap-1"><AlertTriangle className="w-3 h-3 text-red-500" /> требуют тебя</div>
-          <div className={"text-xl font-bold " + ((f?.problemCount ?? 0) > 0 ? "text-red-600" : "")}>{f?.problemCount ?? 0}</div>
-          <div className="text-[10px] text-muted-foreground">в колонке «Проблема»</div>
-        </div>
-        <div className="border-l border-border/50 pl-3 flex flex-col justify-center gap-1">
-          <button onClick={() => refetch()} className="border border-border/50 text-foreground text-[11px] py-1.5 rounded flex items-center justify-center gap-1 hover:bg-slate-100">
-            <RefreshCw className={"w-3 h-3 " + (isLoading ? "animate-spin" : "")} /> обновить
-          </button>
-          <div className="flex items-center justify-center gap-1 text-[10px] text-emerald-700 border border-emerald-200 bg-emerald-50 rounded py-1">
-            <Radio className="w-3 h-3" /> live · SSE
+      {/* Funnel header — softer, glass-like */}
+      <div
+        className="rounded-2xl p-4"
+        style={{
+          background: "rgba(255,255,255,0.70)",
+          backdropFilter: "blur(20px) saturate(180%)",
+          WebkitBackdropFilter: "blur(20px) saturate(180%)",
+          border: "1px solid rgba(255,255,255,0.95)",
+          boxShadow: "0 4px 20px rgba(120,80,220,0.07), 0 1px 3px rgba(0,0,0,0.04)",
+        }}
+      >
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <div>
+            <div className="text-[11px] text-slate-500 uppercase tracking-wide font-medium">Активных в работе</div>
+            <div className="text-2xl font-bold text-slate-800 mt-0.5">{f?.activeCount ?? 0}</div>
+            <div className="text-[10.5px] text-slate-400 mt-0.5">обновлено {updatedAgo}</div>
+          </div>
+          <div>
+            <div className="text-[11px] text-slate-500 uppercase tracking-wide font-medium flex items-center gap-1">
+              <Wallet className="w-3 h-3" /> в работе
+            </div>
+            <div className="text-xl font-bold text-violet-700 mt-0.5">{f ? fmtMoney(f.sumInWork) : "—"}</div>
+            <div className="text-[10.5px] text-slate-400 mt-0.5">смета без оплаты</div>
+          </div>
+          <div>
+            <div className="text-[11px] text-slate-500 uppercase tracking-wide font-medium flex items-center gap-1">
+              <CheckCircle2 className="w-3 h-3 text-emerald-500" /> оплачено
+            </div>
+            <div className="text-xl font-bold text-emerald-700 mt-0.5">{f ? fmtMoney(f.sumPaid) : "—"}</div>
+            <div className="text-[10.5px] text-slate-400 mt-0.5">
+              комиссия: {f ? fmtMoney(f.expectedCommission) : "—"} · 5к до 50к / 15% выше
+            </div>
+          </div>
+          <div>
+            <div className="text-[11px] text-slate-500 uppercase tracking-wide font-medium flex items-center gap-1">
+              <TrendingUp className="w-3 h-3" /> доходимость
+            </div>
+            <div className="text-xl font-bold text-slate-800 mt-0.5">{f?.conversionPct ?? 0}%</div>
+            <div className="text-[10.5px] text-slate-400 mt-0.5">завершено / в работе</div>
+          </div>
+          <div>
+            <div className="text-[11px] text-slate-500 uppercase tracking-wide font-medium flex items-center gap-1">
+              <AlertTriangle className={"w-3 h-3 " + ((f?.problemCount ?? 0) > 0 ? "text-red-500" : "text-slate-400")} />
+              требуют тебя
+            </div>
+            <div className={"text-xl font-bold mt-0.5 " + ((f?.problemCount ?? 0) > 0 ? "text-red-600" : "text-slate-800")}>
+              {f?.problemCount ?? 0}
+            </div>
+            <div className="text-[10.5px] text-slate-400 mt-0.5">в колонке «Проблема»</div>
+          </div>
+          <div className="flex flex-col justify-center gap-1.5">
+            <button
+              onClick={() => refetch()}
+              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl text-[12px] font-medium hover:bg-slate-50 transition-colors shadow-sm"
+            >
+              <RefreshCw className={"w-3.5 h-3.5 " + (isLoading ? "animate-spin" : "")} /> обновить
+            </button>
+            <div className="flex items-center justify-center gap-1 text-[10.5px] text-emerald-700 border border-emerald-200 bg-emerald-50/80 rounded-lg py-1">
+              <Radio className="w-3 h-3" /> live · SSE
+            </div>
           </div>
         </div>
       </div>
 
       {/* Search bar */}
-      <div className="flex items-center gap-2 text-[11px]">
-        <div className="flex items-center gap-1.5 bg-card border border-border/60 rounded px-2 py-1.5 flex-1 max-w-md">
-          <Search className="w-3.5 h-3.5 text-muted-foreground" />
-          <input value={search} onChange={e => setSearch(e.target.value)}
-                 placeholder="Поиск по №, адресу, мастеру, клиенту…"
-                 className="bg-transparent outline-none text-[12px] flex-1" />
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-3 py-2 flex-1 max-w-md shadow-sm">
+          <Search className="w-4 h-4 text-slate-400" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Поиск по №, адресу, мастеру, клиенту…"
+            className="bg-transparent outline-none text-[13px] flex-1 placeholder:text-slate-400"
+          />
         </div>
-        <span className="text-muted-foreground ml-auto flex items-center gap-1">
+        <span className="text-slate-400 text-[11px] ml-auto flex items-center gap-1">
           <Inbox className="w-3 h-3" /> обновлено {updatedAgo}
         </span>
       </div>
 
       {/* Kanban */}
       {isLoading && !data ? (
-        <div className="text-center py-12 text-muted-foreground text-sm">Загрузка ленты…</div>
+        <div className="flex items-center justify-center py-16">
+          <div className="w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+        </div>
       ) : (
-        <div className="flex gap-2 items-start overflow-x-auto pb-4">
-          {columns.map(c => <DesktopColumn key={c.key} col={c} onOpen={onOpenOrder} />)}
+        <div className="voronka-scroll flex gap-4 overflow-x-auto pb-4 min-h-0">
+          {columns.map(c => (
+            <DesktopColumn
+              key={c.key}
+              col={c}
+              onOpen={onOpenOrder}
+              onReturnToPool={(id) => returnToPool.mutate(id)}
+              returning={returnToPool.isPending}
+            />
+          ))}
         </div>
       )}
 
-      <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-        <Bell className="w-3 h-3 text-muted-foreground/70" />
+      <div className="flex items-center gap-2 text-[10.5px] text-slate-400">
+        <Bell className="w-3 h-3 text-slate-400/70" />
         Карточки сами переезжают между колонками. Возврат в пул — только по подтверждению оператора.
       </div>
     </div>

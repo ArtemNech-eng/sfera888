@@ -97,7 +97,7 @@ artifacts-monorepo/
 
 ## Work Board Kanban (CRM)
 
-UI: `artifacts/crm/src/components/work-board-kanban.tsx`. Десктоп — 8 колонок с funnel-шапкой, мобильный — chip-фильтр (по умолчанию «🚨 Проблема»). Карточки кликабельные `<button>` с keyboard-доступностью (Enter/Space). Подписка на `EventSource("/api/work-board/stream")` инвалидирует TanStack Query при `tick`/`changed`. Тариф комиссии: до 50к — фикс 5к, выше — 15%. Старая страница `/work-monitor` удалена; route редиректит на `/leads?tab=work` через wouter `Redirect`.
+UI: `artifacts/crm/src/components/work-board-kanban.tsx`. Десктоп — 8 колонок с funnel-шапкой, мобильный — chip-фильтр (по умолчанию «🚨 Проблема»). **Визуальный язык — voronka.tsx**: glassmorphism (`rgba(255,255,255,0.60)` + `backdrop-filter: blur(20px) saturate(180%)`), цветной `border-top` по колонке, мягкие пастельные `headerBg`, count-pill в тон, `rounded-2xl` колонки + `rounded-xl` карточки. **Колонки скроллятся внутри** (`maxHeight: calc(100vh - 280px)`), все карточки видны без forced-collapse. Кнопка «↩︎ В пул» показывается только в `RETURNABLE_COLUMNS = {problem, waiting_master}` (десктоп и мобильный) — нельзя случайно вернуть в пул оплаченную/закрытую заявку. Карточки кликабельные `<button>` с keyboard-доступностью (Enter/Space) и `aria-label`. Подписка на `EventSource("/api/work-board/stream")` инвалидирует TanStack Query при `tick`/`changed`. Тариф комиссии: до 50к — фикс 5к, выше — 15%. Старая страница `/work-monitor` удалена; route редиректит на `/leads?tab=work` через wouter `Redirect`.
 
 ## Master PWA (`/master-pwa/`)
 
