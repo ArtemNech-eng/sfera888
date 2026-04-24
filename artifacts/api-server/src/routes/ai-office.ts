@@ -208,7 +208,7 @@ async function runBroadcastOrders() {
 
   // 1. Load open orders with their broadcast state
   const ordersResult = await db.execute(sql`
-    SELECT o.id, o.city, o.district, o.service_type, o.area, o.scheduled_at, o.created_at,
+    SELECT o.id, o.lead_id, o.city, o.district, o.service_type, o.area, o.scheduled_at, o.created_at,
            w.wave_1_sent_at, w.wave_1_count, w.admin_alerted_at
     FROM orders o
     LEFT JOIN order_broadcast_waves w ON w.order_id = o.id
@@ -283,7 +283,7 @@ async function runBroadcastOrders() {
 
       await sendAdminMax(
         `⚠️ ЗАКАЗ БЕЗ МАСТЕРА\n\n` +
-        `Заказ: #${order.id}\nВид работ: ${order.service_type}\nГород: ${location}\nПлощадь: ${areaStr}\nКогда нужно: ${scheduledText}\n\n` +
+        `Заявка: #${order.lead_id ?? order.id}\nВид работ: ${order.service_type}\nГород: ${location}\nПлощадь: ${areaStr}\nКогда нужно: ${scheduledText}\n\n` +
         `Разослано ${sentCount} мастерам — никто не откликнулся за 75 минут.\n\n` +
         `Мастеров в городе: ${cityMasters}\nСвободных: ${freeMasters}\n\n` +
         `Решение в ИИ Офис → Открытые заказы`
@@ -308,7 +308,7 @@ async function runPaymentReminders(runType: "manual" | "auto" = "auto") {
   const commissionSettings = await getCommissionSettings();
 
   const rows = await db.execute(sql`
-    SELECT r.order_id, r.created_at AS receipt_created_at,
+    SELECT r.order_id, o.lead_id, r.created_at AS receipt_created_at,
            r.service_type, r.district, r.city, r.client_name, r.client_phone,
            r.total_amount,
            m.id AS master_id, m.alias AS master_alias, m.max_chat_id
@@ -331,6 +331,7 @@ async function runPaymentReminders(runType: "manual" | "auto" = "auto") {
   for (const r of rows.rows as any[]) {
     const hoursElapsed = Math.floor((now.getTime() - new Date(r.receipt_created_at).getTime()) / 3600_000);
     const tier = hoursElapsed >= 72 ? "super" : hoursElapsed >= 48 ? "critical" : "warning";
+    const displayId = r.lead_id ?? r.order_id;
     const entry = {
       orderId: r.order_id,
       masterId: r.master_id,
@@ -358,7 +359,7 @@ async function runPaymentReminders(runType: "manual" | "auto" = "auto") {
           if (r.max_chat_id) {
             await sendAndSaveMasterMessage(
               r.master_id, r.max_chat_id,
-              `${r.master_alias}, по заказу #${r.order_id} предоплата не поступила уже ${hoursElapsed} часов.\n\n` +
+              `${r.master_alias}, по заявке #${displayId} предоплата не поступила уже ${hoursElapsed} часов.\n\n` +
               `Уточните у клиента, когда он планирует внести предоплату, и сообщите нам.`,
               "💰 Напомнить об оплате"
             );
@@ -366,7 +367,7 @@ async function runPaymentReminders(runType: "manual" | "auto" = "auto") {
           }
           await sendAdminMax(
             `⚠️ ПРЕДОПЛАТА НЕ ОПЛАЧЕНА 72+ ЧАСОВ\n\n` +
-            `Заказ: #${r.order_id}\n` +
+            `Заявка: #${displayId}\n` +
             `Вид работ: ${r.service_type}\n` +
             `Город: ${r.city}${r.district ? ", " + r.district : ""}\n` +
             `Мастер: ${r.master_alias}\n` +
@@ -391,13 +392,13 @@ async function runPaymentReminders(runType: "manual" | "auto" = "auto") {
           let message: string;
           if (tier === "critical") {
             message =
-              `⚠️ ${r.master_alias}, по заказу #${r.order_id} предоплата не поступила уже ${hoursElapsed} часов.\n\n` +
+              `⚠️ ${r.master_alias}, по заявке #${displayId} предоплата не поступила уже ${hoursElapsed} часов.\n\n` +
               `Пожалуйста ещё раз напомните клиенту про бронь.\n\n` +
               `Если клиент не планирует оплачивать — сообщите нам, мы решим что делать с этим заказом.`;
           } else {
             message =
               `👋 ${r.master_alias}, добрый день!\n\n` +
-              `По заказу #${r.order_id} (${r.service_type}, ${location}) клиент пока не оплатил предоплату.\n\n` +
+              `По заявке #${displayId} (${r.service_type}, ${location}) клиент пока не оплатил предоплату.\n\n` +
               `Напомните клиенту про бронь — одно сообщение часто решает вопрос 👍\n\n` +
               `Если клиент отказался — сообщите нам, и мы подготовим новый заказ для вас.`;
           }
@@ -680,7 +681,7 @@ async function runOrdersWithoutReceipts(runType: "manual" | "auto" = "auto"): Pr
   const h24ago = new Date(now.getTime() - 24 * 3600_000).toISOString();
 
   const rows = await db.execute(sql`
-    SELECT o.id, o.city, o.district, o.service_type,
+    SELECT o.id, o.lead_id, o.city, o.district, o.service_type,
            COALESCE(o.assigned_at, o.created_at) AS ref_time,
            m.id AS master_id, m.alias AS master_alias, m.max_chat_id, m.phone AS master_phone,
            EXTRACT(EPOCH FROM (NOW() - COALESCE(o.assigned_at, o.created_at))) / 3600 AS hours_without_receipt
@@ -701,6 +702,7 @@ async function runOrdersWithoutReceipts(runType: "manual" | "auto" = "auto"): Pr
   for (const r of rows.rows as any[]) {
     const hours = Math.floor(Number(r.hours_without_receipt));
     const tier = hours >= 72 ? "critical-72" : hours >= 48 ? "critical" : "warning";
+    const displayId = r.lead_id ?? r.id;
     const entry: OrderWithoutReceipt = {
       orderId: r.id,
       masterAlias: r.master_alias ?? "—",
@@ -727,7 +729,7 @@ async function runOrdersWithoutReceipts(runType: "manual" | "auto" = "auto"): Pr
           if (r.max_chat_id) {
             await sendAndSaveMasterMessage(
               r.master_id, r.max_chat_id,
-              `⚠️ ${r.master_alias}, по заказу #${r.id} (${r.service_type}, ${location}) смета не отправлена уже ${hours} часов.\n\n` +
+              `⚠️ ${r.master_alias}, по заявке #${displayId} (${r.service_type}, ${location}) смета не отправлена уже ${hours} часов.\n\n` +
               `Если вы не можете взять этот заказ — пожалуйста сообщите нам.\n\nВопрос передан руководителю.`,
               "📄 Заказы без сметы"
             );
@@ -735,7 +737,7 @@ async function runOrdersWithoutReceipts(runType: "manual" | "auto" = "auto"): Pr
           }
           await sendAdminMax(
             `🚨 ЗАКАЗ БЕЗ СМЕТЫ 96+ ЧАСОВ\n\n` +
-            `Заказ: #${r.id}\nВид работ: ${r.service_type}\nГород: ${r.city}, ${r.district ?? "—"}\nМастер: ${r.master_alias}\nЧасов без сметы: ${hours}\n\n` +
+            `Заявка: #${displayId}\nВид работ: ${r.service_type}\nГород: ${r.city}, ${r.district ?? "—"}\nМастер: ${r.master_alias}\nЧасов без сметы: ${hours}\n\n` +
             `Требуется ручное решение: ИИ Офис → Заказы без сметы`
           );
           await recordNotification("orders-without-receipts", r.id, r.master_id, "alert-96");
@@ -749,14 +751,14 @@ async function runOrdersWithoutReceipts(runType: "manual" | "auto" = "auto"): Pr
           if (r.max_chat_id) {
             await sendAndSaveMasterMessage(
               r.master_id, r.max_chat_id,
-              `⚠️ ${r.master_alias}, по заказу #${r.id} (${r.service_type}, ${location}) смета не отправлена уже ${hours} часов.\n\nОтправьте смету или сообщите нам что не можете взять заказ.\n\nВопрос по заказу передан руководителю.`,
+              `⚠️ ${r.master_alias}, по заявке #${displayId} (${r.service_type}, ${location}) смета не отправлена уже ${hours} часов.\n\nОтправьте смету или сообщите нам что не можете взять заказ.\n\nВопрос по заказу передан руководителю.`,
               "📄 Заказы без сметы"
             );
             await sleep(MSG_DELAY_MS);
           }
           await sendAdminMax(
             `⚠️ ЗАКАЗ БЕЗ СМЕТЫ 72+ ЧАСОВ\n\n` +
-            `Заказ: #${r.id}\nВид работ: ${r.service_type}\nГород: ${r.city}, ${r.district ?? "—"}\nМастер: ${r.master_alias}\nЧасов без сметы: ${hours}\n\n` +
+            `Заявка: #${displayId}\nВид работ: ${r.service_type}\nГород: ${r.city}, ${r.district ?? "—"}\nМастер: ${r.master_alias}\nЧасов без сметы: ${hours}\n\n` +
             `Решение принимается в ИИ Офис → Заказы без сметы`
           );
           await recordNotification("orders-without-receipts", r.id, r.master_id, "critical-72");
@@ -770,14 +772,14 @@ async function runOrdersWithoutReceipts(runType: "manual" | "auto" = "auto"): Pr
           let message: string;
           if (tier === "critical") {
             message =
-              `⚠️ ${r.master_alias}, по заказу #${r.id} (${r.service_type}, ${location}) смета не отправлена уже ${hours} часов.\n\n` +
+              `⚠️ ${r.master_alias}, по заявке #${displayId} (${r.service_type}, ${location}) смета не отправлена уже ${hours} часов.\n\n` +
               `Без сметы через приложение заказ не считается активным.\n\n` +
               `Если вы уже договорились с клиентом — отправьте смету через приложение, чтобы клиент оплатил предоплату.\n\n` +
               `Если не можете взять этот заказ — напишите нам, мы решим вопрос.\n\nОжидаем ответ в течение 3 часов.`;
           } else {
             message =
               `👋 ${r.master_alias}, добрый день!\n\n` +
-              `По заказу #${r.id} (${r.service_type}, ${location}) вы ещё не отправили смету клиенту.\n\n` +
+              `По заявке #${displayId} (${r.service_type}, ${location}) вы ещё не отправили смету клиенту.\n\n` +
               `Напоминаю: смета составляется в приложении и отправляется клиенту ссылкой. Это занимает 2 минуты.\n\n` +
               `Без сметы клиент не сможет оплатить предоплату, а вы не получите новые заказы.\n\nОтправьте смету сегодня 👍`;
           }
@@ -1092,7 +1094,7 @@ router.post("/template-scenarios/payment-reminders/send-all", async (req, res) =
     const now = new Date();
     const h24ago = new Date(now.getTime() - 24 * 3600_000).toISOString();
     const rows = await db.execute(sql`
-      SELECT r.order_id, r.created_at AS receipt_created_at,
+      SELECT r.order_id, o.lead_id, r.created_at AS receipt_created_at,
              r.service_type, r.district, r.city,
              EXTRACT(EPOCH FROM (NOW() - r.created_at)) / 3600 AS hours,
              m.id AS master_id, m.alias AS master_alias, m.max_chat_id
@@ -1114,13 +1116,14 @@ router.post("/template-scenarios/payment-reminders/send-all", async (req, res) =
       const alreadySent = await wasNotified("payment-reminders", r.order_id, r.master_id, tier);
       if (alreadySent) { skipped++; continue; }
       const location = r.district || r.city;
+      const displayId = r.lead_id ?? r.order_id;
       let msg: string;
       if (hours >= 72) {
-        msg = `${r.master_alias}, по заказу #${r.order_id} предоплата не поступила уже ${hours} часов.\n\nУточните у клиента, когда он планирует внести предоплату, и сообщите нам.`;
+        msg = `${r.master_alias}, по заявке #${displayId} предоплата не поступила уже ${hours} часов.\n\nУточните у клиента, когда он планирует внести предоплату, и сообщите нам.`;
       } else if (hours >= 48) {
-        msg = `⚠️ ${r.master_alias}, по заказу #${r.order_id} предоплата не поступила уже ${hours} часов.\n\nПожалуйста ещё раз напомните клиенту про бронь.\n\nЕсли клиент не планирует оплачивать — сообщите нам, мы решим что делать с этим заказом.`;
+        msg = `⚠️ ${r.master_alias}, по заявке #${displayId} предоплата не поступила уже ${hours} часов.\n\nПожалуйста ещё раз напомните клиенту про бронь.\n\nЕсли клиент не планирует оплачивать — сообщите нам, мы решим что делать с этим заказом.`;
       } else {
-        msg = `👋 ${r.master_alias}, добрый день!\n\nПо заказу #${r.order_id} (${r.service_type}, ${location}) клиент пока не оплатил предоплату.\n\nНапомните клиенту про бронь — одно сообщение часто решает вопрос 👍\n\nЕсли клиент отказался — сообщите нам, и мы подготовим новый заказ для вас.`;
+        msg = `👋 ${r.master_alias}, добрый день!\n\nПо заявке #${displayId} (${r.service_type}, ${location}) клиент пока не оплатил предоплату.\n\nНапомните клиенту про бронь — одно сообщение часто решает вопрос 👍\n\nЕсли клиент отказался — сообщите нам, и мы подготовим новый заказ для вас.`;
       }
       await sendAndSaveMasterMessage(r.master_id, r.max_chat_id, msg, "💰 Напомнить об оплате").catch(() => {});
       await recordNotification("payment-reminders", r.order_id, r.master_id, tier);
@@ -1140,7 +1143,7 @@ router.get("/template-scenarios/payment-reminders/live", async (_req, res) => {
     const h24ago = new Date(now.getTime() - 24 * 3600_000).toISOString();
     const commissionSettings = await getCommissionSettings();
     const rows = await db.execute(sql`
-      SELECT r.order_id, r.created_at AS receipt_created_at,
+      SELECT r.order_id, o.lead_id, r.created_at AS receipt_created_at,
              r.service_type, r.district, r.city, r.client_name, r.client_phone,
              r.total_amount,
              m.alias AS master_alias, m.max_chat_id
@@ -1158,6 +1161,7 @@ router.get("/template-scenarios/payment-reminders/live", async (_req, res) => {
       const h = Math.floor((now.getTime() - new Date(r.receipt_created_at).getTime()) / 3600_000);
       return {
         orderId: r.order_id,
+        leadId: r.lead_id ?? null,
         masterAlias: r.master_alias ?? "—",
         maxChatId: r.max_chat_id ?? null,
         clientName: r.client_name ?? "Клиент",
@@ -1188,10 +1192,11 @@ router.post("/template-scenarios/payment-reminders/:orderId/message-master", asy
   const orderId = Number(req.params.orderId);
   try {
     const rows = await db.execute(sql`
-      SELECT r.order_id, r.service_type, r.district, r.city,
+      SELECT r.order_id, o.lead_id, r.service_type, r.district, r.city,
              EXTRACT(EPOCH FROM (NOW() - r.created_at)) / 3600 AS hours,
              m.id AS master_id, m.alias AS master_alias, m.max_chat_id
       FROM receipts r
+      JOIN orders o ON o.id = r.order_id
       JOIN masters m ON m.id = r.master_id
       WHERE r.order_id = ${orderId} AND r.prepayment_submitted_at IS NULL
     `);
@@ -1201,21 +1206,22 @@ router.post("/template-scenarios/payment-reminders/:orderId/message-master", asy
 
     const hours = Math.floor(Number(r.hours));
     const location = r.district || r.city;
+    const displayId = r.lead_id ?? r.order_id;
     let message: string;
 
     if (hours >= 72) {
       message =
-        `${r.master_alias}, по заказу #${r.order_id} предоплата не поступила уже ${hours} часов.\n\n` +
+        `${r.master_alias}, по заявке #${displayId} предоплата не поступила уже ${hours} часов.\n\n` +
         `Уточните у клиента, когда он планирует внести предоплату, и сообщите нам.`;
     } else if (hours >= 48) {
       message =
-        `⚠️ ${r.master_alias}, по заказу #${r.order_id} предоплата не поступила уже ${hours} часов.\n\n` +
+        `⚠️ ${r.master_alias}, по заявке #${displayId} предоплата не поступила уже ${hours} часов.\n\n` +
         `Пожалуйста ещё раз напомните клиенту про бронь.\n\n` +
         `Если клиент не планирует оплачивать — сообщите нам, мы решим что делать с этим заказом.`;
     } else {
       message =
         `👋 ${r.master_alias}, добрый день!\n\n` +
-        `По заказу #${r.order_id} (${r.service_type}, ${location}) клиент пока не оплатил предоплату.\n\n` +
+        `По заявке #${displayId} (${r.service_type}, ${location}) клиент пока не оплатил предоплату.\n\n` +
         `Напомните клиенту про бронь — одно сообщение часто решает вопрос 👍\n\n` +
         `Если клиент отказался — сообщите нам, и мы подготовим новый заказ для вас.`;
     }
@@ -1232,13 +1238,14 @@ router.post("/template-scenarios/payment-reminders/:orderId/return-to-pool", asy
   const orderId = Number(req.params.orderId);
   try {
     const rows = await db.execute(sql`
-      SELECT o.id, o.service_type, m.id AS master_id, m.alias AS master_alias, m.max_chat_id
+      SELECT o.id, o.lead_id, o.service_type, m.id AS master_id, m.alias AS master_alias, m.max_chat_id
       FROM orders o
       JOIN masters m ON m.id = o.master_id
       WHERE o.id = ${orderId} AND o.deleted_at IS NULL
     `);
     const o = rows.rows[0] as any;
     if (!o) return res.status(404).json({ error: "Заказ не найден" });
+    const displayId = o.lead_id ?? o.id;
 
     await db.execute(sql`
       UPDATE orders
@@ -1249,7 +1256,7 @@ router.post("/template-scenarios/payment-reminders/:orderId/return-to-pool", asy
     if (o.max_chat_id && o.master_id) {
       await sendAndSaveMasterMessage(
         o.master_id, o.max_chat_id,
-        `Заказ #${o.id} возвращён в пул — клиент не оплатил предоплату.\n\n` +
+        `Заявка #${displayId} возвращена в пул — клиент не оплатил предоплату.\n\n` +
         `Из 10 клиентов 8 оплачивают без проблем — те кто не платит, обычно проблемные.\n\n` +
         `Готовим для вас новый заказ 👍`,
         "💰 Напомнить об оплате"
@@ -1266,13 +1273,14 @@ router.post("/template-scenarios/payment-reminders/:orderId/cancel", async (req,
   const orderId = Number(req.params.orderId);
   try {
     const rows = await db.execute(sql`
-      SELECT o.id, m.id AS master_id, m.alias AS master_alias, m.max_chat_id
+      SELECT o.id, o.lead_id, m.id AS master_id, m.alias AS master_alias, m.max_chat_id
       FROM orders o
       JOIN masters m ON m.id = o.master_id
       WHERE o.id = ${orderId} AND o.deleted_at IS NULL
     `);
     const o = rows.rows[0] as any;
     if (!o) return res.status(404).json({ error: "Заказ не найден" });
+    const displayId = o.lead_id ?? o.id;
 
     await db.execute(sql`
       UPDATE orders SET status = 'cancelled', updated_at = NOW()
@@ -1282,7 +1290,7 @@ router.post("/template-scenarios/payment-reminders/:orderId/cancel", async (req,
     if (o.max_chat_id && o.master_id) {
       await sendAndSaveMasterMessage(
         o.master_id, o.max_chat_id,
-        `Заказ #${o.id} отменён.\nПричина: клиент не оплатил предоплату.`,
+        `Заявка #${displayId} отменена.\nПричина: клиент не оплатил предоплату.`,
         "💰 Напомнить об оплате"
       );
     }
@@ -1299,7 +1307,7 @@ router.post("/template-scenarios/orders-without-receipts/:orderId/message-master
   const orderId = Number(req.params.orderId);
   try {
     const rows = await db.execute(sql`
-      SELECT o.id, o.service_type, o.district, o.city,
+      SELECT o.id, o.lead_id, o.service_type, o.district, o.city,
              COALESCE(o.assigned_at, o.created_at) AS ref_time,
              EXTRACT(EPOCH FROM (NOW() - COALESCE(o.assigned_at, o.created_at))) / 3600 AS hours,
              m.id AS master_id, m.alias AS master_alias, m.max_chat_id
@@ -1313,19 +1321,20 @@ router.post("/template-scenarios/orders-without-receipts/:orderId/message-master
 
     const hours = Math.floor(Number(o.hours));
     const location = o.district || o.city;
+    const displayId = o.lead_id ?? o.id;
     let message: string;
 
     if (hours >= 72) {
       message =
         `⚠️ ${o.master_alias}, ` +
-        `по заказу #${o.id} (${o.service_type}, ${location}) ` +
+        `по заявке #${displayId} (${o.service_type}, ${location}) ` +
         `смета не отправлена уже ${hours} часов.\n\n` +
         `Отправьте смету или сообщите нам что не можете взять заказ.\n\n` +
         `Вопрос по заказу передан руководителю.`;
     } else if (hours >= 48) {
       message =
         `⚠️ ${o.master_alias}, ` +
-        `по заказу #${o.id} (${o.service_type}, ${location}) ` +
+        `по заявке #${displayId} (${o.service_type}, ${location}) ` +
         `смета не отправлена уже ${hours} часов.\n\n` +
         `Без сметы через приложение заказ не считается активным.\n\n` +
         `Если вы уже договорились с клиентом — отправьте смету через приложение, чтобы клиент оплатил предоплату.\n\n` +
@@ -1334,7 +1343,7 @@ router.post("/template-scenarios/orders-without-receipts/:orderId/message-master
     } else {
       message =
         `👋 ${o.master_alias}, добрый день!\n\n` +
-        `По заказу #${o.id} (${o.service_type}, ${location}) ` +
+        `По заявке #${displayId} (${o.service_type}, ${location}) ` +
         `вы ещё не отправили смету клиенту.\n\n` +
         `Напоминаю: смета составляется в приложении и отправляется клиенту ссылкой. Это занимает 2 минуты.\n\n` +
         `Без сметы клиент не сможет оплатить предоплату, а вы не получите новые заказы.\n\n` +
@@ -1353,13 +1362,14 @@ router.post("/template-scenarios/orders-without-receipts/:orderId/reassign", asy
   const orderId = Number(req.params.orderId);
   try {
     const rows = await db.execute(sql`
-      SELECT o.id, o.service_type, m.id AS master_id, m.alias AS master_alias, m.max_chat_id
+      SELECT o.id, o.lead_id, o.service_type, m.id AS master_id, m.alias AS master_alias, m.max_chat_id
       FROM orders o
       JOIN masters m ON m.id = o.master_id
       WHERE o.id = ${orderId} AND o.deleted_at IS NULL
     `);
     const o = rows.rows[0] as any;
     if (!o) return res.status(404).json({ error: "Заказ не найден" });
+    const displayId = o.lead_id ?? o.id;
 
     await db.execute(sql`
       UPDATE orders
@@ -1384,7 +1394,7 @@ router.post("/template-scenarios/orders-without-receipts/:orderId/reassign", asy
     if (o.max_chat_id && o.master_id) {
       await sendAndSaveMasterMessage(
         o.master_id, o.max_chat_id,
-        `Заказ #${o.id} переназначен другому мастеру.\n` +
+        `Заявка #${displayId} переназначена другому мастеру.\n` +
         `Причина: смета не была отправлена в срок.\n` +
         `Это повлияло на вашу конверсию.`,
         "📄 Заказы без сметы"
@@ -1402,13 +1412,14 @@ router.post("/template-scenarios/orders-without-receipts/:orderId/cancel", async
   const orderId = Number(req.params.orderId);
   try {
     const rows = await db.execute(sql`
-      SELECT o.id, o.service_type, m.id AS master_id, m.alias AS master_alias, m.max_chat_id
+      SELECT o.id, o.lead_id, o.service_type, m.id AS master_id, m.alias AS master_alias, m.max_chat_id
       FROM orders o
       JOIN masters m ON m.id = o.master_id
       WHERE o.id = ${orderId} AND o.deleted_at IS NULL
     `);
     const o = rows.rows[0] as any;
     if (!o) return res.status(404).json({ error: "Заказ не найден" });
+    const displayId = o.lead_id ?? o.id;
 
     await db.execute(sql`
       UPDATE orders SET status = 'cancelled', updated_at = NOW()
@@ -1418,7 +1429,7 @@ router.post("/template-scenarios/orders-without-receipts/:orderId/cancel", async
     if (o.max_chat_id && o.master_id) {
       await sendAndSaveMasterMessage(
         o.master_id, o.max_chat_id,
-        `Заказ #${o.id} отменён.`,
+        `Заявка #${displayId} отменена.`,
         "📄 Заказы без сметы"
       );
     }
@@ -1435,7 +1446,7 @@ router.post("/template-scenarios/orders-without-receipts/send-all", async (req, 
   try {
     const h24ago = new Date(Date.now() - 24 * 3600_000).toISOString();
     const rows = await db.execute(sql`
-      SELECT o.id, o.city, o.district, o.service_type,
+      SELECT o.id, o.lead_id, o.city, o.district, o.service_type,
              COALESCE(o.assigned_at, o.created_at) AS ref_time,
              m.id AS master_id, m.alias AS master_alias, m.max_chat_id,
              EXTRACT(EPOCH FROM (NOW() - COALESCE(o.assigned_at, o.created_at))) / 3600 AS hours_without_receipt
@@ -1457,13 +1468,14 @@ router.post("/template-scenarios/orders-without-receipts/send-all", async (req, 
       const alreadySent = await wasNotified("orders-without-receipts", r.id, r.master_id, tier);
       if (alreadySent) { skipped++; continue; }
       const location = r.district || r.city;
+      const displayId = r.lead_id ?? r.id;
       let msg: string;
       if (hours >= 72) {
-        msg = `⚠️ ${r.master_alias}, по заказу #${r.id} (${r.service_type}, ${location}) смета не отправлена уже ${hours} часов.\n\nОтправьте смету или сообщите нам что не можете взять заказ.\n\nВопрос по заказу передан руководителю.`;
+        msg = `⚠️ ${r.master_alias}, по заявке #${displayId} (${r.service_type}, ${location}) смета не отправлена уже ${hours} часов.\n\nОтправьте смету или сообщите нам что не можете взять заказ.\n\nВопрос по заказу передан руководителю.`;
       } else if (hours >= 48) {
-        msg = `⚠️ ${r.master_alias}, по заказу #${r.id} (${r.service_type}, ${location}) смета не отправлена уже ${hours} часов.\n\nБез сметы через приложение заказ не считается активным.\n\nЕсли вы уже договорились с клиентом — отправьте смету через приложение, чтобы клиент оплатил предоплату.\n\nЕсли не можете взять этот заказ — напишите нам, мы решим вопрос.\n\nОжидаем ответ в течение 3 часов.`;
+        msg = `⚠️ ${r.master_alias}, по заявке #${displayId} (${r.service_type}, ${location}) смета не отправлена уже ${hours} часов.\n\nБез сметы через приложение заказ не считается активным.\n\nЕсли вы уже договорились с клиентом — отправьте смету через приложение, чтобы клиент оплатил предоплату.\n\nЕсли не можете взять этот заказ — напишите нам, мы решим вопрос.\n\nОжидаем ответ в течение 3 часов.`;
       } else {
-        msg = `👋 ${r.master_alias}, добрый день!\n\nПо заказу #${r.id} (${r.service_type}, ${location}) вы ещё не отправили смету клиенту.\n\nНапоминаю: смета составляется в приложении и отправляется клиенту ссылкой. Это занимает 2 минуты.\n\nБез сметы клиент не сможет оплатить предоплату, а вы не получите новые заказы.\n\nОтправьте смету сегодня 👍`;
+        msg = `👋 ${r.master_alias}, добрый день!\n\nПо заявке #${displayId} (${r.service_type}, ${location}) вы ещё не отправили смету клиенту.\n\nНапоминаю: смета составляется в приложении и отправляется клиенту ссылкой. Это занимает 2 минуты.\n\nБез сметы клиент не сможет оплатить предоплату, а вы не получите новые заказы.\n\nОтправьте смету сегодня 👍`;
       }
       await sendAndSaveMasterMessage(r.master_id, r.max_chat_id, msg, "📄 Заказы без сметы").catch(() => {});
       await recordNotification("orders-without-receipts", r.id, r.master_id, tier);
@@ -1529,7 +1541,7 @@ router.post("/template-scenarios/order-diagnostics/:orderId/message-master", asy
   const orderId = Number(req.params.orderId);
   try {
     const rows = await db.execute(sql`
-      SELECT o.id, o.service_type, o.district, o.city, o.status,
+      SELECT o.id, o.lead_id, o.service_type, o.district, o.city, o.status,
              COALESCE(o.assigned_at, o.created_at) AS ref_time,
              EXTRACT(EPOCH FROM (NOW() - o.updated_at)) / 86400 AS days_no_update,
              r.id AS receipt_id, r.created_at AS receipt_created_at,
@@ -1556,17 +1568,18 @@ router.post("/template-scenarios/order-diagnostics/:orderId/message-master", asy
     const refTime = new Date(o.ref_time);
     const hoursRef = (Date.now() - refTime.getTime()) / 3_600_000;
     const daysUpdated = Math.floor(Number(o.days_no_update));
+    const displayId = o.lead_id ?? o.id;
 
     let msg: string;
     if (o.status === "master_assigned") {
-      msg = `${o.master_alias}, вы назначены на заказ #${o.id} (${o.service_type}, ${location}).\n\nПожалуйста подтвердите что готовы взяться за заказ и свяжитесь с клиентом.`;
+      msg = `${o.master_alias}, вы назначены на заявку #${displayId} (${o.service_type}, ${location}).\n\nПожалуйста подтвердите что готовы взяться за заказ и свяжитесь с клиентом.`;
     } else if (o.status === "in_progress" && !hasReceipt) {
-      msg = `${o.master_alias}, по заказу #${o.id} (${o.service_type}, ${location}) смета ещё не отправлена клиенту.\n\nПожалуйста отправьте смету через приложение — без неё клиент не сможет внести предоплату.`;
+      msg = `${o.master_alias}, по заявке #${displayId} (${o.service_type}, ${location}) смета ещё не отправлена клиенту.\n\nПожалуйста отправьте смету через приложение — без неё клиент не сможет внести предоплату.`;
     } else if (hasReceipt && !prepaidOk) {
       const h = Math.floor(hoursRef);
-      msg = `${o.master_alias}, по заказу #${o.id} (${o.service_type}, ${location}) предоплата не поступила уже ${h} часов.\n\nУточните у клиента, когда он планирует внести предоплату, и сообщите нам.`;
+      msg = `${o.master_alias}, по заявке #${displayId} (${o.service_type}, ${location}) предоплата не поступила уже ${h} часов.\n\nУточните у клиента, когда он планирует внести предоплату, и сообщите нам.`;
     } else {
-      msg = `${o.master_alias}, по заказу #${o.id} (${o.service_type}, ${location}) нет обновлений уже ${daysUpdated} дн.\n\nПодскажите, что со статусом работ?`;
+      msg = `${o.master_alias}, по заявке #${displayId} (${o.service_type}, ${location}) нет обновлений уже ${daysUpdated} дн.\n\nПодскажите, что со статусом работ?`;
     }
 
     await sendAndSaveMasterMessage(o.master_id, o.max_chat_id, msg, "🔍 Диагностика заказов");
