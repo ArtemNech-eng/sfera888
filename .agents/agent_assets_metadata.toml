@@ -41,3 +41,9 @@ id = "FyjZ5Wp_JglUrAuFqH6W9"
 uri = "file://exports/sfera-master-project.tar.gz"
 type = "unspecified"
 title = "Sfera Master — весь проект (исходники)"
+
+[[outputs]]
+id = "wbQmQn7nrtrfkOpFGNJII"
+uri = "file://exports/sfera-secrets.txt"
+type = "text"
+title = "Secrets — все ключи и значения (формат .env)"
