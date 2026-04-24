@@ -54,8 +54,8 @@ export function CardDetail() {
           </div>
           <div className="p-2.5 border-l border-slate-100">
             <div className="text-[10px] text-slate-500 uppercase">Комиссия</div>
-            <div className="text-lg font-bold text-slate-400">2 640 ₽</div>
-            <div className="text-[10px] text-slate-400">10% от сметы</div>
+            <div className="text-lg font-bold text-slate-400">5 000 ₽</div>
+            <div className="text-[10px] text-slate-400">фикс до 50к</div>
           </div>
         </div>
 

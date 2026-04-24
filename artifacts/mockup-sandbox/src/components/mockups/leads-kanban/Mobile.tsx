@@ -41,7 +41,7 @@ const cards = [
     address: "Москва, Беляево",
     master: "Павел Е.",
     timeInStage: "3д",
-    money: "комиссия 5 800 ₽",
+    money: "комиссия 5 000 ₽",
     bot: "блокировка мастера · подтвердить?",
     severity: "high",
   },

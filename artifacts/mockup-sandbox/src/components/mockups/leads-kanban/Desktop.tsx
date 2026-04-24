@@ -237,7 +237,7 @@ const columns: Column[] = [
         address: "Реутов, Ленина 9",
         master: "Михаил Д.",
         timeInStage: "1д 4ч",
-        money: { kind: "commission", amount: 2100 },
+        money: { kind: "commission", amount: 5000 },
         bot: { action: "напомню мастеру", eta: "через 2ч", tone: "warn" },
       },
       {
@@ -247,7 +247,7 @@ const columns: Column[] = [
         address: "Москва, Бирюлёво",
         master: "Артём Г.",
         timeInStage: "2д",
-        money: { kind: "commission", amount: 4700 },
+        money: { kind: "commission", amount: 11250 },
         bot: { action: "блок при просрочке", eta: "через 8ч", tone: "bad" },
         badge: { text: "просрочка", tone: "bad" },
       },
@@ -270,7 +270,7 @@ const columns: Column[] = [
         master: "Виталий Ж.",
         timeInStage: "3ч назад",
         money: { kind: "paid", amount: 18200 },
-        badge: { text: "комиссия 1820 ₽", tone: "ok" },
+        badge: { text: "комиссия 5 000 ₽", tone: "ok" },
       },
     ],
     accent: "border-l-slate-400",
@@ -310,7 +310,7 @@ const columns: Column[] = [
         address: "Москва, Беляево",
         master: "Павел Е.",
         timeInStage: "3д",
-        money: { kind: "commission", amount: 5800 },
+        money: { kind: "commission", amount: 5000 },
         bot: { action: "блокировка мастера", eta: "подтвердить?", tone: "bad" },
         badge: { text: "блок ждёт", tone: "bad" },
       },
@@ -460,7 +460,7 @@ export function Desktop() {
         <div className="border-l border-slate-100 pl-3">
           <div className="text-slate-500 flex items-center gap-1"><CheckCircle2 className="w-3 h-3 text-emerald-500" /> оплачено</div>
           <div className="text-xl font-bold text-emerald-700">1 412 300 ₽</div>
-          <div className="text-[10px] text-slate-400">комиссия: 141 230 ₽</div>
+          <div className="text-[10px] text-slate-400">комиссия: 282 400 ₽ · 5к до 50к / 15% выше</div>
         </div>
         <div className="border-l border-slate-100 pl-3">
           <div className="text-slate-500 flex items-center gap-1"><TrendingUp className="w-3 h-3" /> доходимость</div>
