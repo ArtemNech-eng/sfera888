@@ -40,4 +40,28 @@ ADMIN_PASSWORD = "admin2026"
 
   [nix]
   channel = "stable-25_05"
+
+[[ports]]
+localPort = 8080
+externalPort = 8080
+
+[[ports]]
+localPort = 8081
+externalPort = 8081
+
+[[ports]]
+localPort = 18954
+externalPort = 3000
+
+[[ports]]
+localPort = 20517
+externalPort = 3001
+
+[[ports]]
+localPort = 21121
+externalPort = 3002
+
+[[ports]]
+localPort = 22444
+externalPort = 80
   
