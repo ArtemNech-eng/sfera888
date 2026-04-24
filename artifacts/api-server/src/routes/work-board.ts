@@ -287,19 +287,24 @@ async function buildBoard() {
       continue;
     }
 
-    // estimate_paid: receipt prepayment confirmed
+    // estimate_paid: receipt prepayment confirmed.
+    // Important: only the *prepayment* is actually in our hands. The card must show
+    // the real money received, not the full estimate (otherwise the board overstates
+    // cash flow). The full estimate (`total`) still drives expected commission and
+    // determines the commission tier (5к / 15%).
     if (receipt && (receipt as any).prepaymentSeenAt) {
       const tier = commissionTier(total);
       if (tier === "fixed") estPaidFixed++; else estPaidPercent++;
+      const realPaid = prepayment > 0 ? prepayment : total;
       const card: Card = {
         ...baseCard,
-        money: { kind: "paid", amount: total, tier },
-        badge: { text: "оплачено", tone: "ok" },
+        money: { kind: "paid", amount: realPaid, tier },
+        badge: { text: prepayment > 0 && prepayment < total ? "аванс получен" : "оплачено", tone: "ok" },
         bot: { action: "ждём отчёт мастера", eta: "норма", tone: "ok" },
       };
       columns.estimate_paid.cards.push(card);
       columns.estimate_paid.count++;
-      columns.estimate_paid.sumPaid! += total;
+      columns.estimate_paid.sumPaid! += realPaid;
       columns.estimate_paid.expectedCommission! += calcCommission(total);
       continue;
     }
