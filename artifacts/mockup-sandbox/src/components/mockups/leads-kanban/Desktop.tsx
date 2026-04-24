@@ -49,6 +49,7 @@ type Column = {
   emoji: string;
   count: number;
   sum?: number;
+  breakdown?: string;
   hint: string;
   cards: Card[];
   expanded?: boolean;
@@ -197,6 +198,7 @@ const columns: Column[] = [
     hint: "работа в процессе",
     count: 54,
     sum: 1_412_300,
+    breakdown: "47× до 50к · 7× выше · ожид. комиссия 282 400 ₽",
     cards: [
       {
         id: "ok1",
@@ -229,6 +231,7 @@ const columns: Column[] = [
     hint: "доплата по итоговой сумме",
     count: 18,
     sum: 184_600,
+    breakdown: "12× фикс 5к · 6× процент от чека",
     cards: [
       {
         id: "c1",
@@ -412,6 +415,9 @@ function ColumnView({ col }: { col: Column }) {
           <div className="text-[10px] text-slate-500 mt-0.5">{col.hint}</div>
           {col.sum !== undefined && (
             <div className="text-[10px] mt-0.5 font-mono text-emerald-700">{formatMoney(col.sum)}</div>
+          )}
+          {col.breakdown && (
+            <div className="text-[9px] mt-0.5 text-slate-500 leading-tight">{col.breakdown}</div>
           )}
         </div>
       </button>
