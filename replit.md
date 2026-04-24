@@ -114,6 +114,15 @@ artifacts-monorepo/
 - `GET /api/dispatch/:orderId` — Dispatch status and respondents list
 - `POST /api/dispatch/:orderId/broadcast` — Send order card to all active masters (without client phone)
 - `POST /api/dispatch/:orderId/assign/:masterId` — Assign order to responding master; notifies with phone; updates others' messages
+- `GET /api/work-board` — 8-column Kanban-конвейер для `/leads → "В работе"` (новые/ждут мастера/без сметы/смета+ждём оплату/смета оплачена/с остатком комиссии/закрыто 24ч/проблема). Возвращает `{funnel, columns, generatedAt}`.
+- `GET /api/work-board/stream` — SSE-канал (heartbeat каждые 5с + push на `workBoardBus.notifyWorkBoardChanged()`).
+- `POST /api/work-board/escalate/:orderId` — Помечает заявку как «нужен оператор» через `operatorNote`. Требует роль admin/lead_operator/master_operator.
+- `POST /api/work-board/clear-problem/:orderId` — Снимает пометку. Та же авторизация.
+- `POST /api/work-board/return-to-pool/:orderId` — Снимает мастера и возвращает заявку в `waiting_master`. **Требует `{confirmed: true}` в теле — авто-возврата нет, только по подтверждению оператора.** Та же авторизация.
+
+## Work Board Kanban (CRM)
+
+UI: `artifacts/crm/src/components/work-board-kanban.tsx`. Десктоп — 8 колонок с funnel-шапкой, мобильный — chip-фильтр (по умолчанию «🚨 Проблема»). Карточки кликабельные `<button>` с keyboard-доступностью (Enter/Space). Подписка на `EventSource("/api/work-board/stream")` инвалидирует TanStack Query при `tick`/`changed`. Тариф комиссии: до 50к — фикс 5к, выше — 15%. Старая страница `/work-monitor` удалена; route редиректит на `/leads?tab=work` через wouter `Redirect`.
 
 ## Master PWA (`/master-pwa/`)
 

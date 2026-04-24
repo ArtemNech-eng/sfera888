@@ -1,4 +1,4 @@
-import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
+import { Switch, Route, Router as WouterRouter, useLocation, Redirect } from "wouter";
 import { useEffect, Component, ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -55,7 +55,6 @@ import AvitoPage from "@/pages/avito";
 import AvitoMessagesPage from "@/pages/avito-messages";
 import AiOfficePage from "@/pages/ai-office";
 import MasterControlPage from "@/pages/master-control";
-import WorkMonitorPage from "@/pages/work-monitor";
 import ScoreDistributionPage from "@/pages/score-distribution";
 import NotFound from "@/pages/not-found";
 
@@ -101,7 +100,7 @@ function Router() {
       <Route path="/avito-messages" component={AvitoMessagesPage} />
       <Route path="/ai-office" component={AiOfficePage} />
       <Route path="/master-control" component={MasterControlPage} />
-      <Route path="/work-monitor" component={WorkMonitorPage} />
+      <Route path="/work-monitor">{() => <Redirect to="/leads?tab=work" />}</Route>
       <Route component={NotFound} />
     </Switch>
   );
