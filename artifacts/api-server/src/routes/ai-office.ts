@@ -47,20 +47,9 @@ function getMskNow() {
   return new Date(Date.now() + 3 * 60 * 60 * 1000);
 }
 
-const TELEGRAM_API = `https://api.telegram.org/bot${process.env["TELEGRAM_BOT_TOKEN"]}`;
-
-async function sendAdminTelegram(text: string): Promise<void> {
-  const chatId = process.env["ADMIN_TELEGRAM_CHAT_ID"];
-  if (!chatId || !process.env["TELEGRAM_BOT_TOKEN"]) return;
-  try {
-    await fetch(`${TELEGRAM_API}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
-    });
-  } catch (e) {
-    console.error("[sendAdminTelegram]", e);
-  }
+// Telegram-бот удалён — админу шлём только в Max.
+async function sendAdminTelegram(_text: string): Promise<void> {
+  // no-op
 }
 
 async function sendAdminMax(text: string): Promise<void> {

@@ -10,10 +10,7 @@ import { sendMaxMessage, sendOnboardingMemo } from "../maxBot.js";
 import { sendAssignmentGreeting } from "../lib/dispatcherAI.js";
 
 const router = Router();
-const TELEGRAM_API = `https://api.telegram.org/bot${process.env["TELEGRAM_BOT_TOKEN"]}`;
-const _DOMAIN = (process.env.REPLIT_DOMAINS ?? "").split(",")[0].trim();
-const BANNER_NEW_ORDER = _DOMAIN ? `https://${_DOMAIN}/api/banners/new_order.png` : null;
-const BANNER_ASSIGNED  = _DOMAIN ? `https://${_DOMAIN}/api/banners/order_assigned.png` : null;
+// Telegram-бот удалён — рассылка только через PWA push и Max.
 
 const ops = requireRole("admin", "master_operator");
 
@@ -66,50 +63,6 @@ async function buildRejectionReason(
   }
 
   return `Что поможет получить следующий заказ:\n${bullets.map(b => `• ${b}`).join("\n")}`;
-}
-
-async function sendTg(chatId: string, text: string, replyMarkup?: object): Promise<string | null> {
-  try {
-    const body: any = { chat_id: chatId, text, parse_mode: "HTML" };
-    if (replyMarkup) body.reply_markup = replyMarkup;
-    const r = await fetch(`${TELEGRAM_API}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const json = await r.json() as any;
-    return json?.result?.message_id?.toString() ?? null;
-  } catch {
-    return null;
-  }
-}
-
-async function sendTgPhoto(chatId: string, photoUrl: string, caption: string, replyMarkup?: object): Promise<string | null> {
-  try {
-    const body: any = { chat_id: chatId, photo: photoUrl, caption, parse_mode: "HTML" };
-    if (replyMarkup) body.reply_markup = replyMarkup;
-    const r = await fetch(`${TELEGRAM_API}/sendPhoto`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const json = await r.json() as any;
-    return json?.result?.message_id?.toString() ?? null;
-  } catch {
-    return sendTg(chatId, caption, replyMarkup); // fallback to text
-  }
-}
-
-async function editTg(chatId: string, messageId: string, text: string, replyMarkup?: object) {
-  try {
-    const body: any = { chat_id: chatId, message_id: parseInt(messageId), text, parse_mode: "HTML" };
-    if (replyMarkup !== undefined) body.reply_markup = replyMarkup;
-    await fetch(`${TELEGRAM_API}/editMessageText`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-  } catch {}
 }
 
 function formatDate(d: Date | null | undefined): string {
@@ -252,8 +205,8 @@ router.post("/test-order", ops, async (req, res) => {
   const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, parseInt(masterId)));
   const master = masterRows[0];
   if (!master) return res.status(404).json({ error: "Мастер не найден" });
-  if (!master.telegramId && !master.pwaLogin) {
-    return res.status(400).json({ error: "У мастера нет ни Telegram, ни PWA — невозможно отправить заказ" });
+  if (!master.pwaLogin && !master.maxChatId) {
+    return res.status(400).json({ error: "У мастера нет ни PWA, ни Max — невозможно отправить заказ" });
   }
 
   // Create a placeholder lead for the test order
@@ -283,21 +236,7 @@ router.post("/test-order", ops, async (req, res) => {
     dispatchStatus: "dispatching",
   }).returning();
 
-  const cardText = buildOrderCard(order, order.id);
-  const replyMarkup = {
-    inline_keyboard: [
-      [{ text: "Откликнуться 🙋", callback_data: `respond_order_${order.id}` }],
-      [{ text: "💬 Задать вопрос оператору", callback_data: `ask_question_${order.id}` }],
-    ],
-  };
-
-  // Send only to the specific master
-  let msgId: string | null = null;
-  if (master.telegramId) {
-    msgId = BANNER_NEW_ORDER
-      ? await sendTgPhoto(master.telegramId, BANNER_NEW_ORDER, cardText, replyMarkup)
-      : await sendTg(master.telegramId, cardText, replyMarkup);
-  }
+  // Send only to the specific master (PWA push + Max)
   if (master.pwaLogin) {
     await sendPushToMaster(master.id, {
       type: "new_order",
@@ -319,8 +258,8 @@ router.post("/test-order", ops, async (req, res) => {
   await db.insert(orderDispatchesTable).values({
     orderId: order.id,
     masterId: master.id,
-    telegramChatId: master.telegramId || `pwa_${master.id}`,
-    telegramMessageId: msgId || null,
+    telegramChatId: `pwa_${master.id}`,
+    telegramMessageId: null,
     status: "sent",
   });
 
@@ -359,19 +298,7 @@ router.post("/:orderId/add-master/:masterId", ops, async (req, res) => {
     .where(and(eq(orderDispatchesTable.orderId, orderId), eq(orderDispatchesTable.masterId, masterId)));
   if (existing.length > 0) return res.status(409).json({ error: "Already dispatched to this master", status: existing[0].status });
 
-  // Send notification
-  const TELEGRAM_API = `https://api.telegram.org/bot${process.env["TELEGRAM_BOT_TOKEN"]}`;
-  let msgId: string | null = null;
-
-  if (master.telegramId) {
-    const cardText = `📋 <b>Рассылка заказов</b>\n🔔 Новый заказ!\n\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n🔧 ${order.serviceType}\n📐 ${order.area} м²\n\n<i>Откликнитесь в приложении 👆</i>`;
-    const replyMarkup = { inline_keyboard: [[{ text: "Откликнуться 🙋", callback_data: `respond_order_${orderId}` }]] };
-    try {
-      const r = await fetch(`${TELEGRAM_API}/sendMessage`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: master.telegramId, text: cardText, parse_mode: "HTML", reply_markup: replyMarkup }) });
-      const j = await r.json() as any;
-      msgId = j?.result?.message_id?.toString() ?? null;
-    } catch {}
-  }
+  // Send notification (PWA push + Max only — Telegram удалён)
   if (master.maxChatId) {
     await sendMaxMessage(master.maxChatId,
       `📋 Рассылка заказов\n🔔 Новый заказ!\n\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n🔧 ${order.serviceType}\n📐 ${order.area} м²\n\n👉 Откликнитесь в приложении:\nhttps://sfera-master.ru/master-pwa/orders`
@@ -383,8 +310,8 @@ router.post("/:orderId/add-master/:masterId", ops, async (req, res) => {
 
   await db.insert(orderDispatchesTable).values({
     orderId, masterId,
-    telegramChatId: master.telegramId || `pwa_${master.id}`,
-    telegramMessageId: msgId || null,
+    telegramChatId: `pwa_${master.id}`,
+    telegramMessageId: null,
     status: "sent",
   });
   await db.update(mastersTable).set({ totalLeadsReceived: sql`${mastersTable.totalLeadsReceived} + 1` }).where(eq(mastersTable.id, masterId));
@@ -456,11 +383,8 @@ router.post("/:orderId/assign/:masterId", ops, async (req, res) => {
     (order.comment ? `\n💬 Комментарий: ${order.comment}` : "") +
     (lead ? `\n\n📞 Клиент: <b>${lead.clientName}</b>\nТелефон: <b>${lead.clientPhone}</b>` : "");
 
-  if (master.telegramId) {
-    BANNER_ASSIGNED
-      ? await sendTgPhoto(master.telegramId, BANNER_ASSIGNED, assignedMsg)
-      : await sendTg(master.telegramId, assignedMsg);
-  }
+  // Telegram удалён — уведомления только PWA push + Max.
+  void assignedMsg;
 
   // Push notification to assigned master
   if (master.pwaLogin) {
@@ -484,28 +408,14 @@ router.post("/:orderId/assign/:masterId", ops, async (req, res) => {
   // Always log to CRM chat (visible in PWA chat tab as well)
   await db.insert(masterMessagesTable).values({
     masterId: master.id,
-    telegramChatId: master.telegramId ?? `pwa_${master.id}`,
+    telegramChatId: `pwa_${master.id}`,
     text: `✅ Назначен на заявку #${orderId}`,
     fromMaster: false,
     senderName: "system",
     isRead: false,
   }).catch(() => {});
 
-  // Update all other dispatched messages → "Заказ взят"
-  const others = await db.select().from(orderDispatchesTable)
-    .where(and(eq(orderDispatchesTable.orderId, orderId), ne(orderDispatchesTable.masterId, masterId)));
-
-  const takenText =
-    `📋 <b>Заявка #${orderId}</b>\n\n` +
-    `🔧 Услуга: ${order.serviceType}\n` +
-    `📍 Район: ${order.city}${order.district ? ", " + order.district : ""}\n\n` +
-    `⛔ <b>Заявка уже назначена другому мастеру.</b>`;
-
-  for (const d of others) {
-    if (d.telegramMessageId) {
-      await editTg(d.telegramChatId, d.telegramMessageId, takenText, { inline_keyboard: [] });
-    }
-  }
+  // Telegram удалён — других мастеров уведомляем через PWA push ниже.
 
   // ── Personalised rejection notifications for respondents ─────────────────
   if (respondedDispatches.length > 0) {
@@ -542,7 +452,7 @@ router.post("/:orderId/assign/:masterId", ops, async (req, res) => {
       const logText = `⛔ Не назначен на заявку #${orderId}. ${reason.replace(/<[^>]+>/g, "").slice(0, 200)}`;
       await db.insert(masterMessagesTable).values({
         masterId: rm.id,
-        telegramChatId: rm.telegramId ?? `pwa_${rm.id}`,
+        telegramChatId: `pwa_${rm.id}`,
         text: logText,
         fromMaster: false,
         senderName: "system",

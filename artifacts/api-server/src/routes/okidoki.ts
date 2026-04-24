@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { db, mastersTable, telegramChatsTable, masterMessagesTable, voronkaColumnsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { notifyMasterActivated } from "../telegram-notify.js";
 
 const router = Router();
 
@@ -48,7 +47,6 @@ router.post("/webhook", async (req, res) => {
         senderName: "system",
         isRead: true,
       }).catch(() => {});
-      await notifyMasterActivated(chatId, master.alias);
     }
   } catch (err) {
     console.error("[OkiDoki] Webhook error:", err);

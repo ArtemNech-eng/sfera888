@@ -4,63 +4,13 @@ import { eq, desc, and, inArray } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
 import { sendPushToMaster } from "../lib/push.js";
 import { sendMaxMessage } from "../maxBot.js";
+import { objectStorageClient } from "../lib/objectStorage.js";
 import multer from "multer";
 
 const router = Router();
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
-// Set TELEGRAM_ENABLED=true in env to re-enable Telegram sending from CRM chat
-const TELEGRAM_ENABLED = process.env.TELEGRAM_ENABLED === "true";
+// Telegram-бот удалён — CRM-чат пишет только в БД и шлёт PWA push + Max.
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
-
-async function sendTgMessage(chatId: string, text: string): Promise<number | null> {
-  const resp = await fetch(`${TELEGRAM_API}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
-  });
-  if (!resp.ok) return null;
-  const data = await resp.json() as any;
-  return data?.result?.message_id ?? null;
-}
-
-async function editTgMessage(chatId: string, messageId: number, newText: string): Promise<boolean> {
-  const resp = await fetch(`${TELEGRAM_API}/editMessageText`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, message_id: messageId, text: newText, parse_mode: "HTML" }),
-  });
-  return resp.ok;
-}
-
-async function sendTgPhoto(chatId: string, photoBuffer: Buffer, filename: string, caption?: string): Promise<string | null> {
-  const form = new FormData();
-  form.set("chat_id", chatId);
-  const blob = new Blob([photoBuffer], { type: "image/jpeg" });
-  form.set("photo", blob, filename);
-  if (caption) form.set("caption", caption);
-
-  const resp = await fetch(`${TELEGRAM_API}/sendPhoto`, {
-    method: "POST",
-    body: form,
-  });
-  if (!resp.ok) return null;
-
-  const data = await resp.json() as any;
-  const photos = data?.result?.photo;
-  if (!photos?.length) return null;
-
-  // Get the largest photo file_id
-  const fileId = photos[photos.length - 1].file_id;
-  // Resolve to public URL
-  const fileResp = await fetch(`${TELEGRAM_API}/getFile?file_id=${fileId}`);
-  const fileData = await fileResp.json() as any;
-  const filePath = fileData?.result?.file_path;
-  if (!filePath) return null;
-
-  return `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
-}
 
 // GET /api/master-chat — list threads with unread count
 router.get("/", requireRole("admin", "master_operator"), async (_req, res) => {
@@ -219,19 +169,33 @@ router.post("/:masterId/reply", requireRole("admin", "master_operator"), upload.
 
   const senderLabel = operatorName ?? "Оператор";
   let savedPhotoUrl: string | null = null;
-  let tgMessageId: number | null = null;
-  const chatId = master.telegramId ?? `pwa_${master.id}`;
+  const chatId = `pwa_${master.id}`;
 
-  // Send to Telegram only if master has telegram AND Telegram is enabled
-  if (master.telegramId && TELEGRAM_ENABLED) {
-    if (photoFile) {
-      const caption = text ? `💬 <b>${senderLabel}:</b> ${text}` : `💬 <b>${senderLabel}</b>`;
-      savedPhotoUrl = await sendTgPhoto(master.telegramId, photoFile.buffer, photoFile.originalname, caption);
-      if (!savedPhotoUrl && text) {
-        tgMessageId = await sendTgMessage(master.telegramId, `💬 <b>${senderLabel}:</b>\n\n${text}`);
-      }
-    } else if (text) {
-      tgMessageId = await sendTgMessage(master.telegramId, `💬 <b>Ответ оператора</b>\n\n${text}`);
+  if (photoFile) {
+    try {
+      const { randomUUID } = await import("crypto");
+      const privateDir = process.env.PRIVATE_OBJECT_DIR || "";
+      if (!privateDir) throw new Error("PRIVATE_OBJECT_DIR not configured");
+      const objectId = randomUUID();
+      const ext = (photoFile.originalname?.split(".").pop() ?? "jpg").toLowerCase().slice(0, 5);
+      const fullPath = `${privateDir}/master-chat/${masterId}/${objectId}.${ext}`;
+      const parts = fullPath.replace(/^\//, "").split("/");
+      const bucketName = parts[0];
+      const objectName = parts.slice(1).join("/");
+      const bucket = objectStorageClient.bucket(bucketName);
+      const file = bucket.file(objectName);
+      await file.save(photoFile.buffer, {
+        contentType: photoFile.mimetype || "image/jpeg",
+        resumable: false,
+      });
+      // Path served by GET /storage/objects/:entityId (see routes/storage.ts).
+      // entityId = path under PRIVATE_OBJECT_DIR.
+      const privateParts = privateDir.replace(/^\//, "").split("/");
+      const entityId = parts.slice(privateParts.length).join("/");
+      savedPhotoUrl = `/objects/${entityId}`;
+    } catch (e) {
+      console.error("[master-chat] photo upload failed:", e);
+      return res.status(500).json({ error: "Не удалось сохранить фото" });
     }
   }
 
@@ -243,7 +207,7 @@ router.post("/:masterId/reply", requireRole("admin", "master_operator"), upload.
     senderName: senderLabel,
     isRead: true,
     photoUrl: savedPhotoUrl,
-    telegramMessageId: tgMessageId,
+    telegramMessageId: null,
   }).returning();
 
   // Push notification to master's PWA
@@ -279,11 +243,7 @@ router.patch("/messages/:messageId", requireRole("admin", "master_operator"), as
   if (!msg) return res.status(404).json({ error: "Message not found" });
   if (msg.fromMaster) return res.status(403).json({ error: "Cannot edit master messages" });
 
-  // Sync edit to Telegram if we have the message_id
-  if (msg.telegramMessageId && msg.telegramChatId) {
-    const tgText = `💬 <b>Ответ оператора</b>\n\n${text.trim()} <i>(изменено)</i>`;
-    await editTgMessage(msg.telegramChatId, msg.telegramMessageId, tgText).catch(() => {});
-  }
+  // Telegram удалён — синхронизация правок в TG больше не выполняется.
 
   const [updated] = await db.update(masterMessagesTable)
     .set({ text: text.trim(), editedAt: new Date() })

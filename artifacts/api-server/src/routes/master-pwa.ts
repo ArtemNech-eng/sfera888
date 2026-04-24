@@ -625,6 +625,11 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
   const masterId = (req.session as any).masterId;
   const orderId = parseInt(req.params.id);
 
+  // Load master profile up-front — нужен для тегов и для `master.contractSignedAt`
+  // (раньше переменная `master` использовалась без объявления → 500).
+  const master = await getMasterById(masterId);
+  if (!master) return res.status(401).json({ error: "Профиль мастера не найден" });
+
   const dispatches = await db.select().from(orderDispatchesTable)
     .where(and(eq(orderDispatchesTable.masterId, masterId), eq(orderDispatchesTable.orderId, orderId), inArray(orderDispatchesTable.status, ["sent", "responded"])));
   if (!dispatches[0]) return res.status(404).json({ error: "Заявка не найдена или вы уже откликнулись" });

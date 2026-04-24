@@ -4,42 +4,7 @@ import { getMasterEligibility, getOverdueMasterIds } from "./orderEligibility.js
 import { sendPushToMaster } from "./push.js";
 import { sendMaxMessage } from "../maxBot.js";
 
-const TELEGRAM_API = `https://api.telegram.org/bot${process.env["TELEGRAM_BOT_TOKEN"]}`;
-const _DOMAIN = (process.env.REPLIT_DOMAINS ?? "").split(",")[0].trim();
-const BANNER_NEW_ORDER = _DOMAIN ? `https://${_DOMAIN}/api/banners/new_order.png` : null;
-
-async function sendTg(chatId: string, text: string, replyMarkup?: object): Promise<string | null> {
-  try {
-    const body: any = { chat_id: chatId, text, parse_mode: "HTML" };
-    if (replyMarkup) body.reply_markup = replyMarkup;
-    const r = await fetch(`${TELEGRAM_API}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const json = await r.json() as any;
-    return json?.result?.message_id?.toString() ?? null;
-  } catch {
-    return null;
-  }
-}
-
-async function sendTgPhoto(chatId: string, photoUrl: string, caption: string, replyMarkup?: object): Promise<string | null> {
-  try {
-    const body: any = { chat_id: chatId, photo: photoUrl, caption, parse_mode: "HTML" };
-    if (replyMarkup) body.reply_markup = replyMarkup;
-    const r = await fetch(`${TELEGRAM_API}/sendPhoto`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const json = await r.json() as any;
-    return json?.result?.message_id?.toString() ?? null;
-  } catch {
-    return sendTg(chatId, caption, replyMarkup);
-  }
-}
-
+// Telegram-бот удалён — мастера получают заявки только через PWA push и Max.
 function formatDate(d: Date | null | undefined): string {
   if (!d) return "не указана";
   return new Intl.DateTimeFormat("ru-RU", {
@@ -129,8 +94,9 @@ export async function performBroadcast(
     notReachable: 0, rejected: 0, notEligible: 0, wrongSpecialty: 0, notReady: 0,
   };
 
+  // Telegram-бот удалён: считаем мастера достижимым только при наличии PWA-логина или Max-чата.
   const reachable = allMasters.filter(m => {
-    if (m.telegramId || m.pwaLogin || m.maxChatId) return true;
+    if (m.pwaLogin || m.maxChatId) return true;
     skipStats.notReachable++;
     return false;
   });
@@ -241,12 +207,6 @@ export async function performBroadcast(
   const skipped = reachable.length - availableEligible.length;
 
   for (const master of availableEligible) {
-    let msgId: string | null = null;
-    if (master.telegramId) {
-      msgId = BANNER_NEW_ORDER
-        ? await sendTgPhoto(master.telegramId, BANNER_NEW_ORDER, cardText, replyMarkup)
-        : await sendTg(master.telegramId, cardText, replyMarkup);
-    }
     if (master.pwaLogin) {
       await sendPushToMaster(master.id, {
         type: "new_order",
@@ -267,8 +227,8 @@ export async function performBroadcast(
     await db.insert(orderDispatchesTable).values({
       orderId,
       masterId: master.id,
-      telegramChatId: master.telegramId || `pwa_${master.id}`,
-      telegramMessageId: msgId || null,
+      telegramChatId: `pwa_${master.id}`,
+      telegramMessageId: null,
       status: "sent",
     });
     // Track total leads received per master for conversion analytics

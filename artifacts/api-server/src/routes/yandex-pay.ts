@@ -6,8 +6,7 @@ const router = Router();
 
 const YANDEX_PAY_API_KEY = process.env.YANDEX_PAY_API_KEY ?? "";
 const DOMAIN = (process.env.REPLIT_DOMAINS ?? "").split(",")[0].trim();
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? "";
-const TG_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
+// Telegram-бот удалён.
 
 const YANDEX_PAY_BASE = "https://sandbox.pay.yandex.ru/api/merchant/v1";
 
@@ -178,22 +177,9 @@ router.post("/webhook", async (req, res) => {
       : [];
     const master = masterRows[0];
 
-    if (master?.telegramId && BOT_TOKEN) {
-      await fetch(`${TG_API}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: master.telegramId,
-          parse_mode: "HTML",
-          text:
-            `✅ <b>Оплата подтверждена!</b>\n\n` +
-            `Комиссия по заказу #${tx?.orderId} в размере <b>${Number(tx?.commission).toLocaleString("ru-RU")} ₽</b> оплачена. Спасибо!`,
-          reply_markup: {
-            inline_keyboard: [[{ text: "« Меню", callback_data: "main_menu" }]],
-          },
-        }),
-      });
-    }
+    // Telegram-бот удалён — мастер увидит подтверждение в PWA / Max.
+    void master;
+    void tx;
   } catch (e) {
     console.error("[yandex-pay webhook] error:", e);
   }
@@ -210,7 +196,7 @@ router.get("/success", (_req, res) => {
 h2{color:#16a34a;font-size:1.6rem;margin-bottom:8px}p{color:#555;line-height:1.5}</style></head><body>
 <div class="card"><div style="font-size:64px">✅</div>
 <h2>Оплата прошла!</h2>
-<p>Вернитесь в Telegram-бот и нажмите <b>«Я оплатил — проверить»</b>.</p></div></body></html>`);
+<p>Можете закрыть это окно и вернуться в приложение мастера.</p></div></body></html>`);
 });
 
 router.get("/error", (_req, res) => {

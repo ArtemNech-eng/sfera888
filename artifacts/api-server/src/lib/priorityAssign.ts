@@ -25,33 +25,29 @@ import { sendMaxMessage } from "../maxBot.js";
 import { getManagerUserId } from "../managerBot.js";
 import { sendPushToMaster } from "./push.js";
 
-const TELEGRAM_API = `https://api.telegram.org/bot${process.env["TELEGRAM_BOT_TOKEN"]}`;
+// Telegram-бот удалён.
 const WAVE1_MINUTES = 30;
 const WAVE2_MINUTES = 60;
 
 // ─── Assignment mode check ────────────────────────────────────────────────────
 
+// Авто-назначение полностью выключено по требованию: оператор назначает
+// мастера руками. Если когда-нибудь понадобится снова включить — поменять
+// тут и обновить SystemSettings.assignment_mode.
+const AUTO_ASSIGN_ENABLED = false;
+
 async function isAutoAssignMode(): Promise<boolean> {
+  if (!AUTO_ASSIGN_ENABLED) return false;
   try {
     const rows = await db.select().from(systemSettingsTable)
       .where(eq(systemSettingsTable.key, "assignment_mode"));
     return (rows[0]?.value ?? "auto") === "auto";
   } catch {
-    return true; // default to auto if DB error
+    return false;
   }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-async function sendTg(chatId: string, text: string) {
-  try {
-    await fetch(`${TELEGRAM_API}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
-    });
-  } catch {}
-}
 
 async function getOnSiteColumn() {
   const cols = await db.select().from(voronkaColumnsTable).orderBy(voronkaColumnsTable.position);
@@ -253,15 +249,12 @@ export async function selectAndAssignWinner(orderId: number): Promise<"assigned"
   if (winner.master.maxChatId) {
     sendMaxMessage(winner.master.maxChatId, winnerText).catch(() => {});
   }
-  if (winner.master.telegramId) {
-    sendTg(winner.master.telegramId, winnerText).catch(() => {});
-  }
   sendPushToMaster(winner.master.id, "🎉 Заявка ваша!", `Позвоните клиенту в течение 15 минут. Заявка #${orderId}`).catch(() => {});
 
   // Log to CRM chat
   await db.insert(masterMessagesTable).values({
     masterId: winner.master.id,
-    telegramChatId: winner.master.telegramId ?? `pwa_${winner.master.id}`,
+    telegramChatId: `pwa_${winner.master.id}`,
     text: `✅ Заявка #${orderId} автоматически назначена (приоритет ${winner.tier}, конверсия ${winner.conversionPct}%)`,
     fromMaster: false,
     senderName: "system",
@@ -281,9 +274,6 @@ export async function selectAndAssignWinner(orderId: number): Promise<"assigned"
 
     if (loser.master.maxChatId) {
       sendMaxMessage(loser.master.maxChatId, loserText).catch(() => {});
-    }
-    if (loser.master.telegramId) {
-      sendTg(loser.master.telegramId, loserText).catch(() => {});
     }
   }
 
@@ -330,7 +320,7 @@ export async function rebroadcastWave2(orderId: number): Promise<void> {
     const master = masterRows[0];
     if (!master) continue;
     if (master.maxChatId) sendMaxMessage(master.maxChatId, wave2Text).catch(() => {});
-    if (master.telegramId) sendTg(master.telegramId, wave2Text).catch(() => {});
+    sendPushToMaster(master.id, "Заявка ещё доступна", `Заявка #${orderId} ещё открыта — откликнитесь!`).catch(() => {});
   }
 
   console.log(`[priorityAssign] Order #${orderId} wave 2 broadcast to ${dispatches.length} master(s)`);

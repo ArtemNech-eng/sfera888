@@ -2,7 +2,6 @@ import { Router } from "express";
 import { db, mastersTable, masterTasksTable, ordersTable, leadsTable, telegramChatsTable, voronkaColumnsTable, transactionsTable, maxBotLogsTable, masterCheckinsTable, systemSettingsTable, usersTable } from "@workspace/db";
 import { eq, desc, inArray, isNull, isNotNull, ne, count, gte, avg, sql, and } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
-import { notifyMasterActivated } from "../telegram-notify.js";
 import { logMaxEvent } from "../maxBot.js";
 import { hashPassword } from "../lib/auth.js";
 import multer from "multer";
@@ -390,13 +389,7 @@ router.patch("/:id", requireRole("admin", "master_operator"), async (req, res) =
     }
   }
 
-  // Notify master in Telegram when admin activates from pending_contract
-  const updated = result[0];
-  if (status === "active" && oldStatus === "pending_contract" && updated.telegramId) {
-    const tgRows = await db.select().from(telegramChatsTable).where(eq(telegramChatsTable.telegramChatId, updated.telegramId));
-    const chatId = tgRows[0]?.telegramChatId ?? updated.telegramId;
-    notifyMasterActivated(chatId, updated.alias).catch(() => {});
-  }
+  // Telegram-бот удалён — мастер видит активацию в PWA / Max.
 
   // Re-fetch to get the final state (voronkaColumnId may have been updated above)
   const [finalMaster] = await db.select().from(mastersTable).where(eq(mastersTable.id, id));
@@ -432,12 +425,7 @@ router.post("/:id/mark-contract-external", requireRole("admin"), async (req, res
     })
     .where(eq(mastersTable.id, id));
 
-  // Notify master in Telegram if applicable
-  if (master.status === "pending_contract" && master.telegramId) {
-    const tgRows = await db.select().from(telegramChatsTable).where(eq(telegramChatsTable.telegramChatId, master.telegramId));
-    const chatId = tgRows[0]?.telegramChatId ?? master.telegramId;
-    notifyMasterActivated(chatId, master.alias).catch(() => {});
-  }
+  // Telegram-бот удалён.
 
   autoSetPwaCredentials(id, master.phone ?? null).catch(() => {});
 
@@ -484,11 +472,7 @@ router.patch("/:id/verify-passport", requireRole("admin"), async (req, res) => {
     updates.status = "active";
     if (busyCol) updates.voronkaColumnId = busyCol.id;
 
-    if (master.telegramId) {
-      const tgRows = await db.select().from(telegramChatsTable).where(eq(telegramChatsTable.telegramChatId, master.telegramId));
-      const chatId = tgRows[0]?.telegramChatId ?? master.telegramId;
-      notifyMasterActivated(chatId, master.alias).catch(() => {});
-    }
+    // Telegram-бот удалён.
   }
 
   await db.update(mastersTable).set(updates).where(eq(mastersTable.id, id));

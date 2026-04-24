@@ -58,29 +58,7 @@ artifacts-monorepo/
 
 ## Notifications
 
-> **Важно**: Telegram отключён как основной канал уведомлений. Все новые функции должны использовать только PWA push-уведомления и запись в CRM-чат (`masterMessagesTable`). Не добавлять `sendTg()` в новые endpoint'ы.
-
-## Telegram Bot (legacy, не используется для новых функций)
-
-- **Token**: stored as `TELEGRAM_BOT_TOKEN` env var
-- **Webhook**: set to `https://{domain}/api/telegram/webhook`
-- **allowed_updates**: `["message", "callback_query"]`
-
-### Bot Commands
-
-- `/start` — Register new master → placed in column 1 ("Новые"); existing master → welcome back
-- `/orders` — Show available orders (only if column has receivesOrders=true)
-- `/myorders` — Show active orders with client name + phone
-- `/profile` — Show master profile, rating, debt
-- `/menu` — Show inline menu
-
-### Order Flow via Bot
-
-1. Master sends `/start` → created in DB → placed in "Новые" column → board updates
-2. Operator moves master to "Свободен" (receivesOrders=true) column
-3. Master presses "Доступные заказы" → sees list with take buttons
-4. Master presses "Взять заказ" → order assigned, master auto-moved to "На объекте" column
-5. Master presses "Завершить заказ" → order completed, master auto-moved back to "Свободен"
+> **Важно**: Telegram-бот **полностью удалён** из системы (24.04.2026). Уведомления мастеров идут только через **PWA push** и запись в CRM-чат (`masterMessagesTable`); параллельно дублируются в Max-бот, если у мастера есть `maxChatId`. Не добавлять `sendTg()` / `notifyMasterActivated()` / обращения к `api.telegram.org` в новые endpoint'ы. Колонка `masters.telegram_id` оставлена в БД как legacy-данные, но никакие исходящие сообщения через неё не идут.
 
 ### Order Limits
 
@@ -106,9 +84,6 @@ artifacts-monorepo/
 - `DELETE /api/voronka/columns/:id` — Delete column
 - `GET /api/voronka/masters` — Masters with active orders info
 - `PATCH /api/voronka/masters/:id/column` — Move master to column
-- `POST /api/telegram/webhook` — Telegram webhook (no auth)
-- `POST /api/telegram/setup-webhook` — Re-register webhook
-- `POST /api/telegram/notify-new-order` — Notify free masters of new order
 - `POST /api/orders/:id/assign-master` — Assign master (enforces column + limit rules)
 - `POST /api/okidoki/webhook` — Receives contract signing status from doki.online; activates master on status "Подписан" (internal_id=2)
 - `GET /api/dispatch/:orderId` — Dispatch status and respondents list

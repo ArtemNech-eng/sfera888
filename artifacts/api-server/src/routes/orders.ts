@@ -11,17 +11,7 @@ import { sendMaxMessage } from "../maxBot.js";
 import { analyseOrderCancellation, sendFeedbackRequest } from "../lib/dispatcherAI.js";
 import { recordOrderCancelled, recordOrderCompleted, revertOrderCancellation } from "../lib/masterReputation.js";
 
-const TELEGRAM_API = `https://api.telegram.org/bot${process.env["TELEGRAM_BOT_TOKEN"]}`;
-
-async function sendTg(chatId: string, text: string) {
-  try {
-    await fetch(`${TELEGRAM_API}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
-    });
-  } catch {}
-}
+// Telegram-бот удалён.
 
 function buildOrderCard(order: any, orderId: number): string {
   const formatDate = (d: Date | null | undefined) => {
@@ -332,34 +322,7 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
               url: "/balance",
             }).catch(() => {});
           }
-          if (m.telegramId) {
-            const prepayNote = prepaymentDeducted > 0
-              ? `✅ Предоплата ${prepaymentDeducted.toLocaleString("ru-RU")} ₽ зачтена в комиссию\n`
-              : "";
-            const payText = fullyPaidByPrepayment
-              ? `✅ Комиссия полностью покрыта предоплатой клиента. Дополнительный перевод не требуется.`
-              : `📲 Реквизиты для перевода:\n<code>89892860863</code> · Альфа Банк · Игорь К.\n\nПосле оплаты комиссии отправьте скриншот чека кнопкой ниже.`;
-            await fetch(`${TELEGRAM_API}/sendMessage`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                chat_id: m.telegramId,
-                text:
-                  `✅ <b>Сумма по заказу #${id} подтверждена</b>\n\n` +
-                  `💰 Стоимость работ: <b>${Number(o.orderAmount).toLocaleString("ru-RU")} ₽</b>\n` +
-                  `🔸 Комиссия: <b>${commissionValue.toLocaleString("ru-RU")} ₽</b>\n` +
-                  prepayNote +
-                  (netPayable > 0 ? `💳 К оплате: <b>${netPayable.toLocaleString("ru-RU")} ₽</b>\n\n` : "\n") +
-                  payText,
-                parse_mode: "HTML",
-                reply_markup: fullyPaidByPrepayment ? undefined : {
-                  inline_keyboard: [[
-                    { text: "📸 Отправить скриншот оплаты", callback_data: "send_payment_proof" }
-                  ]],
-                },
-              }),
-            }).catch(() => {});
-          }
+          // Telegram удалён — мастер видит детали комиссии в PWA push + балансе.
         } else if (commissionValue !== prevCommission || prepaymentDeducted !== prevPrepaymentDeducted) {
           // Commission re-adjusted: recalculate delta based on net payable difference
           const delta = netPayable - prevNetPayable;
@@ -398,34 +361,7 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
             url: "/balance",
           }).catch(() => {});
         }
-        if (m.telegramId) {
-          const prepayNote = prepaymentDeducted > 0
-            ? `✅ Предоплата ${prepaymentDeducted.toLocaleString("ru-RU")} ₽ зачтена в комиссию\n`
-            : "";
-          const payText = fullyPaidByPrepayment
-            ? `✅ Комиссия полностью покрыта предоплатой клиента. Дополнительный перевод не требуется.`
-            : `📲 Реквизиты для перевода:\n<code>89892860863</code> · Альфа Банк · Игорь К.\n\nПосле оплаты комиссии отправьте скриншот чека кнопкой ниже.`;
-          await fetch(`${TELEGRAM_API}/sendMessage`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              chat_id: m.telegramId,
-              text:
-                `✅ <b>Сумма по заказу #${id} подтверждена</b>\n\n` +
-                `💰 Стоимость работ: <b>${Number(o.orderAmount).toLocaleString("ru-RU")} ₽</b>\n` +
-                `🔸 Комиссия: <b>${commissionValue.toLocaleString("ru-RU")} ₽</b>\n` +
-                prepayNote +
-                (netPayable > 0 ? `💳 К оплате: <b>${netPayable.toLocaleString("ru-RU")} ₽</b>\n\n` : "\n") +
-                payText,
-              parse_mode: "HTML",
-              reply_markup: fullyPaidByPrepayment ? undefined : {
-                inline_keyboard: [[
-                  { text: "📸 Отправить скриншот оплаты", callback_data: "send_payment_proof" }
-                ]],
-              },
-            }),
-          }).catch(() => {});
-        }
+        // Telegram удалён — мастер видит детали комиссии в PWA push + балансе.
       }
     }
   }
@@ -534,74 +470,37 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
   if (rejectCancellation && current.masterId) {
     const rejectedMasterId = current.masterId;
 
-    // Notify the rejected master via Telegram
     const rejectedMasterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, rejectedMasterId));
     const rejectedMaster = rejectedMasterRows[0];
-    if (rejectedMaster?.telegramId) {
-      await sendTg(rejectedMaster.telegramId,
-        `⚠️ <b>Запрос на отмену заказа #${id} отклонён оператором.</b>\n\n` +
-        `Заказ передан другим мастерам. Ваш статус в воронке остаётся прежним — оператор переведёт вас в «Свободен» вручную.`
-      );
+    const rejectionMsg =
+      `⚠️ Запрос на отмену заказа #${id} отклонён оператором.\n\n` +
+      `Заказ передан другим мастерам. Ваш статус в воронке остаётся прежним — оператор переведёт вас в «Свободен» вручную.`;
+    if (rejectedMaster?.maxChatId) {
+      await sendMaxMessage(rejectedMaster.maxChatId, rejectionMsg).catch(() => {});
+    }
+    if (rejectedMaster?.pwaLogin) {
+      await sendPushToMaster(rejectedMasterId, {
+        title: "Отмена заказа отклонена",
+        body: `Заказ #${id} передан другим мастерам.`,
+        orderId: id,
+      } as any).catch(() => {});
     }
 
     // Delete old dispatch records so we can re-broadcast
     await db.delete(orderDispatchesTable).where(eq(orderDispatchesTable.orderId, id));
 
     // Permanently block the cancelling master from receiving this order again
-    // (broadcastOrder checks for "rejected" records and skips those masters)
-    const chatIdForRejected =
-      rejectedMaster?.maxChatId ?? rejectedMaster?.telegramId ?? `pwa_${rejectedMasterId}`;
     await db.insert(orderDispatchesTable).values({
       orderId: id,
       masterId: rejectedMasterId,
-      telegramChatId: chatIdForRejected,
+      telegramChatId: rejectedMaster?.maxChatId ?? `pwa_${rejectedMasterId}`,
       status: "rejected",
       rejectionReason: "Мастер запросил отмену — оператор отклонил и переназначил заказ",
     });
+    void buildOrderCard;
 
-    // Re-broadcast to eligible masters in the same city (excluding the one who tried to cancel)
-    const allMasters = await db.select().from(mastersTable)
-      .where(and(eq(mastersTable.status, "active"), eq(mastersTable.city, o.city)));
-    const withTg = allMasters.filter(m => m.telegramId && m.id !== rejectedMasterId);
-
-    const activeOrders = await db.select().from(ordersTable)
-      .where(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
-
-    const cardText = buildOrderCard(o, id);
-    const replyMarkup = {
-      inline_keyboard: [
-        [{ text: "Откликнуться 🙋", callback_data: `respond_order_${id}` }],
-        [{ text: "💬 Задать вопрос оператору", callback_data: `ask_question_${id}` }],
-      ],
-    };
-
-    const overdueMasterIdsForRebroadcast = await getOverdueMasterIds();
-    let sent = 0;
-    for (const m of withTg) {
-      if (!m.telegramId) continue;
-      const myActiveCount = activeOrders.filter(ao => ao.masterId === m.id).length;
-      if (!getMasterEligibility(m, myActiveCount, overdueMasterIdsForRebroadcast).canAccept) continue;
-      try {
-        const r = await fetch(`${TELEGRAM_API}/sendMessage`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chat_id: m.telegramId, text: cardText, parse_mode: "HTML", reply_markup: replyMarkup }),
-        });
-        const j = await r.json() as any;
-        const msgId = j?.result?.message_id?.toString() ?? null;
-        await db.insert(orderDispatchesTable).values({
-          orderId: id, masterId: m.id, telegramChatId: m.telegramId,
-          telegramMessageId: msgId, status: "sent",
-        });
-        sent++;
-      } catch {}
-    }
-
-    if (sent > 0) {
-      await db.update(ordersTable)
-        .set({ dispatchStatus: "dispatching", updatedAt: new Date() })
-        .where(eq(ordersTable.id, id));
-    }
+    // Re-broadcast to all eligible masters via standard pipeline (PWA push + Max).
+    await performBroadcast(id).catch(e => console.error("[orders] re-broadcast error:", e));
   }
 
   // Async analysis of suspicious cancellations — fire and forget
@@ -629,7 +528,7 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
       // Save to CRM chat (visible in CRM and master's app)
       await db.insert(masterMessagesTable).values({
         masterId: cancelledMaster.id,
-        telegramChatId: cancelledMaster.telegramId ?? String(cancelledMaster.id),
+        telegramChatId: `pwa_${cancelledMaster.id}`,
         text: cancelNotifyText,
         fromMaster: false,
         senderName: "system",
@@ -821,7 +720,7 @@ router.post("/:id/unassign-master", requireRole("admin", "master_operator"), asy
     // Log to CRM chat (visible in PWA chat tab)
     await db.insert(masterMessagesTable).values({
       masterId: prevMasterId,
-      telegramChatId: master.telegramId ?? `pwa_${prevMasterId}`,
+      telegramChatId: `pwa_${prevMasterId}`,
       text: `⚠️ Снят с заявки #${id} (${order.serviceType}, ${order.city}) администратором. Причина: ${reason.trim()}`,
       fromMaster: false,
       senderName: "system",
@@ -878,7 +777,7 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
     await db.insert(orderDispatchesTable).values({
       orderId,
       masterId,
-      telegramChatId: master.telegramId ?? `pwa_${masterId}`,
+      telegramChatId: `pwa_${masterId}`,
       status: "assigned",
     });
   }
@@ -929,7 +828,7 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
   // Log to CRM chat (visible in PWA chat tab)
   await db.insert(masterMessagesTable).values({
     masterId: master.id,
-    telegramChatId: master.telegramId ?? `pwa_${master.id}`,
+    telegramChatId: `pwa_${master.id}`,
     text: `✅ Назначен на заявку #${orderId} (вручную администратором)`,
     fromMaster: false,
     senderName: "system",
