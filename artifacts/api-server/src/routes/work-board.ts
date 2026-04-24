@@ -81,6 +81,16 @@ interface Card {
   timeInStage: string;
   ageMs: number;
   money?: { kind: "estimate" | "paid" | "commission"; amount: number; tier?: "fixed" | "percent" };
+  // Detailed commission progress for "estimate_paid" and "commission_left" cards.
+  // Lets the operator see at a glance how much commission has already been collected
+  // (typically the 5к prepayment) and how much is still owed.
+  commission?: {
+    orderTotal: number;   // full estimate / order amount (the "Сумма")
+    total: number;        // total commission expected (5к fixed or 15% percent)
+    paid: number;         // commission already received
+    left: number;         // remaining commission (max(total-paid, 0))
+    tier: "fixed" | "percent";
+  };
   bot?: { action: string; eta: string; tone: BotTone };
   badge?: { text: string; tone: BadgeTone };
   status: string;
@@ -276,9 +286,17 @@ async function buildBoard() {
     if (orderAmount > 0 && commissionUnpaidAmount > 0 && (o.status === "in_progress" || o.status === "master_assigned")) {
       const tier = commissionTier(orderAmount);
       if (tier === "fixed") commLeftFixed++; else commLeftPercent++;
+      const commTotal = calcCommission(orderAmount);
+      const commPaid = Math.max(0, commTotal - commissionUnpaidAmount);
       const card: Card = {
         ...baseCard,
-        money: { kind: "commission", amount: commissionUnpaidAmount, tier },
+        commission: {
+          orderTotal: orderAmount,
+          total: commTotal,
+          paid: commPaid,
+          left: commissionUnpaidAmount,
+          tier,
+        },
         bot: { action: "напомню мастеру", eta: "через 2ч", tone: "warn" },
       };
       columns.commission_left.cards.push(card);
@@ -296,16 +314,27 @@ async function buildBoard() {
       const tier = commissionTier(total);
       if (tier === "fixed") estPaidFixed++; else estPaidPercent++;
       const realPaid = prepayment > 0 ? prepayment : total;
+      // Convention: the 5к prepayment goes straight into commission. So whatever the
+      // client transferred as a deposit counts as commission already received,
+      // capped at the total expected commission.
+      const commTotal = calcCommission(total);
+      const commPaid = Math.min(commTotal, realPaid);
+      const commLeft = Math.max(0, commTotal - commPaid);
       const card: Card = {
         ...baseCard,
-        money: { kind: "paid", amount: realPaid, tier },
-        badge: { text: prepayment > 0 && prepayment < total ? "аванс получен" : "оплачено", tone: "ok" },
+        commission: {
+          orderTotal: total,
+          total: commTotal,
+          paid: commPaid,
+          left: commLeft,
+          tier,
+        },
         bot: { action: "ждём отчёт мастера", eta: "норма", tone: "ok" },
       };
       columns.estimate_paid.cards.push(card);
       columns.estimate_paid.count++;
       columns.estimate_paid.sumPaid! += realPaid;
-      columns.estimate_paid.expectedCommission! += calcCommission(total);
+      columns.estimate_paid.expectedCommission! += commTotal;
       continue;
     }
 

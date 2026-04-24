@@ -28,6 +28,13 @@ interface BoardCard {
   timeInStage: string;
   ageMs: number;
   money?: { kind: "estimate" | "paid" | "commission"; amount: number; tier?: "fixed" | "percent" };
+  commission?: {
+    orderTotal: number;
+    total: number;
+    paid: number;
+    left: number;
+    tier: "fixed" | "percent";
+  };
   bot?: { action: string; eta: string; tone: BotTone };
   badge?: { text: string; tone: BadgeTone };
   status: string;
@@ -155,8 +162,44 @@ function OrderCard({
           <span className="truncate">{card.master ?? "не назначен"}</span>
         </div>
 
+        {/* Commission progress block (estimate_paid / commission_left) */}
+        {card.commission && (
+          <div className="mt-2 rounded-md border border-slate-200 bg-slate-50/70 px-2 py-1.5">
+            <div className="flex items-baseline justify-between text-[10.5px] mb-1">
+              <span className="text-slate-500">Сумма заказа</span>
+              <span className="font-semibold text-slate-700 font-mono">{fmtMoney(card.commission.orderTotal)}</span>
+            </div>
+            <div className="flex items-baseline justify-between text-[10.5px]">
+              <span className="text-slate-500">
+                Комиссия <span className="text-slate-400">({card.commission.tier === "fixed" ? "5к фикс" : "15%"})</span>
+              </span>
+              <span className="font-semibold font-mono">
+                <span className={card.commission.left === 0 ? "text-emerald-700" : "text-emerald-700"}>{fmtMoney(card.commission.paid)}</span>
+                <span className="text-slate-400"> / {fmtMoney(card.commission.total)}</span>
+              </span>
+            </div>
+            {/* Progress bar */}
+            <div className="mt-1.5 h-1.5 rounded-full bg-slate-200 overflow-hidden">
+              <div
+                className={"h-full rounded-full transition-all " + (card.commission.left === 0 ? "bg-emerald-500" : "bg-amber-400")}
+                style={{ width: `${card.commission.total > 0 ? Math.min(100, Math.round((card.commission.paid / card.commission.total) * 100)) : 0}%` }}
+              />
+            </div>
+            {card.commission.left > 0 ? (
+              <div className="mt-1 text-[10px] text-amber-700">
+                остаток: <span className="font-semibold font-mono">{fmtMoney(card.commission.left)}</span>
+              </div>
+            ) : (
+              <div className="mt-1 text-[10px] text-emerald-700 font-medium flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3" /> комиссия оплачена
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex items-center flex-wrap gap-1 mt-2">
-          {card.money && (
+          {/* Plain money badge — only when no detailed commission block is shown */}
+          {!card.commission && card.money && (
             <span className={
               "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10.5px] font-semibold " +
               (card.money.kind === "paid" ? "bg-emerald-100 text-emerald-700"
