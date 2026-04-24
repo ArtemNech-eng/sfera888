@@ -35,3 +35,9 @@ id = "rB52vdxNcuRwNqCvbg6fa"
 uri = "file://sfera-master-crm.tar.gz"
 type = "unspecified"
 title = "Честный мастер — полный код"
+
+[[outputs]]
+id = "FyjZ5Wp_JglUrAuFqH6W9"
+uri = "file://exports/sfera-master-project.tar.gz"
+type = "unspecified"
+title = "Sfera Master — весь проект (исходники)"
