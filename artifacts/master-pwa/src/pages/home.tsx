@@ -408,8 +408,7 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
   order: OrderCard; onRespond: () => void; onReject: () => void; onClose: () => void;
   fomoBlock?: FomoBlock | null;
 }) {
-  const [state, setState] = useState<"idle" | "loading" | "success" | "constrained_success" | "at_limit" | "fomo_blocked" | "needs_contract" | "rejecting">("idle");
-  const [atLimitOrderId, setAtLimitOrderId] = useState<number | null>(null);
+  const [state, setState] = useState<"idle" | "loading" | "success" | "constrained_success" | "fomo_blocked" | "needs_contract" | "rejecting">("idle");
   const [contractFlags, setContractFlags] = useState<{ contractSigned: boolean; passportVerified: boolean }>({ contractSigned: false, passportVerified: false });
   const [constraintTags, setConstraintTags] = useState<string[]>([]);
   const [, setSheetLocation] = useLocation();
@@ -453,9 +452,6 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
       if (result?.needsContract) {
         setContractFlags({ contractSigned: !!result.contractSigned, passportVerified: !!result.passportVerified });
         setState("needs_contract");
-      } else if (result?.atLimit) {
-        setAtLimitOrderId(result.activeOrderId ?? null);
-        setState("at_limit");
       } else if (result?.constraintTags?.length) {
         setConstraintTags(result.constraintTags);
         setState("constrained_success");
@@ -569,40 +565,6 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
               onClick={() => { onClose(); setSheetLocation("/pending-contract"); }}
               className="w-full max-w-sm h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm">
               {contractFlags.contractSigned ? "Открыть статус договора" : "Заключить договор"}
-            </button>
-          </div>
-        ) : state === "at_limit" ? (
-          <div className="flex flex-col items-center justify-center min-h-[70vh] px-6 text-center space-y-5">
-            <div className="w-20 h-20 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
-              <Briefcase size={40} className="text-amber-500" />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold mb-1">Отклик зафиксирован!</h2>
-              <p className="text-sm text-muted-foreground">Мы знаем, что заявка #{order.leadId ?? order.id} вам интересна.</p>
-            </div>
-            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-2xl px-4 py-4 text-left w-full max-w-sm space-y-3">
-              <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Чтобы принять эту заявку, нужно сначала закрыть текущий заказ:</p>
-              <div className="flex items-start gap-2.5">
-                <span className="mt-0.5 w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center flex-shrink-0">
-                  <CheckCircle2 size={14} className="text-emerald-600" />
-                </span>
-                <p className="text-sm text-gray-700 dark:text-gray-300">
-                  <span className="font-medium">Завершить{atLimitOrderId ? ` заказ #${atLimitOrderId}` : " текущий заказ"}</span> и оплатить комиссию — рейтинг сохранится
-                </p>
-              </div>
-              <div className="flex items-start gap-2.5">
-                <span className="mt-0.5 w-6 h-6 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center flex-shrink-0">
-                  <XCircle size={14} className="text-red-500" />
-                </span>
-                <p className="text-sm text-gray-700 dark:text-gray-300">
-                  <span className="font-medium">Отменить текущий заказ</span> — тогда рейтинг будет снижен
-                </p>
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground px-2">Как только закроете предыдущий заказ — напишите нам, и мы вернёмся к этой заявке.</p>
-            <button onClick={onClose}
-              className="w-full max-w-sm h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm">
-              Понял, закрою текущий заказ
             </button>
           </div>
         ) : state === "constrained_success" ? (
