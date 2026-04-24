@@ -1,0 +1,683 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useParams } from "wouter";
+import BottomNav from "@/components/BottomNav";
+import PhoneGate from "@/components/PhoneGate";
+import { getStoredPhone, phonesMatch } from "@/utils/phone";
+
+interface LineItem { description: string; unit?: string; quantity?: number; price: number; }
+interface ReceiptData {
+  id: number;
+  clientName: string;
+  clientPhone: string;
+  city: string;
+  district: string | null;
+  serviceType: string;
+  prepaymentAmount: number;
+  totalAmount: number;
+  lineItems: LineItem[];
+  notes: string | null;
+  masterName: string;
+  masterPhone: string;
+  isClientSubmitted: boolean;
+  isOperatorConfirmed: boolean;
+  createdAt: string;
+}
+
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+const fmt = (n: number) => n.toLocaleString("ru-RU");
+
+function printSmetaDoc(data: ReceiptData) {
+  const date = new Date(data.createdAt).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+  const fmtN = (n: number) => Number(n).toLocaleString("ru-RU");
+  const rows = data.lineItems.map((item, i) => {
+    const qty = item.quantity ?? 1;
+    return `<tr>
+      <td style="padding:6px 8px;border:1px solid #ccc;text-align:center">${i + 1}</td>
+      <td style="padding:6px 8px;border:1px solid #ccc">${item.description}</td>
+      <td style="padding:6px 8px;border:1px solid #ccc;text-align:center">${item.unit ?? "—"}</td>
+      <td style="padding:6px 8px;border:1px solid #ccc;text-align:right">${qty}</td>
+      <td style="padding:6px 8px;border:1px solid #ccc;text-align:right">${fmtN(item.price)}</td>
+      <td style="padding:6px 8px;border:1px solid #ccc;text-align:right;font-weight:600">${fmtN(qty * Number(item.price))}</td>
+    </tr>`;
+  }).join("");
+  const orderInfo = `${data.serviceType}${data.city ? `, ${data.city}` : ""}${data.district ? ` (${data.district})` : ""}`;
+  const remainder = data.totalAmount - data.prepaymentAmount;
+
+  const html = `<!DOCTYPE html>
+<html lang="ru"><head><meta charset="UTF-8"/>
+<title>Смета №${data.id}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,sans-serif;font-size:13px;color:#000;background:#fff;padding:32px}
+  h1{font-size:20px;font-weight:bold;text-align:center;margin-bottom:4px}
+  .sub{text-align:center;font-size:12px;color:#444;margin-bottom:24px}
+  table.meta{width:100%;margin-bottom:8px}
+  table.meta td{padding:3px 0;font-size:13px}
+  table.meta td:first-child{color:#555;width:180px}
+  table.items{width:100%;border-collapse:collapse;margin-top:16px}
+  table.items th{padding:7px 8px;border:1px solid #ccc;background:#f0f0f0;font-size:12px;text-align:left}
+  .summary{margin-top:14px;text-align:right}
+  .summary p{font-size:13px;margin-bottom:4px}
+  .summary p.main{font-size:15px;font-weight:bold}
+  .notes{margin-top:14px;padding:10px 12px;border:1px solid #ccc;border-radius:4px;font-size:12px}
+  .sig{margin-top:40px;display:flex;justify-content:space-between;font-size:12px;color:#333}
+  .sig div{flex:1;padding-right:24px}
+  .sig-line{margin-top:24px;border-top:1px solid #000}
+  @media print{body{padding:16px}}
+</style></head><body>
+<h1>СМЕТА №${data.id}</h1>
+<div class="sub">Честный мастер · sfera-master.ru</div>
+<hr style="border:none;border-top:1px solid #ccc;margin-bottom:20px"/>
+<table class="meta">
+  <tr><td>Дата составления:</td><td><strong>${date}</strong></td></tr>
+  <tr><td>Клиент:</td><td><strong>${data.clientName}</strong></td></tr>
+  ${data.clientPhone ? `<tr><td>Телефон клиента:</td><td>${data.clientPhone}</td></tr>` : ""}
+  ${orderInfo ? `<tr><td>Объект / услуга:</td><td>${orderInfo}</td></tr>` : ""}
+  <tr><td>Исполнитель:</td><td><strong>${data.masterName}</strong>${data.masterPhone ? ` · ${data.masterPhone}` : ""}</td></tr>
+  <tr><td>Организатор:</td><td>ИП Коваленко И.Г. · ИНН 262409599800</td></tr>
+</table>
+<table class="items">
+  <thead><tr>
+    <th style="width:36px;text-align:center">№</th>
+    <th>Наименование работ / материалов</th>
+    <th style="width:70px;text-align:center">Ед.</th>
+    <th style="width:60px;text-align:right">Кол-во</th>
+    <th style="width:90px;text-align:right">Цена, ₽</th>
+    <th style="width:100px;text-align:right">Сумма, ₽</th>
+  </tr></thead>
+  <tbody>${rows}</tbody>
+</table>
+<div class="summary">
+  <p>Итого по смете: <strong>${fmtN(data.totalAmount)} ₽</strong></p>
+  <p class="main">Предоплата (бронирование): <strong>${fmtN(data.prepaymentAmount)} ₽</strong></p>
+  <p style="color:#555">Остаток по факту работ: ${fmtN(remainder)} ₽</p>
+</div>
+${data.notes ? `<div class="notes"><strong>Примечания:</strong> ${data.notes}</div>` : ""}
+<div class="sig">
+  <div>
+    <p>Исполнитель: <strong>${data.masterName}</strong></p>
+    <div class="sig-line"></div>
+    <p style="margin-top:4px">подпись / дата</p>
+  </div>
+  <div>
+    <p>Заказчик: <strong>${data.clientName}</strong></p>
+    <div class="sig-line"></div>
+    <p style="margin-top:4px">подпись / дата</p>
+  </div>
+</div>
+<script>window.onload=function(){window.print()};<\/script>
+</body></html>`;
+
+  const w = window.open("", "_blank", "width=900,height=700");
+  if (!w) return;
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+}
+
+function SectionCard({ title, icon, children, accent }: { title: string; icon: React.ReactNode; children: React.ReactNode; accent?: boolean }) {
+  return (
+    <div style={{
+      background: "#fff",
+      borderRadius: 14,
+      border: accent ? "1.5px solid #99F6E4" : "1.5px solid #D0EDEB",
+      boxShadow: "0 1px 6px rgba(13,148,136,.04)",
+      overflow: "hidden",
+    }}>
+      <div style={{
+        display: "flex", alignItems: "center", gap: 10,
+        padding: "12px 14px",
+        background: accent ? "#F0FDFA" : "#F5FAFA",
+        borderBottom: accent ? "1.5px solid #99F6E4" : "1.5px solid #D0EDEB",
+      }}>
+        <div style={{
+          width: 32, height: 32, borderRadius: 10, flexShrink: 0,
+          background: accent ? "#CCFBF1" : "#F0FDFA",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>{icon}</div>
+        <span style={{ fontSize: 13, fontWeight: 700, color: accent ? "#0F4C45" : "#0D2B28" }}>{title}</span>
+      </div>
+      <div>{children}</div>
+    </div>
+  );
+}
+
+export default function Smeta() {
+  const { token } = useParams<{ token: string }>();
+  const [data, setData] = useState<ReceiptData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
+  const [clientName, setClientName] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [copied, setCopied] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const paymentRef = useRef<HTMLDivElement>(null);
+  const [showGate, setShowGate] = useState(false);
+
+  // PWA Install
+  const [installPrompt, setInstallPrompt] = useState<any>(null);
+  const [isIOS, setIsIOS] = useState(false);
+  const [isInstalled, setIsInstalled] = useState(false);
+  const [showInstallInstructions, setShowInstallInstructions] = useState(false);
+
+  useEffect(() => {
+    const standalone = window.matchMedia("(display-mode: standalone)").matches ||
+      (window.navigator as any).standalone === true;
+    if (standalone) { setIsInstalled(true); return; }
+    const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    if (ios) { setIsIOS(true); return; }
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  }, []);
+
+  const handleInstall = useCallback(async () => {
+    if (isIOS) { setShowInstallInstructions(true); return; }
+    if (installPrompt) {
+      await installPrompt.prompt();
+      const { outcome } = await installPrompt.userChoice;
+      if (outcome === "accepted") { setIsInstalled(true); setInstallPrompt(null); return; }
+    }
+    setShowInstallInstructions(true);
+  }, [isIOS, installPrompt]);
+
+  useEffect(() => {
+    fetch(`/api/receipt/${token}/data`)
+      .then(r => {
+        if (r.status === 404) { setNotFound(true); setLoading(false); return null; }
+        return r.json();
+      })
+      .then(d => {
+        if (d) {
+          setData(d);
+          setLoading(false);
+          try { localStorage.setItem("lastSmetaToken", token); } catch {}
+          const stored = getStoredPhone();
+          if (!stored || !phonesMatch(stored, d.clientPhone)) setShowGate(true);
+        }
+      })
+      .catch(() => { setNotFound(true); setLoading(false); });
+  }, [token]);
+
+  const handleFile = (f: File | null) => {
+    setFile(f);
+    setPreviewUrl(f ? URL.createObjectURL(f) : null);
+  };
+
+  const copyPhone = () => {
+    navigator.clipboard.writeText("79892860863").then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    });
+  };
+
+  const handleSubmit = async () => {
+    setFormError("");
+    if (!clientName.trim()) { setFormError("Введите ваше ФИО"); return; }
+    if (clientName.trim().split(" ").filter(w => w.length > 1).length < 2) {
+      setFormError("Введите полное ФИО (Фамилия Имя Отчество)"); return;
+    }
+    if (!file) { setFormError("Прикрепите скриншот оплаты"); return; }
+    setSubmitting(true);
+    const fd = new FormData();
+    fd.append("clientName", clientName.trim());
+    fd.append("screenshot", file);
+    try {
+      const r = await fetch(`/api/receipt/${token}/confirm`, { method: "POST", body: fd });
+      if (r.ok) {
+        setSubmitted(true);
+        setData(d => d ? { ...d, isClientSubmitted: true } : d);
+      } else {
+        setFormError("Ошибка при отправке. Попробуйте ещё раз.");
+      }
+    } catch {
+      setFormError("Нет соединения. Проверьте интернет.");
+    }
+    setSubmitting(false);
+  };
+
+  if (loading) return (
+    <div style={{ height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#F5FAFA" }}>
+      <div style={{ width: 36, height: 36, border: "3px solid #99F6E4", borderTopColor: "#0D9488", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  );
+
+  if (notFound || !data) return (
+    <div style={{ height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#F5FAFA", fontFamily: "'Plus Jakarta Sans', -apple-system, sans-serif" }}>
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontSize: 48, marginBottom: 12 }}>🔍</div>
+        <h2 style={{ fontSize: 18, fontWeight: 700, color: "#111827", marginBottom: 6 }}>Смета не найдена</h2>
+        <p style={{ color: "#6b7280", fontSize: 13 }}>Ссылка недействительна или устарела</p>
+      </div>
+    </div>
+  );
+
+  if (showGate) return (
+    <PhoneGate expectedPhone={data.clientPhone} onSuccess={() => setShowGate(false)} />
+  );
+
+  const date = new Date(data.createdAt).toLocaleString("ru-RU", { day: "2-digit", month: "short", year: "numeric" });
+  const district = data.district ? `, ${data.district}` : "";
+  const remainder = data.totalAmount - data.prepaymentAmount;
+  const isSubmitted = data.isClientSubmitted || submitted;
+  const isConfirmed = data.isOperatorConfirmed;
+
+  return (
+    <div style={{
+      fontFamily: "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif",
+      minHeight: "100dvh",
+      background: "#F5FAFA",
+      paddingBottom: "calc(72px + env(safe-area-inset-bottom, 0px))",
+    }}>
+      {/* Sticky Topbar */}
+      <div style={{
+        position: "sticky" as const,
+        top: 0,
+        zIndex: 50,
+        background: "#fff",
+        borderBottom: "1.5px solid #D0EDEB",
+        display: "flex", alignItems: "center", gap: 10,
+        padding: "11px 16px",
+        paddingTop: "calc(11px + env(safe-area-inset-top, 0px))",
+        boxShadow: "0 1px 8px rgba(13,148,136,.06)",
+      }}>
+        <button
+          onClick={() => { window.location.href = `${BASE}/`; }}
+          style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: "4px 0", color: "#4A6B69", fontFamily: "inherit", flexShrink: 0 }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          <span style={{ fontSize: 12, fontWeight: 600 }}>Главная</span>
+        </button>
+        <span style={{ fontSize: 15, fontWeight: 700, color: "#0D2B28", flex: 1, textAlign: "center" as const }}>Честный мастер</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+          <span style={{ fontSize: 11, color: "#4A6B69", fontWeight: 500 }}>Смета №{data.id}</span>
+          <button
+            onClick={() => printSmetaDoc(data)}
+            title="Распечатать смету"
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center",
+              width: 32, height: 32, borderRadius: 8,
+              background: "#F0FDFA", border: "1.5px solid #99F6E4",
+              cursor: "pointer", flexShrink: 0, padding: 0,
+            }}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0D9488" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="6 9 6 2 18 2 18 9"/>
+              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+              <rect x="6" y="14" width="12" height="8"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {/* Landing-style content — natural page scroll */}
+      <div style={{ padding: "10px 12px 20px", display: "flex", flexDirection: "column", gap: 8 }}>
+
+        {/* Hero card — compact */}
+        <div style={{ background: "linear-gradient(135deg, #0F4C45, #0D9488)", borderRadius: 16, padding: "14px 16px", boxShadow: "0 4px 16px rgba(13,148,136,.2)" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase" as const, color: "rgba(255,255,255,.5)", marginBottom: 2 }}>Сумма брони</div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 3 }}>
+                <span style={{ fontSize: 30, fontWeight: 800, color: "#fff", letterSpacing: -1, lineHeight: 1 }}>{fmt(data.prepaymentAmount)}</span>
+                <span style={{ fontSize: 15, fontWeight: 600, color: "rgba(255,255,255,.55)" }}>₽</span>
+              </div>
+              <div style={{ fontSize: 10, color: "rgba(255,255,255,.45)", marginTop: 2 }}>
+                {data.serviceType} · итого {fmt(data.totalAmount)} ₽
+              </div>
+            </div>
+            <div style={{ flexShrink: 0 }}>
+              {isConfirmed
+                ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: "rgba(16,185,129,.25)", color: "#6ee7b7" }}>✓ Подтверждена</span>
+                : isSubmitted
+                  ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: "rgba(13,148,136,.2)", color: "#99F6E4" }}>⏳ Проверяем</span>
+                  : <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: "rgba(251,191,36,.2)", color: "#fde68a" }}>⚠ Не оплачена</span>
+              }
+            </div>
+          </div>
+        </div>
+
+        {/* Compact pay CTA — only if not yet submitted */}
+        {!isSubmitted && (
+          <button
+            onClick={() => paymentRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            style={{
+              width: "100%", height: 44, background: "#0D9488", color: "#fff",
+              fontSize: 14, fontWeight: 700, border: "none", borderRadius: 12,
+              cursor: "pointer", fontFamily: "inherit", display: "flex",
+              alignItems: "center", justifyContent: "center", gap: 8,
+              boxShadow: "0 4px 14px rgba(13,148,136,.3)",
+            }}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            </svg>
+            Забронировать мастера · {fmt(data.prepaymentAmount)} ₽
+          </button>
+        )}
+
+        {/* Status banner */}
+        {isSubmitted && (
+          <div style={{
+            borderRadius: 14, padding: "12px 14px",
+            background: isConfirmed ? "#ecfdf5" : "#eef2ff",
+            border: isConfirmed ? "1px solid #a7f3d0" : "1px solid #5EEAD4",
+            display: "flex", alignItems: "center", gap: 10,
+          }}>
+            <span style={{ fontSize: 24, flexShrink: 0 }}>{isConfirmed ? "✅" : "⏳"}</span>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: isConfirmed ? "#065f46" : "#0F4C45", marginBottom: 2 }}>
+                {isConfirmed ? "Оплата подтверждена!" : "Заявка принята!"}
+              </div>
+              <div style={{ fontSize: 12, color: "#6b7280", lineHeight: 1.5 }}>
+                {isConfirmed ? "Мастер закреплён за вашим заказом." : "Оператор проверяет скриншот — обычно до 30 мин."}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Section: Line items */}
+        <SectionCard
+          title={`Перечень работ · ${data.lineItems.length} поз.`}
+          icon={
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
+              <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+            </svg>
+          }
+        >
+          <div style={{ padding: "8px 14px 10px" }}>
+            {data.lineItems.map((item, i) => (
+              <div key={i} style={{
+                display: "flex", justifyContent: "space-between", alignItems: "baseline",
+                gap: 8, padding: "8px 0",
+                borderBottom: "1px solid #f3f4f6",
+              }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, color: "#374151", lineHeight: 1.4 }}>{item.description}</div>
+                  {(item.quantity && item.quantity !== 1) ? (
+                    <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>
+                      {item.quantity} {item.unit ? `${item.unit} × ` : "× "}{fmt(Number(item.price))} ₽{item.unit ? `/${item.unit}` : ""}
+                    </div>
+                  ) : item.unit ? (
+                    <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>{fmt(Number(item.price))} ₽/{item.unit}</div>
+                  ) : null}
+                </div>
+                <span style={{ fontSize: 13, fontWeight: 600, color: "#111827", whiteSpace: "nowrap" as const }}>
+                  {fmt((item.quantity ?? 1) * Number(item.price))} ₽
+                </span>
+              </div>
+            ))}
+            <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}>
+                <span style={{ fontSize: 12, color: "#6b7280" }}>Итого по смете</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "#111827" }}>{fmt(data.totalAmount)} ₽</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 10px", background: "#F0FDFA", borderRadius: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "#0D9488" }}>Бронь (предоплата)</span>
+                <span style={{ fontSize: 14, fontWeight: 800, color: "#0D9488" }}>{fmt(data.prepaymentAmount)} ₽</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}>
+                <span style={{ fontSize: 12, color: "#374151" }}>Остаток по факту работ</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>{fmt(remainder)} ₽</span>
+              </div>
+            </div>
+            {data.notes && (
+              <div style={{ marginTop: 8, background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: "8px 10px" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase" as const, letterSpacing: "0.06em", marginBottom: 3 }}>Примечание</div>
+                <div style={{ fontSize: 12, color: "#374151", lineHeight: 1.5 }}>{data.notes}</div>
+              </div>
+            )}
+          </div>
+        </SectionCard>
+
+        {/* Guarantee block */}
+        <div style={{
+          margin: "0 0 4px",
+          background: "linear-gradient(135deg, #0F4C45 0%, #0D9488 100%)",
+          borderRadius: 16,
+          padding: "16px 18px",
+          display: "flex",
+          gap: 14,
+          alignItems: "flex-start",
+        }}>
+          <div style={{
+            width: 44, height: 44, borderRadius: 12,
+            background: "rgba(255,255,255,0.15)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            flexShrink: 0,
+          }}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+              <path d="M12 2L3 7v5c0 5.25 3.75 10.15 9 11.25C17.25 22.15 21 17.25 21 12V7L12 2z" fill="rgba(255,255,255,0.25)" stroke="white" strokeWidth="1.5" strokeLinejoin="round"/>
+              <path d="M8.5 12.5l2.5 2.5 4.5-4.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: "#ffffff", marginBottom: 6, letterSpacing: "-0.01em" }}>
+              Гарантия возврата
+            </div>
+            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.88)", lineHeight: 1.55 }}>
+              Если по любой причине работы не начнутся — предоплата возвращается в полном объёме.
+            </div>
+            <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: "#86EFAC" }}>
+              Вы ничем не рискуете.
+            </div>
+          </div>
+        </div>
+
+        {/* Section: About */}
+        <SectionCard
+          title="О заказе"
+          icon={
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+            </svg>
+          }
+        >
+          <div style={{ padding: "10px 14px 12px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div style={{ background: "#f9fafb", borderRadius: 10, padding: "10px 12px" }}>
+              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" as const, color: "#9ca3af", marginBottom: 4 }}>Исполнитель</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#111827", marginBottom: 2 }}>{data.masterName}</div>
+              {data.masterPhone && <div style={{ fontSize: 11, color: "#6b7280" }}>{data.masterPhone}</div>}
+            </div>
+            <div style={{ background: "#f9fafb", borderRadius: 10, padding: "10px 12px" }}>
+              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" as const, color: "#9ca3af", marginBottom: 4 }}>Организатор</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#111827", marginBottom: 2 }}>ИП Коваленко И.Г.</div>
+              <div style={{ fontSize: 10, color: "#6b7280" }}>ИНН 262409599800</div>
+            </div>
+          </div>
+          <div style={{ padding: "0 14px 10px" }}>
+            <div style={{ fontSize: 10, color: "#d1d5db" }}>
+              Смета №{data.id} · {date} · sfera-master.ru
+            </div>
+          </div>
+        </SectionCard>
+
+        {/* Section: Payment — scrolled to via CTA button */}
+        {!isSubmitted && (
+          <div ref={paymentRef}>
+            <SectionCard
+              title="Забронировать мастера"
+              accent
+              icon={
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0D9488" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/>
+                </svg>
+              }
+            >
+              <div style={{ padding: "12px 14px 14px" }}>
+
+                {/* Phone + copy inline */}
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase" as const, color: "#9ca3af", marginBottom: 4 }}>
+                    СБП / Альфа Банк
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                    <div
+                      onClick={copyPhone}
+                      style={{ fontSize: 24, fontWeight: 800, color: "#0D9488", letterSpacing: -0.5, cursor: "pointer", flex: 1, lineHeight: 1, userSelect: "none" as const }}
+                    >
+                      8 989 286-08-63
+                    </div>
+                    <button onClick={copyPhone} style={{
+                      flexShrink: 0, padding: "7px 13px",
+                      background: copied ? "#f0fdf4" : "#F0FDFA",
+                      border: `1.5px solid ${copied ? "#bbf7d0" : "#99F6E4"}`,
+                      borderRadius: 9, cursor: "pointer", fontFamily: "inherit",
+                      fontSize: 12, fontWeight: 700,
+                      color: copied ? "#065f46" : "#0D9488",
+                      transition: "all 0.15s",
+                    }}>
+                      {copied ? "✓ Скопировано" : "Копировать"}
+                    </button>
+                  </div>
+                  <div style={{ fontSize: 11, color: "#6b7280" }}>Альфа Банк · ИП Коваленко Игорь Геннадьевич</div>
+                </div>
+
+                {/* Bank details */}
+                <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: "7px 12px", marginBottom: 12 }}>
+                  {[
+                    { label: "Банк", val: "Альфа Банк · СБП" },
+                    { label: "ИНН", val: "262409599800" },
+                    { label: "Назначение", val: `Бронь №${data.id}` },
+                  ].map((row, i, arr) => (
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "3px 0", borderBottom: i < arr.length - 1 ? "1px solid #e5e7eb" : "none" }}>
+                      <span style={{ fontSize: 11, color: "#9ca3af", flexShrink: 0 }}>{row.label}</span>
+                      <span style={{ fontSize: 11, color: "#374151", fontWeight: 500, textAlign: "right" as const }}>{row.val}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Confirm section */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                  <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
+                  <span style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase" as const, letterSpacing: "0.07em", whiteSpace: "nowrap" as const }}>Подтвердите перевод</span>
+                  <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
+                </div>
+
+                <div style={{ marginBottom: 8 }}>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#374151", marginBottom: 3 }}>Ваше ФИО <span style={{ color: "#ef4444" }}>*</span></label>
+                  <input type="text" value={clientName} onChange={e => setClientName(e.target.value)} placeholder="Иванов Иван Иванович" autoComplete="name"
+                    style={{ width: "100%", height: 40, border: "1.5px solid #d1d5db", borderRadius: 9, padding: "0 12px", fontSize: 14, fontFamily: "inherit", color: "#111827", background: "#fff", outline: "none", boxSizing: "border-box" as const }} />
+                </div>
+
+                <div style={{ marginBottom: 8 }}>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#374151", marginBottom: 3 }}>Скриншот оплаты <span style={{ color: "#ef4444" }}>*</span></label>
+                  <div onClick={() => fileRef.current?.click()} style={{ border: "2px dashed #d1d5db", borderRadius: 10, background: "#fff", cursor: "pointer", padding: "10px", display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ width: 28, height: 28, background: "#CCFBF1", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0D9488" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: file ? "#065f46" : "#0D9488" }}>{file ? `✓ ${file.name}` : "Прикрепить скриншот"}</div>
+                      <div style={{ fontSize: 10, color: "#9ca3af" }}>JPG, PNG · до 10 МБ</div>
+                    </div>
+                  </div>
+                  <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => handleFile(e.target.files?.[0] || null)} />
+                  {previewUrl && <img src={previewUrl} alt="preview" style={{ maxWidth: "100%", borderRadius: 8, border: "1px solid #e5e7eb", marginTop: 8 }} />}
+                </div>
+
+                {formError && <div style={{ color: "#b91c1c", fontSize: 12, marginBottom: 8, padding: "8px 10px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8 }}>{formError}</div>}
+
+                <button onClick={handleSubmit} disabled={submitting}
+                  style={{ width: "100%", height: 44, background: submitting ? "#6b7280" : "#0D9488", color: "#fff", fontSize: 14, fontWeight: 700, border: "none", borderRadius: 10, cursor: submitting ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                  {submitting ? "Отправляем..." : "Отправить подтверждение"}
+                </button>
+                <p style={{ fontSize: 10, color: "#9ca3af", textAlign: "center" as const, marginTop: 6 }}>Защищено платформой «Честный мастер»</p>
+              </div>
+            </SectionCard>
+          </div>
+        )}
+
+        {/* Install App — always shown unless already installed in standalone */}
+        {!isInstalled && !showInstallInstructions && (
+          <div style={{
+            background: "#fff",
+            border: "1.5px solid #D0EDEB",
+            borderRadius: 16,
+            padding: "14px 16px",
+            display: "flex",
+            alignItems: "center",
+            gap: 14,
+          }}>
+            <div style={{
+              width: 42, height: 42, borderRadius: 12, flexShrink: 0,
+              background: "linear-gradient(135deg, #0D9488, #0F4C45)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2H8a4 4 0 0 0-4 4v12a4 4 0 0 0 4 4h8a4 4 0 0 0 4-4V8l-4-6z"/>
+                <path d="M12 2v6h4M12 13v4M10 15h4"/>
+              </svg>
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#0D2B28" }}>Установить приложение</div>
+              <div style={{ fontSize: 11, color: "#4A6B69", marginTop: 2 }}>Уведомления о заказе прямо на телефон</div>
+            </div>
+            <button
+              onClick={handleInstall}
+              style={{
+                flexShrink: 0, padding: "8px 14px",
+                background: "#0D9488", color: "#fff",
+                border: "none", borderRadius: 10,
+                fontSize: 12, fontWeight: 700,
+                cursor: "pointer", fontFamily: "inherit",
+                whiteSpace: "nowrap" as const,
+              }}
+            >
+              {isIOS ? "Как установить" : "Установить"}
+            </button>
+          </div>
+        )}
+
+        {/* Install instructions (iOS or Android fallback) */}
+        {!isInstalled && showInstallInstructions && (
+          <div style={{
+            background: "#F0FDFA",
+            border: "1.5px solid #99F6E4",
+            borderRadius: 16,
+            padding: "14px 16px",
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#0D2B28" }}>
+                {isIOS ? "Как установить на iPhone" : "Как установить приложение"}
+              </div>
+              <button onClick={() => setShowInstallInstructions(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "#4A6B69", padding: 2 }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            {isIOS ? (
+              <div style={{ fontSize: 13, color: "#0F4C45", lineHeight: 1.7 }}>
+                1. Нажмите{" "}
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 2, background: "#fff", border: "1px solid #99F6E4", borderRadius: 6, padding: "1px 7px", verticalAlign: "middle" }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0D9488" strokeWidth="2" strokeLinecap="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: "#0D9488" }}>Поделиться</span>
+                </span>
+                {" "}в Safari<br />
+                2. Выберите <b>«На экран Домой»</b><br />
+                3. Нажмите <b>«Добавить»</b>
+              </div>
+            ) : (
+              <div style={{ fontSize: 13, color: "#0F4C45", lineHeight: 1.7 }}>
+                1. Нажмите <b>⋮</b> (меню браузера) в правом верхнем углу<br />
+                2. Выберите <b>«Установить приложение»</b> или <b>«Добавить на главный экран»</b><br />
+                3. Нажмите <b>«Установить»</b>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div style={{ height: 2 }} />
+      </div>
+
+      <BottomNav token={token} active="smeta" supportPhone={getStoredPhone() ?? undefined} />
+    </div>
+  );
+}

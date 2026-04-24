@@ -1,0 +1,85 @@
+const BASE = "/api/master-pwa";
+
+async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : {},
+    credentials: "include",
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.message ?? err.error ?? "Ошибка запроса");
+  }
+  return res.json();
+}
+
+export const api = {
+  auth: {
+    login: (login: string, password: string, maxChatId?: string | null) =>
+      req<any>("POST", "/auth/login", { login, password, ...(maxChatId ? { maxChatId } : {}) }),
+    register: (data: { alias: string; phone?: string; city: string; specialization: string; specializations?: string[]; login: string; password: string; servicePrices?: { service: string; priceFrom: number }[]; maxChatId?: string | null }) =>
+      req<any>("POST", "/auth/register", data),
+    me: () => req<any>("GET", "/auth/me"),
+    logout: () => req<any>("POST", "/auth/logout"),
+  },
+  home: () => req<any>("GET", "/home"),
+  orders: {
+    available: () => req<any>("GET", "/orders/available"),
+    my: (filter?: string) => req<any>("GET", `/orders/my${filter ? `?filter=${filter}` : ""}`),
+    respond: (id: number, responseNote?: string) => req<any>("POST", `/orders/${id}/respond`, { responseNote }),
+    accept: (id: number) => req<any>("POST", `/orders/${id}/accept`),
+    reject: (id: number, reason?: string) => req<any>("POST", `/orders/${id}/reject`, { reason }),
+    cancel: (id: number, cancelType: string, reason?: string) => req<any>("POST", `/orders/${id}/cancel`, { cancelType, reason }),
+    updateStatus: (id: number, masterWorkStatus: string) =>
+      req<any>("PATCH", `/orders/${id}/status`, { masterWorkStatus }),
+    addPhoto: (id: number, type: string, url: string) =>
+      req<any>("PATCH", `/orders/${id}/photos`, { type, url }),
+    complete: (id: number, proposedAmount: number) =>
+      req<any>("POST", `/orders/${id}/complete`, { proposedAmount }),
+  },
+  setAvailability: (available: boolean) => req<any>("PATCH", "/availability", { available }),
+  fomoBlockPress: (orderId: number | null, reason?: string | null) =>
+    req<any>("POST", "/fomo-block-press", { orderId, reason }),
+  dispatchHistory: () => req<any>("GET", "/dispatches/history"),
+  analytics: () => req<any>("GET", "/analytics"),
+  balance: () => req<any>("GET", "/balance"),
+  paymentProof: (photoUrl: string) =>
+    req<any>("POST", "/balance/payment-proof", { photoUrl }),
+  profile: () => req<any>("GET", "/profile"),
+  updateProfile: (data: any) => req<any>("PATCH", "/profile", data),
+  chat: {
+    messages: () => req<any>("GET", "/chat"),
+    send: (text: string, photoUrl?: string) => req<any>("POST", "/chat", { text, photoUrl }),
+    sendPhoto: (photoUrl: string, caption?: string) => req<any>("POST", "/chat", { text: caption ?? "", photoUrl }),
+    unread: () => req<any>("GET", "/chat/unread"),
+  },
+  admin: {
+    setCredentials: (masterId: number, login: string, password: string) =>
+      fetch(`${BASE}/admin/set-credentials/${masterId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ login, password }),
+      }).then(r => r.json()),
+  },
+};
+
+export async function uploadPhoto(file: File): Promise<string> {
+  const urlRes = await fetch("/api/storage/uploads/request-url", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ name: file.name, size: file.size, contentType: file.type }),
+  });
+  if (!urlRes.ok) throw new Error("Ошибка получения URL загрузки");
+  const { uploadURL, objectPath } = await urlRes.json();
+  await fetch(uploadURL, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
+  return `/api/storage${objectPath}`;
+}
+
+export function resolvePhotoUrl(url: string): string {
+  if (!url) return url;
+  if (url.startsWith("/objects/")) return `/api/storage${url}`;
+  return url;
+}

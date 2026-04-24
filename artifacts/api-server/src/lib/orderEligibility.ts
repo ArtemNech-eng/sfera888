@@ -1,0 +1,143 @@
+import { db, transactionsTable, mastersTable, voronkaColumnsTable, ordersTable } from "@workspace/db";
+import { eq, and, lte, ne, inArray, isNull } from "drizzle-orm";
+
+/**
+ * Count how many active orders a master currently has (excluding a specific orderId if provided).
+ */
+export async function countActiveMasterOrders(masterId: number, excludeOrderId?: number): Promise<number> {
+  const rows = await db.select({ id: ordersTable.id })
+    .from(ordersTable)
+    .where(and(
+      eq(ordersTable.masterId, masterId),
+      inArray(ordersTable.status, ["master_assigned", "in_progress", "cancellation_requested"]),
+      isNull(ordersTable.deletedAt),
+    ));
+  if (excludeOrderId !== undefined) {
+    return rows.filter(r => r.id !== excludeOrderId).length;
+  }
+  return rows.length;
+}
+
+/**
+ * Returns the correct voronka column ID for a master based on their active order count.
+ * - 0 orders  → "Свободен"   (receivesOrders: true — free, no active work)
+ * - 1+ orders → "На объекте" (receivesOrders: true — working, limit enforced by eligibility check)
+ * "Занят" is manual offline only (receivesOrders: false).
+ */
+export async function getColumnIdForActiveCount(activeCount: number): Promise<number | null> {
+  const cols = await db.select().from(voronkaColumnsTable).orderBy(voronkaColumnsTable.position);
+  if (activeCount === 0) {
+    return cols.find(c => c.name === "Свободен")?.id ?? cols.find(c => c.receivesOrders)?.id ?? null;
+  }
+  // 1 or more active orders → "На объекте"
+  return cols.find(c => c.name === "На объекте")?.id
+    ?? cols.find(c => c.receivesOrders && c.name !== "Свободен")?.id
+    ?? null;
+}
+
+export interface EligibilityResult {
+  canAccept: boolean;
+  reason: string | null;
+  limit: number;
+}
+
+/**
+ * Marks pending transactions older than `daysThreshold` days as overdue.
+ * Only marks transactions with real commission > 0 (ignores placeholders).
+ * Returns the number of transactions marked overdue.
+ */
+export async function checkOverdueTransactions(daysThreshold = 2): Promise<number> {
+  const cutoff = new Date(Date.now() - daysThreshold * 24 * 60 * 60 * 1000);
+
+  const pending = await db
+    .select()
+    .from(transactionsTable)
+    .where(and(eq(transactionsTable.paymentStatus, "pending"), lte(transactionsTable.createdAt, cutoff)));
+
+  const toMark = pending.filter((t) => Number(t.commission) > 0);
+  if (toMark.length === 0) return 0;
+
+  for (const t of toMark) {
+    await db
+      .update(transactionsTable)
+      .set({ paymentStatus: "overdue" })
+      .where(eq(transactionsTable.id, t.id));
+  }
+
+  console.log(`[overdue] Marked ${toMark.length} transaction(s) as overdue`);
+  return toMark.length;
+}
+
+/**
+ * Returns a Set of master IDs who have at least one overdue transaction.
+ * Efficient: one DB query to load all overdue transactions.
+ */
+export async function getOverdueMasterIds(): Promise<Set<number>> {
+  const overdue = await db
+    .select({ masterId: transactionsTable.masterId })
+    .from(transactionsTable)
+    .where(eq(transactionsTable.paymentStatus, "overdue"));
+  return new Set(overdue.map((r) => r.masterId));
+}
+
+/**
+ * Determines if a master is eligible to take a new order.
+ *
+ * Rules:
+ *  - BLOCK if passport not verified
+ *  - BLOCK if master has any overdue transactions
+ *  - BLOCK if master is still in test period (isTestMaster) AND has unpaid commission debt > 0
+ *  - ALLOW within limit: master.maxActiveOrders (default 1); operators can grant up to 2
+ */
+export function getMasterEligibility(
+  master: {
+    id: number;
+    isTestMaster: boolean;
+    debt: string | number;
+    passportVerified?: boolean | null;
+    maxActiveOrders?: number | null;
+  },
+  currentActiveCount: number,
+  overdueMasterIds: Set<number>,
+): EligibilityResult {
+  const debt = Number(master.debt);
+  const isOverdue = overdueMasterIds.has(master.id);
+  const limit = master.maxActiveOrders ?? 1;
+
+  // Admin must verify passport before master can accept orders
+  if (master.passportVerified !== true) {
+    return {
+      canAccept: false,
+      reason: "Договор и паспорт ещё не подтверждены администратором. Дождитесь проверки для получения заказов.",
+      limit: 0,
+    };
+  }
+
+  if (isOverdue) {
+    return {
+      canAccept: false,
+      reason: `Просроченная задолженность по комиссии (${debt.toLocaleString("ru")} ₽). Необходимо погасить долг для получения заказов.`,
+      limit: 0,
+    };
+  }
+
+  if (master.isTestMaster && debt > 0) {
+    return {
+      canAccept: false,
+      reason: `Тестовый период: имеется неоплаченная комиссия (${debt.toLocaleString("ru")} ₽). Оплатите комиссию за первый заказ, чтобы продолжить работу.`,
+      limit,
+    };
+  }
+
+  if (currentActiveCount >= limit) {
+    return {
+      canAccept: false,
+      reason: limit === 1
+        ? "Вы уже работаете по заказу. Завершите его, чтобы получить новый."
+        : `Достигнут лимит активных заказов (${limit}).`,
+      limit,
+    };
+  }
+
+  return { canAccept: true, reason: null, limit };
+}

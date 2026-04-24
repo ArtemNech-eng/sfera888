@@ -1,0 +1,16 @@
+packages:
+  "react-hook-form": "Form state management"
+  "@hookform/resolvers": "Zod validation for forms"
+  "recharts": "Charts for analytics dashboard"
+  "date-fns": "Date formatting"
+  "clsx": "Utility for constructing className strings conditionally"
+  "tailwind-merge": "Utility to merge tailwind classes"
+
+images:
+  - path: "artifacts/crm/public/images/login-bg.png"
+    description: "Abstract soft gradient mesh in corporate blue and white, clean modern minimal architectural feel"
+    aspect_ratio: "16:9"
+
+notes:
+  - Auth uses cookie-based session via POST /api/auth/login
+  - Hooks and types imported from @workspace/api-client-react

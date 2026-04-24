@@ -1,0 +1,701 @@
+Общая информация
+Вы можете получить актуальную информацию о статистике целевых действий (звонки и чаты) и балансе своего тарифа. Если у вас тариф с оплатой за звонки и/или чаты, вы также можете их опротестовать.
+
+Список методов:
+balanceInfo Получить информацию о балансе пользователя и внесённом за текущий период авансе
+
+call/{call_id} Получение записи звонка по идентификатору
+
+callById Получение модели звонка по идентификатору
+
+callsByTime Получение списка звонков с параметрами по времени создания
+
+createComplaint Опротестовать звонок
+
+chatByActionId/{actionId} Получение модели чата по идентификатору
+
+chatsByTime Получение списка чатов с параметрами по времени создания
+
+createComplaintByActionId Опротестовать чат/звонок
+
+phonesInfoFromChats Получить информацию о номерах телефонов из целевых чатов
+
+API CPA Авито
+Методы для работы с сервисом CPA
+Описание API произведено в формате Swagger 3.0. Вы можете использовать данный файл для ознакомления с методами API, а также для генерации базового кода для работы с API на удобном для вас языке программирования с помощью утилиты Swagger Codegen или online сервиса Swagger Editor.
+
+Авито API для бизнеса предоставляется согласно Условиям использования. По всем вопросам работы с API необходимо обращаться в Службу Поддержки профессиональных инструментов:
+
+телефон: +7 495 777-10-66
+email: supportautoload@avito.ru
+Типы авторизации
+Для использования данного API запрос должен быть авторизован. В данный момент API Авито использует следующие механизмы авторизации.
+
+Информация по номерам телефонов из целевых чатов
+Получение информации по номерам телефонов из целевых чатов Максимальное количество запросов в минуту - 5.
+
+Authorizations:
+ClientCredentials
+header Parameters
+Authorization
+required
+string
+Example: Bearer ACCESS_TOKEN
+Токен для авторизации
+
+X-Source
+required
+string
+Example: someName
+Имя сервиса, отправляющего запрос
+
+Request Body schema: application/json
+Время с которого нужного производить поиск чатов, размер выборки и смещение
+
+dateTimeFrom
+required
+string
+Время с которого начинается поиск
+
+limit
+required
+integer
+offset
+required
+integer
+Responses
+200 Успешный ответ
+400 Bad Request
+401 Unauthorized
+403 Forbidden
+404 Not Found
+429 Превышено допустимое количество запросов
+500 Internal Error
+
+post
+/cpa/v1/phonesInfoFromChats
+Request samples
+Payload
+Content type
+application/json
+
+Copy
+Expand allCollapse all
+{
+"dateTimeFrom": "string",
+"limit": 0,
+"offset": 0
+}
+Response samples
+200400401403404429500
+Content type
+application/json
+
+Copy
+Expand allCollapse all
+{
+"results": [
+{}
+],
+"total": 128
+}
+Баланс (deprecated) Deprecated
+Используйте endpoint balanceInfoV3
+Получение информации о балансе пользователя (баланс, долг, аванс текущего месяца) в копейках. Максимальное количество запросов в минуту - 1.
+
+Authorizations:
+ClientCredentials
+header Parameters
+Authorization
+required
+string
+Example: Bearer ACCESS_TOKEN
+Токен для авторизации
+
+X-Source
+required
+string
+Example: someName
+Имя сервиса, отправляющего запрос
+
+Request Body schema: application/json
+string
+Пожалуйста, передайте {} в тело запроса чтобы он прошел валидацию.
+
+Responses
+200 Успешный ответ или сообщение об ошибке
+429 Превышено допустимое количество запросов
+
+post
+/cpa/v2/balanceInfo
+Request samples
+Payload
+Content type
+application/json
+
+Copy
+Expand allCollapse all
+"{}"
+Response samples
+200429
+Content type
+application/json
+
+Copy
+Expand allCollapse all
+{
+"advance": 1,
+"balance": -5000,
+"debt": 0,
+"error": {
+"code": 0,
+"message": "ЦД недоступно для обжалования"
+}
+}
+Баланс
+Получение информации о текущем балансе пользователя в копейках. Максимальное количество запросов в минуту - 50.
+
+Authorizations:
+ClientCredentials
+header Parameters
+Authorization
+required
+string
+Example: Bearer ACCESS_TOKEN
+Токен для авторизации
+
+X-Source
+required
+string
+Example: someName
+Имя сервиса, отправляющего запрос
+
+Request Body schema: application/json
+string
+Пожалуйста, передайте {} в тело запроса чтобы он прошел валидацию.
+
+Responses
+200 Успешный ответ или сообщение об ошибке
+429 Превышено допустимое количество запросов
+
+post
+/cpa/v3/balanceInfo
+Request samples
+Payload
+Content type
+application/json
+
+Copy
+Expand allCollapse all
+"{}"
+Response samples
+200429
+Content type
+application/json
+
+Copy
+Expand allCollapse all
+{
+"balance": -5000
+}
+Call
+Запись звонка (deprecated) Deprecated
+DEPRECATED Используйте endpoint get_record_by_call_id Получение записи звонка по идентификатору
+
+Authorizations:
+ClientCredentials
+path Parameters
+call_id
+required
+integer <int64>
+Идентификатор звонка
+
+header Parameters
+Authorization
+required
+string
+Example: Bearer ACCESS_TOKEN
+Токен для авторизации
+
+X-Source
+required
+string
+Example: someName
+Имя сервиса, отправляющего запрос
+
+Responses
+200 Успешный ответ
+404 Звонок не найден
+429 Превышено допустимое количество запросов
+500 Внутренняя ошибка метода API
+
+get
+/cpa/v1/call/{call_id}
+Response samples
+404429500
+Content type
+application/json
+
+Copy
+Expand allCollapse all
+{
+"error": {
+"code": 404,
+"message": "Not found"
+}
+}
+Создание жалобы для звонков
+Создание жалобы на звонок по идентификатору. Максимальное количество запросов в минуту - 1.
+
+Authorizations:
+ClientCredentials
+header Parameters
+Authorization
+required
+string
+Example: Bearer ACCESS_TOKEN
+Токен для авторизации
+
+X-Source
+required
+string
+Example: someName
+Имя сервиса, отправляющего запрос
+
+Request Body schema: application/json
+Идентификатор звонка и текст жалобы
+
+callId
+required
+integer <int64>
+Идентификатор звонка
+
+message
+required
+string
+Текст жалобы
+
+Responses
+200 Успешный ответ или сообщение об ошибке
+429 Превышено допустимое количество запросов
+
+post
+/cpa/v1/createComplaint
+Request samples
+Payload
+Content type
+application/json
+
+Copy
+Expand allCollapse all
+{
+"callId": 218491749,
+"message": "Клиент позвонил по ошибке"
+}
+Response samples
+200429
+Content type
+application/json
+
+Copy
+Expand allCollapse all
+{
+"error": {
+"code": 0,
+"message": "ЦД недоступно для обжалования"
+},
+"success": true
+}
+Звонок Deprecated
+Получение модели звонка по идентификатору
+
+Authorizations:
+ClientCredentials
+header Parameters
+Authorization
+required
+string
+Example: Bearer ACCESS_TOKEN
+Токен для авторизации
+
+X-Source
+required
+string
+Example: someName
+Имя сервиса, отправляющего запрос
+
+Request Body schema: application/json
+Идентификатор звонка
+
+callId
+required
+integer <int64>
+Идентификатор звонка
+
+Responses
+200 Успешный ответ или сообщение об ошибке
+429 Превышено допустимое количество запросов
+
+post
+/cpa/v2/callById
+Request samples
+Payload
+Content type
+application/json
+
+Copy
+Expand allCollapse all
+{
+"callId": 0
+}
+Response samples
+200429
+Content type
+application/json
+
+Copy
+Expand allCollapse all
+{
+"calls": {
+"buyerPhone": "89444988703",
+"createTime": "2024-01-12T14:52:10+03:00",
+"duration": "119",
+"groupTitle": "Автомобили · Новые",
+"id": "2024",
+"isArbitrageAvailable": "true",
+"itemId": "2164143441",
+"price": "171600",
+"recordUrl": "https://prod.k.avito.ru/service-open-api-proxy/cpa/v1/call/3xx8",
+"sellerPhone": "89444988705",
+"startTime": "2024-01-12T14:52:00+03:00",
+"statusId": 0,
+"virtualPhone": "89444988704",
+"waitingDuration": "0.0109999"
+},
+"error": {
+"code": 0,
+"message": "ЦД недоступно для обжалования"
+}
+}
+Звонки по времени
+Получение списка звонков по времени создания. Максимальное количество запросов в минуту - 1.
+
+Authorizations:
+ClientCredentials
+header Parameters
+Authorization
+required
+string
+Example: Bearer ACCESS_TOKEN
+Токен для авторизации
+
+X-Source
+required
+string
+Example: someName
+Имя сервиса, отправляющего запрос
+
+Request Body schema: application/json
+Время с которого нужного производить поиск звонков, размер выборки и смещение
+
+dateTimeFrom
+required
+string
+Время с которого нужно начинать поиск звонков по startTime (строка в формате RFC3339)
+
+limit
+required
+integer <int64>
+Размер выборки
+
+offset	
+integer <int64>
+Смещение выборки (по-умолчанию 0). Для улучшения производительности лучше использовать максимальный startTime звонка из предыдущей выборки
+
+Responses
+200 Успешный ответ или сообщение об ошибке
+429 Превышено допустимое количество запросов
+
+post
+/cpa/v2/callsByTime
+Request samples
+Payload
+Content type
+application/json
+
+Copy
+Expand allCollapse all
+{
+"dateTimeFrom": "2021-01-02T15:04:05Z",
+"limit": 1000,
+"offset": 100
+}
+Response samples
+200429
+Content type
+application/json
+
+Copy
+Expand allCollapse all
+{
+"calls": [
+{}
+],
+"error": {
+"code": 0,
+"message": "ЦД недоступно для обжалования"
+}
+}
+Chat
+Чат
+Получение модели чата по идентификатору Максимальное количество запросов в минуту - 3.
+
+path Parameters
+actionId
+required
+integer
+Идентификатор целевого действия
+
+header Parameters
+Authorization
+required
+string
+Example: Bearer ACCESS_TOKEN
+Токен для авторизации
+
+X-Source
+required
+string
+Example: someName
+Имя сервиса, отправляющего запрос
+
+Responses
+200 Успешный ответ
+401 Unauthorized
+403 Forbidden
+404 Not Found
+429 Превышено допустимое количество запросов
+500 Internal Error
+
+get
+/cpa/v1/chatByActionId/{actionId}
+Response samples
+200401403404429500
+Content type
+application/json
+
+Copy
+Expand allCollapse all
+{
+"chat": {
+"buyer": {},
+"chat": {},
+"isArbitrageAvailable": true,
+"item": {}
+}
+}
+Чаты по времени (deprecated)
+Получение списка чатов по времени создания (deprecated). Максимальное количество запросов в минуту - 60.
+
+Authorizations:
+ClientCredentials
+header Parameters
+Authorization
+required
+string
+Example: Bearer ACCESS_TOKEN
+Токен для авторизации
+
+X-Source
+required
+string
+Example: someName
+Имя сервиса, отправляющего запрос
+
+Request Body schema: application/json
+Время с которого нужного производить поиск чатов, размер выборки и смещение
+
+dateTimeFrom
+required
+string
+Время с которого нужно начинать поиск чатов по date (строка в формате RFC3339)
+
+limit
+required
+integer
+Размер выборки (значение в поле должно быть не более 100)
+
+offset
+required
+integer
+Смещение выборки (по-умолчанию 0). Для улучшения производительности лучше использовать максимальный startTime чата из предыдущей выборки
+
+Responses
+200 Успешный ответ
+400 Bad Request
+401 Unauthorized
+403 Forbidden
+404 Not Found
+429 Превышено допустимое количество запросов
+500 Internal Error
+
+post
+/cpa/v1/chatsByTime
+Request samples
+Payload
+Content type
+application/json
+
+Copy
+Expand allCollapse all
+{
+"dateTimeFrom": "2023-03-21T15:04:05Z",
+"limit": 100,
+"offset": 0
+}
+Response samples
+200400401403404429500
+Content type
+application/json
+
+Copy
+Expand allCollapse all
+{
+"chats": [
+{}
+]
+}
+Создание жалобы для звонков/чатов
+Создание жалобы на целевое действие по actionId. Максимальное количество запросов в минуту - 3.
+
+header Parameters
+Authorization
+required
+string
+Example: Bearer ACCESS_TOKEN
+Токен для авторизации
+
+X-Source
+required
+string
+Example: someName
+Имя сервиса, отправляющего запрос
+
+Request Body schema: application/json
+actionId
+required
+integer
+ID действия (action), по которому подаётся жалоба
+
+message
+required
+string
+Сообщение, прикрепленное к жалобе
+
+Responses
+200 Успешный ответ или сообщение об ошибке
+400 Bad Request
+401 Unauthorized
+403 Forbidden
+404 Not Found
+429 Превышено допустимое количество запросов
+500 Internal Error
+
+post
+/cpa/v1/createComplaintByActionId
+Request samples
+Payload
+Content type
+application/json
+
+Copy
+Expand allCollapse all
+{
+"actionId": 123456789,
+"message": "это не был обмен контактами в чате"
+}
+Response samples
+200400401403404429500
+Content type
+application/json
+
+Copy
+Expand allCollapse all
+{
+"error": {
+"code": 0,
+"message": "ЦД недоступно для обжалования"
+},
+"success": true
+}
+Чаты по времени
+Получение списка чатов по времени создания. Максимальное количество запросов в минуту - 40.
+
+Authorizations:
+ClientCredentials
+header Parameters
+Authorization
+required
+string
+Example: Bearer ACCESS_TOKEN
+Токен для авторизации
+
+X-Source
+required
+string
+Example: someName
+Имя сервиса, отправляющего запрос
+
+Request Body schema: application/json
+Время с которого нужного производить поиск чатов, размер выборки и смещение
+
+dateTimeFrom
+required
+string
+Время с которого нужно начинать поиск чатов по date (строка в формате RFC3339)
+
+limit
+required
+integer
+Размер выборки (значение в поле должно быть не более 100)
+
+offset
+required
+integer
+Смещение выборки (по-умолчанию 0). Для улучшения производительности лучше использовать максимальный date чата из предыдущей выборки
+
+Responses
+200 Успешный ответ
+400 Bad Request
+401 Unauthorized
+403 Forbidden
+404 Not Found
+429 Превышено допустимое количество запросов
+500 Internal Error
+
+post
+/cpa/v2/chatsByTime
+Request samples
+Payload
+Content type
+application/json
+
+Copy
+Expand allCollapse all
+{
+"dateTimeFrom": "2023-03-21T15:04:05Z",
+"limit": 100,
+"offset": 0
+}
+Response samples
+200400401403404429500
+Content type
+application/json
+
+Copy
+Expand allCollapse all
+{
+"chats": [
+{}
+]
+}

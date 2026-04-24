@@ -1,0 +1,43 @@
+modules = ["nodejs-24", "postgresql-16"]
+
+  [[artifacts]]
+  id = "artifacts/api-server"
+
+  [[artifacts]]
+  id = "artifacts/mockup-sandbox"
+
+  [deployment]
+  router = "application"
+  deploymentTarget = "vm"
+  build = ["pnpm", "run", "build:prod"]
+  run = ["node", "artifacts/api-server/dist/index.cjs"]
+
+  [deployment.postBuild]
+  args = ["sh", "-c", "CI=true pnpm prune --prod && pnpm store prune"]
+
+  [workflows]
+runButton = "Project"
+
+  [agent]
+  stack = "PNPM_WORKSPACE"
+expertMode = true
+integrations = ["github:1.0.0"]
+
+  [postMerge]
+  path = "scripts/post-merge.sh"
+  timeoutMs = 20000
+
+  [userenv]
+
+[userenv.production]
+
+[userenv.shared]
+VAPID_PUBLIC_KEY = "BEsTKPbpLdg3SuDxyu9m3xFFr6MUHpBROPKhWgfddaf4D2gp0GbiH0pv1Nv4WBXO_Yk9O4jKgxyxm0VJidHtd9Q"
+VAPID_PRIVATE_KEY = "PlPmqNhWM4ioOIikpRw3WXAgQWuHFbbqlZL_GTyvQdk"
+VAPID_EMAIL = "mailto:admin@sfera-master.ru"
+VITE_YANDEX_MAPS_KEY = "7a61bf5a-2a4f-497e-92b6-899908af56f8"
+ADMIN_PASSWORD = "admin2026"
+
+  [nix]
+  channel = "stable-25_05"
+  

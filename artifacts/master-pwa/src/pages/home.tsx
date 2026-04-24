@@ -1,0 +1,1411 @@
+import { useEffect, useRef, useState, useCallback } from "react";
+import { useLocation } from "wouter";
+import { useAuth } from "@/lib/auth";
+import { api, resolvePhotoUrl } from "@/lib/api";
+import { toast } from "sonner";
+import { usePushNotifications } from "@/lib/usePushNotifications";
+import {
+  Bell, CheckCircle2, XCircle, AlertTriangle, Star,
+  MapPin, Calendar, MessageSquare, Clock,
+  ChevronRight, X, Images, Wrench, Zap, PauseCircle,
+  PlayCircle, Navigation, Users, Heart, ChevronDown, Briefcase,
+  Eye, EyeOff, Lock, FileText, Bot,
+} from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
+import { ru } from "date-fns/locale";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface ServiceLine { type: string; area: number; pricePerM2?: number; }
+
+interface OrderCard {
+  id: number;
+  leadId: number | null;
+  city: string;
+  district: string | null;
+  serviceType: string;
+  services: string | null;
+  area: number;
+  scheduledAt: string | null;
+  comment: string | null;
+  photos: string[];
+  dispatchedAt: string | null;
+  competitorCount: number;
+  isRepeatClient: boolean;
+}
+
+interface PendingCard extends OrderCard { respondedAt: string | null; }
+
+interface ActiveOrder {
+  id: number; leadId: number | null; city: string; district: string | null;
+  serviceType: string; area: number; status: string; masterWorkStatus: string | null;
+}
+
+interface MissedOrder {
+  id: number;
+  serviceType: string;
+  district: string | null;
+  area: number;
+  takenAt: string;
+  wasDispatched: boolean;
+}
+
+interface FomoBlock {
+  isBlocked: boolean;
+  type: string | null;
+  reason: string | null;
+  orderId: number | null;
+  hoursElapsed: number | null;
+}
+
+// ─── FOMO modal ───────────────────────────────────────────────────────────────
+
+function FomoModal({ fomoBlock, onClose }: { fomoBlock: FomoBlock; onClose: () => void }) {
+  const typeMessages: Record<string, { title: string; body: string; icon: string }> = {
+    no_estimate: {
+      title: "Нужна смета",
+      body: `По одному из заказов смета не отправлена уже более 48 часов.\nОтправьте смету менеджеру, чтобы разблокировать отклики.`,
+      icon: "⏱️",
+    },
+    no_payment: {
+      title: "Ожидается предоплата",
+      body: `По одному из заказов предоплата не поступила уже более 72 часов.\nДождитесь оплаты или уточните статус у менеджера.`,
+      icon: "💳",
+    },
+    limit_reached: {
+      title: "Достигнут лимит заказов",
+      body: `У вас уже максимальное количество активных заказов.\nЗавершите хотя бы один заказ, чтобы снова откликаться на новые.`,
+      icon: "📦",
+    },
+    overdue_debt: {
+      title: "Есть задолженность",
+      body: `Оплатите задолженность, чтобы снова получить возможность откликаться на заявки.`,
+      icon: "💸",
+    },
+  };
+  const info = fomoBlock.type ? typeMessages[fomoBlock.type] : null;
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 backdrop-blur-sm px-4 pb-6" onClick={onClose}>
+      <div className="w-full max-w-sm bg-background rounded-3xl shadow-xl overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="bg-orange-50 dark:bg-orange-900/30 px-6 pt-7 pb-5 border-b border-orange-100 dark:border-orange-800 text-center">
+          <div className="text-5xl mb-3">{info?.icon ?? "🔒"}</div>
+          <h2 className="font-bold text-lg text-orange-800 dark:text-orange-300">
+            {info?.title ?? "Отклик недоступен"}
+          </h2>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          <p className="text-sm text-muted-foreground whitespace-pre-line text-center leading-relaxed">
+            {info?.body ?? fomoBlock.reason ?? "Выполните условия, чтобы снова откликаться на заявки."}
+          </p>
+          {fomoBlock.hoursElapsed && (
+            <div className="flex items-center justify-center gap-2 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-xl px-4 py-2">
+              <Clock size={14} className="text-orange-500 shrink-0" />
+              <span className="text-xs font-semibold text-orange-700 dark:text-orange-400">
+                Просрочено на {fomoBlock.hoursElapsed} ч
+              </span>
+            </div>
+          )}
+          {fomoBlock.orderId && (
+            <p className="text-xs text-center text-muted-foreground">Заказ #{fomoBlock.orderId}</p>
+          )}
+          <button onClick={onClose}
+            className="w-full h-12 rounded-2xl bg-primary text-primary-foreground font-bold text-sm">
+            Понятно
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface TodayActivity {
+  total: number;
+  taken: number;
+}
+
+// ─── Notification sound + vibration ──────────────────────────────────────────
+
+function playNewOrderAlert() {
+  try {
+    const ctx = new AudioContext();
+    const t = ctx.currentTime;
+    [523, 659, 784].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.value = freq; osc.type = "sine";
+      const start = t + i * 0.13;
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.35, start + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.01, start + 0.35);
+      osc.start(start); osc.stop(start + 0.35);
+    });
+  } catch {}
+  try { navigator.vibrate?.([300, 100, 200, 100, 300]); } catch {}
+}
+
+// ─── Timer ────────────────────────────────────────────────────────────────────
+
+function elapsedMinutes(d: string | null) {
+  if (!d) return 0;
+  return Math.floor((Date.now() - new Date(d).getTime()) / 60_000);
+}
+
+function DispatchTimer({ dispatchedAt }: { dispatchedAt: string | null }) {
+  const mins = elapsedMinutes(dispatchedAt);
+  if (mins < 2) return (
+    <span className="flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" />Только что
+    </span>
+  );
+  if (mins < 60) return (
+    <span className="flex items-center gap-1 text-xs text-muted-foreground"><Clock size={11} />{mins} мин назад</span>
+  );
+  const hrs = Math.floor(mins / 60), rem = mins % 60;
+  const label = rem > 0 ? `${hrs}ч ${rem}м` : `${hrs}ч`;
+  if (hrs >= 2) return (
+    <span className="flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-400">
+      <Zap size={11} />{label} — истекает
+    </span>
+  );
+  return <span className="flex items-center gap-1 text-xs text-muted-foreground"><Clock size={11} />{label} назад</span>;
+}
+
+// ─── Swipeable card ───────────────────────────────────────────────────────────
+
+const SWIPE_T = 80;
+
+function SwipeableCard({ onSwipeRight, onSwipeLeft, children }: {
+  onSwipeRight: () => void; onSwipeLeft: () => void; children: React.ReactNode;
+}) {
+  const startX = useRef<number | null>(null);
+  const startY = useRef<number | null>(null);
+  const isH = useRef(false);
+  const didSwipe = useRef(false);
+  const [dx, setDx] = useState(0);
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    startX.current = e.touches[0].clientX;
+    startY.current = e.touches[0].clientY;
+    isH.current = false; didSwipe.current = false;
+  };
+  const onTouchMove = (e: React.TouchEvent) => {
+    if (startX.current === null || startY.current === null) return;
+    const ddx = e.touches[0].clientX - startX.current;
+    const ddy = e.touches[0].clientY - startY.current;
+    if (!isH.current) {
+      if (Math.abs(ddx) < 8 && Math.abs(ddy) < 8) return;
+      if (Math.abs(ddx) > Math.abs(ddy)) isH.current = true;
+      else { startX.current = null; return; }
+    }
+    if (isH.current) {
+      e.preventDefault();
+      setDx(Math.max(-SWIPE_T * 1.6, Math.min(SWIPE_T * 1.6, ddx)));
+    }
+  };
+  const onTouchEnd = () => {
+    if (isH.current) {
+      if (dx > SWIPE_T) { didSwipe.current = true; onSwipeRight(); }
+      else if (dx < -SWIPE_T) { didSwipe.current = true; onSwipeLeft(); }
+    }
+    setDx(0); startX.current = null; isH.current = false;
+  };
+  const prog = Math.min(Math.abs(dx) / SWIPE_T, 1);
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl"
+      onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
+      <div className="absolute inset-0 flex items-center justify-start pl-5 bg-emerald-500 rounded-2xl"
+        style={{ opacity: dx > 8 ? prog : 0 }}>
+        <div className="flex items-center gap-2 text-white font-bold text-sm"><CheckCircle2 size={20} /> Откликнуться</div>
+      </div>
+      <div className="absolute inset-0 flex items-center justify-end pr-5 bg-red-500 rounded-2xl"
+        style={{ opacity: dx < -8 ? prog : 0 }}>
+        <div className="flex items-center gap-2 text-white font-bold text-sm">Отказать <XCircle size={20} /></div>
+      </div>
+      <div style={{ transform: `translateX(${dx}px)`, transition: dx === 0 ? "transform 0.2s ease" : "none" }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ─── Photo Gallery ────────────────────────────────────────────────────────────
+
+function PhotoGallery({ photos }: { photos: string[] }) {
+  const [active, setActive] = useState(0);
+  if (!photos.length) return null;
+  return (
+    <div className="relative bg-black">
+      <img src={resolvePhotoUrl(photos[active])} alt={`Фото ${active + 1}`} className="w-full object-cover" style={{ maxHeight: 260 }} />
+      {photos.length > 1 && (
+        <>
+          <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-1.5">
+            {photos.map((_, i) => (
+              <button key={i} onClick={() => setActive(i)}
+                className={`w-2 h-2 rounded-full ${i === active ? "bg-white scale-110" : "bg-white/50"}`} />
+            ))}
+          </div>
+          {active > 0 && (
+            <button onClick={() => setActive(p => p - 1)}
+              className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 text-white text-lg">‹</button>
+          )}
+          {active < photos.length - 1 && (
+            <button onClick={() => setActive(p => p + 1)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 text-white text-lg">›</button>
+          )}
+          <div className="absolute top-2 right-2 bg-black/50 text-white text-xs rounded-full px-2 py-0.5">
+            {active + 1}/{photos.length}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── Detail Row ───────────────────────────────────────────────────────────────
+
+function Row({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="flex items-start gap-3 py-3 border-b border-border last:border-0">
+      <div className="text-muted-foreground mt-0.5 shrink-0">{icon}</div>
+      <div className="min-w-0">
+        <p className="text-xs text-muted-foreground mb-1">{label}</p>
+        <p className="text-sm font-medium">{value}</p>
+      </div>
+    </div>
+  );
+}
+
+function formatDate(d: string | null) {
+  if (!d) return "не указана";
+  return new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(d));
+}
+
+function parseServices(raw: string | null): ServiceLine[] | null {
+  if (!raw) return null;
+  try { const a = JSON.parse(raw); if (Array.isArray(a) && a.length) return a; } catch {}
+  return null;
+}
+
+// ─── Map Preview (static image linking to Yandex Maps) ───────────────────────
+
+function YandexMapEmbed({ city, district }: { city: string; district: string | null }) {
+  const address = `${city}${district ? ` ${district}` : ""}`;
+  const query = encodeURIComponent(address);
+  const mapsUrl = `https://yandex.ru/maps/?text=${query}`;
+
+  return (
+    <div className="mt-3 rounded-2xl overflow-hidden border border-border">
+      <iframe
+        src={`https://yandex.ru/map-widget/v1/?text=${query}&z=14&lang=ru_RU`}
+        width="100%"
+        height="180"
+        frameBorder="0"
+        allowFullScreen
+        title={address}
+        className="block"
+        loading="lazy"
+      />
+      <a
+        href={mapsUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center justify-center gap-2 h-10 bg-muted/50 text-muted-foreground text-xs hover:bg-accent transition-colors border-t border-border"
+      >
+        <MapPin size={12} />
+        {address} — открыть в Яндекс Картах ↗
+      </a>
+    </div>
+  );
+}
+
+// ─── Navigation Buttons ───────────────────────────────────────────────────────
+
+function NavigationButtons({ city, district }: { city: string; district: string | null }) {
+  const query = encodeURIComponent(`${city}${district ? ` ${district}` : ""}`);
+  return (
+    <div className="mt-4">
+      <p className="text-xs text-muted-foreground mb-2">Маршрут до объекта</p>
+      <div className="flex gap-2">
+        <a href={`https://2gis.ru/search/${query}`} target="_blank" rel="noopener noreferrer"
+          className="flex-1 flex items-center justify-center gap-1.5 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 text-xs font-semibold">
+          <Navigation size={13} /> 2ГИС
+        </a>
+        <a href={`https://yandex.ru/maps/?text=${query}&rtt=auto`} target="_blank" rel="noopener noreferrer"
+          className="flex-1 flex items-center justify-center gap-1.5 h-10 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 text-xs font-semibold">
+          <Navigation size={13} /> Яндекс
+        </a>
+        <a href={`https://www.google.com/maps/search/?api=1&query=${query}`} target="_blank" rel="noopener noreferrer"
+          className="flex-1 flex items-center justify-center gap-1.5 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-400 text-xs font-semibold">
+          <Navigation size={13} /> Google
+        </a>
+      </div>
+    </div>
+  );
+}
+
+// ─── Rejection Reason Sheet ───────────────────────────────────────────────────
+
+const REJECT_REASONS = [
+  "Слишком далеко",
+  "Неудобные даты",
+  "Не моя специализация",
+  "Уже занят",
+  "Слишком маленький объём",
+  "Другая причина",
+];
+
+function RejectReasonSheet({ onConfirm, onCancel }: {
+  onConfirm: (reason: string) => void;
+  onCancel: () => void;
+}) {
+  const [selected, setSelected] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end bg-black/40" onClick={onCancel}>
+      <div className="w-full bg-background rounded-t-2xl pt-4 pb-8 px-4 space-y-3" onClick={e => e.stopPropagation()}>
+        <div className="w-10 h-1 bg-border rounded-full mx-auto mb-2" />
+        <h3 className="font-bold text-base">Почему отказываете?</h3>
+        <p className="text-xs text-muted-foreground">Это помогает нам подбирать более подходящие заявки</p>
+        <div className="space-y-2 mt-2">
+          {REJECT_REASONS.map(r => (
+            <button key={r} onClick={() => setSelected(r)}
+              className={`w-full text-left px-4 py-3 rounded-xl border text-sm transition-all ${
+                selected === r
+                  ? "border-primary bg-primary/10 text-primary font-medium"
+                  : "border-border bg-card text-foreground"
+              }`}>
+              {r}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-3 pt-2">
+          <button onClick={onCancel}
+            className="flex-1 h-12 rounded-xl border border-border text-muted-foreground text-sm font-medium">
+            Отмена
+          </button>
+          <button
+            disabled={!selected || loading}
+            onClick={async () => {
+              if (!selected) return;
+              setLoading(true);
+              onConfirm(selected);
+            }}
+            className="flex-1 h-12 rounded-xl bg-red-500 text-white text-sm font-bold disabled:opacity-50">
+            {loading ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto" /> : "Отказать"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Order Detail Sheet ───────────────────────────────────────────────────────
+
+function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
+  order: OrderCard; onRespond: () => void; onReject: () => void; onClose: () => void;
+  fomoBlock?: FomoBlock | null;
+}) {
+  const [state, setState] = useState<"idle" | "loading" | "success" | "constrained_success" | "fomo_blocked" | "needs_contract" | "rejecting">("idle");
+  const [contractFlags, setContractFlags] = useState<{ contractSigned: boolean; passportVerified: boolean }>({ contractSigned: false, passportVerified: false });
+  const [constraintTags, setConstraintTags] = useState<string[]>([]);
+  const [, setSheetLocation] = useLocation();
+  const [showRejectSheet, setShowRejectSheet] = useState(false);
+  const [showPriceNote, setShowPriceNote] = useState(false);
+  const [priceNote, setPriceNote] = useState("");
+  const services = parseServices(order.services);
+  const isFomoBlocked = fomoBlock?.isBlocked === true;
+
+  const fomoTypeInfo: Record<string, { title: string; body: string; icon: string; action: string }> = {
+    no_estimate: {
+      title: "Нужна смета",
+      body: "По одному из заказов смета не отправлена уже более 48 часов.\nОтправьте смету менеджеру, чтобы снова откликаться на заявки.",
+      icon: "⏱️",
+      action: "Отправить смету менеджеру",
+    },
+    no_payment: {
+      title: "Ожидается предоплата",
+      body: "По одному из заказов предоплата не поступила уже более 72 часов.\nДождитесь оплаты или уточните статус у менеджера.",
+      icon: "💳",
+      action: "Написать менеджеру",
+    },
+    limit_reached: {
+      title: "Достигнут лимит заказов",
+      body: "У вас уже максимальное количество активных заказов.\nЗавершите хотя бы один заказ, чтобы снова откликаться.",
+      icon: "📦",
+      action: "Понял, закрою текущий заказ",
+    },
+    overdue_debt: {
+      title: "Есть задолженность",
+      body: "Оплатите задолженность, чтобы снова получить возможность откликаться на заявки.",
+      icon: "💸",
+      action: "Написать менеджеру",
+    },
+  };
+
+  const handleRespond = async () => {
+    setState("loading");
+    try {
+      const result = await api.orders.respond(order.id, priceNote.trim() || undefined);
+      if (result?.needsContract) {
+        setContractFlags({ contractSigned: !!result.contractSigned, passportVerified: !!result.passportVerified });
+        setState("needs_contract");
+      } else if (result?.constraintTags?.length) {
+        setConstraintTags(result.constraintTags);
+        setState("constrained_success");
+      } else {
+        setState("success");
+      }
+    } catch (e: any) {
+      toast.error(e.message ?? "Ошибка");
+      setState("idle");
+    }
+  };
+
+  const handleRejectConfirm = async (reason: string) => {
+    setState("rejecting");
+    setShowRejectSheet(false);
+    try {
+      await api.orders.reject(order.id, reason);
+      toast.success("Заявка отклонена");
+      onReject();
+    } catch (e: any) {
+      toast.error(e.message ?? "Ошибка");
+      setState("idle");
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-background">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card shrink-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-bold">Заявка #{order.leadId ?? order.id}</span>
+          <DispatchTimer dispatchedAt={order.dispatchedAt} />
+          {order.isRepeatClient && (
+            <span className="flex items-center gap-1 text-xs font-semibold text-pink-600 dark:text-pink-400 bg-pink-50 dark:bg-pink-900/20 px-2 py-0.5 rounded-full">
+              <Heart size={10} fill="currentColor" /> Ваш клиент
+            </span>
+          )}
+        </div>
+        <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-muted">
+          <X size={20} />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {state === "fomo_blocked" && fomoBlock ? (() => {
+          const info = fomoBlock.type ? fomoTypeInfo[fomoBlock.type] : null;
+          return (
+            <div className="flex flex-col items-center justify-center min-h-[70vh] px-6 text-center space-y-5">
+              <div className="text-6xl">{info?.icon ?? "🔒"}</div>
+              <div>
+                <h2 className="text-xl font-bold mb-1">{info?.title ?? "Отклик недоступен"}</h2>
+                <p className="text-sm text-muted-foreground">Отклик на заявку #{order.leadId ?? order.id} временно ограничен</p>
+              </div>
+              <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 rounded-2xl px-4 py-4 text-left w-full max-w-sm space-y-3">
+                <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line leading-relaxed">
+                  {info?.body ?? fomoBlock.reason ?? "Выполните условия, чтобы снова откликаться на заявки."}
+                </p>
+                {fomoBlock.hoursElapsed && (
+                  <div className="flex items-center gap-2 bg-orange-100 dark:bg-orange-900/30 rounded-xl px-3 py-2">
+                    <Clock size={14} className="text-orange-500 shrink-0" />
+                    <span className="text-xs font-semibold text-orange-700 dark:text-orange-400">
+                      Просрочено на {fomoBlock.hoursElapsed} ч
+                    </span>
+                  </div>
+                )}
+                {fomoBlock.orderId && (
+                  <p className="text-xs text-muted-foreground">Заказ #{fomoBlock.orderId}</p>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground px-2">
+                Как только устраните причину — заявка #{order.leadId ?? order.id} по-прежнему будет доступна в ленте.
+              </p>
+              <button onClick={onClose}
+                className="w-full max-w-sm h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm">
+                {info?.action ?? "Понятно"}
+              </button>
+            </div>
+          );
+        })() : state === "needs_contract" ? (
+          <div className="flex flex-col items-center justify-center min-h-[70vh] px-6 text-center space-y-5">
+            <div className="w-20 h-20 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+              <FileText size={40} className="text-blue-500" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold mb-1">Нужно заключить договор</h2>
+              <p className="text-sm text-muted-foreground">Чтобы откликнуться на заявку #{order.leadId ?? order.id}, сначала заключите договор с платформой.</p>
+            </div>
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-2xl px-4 py-4 text-left w-full max-w-sm space-y-3">
+              <div className="flex items-start gap-2.5">
+                <span className={`mt-0.5 w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${contractFlags.contractSigned ? "bg-emerald-100 dark:bg-emerald-900/30" : "bg-gray-200 dark:bg-gray-700"}`}>
+                  {contractFlags.contractSigned
+                    ? <CheckCircle2 size={14} className="text-emerald-600" />
+                    : <span className="text-xs font-bold text-gray-500">1</span>}
+                </span>
+                <p className="text-sm text-gray-700 dark:text-gray-300">
+                  <span className="font-medium">Подписать договор</span> и загрузить паспорт
+                </p>
+              </div>
+              <div className="flex items-start gap-2.5">
+                <span className={`mt-0.5 w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${contractFlags.passportVerified ? "bg-emerald-100 dark:bg-emerald-900/30" : "bg-gray-200 dark:bg-gray-700"}`}>
+                  {contractFlags.passportVerified
+                    ? <CheckCircle2 size={14} className="text-emerald-600" />
+                    : <span className="text-xs font-bold text-gray-500">2</span>}
+                </span>
+                <p className="text-sm text-gray-700 dark:text-gray-300">
+                  <span className="font-medium">Дождаться проверки</span> документов менеджером
+                </p>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground px-2">Это разовая процедура. После проверки вы сможете откликаться на любые заявки.</p>
+            <button
+              onClick={() => { onClose(); setSheetLocation("/pending-contract"); }}
+              className="w-full max-w-sm h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm">
+              {contractFlags.contractSigned ? "Открыть статус договора" : "Заключить договор"}
+            </button>
+          </div>
+        ) : state === "constrained_success" ? (
+          <div className="flex flex-col items-center justify-center min-h-[70vh] px-6 text-center space-y-5">
+            <div className="w-20 h-20 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+              <CheckCircle2 size={44} className="text-amber-500" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold">Отклик принят!</h2>
+              <p className="text-sm text-muted-foreground mt-1">Заявка #{order.leadId ?? order.id} — менеджер рассмотрит вашу кандидатуру.</p>
+            </div>
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-2xl px-4 py-4 text-left w-full max-w-sm space-y-3">
+              <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Обратите внимание:</p>
+              {constraintTags.map(tag => {
+                const info: Record<string, { icon: string; text: string }> = {
+                  "Лимит": { icon: "📦", text: "У вас активный заказ — закройте его, чтобы повысить шансы на назначение." },
+                  "ФОМО": { icon: "⏱️", text: "По текущему заказу не отправлена смета или не поступила предоплата. Решите этот вопрос с менеджером." },
+                  "Без договора": { icon: "📋", text: "Ваш паспорт ещё не верифицирован или договор не заключён. Оформите документы в профиле." },
+                  "Долг": { icon: "💳", text: "Есть просроченная задолженность по комиссии. Оплатите долг, чтобы получать приоритет при назначении." },
+                  "Репутация": { icon: "📉", text: "У вас 1 отменённый заказ подряд. Мастера с лучшей статистикой завершённости получают приоритет при назначении. Завершите следующий заказ — счётчик обнулится, и приоритет вернётся." },
+                  "Автоблок": { icon: "🛑", text: "У вас 2 подряд отменённых заказа — приоритет при назначении сейчас минимальный. Свяжитесь с менеджером для разблокировки: после неё счётчик обнулится, и вы снова сможете брать заказы наравне со всеми." },
+                  "Ограничение": { icon: "⚠️", text: "Есть техническое ограничение. Уточните у менеджера." },
+                };
+                const item = info[tag];
+                return item ? (
+                  <div key={tag} className="flex items-start gap-2.5">
+                    <span className="text-lg shrink-0">{item.icon}</span>
+                    <p className="text-sm text-gray-700 dark:text-gray-300">{item.text}</p>
+                  </div>
+                ) : null;
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground px-2">
+              Ваш отклик зафиксирован — менеджер его видит и примет решение.
+            </p>
+            <button onClick={onRespond}
+              className="w-full max-w-sm h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm">
+              Понял, спасибо
+            </button>
+          </div>
+        ) : state === "success" ? (
+          <div className="flex flex-col items-center justify-center min-h-[70vh] px-6 text-center space-y-4">
+            <div className="w-20 h-20 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+              <CheckCircle2 size={44} className="text-green-500" />
+            </div>
+            <h2 className="text-xl font-bold">Отклик отправлен!</h2>
+            <p className="text-sm text-muted-foreground">Ожидайте решения менеджера.</p>
+            {priceNote && (
+              <div className="bg-muted/60 rounded-xl px-4 py-3 max-w-xs">
+                <p className="text-xs text-muted-foreground">Ваше предложение передано:</p>
+                <p className="text-sm font-medium mt-1">{priceNote}</p>
+              </div>
+            )}
+            <button onClick={onRespond}
+              className="mt-2 w-full max-w-xs h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm">
+              Готово
+            </button>
+          </div>
+        ) : (
+          <>
+            {order.photos.length > 0
+              ? <PhotoGallery photos={order.photos} />
+              : <div className="flex items-center justify-center h-24 bg-muted/40 text-muted-foreground gap-2">
+                  <Images size={18} /><span className="text-sm">Фото не прикреплено</span>
+                </div>
+            }
+            <div className="px-4 pt-2 pb-4">
+              {/* Competition + repeat client info */}
+              <div className="flex items-center gap-3 py-2.5 border-b border-border mb-1">
+                {order.competitorCount > 0 ? (
+                  <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400 font-medium">
+                    <Users size={13} />
+                    Уже откликнулись: {order.competitorCount} {order.competitorCount === 1 ? "мастер" : "мастера"}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                    <CheckCircle2 size={13} /> Первый отклик — у вас преимущество!
+                  </div>
+                )}
+                {order.isRepeatClient && (
+                  <div className="flex items-center gap-1 text-xs text-pink-600 dark:text-pink-400 font-medium ml-auto">
+                    <Heart size={11} fill="currentColor" /> Ваш клиент
+                  </div>
+                )}
+              </div>
+
+              {/* Services */}
+              <div className="py-3 border-b border-border">
+                <p className="text-xs text-muted-foreground mb-2">Услуга / объём</p>
+                {services ? (
+                  <div className="space-y-1.5">
+                    {services.map((s, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <Wrench size={14} className="text-primary shrink-0" />
+                        <span className="text-sm font-medium">{s.type} — {s.area} м²{s.pricePerM2 ? ` · ${s.pricePerM2.toLocaleString("ru-RU")} ₽/м²` : ""}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Wrench size={14} className="text-primary shrink-0" />
+                    <span className="text-sm font-medium">{order.serviceType} — {order.area} м²</span>
+                  </div>
+                )}
+              </div>
+
+              <Row icon={<MapPin size={16} />} label="Адрес" value={`${order.city}${order.district ? `, ${order.district}` : ""}`} />
+              <YandexMapEmbed city={order.city} district={order.district} />
+              <Row icon={<Calendar size={16} />} label="Дата выезда" value={formatDate(order.scheduledAt)} />
+              {order.comment && <Row icon={<MessageSquare size={16} />} label="Комментарий" value={order.comment} />}
+
+              {/* Navigation */}
+              <NavigationButtons city={order.city} district={order.district} />
+
+              {/* Price note (optional) */}
+              <div className="mt-4">
+                <button
+                  onClick={() => setShowPriceNote(p => !p)}
+                  className="flex items-center gap-2 text-xs text-primary font-medium"
+                >
+                  <ChevronDown size={14} className={`transition-transform ${showPriceNote ? "rotate-180" : ""}`} />
+                  {showPriceNote ? "Скрыть предложение" : "Добавить ценовое предложение (необязательно)"}
+                </button>
+                {showPriceNote && (
+                  <div className="mt-2">
+                    <textarea
+                      value={priceNote}
+                      onChange={e => setPriceNote(e.target.value)}
+                      placeholder="Например: готов выехать за 1 500 ₽/м², могу начать 20 марта"
+                      rows={3}
+                      className="w-full px-3 py-2.5 rounded-xl border border-border bg-muted/40 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-4 bg-muted/60 rounded-xl px-4 py-3">
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Телефон клиента будет передан после того, как менеджер выберет вас.
+                </p>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {state !== "success" && state !== "at_limit" && state !== "fomo_blocked" && state !== "needs_contract" && (
+        <div className="shrink-0 bg-card border-t border-border px-4 py-4 space-y-2">
+          {isFomoBlocked ? (
+            <button onClick={handleRespond}
+              className="w-full h-14 rounded-2xl bg-orange-500 text-white font-bold text-base flex items-center justify-center gap-2">
+              <Lock size={20} />
+              Отклик заблокирован
+            </button>
+          ) : (
+            <button onClick={handleRespond} disabled={state !== "idle"}
+              className="w-full h-14 rounded-2xl bg-primary text-primary-foreground font-bold text-base flex items-center justify-center gap-2 disabled:opacity-60">
+              {state === "loading"
+                ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                : <CheckCircle2 size={22} />}
+              Откликнуться{priceNote.trim() ? " с предложением" : ""}
+            </button>
+          )}
+          <button onClick={() => setShowRejectSheet(true)} disabled={state !== "idle"}
+            className="w-full h-11 rounded-xl text-destructive font-medium text-sm flex items-center justify-center gap-1.5 disabled:opacity-50">
+            {state === "rejecting"
+              ? <div className="w-4 h-4 border-2 border-destructive border-t-transparent rounded-full animate-spin" />
+              : <XCircle size={16} />}
+            Отказать от заявки
+          </button>
+        </div>
+      )}
+
+      {showRejectSheet && (
+        <RejectReasonSheet
+          onConfirm={handleRejectConfirm}
+          onCancel={() => setShowRejectSheet(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Responded Sheet ──────────────────────────────────────────────────────────
+
+function RespondedSheet({ order, onClose }: { order: PendingCard; onClose: () => void }) {
+  const services = parseServices(order.services);
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-background">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card shrink-0">
+        <span className="font-bold">Заявка #{order.leadId ?? order.id}</span>
+        <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-muted"><X size={20} /></button>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {order.photos.length > 0 && <PhotoGallery photos={order.photos} />}
+        <div className="px-4 pt-2 pb-4">
+          <div className="py-3 border-b border-border">
+            <p className="text-xs text-muted-foreground mb-2">Услуга / объём</p>
+            {services ? (
+              <div className="space-y-1.5">
+                {services.map((s, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <Wrench size={14} className="text-primary shrink-0" />
+                    <span className="text-sm font-medium">{s.type} — {s.area} м²</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Wrench size={14} className="text-primary shrink-0" />
+                <span className="text-sm font-medium">{order.serviceType} — {order.area} м²</span>
+              </div>
+            )}
+          </div>
+          <Row icon={<MapPin size={16} />} label="Адрес" value={`${order.city}${order.district ? `, ${order.district}` : ""}`} />
+          <YandexMapEmbed city={order.city} district={order.district} />
+          <Row icon={<Calendar size={16} />} label="Дата выезда" value={formatDate(order.scheduledAt)} />
+          {order.comment && <Row icon={<MessageSquare size={16} />} label="Комментарий" value={order.comment} />}
+          <NavigationButtons city={order.city} district={order.district} />
+          <div className="mt-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl px-4 py-4 space-y-1">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 size={18} className="text-green-500 shrink-0" />
+              <p className="font-semibold text-sm text-green-700 dark:text-green-400">Вы откликнулись</p>
+            </div>
+            <p className="text-xs text-green-600 dark:text-green-500 pl-7">Ожидайте подтверждения оператора</p>
+            {order.respondedAt && (
+              <p className="text-xs text-muted-foreground pl-7">
+                {formatDistanceToNow(new Date(order.respondedAt), { addSuffix: true, locale: ru })}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="shrink-0 bg-card border-t border-border px-4 py-4">
+        <button onClick={onClose} className="w-full h-12 rounded-xl border border-border text-muted-foreground font-medium text-sm">Закрыть</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Availability Toggle ──────────────────────────────────────────────────────
+
+function AvailabilityToggle({
+  isAvailable,
+  atLimit,
+  onChange,
+}: {
+  isAvailable: boolean;
+  atLimit: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const toggle = async () => {
+    if (atLimit && !isAvailable) return; // already blocked by API, but prevent optimistic UI
+    setLoading(true);
+    try {
+      await api.setAvailability(!isAvailable);
+      onChange(!isAvailable);
+      toast.success(isAvailable ? "Вы недоступны — заявки не будут приходить" : "Вы снова принимаете заявки");
+    } catch (e: any) {
+      toast.error(e.message ?? "Ошибка");
+    } finally { setLoading(false); }
+  };
+
+  if (atLimit) {
+    return (
+      <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+        <Briefcase size={13} />
+        Лимит заказов
+      </span>
+    );
+  }
+
+  return (
+    <button onClick={toggle} disabled={loading}
+      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all disabled:opacity-60 ${
+        isAvailable
+          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+          : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+      }`}>
+      {loading
+        ? <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+        : isAvailable ? <PlayCircle size={14} /> : <PauseCircle size={14} />}
+      {isAvailable ? "Принимаю заявки" : "Недоступен"}
+    </button>
+  );
+}
+
+// ─── Swipe hint ───────────────────────────────────────────────────────────────
+
+const SWIPE_HINT_KEY = "swipe_hint_shown_v2";
+
+function SwipeHint({ onDismiss }: { onDismiss: () => void }) {
+  return (
+    <div className="flex items-center gap-3 bg-muted/80 border border-border rounded-xl px-3 py-2.5 text-xs text-muted-foreground">
+      <span className="shrink-0"><span className="text-emerald-500 font-bold">→</span> Откликнуться &nbsp; <span className="text-red-500 font-bold">←</span> Отказать</span>
+      <span className="flex-1 text-center opacity-60">Свайп для быстрого ответа</span>
+      <button onClick={onDismiss}><X size={14} /></button>
+    </div>
+  );
+}
+
+// ─── Missed Orders Section ────────────────────────────────────────────────────
+
+function timeAgo(d: string) {
+  const mins = Math.floor((Date.now() - new Date(d).getTime()) / 60_000);
+  if (mins < 60) return `${mins} мин назад`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} ч назад`;
+  return `${Math.floor(hrs / 24)} д назад`;
+}
+
+function MissedOrdersSection({ orders, city }: { orders: MissedOrder[]; city: string }) {
+  const [expanded, setExpanded] = useState(false);
+  if (orders.length === 0) return null;
+
+  return (
+    <section className="space-y-2">
+      <button
+        onClick={() => setExpanded(v => !v)}
+        className="w-full flex items-center justify-between"
+      >
+        <div className="flex items-center gap-2">
+          <Eye size={15} className="text-slate-400" />
+          <span className="font-semibold text-sm text-slate-600 dark:text-slate-400">
+            Недавно разобрали в {city}
+          </span>
+          <span className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-full px-2 py-0.5 font-medium">
+            {orders.length}
+          </span>
+        </div>
+        <ChevronDown
+          size={16}
+          className={`text-slate-400 transition-transform ${expanded ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {expanded && (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground px-1">
+            Эти заявки появились в вашем городе, но уже ушли другим мастерам
+          </p>
+          {orders.map(order => (
+            <div
+              key={order.id}
+              className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 flex items-center gap-3 opacity-80"
+            >
+              <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center shrink-0">
+                <Wrench size={14} className="text-slate-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{order.serviceType}</span>
+                  <span className="text-xs text-slate-400">·</span>
+                  <span className="text-xs text-slate-500">{order.area} м²</span>
+                  {order.district && (
+                    <>
+                      <span className="text-xs text-slate-400">·</span>
+                      <span className="text-xs text-slate-500">{order.district}</span>
+                    </>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-xs text-slate-400">{timeAgo(order.takenAt)}</span>
+                  {order.wasDispatched && (
+                    <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-1.5 py-0.5 rounded-full">
+                      Вам предлагали
+                    </span>
+                  )}
+                </div>
+              </div>
+              <EyeOff size={14} className="text-slate-300 dark:text-slate-600 shrink-0" />
+            </div>
+          ))}
+          <p className="text-xs text-center text-muted-foreground/60 pt-1">
+            Заходите чаще — заявки разбирают быстро
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ─── Daily Checkin Card ───────────────────────────────────────────────────────
+
+const BASE_PWA = "/api/master-pwa";
+
+function DailyCheckinCard() {
+  const [checkin, setCheckin] = useState<{
+    isAvailable: boolean | null; respondedAt: string | null;
+  } | null | undefined>(undefined);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    fetch(`${BASE_PWA}/checkin/today`, { credentials: "include" })
+      .then(r => r.ok ? r.json() : null)
+      .then(setCheckin)
+      .catch(() => setCheckin(null));
+  }, []);
+
+  const submit = async (isAvailable: boolean) => {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch(`${BASE_PWA}/checkin/today`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ isAvailable }),
+      });
+      if (res.ok) {
+        setCheckin({ isAvailable, respondedAt: new Date().toISOString() });
+      }
+    } catch {} finally { setSubmitting(false); }
+  };
+
+  // Don't show until loaded
+  if (checkin === undefined) return null;
+
+  // Already answered with a definite answer — show status with change option
+  if (checkin?.respondedAt && checkin.isAvailable !== null) {
+    return (
+      <div className={`flex items-center gap-3 rounded-xl border p-3 ${
+        checkin.isAvailable
+          ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800"
+          : "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800"
+      }`}>
+        {checkin.isAvailable
+          ? <CheckCircle2 size={18} className="text-green-500 shrink-0" />
+          : <XCircle size={18} className="text-red-500 shrink-0" />
+        }
+        <div className="flex-1 min-w-0">
+          <p className={`text-sm font-semibold ${checkin.isAvailable ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"}`}>
+            {checkin.isAvailable ? "Вы готовы сегодня" : "Вы не готовы сегодня"}
+          </p>
+          <p className={`text-xs ${checkin.isAvailable ? "text-green-600 dark:text-green-500" : "text-red-600 dark:text-red-500"}`}>
+            {checkin.isAvailable ? "Заявки будут поступать в обычном режиме" : "Новые заявки сегодня не поступают"}
+          </p>
+        </div>
+        <button
+          onClick={() => submit(!checkin.isAvailable)}
+          disabled={submitting}
+          className="text-xs text-gray-500 dark:text-gray-400 underline shrink-0"
+        >
+          Изменить
+        </button>
+      </div>
+    );
+  }
+
+  // No answer yet — show question card
+  return (
+    <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <Calendar size={16} className="text-amber-500 shrink-0" />
+        <p className="text-sm font-semibold text-amber-800 dark:text-amber-400">Вы готовы принять заказы сегодня?</p>
+      </div>
+      <div className="flex gap-3">
+        <button
+          onClick={() => submit(true)}
+          disabled={submitting}
+          className="flex-1 flex items-center justify-center gap-2 h-11 rounded-xl bg-green-500 hover:bg-green-600 active:scale-95 text-white text-sm font-semibold transition-all disabled:opacity-50"
+        >
+          <CheckCircle2 size={16} /> Готов
+        </button>
+        <button
+          onClick={() => submit(false)}
+          disabled={submitting}
+          className="flex-1 flex items-center justify-center gap-2 h-11 rounded-xl bg-red-500 hover:bg-red-600 active:scale-95 text-white text-sm font-semibold transition-all disabled:opacity-50"
+        >
+          <XCircle size={16} /> Не готов
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
+
+function MaxBindPostRegPrompt({ botUrl, onClose }: { botUrl: string; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/50 px-4 pb-4 sm:pb-0">
+      <div className="w-full max-w-sm bg-card rounded-t-2xl sm:rounded-2xl p-6 space-y-5 animate-in slide-in-from-bottom duration-300">
+        <div className="flex flex-col items-center text-center space-y-3">
+          <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+            <Bot size={32} className="text-emerald-600" />
+          </div>
+          <h2 className="text-lg font-bold">Подключите бот в Max</h2>
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            Уведомления о новых заказах будут приходить мгновенно. Без привязки бота вы будете видеть заказы только в приложении.
+          </p>
+        </div>
+        <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-xl px-4 py-3 space-y-2">
+          <div className="flex items-start gap-2">
+            <CheckCircle2 size={14} className="text-emerald-600 mt-0.5 shrink-0" />
+            <span className="text-xs text-gray-700 dark:text-gray-300">Новые заявки в вашем городе</span>
+          </div>
+          <div className="flex items-start gap-2">
+            <CheckCircle2 size={14} className="text-emerald-600 mt-0.5 shrink-0" />
+            <span className="text-xs text-gray-700 dark:text-gray-300">Назначения и сообщения от менеджера</span>
+          </div>
+          <div className="flex items-start gap-2">
+            <CheckCircle2 size={14} className="text-emerald-600 mt-0.5 shrink-0" />
+            <span className="text-xs text-gray-700 dark:text-gray-300">Подтверждения оплат</span>
+          </div>
+        </div>
+        <div className="space-y-2">
+          <a
+            href={botUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={onClose}
+            className="block w-full h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm flex items-center justify-center gap-2"
+          >
+            <Bot size={18} /> Привязать бот Max
+          </a>
+          <button
+            onClick={onClose}
+            className="w-full h-10 text-sm text-muted-foreground font-medium"
+          >
+            Позже
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function HomePage() {
+  const { master } = useAuth();
+  const [, setLocation] = useLocation();
+  const [data, setData] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [selectedAvail, setSelectedAvail] = useState<OrderCard | null>(null);
+  const [selectedPending, setSelectedPending] = useState<PendingCard | null>(null);
+  const [isAvailable, setIsAvailable] = useState(true);
+  const [showSwipeHint, setShowSwipeHint] = useState(() => !localStorage.getItem(SWIPE_HINT_KEY));
+  const [showMaxPrompt, setShowMaxPrompt] = useState(() => {
+    try { return localStorage.getItem("showMaxBindPrompt") === "1"; } catch { return false; }
+  });
+  const dismissMaxPrompt = () => {
+    try { localStorage.removeItem("showMaxBindPrompt"); } catch {}
+    setShowMaxPrompt(false);
+  };
+
+  const prevOrderIds = useRef<Set<number>>(new Set());
+  const firstLoad = useRef(true);
+
+  usePushNotifications(!!master);
+
+  const load = useCallback(async () => {
+    try {
+      const d = await api.home();
+      setData(d);
+      setIsAvailable(d.master?.isAvailable ?? true);
+      const currentIds = new Set<number>((d.availableOrders ?? []).map((o: OrderCard) => o.id));
+      if (!firstLoad.current) {
+        const newOnes = [...currentIds].filter(id => !prevOrderIds.current.has(id));
+        if (newOnes.length > 0) playNewOrderAlert();
+      }
+      firstLoad.current = false;
+      prevOrderIds.current = currentIds;
+    } catch {} finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => {
+    load();
+    const interval = setInterval(load, 10_000);
+    return () => clearInterval(interval);
+  }, [load]);
+
+  const dismissSwipeHint = () => { localStorage.setItem(SWIPE_HINT_KEY, "1"); setShowSwipeHint(false); };
+
+  const handleSwipeRespond = async (order: OrderCard) => {
+    const fomoBlock: FomoBlock | null = data?.fomoBlock ?? null;
+    if (fomoBlock?.isBlocked) {
+      api.fomoBlockPress(order.id, fomoBlock.reason ?? null).catch(() => {});
+      toast.error("Отклик заблокирован. Откройте заявку для деталей.", { duration: 3000 });
+      setSelectedAvail(order);
+      return;
+    }
+    try { await api.orders.respond(order.id); toast.success(`Отклик на заявку #${order.leadId ?? order.id} отправлен!`); load(); }
+    catch (e: any) { toast.error(e.message ?? "Ошибка"); }
+  };
+
+  const handleSwipeReject = async (order: OrderCard) => {
+    try { await api.orders.reject(order.id); toast.success("Заявка отклонена"); load(); }
+    catch (e: any) { toast.error(e.message ?? "Ошибка"); }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  const available: OrderCard[] = data?.availableOrders ?? [];
+  const pending: PendingCard[] = data?.pendingOrders ?? [];
+  const active: ActiveOrder[] = data?.activeOrders ?? [];
+  const missed: MissedOrder[] = data?.missedOrders ?? [];
+  const todayActivity: TodayActivity = data?.todayActivity ?? { total: 0, taken: 0 };
+  const orderLimit: number = data?.master?.orderLimit ?? 2;
+  const hasActiveOrders = active.length > 0;
+  const atLimit = active.length >= orderLimit;
+  const fomoBlock: FomoBlock | null = data?.fomoBlock ?? null;
+
+  const workStatusLabels: Record<string, string> = {
+    accepted: "Принят", on_way: "Еду на объект", on_site: "На объекте",
+    work_done: "Работа выполнена", completed: "Завершён",
+  };
+  const orderStatusLabels: Record<string, string> = {
+    master_assigned: "Назначен", in_progress: "В работе", cancellation_requested: "Отмена",
+  };
+
+  return (
+    <div className="px-4 pt-5 pb-4 space-y-5">
+
+      {showMaxPrompt && !master?.maxChatId && (
+        <MaxBindPostRegPrompt
+          botUrl={(master as any)?.maxBotLink ?? "https://max.ru"}
+          onClose={dismissMaxPrompt}
+        />
+      )}
+
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold">{master?.alias}</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">{master?.city}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <AvailabilityToggle isAvailable={isAvailable} atLimit={atLimit} onChange={setIsAvailable} />
+          <div className="flex items-center gap-1 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-2.5 py-1.5 rounded-xl">
+            <Star size={13} fill="currentColor" />
+            <span className="font-semibold text-sm">{master?.rating?.toFixed(1)}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Active orders info */}
+      {hasActiveOrders && (
+        <div className={`flex items-center gap-3 border rounded-xl p-3 ${
+          atLimit
+            ? "bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800"
+            : "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800"
+        }`}>
+          <Briefcase size={18} className={`shrink-0 ${atLimit ? "text-orange-500" : "text-blue-500"}`} />
+          <div>
+            <p className={`text-sm font-semibold ${atLimit ? "text-orange-700 dark:text-orange-400" : "text-blue-700 dark:text-blue-400"}`}>
+              {atLimit ? `Лимит заказов (${active.length}/${orderLimit})` : `В работе (${active.length}/${orderLimit})`}
+            </p>
+            <p className={`text-xs ${atLimit ? "text-orange-600 dark:text-orange-500" : "text-blue-600 dark:text-blue-500"}`}>
+              {atLimit
+                ? "Закройте текущие заказы, чтобы принимать новые."
+                : "Вы можете принять ещё один заказ."}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Unavailable warning */}
+      {!hasActiveOrders && !isAvailable && (
+        <div className="flex items-center gap-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3">
+          <PauseCircle size={18} className="text-red-500 shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-red-700 dark:text-red-400">Вы недоступны</p>
+            <p className="text-xs text-red-600 dark:text-red-500">Новые заявки не поступают. Включите приём выше.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Daily checkin */}
+      <DailyCheckinCard />
+
+      {/* Debt warning */}
+      {master && (master.debt ?? 0) > 0 && (
+        <div className="flex items-center gap-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3">
+          <AlertTriangle size={18} className="text-red-500 shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-red-700 dark:text-red-400">Задолженность</p>
+            <p className="text-xs text-red-600 dark:text-red-500">{(master.debt ?? 0).toLocaleString("ru-RU")} ₽ — свяжитесь с менеджером</p>
+          </div>
+        </div>
+      )}
+
+      {/* FOMO block banner */}
+      {fomoBlock?.isBlocked && available.length > 0 && (
+        <div className="flex items-start gap-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-300 dark:border-orange-700 rounded-xl p-3">
+          <Lock size={18} className="text-orange-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-orange-700 dark:text-orange-400">Отклики заблокированы</p>
+            <p className="text-xs text-orange-600 dark:text-orange-500 mt-0.5">{fomoBlock.reason}</p>
+          </div>
+        </div>
+      )}
+
+      {/* New orders */}
+      {available.length > 0 && (
+        <section className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Bell size={15} className="text-primary" />
+            <h2 className="font-semibold text-sm">Новые заявки ({available.length})</h2>
+          </div>
+          {showSwipeHint && <SwipeHint onDismiss={dismissSwipeHint} />}
+          {available.map(order => (
+            <SwipeableCard key={order.id}
+              onSwipeRight={() => handleSwipeRespond(order)}
+              onSwipeLeft={() => handleSwipeReject(order)}>
+              <button onClick={() => setSelectedAvail(order)}
+                className="w-full bg-primary/10 dark:bg-primary/15 border border-primary/30 rounded-2xl overflow-hidden text-left">
+                {order.photos.length > 0 && (
+                  <img src={resolvePhotoUrl(order.photos[0])} alt="фото" className="w-full object-cover" style={{ height: 130 }} />
+                )}
+                <div className="p-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-sm text-primary">Заявка #{order.leadId ?? order.id}</span>
+                      {order.isRepeatClient && (
+                        <span className="flex items-center gap-0.5 text-xs text-pink-500 font-semibold">
+                          <Heart size={10} fill="currentColor" /> Ваш клиент
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <DispatchTimer dispatchedAt={order.dispatchedAt} />
+                      <ChevronRight size={14} className="text-primary opacity-60" />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1.5 text-sm font-medium">
+                      <Wrench size={13} className="text-primary shrink-0" />
+                      {order.serviceType} · {order.area} м²
+                    </div>
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <MapPin size={12} className="shrink-0" />
+                      {order.city}{order.district ? `, ${order.district}` : ""}
+                    </div>
+                    {order.scheduledAt && (
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Calendar size={12} className="shrink-0" />
+                        {formatDate(order.scheduledAt)}
+                      </div>
+                    )}
+                    {/* Competitor badge */}
+                    {order.competitorCount > 0 ? (
+                      <div className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 font-medium">
+                        <Users size={11} /> {order.competitorCount} {order.competitorCount === 1 ? "мастер откликнулся" : "мастера откликнулись"}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                        <CheckCircle2 size={11} /> Первый отклик
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </button>
+            </SwipeableCard>
+          ))}
+        </section>
+      )}
+
+      {/* Pending */}
+      {pending.length > 0 && (
+        <section className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Clock size={15} className="text-amber-500" />
+            <h2 className="font-semibold text-sm">Ожидаю решения ({pending.length})</h2>
+          </div>
+          {pending.map(order => (
+            <button key={order.id} onClick={() => setSelectedPending(order)}
+              className="w-full bg-amber-50 dark:bg-amber-900/15 border border-amber-200 dark:border-amber-800/40 rounded-2xl overflow-hidden text-left">
+              {order.photos.length > 0 && (
+                <img src={resolvePhotoUrl(order.photos[0])} alt="фото" className="w-full object-cover" style={{ height: 90 }} />
+              )}
+              <div className="p-4 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-sm text-amber-800 dark:text-amber-300">Заявка #{order.leadId ?? order.id}</span>
+                  <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
+                    <CheckCircle2 size={12} /> Отклик отправлен
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 text-sm font-medium">
+                  <Wrench size={13} className="text-amber-500 shrink-0" />
+                  {order.serviceType} · {order.area} м²
+                </div>
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <MapPin size={12} className="shrink-0" />
+                  {order.city}{order.district ? `, ${order.district}` : ""}
+                </div>
+              </div>
+            </button>
+          ))}
+        </section>
+      )}
+
+      {/* Active orders */}
+      <section className="space-y-2">
+        <h2 className="font-semibold text-sm">Активные заказы</h2>
+        {active.length === 0 ? (
+          <div className="text-center py-10 text-muted-foreground text-sm">Нет активных заказов</div>
+        ) : (
+          active.map(order => (
+            <button key={order.id} onClick={() => setLocation(`/orders?expand=${order.id}`)}
+              className="w-full bg-card border border-border rounded-2xl p-4 text-left space-y-2 active:opacity-80">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-sm">{order.city}{order.district ? `, ${order.district}` : ""}</span>
+                <span className="text-xs text-muted-foreground">#{order.leadId ?? order.id}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  {order.serviceType} · {order.area} м²
+                </div>
+                <span className="text-xs font-semibold text-primary">
+                  {order.masterWorkStatus
+                    ? workStatusLabels[order.masterWorkStatus] ?? order.masterWorkStatus
+                    : orderStatusLabels[order.status] ?? order.status}
+                </span>
+              </div>
+            </button>
+          ))
+        )}
+      </section>
+
+      {/* Missed orders FOMO feed */}
+      <MissedOrdersSection orders={missed} city={master?.city ?? ""} />
+
+      {/* Full-screen sheets */}
+      {selectedAvail && (
+        <OrderDetailSheet
+          order={selectedAvail}
+          onRespond={() => { setSelectedAvail(null); load(); }}
+          onReject={() => { setSelectedAvail(null); load(); }}
+          onClose={() => setSelectedAvail(null)}
+          fomoBlock={fomoBlock}
+        />
+      )}
+      {selectedPending && (
+        <RespondedSheet order={selectedPending} onClose={() => setSelectedPending(null)} />
+      )}
+    </div>
+  );
+}
