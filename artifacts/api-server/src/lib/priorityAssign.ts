@@ -144,7 +144,16 @@ export async function selectAndAssignWinner(orderId: number): Promise<"assigned"
 
   const scored: ScoredDispatch[] = [];
 
+  // Теги-ограничения, по которым мастер НЕ может быть авто-назначен.
+  // Откликнуться может каждый, но автоназначка должна выбирать только реально
+  // свободного мастера. Заблокированных по «Лимит/Автоблок/ФОМО» оператор
+  // назначает вручную, когда они освободятся.
+  const HARD_BLOCK_TAGS = ["Лимит", "Автоблок", "ФОМО"];
+
   for (const dispatch of respondedDispatches) {
+    if (dispatch.responseNote && HARD_BLOCK_TAGS.some(tag => dispatch.responseNote!.includes(tag))) {
+      continue;
+    }
     const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, dispatch.masterId));
     const master = masterRows[0];
     if (!master || master.status !== "active") continue;

@@ -6,7 +6,9 @@ import {
 } from "@workspace/db";
 import { eq, desc, inArray, and, ne } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
-import { countActiveMasterOrders, getColumnIdForActiveCount } from "../lib/orderEligibility.js";
+import { countActiveMasterOrders, getColumnIdForActiveCount, getMasterEligibility, getOverdueMasterIds } from "../lib/orderEligibility.js";
+import { getFomoBlock, logFomoEvent } from "../lib/fomoBlock.js";
+import { notifyManagerMasterResponse } from "../managerBot.js";
 import { createYandexPayOrder, pollYandexPayStatus, confirmPayment } from "./yandex-pay.js";
 
 // ─── Available specializations (synced with service_types) ────────────────────
@@ -1028,45 +1030,107 @@ async function handleCallback(callbackQuery: any) {
       return;
     }
 
-    // Check active order limit — master may have taken another order since broadcast
+    // ── Политика «откликнуться может каждый» ─────────────────────────────────
+    // Никаких хард-блоков: собираем теги-ограничения, отклик принимаем всегда,
+    // оператор видит причины в responseNote (точно как в PWA /respond).
+    const constraintTags: string[] = [];
+
+    if (!master.contractSignedAt || !master.passportVerified) {
+      constraintTags.push("Без договора");
+    }
+
+    if (master.blockedFromOrders) {
+      constraintTags.push("Автоблок");
+    } else if ((master.consecutiveCancellations ?? 0) >= 1) {
+      constraintTags.push("Репутация");
+    }
+
+    const fomoStatus = await getFomoBlock(master.id, master.isTestMaster);
+    if (fomoStatus.isBlocked) {
+      logFomoEvent(master.id, "button_press", fomoStatus.reason, fomoStatus.orderId ?? undefined).catch(() => {});
+      constraintTags.push("ФОМО");
+    }
+
     const activeOrders = await db.select().from(ordersTable)
       .where(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
-    const myActiveCount = activeOrders.filter(o => o.masterId === master.id).length;
-    const limit = master.isTestMaster ? 1 : 2;
-    if (myActiveCount >= limit) {
-      await answerCallback(cbId, `⛔ У вас уже ${myActiveCount} из ${limit} активных заказов`);
-      const busyCard =
-        `📋 <b>Заявка #${orderId}</b>\n\n` +
-        `🔧 Услуга: ${order.serviceType}\n📍 Район: ${order.city}${order.district ? ", " + order.district : ""}\n\n` +
-        `⛔ <b>Вы достигли лимита активных заказов (${myActiveCount}/${limit}).</b>\n` +
-        `<i>После оплаты комиссии и завершения заказов вы сможете брать новые.</i>`;
-      await editMessage(chatId, messageId, busyCard, { reply_markup: { inline_keyboard: [] } });
+    const myActive = activeOrders.filter(o => o.masterId === master.id);
+    const myActiveCount = myActive.length;
+    const overdueMasterIds = await getOverdueMasterIds();
+    const eligibility = getMasterEligibility(master, myActiveCount, overdueMasterIds);
+
+    if (overdueMasterIds.has(master.id)) {
+      constraintTags.push("Долг");
+    }
+
+    // Лимит — единая формула с PWA `/respond` (master-pwa.ts L690): `?? 1`.
+    const limit = master.maxActiveOrders ?? 1;
+    const atLimit = myActiveCount >= limit;
+    if (atLimit) {
+      constraintTags.push("Лимит");
+    }
+
+    if (!eligibility.canAccept && constraintTags.length === 0) {
+      constraintTags.push("Ограничение");
+    }
+
+    const responseNote = constraintTags.length > 0 ? `⚠️ ${constraintTags.join(", ")}` : null;
+
+    // Атомарный переход sent→responded: защищаемся от двойных нажатий.
+    // Сайд-эффекты (logToChat, notifyManager, maybeEarlyAssign) выполняем только
+    // если update реально изменил строку.
+    const claimed = await db.update(orderDispatchesTable)
+      .set({
+        status: "responded",
+        respondedAt: new Date(),
+        responseNote,
+      })
+      .where(and(
+        eq(orderDispatchesTable.id, dispatch.id),
+        eq(orderDispatchesTable.status, "sent"),
+      ))
+      .returning({ id: orderDispatchesTable.id });
+
+    if (claimed.length === 0) {
+      // Параллельный отклик уже застолбил — отвечаем мастеру и выходим.
+      await answerCallback(cbId, "✅ Вы уже откликнулись — ожидайте результата");
       return;
     }
 
-    // Mark responded
-    await db.update(orderDispatchesTable).set({
-      status: "responded",
-      respondedAt: new Date(),
-    }).where(eq(orderDispatchesTable.id, dispatch.id));
-
     await answerCallback(cbId, "✅ Отклик отправлен!");
 
-    // Update bot message
-    const respondedCard =
-      `📋 <b>Заявка #${orderId}</b>\n\n` +
-      `🔧 Услуга: <b>${order.serviceType}</b>\n` +
-      `📍 Район: <b>${order.city}${order.district ? ", " + order.district : ""}</b>\n` +
-      `📐 Объём: <b>${order.area} м²</b>\n\n` +
-      `✅ <b>Вы откликнулись!</b> Ожидайте подтверждения оператора.\n` +
-      `<i>После подтверждения вы получите контакт клиента.</i>`;
+    // Карточка для мастера: при лимите — мягкое объяснение, иначе обычное «Ожидайте».
+    let respondedCard: string;
+    if (atLimit) {
+      const activeRef = myActive[0] ? ` (заказ #${myActive[0].id})` : "";
+      respondedCard =
+        `📋 <b>Заявка #${orderId}</b>\n\n` +
+        `🔧 Услуга: <b>${order.serviceType}</b>\n` +
+        `📍 Район: <b>${order.city}${order.district ? ", " + order.district : ""}</b>\n\n` +
+        `✅ <b>Отклик принят!</b>\n\n` +
+        `⚠️ Сейчас у вас уже ${myActiveCount} из ${limit} активных заказов${activeRef}. ` +
+        `Чтобы мы вас назначили — закройте текущий и оплатите комиссию, либо отмените его (рейтинг снизится).\n\n` +
+        `<i>Как только освободитесь — напишите оператору, и мы вернёмся к этой заявке.</i>`;
+    } else {
+      const tagLine = responseNote ? `\n\n${responseNote}\n<i>Оператор увидит ваш статус и решит по назначению.</i>` : "";
+      respondedCard =
+        `📋 <b>Заявка #${orderId}</b>\n\n` +
+        `🔧 Услуга: <b>${order.serviceType}</b>\n` +
+        `📍 Район: <b>${order.city}${order.district ? ", " + order.district : ""}</b>\n` +
+        `📐 Объём: <b>${order.area} м²</b>\n\n` +
+        `✅ <b>Вы откликнулись!</b> Ожидайте подтверждения оператора.\n` +
+        `<i>После подтверждения вы получите контакт клиента.</i>${tagLine}`;
+    }
 
     await editMessage(chatId, messageId, respondedCard, { reply_markup: { inline_keyboard: [] } });
 
-    // Log to CRM chat as system message
-    await logToChat(master.id, chatId, `🙋 Откликнулся на заявку #${orderId}`);
+    // Лог в CRM-чат: видна сама заявка + теги, чтобы оператор быстро ориентировался.
+    const tagSuffix = constraintTags.length > 0 ? ` [${constraintTags.join(", ")}]` : "";
+    await logToChat(master.id, chatId, `🙋 Откликнулся на заявку #${orderId}${tagSuffix}`);
 
-    // Early assignment if 5+ masters have responded
+    // Уведомить менеджер-бот
+    notifyManagerMasterResponse(orderId, master.alias, true).catch(() => {});
+
+    // Ранняя автоназначка по 5+ откликам (учтёт responseNote и не назначит «Лимит»/«Автоблок»).
     import("../lib/priorityAssign.js").then(m => m.maybeEarlyAssign(orderId)).catch(() => {});
 
     return;
