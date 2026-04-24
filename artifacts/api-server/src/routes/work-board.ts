@@ -364,9 +364,15 @@ async function buildBoard() {
     }
   }
 
-  // Sort cards inside each column by ageMs DESC (oldest first → most urgent)
+  // Sort cards inside each column by ageMs ASC (newest first → oldest at the bottom).
+  // Exception: "problem" column keeps oldest-first ordering, since stale problems are
+  // the most urgent and operators expect them at the top.
   for (const col of Object.values(columns)) {
-    col.cards.sort((a, b) => b.ageMs - a.ageMs);
+    if (col.key === "problem") {
+      col.cards.sort((a, b) => b.ageMs - a.ageMs);
+    } else {
+      col.cards.sort((a, b) => a.ageMs - b.ageMs);
+    }
   }
 
   // Breakdown strings for money columns
