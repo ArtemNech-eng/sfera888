@@ -15,10 +15,24 @@ import { eq, and, isNull, inArray, lte, desc, gte, ilike, sql } from "drizzle-or
 import { sendMaxMessage } from "../maxBot.js";
 import { sendMsg as sendManagerMsg, getManagerUserId, injectNotification } from "../managerBot.js";
 
-const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-});
+const openaiApiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+const openaiBaseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
+
+const openai = openaiApiKey
+  ? new OpenAI({
+      apiKey: openaiApiKey,
+      baseURL: openaiBaseURL,
+    })
+  : null;
+
+function requireOpenAI(): OpenAI {
+  if (!openai) {
+    throw new Error(
+      "OpenAI is not configured. Set AI_INTEGRATIONS_OPENAI_API_KEY (and optionally AI_INTEGRATIONS_OPENAI_BASE_URL).",
+    );
+  }
+  return openai;
+}
 
 // ─── Conversation context per master ─────────────────────────────────────────
 
@@ -1065,7 +1079,7 @@ ${context}${pendingOrderSection}
       ...getHistory(masterId),
     ];
 
-    const response = await openai.chat.completions.create({
+    const response = await requireOpenAI().chat.completions.create({
       model: "gpt-4o",
       messages,
       tools: DISPATCHER_TOOLS,
@@ -1106,7 +1120,7 @@ ${context}${pendingOrderSection}
         addToHistory(masterId, { role: "tool", content: toolResult, tool_call_id: tc.id, name: fnName });
       }
 
-      const followUp = await openai.chat.completions.create({
+      const followUp = await requireOpenAI().chat.completions.create({
         model: "gpt-4o",
         messages: [
           { role: "system", content: systemPrompt },
@@ -1275,7 +1289,7 @@ ${situation}
 
     let result: { action: string; message?: string; reason?: string } = { action: "skip", reason: "default" };
     try {
-      const response = await openai.chat.completions.create({
+      const response = await requireOpenAI().chat.completions.create({
         model: "gpt-4o-mini",
         messages: [{ role: "user", content: gptPrompt }],
         temperature: 0.3,
@@ -1969,7 +1983,7 @@ export async function sendTaskToMaster(masterNameOrId: string, task: string): Pr
 Напиши сообщение мастеру ${master.alias} от лица диспетчера компании. Коротко, по делу, дружелюбно.
 Контекст мастера: ${context}`;
 
-    const resp = await openai.chat.completions.create({
+    const resp = await requireOpenAI().chat.completions.create({
       model: "gpt-4o",
       messages: [{ role: "user", content: prompt }],
       max_tokens: 300,
