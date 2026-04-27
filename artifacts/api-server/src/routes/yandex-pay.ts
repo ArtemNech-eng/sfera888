@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 const router = Router();
 
 const YANDEX_PAY_API_KEY = process.env.YANDEX_PAY_API_KEY ?? "";
-const DOMAIN = (process.env.REPLIT_DOMAINS ?? "").split(",")[0].trim();
+const DOMAIN = process.env.APP_DOMAIN ?? "";
 // Telegram-бот удалён.
 
 const YANDEX_PAY_BASE = "https://sandbox.pay.yandex.ru/api/merchant/v1";
