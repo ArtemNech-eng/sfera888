@@ -4,13 +4,12 @@
   "license": "MIT",
   "packageManager": "pnpm@9.15.9",
   "scripts": {
-    "build": "build": "pnpm -r --if-present run build"
+    "build": "pnpm -r --if-present run build",
     "build:prod": "pnpm --filter @workspace/scripts run db-migrate && BASE_PATH=/crm/ pnpm --filter @workspace/crm run build && BASE_PATH=/master-pwa/ pnpm --filter @workspace/master-pwa run build && BASE_PATH=/client/ pnpm --filter @workspace/client run build && pnpm --filter @workspace/api-server run build",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
   },
   "private": true,
-  "packageManager": "pnpm@9.15.9",
   "devDependencies": {
     "prettier": "^3.8.1",
     "typescript": "~5.9.2"
