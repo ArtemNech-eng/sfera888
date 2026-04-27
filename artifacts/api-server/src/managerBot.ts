@@ -67,10 +67,22 @@ function getToken(): string | undefined {
   return process.env.MANAGER_BOT_TOKEN;
 }
 
-const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-});
+const openaiApiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+const openaiBaseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
+
+const openai = openaiApiKey
+  ? new OpenAI({
+      apiKey: openaiApiKey,
+      baseURL: openaiBaseURL,
+    })
+  : null;
+
+function requireOpenAI(): OpenAI {
+  if (!openai) {
+    throw new Error("OpenAI is not configured. Set AI_INTEGRATIONS_OPENAI_API_KEY (and optionally AI_INTEGRATIONS_OPENAI_BASE_URL).");
+  }
+  return openai;
+}
 
 // ─── Manager user tracking ─────────────────────────────────────────────────────
 // Auto-detected from first/last person who writes to the bot
@@ -485,8 +497,8 @@ async function transcribeAudio(buffer: Buffer, mimeType = "audio/ogg"): Promise<
       fileName = "voice.mp3"; fileType = "audio/mp3";
     }
 
-    const file = new File([audioBuffer], fileName, { type: fileType });
-    const result = await openai.audio.transcriptions.create({
+    const file = new File([new Uint8Array(audioBuffer)], fileName, { type: fileType });
+    const result = await requireOpenAI().audio.transcriptions.create({
       model: "gpt-4o-mini-transcribe",
       file,
       language: "ru",
@@ -2751,7 +2763,7 @@ export async function handleManagerUpdate(update: unknown) {
       ...session.messages,
     ];
 
-    const response = await openai.chat.completions.create({
+    const response = await requireOpenAI().chat.completions.create({
       model: "gpt-4o",
       messages,
       tools: TOOLS,
@@ -2769,9 +2781,9 @@ export async function handleManagerUpdate(update: unknown) {
       pushRaw(session, { role: "assistant", content: assistantMsg.content ?? "", tool_calls: assistantMsg.tool_calls });
 
       for (const tc of assistantMsg.tool_calls) {
-        const fnName = tc.function.name;
+        const fnName = (tc as any).function?.name ?? (tc as any).name ?? "";
         let args: any = {};
-        try { args = JSON.parse(tc.function.arguments); } catch {}
+        try { args = JSON.parse((tc as any).function?.arguments ?? (tc as any).arguments ?? "{}"); } catch {}
 
         console.log(`[managerBot] tool call: ${fnName}`, JSON.stringify(args));
         let toolResult = "";
@@ -3014,7 +3026,7 @@ export async function handleManagerUpdate(update: unknown) {
       flushSession(session);
 
       // Second AI call with tool results
-      const followUp = await openai.chat.completions.create({
+      const followUp = await requireOpenAI().chat.completions.create({
         model: "gpt-4o",
         messages: [
           { role: "system", content: SYSTEM_PROMPT + ctxNote },
@@ -3609,7 +3621,7 @@ export async function runAutonomousCycle(triggerReason = "scheduled") {
     while (round < MAX_ROUNDS && !finished) {
       round++;
 
-      const response = await openai.chat.completions.create({
+      const response = await requireOpenAI().chat.completions.create({
         model: "gpt-4o",
         messages,
         tools: AUTONOMOUS_TOOLS,
@@ -3619,7 +3631,7 @@ export async function runAutonomousCycle(triggerReason = "scheduled") {
 
       const choice = response.choices[0];
       const assistantMsg = choice.message;
-      messages.push({ role: "assistant", content: assistantMsg.content ?? "", tool_calls: assistantMsg.tool_calls });
+      messages.push({ role: "assistant", content: assistantMsg.content ?? "", tool_calls: assistantMsg.tool_calls } as any);
 
       if (!assistantMsg.tool_calls || assistantMsg.tool_calls.length === 0) {
         // No tool calls — text reply without finish_cycle, log silently
