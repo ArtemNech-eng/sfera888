@@ -2694,7 +2694,31 @@ export async function handleManagerUpdate(update: unknown) {
   const msg = u.message;
   if (!msg) return;
 
-  const userId: number = msg.sender?.user_id ?? 0;
+  const from = msg.from ?? u.user ?? null;
+  const chat = msg.chat ?? null;
+  const userId = from?.user_id ?? from?.id ?? msg.sender?.user_id ?? 0;
+  const chatId = chat?.chat_id ?? chat?.id ?? u.chat_id ?? 0;
+
+  console.log("[managerBot][debug] incoming message", {
+    from,
+    chat,
+    message: msg.body?.text ?? msg.text ?? null,
+    userId,
+    chatId,
+  });
+
+  const commandText = (msg.body?.text ?? msg.text ?? "").trim();
+  if (commandText === "/myid") {
+    if (chatId || userId) {
+      managerUserId = userId || chatId;
+      await maxPost("/messages", "chat_id", Number(chatId || userId), {
+        text: `Ваш user id: ${userId || "unknown"}\nВаш chat id: ${chatId || "unknown"}`,
+        format: "markdown",
+      });
+    }
+    return;
+  }
+
   if (!userId) return;
 
   // Track manager user ID

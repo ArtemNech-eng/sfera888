@@ -13,6 +13,8 @@ import { UPLOAD_BASE } from "./config.js";
 import { objectStorageClient } from "./lib/objectStorage.js";
 import { handleMaxUpdate, registerWebhook, sendMaxMessage } from "./maxBot.js";
 import { handleManagerUpdate, registerManagerWebhook, notifyManagerReceiptPaid } from "./managerBot.js";
+import { db } from "@workspace/db";
+import { sql } from "drizzle-orm";
 
 const screenshotUpload = multer({
   storage: multer.memoryStorage(),
@@ -45,6 +47,42 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+
+async function getDatabaseStatus(): Promise<boolean> {
+  try {
+    await db.execute(sql`SELECT 1`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function buildHealthResponse() {
+  const databaseOk = await getDatabaseStatus();
+  return {
+    ok: true,
+    service: "api-server",
+    time: new Date().toISOString(),
+    database: databaseOk ? "connected" : "error",
+  };
+}
+
+app.get("/health", async (_req, res) => {
+  res.json(await buildHealthResponse());
+});
+
+app.get("/api/health", async (_req, res) => {
+  res.json(await buildHealthResponse());
+});
+
+app.get("/api/system-status", async (_req, res) => {
+  const database = await getDatabaseStatus();
+  const maxBotToken = !!process.env.MAX_BOT_TOKEN;
+  const managerBotToken = !!process.env.MANAGER_BOT_TOKEN;
+  const openAiKey = !!process.env.OPENAI_API_KEY;
+  const avitoConfigured = !!(process.env.AVITO_TOKEN || process.env.AVITO_ACCESS_TOKEN || process.env.AVITO_CLIENT_ID || process.env.AVITO_CLIENT_SECRET);
+  res.json({ database, maxBotToken, managerBotToken, openAiKey, avitoConfigured });
+});
 
 const PgSession = connectPgSimple(session);
 
