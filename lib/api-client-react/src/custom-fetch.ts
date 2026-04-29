@@ -26,9 +26,16 @@ function isUrl(input: RequestInfo | URL): input is URL {
 }
 
 function resolveUrl(input: RequestInfo | URL): string {
-  if (typeof input === "string") return input;
-  if (isUrl(input)) return input.toString();
-  return input.url;
+  const importMetaEnv = (import.meta as unknown as { env?: { VITE_API_BASE_URL?: string } }).env;
+  const baseUrl = (importMetaEnv?.VITE_API_BASE_URL ?? "").trim().replace(/\/$/, "");
+
+  const rawUrl = typeof input === "string" ? input : isUrl(input) ? input.toString() : input.url;
+
+  if (!baseUrl || rawUrl.startsWith("http://") || rawUrl.startsWith("https://")) {
+    return rawUrl;
+  }
+
+  return `${baseUrl}${rawUrl.startsWith("/") ? rawUrl : `/${rawUrl}`}`;
 }
 
 function mergeHeaders(...sources: Array<HeadersInit | undefined>): Headers {
