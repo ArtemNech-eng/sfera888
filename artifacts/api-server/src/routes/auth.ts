@@ -6,7 +6,11 @@ import { verifyPassword } from "../lib/auth.js";
 const router = Router();
 
 router.post("/login", async (req, res) => {
-  const { login, password } = req.body;
+  const rawLogin = typeof req.body?.login === "string" ? req.body.login : "";
+  const rawPassword = typeof req.body?.password === "string" ? req.body.password : "";
+  const login = rawLogin.trim();
+  const password = rawPassword.trim();
+
   if (!login || !password) {
     return res.status(400).json({ error: "Login and password required" });
   }
