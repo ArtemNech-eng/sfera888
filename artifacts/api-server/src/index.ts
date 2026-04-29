@@ -464,6 +464,7 @@ async function autoReBroadcastNoResponse() {
 // Run migrations first, then all other startup tasks that depend on the schema
 runMigrations()
   .then(() => {
+    console.log("--- ADMIN AUTH PREPARED ---");
     bootstrapFirstAdmin().catch(console.error);
     seedVoronkaColumns().catch(console.error);
     grantPassportVerifiedToActiveMasters().catch(console.error);
