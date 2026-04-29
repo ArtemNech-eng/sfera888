@@ -116,7 +116,7 @@ const pgPool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
-app.use(session({
+const sessionMiddleware = session({
   store: new PgSession({
     pool: pgPool,
     createTableIfMissing: true,
@@ -127,13 +127,25 @@ app.use(session({
   saveUninitialized: false,
   proxy: true,
   cookie: {
-    domain: process.env.SESSION_COOKIE_DOMAIN || ".up.railway.app",
     httpOnly: true,
     secure: true,
     sameSite: "none",
     maxAge: 24 * 60 * 60 * 1000, // 1 day
   },
-}));
+});
+
+app.use((req, _res, next) => {
+  const host = req.hostname || "";
+  const sessionCookieDomain = process.env.SESSION_COOKIE_DOMAIN?.trim();
+  if (sessionCookieDomain) {
+    req.session.cookie.domain = sessionCookieDomain;
+  } else if (host.endsWith(".up.railway.app") || host.endsWith(".railway.app")) {
+    req.session.cookie.domain = host.replace(/^[^.]+\./, ".");
+  }
+  next();
+});
+
+app.use(sessionMiddleware);
 
 // ── Redirect old /receipt/:token links to new /api/receipt/:token ─────────────
 app.get("/receipt/:token", (req, res) => {
