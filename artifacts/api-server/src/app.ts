@@ -127,6 +127,7 @@ app.use(session({
   saveUninitialized: false,
   proxy: true,
   cookie: {
+    domain: process.env.SESSION_COOKIE_DOMAIN || ".up.railway.app",
     httpOnly: true,
     secure: true,
     sameSite: "none",
