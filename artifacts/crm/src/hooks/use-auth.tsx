@@ -1,5 +1,5 @@
 import { createContext, useContext, ReactNode, useEffect } from "react";
-import { useGetCurrentUser, User, useLogout } from "@workspace/api-client-react";
+import { useGetCurrentUser, User, useLogout, getGetCurrentUserQueryKey } from "@workspace/api-client-react";
 import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, ShieldOff } from "lucide-react";
@@ -39,10 +39,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   
   const { data: user, isLoading, error } = useGetCurrentUser({
     query: {
+      queryKey: getGetCurrentUserQueryKey(),
       retry: false,
       refetchOnWindowFocus: false,
     }
   });
+
+  const authUser = (error as any)?.status === 401 ? null : (user ?? null);
+  const authLoading = isLoading && (error as any)?.status !== 401;
 
   const logoutMutation = useLogout({
     mutation: {
@@ -58,7 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user: user ?? null, isLoading, logout: handleLogout }}>
+    <AuthContext.Provider value={{ user: authUser, isLoading: authLoading, logout: handleLogout }}>
       {children}
     </AuthContext.Provider>
   );
@@ -101,7 +105,7 @@ export function ProtectedRoute({
     } else if (!isLoading && user && allowedRoles && !allowedRoles.includes(user.role) && user.role !== "admin") {
       setLocation(getFirstPermRoute(user));
     }
-  }, [user, isLoading]);
+  }, [user, isLoading, setLocation]);
 
   if (isLoading) {
     return (
