@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "license": "MIT",
   "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "build": "pnpm -r --if-present run build",
     "build:prod": "pnpm --filter @workspace/scripts run db-migrate && BASE_PATH=/crm/ pnpm --filter @workspace/crm run build && BASE_PATH=/master-pwa/ pnpm --filter @workspace/master-pwa run build && BASE_PATH=/client/ pnpm --filter @workspace/client run build && pnpm --filter @workspace/api-server run build",
