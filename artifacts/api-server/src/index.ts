@@ -244,23 +244,29 @@ async function runMigrations() {
 
 // If ADMIN_PASSWORD env var is set, reset the admin user's password on startup.
 async function maybeResetAdminPassword() {
-  const newPassword = process.env["ADMIN_PASSWORD"];
-  if (!newPassword) return;
+  const configuredPassword = process.env["ADMIN_PASSWORD"]?.trim();
+  const fallbackPassword = process.env.NODE_ENV !== "production" ? "admin2026" : undefined;
+  const newPassword = configuredPassword || fallbackPassword;
+
+  if (!newPassword) {
+    console.warn("[startup] ADMIN_PASSWORD is not set; admin credentials were not initialized");
+    return;
+  }
 
   const [admin] = await db.select().from(usersTable).where(eq(usersTable.login, "admin"));
+  const passwordHash = await hashPassword(newPassword);
+
   if (!admin) {
-    const passwordHash = await hashPassword(newPassword);
     await db.insert(usersTable).values({
       login: "admin",
       passwordHash,
       name: "Администратор",
       role: "admin",
     });
-    console.log("[startup] Admin user created with ADMIN_PASSWORD");
+    console.log(`[startup] Admin user created (${configuredPassword ? "ADMIN_PASSWORD" : "fallback admin2026"})`);
   } else {
-    const passwordHash = await hashPassword(newPassword);
     await db.update(usersTable).set({ passwordHash }).where(eq(usersTable.id, admin.id));
-    console.log("[startup] Admin password reset via ADMIN_PASSWORD env var");
+    console.log(`[startup] Admin password updated (${configuredPassword ? "ADMIN_PASSWORD" : "fallback admin2026"})`);
   }
 }
 
