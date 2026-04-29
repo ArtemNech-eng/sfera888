@@ -16,6 +16,23 @@ import { handleManagerUpdate, registerManagerWebhook, notifyManagerReceiptPaid }
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 
+function getAllowedOrigins(): string[] {
+  const raw = [
+    process.env.CRM_ORIGIN,
+    process.env.CRM_URL,
+    process.env.PUBLIC_CRM_URL,
+    process.env.CRM_PUBLIC_URL,
+  ]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map((value) => value.trim());
+
+  const defaults = [
+    "https://crm-production-6fdc.up.railway.app",
+  ];
+
+  return Array.from(new Set([...raw, ...defaults]));
+}
+
 const screenshotUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
@@ -40,10 +57,19 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app: Express = express();
 
 // Trust reverse proxy headers (X-Forwarded-Proto, X-Forwarded-Host) so that
-// req.protocol returns "https" in production behind Replit's proxy.
+// secure cookies work correctly behind Railway's proxy.
 app.set("trust proxy", 1);
 
-app.use(cors({ origin: true, credentials: true }));
+const allowedOrigins = getAllowedOrigins();
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error(`Origin not allowed: ${origin}`));
+  },
+  credentials: true,
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
@@ -99,10 +125,11 @@ app.use(session({
   secret: process.env.SESSION_SECRET || "crm-secret-key-2024",
   resave: false,
   saveUninitialized: false,
+  proxy: true,
   cookie: {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    secure: true,
+    sameSite: "none",
     maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
   },
 }));
