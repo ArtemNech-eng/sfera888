@@ -3,6 +3,7 @@ import { db, usersTable, voronkaColumnsTable, mastersTable, ordersTable, orderDi
 import { sql } from "drizzle-orm";
 import { eq, inArray, and, lte, isNull } from "drizzle-orm";
 import { hashPassword } from "./lib/auth.js";
+import { bootstrapFirstAdmin } from "./lib/bootstrap-admin.js";
 import { checkOverdueTransactions } from "./lib/orderEligibility.js";
 import { performBroadcast } from "./lib/broadcastOrder.js";
 import { broadcastCheckin, broadcastCheckinReminder } from "./lib/checkinBroadcast.js";
@@ -242,34 +243,6 @@ async function runMigrations() {
   console.log("[startup] Migrations applied");
 }
 
-// If ADMIN_PASSWORD env var is set, reset the admin user's password on startup.
-async function maybeResetAdminPassword() {
-  const configuredPassword = process.env["ADMIN_PASSWORD"]?.trim();
-  const fallbackPassword = "admin2026";
-  const newPassword = configuredPassword || fallbackPassword;
-
-  if (!newPassword) {
-    console.warn("[startup] ADMIN_PASSWORD is not set; admin credentials were not initialized");
-    return;
-  }
-
-  const [admin] = await db.select().from(usersTable).where(eq(usersTable.login, "admin"));
-  const passwordHash = await hashPassword(newPassword);
-
-  if (!admin) {
-    await db.insert(usersTable).values({
-      login: "admin",
-      passwordHash,
-      name: "Администратор",
-      role: "admin",
-    });
-    console.log(`[startup] Admin user created (${configuredPassword ? "ADMIN_PASSWORD" : "fallback admin2026"})`);
-  } else {
-    await db.update(usersTable).set({ passwordHash }).where(eq(usersTable.id, admin.id));
-    console.log(`[startup] Admin password updated (${configuredPassword ? "ADMIN_PASSWORD" : "fallback admin2026"})`);
-  }
-}
-
 // Seed default voronka columns if they don't exist yet.
 // Safe to run on every startup — checks before inserting.
 async function seedVoronkaColumns() {
@@ -491,7 +464,7 @@ async function autoReBroadcastNoResponse() {
 // Run migrations first, then all other startup tasks that depend on the schema
 runMigrations()
   .then(() => {
-    maybeResetAdminPassword().catch(console.error);
+    bootstrapFirstAdmin().catch(console.error);
     seedVoronkaColumns().catch(console.error);
     grantPassportVerifiedToActiveMasters().catch(console.error);
     recalculateMasterVoronkaColumns().catch(console.error);
