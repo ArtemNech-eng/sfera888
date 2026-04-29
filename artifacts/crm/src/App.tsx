@@ -111,7 +111,7 @@ function App() {
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          <WouterRouter base={process.env.BASE_PATH ?? "/"}>
+          <WouterRouter base={import.meta.env.BASE_URL}>
             <AuthProvider>
               <Router />
             </AuthProvider>
