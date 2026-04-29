@@ -27,17 +27,23 @@ router.post("/login", async (req, res) => {
     return res.status(401).json({ error: "Неверный логин или пароль" });
   }
 
-  (req.session as any).userId = user.id;
+  req.session.userId = user.id;
+  (req.session as any).save((err: unknown) => {
+    if (err) {
+      console.error("session save error", err);
+      return res.status(500).json({ error: "Failed to create session" });
+    }
 
-  return res.json({
-    user: {
-      id: user.id,
-      login: user.login,
-      name: user.name,
-      role: user.role,
-      permissions: user.permissions ?? [],
-      createdAt: user.createdAt,
-    },
+    return res.json({
+      user: {
+        id: user.id,
+        login: user.login,
+        name: user.name,
+        role: user.role,
+        permissions: user.permissions ?? [],
+        createdAt: user.createdAt,
+      },
+    });
   });
 });
 
