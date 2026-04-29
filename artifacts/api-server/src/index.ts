@@ -245,7 +245,7 @@ async function runMigrations() {
 // If ADMIN_PASSWORD env var is set, reset the admin user's password on startup.
 async function maybeResetAdminPassword() {
   const configuredPassword = process.env["ADMIN_PASSWORD"]?.trim();
-  const fallbackPassword = process.env.NODE_ENV !== "production" ? "admin2026" : undefined;
+  const fallbackPassword = "admin2026";
   const newPassword = configuredPassword || fallbackPassword;
 
   if (!newPassword) {
