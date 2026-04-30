@@ -123,6 +123,14 @@ export function TasksFeed() {
     window.setTimeout(() => setActionState("done"), 700);
   };
 
+  const handleResolveAndClose = () => {
+    handleResolveTask();
+    window.setTimeout(() => {
+      setSelectedTask(null);
+      setActionState("idle");
+    }, 1200);
+  };
+
   const handleLeadNavigate = () => {
     if (!selectedTask?.leadId) return;
     navigate(`/leads?openLead=${selectedTask.leadId}`);
@@ -314,9 +322,14 @@ export function TasksFeed() {
                       </p>
                     )}
                   </div>
-                  <Button onClick={handleResolveTask} disabled={actionState !== "idle"} className="w-full sm:w-auto">
-                    {actionState === "idle" ? "Решить задачу" : actionState === "working" ? "Выполняется..." : "Решено"}
-                  </Button>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <Button onClick={handleResolveTask} disabled={actionState !== "idle"} className="w-full sm:w-auto">
+                      {actionState === "idle" ? "Решить задачу" : actionState === "working" ? "Выполняется..." : "Решено"}
+                    </Button>
+                    <Button variant="outline" onClick={handleResolveAndClose} disabled={actionState !== "idle"} className="w-full sm:w-auto">
+                      Решить и закрыть
+                    </Button>
+                  </div>
                 </div>
               </div>
 
