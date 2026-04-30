@@ -5,7 +5,7 @@ import { Layout } from "@/components/layout";
 import { ProtectedRoute } from "@/hooks/use-auth";
 import { KPICards } from "../components/dashboard/KPICards";
 import { AlertsBlock } from "../components/dashboard/AlertsBlock";
-import { TasksFeed } from "../components/dashboard/TasksFeed";
+import { ActionItemsBlock } from "../components/dashboard/ActionItemsBlock";
 import { ForecastCard } from "../components/dashboard/ForecastCard";
 import { RiskMonitor } from "../components/dashboard/RiskMonitor";
 import { RevenueChart } from "../components/dashboard/RevenueChart";
@@ -150,7 +150,7 @@ function DashboardPage() {
 
         {/* TASKS FEED — что делать прямо сейчас */}
         <div className="mb-6">
-          <TasksFeed />
+          <ActionItemsBlock />
         </div>
 
         {/* KPI CARDS */}
