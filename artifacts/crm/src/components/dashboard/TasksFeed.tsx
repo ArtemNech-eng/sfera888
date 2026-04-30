@@ -64,6 +64,14 @@ const PRIMARY_ACTION_LABEL: Record<TaskType, string> = {
   confirm_prepayment: "Подтвердить платеж",
 };
 
+const CONFIRMATION_LABEL: Record<TaskType, string> = {
+  send_to_work: "Открыть заявку для отправки мастерам?",
+  no_master_response: "Открыть заказ для повторной отправки?",
+  cancel_request: "Подтвердить отмену заказа?",
+  price_proposal: "Подтвердить предложенную сумму?",
+  confirm_prepayment: "Подтвердить платеж по этой задаче?",
+};
+
 const PRIORITY_STYLES: Record<Priority, { bg: string; border: string; iconBg: string; iconColor: string; badge: string; badgeText: string }> = {
   critical: { bg: "bg-red-50", border: "border-red-300", iconBg: "bg-red-500", iconColor: "text-white", badge: "bg-red-500 text-white", badgeText: "Просрочено" },
   high: { bg: "bg-orange-50", border: "border-orange-300", iconBg: "bg-orange-500", iconColor: "text-white", badge: "bg-orange-500 text-white", badgeText: "Срочно" },
@@ -84,6 +92,8 @@ export function TasksFeed() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [actionState, setActionState] = useState<ActionState>("idle");
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [confirmTask, setConfirmTask] = useState<Task | null>(null);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery<TasksResponse>({
     queryKey: ["/api/leads/tasks"],
@@ -104,16 +114,20 @@ export function TasksFeed() {
     setSelectedTask(null);
     setActionState("idle");
     setActionMessage(null);
+    setConfirmTask(null);
+    setConfirmError(null);
   };
 
   const handleOpen = (task: Task) => {
     setSelectedTask(task);
     setActionState("idle");
     setActionMessage(null);
+    setConfirmError(null);
   };
 
   const runPrimaryAction = async () => {
     if (!selectedTask || actionState !== "idle") return;
+
     setActionState("working");
     setActionMessage(null);
 
@@ -171,7 +185,14 @@ export function TasksFeed() {
       console.error("[TasksFeed] action failed", e);
       setActionState("idle");
       setActionMessage("Не удалось выполнить действие. Попробуйте ещё раз.");
+      setConfirmError("Не удалось выполнить действие. Попробуйте ещё раз.");
     }
+  };
+
+  const requestPrimaryAction = () => {
+    if (!selectedTask || actionState !== "idle") return;
+    setConfirmTask(selectedTask);
+    setConfirmError(null);
   };
 
   const handleResolveAndClose = async () => {
@@ -181,6 +202,8 @@ export function TasksFeed() {
         setSelectedTask(null);
         setActionState("idle");
         setActionMessage(null);
+        setConfirmTask(null);
+        setConfirmError(null);
       }, 900);
     }
   };
@@ -265,7 +288,7 @@ export function TasksFeed() {
         )}
       </div>
 
-      <Dialog open={!!selectedTask} onOpenChange={(open) => { if (!open) closeDialog(); }}>
+      <Dialog open={!!selectedTask} onOpenChange={(open: boolean) => { if (!open) closeDialog(); }}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           {selectedTask && selectedStyles && selectedIcon && (
             <>
@@ -309,8 +332,8 @@ export function TasksFeed() {
                     {actionState === "idle" && actionMessage && <p className="mt-2 text-sm text-red-700">{actionMessage}</p>}
                   </div>
                   <div className="flex flex-col sm:flex-row gap-2">
-                    <Button onClick={runPrimaryAction} disabled={actionState !== "idle"} className="w-full sm:w-auto">{PRIMARY_ACTION_LABEL[selectedTask.type]}</Button>
-                    <Button variant="outline" onClick={handleResolveAndClose} disabled={actionState !== "idle"} className="w-full sm:w-auto">Выполнить и закрыть</Button>
+                    <Button onClick={requestPrimaryAction} disabled={actionState !== "idle"} className="w-full sm:w-auto">{PRIMARY_ACTION_LABEL[selectedTask.type]}</Button>
+                    <Button variant="outline" onClick={requestPrimaryAction} disabled={actionState !== "idle"} className="w-full sm:w-auto">Выполнить и закрыть</Button>
                   </div>
                 </div>
               </div>
@@ -324,6 +347,27 @@ export function TasksFeed() {
               </DialogFooter>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!confirmTask} onOpenChange={(open: boolean) => { if (!open) setConfirmTask(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Подтверждение действия</DialogTitle>
+            <DialogDescription>{confirmTask ? CONFIRMATION_LABEL[confirmTask.type] : ""}</DialogDescription>
+          </DialogHeader>
+          {confirmError && <p className="text-sm text-red-700">{confirmError}</p>}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmTask(null)} disabled={actionState === "working"}>Отмена</Button>
+            <Button onClick={async () => {
+              if (!confirmTask) return;
+              const task = confirmTask;
+              setConfirmTask(null);
+              setSelectedTask(task);
+              setActionState("idle");
+              await runPrimaryAction();
+            }} disabled={actionState === "working"}>Подтвердить</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
