@@ -352,22 +352,56 @@ export function TasksFeed() {
 
       <Dialog open={!!confirmTask} onOpenChange={(open: boolean) => { if (!open) setConfirmTask(null); }}>
         <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Подтверждение действия</DialogTitle>
-            <DialogDescription>{confirmTask ? CONFIRMATION_LABEL[confirmTask.type] : ""}</DialogDescription>
-          </DialogHeader>
-          {confirmError && <p className="text-sm text-red-700">{confirmError}</p>}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmTask(null)} disabled={actionState === "working"}>Отмена</Button>
-            <Button onClick={async () => {
-              if (!confirmTask) return;
-              const task = confirmTask;
-              setConfirmTask(null);
-              setSelectedTask(task);
-              setActionState("idle");
-              await runPrimaryAction();
-            }} disabled={actionState === "working"}>Подтвердить</Button>
-          </DialogFooter>
+          {confirmTask && (
+            <>
+              <DialogHeader className="space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center text-primary flex-shrink-0">
+                    <CheckCircle2 className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <DialogTitle className="text-lg">Подтвердить действие</DialogTitle>
+                    <DialogDescription className="mt-1 text-sm">
+                      {CONFIRMATION_LABEL[confirmTask.type]}
+                    </DialogDescription>
+                  </div>
+                </div>
+              </DialogHeader>
+
+              <div className="space-y-4">
+                <div className="rounded-xl border bg-muted/30 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Задача</div>
+                  <div className="font-medium text-foreground">{confirmTask.title}</div>
+                  <div className="mt-1 text-sm text-muted-foreground">{confirmTask.subtitle}</div>
+                </div>
+
+                <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-4 text-sm text-amber-900">
+                  Это действие изменит статус в системе. Продолжить?
+                </div>
+
+                {confirmError && <p className="text-sm text-red-700">{confirmError}</p>}
+              </div>
+
+              <DialogFooter className="gap-2 sm:justify-between">
+                <Button variant="outline" onClick={() => setConfirmTask(null)} disabled={actionState === "working"}>
+                  Отмена
+                </Button>
+                <Button
+                  onClick={async () => {
+                    if (!confirmTask) return;
+                    const task = confirmTask;
+                    setConfirmTask(null);
+                    setSelectedTask(task);
+                    setActionState("idle");
+                    await runPrimaryAction();
+                  }}
+                  disabled={actionState === "working"}
+                >
+                  Подтвердить
+                </Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </>
