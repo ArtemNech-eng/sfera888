@@ -281,12 +281,12 @@ export function TasksFeed() {
               <div className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                   <div className="rounded-xl border bg-muted/30 p-3">
-                    <div className="text-xs text-muted-foreground mb-1">Тип задачи</div>
+                    <div className="text-xs text-muted-foreground mb-1">Что за задача</div>
                     <div className="font-medium">{selectedTask.type}</div>
                   </div>
                   <div className="rounded-xl border bg-muted/30 p-3">
                     <div className="text-xs text-muted-foreground mb-1">Возраст</div>
-                    <div className="font-medium">{selectedTask.ageMinutes} мин</div>
+                    <div className="font-medium">{Math.max(1, Math.round(selectedTask.ageMinutes / 60))} ч</div>
                   </div>
                 </div>
 
