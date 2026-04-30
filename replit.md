@@ -4,6 +4,24 @@
 
 CRM система для управления ремонтными заказами. pnpm workspace monorepo using TypeScript.
 
+## Working context
+
+- Рабочий корень репозитория: `d:/Сфера мастер/sfera888`
+- Я работаю через Replit Agent, а код правится локально в VS Code и синкается через GitHub
+- Все git-команды нужно запускать только из корня репозитория
+- Если в терминале появляется `fatal: not a git repository`, значит команда была запущена не из `d:/Сфера мастер/sfera888`
+
+## Git sync
+
+```bash
+cd "d:/Сфера мастер/sfera888"
+git status
+git add .
+git commit -m "<message>"
+git push origin main
+```
+
+
 ## Stack
 
 - **Monorepo tool**: pnpm workspaces
