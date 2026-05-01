@@ -103,7 +103,7 @@ export function ActionItemsBlock() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
         <div className="relative md:col-span-1">
           <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
-          <Input value={search} onChange={(e: ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)} placeholder="Поиск по title, orderId, master" className="pl-9" />
+          <Input value={search} onChange={(e: ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)} placeholder="Поиск по названию, заказу или мастеру" className="pl-9" />
         </div>
         <div className="flex gap-2 flex-wrap md:col-span-2">
           {FILTERS.map((f) => (

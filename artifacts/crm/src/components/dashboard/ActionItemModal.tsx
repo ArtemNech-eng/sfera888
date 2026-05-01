@@ -94,7 +94,7 @@ export function ActionItemModal({ id, open, onOpenChange }: { id: string | null;
       return (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
           <div className="rounded-xl border p-3">Мастер: <span className="font-medium">{item?.masterId ?? "—"}</span></div>
-          <div className="rounded-xl border p-3">Причина блокировки: <span className="font-medium">FOMO_BLOCKED / blocked</span></div>
+            <div className="rounded-xl border p-3">Причина блокировки: <span className="font-medium">Блокировка FOMO / blocked</span></div>
           <div className="rounded-xl border p-3 md:col-span-2">
             Проблемный заказ:
             <div className="mt-2 rounded-lg border bg-slate-50 p-3">
@@ -124,8 +124,8 @@ export function ActionItemModal({ id, open, onOpenChange }: { id: string | null;
             <div className="rounded-xl border p-3">Заказ: <span className="font-medium">{item?.orderId ?? "—"}</span></div>
             <div className="rounded-xl border p-3">Мастер: <span className="font-medium">{item?.masterId ?? "—"}</span></div>
           </div>
-          <div className="rounded-xl border bg-slate-50 p-4">
-            <div className="text-xs uppercase text-muted-foreground mb-1">Краткий summary / риск</div>
+            <div className="rounded-xl border bg-slate-50 p-4">
+            <div className="text-xs uppercase text-muted-foreground mb-1">Краткое описание и риск</div>
             <div className="font-medium">{item?.shortDescription ?? "—"}</div>
             <div className="text-sm mt-2">{item?.fullDescription ?? "—"}</div>
           </div>
@@ -201,6 +201,12 @@ export function ActionItemModal({ id, open, onOpenChange }: { id: string | null;
               </div>
             </DialogTitle>
             <DialogDescription className="mt-2">{item?.shortDescription}</DialogDescription>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" onClick={async () => { if (taskUrl) await navigator.clipboard.writeText(taskUrl); setToast("Ссылка на задачу скопирована"); }}>
+                <Copy className="w-4 h-4" />
+                Скопировать ссылку на задачу
+              </Button>
+            </div>
           </DialogHeader>
 
           <div className="space-y-4 mt-5">
