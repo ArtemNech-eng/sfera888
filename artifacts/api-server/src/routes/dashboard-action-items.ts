@@ -290,25 +290,32 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
       const commFmt = commission > 0 ? `${Math.round(commission).toLocaleString("ru-RU")} ₽` : "0 ₽";
       const notifyText = `✅ Заказ #${orderId} отмечен как выполненный оператором. Комиссия ${commFmt} засчитана как оплаченная. Спасибо за работу!`;
       const [master] = await db.select({ id: mastersTable.id, maxChatId: mastersTable.maxChatId }).from(mastersTable).where(eq(mastersTable.id, masterId)).limit(1);
+      // Send to BOTH channels: Max (if connected) AND PWA push
       if (master?.maxChatId) {
-        await sendMaxMessage(master.maxChatId, notifyText).catch(() => {});
-      } else {
-        sendPushToMaster(masterId, { type: "new_message", title: "Заказ выполнен", body: `Заказ #${orderId} завершён. Комиссия ${commFmt} засчитана.` }).catch(() => {});
+        await sendMaxMessage(master.maxChatId, notifyText).catch((e) => console.error("[complete_as_master] max send failed:", e));
       }
+      sendPushToMaster(masterId, { type: "new_message", title: "Заказ выполнен", body: `Заказ #${orderId} завершён. Комиссия ${commFmt} засчитана.` }).catch((e) => console.error("[complete_as_master] push failed:", e));
       const chatId = master?.maxChatId ? `max_${master.maxChatId}` : `pwa_${masterId}`;
       await db.insert(masterMessagesTable).values({ masterId, telegramChatId: chatId, text: notifyText, fromMaster: false, senderName: operatorName, isRead: true });
+      // Archive linked chat case so it doesn't reappear in dashboards
+      await db.update(chatCasesTable).set({ isResolved: true, isArchived: true, updatedAt: now } as any).where(eq(chatCasesTable.orderId, orderId)).catch((e) => console.error("[complete_as_master] case archive failed:", e));
+      console.log(`[complete_as_master] order #${orderId} fully processed (notifications sent, case archived)`);
     }
   }
 
   if (action === "cancel_as_master" && item.orderId != null && item.masterId != null) {
+    console.log(`[cancel_as_master] role=${operatorRole} orderId=${item.orderId} masterId=${item.masterId}`);
+    if (operatorRole !== "admin") throw Object.assign(new Error("Только администратор может выполнить это действие"), { status: 403 });
     const orderId = Number(item.orderId);
     const masterId = Number(item.masterId);
+    const now = new Date();
 
     await db.update(ordersTable)
-      .set({ status: "cancelled", cancelReason: "master_cancel_bypass", updatedAt: new Date() } as any)
+      .set({ status: "cancelled", cancelReason: "master_cancel_bypass", updatedAt: now } as any)
       .where(eq(ordersTable.id, orderId));
+    console.log(`[cancel_as_master] order #${orderId} marked cancelled (master fault)`);
 
-    await recordOrderCancelled(masterId, orderId).catch(() => {});
+    await recordOrderCancelled(masterId, orderId).catch((e) => console.error("[cancel_as_master] reputation update failed:", e));
 
     const notifyText = `⚠️ Заказ #${orderId} отменён оператором (причина: обход платформы). Отмена засчитана вам. Свяжитесь с нами для уточнения деталей.`;
     const [master] = await db
@@ -317,15 +324,15 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
       .where(eq(mastersTable.id, masterId))
       .limit(1);
 
+    // Send to BOTH channels: Max (if connected) AND PWA push
     if (master?.maxChatId) {
-      await sendMaxMessage(master.maxChatId, notifyText).catch(() => {});
-    } else {
-      sendPushToMaster(masterId, {
-        type: "new_message",
-        title: "Заказ отменён",
-        body: `Заказ #${orderId} отменён. Обратитесь к оператору.`,
-      }).catch(() => {});
+      await sendMaxMessage(master.maxChatId, notifyText).catch((e) => console.error("[cancel_as_master] max send failed:", e));
     }
+    sendPushToMaster(masterId, {
+      type: "new_message",
+      title: "Заказ отменён",
+      body: `Заказ #${orderId} отменён. Обратитесь к оператору.`,
+    }).catch((e) => console.error("[cancel_as_master] push failed:", e));
 
     const chatId = master?.maxChatId ? `max_${master.maxChatId}` : `pwa_${masterId}`;
     await db.insert(masterMessagesTable).values({
@@ -336,6 +343,9 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
       senderName: operatorName,
       isRead: true,
     });
+    // Archive linked chat case so it doesn't reappear in dashboards
+    await db.update(chatCasesTable).set({ isResolved: true, isArchived: true, updatedAt: now } as any).where(eq(chatCasesTable.orderId, orderId)).catch((e) => console.error("[cancel_as_master] case archive failed:", e));
+    console.log(`[cancel_as_master] order #${orderId} fully processed (notifications sent, case archived)`);
   }
 
   if (action === "return_to_pool" && item.orderId != null) {
