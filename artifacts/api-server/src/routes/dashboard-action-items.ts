@@ -507,7 +507,12 @@ router.get("/action-items/:id", ops, async (req: any, res: any) => {
 router.post("/action-items/:id/action", ops, async (req: any, res: any) => {
   const { action, payload = {} } = req.body ?? {};
   const items = await buildItems();
-  const item = items.find((i) => i.id === req.params.id);
+  let item = items.find((i) => i.id === req.params.id);
+  if (!item && (action === "complete_as_master" || action === "cancel_as_master")) {
+    const orderId = Number((payload as any)?.orderId);
+    const masterId = Number((payload as any)?.masterId);
+    item = items.find((i) => (Number.isFinite(orderId) && i.orderId != null && Number(i.orderId) === orderId) || (Number.isFinite(masterId) && i.masterId != null && Number(i.masterId) === masterId));
+  }
   if (!item) return res.status(404).json({ error: "Не найдено" });
   if (!["message_master", "call_client", "reassign", "cancel_order", "cancel_as_master", "complete_as_master", "return_to_pool", "resolve", "dismiss", "update_balance", "manual_unblock", "call_master", "resend", "block_master", "manual_control", "open_issue_order"].includes(action)) return res.status(400).json({ error: "Недопустимое действие" });
   const operatorName = (req as any).user?.name ?? "Оператор";

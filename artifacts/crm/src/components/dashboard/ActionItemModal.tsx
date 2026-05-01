@@ -767,7 +767,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                         disabled={busy === "complete_as_master"}
                         onClick={async () => {
                           console.log("[btn:complete_as_master] clicked, id=", id, "amount=", completeAmount, "mode=", commissionMode);
-                          const payload: Record<string, unknown> = { commissionMode };
+                          const payload: Record<string, unknown> = { commissionMode, orderId: ctx.order?.id, masterId: ctx.master?.id };
                           const n = Number(completeAmount);
                           if (Number.isFinite(n) && n > 0) payload.orderAmount = n;
                           await fire("complete_as_master", payload);
@@ -831,7 +831,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                         variant="destructive"
                         disabled={busy === "cancel_as_master"}
                         onClick={async () => {
-                          await fire("cancel_as_master", { cancelReason });
+                          await fire("cancel_as_master", { cancelReason, orderId: ctx.order?.id, masterId: ctx.master?.id });
                           setCancelAsMasterPending(false);
                         }}
                       >
