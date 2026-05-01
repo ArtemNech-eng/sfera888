@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, ordersTable, mastersTable, leadsTable, receiptsTable, avitoSettingsTable, chatCasesTable, systemTasksTable, masterMessagesTable, transactionsTable } from "@workspace/db";
-import { desc, isNull, eq, and } from "drizzle-orm";
+import { desc, isNull, eq, and, sql } from "drizzle-orm";
 import { sendMaxMessage } from "../maxBot.js";
 import { sendPushToMaster } from "../lib/push.js";
 import { requireRole } from "../middlewares/requireAuth.js";
@@ -241,19 +241,22 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
       const amount = Number(orderRow?.proposedAmount ?? orderRow?.orderAmount ?? 0);
       const commSettings = await getCommissionSettings();
       const commission = amount > 0 ? calculateCommission(amount, commSettings) : 0;
+      const now = new Date();
 
       await db.update(ordersTable).set({
         status: "completed",
         masterWorkStatus: "completed",
-        updatedAt: new Date(),
+        orderAmount: amount > 0 ? String(amount) : (orderRow?.orderAmount ?? null),
+        updatedAt: now,
       } as any).where(eq(ordersTable.id, orderId));
 
-      const [existingTx] = await db.select({ id: transactionsTable.id }).from(transactionsTable).where(eq(transactionsTable.orderId, orderId)).limit(1);
+      const [existingTx] = await db.select({ id: transactionsTable.id, paidAt: transactionsTable.paidAt }).from(transactionsTable).where(eq(transactionsTable.orderId, orderId)).limit(1);
       if (existingTx) {
         await db.update(transactionsTable).set({
           orderAmount: String(amount),
           commission: String(commission),
           paymentStatus: "paid",
+          paidAt: existingTx.paidAt ?? now,
         }).where(eq(transactionsTable.id, existingTx.id));
       } else {
         await db.insert(transactionsTable).values({
@@ -262,7 +265,18 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
           orderAmount: String(amount),
           commission: String(commission),
           paymentStatus: "paid",
+          paidAt: now,
         });
+      }
+
+      if (commission > 0) {
+        const prepaymentDeducted = Number(existingTx ? (await db.select({ pd: transactionsTable.prepaymentDeducted }).from(transactionsTable).where(eq(transactionsTable.orderId, orderId)).limit(1))[0]?.pd ?? 0 : 0);
+        const netPayable = Math.max(0, commission - prepaymentDeducted);
+        if (netPayable > 0) {
+          await db.update(mastersTable).set({
+            debt: sql`GREATEST(${mastersTable.debt}::numeric - ${netPayable}, 0)`,
+          }).where(eq(mastersTable.id, masterId));
+        }
       }
 
       await recordOrderCompleted(masterId).catch(() => {});
