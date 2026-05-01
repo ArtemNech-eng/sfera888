@@ -232,6 +232,7 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
   }
 
   if (action === "complete_as_master") {
+    console.log(`[complete_as_master] role=${operatorRole} orderId=${item.orderId} masterId=${item.masterId}`);
     if (operatorRole !== "admin") throw Object.assign(new Error("Только администратор может выполнить это действие"), { status: 403 });
     if (item.orderId != null && item.masterId != null) {
       const orderId = Number(item.orderId);
@@ -249,6 +250,7 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
         orderAmount: amount > 0 ? String(amount) : (orderRow?.orderAmount ?? null),
         updatedAt: now,
       } as any).where(eq(ordersTable.id, orderId));
+      console.log(`[complete_as_master] order #${orderId} marked completed, amount=${amount}, commission=${commission}`);
 
       const [existingTx] = await db.select({ id: transactionsTable.id, paidAt: transactionsTable.paidAt }).from(transactionsTable).where(eq(transactionsTable.orderId, orderId)).limit(1);
       if (existingTx) {

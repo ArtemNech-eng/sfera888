@@ -237,7 +237,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
 
   const showToast = (msg: string, ok = true) => {
     setToast({ msg, ok });
-    setTimeout(() => setToast(null), 2500);
+    setTimeout(() => setToast(null), ok ? 2500 : 5000);
   };
 
   const fire = async (action: string, payload: Record<string, unknown> = {}) => {
@@ -250,7 +250,11 @@ export function ActionItemModal({ id, open, onOpenChange }: {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, payload: { comment, ...payload } }),
       });
-      if (!r.ok) throw new Error("err");
+      if (!r.ok) {
+        const errBody = await r.json().catch(() => null);
+        const errMsg = errBody?.error ?? `Ошибка ${r.status}`;
+        throw new Error(errMsg);
+      }
       const resultJson = await r.json().catch(() => null);
       const assignedMaster = resultJson?.context?.assignedMaster;
       const confirmedOrderMasterId = resultJson?.context?.order?.masterId;
@@ -266,8 +270,8 @@ export function ActionItemModal({ id, open, onOpenChange }: {
       }
       try { await refetch(); } catch { /* item may be gone after status change, that's ok */ }
       showToast(successMsg);
-    } catch {
-      showToast("Ошибка при выполнении", false);
+    } catch (e: any) {
+      showToast(e?.message ?? "Ошибка при выполнении", false);
     } finally {
       setBusy(null);
     }
@@ -619,7 +623,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                 </Button>
               </div>
             </div>
-            {isAdmin && (
+            {isAdmin && ctx.order?.id && ctx.master?.id && (
               <div className="border-t pt-3 space-y-2">
                 {!completeAsMasterPending ? (
                   <Button
@@ -627,7 +631,6 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                     variant="outline"
                     className="w-full border-green-400 text-green-700 hover:bg-green-50"
                     onClick={() => setCompleteAsMasterPending(true)}
-                    disabled={!ctx.order?.id || !ctx.master?.id}
                   >
                     <CheckCircle2 className="w-4 h-4 mr-1" /> Завершить как выполненный
                   </Button>
@@ -657,46 +660,47 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                 )}
               </div>
             )}
-            <div className="border-t pt-3 space-y-2">
-              {!cancelAsMasterPending ? (
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  className="w-full"
-                  onClick={() => setCancelAsMasterPending(true)}
-                  disabled={!ctx.order?.id || !ctx.master?.id}
-                >
-                  Отменить заказ (вина мастера)
-                </Button>
-              ) : (
-                <div className="rounded-xl border-2 border-red-300 bg-red-50 p-4 space-y-3">
-                  <div className="flex items-start gap-2">
-                    <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
-                    <div className="text-sm text-red-800">
-                      <div className="font-bold mb-1">Подтвердите отмену заказа</div>
-                      <div>Заказ <strong>#{ctx.order?.id}</strong> будет отменён с причиной <strong>«вина мастера»</strong>. Это влияет на рейтинг мастера {ctx.master?.name ? <strong>{ctx.master.name}</strong> : null} и видно в чате CRM. Действие необратимо.</div>
+            {!!(ctx.order?.id && ctx.master?.id) && (
+              <div className="border-t pt-3 space-y-2">
+                {!cancelAsMasterPending ? (
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    className="w-full"
+                    onClick={() => setCancelAsMasterPending(true)}
+                  >
+                    Отменить заказ (вина мастера)
+                  </Button>
+                ) : (
+                  <div className="rounded-xl border-2 border-red-300 bg-red-50 p-4 space-y-3">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                      <div className="text-sm text-red-800">
+                        <div className="font-bold mb-1">Подтвердите отмену заказа</div>
+                        <div>Заказ <strong>#{ctx.order?.id}</strong> будет отменён с причиной <strong>«вина мастера»</strong>. Это влияет на рейтинг мастера {ctx.master?.name ? <strong>{ctx.master.name}</strong> : null} и видно в чате CRM. Действие необратимо.</div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={busy === "cancel_as_master"}
+                        onClick={() => { fire("cancel_as_master"); setCancelAsMasterPending(false); }}
+                      >
+                        Да, отменить (вина мастера)
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setCancelAsMasterPending(false)}
+                      >
+                        Отмена
+                      </Button>
                     </div>
                   </div>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      disabled={busy === "cancel_as_master"}
-                      onClick={() => { fire("cancel_as_master"); setCancelAsMasterPending(false); }}
-                    >
-                      Да, отменить (вина мастера)
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setCancelAsMasterPending(false)}
-                    >
-                      Отмена
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
           </SectionBox>
         );
 
