@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Clock, Copy, Link as LinkIcon, MapPin, Package, X } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -184,123 +184,95 @@ export function ActionItemModal({ id, open, onOpenChange }: { id: string | null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[860px] w-[95vw] max-h-[85vh] overflow-y-auto rounded-[18px] bg-white shadow-xl p-0 overflow-hidden">
+      <DialogContent className="sm:max-w-[860px] w-[95vw] max-h-[85vh] rounded-[18px] bg-white shadow-xl p-0 overflow-hidden">
         <div className={`absolute left-0 top-0 bottom-0 w-1 ${priorityColor}`} />
-        <div className="p-6 pl-7">
-          <DialogHeader className="pr-8">
-            <DialogTitle className="flex items-start gap-3">
-              <div className={`mt-0.5 rounded-full p-2 ${badgeColor}`}>
-                <AlertTriangle className="w-5 h-5" />
+        <div className="max-h-[85vh] overflow-y-auto">
+          <div className="p-6 pl-7 space-y-5 pr-8">
+            <DialogHeader>
+              <DialogTitle className="flex items-start gap-3">
+                <div className={`mt-0.5 rounded-full p-2 ${badgeColor}`}>
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-base font-semibold text-foreground">{item?.title ?? "Задача"}</div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <span className={`text-[11px] font-medium px-2.5 py-1 rounded-full ${badgeColor}`}>{item?.priority ?? "—"}</span>
+                    <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-700">{item?.status ?? "—"}</span>
+                  </div>
+                </div>
+              </DialogTitle>
+              <DialogDescription className="mt-2">{item?.shortDescription}</DialogDescription>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button variant="outline" size="sm" onClick={async () => { if (taskUrl) await navigator.clipboard.writeText(taskUrl); setToast("Ссылка на задачу скопирована"); }}>
+                  <Copy className="w-4 h-4" />
+                  Скопировать ссылку на задачу
+                </Button>
               </div>
-              <div className="min-w-0">
-                <div className="text-base font-semibold text-foreground">{item?.title ?? "Задача"}</div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <span className={`text-[11px] font-medium px-2.5 py-1 rounded-full ${badgeColor}`}>{item?.priority ?? "—"}</span>
-                  <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-700">{item?.status ?? "—"}</span>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              {renderTypeDetails()}
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                <div className="rounded-xl border p-3">
+                  <div className="text-xs text-muted-foreground">Город</div>
+                  <div className="font-medium inline-flex items-center gap-1"><MapPin className="w-4 h-4" />{item?.city ?? "—"}</div>
+                </div>
+                <div className="rounded-xl border p-3">
+                  <div className="text-xs text-muted-foreground">Дедлайн</div>
+                  <div className="font-medium inline-flex items-center gap-1"><Clock className="w-4 h-4" />{item?.deadline ?? "—"}</div>
+                </div>
+                <div className="rounded-xl border p-3">
+                  <div className="text-xs text-muted-foreground">Сумма под риском</div>
+                  <div className="font-medium inline-flex items-center gap-1"><Package className="w-4 h-4" />{item?.amountAtRisk ? `${Number(item.amountAtRisk).toLocaleString("ru-RU")} ₽` : "—"}</div>
+                </div>
+                <div className="rounded-xl border p-3">
+                  <div className="text-xs text-muted-foreground">Последнее обновление</div>
+                  <div className="font-medium">{lastUpdatedAt ? new Date(lastUpdatedAt).toLocaleString("ru-RU") : "—"}</div>
+                </div>
+                <div className="rounded-xl border p-3">
+                  <div className="text-xs text-muted-foreground">Последнее действие</div>
+                  <div className="font-medium">{lastActionBy ?? "—"}</div>
                 </div>
               </div>
-            </DialogTitle>
-            <DialogDescription className="mt-2">{item?.shortDescription}</DialogDescription>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" onClick={async () => { if (taskUrl) await navigator.clipboard.writeText(taskUrl); setToast("Ссылка на задачу скопирована"); }}>
-                <Copy className="w-4 h-4" />
-                Скопировать ссылку на задачу
-              </Button>
-            </div>
-          </DialogHeader>
 
-          <div className="space-y-4 mt-5">
-            {renderTypeDetails()}
+              <div className="rounded-xl border bg-slate-50 p-4 text-sm">
+                <div className="text-xs uppercase text-muted-foreground mb-1">Полное описание</div>
+                <div>{item?.fullDescription}</div>
+              </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-              <div className="rounded-xl border p-3">
-                <div className="text-xs text-muted-foreground">Город</div>
-                <div className="font-medium inline-flex items-center gap-1">
-                  <MapPin className="w-4 h-4" />
-                  {item?.city ?? "—"}
-                </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                <div className="rounded-xl border p-3"><div className="text-xs text-muted-foreground">Заказ</div><div className="font-medium">{item?.orderId ?? "—"}</div></div>
+                <div className="rounded-xl border p-3"><div className="text-xs text-muted-foreground">Мастер</div><div className="font-medium">{item?.masterId ?? "—"}</div></div>
+                <div className="rounded-xl border p-3"><div className="text-xs text-muted-foreground">Клиент</div><div className="font-medium">{item?.clientId ?? "—"}</div></div>
               </div>
-              <div className="rounded-xl border p-3">
-                <div className="text-xs text-muted-foreground">Дедлайн</div>
-                <div className="font-medium inline-flex items-center gap-1">
-                  <Clock className="w-4 h-4" />
-                  {item?.deadline ?? "—"}
-                </div>
-              </div>
-              <div className="rounded-xl border p-3">
-                <div className="text-xs text-muted-foreground">Сумма под риском</div>
-                <div className="font-medium inline-flex items-center gap-1">
-                  <Package className="w-4 h-4" />
-                  {item?.amountAtRisk ? `${Number(item.amountAtRisk).toLocaleString("ru-RU")} ₽` : "—"}
-                </div>
-              </div>
-            </div>
 
-            <div className="rounded-xl border bg-slate-50 p-4 text-sm">
-              <div className="text-xs uppercase text-muted-foreground mb-1">Полное описание</div>
-              <div>{item?.fullDescription}</div>
-            </div>
+              {renderInlineAction()}
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-              <div className="rounded-xl border p-3">
-                <div className="text-xs text-muted-foreground">Заказ</div>
-                <div className="font-medium">{item?.orderId ?? "—"}</div>
-              </div>
-              <div className="rounded-xl border p-3">
-                <div className="text-xs text-muted-foreground">Мастер</div>
-                <div className="font-medium">{item?.masterId ?? "—"}</div>
-              </div>
-              <div className="rounded-xl border p-3">
-                <div className="text-xs text-muted-foreground">Клиент</div>
-                <div className="font-medium">{item?.clientId ?? "—"}</div>
-              </div>
-            </div>
-
-            {renderInlineAction()}
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <div className="text-sm font-medium">Последние события</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  {timeline.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">Таймлайн пока пуст</div>
-                  ) : (
-                    timeline.map((t: any, idx: number) => (
-                      <div key={idx} className="rounded-lg border p-2 text-sm">
-                        <div className="font-medium">{t.title ?? t.event ?? "Событие"}</div>
-                        <div className="text-xs text-muted-foreground">{t.at ?? t.createdAt ?? ""}</div>
-                      </div>
-                    ))
-                  )}
+                  <div className="text-sm font-medium">Последние события</div>
+                  <div className="max-h-44 overflow-y-auto space-y-2 rounded-xl border bg-slate-50 p-2">
+                    {timeline.length === 0 ? <div className="text-sm text-muted-foreground p-2">Таймлайн пока пуст</div> : timeline.map((t: any, idx: number) => (<div key={idx} className="rounded-lg border bg-white p-2 text-sm"><div className="font-medium">{t.title ?? t.event ?? "Событие"}</div><div className="text-xs text-muted-foreground">{t.at ?? t.createdAt ?? ""}</div></div>))}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">Действия</div>
+                  <div className="flex flex-wrap gap-2">
+                    {actions.map((a: any) => (
+                      <Button key={a.key} variant={a.style === "primary" ? "default" : a.style === "secondary" ? "secondary" : a.style === "danger" ? "destructive" : "outline"} onClick={() => { if (["message_master", "reassign", "update_balance", "cancel_order", "return_to_pool", "manual_unblock", "open_issue_order", "block_master", "manual_control"].includes(a.key)) { setSubAction(a.key); return; } act(a.key); }} disabled={busy === a.key}>
+                        {a.label}
+                      </Button>
+                    ))}
+                  </div>
                 </div>
               </div>
-              <div className="space-y-2">
-                <div className="text-sm font-medium">Действия</div>
-                <div className="flex flex-wrap gap-2">
-                  {actions.map((a: any) => (
-                    <Button
-                      key={a.key}
-                      variant={a.style === "primary" ? "default" : a.style === "secondary" ? "secondary" : a.style === "danger" ? "destructive" : "outline"}
-                      onClick={() => {
-                        if (["message_master", "reassign", "update_balance", "cancel_order", "return_to_pool", "manual_unblock", "open_issue_order", "block_master", "manual_control"].includes(a.key)) {
-                          setSubAction(a.key);
-                          return;
-                        }
-                        act(a.key);
-                      }}
-                      disabled={busy === a.key}
-                    >
-                      {a.label}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            </div>
 
-            <div>
-              <div className="text-sm font-medium mb-2">Комментарий</div>
-              <Textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Комментарий к задаче" />
-              <div className="text-xs text-muted-foreground mt-2">Комментарий сохраняется локально автоматически.</div>
+              <div>
+                <div className="text-sm font-medium mb-2">Комментарий</div>
+                <Textarea value={comment} onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setComment(e.target.value)} placeholder="Комментарий к задаче" />
+                <div className="text-xs text-muted-foreground mt-2">Комментарий сохраняется локально автоматически.</div>
+              </div>
             </div>
           </div>
         </div>
