@@ -1,6 +1,8 @@
 import { Router } from "express";
-import { db, ordersTable, mastersTable, leadsTable, receiptsTable, avitoSettingsTable, chatCasesTable, systemTasksTable } from "@workspace/db";
+import { db, ordersTable, mastersTable, leadsTable, receiptsTable, avitoSettingsTable, chatCasesTable, systemTasksTable, masterMessagesTable } from "@workspace/db";
 import { desc, isNull, eq, and } from "drizzle-orm";
+import { sendMaxMessage } from "../maxBot.js";
+import { sendPushToMaster } from "../lib/push.js";
 import { requireRole } from "../middlewares/requireAuth.js";
 
 const NEXT_ACTION_RU: Record<string, string> = {
@@ -204,6 +206,37 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
     await db.update(mastersTable)
       .set({ status: "blocked", blockedAt: new Date(), blockedReason: "crm_manual" } as any)
       .where(eq(mastersTable.id, Number(item.masterId)));
+  }
+
+  if (action === "message_master" && item.masterId != null && payload.message) {
+    const text = String(payload.message).trim();
+    if (text) {
+      const [master] = await db
+        .select({ id: mastersTable.id, maxChatId: mastersTable.maxChatId })
+        .from(mastersTable)
+        .where(eq(mastersTable.id, Number(item.masterId)))
+        .limit(1);
+
+      if (master?.maxChatId) {
+        await sendMaxMessage(master.maxChatId, text);
+      } else {
+        sendPushToMaster(Number(item.masterId), {
+          type: "new_message",
+          title: "Сообщение от оператора",
+          body: text.length > 100 ? text.slice(0, 97) + "…" : text,
+        }).catch(() => {});
+      }
+
+      const chatId = master?.maxChatId ? `max_${master.maxChatId}` : `pwa_${item.masterId}`;
+      await db.insert(masterMessagesTable).values({
+        masterId: Number(item.masterId),
+        telegramChatId: chatId,
+        text,
+        fromMaster: false,
+        senderName: "Оператор",
+        isRead: true,
+      });
+    }
   }
 
   if (action === "reassign" && item.orderId != null && payload.masterId != null) {
