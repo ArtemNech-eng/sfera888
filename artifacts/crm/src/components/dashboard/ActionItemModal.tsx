@@ -259,8 +259,12 @@ export function ActionItemModal({ id, open, onOpenChange }: {
       const successMsg = isReassignConfirmed
         ? `Назначен: ${assignedMaster.name}${assignedMaster.city ? ` (${assignedMaster.city})` : ""}`
         : "Действие выполнено";
-      try { await refetch(); } catch { /* item may be gone after status change, that's ok */ }
       window.dispatchEvent(new CustomEvent("dashboard-action-items:changed"));
+      if (action === "complete_as_master" || action === "cancel_as_master") {
+        onOpenChange(false);
+        return;
+      }
+      try { await refetch(); } catch { /* item may be gone after status change, that's ok */ }
       showToast(successMsg);
     } catch {
       showToast("Ошибка при выполнении", false);
