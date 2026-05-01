@@ -141,6 +141,7 @@ function OrderInfoBlock({ ctx, ageLabel }: { ctx: any; ageLabel?: string }) {
   const clientName = ctx.order?.clientName ?? ctx.client?.clientName;
   const clientPhone = ctx.order?.clientPhone ?? ctx.client?.clientPhone;
   const city = ctx.order?.city ?? ctx.master?.city;
+  const district = ctx.order?.district ?? null;
   return (
     <div className="space-y-2">
       {ctx.order?.id != null && (
@@ -150,6 +151,7 @@ function OrderInfoBlock({ ctx, ageLabel }: { ctx: any; ageLabel?: string }) {
         <InfoRow icon={<Clock className="w-4 h-4" />} label={ageLabel ?? "Возраст заказа"} value={fmtAge(ctx.order.hoursOld)} />
       )}
       {city && <InfoRow icon={<MapPin className="w-4 h-4" />} label="Город" value={city} />}
+      {district && <InfoRow icon={<MapPin className="w-4 h-4" />} label="Адрес" value={district} />}
       {clientName && <InfoRow icon={<UserRoundPen className="w-4 h-4" />} label="Клиент" value={clientName} />}
       {clientPhone && (
         <InfoRow icon={<Phone className="w-4 h-4" />} label="Телефон клиента" value={

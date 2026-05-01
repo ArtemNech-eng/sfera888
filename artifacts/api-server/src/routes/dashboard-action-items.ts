@@ -413,10 +413,10 @@ router.get("/action-items/:id", ops, async (req: any, res: any) => {
   }
 
   if (item.orderId != null) {
-    const [o] = await db.select({ id: ordersTable.id, proposedAmount: ordersTable.proposedAmount, orderAmount: ordersTable.orderAmount, prepaymentAmount: ordersTable.prepaymentAmount, status: ordersTable.status, clientName: ordersTable.clientName, clientPhone: ordersTable.clientPhone, city: ordersTable.city, createdAt: ordersTable.createdAt }).from(ordersTable).where(eq(ordersTable.id, Number(item.orderId))).limit(1);
+    const [o] = await db.select({ id: ordersTable.id, proposedAmount: ordersTable.proposedAmount, orderAmount: ordersTable.orderAmount, prepaymentAmount: ordersTable.prepaymentAmount, status: ordersTable.status, clientName: ordersTable.clientName, clientPhone: ordersTable.clientPhone, city: ordersTable.city, district: ordersTable.district, createdAt: ordersTable.createdAt }).from(ordersTable).where(eq(ordersTable.id, Number(item.orderId))).limit(1);
     if (o) {
       const ageH = Math.round((Date.now() - new Date(o.createdAt).getTime()) / 3600000);
-      ctx.order = { id: o.id, proposedAmount: o.proposedAmount ? Number(o.proposedAmount) : null, orderAmount: o.orderAmount ? Number(o.orderAmount) : null, prepaymentAmount: o.prepaymentAmount ? Number(o.prepaymentAmount) : null, status: o.status, clientName: (o as any).clientName ?? null, clientPhone: (o as any).clientPhone ?? null, city: o.city, hoursOld: ageH };
+      ctx.order = { id: o.id, proposedAmount: o.proposedAmount ? Number(o.proposedAmount) : null, orderAmount: o.orderAmount ? Number(o.orderAmount) : null, prepaymentAmount: o.prepaymentAmount ? Number(o.prepaymentAmount) : null, status: o.status, clientName: (o as any).clientName ?? null, clientPhone: (o as any).clientPhone ?? null, city: o.city, district: o.district ?? null, hoursOld: ageH };
     }
   }
 
