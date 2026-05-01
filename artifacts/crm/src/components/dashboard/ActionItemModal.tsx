@@ -136,6 +136,37 @@ function NextActionBanner({ text, phone, phoneLabel, callLabel }: {
   );
 }
 
+function OrderInfoBlock({ ctx, ageLabel }: { ctx: any; ageLabel?: string }) {
+  const clientName = ctx.order?.clientName ?? ctx.client?.clientName;
+  const clientPhone = ctx.order?.clientPhone ?? ctx.client?.clientPhone;
+  const city = ctx.order?.city ?? ctx.master?.city;
+  return (
+    <div className="space-y-2">
+      {ctx.order?.id != null && (
+        <InfoRow icon={<Package className="w-4 h-4" />} label="Заказ" value={`#${ctx.order.id}`} />
+      )}
+      {ctx.order?.hoursOld != null && (
+        <InfoRow icon={<Clock className="w-4 h-4" />} label={ageLabel ?? "Возраст заказа"} value={fmtAge(ctx.order.hoursOld)} />
+      )}
+      {city && <InfoRow icon={<MapPin className="w-4 h-4" />} label="Город" value={city} />}
+      {clientName && <InfoRow icon={<UserRoundPen className="w-4 h-4" />} label="Клиент" value={clientName} />}
+      {clientPhone && (
+        <InfoRow icon={<Phone className="w-4 h-4" />} label="Телефон клиента" value={
+          <a href={`tel:${clientPhone}`} className="text-blue-600 underline font-semibold">{clientPhone}</a>
+        } />
+      )}
+      {ctx.master && (
+        <InfoRow icon={<UserRoundPen className="w-4 h-4" />} label="Мастер" value={`${ctx.master.name} (#${ctx.master.id})`} />
+      )}
+      {ctx.master?.phone && (
+        <InfoRow icon={<Phone className="w-4 h-4" />} label="Телефон мастера" value={
+          <a href={`tel:${ctx.master.phone}`} className="text-blue-600 underline">{ctx.master.phone}</a>
+        } />
+      )}
+    </div>
+  );
+}
+
 function TemplateChips({ type, orderId, onSelect }: { type: string; orderId?: number | string; onSelect: (text: string) => void }) {
   const templates = MESSAGE_TEMPLATES[type] ?? [];
   if (templates.length === 0) return null;
@@ -250,34 +281,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
               phone={ctx.master?.phone}
               callLabel="Позвонить мастеру"
             />
-            <div className="space-y-2">
-              {ctx.order && (
-                <>
-                  <InfoRow icon={<Package className="w-4 h-4" />} label="Заказ" value={`#${ctx.order.id}`} />
-                  {ctx.order.hoursOld != null && <InfoRow icon={<Clock className="w-4 h-4" />} label="Без сметы" value={fmtAge(ctx.order.hoursOld)} />}
-                  {(ctx.order.clientName || ctx.client?.clientName) && (
-                    <InfoRow icon={<UserRoundPen className="w-4 h-4" />} label="Клиент" value={ctx.order.clientName ?? ctx.client?.clientName} />
-                  )}
-                  {(ctx.order.clientPhone || ctx.client?.clientPhone) && (
-                    <InfoRow icon={<Phone className="w-4 h-4" />} label="Телефон клиента" value={
-                      <a href={`tel:${ctx.order.clientPhone ?? ctx.client?.clientPhone}`} className="text-blue-600 underline font-semibold">
-                        {ctx.order.clientPhone ?? ctx.client?.clientPhone}
-                      </a>
-                    } />
-                  )}
-                </>
-              )}
-              {ctx.master && (
-                <>
-                  <InfoRow icon={<UserRoundPen className="w-4 h-4" />} label="Мастер" value={`${ctx.master.name} (#${ctx.master.id})`} />
-                  {ctx.master.phone && (
-                    <InfoRow icon={<Phone className="w-4 h-4" />} label="Телефон мастера" value={
-                      <a href={`tel:${ctx.master.phone}`} className="text-blue-600 underline">{ctx.master.phone}</a>
-                    } />
-                  )}
-                </>
-              )}
-            </div>
+            <OrderInfoBlock ctx={ctx} ageLabel="Без сметы" />
 
             <div className="border-t pt-3 space-y-3">
               <div className="text-sm font-semibold">Написать мастеру</div>
@@ -347,50 +351,28 @@ export function ActionItemModal({ id, open, onOpenChange }: {
               phone={ctx.order?.clientPhone ?? ctx.client?.clientPhone}
               callLabel={`Позвонить${(ctx.order?.clientName ?? ctx.client?.clientName) ? ` ${ctx.order?.clientName ?? ctx.client?.clientName}` : " клиенту"}`}
             />
-            <div className="space-y-2">
-              {ctx.order && (
-                <>
-                  <InfoRow icon={<Package className="w-4 h-4" />} label="Заказ" value={`#${ctx.order.id}`} />
-                  {ctx.order.hoursOld != null && <InfoRow icon={<Clock className="w-4 h-4" />} label="Ожидаем оплату" value={fmtAge(ctx.order.hoursOld)} />}
-                  {ctx.order.proposedAmount != null && (
-                    <InfoRow icon={<Banknote className="w-4 h-4" />} label="Сумма сметы" value={`${Number(ctx.order.proposedAmount).toLocaleString("ru-RU")} ₽`} />
-                  )}
-                  {(ctx.order.clientName || ctx.client?.clientName) && (
-                    <InfoRow icon={<UserRoundPen className="w-4 h-4" />} label="Клиент" value={ctx.order.clientName ?? ctx.client?.clientName} />
-                  )}
-                  {(ctx.order.clientPhone || ctx.client?.clientPhone) && (
-                    <div className="flex items-center gap-2">
-                      <Phone className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-muted-foreground text-sm">Позвонить клиенту:</span>
-                      <a
-                        href={`tel:${ctx.order.clientPhone ?? ctx.client?.clientPhone}`}
-                        className="text-base font-bold text-violet-700 underline"
-                      >
-                        {ctx.order.clientPhone ?? ctx.client?.clientPhone}
-                      </a>
-                    </div>
-                  )}
-                </>
-              )}
-              {ctx.receipt && (
-                <>
-                  {ctx.receipt.prepaymentAmount && (
-                    <InfoRow icon={<Banknote className="w-4 h-4" />} label="Предоплата" value={`${Number(ctx.receipt.prepaymentAmount).toLocaleString("ru-RU")} ₽`} />
-                  )}
-                  {ctx.receipt.prepaymentSubmittedAt && (
-                    <InfoRow icon={<Clock className="w-4 h-4" />} label="Клиент оплатил" value={new Date(ctx.receipt.prepaymentSubmittedAt).toLocaleString("ru-RU")} />
-                  )}
-                  {ctx.receipt.prepaymentScreenshotUrl && (
-                    <div>
-                      <div className="text-xs text-muted-foreground mb-1">Скриншот оплаты:</div>
-                      <a href={ctx.receipt.prepaymentScreenshotUrl} target="_blank" rel="noopener noreferrer">
-                        <img src={ctx.receipt.prepaymentScreenshotUrl} alt="Скриншот" className="max-h-32 rounded-lg border object-contain" />
-                      </a>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
+            <OrderInfoBlock ctx={ctx} ageLabel="Ожидаем оплату" />
+            {ctx.order?.proposedAmount != null && (
+              <InfoRow icon={<Banknote className="w-4 h-4" />} label="Сумма сметы" value={`${Number(ctx.order.proposedAmount).toLocaleString("ru-RU")} ₽`} />
+            )}
+            {ctx.receipt && (
+              <div className="space-y-2">
+                {ctx.receipt.prepaymentAmount && (
+                  <InfoRow icon={<Banknote className="w-4 h-4" />} label="Предоплата" value={`${Number(ctx.receipt.prepaymentAmount).toLocaleString("ru-RU")} ₽`} />
+                )}
+                {ctx.receipt.prepaymentSubmittedAt && (
+                  <InfoRow icon={<Clock className="w-4 h-4" />} label="Клиент оплатил" value={new Date(ctx.receipt.prepaymentSubmittedAt).toLocaleString("ru-RU")} />
+                )}
+                {ctx.receipt.prepaymentScreenshotUrl && (
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-1">Скриншот оплаты:</div>
+                    <a href={ctx.receipt.prepaymentScreenshotUrl} target="_blank" rel="noopener noreferrer">
+                      <img src={ctx.receipt.prepaymentScreenshotUrl} alt="Скриншот" className="max-h-32 rounded-lg border object-contain" />
+                    </a>
+                  </div>
+                )}
+              </div>
+            )}
             <div className="border-t pt-3 space-y-3">
               <div className="text-sm font-semibold text-muted-foreground">Написать мастеру (если клиент не отвечает)</div>
               <TemplateChips type="no_payment" orderId={ctx.order?.id} onSelect={setMessageText} />
@@ -436,25 +418,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
               phone={ctx.master?.phone}
               callLabel="Позвонить мастеру"
             />
-            <div className="space-y-2">
-              {ctx.order && (
-                <>
-                  <InfoRow icon={<Package className="w-4 h-4" />} label="Заказ" value={`#${ctx.order.id}`} />
-                  {ctx.order.hoursOld != null && <InfoRow icon={<Clock className="w-4 h-4" />} label="Ждём мастера" value={fmtAge(ctx.order.hoursOld)} />}
-                  {ctx.order.city && <InfoRow icon={<MapPin className="w-4 h-4" />} label="Город" value={ctx.order.city} />}
-                  {(ctx.order.clientName || ctx.client?.clientName) && (
-                    <InfoRow icon={<UserRoundPen className="w-4 h-4" />} label="Клиент" value={ctx.order.clientName ?? ctx.client?.clientName} />
-                  )}
-                  {(ctx.order.clientPhone || ctx.client?.clientPhone) && (
-                    <InfoRow icon={<Phone className="w-4 h-4" />} label="Телефон клиента" value={
-                      <a href={`tel:${ctx.order.clientPhone ?? ctx.client?.clientPhone}`} className="text-blue-600 underline font-semibold">
-                        {ctx.order.clientPhone ?? ctx.client?.clientPhone}
-                      </a>
-                    } />
-                  )}
-                </>
-              )}
-            </div>
+            <OrderInfoBlock ctx={ctx} ageLabel="Ждём мастера" />
 
             <div className="border-t pt-3">
               <div className="text-sm font-semibold mb-2">Назначить мастера вручную</div>
@@ -521,22 +485,12 @@ export function ActionItemModal({ id, open, onOpenChange }: {
               phone={ctx.master?.phone}
               callLabel="Позвонить мастеру"
             />
-            {ctx.master && (
-              <div className="space-y-2">
-                <InfoRow icon={<UserRoundPen className="w-4 h-4" />} label="Мастер" value={`${ctx.master.name} (#${ctx.master.id})`} />
-                {ctx.master.phone && (
-                  <InfoRow icon={<Phone className="w-4 h-4" />} label="Телефон" value={
-                    <a href={`tel:${ctx.master.phone}`} className="text-blue-600 underline">{ctx.master.phone}</a>
-                  } />
-                )}
-                {ctx.master.city && <InfoRow icon={<MapPin className="w-4 h-4" />} label="Город" value={ctx.master.city} />}
-                {ctx.master.blockedReason && (
-                  <InfoRow icon={<CircleAlert className="w-4 h-4" />} label="Причина блокировки" value={ctx.master.blockedReason} />
-                )}
-                {ctx.master.blockedAt && (
-                  <InfoRow icon={<Clock className="w-4 h-4" />} label="Заблокирован" value={new Date(ctx.master.blockedAt).toLocaleString("ru-RU")} />
-                )}
-              </div>
+            <OrderInfoBlock ctx={ctx} />
+            {ctx.master?.blockedReason && (
+              <InfoRow icon={<CircleAlert className="w-4 h-4" />} label="Причина блокировки" value={ctx.master.blockedReason} />
+            )}
+            {ctx.master?.blockedAt && (
+              <InfoRow icon={<Clock className="w-4 h-4" />} label="Заблокирован" value={new Date(ctx.master.blockedAt).toLocaleString("ru-RU")} />
             )}
             <div className="border-t pt-3 space-y-3">
               <div className="text-sm font-semibold">Написать мастеру</div>
@@ -618,30 +572,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
               phone={ctx.master?.phone}
               callLabel="Позвонить мастеру"
             />
-            <div className="space-y-2">
-              {ctx.order && (
-                <>
-                  <InfoRow icon={<Package className="w-4 h-4" />} label="Заказ" value={`#${ctx.order.id}`} />
-                  {ctx.order.hoursOld != null && <InfoRow icon={<Clock className="w-4 h-4" />} label="Возраст заказа" value={fmtAge(ctx.order.hoursOld)} />}
-                  {(ctx.order.clientName || ctx.client?.clientName) && (
-                    <InfoRow icon={<UserRoundPen className="w-4 h-4" />} label="Клиент" value={ctx.order.clientName ?? ctx.client?.clientName} />
-                  )}
-                  {(ctx.order.clientPhone || ctx.client?.clientPhone) && (
-                    <InfoRow icon={<Phone className="w-4 h-4" />} label="Телефон клиента" value={
-                      <a href={`tel:${ctx.order.clientPhone ?? ctx.client?.clientPhone}`} className="text-blue-600 underline font-semibold">
-                        {ctx.order.clientPhone ?? ctx.client?.clientPhone}
-                      </a>
-                    } />
-                  )}
-                </>
-              )}
-              {ctx.master && <InfoRow icon={<UserRoundPen className="w-4 h-4" />} label="Мастер" value={`${ctx.master.name} (#${ctx.master.id})`} />}
-              {ctx.master?.phone && (
-                <InfoRow icon={<Phone className="w-4 h-4" />} label="Телефон мастера" value={
-                  <a href={`tel:${ctx.master.phone}`} className="text-blue-600 underline">{ctx.master.phone}</a>
-                } />
-              )}
-            </div>
+            <OrderInfoBlock ctx={ctx} />
             <div className="border-t pt-3 space-y-3">
               <div className="text-sm font-semibold">Написать мастеру</div>
               <TemplateChips type={data?.type ?? "possible_bypass"} orderId={ctx.order?.id} onSelect={setMessageText} />
