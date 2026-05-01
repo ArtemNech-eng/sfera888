@@ -243,9 +243,13 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
       const masterId = Number(item.masterId);
 
       const [orderRow] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1);
-      const amount = Number(orderRow?.proposedAmount ?? orderRow?.orderAmount ?? 0);
+      const payloadAmount = Number(payload?.orderAmount ?? 0);
+      const amount = payloadAmount > 0
+        ? payloadAmount
+        : Number(orderRow?.proposedAmount ?? orderRow?.orderAmount ?? 0);
       const commSettings = await getCommissionSettings();
       const commission = amount > 0 ? calculateCommission(amount, commSettings) : 0;
+      console.log(`[complete_as_master] amount=${amount} (payload=${payloadAmount}, db proposed=${orderRow?.proposedAmount}, db order=${orderRow?.orderAmount}), commission=${commission}`);
       const now = new Date();
 
       await db.update(ordersTable).set({

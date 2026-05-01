@@ -206,6 +206,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
   const [assignedMasterConfirm, setAssignedMasterConfirm] = useState<{ id: number; name: string; city: string | null } | null>(null);
   const [cancelAsMasterPending, setCancelAsMasterPending] = useState(false);
   const [completeAsMasterPending, setCompleteAsMasterPending] = useState(false);
+  const [completeAmount, setCompleteAmount] = useState<string>("");
   const { user: authUser } = useAuth();
   const isAdmin = authUser?.role === "admin";
 
@@ -218,7 +219,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
   useEffect(() => {
     if (!open) {
       setMessageText(""); setSelectedMasterId(null); setMasterSearch("");
-      setBalanceInput(""); setConfirmInput(""); setToast(null); setAssignedMasterConfirm(null); setCancelAsMasterPending(false); setCompleteAsMasterPending(false);
+      setBalanceInput(""); setConfirmInput(""); setToast(null); setAssignedMasterConfirm(null); setCancelAsMasterPending(false); setCompleteAsMasterPending(false); setCompleteAmount("");
     }
   }, [open]);
 
@@ -271,13 +272,21 @@ export function ActionItemModal({ id, open, onOpenChange }: {
         ? `Назначен: ${assignedMaster.name}${assignedMaster.city ? ` (${assignedMaster.city})` : ""}`
         : "Действие выполнено";
       window.dispatchEvent(new CustomEvent("dashboard-action-items:changed"));
-      if (action === "complete_as_master" || action === "cancel_as_master") {
+      if (action === "complete_as_master") {
+        window.alert("✅ Заказ завершён. Комиссия засчитана как оплаченная, мастеру отправлено уведомление.");
+        onOpenChange(false);
+        return;
+      }
+      if (action === "cancel_as_master") {
+        window.alert("⚠️ Заказ отменён (вина мастера). Рейтинг мастера обновлён, уведомление отправлено.");
         onOpenChange(false);
         return;
       }
       try { await refetch(); } catch { /* item may be gone after status change, that's ok */ }
       showToast(successMsg);
     } catch (e: any) {
+      console.error("[ActionItemModal.fire] error:", e);
+      window.alert(`❌ Ошибка: ${e?.message ?? "Неизвестная ошибка"}`);
       showToast(e?.message ?? "Ошибка при выполнении", false);
     } finally {
       setBusy(null);
@@ -637,7 +646,11 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                     size="sm"
                     variant="outline"
                     className="w-full border-green-400 text-green-700 hover:bg-green-50"
-                    onClick={() => setCompleteAsMasterPending(true)}
+                    onClick={() => {
+                      const initial = ctx.order?.proposedAmount ?? ctx.order?.orderAmount ?? "";
+                      setCompleteAmount(initial ? String(initial) : "");
+                      setCompleteAsMasterPending(true);
+                    }}
                   >
                     <CheckCircle2 className="w-4 h-4 mr-1" /> Завершить как выполненный
                   </Button>
@@ -647,7 +660,26 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                       <CheckCircle2 className="w-5 h-5 text-green-700 shrink-0 mt-0.5" />
                       <div className="text-sm text-green-900">
                         <div className="font-bold mb-1">Подтвердите завершение заказа</div>
-                        <div>Заказ <strong>#{ctx.order?.id}</strong> будет отмечен как выполненный. Комиссия со сметы будет рассчитана автоматически и засчитана мастеру {ctx.master?.name ? <strong>{ctx.master.name}</strong> : null} как оплаченная. В чат мастера придёт уведомление.</div>
+                        <div>Заказ <strong>#{ctx.order?.id}</strong> будет отмечен как выполненный. Укажите итоговую сумму заказа — от неё будет рассчитана комиссия и засчитана мастеру {ctx.master?.name ? <strong>{ctx.master.name}</strong> : null} как оплаченная. В чат мастера придёт уведомление.</div>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs text-green-900 font-semibold block mb-1">Итоговая сумма заказа, ₽</label>
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        min={0}
+                        step={100}
+                        value={completeAmount}
+                        onChange={(e: ChangeEvent<HTMLInputElement>) => setCompleteAmount(e.target.value)}
+                        placeholder="Например: 5000"
+                        className="bg-white"
+                        disabled={busy === "complete_as_master"}
+                      />
+                      <div className="text-xs text-green-700 mt-1">
+                        {completeAmount && Number(completeAmount) > 0
+                          ? `Будет отмечена сумма ${Math.round(Number(completeAmount)).toLocaleString("ru-RU")} ₽. Комиссия рассчитается автоматически.`
+                          : "Если оставить пустым — заказ завершится без расчёта комиссии."}
                       </div>
                     </div>
                     <div className="flex gap-2">
@@ -656,8 +688,11 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                         className="bg-green-600 hover:bg-green-700 text-white"
                         disabled={busy === "complete_as_master"}
                         onClick={async () => {
-                          console.log("[btn:complete_as_master] clicked, id=", id);
-                          await fire("complete_as_master");
+                          console.log("[btn:complete_as_master] clicked, id=", id, "amount=", completeAmount);
+                          const payload: Record<string, unknown> = {};
+                          const n = Number(completeAmount);
+                          if (Number.isFinite(n) && n > 0) payload.orderAmount = n;
+                          await fire("complete_as_master", payload);
                           setCompleteAsMasterPending(false);
                         }}
                       >
