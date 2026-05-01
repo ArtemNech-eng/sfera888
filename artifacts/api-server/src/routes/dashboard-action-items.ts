@@ -8,6 +8,8 @@ import { recordOrderCancelled } from "../lib/masterReputation.js";
 import { recordOrderCompleted } from "../lib/masterReputation.js";
 import { calculateCommission, getCommissionSettings } from "../lib/commission.js";
 
+declare const console: any;
+
 const NEXT_ACTION_RU: Record<string, string> = {
   call_master: "Позвонить мастеру",
   message_master: "Написать мастеру",
@@ -321,14 +323,14 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
       const [master] = await db.select({ id: mastersTable.id, maxChatId: mastersTable.maxChatId }).from(mastersTable).where(eq(mastersTable.id, masterId)).limit(1);
       // Send to BOTH channels: Max (if connected) AND PWA push
       if (master?.maxChatId) {
-        await sendMaxMessage(master.maxChatId, notifyText).catch((e) => console.error("[complete_as_master] max send failed:", e));
+      await sendMaxMessage(master.maxChatId, notifyText).catch((e: any) => console.error("[complete_as_master] max send failed:", e));
       }
       const pushBody = commissionMode === "as_debt"
         ? `Заказ #${orderId} завершён. К оплате ${commFmt} (добавлено к долгу).`
         : commissionMode === "no_debt"
         ? `Заказ #${orderId} завершён. Комиссия не начисляется.`
         : `Заказ #${orderId} завершён. Комиссия ${commFmt} засчитана.`;
-      sendPushToMaster(masterId, { type: "new_message", title: "Заказ выполнен", body: pushBody }).catch((e) => console.error("[complete_as_master] push failed:", e));
+      sendPushToMaster(masterId, { type: "new_message", title: "Заказ выполнен", body: pushBody }).catch((e: any) => console.error("[complete_as_master] push failed:", e));
       const chatId = master?.maxChatId ? `max_${master.maxChatId}` : `pwa_${masterId}`;
       await db.insert(masterMessagesTable).values({ masterId, telegramChatId: chatId, text: notifyText, fromMaster: false, senderName: operatorName, isRead: true });
       // Archive linked chat case so it doesn't reappear in dashboards
@@ -343,15 +345,24 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
     const orderId = Number(item.orderId);
     const masterId = Number(item.masterId);
     const now = new Date();
+    const rawReason = String((payload as { cancelReason?: string })?.cancelReason ?? "bypass").trim();
+    const cancelReason = rawReason === "bypass" || rawReason === "no_contact" || rawReason === "no_estimate" || rawReason === "other" ? rawReason : "bypass";
 
     await db.update(ordersTable)
-      .set({ status: "cancelled", cancelReason: "master_cancel_bypass", updatedAt: now } as any)
+      .set({ status: "cancelled", cancelReason: cancelReason === "bypass" ? "master_cancel_bypass" : `master_cancel_${cancelReason}`, updatedAt: now } as any)
       .where(eq(ordersTable.id, orderId));
-    console.log(`[cancel_as_master] order #${orderId} marked cancelled (master fault)`);
+    console.log(`[cancel_as_master] order #${orderId} marked cancelled (reason=${cancelReason})`);
 
     await recordOrderCancelled(masterId, orderId).catch((e) => console.error("[cancel_as_master] reputation update failed:", e));
 
-    const notifyText = `⚠️ Заказ #${orderId} отменён оператором (причина: обход платформы). Отмена засчитана вам. Свяжитесь с нами для уточнения деталей.`;
+    const reasonText = cancelReason === "no_contact"
+      ? "мастер не выходит на связь"
+      : cancelReason === "no_estimate"
+      ? "мастер не отправил смету"
+      : cancelReason === "other"
+      ? "другая причина"
+      : "обход платформы";
+    const notifyText = `⚠️ Заказ #${orderId} отменён оператором (причина: ${reasonText}). Отмена засчитана вам. Свяжитесь с нами для уточнения деталей.`;
     const [master] = await db
       .select({ id: mastersTable.id, maxChatId: mastersTable.maxChatId })
       .from(mastersTable)
@@ -360,13 +371,13 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
 
     // Send to BOTH channels: Max (if connected) AND PWA push
     if (master?.maxChatId) {
-      await sendMaxMessage(master.maxChatId, notifyText).catch((e) => console.error("[cancel_as_master] max send failed:", e));
+      await sendMaxMessage(master.maxChatId, notifyText).catch((e: any) => console.error("[cancel_as_master] max send failed:", e));
     }
     sendPushToMaster(masterId, {
       type: "new_message",
       title: "Заказ отменён",
-      body: `Заказ #${orderId} отменён. Обратитесь к оператору.`,
-    }).catch((e) => console.error("[cancel_as_master] push failed:", e));
+      body: `Заказ #${orderId} отменён: ${reasonText}.`,
+    }).catch((e: any) => console.error("[cancel_as_master] push failed:", e));
 
     const chatId = master?.maxChatId ? `max_${master.maxChatId}` : `pwa_${masterId}`;
     await db.insert(masterMessagesTable).values({
@@ -477,7 +488,7 @@ router.get("/action-items/:id", ops, async (req: any, res: any) => {
 
   if (item.type === "no_master_response" || item.type === "no_estimate") {
     const avail = await db.select({ id: mastersTable.id, alias: mastersTable.alias, city: mastersTable.city, status: mastersTable.status }).from(mastersTable).where(and(eq(mastersTable.status, "active"), isNull(mastersTable.deletedAt))).limit(30);
-    ctx.availableMasters = avail.map((m) => ({ id: m.id, name: m.alias ?? `Мастер #${m.id}`, city: m.city }));
+    ctx.availableMasters = avail.map((m: any) => ({ id: m.id, name: m.alias ?? `Мастер #${m.id}`, city: m.city }));
   }
 
   if (item.type === "no_payment" && item.orderId != null) {

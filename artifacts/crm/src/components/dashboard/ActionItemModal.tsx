@@ -208,6 +208,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
   const [comment, setComment] = useState("");
   const [assignedMasterConfirm, setAssignedMasterConfirm] = useState<{ id: number; name: string; city: string | null } | null>(null);
   const [cancelAsMasterPending, setCancelAsMasterPending] = useState(false);
+  const [cancelReason, setCancelReason] = useState<"bypass" | "no_contact" | "no_estimate" | "other">("bypass");
   const [completeAsMasterPending, setCompleteAsMasterPending] = useState(false);
   const [completeAmount, setCompleteAmount] = useState<string>("");
   const [commissionMode, setCommissionMode] = useState<"no_debt" | "as_debt" | "as_paid">("as_paid");
@@ -223,7 +224,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
   useEffect(() => {
     if (!open) {
       setMessageText(""); setSelectedMasterId(null); setMasterSearch("");
-      setBalanceInput(""); setConfirmInput(""); setToast(null); setAssignedMasterConfirm(null); setCancelAsMasterPending(false); setCompleteAsMasterPending(false); setCompleteAmount(""); setCommissionMode("as_paid");
+      setBalanceInput(""); setConfirmInput(""); setToast(null); setAssignedMasterConfirm(null); setCancelAsMasterPending(false); setCancelReason("bypass"); setCompleteAsMasterPending(false); setCompleteAmount(""); setCommissionMode("as_paid");
     }
   }, [open]);
 
@@ -288,7 +289,15 @@ export function ActionItemModal({ id, open, onOpenChange }: {
         return;
       }
       if (action === "cancel_as_master") {
-        window.alert("⚠️ Заказ отменён (вина мастера). Рейтинг мастера обновлён, уведомление отправлено.");
+        const reason = (payload as { cancelReason?: string }).cancelReason;
+        const msg = reason === "no_contact"
+          ? "⚠️ Заказ отменён (мастер не выходит на связь). Рейтинг мастера обновлён, уведомление отправлено."
+          : reason === "no_estimate"
+          ? "⚠️ Заказ отменён (мастер не отправил смету). Рейтинг мастера обновлён, уведомление отправлено."
+          : reason === "other"
+          ? "⚠️ Заказ отменён (другая причина мастера). Рейтинг мастера обновлён, уведомление отправлено."
+          : "⚠️ Заказ отменён (обход платформы). Рейтинг мастера обновлён, уведомление отправлено.";
+        window.alert(msg);
         onOpenChange(false);
         return;
       }
@@ -795,24 +804,40 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                         <div>Заказ <strong>#{ctx.order?.id}</strong> будет отменён с причиной <strong>«вина мастера»</strong>. Это влияет на рейтинг мастера {ctx.master?.name ? <strong>{ctx.master.name}</strong> : null} и видно в чате CRM. Действие необратимо.</div>
                       </div>
                     </div>
+                    <div>
+                      <label className="text-xs text-red-900 font-semibold block mb-1">Причина отмены</label>
+                      <div className="grid gap-1.5">
+                        <label className={`flex items-start gap-2 rounded-lg border p-2 cursor-pointer ${cancelReason === "bypass" ? "border-red-500 bg-red-100" : "border-red-200 bg-white"}`}>
+                          <input type="radio" name="cancelReason" value="bypass" checked={cancelReason === "bypass"} onChange={() => setCancelReason("bypass")} disabled={busy === "cancel_as_master"} className="mt-0.5" />
+                          <div className="text-xs"><div className="font-semibold text-red-900">Обход платформы</div><div className="text-red-800">Мастер закрывает заказ вне CRM / платформы.</div></div>
+                        </label>
+                        <label className={`flex items-start gap-2 rounded-lg border p-2 cursor-pointer ${cancelReason === "no_contact" ? "border-orange-500 bg-orange-100" : "border-red-200 bg-white"}`}>
+                          <input type="radio" name="cancelReason" value="no_contact" checked={cancelReason === "no_contact"} onChange={() => setCancelReason("no_contact")} disabled={busy === "cancel_as_master"} className="mt-0.5" />
+                          <div className="text-xs"><div className="font-semibold text-orange-900">Нет связи с мастером</div><div className="text-orange-800">Мастер не отвечает, не выходит на связь и игнорирует оператора.</div></div>
+                        </label>
+                        <label className={`flex items-start gap-2 rounded-lg border p-2 cursor-pointer ${cancelReason === "no_estimate" ? "border-slate-500 bg-slate-100" : "border-red-200 bg-white"}`}>
+                          <input type="radio" name="cancelReason" value="no_estimate" checked={cancelReason === "no_estimate"} onChange={() => setCancelReason("no_estimate")} disabled={busy === "cancel_as_master"} className="mt-0.5" />
+                          <div className="text-xs"><div className="font-semibold text-slate-900">Смета не отправлена</div><div className="text-slate-700">Заказ долго висит без сметы и мастер не исправляет ситуацию.</div></div>
+                        </label>
+                        <label className={`flex items-start gap-2 rounded-lg border p-2 cursor-pointer ${cancelReason === "other" ? "border-slate-400 bg-slate-100" : "border-red-200 bg-white"}`}>
+                          <input type="radio" name="cancelReason" value="other" checked={cancelReason === "other"} onChange={() => setCancelReason("other")} disabled={busy === "cancel_as_master"} className="mt-0.5" />
+                          <div className="text-xs"><div className="font-semibold text-slate-900">Другая причина</div><div className="text-slate-700">Использовать, если причина не подходит под стандартные сценарии.</div></div>
+                        </label>
+                      </div>
+                    </div>
                     <div className="flex gap-2">
                       <Button
                         size="sm"
                         variant="destructive"
                         disabled={busy === "cancel_as_master"}
                         onClick={async () => {
-                          await fire("cancel_as_master");
+                          await fire("cancel_as_master", { cancelReason });
                           setCancelAsMasterPending(false);
                         }}
                       >
-                        {busy === "cancel_as_master" ? "Отменяем..." : "Да, отменить (вина мастера)"}
+                        {busy === "cancel_as_master" ? "Отменяем..." : "Да, отменить"}
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={busy === "cancel_as_master"}
-                        onClick={() => setCancelAsMasterPending(false)}
-                      >
+                      <Button size="sm" variant="outline" disabled={busy === "cancel_as_master"} onClick={() => setCancelAsMasterPending(false)}>
                         Отмена
                       </Button>
                     </div>
