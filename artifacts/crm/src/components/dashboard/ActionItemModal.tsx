@@ -1,5 +1,6 @@
 import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
 import {
   AlertTriangle, CheckCircle2, Clock, X, Banknote, TriangleAlert,
   UserX, ShieldAlert, BadgeAlert, Wrench, MessageSquare, Settings,
@@ -202,6 +203,9 @@ export function ActionItemModal({ id, open, onOpenChange }: {
   const [comment, setComment] = useState("");
   const [assignedMasterConfirm, setAssignedMasterConfirm] = useState<{ id: number; name: string; city: string | null } | null>(null);
   const [cancelAsMasterPending, setCancelAsMasterPending] = useState(false);
+  const [completeAsMasterPending, setCompleteAsMasterPending] = useState(false);
+  const { user: authUser } = useAuth();
+  const isAdmin = authUser?.role === "admin";
 
   const { data, refetch } = useQuery({
     queryKey: ["action-item", id],
@@ -212,7 +216,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
   useEffect(() => {
     if (!open) {
       setMessageText(""); setSelectedMasterId(null); setMasterSearch("");
-      setBalanceInput(""); setConfirmInput(""); setToast(null); setAssignedMasterConfirm(null); setCancelAsMasterPending(false);
+      setBalanceInput(""); setConfirmInput(""); setToast(null); setAssignedMasterConfirm(null); setCancelAsMasterPending(false); setCompleteAsMasterPending(false);
     }
   }, [open]);
 
@@ -609,6 +613,44 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                 </Button>
               </div>
             </div>
+            {isAdmin && (
+              <div className="border-t pt-3 space-y-2">
+                {!completeAsMasterPending ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full border-green-400 text-green-700 hover:bg-green-50"
+                    onClick={() => setCompleteAsMasterPending(true)}
+                    disabled={!ctx.order?.id || !ctx.master?.id}
+                  >
+                    <CheckCircle2 className="w-4 h-4 mr-1" /> Завершить как выполненный
+                  </Button>
+                ) : (
+                  <div className="rounded-xl border-2 border-green-300 bg-green-50 p-4 space-y-3">
+                    <div className="flex items-start gap-2">
+                      <CheckCircle2 className="w-5 h-5 text-green-700 shrink-0 mt-0.5" />
+                      <div className="text-sm text-green-900">
+                        <div className="font-bold mb-1">Подтвердите завершение заказа</div>
+                        <div>Заказ <strong>#{ctx.order?.id}</strong> будет отмечен как выполненный. Комиссия со сметы будет рассчитана автоматически и засчитана мастеру {ctx.master?.name ? <strong>{ctx.master.name}</strong> : null} как оплаченная. В чат мастера придёт уведомление.</div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        className="bg-green-600 hover:bg-green-700 text-white"
+                        disabled={busy === "complete_as_master"}
+                        onClick={() => { fire("complete_as_master"); setCompleteAsMasterPending(false); }}
+                      >
+                        <CheckCircle2 className="w-4 h-4 mr-1" /> Да, завершить заказ
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => setCompleteAsMasterPending(false)}>
+                        Отмена
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             <div className="border-t pt-3 space-y-2">
               {!cancelAsMasterPending ? (
                 <Button
