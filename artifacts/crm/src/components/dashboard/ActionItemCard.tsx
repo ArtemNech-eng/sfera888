@@ -10,6 +10,8 @@ type Item = {
   deadline: string | null;
   amountAtRisk?: number | null;
   type: string;
+  masterId?: string | number | null;
+  masterName?: string | null;
 };
 
 const PRIORITY_RU: Record<Priority, string> = {
@@ -52,6 +54,11 @@ export function ActionItemCard({ item, onOpen }: { item: Item; onOpen: (id: stri
           </div>
           <div className="font-medium text-sm text-foreground line-clamp-2">{item.title}</div>
           <div className="text-xs text-muted-foreground mt-1 line-clamp-2">{item.shortDescription}</div>
+          {(item.masterName || item.masterId != null) && (
+            <div className="text-xs mt-1 text-violet-700 font-medium">
+              Мастер: {item.masterName ?? `#${item.masterId}`}
+            </div>
+          )}
           {item.amountAtRisk != null && (
             <div className="text-xs mt-2 font-semibold text-red-700">
               Под риском: {Number(item.amountAtRisk).toLocaleString("ru-RU")} ₽
