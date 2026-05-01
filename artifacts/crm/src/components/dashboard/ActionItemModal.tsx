@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, Clock, Copy, Link as LinkIcon, MapPin, Package, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, Copy, MapPin, Package, X } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -55,54 +55,67 @@ export function ActionItemModal({ id, open, onOpenChange }: { id: string | null;
   const priorityColor = item?.priority === "critical" ? "bg-red-500" : item?.priority === "high" ? "bg-orange-500" : item?.priority === "medium" ? "bg-blue-500" : "bg-slate-400";
   const badgeColor = item?.priority === "critical" ? "bg-red-100 text-red-700" : item?.priority === "high" ? "bg-orange-100 text-orange-700" : item?.priority === "medium" ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-700";
 
-  const type = item?.type;
+  const hoursSince = (createdAt?: string | null) => createdAt ? `${Math.max(0, Math.round((Date.now() - new Date(createdAt).getTime()) / 3600000))} ч` : "—";
+
   const renderTypeDetails = () => {
+    if (!item) return null;
+    const type = item.type;
+
+    const common = (
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+        <div className="rounded-xl border p-3">Заказ: <span className="font-medium">{item.orderId ?? "—"}</span></div>
+        <div className="rounded-xl border p-3">Мастер: <span className="font-medium">{item.masterId ?? "—"}</span></div>
+      </div>
+    );
+
     if (type === "no_estimate") {
       return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-          <div className="rounded-xl border p-3">Заказ: <span className="font-medium">{item?.orderId ?? "—"}</span></div>
-          <div className="rounded-xl border p-3">Мастер: <span className="font-medium">{item?.masterId ?? "—"}</span></div>
-          <div className="rounded-xl border p-3">Часов без сметы: <span className="font-medium">{item?.deadline ? item.deadline : item?.createdAt ? `${Math.max(0, Math.round((Date.now() - new Date(item.createdAt).getTime()) / 3600000))} ч` : "—"}</span></div>
-          <div className="rounded-xl border p-3">Ожидаемая комиссия: <span className="font-medium">{item?.amountAtRisk ? `${Number(item.amountAtRisk).toLocaleString("ru-RU")} ₽` : "—"}</span></div>
+        <div className="space-y-3">
+          {common}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+            <div className="rounded-xl border p-3">Часов без сметы: <span className="font-medium">{hoursSince(item.createdAt)}</span></div>
+            <div className="rounded-xl border p-3">Ожидаемая комиссия: <span className="font-medium">{item.amountAtRisk ? `${Number(item.amountAtRisk).toLocaleString("ru-RU")} ₽` : "—"}</span></div>
+          </div>
         </div>
       );
     }
 
     if (type === "no_payment") {
       return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-          <div className="rounded-xl border p-3">Заказ: <span className="font-medium">{item?.orderId ?? "—"}</span></div>
-          <div className="rounded-xl border p-3">Мастер: <span className="font-medium">{item?.masterId ?? "—"}</span></div>
-          <div className="rounded-xl border p-3">Клиент: <span className="font-medium">{item?.clientId ?? "—"}</span></div>
-          <div className="rounded-xl border p-3">Сумма риска: <span className="font-medium">{item?.amountAtRisk ? `${Number(item.amountAtRisk).toLocaleString("ru-RU")} ₽` : "—"}</span></div>
+        <div className="space-y-3">
+          {common}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+            <div className="rounded-xl border p-3">Клиент: <span className="font-medium">{item.clientId ?? "—"}</span></div>
+            <div className="rounded-xl border p-3">Сумма риска: <span className="font-medium">{item.amountAtRisk ? `${Number(item.amountAtRisk).toLocaleString("ru-RU")} ₽` : "—"}</span></div>
+          </div>
         </div>
       );
     }
 
     if (type === "no_master_response") {
       return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-          <div className="rounded-xl border p-3">Заказ: <span className="font-medium">{item?.orderId ?? "—"}</span></div>
-          <div className="rounded-xl border p-3">Мастер: <span className="font-medium">{item?.masterId ?? "—"}</span></div>
-          <div className="rounded-xl border p-3">Клиент: <span className="font-medium">{item?.clientId ?? "—"}</span></div>
-          <div className="rounded-xl border p-3">Нет отклика: <span className="font-medium">{item?.createdAt ? `${Math.max(0, Math.round((Date.now() - new Date(item.createdAt).getTime()) / 3600000))} ч` : "—"}</span></div>
+        <div className="space-y-3">
+          {common}
+          <div className="rounded-xl border p-3 text-sm">Нет отклика: <span className="font-medium">{hoursSince(item.createdAt)}</span></div>
         </div>
       );
     }
 
     if (type === "blocked_master") {
       return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-          <div className="rounded-xl border p-3">Мастер: <span className="font-medium">{item?.masterId ?? "—"}</span></div>
+        <div className="space-y-3 text-sm">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="rounded-xl border p-3">Мастер: <span className="font-medium">{item.masterId ?? "—"}</span></div>
             <div className="rounded-xl border p-3">Причина блокировки: <span className="font-medium">Блокировка FOMO / blocked</span></div>
+          </div>
           <div className="rounded-xl border p-3 md:col-span-2">
             Проблемный заказ:
             <div className="mt-2 rounded-lg border bg-slate-50 p-3">
-              <div className="font-medium">{item?.orderId ? `Заказ #${item.orderId}` : "—"}</div>
-              <div className="text-xs text-muted-foreground">Мини-карточка заказа показывается без перехода на другую страницу.</div>
+              <div className="font-medium">{item.orderId ? `Заказ #${item.orderId}` : "—"}</div>
+              <div className="text-xs text-muted-foreground">Карточка заказа отображается прямо в popup без перехода.</div>
             </div>
           </div>
-          <div className="rounded-xl border p-3">Сколько часов висит: <span className="font-medium">{item?.createdAt ? `${Math.max(0, Math.round((Date.now() - new Date(item.createdAt).getTime()) / 3600000))} ч` : "—"}</span></div>
+          <div className="rounded-xl border p-3">Сколько часов висит: <span className="font-medium">{hoursSince(item.createdAt)}</span></div>
         </div>
       );
     }
@@ -110,7 +123,7 @@ export function ActionItemModal({ id, open, onOpenChange }: { id: string | null;
     if (type === "low_avito_balance") {
       return (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-          <div className="rounded-xl border p-3">Текущий баланс: <span className="font-medium">{item?.amountAtRisk ? `${Number(item.amountAtRisk).toLocaleString("ru-RU")} ₽` : "—"}</span></div>
+          <div className="rounded-xl border p-3">Текущий баланс: <span className="font-medium">{item.amountAtRisk ? `${Number(item.amountAtRisk).toLocaleString("ru-RU")} ₽` : "—"}</span></div>
           <div className="rounded-xl border p-3">Минимальный баланс: <span className="font-medium">1 000 ₽</span></div>
           <div className="rounded-xl border p-3">Средний расход в день: <span className="font-medium">—</span></div>
         </div>
@@ -120,14 +133,11 @@ export function ActionItemModal({ id, open, onOpenChange }: { id: string | null;
     if (type === "possible_bypass" || type === "conflict") {
       return (
         <div className="space-y-3 text-sm">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="rounded-xl border p-3">Заказ: <span className="font-medium">{item?.orderId ?? "—"}</span></div>
-            <div className="rounded-xl border p-3">Мастер: <span className="font-medium">{item?.masterId ?? "—"}</span></div>
-          </div>
-            <div className="rounded-xl border bg-slate-50 p-4">
+          {common}
+          <div className="rounded-xl border bg-slate-50 p-4">
             <div className="text-xs uppercase text-muted-foreground mb-1">Краткое описание и риск</div>
-            <div className="font-medium">{item?.shortDescription ?? "—"}</div>
-            <div className="text-sm mt-2">{item?.fullDescription ?? "—"}</div>
+            <div className="font-medium">{item.shortDescription ?? "—"}</div>
+            <div className="text-sm mt-2">{item.fullDescription ?? "—"}</div>
           </div>
           <div className="rounded-xl border p-3">
             Последние сообщения / сигналы:
@@ -140,7 +150,7 @@ export function ActionItemModal({ id, open, onOpenChange }: { id: string | null;
     return null;
   };
 
-  const primaryActionLabel = type === "no_estimate" ? "Пометить задачу выполненной" : type === "no_payment" ? "Пометить выполненной" : type === "blocked_master" ? "Пометить как проверено" : type === "low_avito_balance" ? "Пометить как решено" : type === "possible_bypass" || type === "conflict" ? "Пометить как проверено" : "Пометить выполненной";
+  const primaryActionLabel = item?.type === "no_estimate" ? "Пометить задачу выполненной" : item?.type === "no_payment" ? "Пометить выполненной" : item?.type === "blocked_master" ? "Пометить как проверено" : item?.type === "low_avito_balance" ? "Пометить как решено" : item?.type === "possible_bypass" || item?.type === "conflict" ? "Пометить как проверено" : "Пометить выполненной";
 
   useEffect(() => {
     if (!open) {
@@ -213,38 +223,25 @@ export function ActionItemModal({ id, open, onOpenChange }: { id: string | null;
             <div className="space-y-4">
               {renderTypeDetails()}
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-                <div className="rounded-xl border p-3">
-                  <div className="text-xs text-muted-foreground">Город</div>
-                  <div className="font-medium inline-flex items-center gap-1"><MapPin className="w-4 h-4" />{item?.city ?? "—"}</div>
-                </div>
-                <div className="rounded-xl border p-3">
-                  <div className="text-xs text-muted-foreground">Дедлайн</div>
-                  <div className="font-medium inline-flex items-center gap-1"><Clock className="w-4 h-4" />{item?.deadline ?? "—"}</div>
-                </div>
-                <div className="rounded-xl border p-3">
-                  <div className="text-xs text-muted-foreground">Сумма под риском</div>
-                  <div className="font-medium inline-flex items-center gap-1"><Package className="w-4 h-4" />{item?.amountAtRisk ? `${Number(item.amountAtRisk).toLocaleString("ru-RU")} ₽` : "—"}</div>
-                </div>
-                <div className="rounded-xl border p-3">
-                  <div className="text-xs text-muted-foreground">Последнее обновление</div>
-                  <div className="font-medium">{lastUpdatedAt ? new Date(lastUpdatedAt).toLocaleString("ru-RU") : "—"}</div>
-                </div>
-                <div className="rounded-xl border p-3">
-                  <div className="text-xs text-muted-foreground">Последнее действие</div>
-                  <div className="font-medium">{lastActionBy ?? "—"}</div>
-                </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+                <div className="rounded-xl border p-3"><div className="text-xs text-muted-foreground">Тип задачи</div><div className="font-medium break-all">{item?.type ?? "—"}</div></div>
+                <div className="rounded-xl border p-3"><div className="text-xs text-muted-foreground">Сущность</div><div className="font-medium">{item?.entityType ?? "—"}</div></div>
+                <div className="rounded-xl border p-3"><div className="text-xs text-muted-foreground">ID сущности</div><div className="font-medium break-all">{item?.entityId ?? "—"}</div></div>
+                <div className="rounded-xl border p-3"><div className="text-xs text-muted-foreground">Статус</div><div className="font-medium">{item?.status ?? "—"}</div></div>
+                <div className="rounded-xl border p-3"><div className="text-xs text-muted-foreground">Город</div><div className="font-medium">{item?.city ?? "—"}</div></div>
+                <div className="rounded-xl border p-3"><div className="text-xs text-muted-foreground">Создано</div><div className="font-medium">{item?.createdAt ? new Date(item.createdAt).toLocaleString("ru-RU") : "—"}</div></div>
+                <div className="rounded-xl border p-3"><div className="text-xs text-muted-foreground">Дедлайн</div><div className="font-medium">{item?.deadline ? new Date(item.deadline).toLocaleString("ru-RU") : "—"}</div></div>
+                <div className="rounded-xl border p-3"><div className="text-xs text-muted-foreground">Сумма под риском</div><div className="font-medium">{item?.amountAtRisk ? `${Number(item.amountAtRisk).toLocaleString("ru-RU")} ₽` : "—"}</div></div>
+                <div className="rounded-xl border p-3"><div className="text-xs text-muted-foreground">Последнее обновление</div><div className="font-medium">{lastUpdatedAt ? new Date(lastUpdatedAt).toLocaleString("ru-RU") : "—"}</div></div>
+                <div className="rounded-xl border p-3"><div className="text-xs text-muted-foreground">Последнее действие</div><div className="font-medium">{lastActionBy ?? "—"}</div></div>
+                <div className="rounded-xl border p-3"><div className="text-xs text-muted-foreground">Заказ</div><div className="font-medium">{item?.orderId ?? "—"}</div></div>
+                <div className="rounded-xl border p-3"><div className="text-xs text-muted-foreground">Мастер</div><div className="font-medium">{item?.masterId ?? "—"}</div></div>
+                <div className="rounded-xl border p-3"><div className="text-xs text-muted-foreground">Клиент</div><div className="font-medium">{item?.clientId ?? "—"}</div></div>
               </div>
 
               <div className="rounded-xl border bg-slate-50 p-4 text-sm">
                 <div className="text-xs uppercase text-muted-foreground mb-1">Полное описание</div>
                 <div>{item?.fullDescription}</div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-                <div className="rounded-xl border p-3"><div className="text-xs text-muted-foreground">Заказ</div><div className="font-medium">{item?.orderId ?? "—"}</div></div>
-                <div className="rounded-xl border p-3"><div className="text-xs text-muted-foreground">Мастер</div><div className="font-medium">{item?.masterId ?? "—"}</div></div>
-                <div className="rounded-xl border p-3"><div className="text-xs text-muted-foreground">Клиент</div><div className="font-medium">{item?.clientId ?? "—"}</div></div>
               </div>
 
               {renderInlineAction()}
@@ -253,17 +250,46 @@ export function ActionItemModal({ id, open, onOpenChange }: { id: string | null;
                 <div className="space-y-2">
                   <div className="text-sm font-medium">Последние события</div>
                   <div className="max-h-44 overflow-y-auto space-y-2 rounded-xl border bg-slate-50 p-2">
-                    {timeline.length === 0 ? <div className="text-sm text-muted-foreground p-2">Таймлайн пока пуст</div> : timeline.map((t: any, idx: number) => (<div key={idx} className="rounded-lg border bg-white p-2 text-sm"><div className="font-medium">{t.title ?? t.event ?? "Событие"}</div><div className="text-xs text-muted-foreground">{t.at ?? t.createdAt ?? ""}</div></div>))}
+                    {timeline.length === 0 ? (
+                      <div className="text-sm text-muted-foreground p-2">Таймлайн пока пуст</div>
+                    ) : (
+                      timeline.map((t: any, idx: number) => (
+                        <div key={idx} className="rounded-lg border bg-white p-2 text-sm">
+                          <div className="font-medium">{t.title ?? t.event ?? "Событие"}</div>
+                          <div className="text-xs text-muted-foreground">{t.at ?? t.createdAt ?? ""}</div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
                 <div className="space-y-2">
                   <div className="text-sm font-medium">Действия</div>
                   <div className="flex flex-wrap gap-2">
                     {actions.map((a: any) => (
-                      <Button key={a.key} variant={a.style === "primary" ? "default" : a.style === "secondary" ? "secondary" : a.style === "danger" ? "destructive" : "outline"} onClick={() => { if (["message_master", "reassign", "update_balance", "cancel_order", "return_to_pool", "manual_unblock", "open_issue_order", "block_master", "manual_control"].includes(a.key)) { setSubAction(a.key); return; } act(a.key); }} disabled={busy === a.key}>
+                      <Button
+                        key={a.key}
+                        variant={a.style === "primary" ? "default" : a.style === "secondary" ? "secondary" : a.style === "danger" ? "destructive" : "outline"}
+                        onClick={() => {
+                          if (["message_master", "reassign", "update_balance", "cancel_order", "return_to_pool", "manual_unblock"].includes(a.key)) {
+                            setSubAction(a.key);
+                            return;
+                          }
+                          act(a.key);
+                        }}
+                        disabled={busy === a.key}
+                      >
                         {a.label}
                       </Button>
                     ))}
+                  </div>
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    <Button variant="secondary" onClick={() => act("resolve")} disabled={busy === "resolve"}>
+                      <CheckCircle2 className="w-4 h-4" />
+                      Выполнить действие
+                    </Button>
+                    <Button variant="outline" onClick={() => act("dismiss")} disabled={busy === "dismiss"}>
+                      Отложить
+                    </Button>
                   </div>
                 </div>
               </div>
