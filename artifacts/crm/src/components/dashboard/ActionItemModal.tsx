@@ -241,15 +241,22 @@ export function ActionItemModal({ id, open, onOpenChange }: {
   };
 
   const fire = async (action: string, payload: Record<string, unknown> = {}) => {
-    if (!id) return;
+    console.log(`[ActionItemModal.fire] called action=${action} id=${id}`);
+    if (!id) {
+      console.warn("[ActionItemModal.fire] aborted: id is null");
+      showToast("Не выбрана задача", false);
+      return;
+    }
     setBusy(action);
     try {
+      console.log(`[ActionItemModal.fire] sending POST /api/dashboard/action-items/${id}/action`);
       const r = await fetch(`/api/dashboard/action-items/${id}/action`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, payload: { comment, ...payload } }),
       });
+      console.log(`[ActionItemModal.fire] response status=${r.status}`);
       if (!r.ok) {
         const errBody = await r.json().catch(() => null);
         const errMsg = errBody?.error ?? `Ошибка ${r.status}`;
@@ -649,6 +656,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                         className="bg-green-600 hover:bg-green-700 text-white"
                         disabled={busy === "complete_as_master"}
                         onClick={async () => {
+                          console.log("[btn:complete_as_master] clicked, id=", id);
                           await fire("complete_as_master");
                           setCompleteAsMasterPending(false);
                         }}
