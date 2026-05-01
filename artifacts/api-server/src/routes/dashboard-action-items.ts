@@ -1,7 +1,22 @@
 import { Router } from "express";
 import { db, ordersTable, mastersTable, leadsTable, receiptsTable, avitoSettingsTable, chatCasesTable, systemTasksTable } from "@workspace/db";
-import { desc, isNull, eq } from "drizzle-orm";
+import { desc, isNull, eq, and } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
+
+const NEXT_ACTION_RU: Record<string, string> = {
+  call_master: "Позвонить мастеру",
+  message_master: "Написать мастеру",
+  call_client: "Позвонить клиенту",
+  reassign: "Переназначить мастера",
+  cancel_order: "Отменить заказ",
+  return_to_pool: "Вернуть в пул",
+  resend: "Повторно разослать",
+  resolve: "Пометить выполненной",
+  block_master: "Заблокировать мастера",
+  manual_control: "Перевести в ручной контроль",
+  review: "Проверить",
+  wait: "Ожидать",
+};
 
 const router = Router();
 const ops = requireRole("admin", "master_operator", "lead_operator");
@@ -113,7 +128,7 @@ async function buildItems(): Promise<Item[]> {
   for (const m of masters) { const status = String(m.status ?? "").toLowerCase(); if (status.includes("blocked") || status.includes("fomo_blocked")) items.push({ id: `blocked_master-${m.id}`, type: "blocked_master", priority: "critical", title: `Мастер ${m.alias} заблокирован`, shortDescription: `${m.city ?? ""}`.trim(), fullDescription: `Мастер в блокировке / FOMO_BLOCKED и требует проверки.`, createdAt: new Date(m.createdAt).toISOString(), updatedAt: new Date(m.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "master", entityId: m.id, orderId: null, masterId: m.id, clientId: null, city: m.city ?? null, amountAtRisk: null, actions: actionSet("blocked_master") }); }
   const balance = avitoRows[0] as any;
   if (balance && Number(balance.manualBalance ?? 0) < 1000) items.push({ id: "low_avito_balance-1", type: "low_avito_balance", priority: "high", title: "Баланс Avito ниже нормы", shortDescription: `Текущий баланс: ${Number(balance.manualBalance ?? 0).toLocaleString("ru-RU")} ₽`, fullDescription: "Баланс Avito ниже рекомендуемого порога.", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "finance", entityId: balance.id ?? null, orderId: null, masterId: null, clientId: null, city: null, amountAtRisk: null, actions: actionSet("low_avito_balance") });
-  for (const c of cases) { const risk = String((c as any).riskLevel ?? (c as any).risk ?? ""); if (risk === "red" || risk === "yellow") items.push({ id: `case-${(c as any).id}`, type: risk === "red" ? "possible_bypass" : "conflict", priority: risk === "red" ? "critical" : "high", title: String((c as any).summary ?? (c as any).title ?? "Кейс"), shortDescription: String((c as any).nextAction ?? "Требует внимания"), fullDescription: String((c as any).summary ?? ""), createdAt: new Date((c as any).updatedAt ?? now).toISOString(), updatedAt: new Date((c as any).updatedAt ?? now).toISOString(), lastActionBy: (c as any).lastActionBy ?? null, deadline: null, status: "open", entityType: "system", entityId: (c as any).id, orderId: (c as any).orderId ?? null, masterId: (c as any).masterId ?? null, clientId: null, city: null, amountAtRisk: null, actions: actionSet(risk === "red" ? "possible_bypass" : "conflict") }); }
+  for (const c of cases) { const risk = String((c as any).riskLevel ?? (c as any).risk ?? ""); if (risk === "red" || risk === "yellow") { const rawNext = String((c as any).nextAction ?? ""); const nextRu = NEXT_ACTION_RU[rawNext] ?? (rawNext || "Требует внимания"); items.push({ id: `case-${(c as any).id}`, type: risk === "red" ? "possible_bypass" : "conflict", priority: risk === "red" ? "critical" : "high", title: String((c as any).summary ?? (c as any).title ?? "Кейс"), shortDescription: nextRu, fullDescription: String((c as any).summary ?? ""), createdAt: new Date((c as any).updatedAt ?? now).toISOString(), updatedAt: new Date((c as any).updatedAt ?? now).toISOString(), lastActionBy: (c as any).lastActionBy ?? null, deadline: null, status: "open", entityType: "system", entityId: (c as any).id, orderId: (c as any).orderId ?? null, masterId: (c as any).masterId ?? null, clientId: null, city: null, amountAtRisk: null, actions: actionSet(risk === "red" ? "possible_bypass" : "conflict") }); } }
   for (const t of manualTasks) if ((t as any).status !== "done" && (t as any).status !== "dismissed") items.push({ id: `manual-${(t as any).id}`, type: "custom_manual", priority: "low", title: String((t as any).title ?? "Ручная задача"), shortDescription: String((t as any).description ?? ""), fullDescription: String((t as any).description ?? ""), createdAt: new Date((t as any).createdAt ?? now).toISOString(), updatedAt: new Date((t as any).updatedAt ?? t.createdAt ?? now).toISOString(), lastActionBy: (t as any).lastActionBy ?? null, deadline: (t as any).dueAt ? new Date((t as any).dueAt).toISOString() : null, status: (t as any).status ?? "open", entityType: "system", entityId: (t as any).id, orderId: (t as any).relatedOrderId ?? null, masterId: (t as any).relatedMasterId ?? null, clientId: null, city: null, amountAtRisk: null, actions: actionSet("custom_manual") });
   items.sort((a,b)=>({critical:0,high:1,medium:2,low:3}[a.priority]-({critical:0,high:1,medium:2,low:3}[b.priority])) || ((a.deadline?new Date(a.deadline).getTime():Number.MAX_SAFE_INTEGER)-(b.deadline?new Date(b.deadline).getTime():Number.MAX_SAFE_INTEGER)) || (new Date(b.createdAt).getTime()-new Date(a.createdAt).getTime()));
   return items;
@@ -169,7 +184,43 @@ router.get("/action-items/:id", ops, async (req: any, res: any) => {
   const items = await buildItems();
   const item = items.find((i) => i.id === req.params.id);
   if (!item) return res.status(404).json({ error: "Не найдено" });
-  res.json({ ...item, timeline: [], context: {}, related: {}, notes: [] });
+
+  const ctx: Record<string, any> = {};
+
+  if (item.masterId != null) {
+    const [m] = await db.select({ id: mastersTable.id, alias: mastersTable.alias, phone: mastersTable.phone, city: mastersTable.city, status: mastersTable.status, blockedAt: (mastersTable as any).blockedAt, blockedReason: (mastersTable as any).blockedReason }).from(mastersTable).where(eq(mastersTable.id, Number(item.masterId))).limit(1);
+    if (m) ctx.master = { id: m.id, name: m.alias, phone: (m as any).phone ?? null, city: m.city, status: m.status, blockedAt: (m as any).blockedAt ?? null, blockedReason: (m as any).blockedReason ?? null };
+  }
+
+  if (item.orderId != null) {
+    const [o] = await db.select({ id: ordersTable.id, proposedAmount: ordersTable.proposedAmount, orderAmount: ordersTable.orderAmount, prepaymentAmount: ordersTable.prepaymentAmount, status: ordersTable.status, clientName: ordersTable.clientName, clientPhone: ordersTable.clientPhone, city: ordersTable.city, createdAt: ordersTable.createdAt }).from(ordersTable).where(eq(ordersTable.id, Number(item.orderId))).limit(1);
+    if (o) {
+      const ageH = Math.round((Date.now() - new Date(o.createdAt).getTime()) / 3600000);
+      ctx.order = { id: o.id, proposedAmount: o.proposedAmount ? Number(o.proposedAmount) : null, orderAmount: o.orderAmount ? Number(o.orderAmount) : null, prepaymentAmount: o.prepaymentAmount ? Number(o.prepaymentAmount) : null, status: o.status, clientName: (o as any).clientName ?? null, clientPhone: (o as any).clientPhone ?? null, city: o.city, hoursOld: ageH };
+    }
+  }
+
+  if (item.clientId != null) {
+    const [l] = await db.select({ id: leadsTable.id, clientName: leadsTable.clientName, clientPhone: leadsTable.clientPhone, city: leadsTable.city }).from(leadsTable).where(eq(leadsTable.id, Number(item.clientId))).limit(1);
+    if (l) ctx.client = l;
+  }
+
+  if (item.type === "no_master_response" || item.type === "no_estimate") {
+    const avail = await db.select({ id: mastersTable.id, alias: mastersTable.alias, city: mastersTable.city, status: mastersTable.status }).from(mastersTable).where(and(eq(mastersTable.status, "active"), isNull(mastersTable.deletedAt))).limit(30);
+    ctx.availableMasters = avail.map((m) => ({ id: m.id, name: m.alias ?? `Мастер #${m.id}`, city: m.city }));
+  }
+
+  if (item.type === "no_payment" && item.orderId != null) {
+    const [r] = await db.select({ id: receiptsTable.id, prepaymentAmount: receiptsTable.prepaymentAmount, prepaymentSubmittedAt: receiptsTable.prepaymentSubmittedAt, prepaymentSeenAt: receiptsTable.prepaymentSeenAt, prepaymentScreenshotUrl: receiptsTable.prepaymentScreenshotUrl, clientName: receiptsTable.clientName, clientPhone: receiptsTable.clientPhone }).from(receiptsTable).where(eq(receiptsTable.orderId, Number(item.orderId))).limit(1);
+    if (r) ctx.receipt = r;
+  }
+
+  if (item.type === "low_avito_balance") {
+    const [av] = await db.select().from(avitoSettingsTable).limit(1);
+    if (av) ctx.avitoBalance = (av as any).advanceBalance ?? 0;
+  }
+
+  res.json({ ...item, timeline: [], context: ctx, related: {}, notes: [] });
 });
 
 router.post("/action-items/:id/action", ops, async (req: any, res: any) => {

@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
+import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  AlertTriangle, CheckCircle2, Clock, Copy, MapPin, Package, ShieldAlert,
-  UserRoundPen, X, Banknote, TriangleAlert, CircleDot, Wrench, RefreshCw,
-  PhoneCall, MessageSquare, UserX, BadgeAlert, Settings,
+  AlertTriangle, CheckCircle2, Clock, X, Banknote, TriangleAlert,
+  UserX, ShieldAlert, BadgeAlert, Wrench, MessageSquare, Settings,
+  UserRoundPen, Phone, MapPin, Package, RefreshCw, CircleAlert,
+  ChevronRight,
 } from "lucide-react";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -16,23 +17,18 @@ async function fetchDetail(id: string) {
   return r.json();
 }
 
-type SubAction = "message_master" | "reassign" | "update_balance" | "cancel_order" | "return_to_pool" | "manual_unblock" | null;
-type MasterOption = { id: string; name: string; city?: string | null; activeOrders?: number };
-
 const PRIORITY_RU: Record<string, string> = {
   critical: "Критично",
-  high: "Высокий приоритет",
-  medium: "Средний приоритет",
-  low: "Низкий приоритет",
+  high: "Высокий",
+  medium: "Средний",
+  low: "Низкий",
 };
-
 const STATUS_RU: Record<string, string> = {
   open: "Открыта",
   in_progress: "В работе",
   done: "Выполнена",
   dismissed: "Отложена",
 };
-
 const TYPE_ICON: Record<string, ReactNode> = {
   no_estimate: <Wrench className="w-5 h-5" />,
   no_payment: <Banknote className="w-5 h-5" />,
@@ -45,17 +41,52 @@ const TYPE_ICON: Record<string, ReactNode> = {
   no_manager_id: <UserRoundPen className="w-5 h-5" />,
   custom_manual: <Settings className="w-5 h-5" />,
 };
+const PRIORITY_LEFT: Record<string, string> = {
+  critical: "bg-red-500",
+  high: "bg-orange-500",
+  medium: "bg-blue-500",
+  low: "bg-slate-400",
+};
+const PRIORITY_BADGE: Record<string, string> = {
+  critical: "bg-red-100 text-red-700",
+  high: "bg-orange-100 text-orange-700",
+  medium: "bg-blue-100 text-blue-700",
+  low: "bg-slate-100 text-slate-700",
+};
 
-export function ActionItemModal({ id, open, onOpenChange }: { id: string | null; open: boolean; onOpenChange: (open: boolean) => void }) {
-  const [comment, setComment] = useState("");
+function InfoRow({ icon, label, value }: { icon: ReactNode; label: string; value: ReactNode }) {
+  if (!value && value !== 0) return null;
+  return (
+    <div className="flex items-center gap-2 text-sm">
+      <span className="text-muted-foreground shrink-0">{icon}</span>
+      <span className="text-muted-foreground whitespace-nowrap">{label}:</span>
+      <span className="font-medium break-all">{value}</span>
+    </div>
+  );
+}
+
+function SectionBox({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="rounded-xl border bg-slate-50 p-4 space-y-3">
+      <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</div>
+      {children}
+    </div>
+  );
+}
+
+export function ActionItemModal({ id, open, onOpenChange }: {
+  id: string | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   const [busy, setBusy] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
-  const [subAction, setSubAction] = useState<SubAction>(null);
-  const [message, setMessage] = useState("");
-  const [masterQuery, setMasterQuery] = useState("");
-  const [masterId, setMasterId] = useState("");
-  const [balance, setBalance] = useState("");
-  const [confirmTyped, setConfirmTyped] = useState("");
+  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
+  const [messageText, setMessageText] = useState("");
+  const [selectedMasterId, setSelectedMasterId] = useState<number | null>(null);
+  const [masterSearch, setMasterSearch] = useState("");
+  const [balanceInput, setBalanceInput] = useState("");
+  const [confirmInput, setConfirmInput] = useState("");
+  const [comment, setComment] = useState("");
 
   const { data, refetch } = useQuery({
     queryKey: ["action-item", id],
@@ -63,390 +94,532 @@ export function ActionItemModal({ id, open, onOpenChange }: { id: string | null;
     enabled: !!id && open,
   });
 
-  useEffect(() => { if (id) setComment(localStorage.getItem(`action-item-comment-${id}`) ?? ""); }, [id]);
-  useEffect(() => { if (id) localStorage.setItem(`action-item-comment-${id}`, comment); }, [id, comment]);
   useEffect(() => {
     if (!open) {
-      setSubAction(null); setToast(null); setMessage("");
-      setMasterQuery(""); setMasterId(""); setBalance(""); setConfirmTyped("");
+      setMessageText(""); setSelectedMasterId(null); setMasterSearch("");
+      setBalanceInput(""); setConfirmInput(""); setToast(null);
     }
   }, [open]);
 
+  useEffect(() => {
+    if (id) setComment(localStorage.getItem(`aitem-comment-${id}`) ?? "");
+  }, [id]);
+  useEffect(() => {
+    if (id) localStorage.setItem(`aitem-comment-${id}`, comment);
+  }, [id, comment]);
+
   const item = data;
-  const timeline = useMemo(() => item?.timeline ?? [], [item]);
-  const actions: { key: string; label: string; style: string }[] = item?.actions ?? [];
-  const lastUpdatedAt = item?.updatedAt ?? null;
-  const taskUrl = typeof window !== "undefined" ? `${window.location.origin}${window.location.pathname}?taskId=${id ?? ""}` : "";
-  const masters: MasterOption[] = (data?.availableMasters ?? []) as MasterOption[];
-  const filteredMasters = masters.filter((m) =>
-    `${m.id} ${m.name} ${m.city ?? ""}`.toLowerCase().includes(masterQuery.toLowerCase())
-  );
+  const ctx = item?.context ?? {};
 
-  const priorityColor =
-    item?.priority === "critical" ? "bg-red-500" :
-    item?.priority === "high" ? "bg-orange-500" :
-    item?.priority === "medium" ? "bg-blue-500" : "bg-slate-400";
+  const badgeColor = PRIORITY_BADGE[item?.priority ?? "low"] ?? PRIORITY_BADGE.low;
+  const leftColor = PRIORITY_LEFT[item?.priority ?? "low"] ?? PRIORITY_LEFT.low;
 
-  const badgeColor =
-    item?.priority === "critical" ? "bg-red-100 text-red-700" :
-    item?.priority === "high" ? "bg-orange-100 text-orange-700" :
-    item?.priority === "medium" ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-700";
+  const showToast = (msg: string, ok = true) => {
+    setToast({ msg, ok });
+    setTimeout(() => setToast(null), 2500);
+  };
 
   const fire = async (action: string, payload: Record<string, unknown> = {}) => {
     if (!id) return;
     setBusy(action);
     try {
-      await fetch(`/api/dashboard/action-items/${id}/action`, {
+      const r = await fetch(`/api/dashboard/action-items/${id}/action`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, payload: { comment, ...payload } }),
       });
+      if (!r.ok) throw new Error("err");
       await refetch();
       window.dispatchEvent(new CustomEvent("dashboard-action-items:changed"));
-      setToast("Действие выполнено");
-      setTimeout(() => setToast(null), 2500);
+      showToast("Действие выполнено");
     } catch {
-      setToast("Ошибка при выполнении действия");
-      setTimeout(() => setToast(null), 2500);
+      showToast("Ошибка при выполнении", false);
     } finally {
       setBusy(null);
-      setSubAction(null);
-      setMessage(""); setMasterQuery(""); setMasterId(""); setBalance(""); setConfirmTyped("");
     }
   };
 
-  const DANGEROUS_SUB_ACTIONS = ["cancel_order", "return_to_pool", "manual_unblock", "reassign"];
+  const availableMasters: { id: number; name: string; city: string | null }[] = ctx.availableMasters ?? [];
+  const filteredMasters = availableMasters.filter((m) =>
+    masterSearch.trim() === "" ||
+    `${m.id} ${m.name} ${m.city ?? ""}`.toLowerCase().includes(masterSearch.toLowerCase())
+  );
 
-  const handleActionClick = (key: string) => {
-    if (["message_master", ...DANGEROUS_SUB_ACTIONS, "update_balance"].includes(key)) {
-      setSubAction(key as SubAction);
-    } else {
-      fire(key);
-    }
-  };
+  function renderTypePanel() {
+    if (!item) return null;
 
-  const renderActionPanel = () => {
-    if (!subAction) return null;
-    return (
-      <div className="rounded-xl border bg-slate-50 p-4 space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="text-sm font-semibold">
-            {subAction === "message_master" && "Написать мастеру"}
-            {subAction === "reassign" && "Переназначить мастера"}
-            {subAction === "update_balance" && "Обновить баланс Avito"}
-            {subAction === "cancel_order" && "Отмена заказа"}
-            {subAction === "return_to_pool" && "Вернуть заказ в пул"}
-            {subAction === "manual_unblock" && "Разблокировать мастера вручную"}
-          </div>
-          <Button variant="ghost" size="sm" onClick={() => { setSubAction(null); setConfirmTyped(""); }}>
-            <X className="w-4 h-4" /> Скрыть
-          </Button>
-        </div>
-
-        {subAction === "message_master" && (
-          <>
-            <Textarea
-              value={message}
-              onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setMessage(e.target.value)}
-              placeholder="Введите текст сообщения для мастера"
-              className="min-h-[110px]"
-            />
-            <div className="flex gap-2">
-              <Button
-                onClick={() => fire("message_master", { message })}
-                disabled={busy === "message_master" || !message.trim()}
-              >
-                <MessageSquare className="w-4 h-4" /> Отправить
-              </Button>
-              <Button variant="outline" onClick={() => setMessage("")}>Очистить</Button>
+    switch (item.type) {
+      // ─── Нет сметы ───────────────────────────────────────────────
+      case "no_estimate":
+        return (
+          <SectionBox title="Ситуация: заказ без сметы">
+            <div className="space-y-2">
+              {ctx.order && (
+                <>
+                  <InfoRow icon={<Package className="w-4 h-4" />} label="Заказ" value={`#${ctx.order.id}`} />
+                  {ctx.order.hoursOld != null && <InfoRow icon={<Clock className="w-4 h-4" />} label="Без сметы" value={`${ctx.order.hoursOld} ч`} />}
+                  {ctx.order.clientName && <InfoRow icon={<UserRoundPen className="w-4 h-4" />} label="Клиент" value={ctx.order.clientName} />}
+                  {ctx.order.clientPhone && (
+                    <InfoRow icon={<Phone className="w-4 h-4" />} label="Телефон клиента" value={
+                      <a href={`tel:${ctx.order.clientPhone}`} className="text-blue-600 underline">{ctx.order.clientPhone}</a>
+                    } />
+                  )}
+                </>
+              )}
+              {ctx.master && (
+                <>
+                  <InfoRow icon={<UserRoundPen className="w-4 h-4" />} label="Мастер" value={`${ctx.master.name} (#${ctx.master.id})`} />
+                  {ctx.master.phone && (
+                    <InfoRow icon={<Phone className="w-4 h-4" />} label="Телефон мастера" value={
+                      <a href={`tel:${ctx.master.phone}`} className="text-blue-600 underline">{ctx.master.phone}</a>
+                    } />
+                  )}
+                </>
+              )}
             </div>
-          </>
-        )}
 
-        {subAction === "reassign" && (
-          <>
-            <Input
-              value={masterQuery}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => setMasterQuery(e.target.value)}
-              placeholder="Поиск по ID, имени или городу"
-            />
-            {filteredMasters.length > 0 && (
-              <div className="max-h-44 overflow-y-auto rounded-xl border bg-white p-2 space-y-2">
-                {filteredMasters.slice(0, 10).map((m) => (
+            <div className="border-t pt-3 space-y-3">
+              <div className="text-sm font-semibold">Написать мастеру</div>
+              <Textarea
+                value={messageText}
+                onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setMessageText(e.target.value)}
+                placeholder="Привет! По заказу #... Пришлите смету до конца дня."
+                className="min-h-[80px] bg-white"
+              />
+              <Button
+                onClick={() => fire("message_master", { message: messageText })}
+                disabled={busy === "message_master" || !messageText.trim()}
+                size="sm"
+              >
+                <MessageSquare className="w-4 h-4" /> Отправить мастеру
+              </Button>
+            </div>
+
+            <div className="border-t pt-3">
+              <div className="text-sm font-semibold mb-2">Переназначить мастера</div>
+              <Input
+                value={masterSearch}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setMasterSearch(e.target.value)}
+                placeholder="Поиск мастера по имени или городу"
+                className="mb-2 bg-white"
+              />
+              <div className="max-h-36 overflow-y-auto space-y-1 rounded-xl border bg-white p-2">
+                {filteredMasters.length === 0 && <div className="text-xs text-muted-foreground p-2">Нет доступных мастеров</div>}
+                {filteredMasters.slice(0, 8).map((m) => (
                   <button
                     key={m.id}
-                    className={`w-full text-left rounded-lg border px-3 py-2 text-sm ${masterId === m.id ? "border-green-500 bg-green-50" : "hover:bg-slate-50"}`}
-                    onClick={() => setMasterId(m.id)}
+                    className={`w-full text-left px-3 py-2 rounded-lg text-sm border transition ${selectedMasterId === m.id ? "border-violet-500 bg-violet-50" : "hover:bg-slate-50"}`}
+                    onClick={() => setSelectedMasterId(m.id)}
                   >
-                    <div className="font-medium">{m.name}</div>
-                    <div className="text-xs text-muted-foreground">ID: {m.id}{m.city ? ` · ${m.city}` : ""}</div>
+                    <span className="font-medium">{m.name}</span>
+                    {m.city && <span className="text-muted-foreground ml-2">· {m.city}</span>}
+                    <ChevronRight className="w-3 h-3 inline ml-1 text-muted-foreground" />
                   </button>
                 ))}
               </div>
+              <Button
+                className="mt-2"
+                size="sm"
+                variant="outline"
+                disabled={!selectedMasterId || busy === "reassign"}
+                onClick={() => fire("reassign", { masterId: selectedMasterId })}
+              >
+                Назначить выбранного мастера
+              </Button>
+            </div>
+          </SectionBox>
+        );
+
+      // ─── Нет оплаты ──────────────────────────────────────────────
+      case "no_payment":
+        return (
+          <SectionBox title="Ситуация: предоплата не получена">
+            <div className="space-y-2">
+              {ctx.order && (
+                <>
+                  <InfoRow icon={<Package className="w-4 h-4" />} label="Заказ" value={`#${ctx.order.id}`} />
+                  {ctx.order.hoursOld != null && <InfoRow icon={<Clock className="w-4 h-4" />} label="Ожидаем оплату" value={`${ctx.order.hoursOld} ч`} />}
+                  {ctx.order.proposedAmount != null && (
+                    <InfoRow icon={<Banknote className="w-4 h-4" />} label="Сумма сметы" value={`${Number(ctx.order.proposedAmount).toLocaleString("ru-RU")} ₽`} />
+                  )}
+                  {(ctx.order.clientName || ctx.client?.clientName) && (
+                    <InfoRow icon={<UserRoundPen className="w-4 h-4" />} label="Клиент" value={ctx.order.clientName ?? ctx.client?.clientName} />
+                  )}
+                  {(ctx.order.clientPhone || ctx.client?.clientPhone) && (
+                    <div className="flex items-center gap-2">
+                      <Phone className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-muted-foreground text-sm">Позвонить клиенту:</span>
+                      <a
+                        href={`tel:${ctx.order.clientPhone ?? ctx.client?.clientPhone}`}
+                        className="text-base font-bold text-violet-700 underline"
+                      >
+                        {ctx.order.clientPhone ?? ctx.client?.clientPhone}
+                      </a>
+                    </div>
+                  )}
+                </>
+              )}
+              {ctx.receipt && (
+                <>
+                  {ctx.receipt.prepaymentAmount && (
+                    <InfoRow icon={<Banknote className="w-4 h-4" />} label="Предоплата" value={`${Number(ctx.receipt.prepaymentAmount).toLocaleString("ru-RU")} ₽`} />
+                  )}
+                  {ctx.receipt.prepaymentSubmittedAt && (
+                    <InfoRow icon={<Clock className="w-4 h-4" />} label="Клиент оплатил" value={new Date(ctx.receipt.prepaymentSubmittedAt).toLocaleString("ru-RU")} />
+                  )}
+                  {ctx.receipt.prepaymentScreenshotUrl && (
+                    <div>
+                      <div className="text-xs text-muted-foreground mb-1">Скриншот оплаты:</div>
+                      <a href={ctx.receipt.prepaymentScreenshotUrl} target="_blank" rel="noopener noreferrer">
+                        <img src={ctx.receipt.prepaymentScreenshotUrl} alt="Скриншот" className="max-h-32 rounded-lg border object-contain" />
+                      </a>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="border-t pt-3 space-y-3">
+              <div className="text-sm font-semibold">Напомнить мастеру о подтверждении</div>
+              <Textarea
+                value={messageText}
+                onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setMessageText(e.target.value)}
+                placeholder="Привет! Клиент оплатил. Подтвердите получение оплаты в приложении."
+                className="min-h-[80px] bg-white"
+              />
+              <Button
+                onClick={() => fire("message_master", { message: messageText })}
+                disabled={busy === "message_master" || !messageText.trim()}
+                size="sm"
+              >
+                <MessageSquare className="w-4 h-4" /> Отправить напоминание мастеру
+              </Button>
+            </div>
+            <div className="border-t pt-3 flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" onClick={() => fire("return_to_pool")} disabled={busy === "return_to_pool"}>
+                <RefreshCw className="w-4 h-4" /> Вернуть в пул
+              </Button>
+              <Button size="sm" variant="destructive" onClick={() => { if (confirmInput.toUpperCase() === "ОТМЕНИТЬ") fire("cancel_order"); else showToast('Введите "ОТМЕНИТЬ" для подтверждения', false); }} disabled={busy === "cancel_order"}>
+                Отменить заказ
+              </Button>
+              <Input
+                value={confirmInput}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setConfirmInput(e.target.value)}
+                placeholder='Введите ОТМЕНИТЬ'
+                className="w-36 bg-white"
+                size={10}
+              />
+            </div>
+          </SectionBox>
+        );
+
+      // ─── Нет отклика мастера ─────────────────────────────────────
+      case "no_master_response":
+        return (
+          <SectionBox title="Ситуация: мастер не откликается">
+            <div className="space-y-2">
+              {ctx.order && (
+                <>
+                  <InfoRow icon={<Package className="w-4 h-4" />} label="Заказ" value={`#${ctx.order.id}`} />
+                  {ctx.order.hoursOld != null && <InfoRow icon={<Clock className="w-4 h-4" />} label="Ждём мастера" value={`${ctx.order.hoursOld} ч`} />}
+                  {ctx.order.city && <InfoRow icon={<MapPin className="w-4 h-4" />} label="Город" value={ctx.order.city} />}
+                </>
+              )}
+            </div>
+
+            <div className="border-t pt-3">
+              <div className="text-sm font-semibold mb-2">Назначить мастера вручную</div>
+              <Input
+                value={masterSearch}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setMasterSearch(e.target.value)}
+                placeholder="Поиск по имени или городу"
+                className="mb-2 bg-white"
+              />
+              <div className="max-h-44 overflow-y-auto space-y-1 rounded-xl border bg-white p-2">
+                {filteredMasters.length === 0 && <div className="text-xs text-muted-foreground p-2">Нет активных мастеров</div>}
+                {filteredMasters.slice(0, 10).map((m) => (
+                  <button
+                    key={m.id}
+                    className={`w-full text-left px-3 py-2 rounded-lg text-sm border transition ${selectedMasterId === m.id ? "border-violet-500 bg-violet-50 font-semibold" : "hover:bg-slate-50"}`}
+                    onClick={() => setSelectedMasterId(m.id)}
+                  >
+                    {m.name}
+                    {m.city && <span className="text-muted-foreground ml-2 font-normal">· {m.city}</span>}
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-2 mt-2 flex-wrap">
+                <Button
+                  size="sm"
+                  disabled={!selectedMasterId || busy === "reassign"}
+                  onClick={() => fire("reassign", { masterId: selectedMasterId })}
+                >
+                  Назначить мастера
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy === "resend"}
+                  onClick={() => fire("resend")}
+                >
+                  <RefreshCw className="w-4 h-4" /> Разослать повторно
+                </Button>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  disabled={busy === "cancel_order"}
+                  onClick={() => fire("cancel_order")}
+                >
+                  Отменить заказ
+                </Button>
+              </div>
+            </div>
+          </SectionBox>
+        );
+
+      // ─── Заблокированный мастер ──────────────────────────────────
+      case "blocked_master":
+        return (
+          <SectionBox title="Ситуация: мастер заблокирован">
+            {ctx.master && (
+              <div className="space-y-2">
+                <InfoRow icon={<UserRoundPen className="w-4 h-4" />} label="Мастер" value={`${ctx.master.name} (#${ctx.master.id})`} />
+                {ctx.master.phone && (
+                  <InfoRow icon={<Phone className="w-4 h-4" />} label="Телефон" value={
+                    <a href={`tel:${ctx.master.phone}`} className="text-blue-600 underline">{ctx.master.phone}</a>
+                  } />
+                )}
+                {ctx.master.city && <InfoRow icon={<MapPin className="w-4 h-4" />} label="Город" value={ctx.master.city} />}
+                {ctx.master.blockedReason && (
+                  <InfoRow icon={<CircleAlert className="w-4 h-4" />} label="Причина блокировки" value={ctx.master.blockedReason} />
+                )}
+                {ctx.master.blockedAt && (
+                  <InfoRow icon={<Clock className="w-4 h-4" />} label="Заблокирован" value={new Date(ctx.master.blockedAt).toLocaleString("ru-RU")} />
+                )}
+              </div>
             )}
-            <Input
-              value={masterId}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => setMasterId(e.target.value)}
-              placeholder="ID мастера вручную"
-            />
-            <Button
-              onClick={() => fire("reassign", { master: masterId })}
-              disabled={busy === "reassign" || !masterId.trim()}
-            >
-              Назначить мастера
-            </Button>
-          </>
-        )}
-
-        {subAction === "update_balance" && (
-          <>
-            <div className="text-sm text-muted-foreground">Введите новый баланс Avito в рублях.</div>
-            <Input
-              value={balance}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => setBalance(e.target.value)}
-              placeholder="Например: 5000"
-              type="number"
-            />
-            <Button
-              onClick={() => fire("update_balance", { balance: Number(balance) })}
-              disabled={busy === "update_balance" || !balance.trim()}
-            >
-              Сохранить баланс
-            </Button>
-          </>
-        )}
-
-        {subAction === "cancel_order" && (
-          <>
-            <div className="text-sm text-muted-foreground text-red-700">
-              Это действие отменит заказ. Введите слово <strong>ОТМЕНИТЬ</strong> для подтверждения.
+            <div className="border-t pt-3 space-y-3">
+              <div className="text-sm font-semibold">Написать мастеру</div>
+              <Textarea
+                value={messageText}
+                onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setMessageText(e.target.value)}
+                placeholder="Здравствуйте! По вашей блокировке..."
+                className="min-h-[80px] bg-white"
+              />
+              <div className="flex gap-2 flex-wrap">
+                <Button
+                  size="sm"
+                  onClick={() => fire("message_master", { message: messageText })}
+                  disabled={busy === "message_master" || !messageText.trim()}
+                >
+                  <MessageSquare className="w-4 h-4" /> Отправить
+                </Button>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => fire("manual_unblock")}
+                  disabled={busy === "manual_unblock"}
+                >
+                  Разблокировать вручную
+                </Button>
+              </div>
             </div>
-            <Input
-              value={confirmTyped}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => setConfirmTyped(e.target.value)}
-              placeholder="ОТМЕНИТЬ"
-            />
-            <Button
-              variant="destructive"
-              onClick={() => fire("cancel_order")}
-              disabled={busy === "cancel_order" || confirmTyped.trim().toUpperCase() !== "ОТМЕНИТЬ"}
-            >
-              Подтвердить отмену заказа
-            </Button>
-          </>
-        )}
+          </SectionBox>
+        );
 
-        {subAction === "return_to_pool" && (
-          <>
-            <div className="text-sm text-muted-foreground">Заказ будет возвращён в пул и снова станет доступен для назначения.</div>
-            <Button
-              onClick={() => fire("return_to_pool")}
-              disabled={busy === "return_to_pool"}
-            >
-              <RefreshCw className="w-4 h-4" /> Подтвердить возврат в пул
-            </Button>
-          </>
-        )}
-
-        {subAction === "manual_unblock" && (
-          <>
-            <div className="text-sm text-muted-foreground text-orange-700">
-              Мастер будет разблокирован вручную. Убедитесь, что проблема решена.
+      // ─── Низкий баланс Avito ─────────────────────────────────────
+      case "low_avito_balance":
+        return (
+          <SectionBox title="Ситуация: низкий баланс Avito">
+            <div className="flex items-center gap-4">
+              <div className="text-center p-4 rounded-xl bg-orange-50 border border-orange-200 min-w-[120px]">
+                <div className="text-xs text-muted-foreground mb-1">Текущий баланс</div>
+                <div className="text-2xl font-bold text-orange-700">
+                  {ctx.avitoBalance != null ? `${Number(ctx.avitoBalance).toLocaleString("ru-RU")} ₽` : "—"}
+                </div>
+              </div>
+              <div className="text-center p-4 rounded-xl bg-slate-50 border min-w-[120px]">
+                <div className="text-xs text-muted-foreground mb-1">Минимум</div>
+                <div className="text-2xl font-bold text-slate-600">1 000 ₽</div>
+              </div>
             </div>
-            <Button
-              variant="destructive"
-              onClick={() => fire("manual_unblock")}
-              disabled={busy === "manual_unblock"}
-            >
-              Подтвердить разблокировку
-            </Button>
-          </>
-        )}
-      </div>
-    );
-  };
+            <div className="border-t pt-3 space-y-2">
+              <div className="text-sm font-semibold">Обновить баланс вручную</div>
+              <div className="flex gap-2">
+                <Input
+                  type="number"
+                  value={balanceInput}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => setBalanceInput(e.target.value)}
+                  placeholder="Новый баланс (₽)"
+                  className="bg-white w-44"
+                />
+                <Button
+                  size="sm"
+                  onClick={() => fire("update_balance", { balance: Number(balanceInput) })}
+                  disabled={busy === "update_balance" || !balanceInput.trim()}
+                >
+                  Сохранить
+                </Button>
+              </div>
+            </div>
+          </SectionBox>
+        );
+
+      // ─── Обход / Конфликт ────────────────────────────────────────
+      case "possible_bypass":
+      case "conflict":
+        return (
+          <SectionBox title={item.type === "possible_bypass" ? "Ситуация: подозрение на обход" : "Ситуация: конфликт"}>
+            <div className="space-y-2">
+              {ctx.order && <InfoRow icon={<Package className="w-4 h-4" />} label="Заказ" value={`#${ctx.order.id}`} />}
+              {ctx.master && <InfoRow icon={<UserRoundPen className="w-4 h-4" />} label="Мастер" value={`${ctx.master.name} (#${ctx.master.id})`} />}
+              {ctx.master?.phone && (
+                <InfoRow icon={<Phone className="w-4 h-4" />} label="Телефон" value={
+                  <a href={`tel:${ctx.master.phone}`} className="text-blue-600 underline">{ctx.master.phone}</a>
+                } />
+              )}
+            </div>
+            <div className="border-t pt-3 space-y-3">
+              <div className="text-sm font-semibold">Написать мастеру</div>
+              <Textarea
+                value={messageText}
+                onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setMessageText(e.target.value)}
+                placeholder="Здравствуйте! По вашему заказу..."
+                className="min-h-[80px] bg-white"
+              />
+              <div className="flex gap-2 flex-wrap">
+                <Button
+                  size="sm"
+                  onClick={() => fire("message_master", { message: messageText })}
+                  disabled={busy === "message_master" || !messageText.trim()}
+                >
+                  <MessageSquare className="w-4 h-4" /> Написать
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => fire("manual_control")}
+                  disabled={busy === "manual_control"}
+                >
+                  Перевести в ручной контроль
+                </Button>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => fire("block_master")}
+                  disabled={busy === "block_master"}
+                >
+                  Заблокировать мастера
+                </Button>
+              </div>
+            </div>
+          </SectionBox>
+        );
+
+      // ─── Нет движения / прочее ───────────────────────────────────
+      default:
+        return (
+          <SectionBox title="Действия по задаче">
+            <div className="flex flex-wrap gap-2">
+              {(item.actions ?? []).map((a: any) => (
+                <Button
+                  key={a.key}
+                  size="sm"
+                  variant={a.style === "danger" ? "destructive" : a.style === "primary" ? "default" : "outline"}
+                  onClick={() => fire(a.key)}
+                  disabled={busy === a.key}
+                >
+                  {a.label}
+                </Button>
+              ))}
+            </div>
+          </SectionBox>
+        );
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[920px] w-[95vw] max-h-[85vh] rounded-[18px] bg-white shadow-xl p-0 overflow-hidden">
-        <div className={`absolute left-0 top-0 bottom-0 w-1.5 rounded-l-[18px] ${priorityColor}`} />
+      <DialogContent className="sm:max-w-[860px] w-[95vw] max-h-[85vh] rounded-[18px] bg-white shadow-2xl p-0 overflow-hidden">
+        {/* Цветная полоса приоритета */}
+        <div className={`absolute left-0 top-0 bottom-0 w-1.5 rounded-l-[18px] ${leftColor}`} />
 
         <div className="max-h-[85vh] overflow-y-auto">
-          <div className="p-6 pl-8 pr-8 space-y-5">
+          <div className="pl-7 pr-6 pt-6 pb-4 space-y-4">
 
             {/* Шапка */}
             <DialogHeader>
-              <div className="flex items-start justify-between gap-3">
-                <DialogTitle className="flex items-start gap-3">
-                  <div className={`mt-0.5 rounded-full p-2 ${badgeColor} shrink-0`}>
+              <DialogTitle asChild>
+                <div className="flex items-start gap-3">
+                  <div className={`mt-0.5 rounded-xl p-2.5 ${badgeColor} shrink-0`}>
                     {TYPE_ICON[item?.type ?? ""] ?? <AlertTriangle className="w-5 h-5" />}
                   </div>
-                  <div className="min-w-0">
-                    <div className="text-base font-semibold text-foreground">{item?.title ?? "Задача"}</div>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${badgeColor}`}>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-bold text-base text-foreground leading-snug pr-8">
+                      {item?.title ?? "Задача"}
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2 items-center">
+                      <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${badgeColor}`}>
                         {PRIORITY_RU[item?.priority ?? ""] ?? item?.priority}
                       </span>
-                      <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-700">
+                      <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">
                         {STATUS_RU[item?.status ?? ""] ?? item?.status}
                       </span>
+                      {item?.city && (
+                        <span className="text-xs text-muted-foreground flex items-center gap-1">
+                          <MapPin className="w-3 h-3" /> {item.city}
+                        </span>
+                      )}
                     </div>
+                    {item?.shortDescription && item.shortDescription !== item.title && (
+                      <div className="text-sm text-muted-foreground mt-1.5">{item.shortDescription}</div>
+                    )}
                   </div>
-                </DialogTitle>
-              </div>
-              {item?.shortDescription && (
-                <DialogDescription className="mt-2 text-sm">{item.shortDescription}</DialogDescription>
-              )}
+                </div>
+              </DialogTitle>
             </DialogHeader>
 
             {/* Полное описание */}
-            {item?.fullDescription && item.fullDescription !== item?.shortDescription && (
-              <div className="rounded-xl border bg-slate-50 p-4 text-sm text-foreground leading-relaxed">
+            {item?.fullDescription && item.fullDescription !== item.shortDescription && (
+              <div className="text-sm text-foreground bg-slate-50 rounded-xl border p-3 leading-relaxed">
                 {item.fullDescription}
               </div>
             )}
 
-            {/* Ключевые сведения */}
-            <div className="rounded-xl border bg-white p-4">
-              <div className="text-xs uppercase text-muted-foreground mb-3 font-medium">Сведения по задаче</div>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
-                {item?.orderId != null && (
-                  <div className="flex items-center gap-2">
-                    <Package className="w-4 h-4 text-muted-foreground shrink-0" />
-                    <span className="text-muted-foreground">Заказ:</span>
-                    <span className="font-medium">#{item.orderId}</span>
-                  </div>
-                )}
-                {item?.masterId != null && (
-                  <div className="flex items-center gap-2">
-                    <UserRoundPen className="w-4 h-4 text-muted-foreground shrink-0" />
-                    <span className="text-muted-foreground">Мастер:</span>
-                    <span className="font-medium">#{item.masterId}</span>
-                  </div>
-                )}
-                {item?.clientId != null && (
-                  <div className="flex items-center gap-2">
-                    <CircleDot className="w-4 h-4 text-muted-foreground shrink-0" />
-                    <span className="text-muted-foreground">Клиент:</span>
-                    <span className="font-medium">#{item.clientId}</span>
-                  </div>
-                )}
-                {item?.city && (
-                  <div className="flex items-center gap-2">
-                    <MapPin className="w-4 h-4 text-muted-foreground shrink-0" />
-                    <span className="text-muted-foreground">Город:</span>
-                    <span className="font-medium">{item.city}</span>
-                  </div>
-                )}
-                {item?.amountAtRisk != null && (
-                  <div className="flex items-center gap-2">
-                    <Banknote className="w-4 h-4 text-muted-foreground shrink-0" />
-                    <span className="text-muted-foreground">Под риском:</span>
-                    <span className="font-semibold text-red-700">{Number(item.amountAtRisk).toLocaleString("ru-RU")} ₽</span>
-                  </div>
-                )}
-                {item?.deadline && (
-                  <div className="flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-muted-foreground shrink-0" />
-                    <span className="text-muted-foreground">Дедлайн:</span>
-                    <span className="font-medium">{new Date(item.deadline).toLocaleString("ru-RU")}</span>
-                  </div>
-                )}
-                {lastUpdatedAt && (
-                  <div className="flex items-center gap-2 col-span-2 md:col-span-1">
-                    <RefreshCw className="w-4 h-4 text-muted-foreground shrink-0" />
-                    <span className="text-muted-foreground">Обновлено:</span>
-                    <span className="font-medium">{new Date(lastUpdatedAt).toLocaleString("ru-RU")}</span>
-                  </div>
-                )}
-              </div>
-            </div>
+            {/* Тип-специфичный виджет */}
+            {renderTypePanel()}
 
-            {/* Кнопки копирования ссылки */}
-            <div className="flex gap-2 flex-wrap">
-              <Button variant="outline" size="sm" onClick={async () => {
-                if (taskUrl) await navigator.clipboard.writeText(taskUrl).catch(() => {});
-                setToast("Ссылка скопирована");
-                setTimeout(() => setToast(null), 1500);
-              }}>
-                <Copy className="w-4 h-4" /> Скопировать ссылку
-              </Button>
-            </div>
-
-            {/* Панель действий из item.actions */}
-            {actions.length > 0 && (
-              <div className="rounded-xl border bg-white p-4">
-                <div className="text-sm font-semibold mb-3">Действия</div>
-                <div className="flex flex-wrap gap-2">
-                  {actions.map((a) => (
-                    <Button
-                      key={a.key}
-                      variant={a.style === "danger" ? "destructive" : a.style === "primary" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => handleActionClick(a.key)}
-                      disabled={busy === a.key}
-                    >
-                      {a.label}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Панель текущего суб-действия */}
-            {renderActionPanel()}
-
-            {/* Последние события */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <div className="text-sm font-semibold mb-2">Последние события</div>
-                <div className="max-h-44 overflow-y-auto space-y-2 rounded-xl border bg-slate-50 p-2">
-                  {timeline.length === 0 ? (
-                    <div className="text-sm text-muted-foreground p-2">Таймлайн пока пуст</div>
-                  ) : (
-                    timeline.map((t: any, idx: number) => (
-                      <div key={idx} className="rounded-lg border bg-white p-2 text-sm">
-                        <div className="font-medium">{t.title ?? t.event ?? "Событие"}</div>
-                        {t.at && <div className="text-xs text-muted-foreground mt-0.5">{new Date(t.at).toLocaleString("ru-RU")}</div>}
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              {/* Комментарий */}
-              <div>
-                <div className="text-sm font-semibold mb-2">Комментарий</div>
-                <Textarea
-                  value={comment}
-                  onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setComment(e.target.value)}
-                  placeholder="Добавьте комментарий к задаче"
-                  className="min-h-[100px]"
-                />
-              </div>
+            {/* Комментарий */}
+            <div>
+              <div className="text-sm font-semibold mb-1.5">Комментарий</div>
+              <Textarea
+                value={comment}
+                onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setComment(e.target.value)}
+                placeholder="Добавьте заметку..."
+                className="min-h-[72px] bg-white"
+              />
             </div>
           </div>
         </div>
 
         {/* Toast */}
         {toast && (
-          <div className={`px-6 pb-2 text-sm font-medium ${toast.includes("Ошибка") ? "text-red-700" : "text-green-700"}`}>
-            {toast}
+          <div className={`px-6 pb-2 text-sm font-medium ${toast.ok ? "text-green-700" : "text-red-600"}`}>
+            {toast.msg}
           </div>
         )}
 
         {/* Footer */}
-        <DialogFooter className="gap-2 flex-wrap px-6 pb-6 pt-0">
+        <DialogFooter className="gap-2 flex-wrap px-6 pb-5 pt-0">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             <X className="w-4 h-4" /> Закрыть
           </Button>
           <Button variant="secondary" onClick={() => fire("dismiss")} disabled={busy === "dismiss"}>
             Отложить
           </Button>
-          <Button onClick={() => fire("resolve")} disabled={busy === "resolve"}>
+          <Button onClick={() => fire("resolve")} disabled={busy === "resolve"} className="bg-violet-600 hover:bg-violet-700">
             <CheckCircle2 className="w-4 h-4" />
-            {busy === "resolve" ? "Завершаем..." : "Пометить выполненной"}
+            {busy === "resolve" ? "Завершаем..." : "Выполнено"}
           </Button>
         </DialogFooter>
       </DialogContent>
