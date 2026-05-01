@@ -249,7 +249,11 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
         : Number(orderRow?.proposedAmount ?? orderRow?.orderAmount ?? 0);
       const commSettings = await getCommissionSettings();
       const commission = amount > 0 ? calculateCommission(amount, commSettings) : 0;
-      console.log(`[complete_as_master] amount=${amount} (payload=${payloadAmount}, db proposed=${orderRow?.proposedAmount}, db order=${orderRow?.orderAmount}), commission=${commission}`);
+      // commissionMode: "no_debt" | "as_debt" | "as_paid" (default "as_paid" for backwards compat)
+      const rawMode = String(payload?.commissionMode ?? "as_paid").trim();
+      const commissionMode: "no_debt" | "as_debt" | "as_paid" =
+        rawMode === "no_debt" || rawMode === "as_debt" || rawMode === "as_paid" ? rawMode : "as_paid";
+      console.log(`[complete_as_master] amount=${amount} (payload=${payloadAmount}, db proposed=${orderRow?.proposedAmount}, db order=${orderRow?.orderAmount}), commission=${commission}, mode=${commissionMode}`);
       const now = new Date();
 
       await db.update(ordersTable).set({
@@ -260,45 +264,71 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
       } as any).where(eq(ordersTable.id, orderId));
       console.log(`[complete_as_master] order #${orderId} marked completed, amount=${amount}, commission=${commission}`);
 
+      // Determine commission accounting based on mode
+      // - no_debt: commission forced to 0, no transaction money flow, master debt unchanged
+      // - as_debt: commission = pending, master debt += commission (master must pay later)
+      // - as_paid: commission = paid (master already paid in cash/transfer), debt reduced
+      const effectiveCommission = commissionMode === "no_debt" ? 0 : commission;
+      const txStatus: "paid" | "pending" = commissionMode === "as_debt" ? "pending" : "paid";
+
       const [existingTx] = await db.select({ id: transactionsTable.id, paidAt: transactionsTable.paidAt }).from(transactionsTable).where(eq(transactionsTable.orderId, orderId)).limit(1);
       if (existingTx) {
         await db.update(transactionsTable).set({
           orderAmount: String(amount),
-          commission: String(commission),
-          paymentStatus: "paid",
-          paidAt: existingTx.paidAt ?? now,
+          commission: String(effectiveCommission),
+          paymentStatus: txStatus,
+          paidAt: txStatus === "paid" ? (existingTx.paidAt ?? now) : null,
         }).where(eq(transactionsTable.id, existingTx.id));
       } else {
         await db.insert(transactionsTable).values({
           orderId,
           masterId,
           orderAmount: String(amount),
-          commission: String(commission),
-          paymentStatus: "paid",
-          paidAt: now,
+          commission: String(effectiveCommission),
+          paymentStatus: txStatus,
+          paidAt: txStatus === "paid" ? now : null,
         });
       }
 
-      if (commission > 0) {
-        const prepaymentDeducted = Number(existingTx ? (await db.select({ pd: transactionsTable.prepaymentDeducted }).from(transactionsTable).where(eq(transactionsTable.orderId, orderId)).limit(1))[0]?.pd ?? 0 : 0);
-        const netPayable = Math.max(0, commission - prepaymentDeducted);
-        if (netPayable > 0) {
+      if (effectiveCommission > 0) {
+        if (commissionMode === "as_debt") {
+          // Master owes us this commission — increase debt
           await db.update(mastersTable).set({
-            debt: sql`GREATEST(${mastersTable.debt}::numeric - ${netPayable}, 0)`,
+            debt: sql`COALESCE(${mastersTable.debt}::numeric, 0) + ${effectiveCommission}`,
           }).where(eq(mastersTable.id, masterId));
+          console.log(`[complete_as_master] master #${masterId} debt increased by ${effectiveCommission}`);
+        } else if (commissionMode === "as_paid") {
+          // Master already paid — reduce debt by net amount (after prepayment offset)
+          const prepaymentDeducted = Number(existingTx ? (await db.select({ pd: transactionsTable.prepaymentDeducted }).from(transactionsTable).where(eq(transactionsTable.orderId, orderId)).limit(1))[0]?.pd ?? 0 : 0);
+          const netPayable = Math.max(0, effectiveCommission - prepaymentDeducted);
+          if (netPayable > 0) {
+            await db.update(mastersTable).set({
+              debt: sql`GREATEST(${mastersTable.debt}::numeric - ${netPayable}, 0)`,
+            }).where(eq(mastersTable.id, masterId));
+            console.log(`[complete_as_master] master #${masterId} debt decreased by ${netPayable}`);
+          }
         }
       }
 
       await recordOrderCompleted(masterId).catch(() => {});
 
-      const commFmt = commission > 0 ? `${Math.round(commission).toLocaleString("ru-RU")} ₽` : "0 ₽";
-      const notifyText = `✅ Заказ #${orderId} отмечен как выполненный оператором. Комиссия ${commFmt} засчитана как оплаченная. Спасибо за работу!`;
+      const commFmt = effectiveCommission > 0 ? `${Math.round(effectiveCommission).toLocaleString("ru-RU")} ₽` : "0 ₽";
+      const notifyText = commissionMode === "as_debt"
+        ? `✅ Заказ #${orderId} отмечен как выполненный оператором. К оплате комиссия ${commFmt} — она добавлена к вашему долгу. Пожалуйста, погасите задолженность.`
+        : commissionMode === "no_debt"
+        ? `✅ Заказ #${orderId} отмечен как выполненный оператором. Комиссия по этому заказу не начисляется. Спасибо за работу!`
+        : `✅ Заказ #${orderId} отмечен как выполненный оператором. Комиссия ${commFmt} засчитана как оплаченная. Спасибо за работу!`;
       const [master] = await db.select({ id: mastersTable.id, maxChatId: mastersTable.maxChatId }).from(mastersTable).where(eq(mastersTable.id, masterId)).limit(1);
       // Send to BOTH channels: Max (if connected) AND PWA push
       if (master?.maxChatId) {
         await sendMaxMessage(master.maxChatId, notifyText).catch((e) => console.error("[complete_as_master] max send failed:", e));
       }
-      sendPushToMaster(masterId, { type: "new_message", title: "Заказ выполнен", body: `Заказ #${orderId} завершён. Комиссия ${commFmt} засчитана.` }).catch((e) => console.error("[complete_as_master] push failed:", e));
+      const pushBody = commissionMode === "as_debt"
+        ? `Заказ #${orderId} завершён. К оплате ${commFmt} (добавлено к долгу).`
+        : commissionMode === "no_debt"
+        ? `Заказ #${orderId} завершён. Комиссия не начисляется.`
+        : `Заказ #${orderId} завершён. Комиссия ${commFmt} засчитана.`;
+      sendPushToMaster(masterId, { type: "new_message", title: "Заказ выполнен", body: pushBody }).catch((e) => console.error("[complete_as_master] push failed:", e));
       const chatId = master?.maxChatId ? `max_${master.maxChatId}` : `pwa_${masterId}`;
       await db.insert(masterMessagesTable).values({ masterId, telegramChatId: chatId, text: notifyText, fromMaster: false, senderName: operatorName, isRead: true });
       // Archive linked chat case so it doesn't reappear in dashboards

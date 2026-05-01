@@ -207,6 +207,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
   const [cancelAsMasterPending, setCancelAsMasterPending] = useState(false);
   const [completeAsMasterPending, setCompleteAsMasterPending] = useState(false);
   const [completeAmount, setCompleteAmount] = useState<string>("");
+  const [commissionMode, setCommissionMode] = useState<"no_debt" | "as_debt" | "as_paid">("as_paid");
   const { user: authUser } = useAuth();
   const isAdmin = authUser?.role === "admin";
 
@@ -219,7 +220,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
   useEffect(() => {
     if (!open) {
       setMessageText(""); setSelectedMasterId(null); setMasterSearch("");
-      setBalanceInput(""); setConfirmInput(""); setToast(null); setAssignedMasterConfirm(null); setCancelAsMasterPending(false); setCompleteAsMasterPending(false); setCompleteAmount("");
+      setBalanceInput(""); setConfirmInput(""); setToast(null); setAssignedMasterConfirm(null); setCancelAsMasterPending(false); setCompleteAsMasterPending(false); setCompleteAmount(""); setCommissionMode("as_paid");
     }
   }, [open]);
 
@@ -660,7 +661,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                       <CheckCircle2 className="w-5 h-5 text-green-700 shrink-0 mt-0.5" />
                       <div className="text-sm text-green-900">
                         <div className="font-bold mb-1">Подтвердите завершение заказа</div>
-                        <div>Заказ <strong>#{ctx.order?.id}</strong> будет отмечен как выполненный. Укажите итоговую сумму заказа — от неё будет рассчитана комиссия и засчитана мастеру {ctx.master?.name ? <strong>{ctx.master.name}</strong> : null} как оплаченная. В чат мастера придёт уведомление.</div>
+                        <div>Заказ <strong>#{ctx.order?.id}</strong> будет отмечен как выполненный для мастера {ctx.master?.name ? <strong>{ctx.master.name}</strong> : null}. В чат мастера придёт уведомление.</div>
                       </div>
                     </div>
                     <div>
@@ -676,20 +677,79 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                         className="bg-white"
                         disabled={busy === "complete_as_master"}
                       />
-                      <div className="text-xs text-green-700 mt-1">
-                        {completeAmount && Number(completeAmount) > 0
-                          ? `Будет отмечена сумма ${Math.round(Number(completeAmount)).toLocaleString("ru-RU")} ₽. Комиссия рассчитается автоматически.`
-                          : "Если оставить пустым — заказ завершится без расчёта комиссии."}
+                    </div>
+                    <div>
+                      <label className="text-xs text-green-900 font-semibold block mb-1">Что делать с комиссией?</label>
+                      <div className="grid gap-1.5">
+                        <label className={`flex items-start gap-2 rounded-lg border p-2 cursor-pointer ${commissionMode === "as_paid" ? "border-green-500 bg-green-100" : "border-green-200 bg-white"}`}>
+                          <input
+                            type="radio"
+                            name="commissionMode"
+                            value="as_paid"
+                            checked={commissionMode === "as_paid"}
+                            onChange={() => setCommissionMode("as_paid")}
+                            disabled={busy === "complete_as_master"}
+                            className="mt-0.5"
+                          />
+                          <div className="text-xs">
+                            <div className="font-semibold text-green-900">Засчитать как оплаченную</div>
+                            <div className="text-green-800">Мастер уже передал комиссию (наличными/переводом). В аналитике появится доход, долг мастера уменьшится.</div>
+                          </div>
+                        </label>
+                        <label className={`flex items-start gap-2 rounded-lg border p-2 cursor-pointer ${commissionMode === "as_debt" ? "border-orange-500 bg-orange-100" : "border-green-200 bg-white"}`}>
+                          <input
+                            type="radio"
+                            name="commissionMode"
+                            value="as_debt"
+                            checked={commissionMode === "as_debt"}
+                            onChange={() => setCommissionMode("as_debt")}
+                            disabled={busy === "complete_as_master"}
+                            className="mt-0.5"
+                          />
+                          <div className="text-xs">
+                            <div className="font-semibold text-orange-900">Начислить как долг мастера</div>
+                            <div className="text-orange-800">Мастер ещё не платил — комиссия добавится к его долгу, статус «ожидает оплаты». Мастер получит уведомление о задолженности.</div>
+                          </div>
+                        </label>
+                        <label className={`flex items-start gap-2 rounded-lg border p-2 cursor-pointer ${commissionMode === "no_debt" ? "border-slate-500 bg-slate-100" : "border-green-200 bg-white"}`}>
+                          <input
+                            type="radio"
+                            name="commissionMode"
+                            value="no_debt"
+                            checked={commissionMode === "no_debt"}
+                            onChange={() => setCommissionMode("no_debt")}
+                            disabled={busy === "complete_as_master"}
+                            className="mt-0.5"
+                          />
+                          <div className="text-xs">
+                            <div className="font-semibold text-slate-900">Закрыть без комиссии</div>
+                            <div className="text-slate-700">Спорная ситуация / мастер не делал смету. Комиссия = 0, долг мастера не меняется, в аналитике 0 ₽.</div>
+                          </div>
+                        </label>
                       </div>
                     </div>
+                    {(() => {
+                      const n = Number(completeAmount);
+                      const validAmount = Number.isFinite(n) && n > 0;
+                      let preview = "";
+                      if (!validAmount) {
+                        preview = "Сумма не указана — заказ закроется с комиссией 0 ₽.";
+                      } else {
+                        const calc = n <= 50000 ? 5000 : Math.round(n * 0.15);
+                        if (commissionMode === "no_debt") preview = `Сумма заказа: ${Math.round(n).toLocaleString("ru-RU")} ₽. Комиссия не начисляется.`;
+                        else if (commissionMode === "as_debt") preview = `Сумма ${Math.round(n).toLocaleString("ru-RU")} ₽ → комиссия ≈ ${calc.toLocaleString("ru-RU")} ₽ будет добавлена к долгу мастера.`;
+                        else preview = `Сумма ${Math.round(n).toLocaleString("ru-RU")} ₽ → комиссия ≈ ${calc.toLocaleString("ru-RU")} ₽ засчитается как оплаченная.`;
+                      }
+                      return <div className="text-xs text-green-700">{preview}</div>;
+                    })()}
                     <div className="flex gap-2">
                       <Button
                         size="sm"
                         className="bg-green-600 hover:bg-green-700 text-white"
                         disabled={busy === "complete_as_master"}
                         onClick={async () => {
-                          console.log("[btn:complete_as_master] clicked, id=", id, "amount=", completeAmount);
-                          const payload: Record<string, unknown> = {};
+                          console.log("[btn:complete_as_master] clicked, id=", id, "amount=", completeAmount, "mode=", commissionMode);
+                          const payload: Record<string, unknown> = { commissionMode };
                           const n = Number(completeAmount);
                           if (Number.isFinite(n) && n > 0) payload.orderAmount = n;
                           await fire("complete_as_master", payload);
