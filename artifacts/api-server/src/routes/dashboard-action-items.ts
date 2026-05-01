@@ -443,6 +443,66 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
     }
   }
 
+  if (action === "partial_payment" && item.masterId != null) {
+    const masterId = Number(item.masterId);
+    const orderId = item.orderId != null ? Number(item.orderId) : null;
+    const orderAmount = Number(payload?.orderAmount ?? 0);
+    const paidAmount = Number(payload?.paidAmount ?? 0);
+    if (!Number.isFinite(orderAmount) || orderAmount <= 0) throw Object.assign(new Error("Укажите полную сумму сметы"), { status: 400 });
+    if (!Number.isFinite(paidAmount) || paidAmount <= 0) throw Object.assign(new Error("Укажите оплаченную сумму"), { status: 400 });
+    const commSettings = await getCommissionSettings();
+    const totalCommission = calculateCommission(orderAmount, commSettings);
+    const paidFraction = Math.min(paidAmount / orderAmount, 1);
+    const paidCommission = Math.round(totalCommission * paidFraction);
+    const remainingCommission = Math.max(0, totalCommission - paidCommission);
+    const now = new Date();
+
+    // Reduce master debt by the paid commission portion
+    if (paidCommission > 0) {
+      await db.update(mastersTable).set({
+        debt: sql`GREATEST(${mastersTable.debt}::numeric - ${paidCommission}, 0)`,
+      }).where(eq(mastersTable.id, masterId));
+    }
+
+    // Record partial payment in transactions if order exists
+    if (orderId != null) {
+      const [existingTx] = await db.select({ id: transactionsTable.id }).from(transactionsTable).where(eq(transactionsTable.orderId, orderId)).limit(1);
+      if (existingTx) {
+        await db.update(transactionsTable).set({
+          orderAmount: String(orderAmount),
+          commission: String(totalCommission),
+          paymentStatus: remainingCommission <= 0 ? "paid" : "pending",
+          paidAt: remainingCommission <= 0 ? now : null,
+        }).where(eq(transactionsTable.id, existingTx.id));
+      } else {
+        await db.insert(transactionsTable).values({
+          orderId,
+          masterId,
+          orderAmount: String(orderAmount),
+          commission: String(totalCommission),
+          paymentStatus: remainingCommission <= 0 ? "paid" : "pending",
+          paidAt: remainingCommission <= 0 ? now : null,
+        });
+      }
+    }
+
+    const [master] = await db.select({ id: mastersTable.id, maxChatId: mastersTable.maxChatId }).from(mastersTable).where(eq(mastersTable.id, masterId)).limit(1);
+    const notifyText = remainingCommission > 0
+      ? `💰 Частичная оплата комиссии по заказу${orderId ? ` #${orderId}` : ""} принята: ${paidCommission.toLocaleString("ru-RU")} ₽ из ${totalCommission.toLocaleString("ru-RU")} ₽. Остаток к оплате: ${remainingCommission.toLocaleString("ru-RU")} ₽.`
+      : `✅ Комиссия по заказу${orderId ? ` #${orderId}` : ""} полностью оплачена: ${paidCommission.toLocaleString("ru-RU")} ₽. Спасибо!`;
+    if (master?.maxChatId) {
+      await sendMaxMessage(master.maxChatId, notifyText).catch((e: any) => console.error("[partial_payment] max send failed:", e));
+    }
+    sendPushToMaster(masterId, {
+      type: "new_message",
+      title: "Частичная оплата принята",
+      body: `Принято ${paidCommission.toLocaleString("ru-RU")} ₽${remainingCommission > 0 ? `, остаток ${remainingCommission.toLocaleString("ru-RU")} ₽` : ". Оплачено полностью."}`,
+    }).catch((e: any) => console.error("[partial_payment] push failed:", e));
+    const chatId = master?.maxChatId ? `max_${master.maxChatId}` : `pwa_${masterId}`;
+    await db.insert(masterMessagesTable).values({ masterId, telegramChatId: chatId, text: notifyText, fromMaster: false, senderName: operatorName, isRead: true });
+    console.log(`[partial_payment] master #${masterId} paid ${paidCommission} of ${totalCommission}, remaining=${remainingCommission}`);
+  }
+
   if (action === "reassign" && item.orderId != null && payload.masterId != null) {
     const [targetMaster] = await db.select({ id: mastersTable.id, status: mastersTable.status }).from(mastersTable).where(and(eq(mastersTable.id, Number(payload.masterId)), isNull(mastersTable.deletedAt))).limit(1);
     if (targetMaster) {
@@ -515,7 +575,7 @@ router.post("/action-items/:id/action", ops, async (req: any, res: any) => {
     item = items.find((i) => (Number.isFinite(orderId) && i.orderId != null && Number(i.orderId) === orderId) || (Number.isFinite(masterId) && i.masterId != null && Number(i.masterId) === masterId));
   }
   if (!item) return res.status(404).json({ error: "Не найдено" });
-  if (!["message_master", "call_client", "reassign", "cancel_order", "cancel_as_master", "complete_as_master", "return_to_pool", "resolve", "dismiss", "update_balance", "manual_unblock", "call_master", "resend", "block_master", "manual_control", "open_issue_order"].includes(action)) return res.status(400).json({ error: "Недопустимое действие" });
+  if (!["message_master", "call_client", "reassign", "cancel_order", "cancel_as_master", "complete_as_master", "partial_payment", "return_to_pool", "resolve", "dismiss", "update_balance", "manual_unblock", "call_master", "resend", "block_master", "manual_control", "open_issue_order"].includes(action)) return res.status(400).json({ error: "Недопустимое действие" });
   const operatorName = (req as any).user?.name ?? "Оператор";
   const operatorRole = (req as any).user?.role ?? "operator";
   let result: any;
