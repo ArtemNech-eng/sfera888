@@ -17,6 +17,11 @@ async function fetchDetail(id: string) {
   return r.json();
 }
 
+function fmtAge(hours: number): string {
+  if (hours >= 48) return `${Math.round(hours / 24)} дней`;
+  return `${Math.round(hours)} ч`;
+}
+
 const PRIORITY_RU: Record<string, string> = {
   critical: "Критично",
   high: "Высокий",
@@ -158,11 +163,15 @@ export function ActionItemModal({ id, open, onOpenChange }: {
               {ctx.order && (
                 <>
                   <InfoRow icon={<Package className="w-4 h-4" />} label="Заказ" value={`#${ctx.order.id}`} />
-                  {ctx.order.hoursOld != null && <InfoRow icon={<Clock className="w-4 h-4" />} label="Без сметы" value={`${ctx.order.hoursOld} ч`} />}
-                  {ctx.order.clientName && <InfoRow icon={<UserRoundPen className="w-4 h-4" />} label="Клиент" value={ctx.order.clientName} />}
-                  {ctx.order.clientPhone && (
+                  {ctx.order.hoursOld != null && <InfoRow icon={<Clock className="w-4 h-4" />} label="Без сметы" value={fmtAge(ctx.order.hoursOld)} />}
+                  {(ctx.order.clientName || ctx.client?.clientName) && (
+                    <InfoRow icon={<UserRoundPen className="w-4 h-4" />} label="Клиент" value={ctx.order.clientName ?? ctx.client?.clientName} />
+                  )}
+                  {(ctx.order.clientPhone || ctx.client?.clientPhone) && (
                     <InfoRow icon={<Phone className="w-4 h-4" />} label="Телефон клиента" value={
-                      <a href={`tel:${ctx.order.clientPhone}`} className="text-blue-600 underline">{ctx.order.clientPhone}</a>
+                      <a href={`tel:${ctx.order.clientPhone ?? ctx.client?.clientPhone}`} className="text-blue-600 underline font-semibold">
+                        {ctx.order.clientPhone ?? ctx.client?.clientPhone}
+                      </a>
                     } />
                   )}
                 </>
@@ -239,7 +248,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
               {ctx.order && (
                 <>
                   <InfoRow icon={<Package className="w-4 h-4" />} label="Заказ" value={`#${ctx.order.id}`} />
-                  {ctx.order.hoursOld != null && <InfoRow icon={<Clock className="w-4 h-4" />} label="Ожидаем оплату" value={`${ctx.order.hoursOld} ч`} />}
+                  {ctx.order.hoursOld != null && <InfoRow icon={<Clock className="w-4 h-4" />} label="Ожидаем оплату" value={fmtAge(ctx.order.hoursOld)} />}
                   {ctx.order.proposedAmount != null && (
                     <InfoRow icon={<Banknote className="w-4 h-4" />} label="Сумма сметы" value={`${Number(ctx.order.proposedAmount).toLocaleString("ru-RU")} ₽`} />
                   )}
@@ -321,8 +330,18 @@ export function ActionItemModal({ id, open, onOpenChange }: {
               {ctx.order && (
                 <>
                   <InfoRow icon={<Package className="w-4 h-4" />} label="Заказ" value={`#${ctx.order.id}`} />
-                  {ctx.order.hoursOld != null && <InfoRow icon={<Clock className="w-4 h-4" />} label="Ждём мастера" value={`${ctx.order.hoursOld} ч`} />}
+                  {ctx.order.hoursOld != null && <InfoRow icon={<Clock className="w-4 h-4" />} label="Ждём мастера" value={fmtAge(ctx.order.hoursOld)} />}
                   {ctx.order.city && <InfoRow icon={<MapPin className="w-4 h-4" />} label="Город" value={ctx.order.city} />}
+                  {(ctx.order.clientName || ctx.client?.clientName) && (
+                    <InfoRow icon={<UserRoundPen className="w-4 h-4" />} label="Клиент" value={ctx.order.clientName ?? ctx.client?.clientName} />
+                  )}
+                  {(ctx.order.clientPhone || ctx.client?.clientPhone) && (
+                    <InfoRow icon={<Phone className="w-4 h-4" />} label="Телефон клиента" value={
+                      <a href={`tel:${ctx.order.clientPhone ?? ctx.client?.clientPhone}`} className="text-blue-600 underline font-semibold">
+                        {ctx.order.clientPhone ?? ctx.client?.clientPhone}
+                      </a>
+                    } />
+                  )}
                 </>
               )}
             </div>
@@ -471,10 +490,25 @@ export function ActionItemModal({ id, open, onOpenChange }: {
         return (
           <SectionBox title={item.type === "possible_bypass" ? "Ситуация: подозрение на обход" : "Ситуация: конфликт"}>
             <div className="space-y-2">
-              {ctx.order && <InfoRow icon={<Package className="w-4 h-4" />} label="Заказ" value={`#${ctx.order.id}`} />}
+              {ctx.order && (
+                <>
+                  <InfoRow icon={<Package className="w-4 h-4" />} label="Заказ" value={`#${ctx.order.id}`} />
+                  {ctx.order.hoursOld != null && <InfoRow icon={<Clock className="w-4 h-4" />} label="Возраст заказа" value={fmtAge(ctx.order.hoursOld)} />}
+                  {(ctx.order.clientName || ctx.client?.clientName) && (
+                    <InfoRow icon={<UserRoundPen className="w-4 h-4" />} label="Клиент" value={ctx.order.clientName ?? ctx.client?.clientName} />
+                  )}
+                  {(ctx.order.clientPhone || ctx.client?.clientPhone) && (
+                    <InfoRow icon={<Phone className="w-4 h-4" />} label="Телефон клиента" value={
+                      <a href={`tel:${ctx.order.clientPhone ?? ctx.client?.clientPhone}`} className="text-blue-600 underline font-semibold">
+                        {ctx.order.clientPhone ?? ctx.client?.clientPhone}
+                      </a>
+                    } />
+                  )}
+                </>
+              )}
               {ctx.master && <InfoRow icon={<UserRoundPen className="w-4 h-4" />} label="Мастер" value={`${ctx.master.name} (#${ctx.master.id})`} />}
               {ctx.master?.phone && (
-                <InfoRow icon={<Phone className="w-4 h-4" />} label="Телефон" value={
+                <InfoRow icon={<Phone className="w-4 h-4" />} label="Телефон мастера" value={
                   <a href={`tel:${ctx.master.phone}`} className="text-blue-600 underline">{ctx.master.phone}</a>
                 } />
               )}
