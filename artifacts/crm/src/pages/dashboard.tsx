@@ -49,6 +49,12 @@ function DashboardPage() {
   });
 
   useEffect(() => {
+    const onChanged = () => refetch();
+    window.addEventListener("dashboard-action-items:changed", onChanged);
+    return () => window.removeEventListener("dashboard-action-items:changed", onChanged);
+  }, [refetch]);
+
+  useEffect(() => {
     const interval = setInterval(() => setSecondsAgo(s => s + 1), 1000);
     return () => clearInterval(interval);
   }, [data]);

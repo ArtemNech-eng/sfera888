@@ -60,6 +60,12 @@ export function ActionItemsBlock() {
     refetchInterval: 15000,
   });
 
+  useEffect(() => {
+    const onChanged = () => refetch();
+    window.addEventListener("dashboard-action-items:changed", onChanged);
+    return () => window.removeEventListener("dashboard-action-items:changed", onChanged);
+  }, [refetch]);
+
   const items: Item[] = data?.items ?? [];
   const summary = data?.summary ?? { critical: 0, high: 0, medium: 0, low: 0, doneToday: 0 };
 
