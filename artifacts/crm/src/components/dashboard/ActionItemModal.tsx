@@ -972,6 +972,57 @@ export function ActionItemModal({ id, open, onOpenChange }: {
             {/* Тип-специфичный виджет */}
             {renderTypePanel()}
 
+            {/* Частичная оплата — универсальный блок для всех типов задач */}
+            {item?.type !== "no_payment" && !!ctx.order?.id && (
+              <SectionBox title="Частичная оплата комиссии">
+                <>
+                  <div className="text-xs text-muted-foreground">Заказ не закрывается — только фиксируется оплата части комиссии. Мастеру придёт уведомление.</div>
+                  <PaymentProgress total={ctx.order?.proposedAmount ?? ctx.order?.orderAmount} paid={ctx.receipt?.prepaymentAmount} />
+                  <div className="flex gap-2 flex-wrap items-end">
+                    <div>
+                      <label className="text-xs text-muted-foreground block mb-1">Полная сумма сметы, ₽</label>
+                      <Input type="number" inputMode="decimal" min={0} step={100} value={partialOrderAmount} onChange={(e: ChangeEvent<HTMLInputElement>) => setPartialOrderAmount(e.target.value)} placeholder="Например: 10000" className="bg-white w-40" disabled={busy === "partial_payment"} />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground block mb-1">Оплачено мастером, ₽</label>
+                      <Input type="number" inputMode="decimal" min={0} step={100} value={partialPaidAmount} onChange={(e: ChangeEvent<HTMLInputElement>) => setPartialPaidAmount(e.target.value)} placeholder="Например: 3000" className="bg-white w-40" disabled={busy === "partial_payment"} />
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-emerald-400 text-emerald-700 hover:bg-emerald-50"
+                      disabled={busy === "partial_payment" || !partialOrderAmount || !partialPaidAmount}
+                      onClick={async () => {
+                        const n = Number(partialOrderAmount);
+                        const p = Number(partialPaidAmount);
+                        if (!Number.isFinite(n) || n <= 0) { showToast("Укажите полную сумму сметы", false); return; }
+                        if (!Number.isFinite(p) || p <= 0) { showToast("Укажите оплаченную сумму", false); return; }
+                        await fire("partial_payment", { orderAmount: n, paidAmount: p });
+                        setPartialOrderAmount("");
+                        setPartialPaidAmount("");
+                      }}
+                    >
+                      <Banknote className="w-4 h-4" /> Зафиксировать оплату
+                    </Button>
+                  </div>
+                  {(() => {
+                    const n = Number(partialOrderAmount);
+                    const p = Number(partialPaidAmount);
+                    if (!Number.isFinite(n) || n <= 0 || !Number.isFinite(p) || p <= 0) return null;
+                    const totalComm = n <= 50000 ? 5000 : Math.round(n * 0.15);
+                    const fraction = Math.min(p / n, 1);
+                    const paidComm = Math.round(totalComm * fraction);
+                    const remaining = Math.max(0, totalComm - paidComm);
+                    return (
+                      <div className="text-xs text-emerald-700 bg-emerald-50 rounded-lg px-3 py-2 border border-emerald-200">
+                        Комиссия с {n.toLocaleString("ru-RU")} ₽ ≈ {totalComm.toLocaleString("ru-RU")} ₽ · Оплачено {paidComm.toLocaleString("ru-RU")} ₽{remaining > 0 ? ` · Остаток ${remaining.toLocaleString("ru-RU")} ₽` : " · Полностью оплачено ✅"}
+                      </div>
+                    );
+                  })()}
+                </>
+              </SectionBox>
+            )}
+
             {/* Комментарий */}
             <div>
               <div className="text-sm font-semibold mb-1.5">Комментарий</div>
