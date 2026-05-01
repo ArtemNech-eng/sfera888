@@ -4,6 +4,7 @@ import { desc, isNull, eq, and } from "drizzle-orm";
 import { sendMaxMessage } from "../maxBot.js";
 import { sendPushToMaster } from "../lib/push.js";
 import { requireRole } from "../middlewares/requireAuth.js";
+import { recordOrderCancelled } from "../lib/masterReputation.js";
 
 const NEXT_ACTION_RU: Record<string, string> = {
   call_master: "Позвонить мастеру",
@@ -11,6 +12,7 @@ const NEXT_ACTION_RU: Record<string, string> = {
   call_client: "Позвонить клиенту",
   reassign: "Переназначить мастера",
   cancel_order: "Отменить заказ",
+  cancel_as_master: "Отменить как мастер (влияет на рейтинг)",
   return_to_pool: "Вернуть в пул",
   resend: "Повторно разослать",
   resolve: "Пометить выполненной",
@@ -62,6 +64,7 @@ const actionToRoute = {
   call_client: "/leads",
   reassign: "/orders",
   cancel_order: "/orders",
+  cancel_as_master: "/orders",
   return_to_pool: "/orders",
   resolve: "/tasks",
   dismiss: "/tasks",
@@ -113,7 +116,7 @@ function actionSet(type: TaskType) {
   if (type === "no_master_response") return [{ key: "message_master", label: "Написать мастеру", style: "primary" as const }, { key: "resend", label: "Повторно разослать", style: "secondary" as const }, { key: "reassign", label: "Назначить вручную", style: "secondary" as const }, { key: "cancel_order", label: "Отменить заказ", style: "danger" as const }];
   if (type === "blocked_master") return [{ key: "message_master", label: "Написать мастеру", style: "primary" as const }, { key: "manual_unblock", label: "Разблокировать вручную", style: "danger" as const }, { key: "open_issue_order", label: "Открыть проблемный заказ", style: "secondary" as const }, { key: "resolve", label: "Пометить как проверено", style: "secondary" as const }];
   if (type === "low_avito_balance") return [{ key: "update_balance", label: "Обновить баланс вручную", style: "primary" as const }, { key: "resolve", label: "Пометить как решено", style: "secondary" as const }];
-  if (type === "possible_bypass" || type === "conflict") return [{ key: "message_master", label: "Написать мастеру", style: "primary" as const }, { key: "block_master", label: "Заблокировать мастера", style: "danger" as const }, { key: "manual_control", label: "Перевести заказ в ручной контроль", style: "secondary" as const }, { key: "resolve", label: "Пометить как проверено", style: "secondary" as const }];
+  if (type === "possible_bypass" || type === "conflict") return [{ key: "message_master", label: "Написать мастеру", style: "primary" as const }, { key: "cancel_as_master", label: "Отменить заказ (вина мастера)", style: "danger" as const }, { key: "block_master", label: "Заблокировать мастера", style: "danger" as const }, { key: "manual_control", label: "Перевести заказ в ручной контроль", style: "secondary" as const }, { key: "resolve", label: "Пометить как проверено", style: "secondary" as const }];
   if (type === "no_manager_id") return [{ key: "reassign", label: "Назначить менеджера", style: "primary" as const }, { key: "resolve", label: "Пометить выполненной", style: "secondary" as const }];
   return [{ key: "resolve", label: "Пометить выполненной", style: "secondary" as const }, { key: "dismiss", label: "Отложить", style: "ghost" as const }];
 }
@@ -222,6 +225,44 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
     await db.update(ordersTable)
       .set({ status: "cancelled", cancelReason: "crm_manual", updatedAt: new Date() } as any)
       .where(eq(ordersTable.id, Number(item.orderId)));
+  }
+
+  if (action === "cancel_as_master" && item.orderId != null && item.masterId != null) {
+    const orderId = Number(item.orderId);
+    const masterId = Number(item.masterId);
+
+    await db.update(ordersTable)
+      .set({ status: "cancelled", cancelReason: "master_cancel_bypass", updatedAt: new Date() } as any)
+      .where(eq(ordersTable.id, orderId));
+
+    await recordOrderCancelled(masterId, orderId).catch(() => {});
+
+    const notifyText = `⚠️ Заказ #${orderId} отменён оператором (причина: обход платформы). Отмена засчитана вам. Свяжитесь с нами для уточнения деталей.`;
+    const [master] = await db
+      .select({ id: mastersTable.id, maxChatId: mastersTable.maxChatId })
+      .from(mastersTable)
+      .where(eq(mastersTable.id, masterId))
+      .limit(1);
+
+    if (master?.maxChatId) {
+      await sendMaxMessage(master.maxChatId, notifyText).catch(() => {});
+    } else {
+      sendPushToMaster(masterId, {
+        type: "new_message",
+        title: "Заказ отменён",
+        body: `Заказ #${orderId} отменён. Обратитесь к оператору.`,
+      }).catch(() => {});
+    }
+
+    const chatId = master?.maxChatId ? `max_${master.maxChatId}` : `pwa_${masterId}`;
+    await db.insert(masterMessagesTable).values({
+      masterId,
+      telegramChatId: chatId,
+      text: notifyText,
+      fromMaster: false,
+      senderName: operatorName,
+      isRead: true,
+    });
   }
 
   if (action === "return_to_pool" && item.orderId != null) {
@@ -340,7 +381,7 @@ router.post("/action-items/:id/action", ops, async (req: any, res: any) => {
   const items = await buildItems();
   const item = items.find((i) => i.id === req.params.id);
   if (!item) return res.status(404).json({ error: "Не найдено" });
-  if (!["message_master", "call_client", "reassign", "cancel_order", "return_to_pool", "resolve", "dismiss", "update_balance", "manual_unblock", "call_master", "resend", "block_master", "manual_control", "open_issue_order"].includes(action)) return res.status(400).json({ error: "Недопустимое действие" });
+  if (!["message_master", "call_client", "reassign", "cancel_order", "cancel_as_master", "return_to_pool", "resolve", "dismiss", "update_balance", "manual_unblock", "call_master", "resend", "block_master", "manual_control", "open_issue_order"].includes(action)) return res.status(400).json({ error: "Недопустимое действие" });
   const operatorName = (req as any).user?.name ?? "Оператор";
   const result = await orchestrateDashboardAction(action, item, payload, operatorName);
 

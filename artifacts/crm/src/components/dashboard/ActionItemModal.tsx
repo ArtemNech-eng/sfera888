@@ -201,6 +201,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
   const [confirmInput, setConfirmInput] = useState("");
   const [comment, setComment] = useState("");
   const [assignedMasterConfirm, setAssignedMasterConfirm] = useState<{ id: number; name: string; city: string | null } | null>(null);
+  const [cancelAsMasterPending, setCancelAsMasterPending] = useState(false);
 
   const { data, refetch } = useQuery({
     queryKey: ["action-item", id],
@@ -211,7 +212,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
   useEffect(() => {
     if (!open) {
       setMessageText(""); setSelectedMasterId(null); setMasterSearch("");
-      setBalanceInput(""); setConfirmInput(""); setToast(null); setAssignedMasterConfirm(null);
+      setBalanceInput(""); setConfirmInput(""); setToast(null); setAssignedMasterConfirm(null); setCancelAsMasterPending(false);
     }
   }, [open]);
 
@@ -607,6 +608,46 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                   Заблокировать мастера
                 </Button>
               </div>
+            </div>
+            <div className="border-t pt-3 space-y-2">
+              {!cancelAsMasterPending ? (
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  className="w-full"
+                  onClick={() => setCancelAsMasterPending(true)}
+                  disabled={!ctx.order?.id || !ctx.master?.id}
+                >
+                  Отменить заказ (вина мастера)
+                </Button>
+              ) : (
+                <div className="rounded-xl border-2 border-red-300 bg-red-50 p-4 space-y-3">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                    <div className="text-sm text-red-800">
+                      <div className="font-bold mb-1">Подтвердите отмену заказа</div>
+                      <div>Заказ <strong>#{ctx.order?.id}</strong> будет отменён с причиной <strong>«вина мастера»</strong>. Это влияет на рейтинг мастера {ctx.master?.name ? <strong>{ctx.master.name}</strong> : null} и видно в чате CRM. Действие необратимо.</div>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      disabled={busy === "cancel_as_master"}
+                      onClick={() => { fire("cancel_as_master"); setCancelAsMasterPending(false); }}
+                    >
+                      Да, отменить (вина мастера)
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setCancelAsMasterPending(false)}
+                    >
+                      Отмена
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           </SectionBox>
         );
