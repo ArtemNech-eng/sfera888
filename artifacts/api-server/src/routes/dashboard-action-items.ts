@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, ordersTable, mastersTable, leadsTable, receiptsTable, avitoSettingsTable, chatCasesTable, systemTasksTable } from "@workspace/db";
-import { desc, isNull } from "drizzle-orm";
+import { desc, isNull, eq } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 
 const router = Router();
@@ -121,6 +121,40 @@ async function buildItems(): Promise<Item[]> {
 
 async function orchestrateDashboardAction(action: string, item: Item, payload: any) {
   const route = actionToRoute[action as keyof typeof actionToRoute] ?? "/tasks";
+
+  if (action === "update_balance" && payload.balance != null) {
+    const rows = await db.select().from(avitoSettingsTable).limit(1);
+    if (rows[0]) {
+      await db.update(avitoSettingsTable)
+        .set({ advanceBalance: Number(payload.balance) } as any)
+        .where(eq(avitoSettingsTable.id, (rows[0] as any).id));
+    }
+  }
+
+  if (action === "cancel_order" && item.orderId != null) {
+    await db.update(ordersTable)
+      .set({ status: "cancelled", cancelReason: "crm_manual", updatedAt: new Date() } as any)
+      .where(eq(ordersTable.id, Number(item.orderId)));
+  }
+
+  if (action === "return_to_pool" && item.orderId != null) {
+    await db.update(ordersTable)
+      .set({ masterId: null, status: "waiting_master", updatedAt: new Date() } as any)
+      .where(eq(ordersTable.id, Number(item.orderId)));
+  }
+
+  if (action === "manual_unblock" && item.masterId != null) {
+    await db.update(mastersTable)
+      .set({ status: "active", blockedAt: null, blockedReason: null } as any)
+      .where(eq(mastersTable.id, Number(item.masterId)));
+  }
+
+  if (action === "block_master" && item.masterId != null) {
+    await db.update(mastersTable)
+      .set({ status: "blocked", blockedAt: new Date(), blockedReason: "crm_manual" } as any)
+      .where(eq(mastersTable.id, Number(item.masterId)));
+  }
+
   return { routedTo: route, applied: true, action, payload, itemId: item.id };
 }
 

@@ -76,7 +76,12 @@ export function ActionItemsBlock() {
 
   const filtered = useMemo(() => {
     const ranked = items
-      .filter((i) => scope === "all" || i.entityType === scope || (scope === "finance" && i.type.includes("payment")))
+      .filter((i) => {
+        if (scope === "all") return true;
+        if (scope === "critical") return i.priority === "critical";
+        if (scope === "finance") return i.entityType === "finance" || i.type.includes("payment");
+        return i.entityType === scope;
+      })
       .filter((i) => !myOnly || !currentUserId || String(i.assigneeId ?? "") === String(currentUserId))
       .filter((i) => search.trim() === "" || `${i.title} ${i.shortDescription} ${i.orderId ?? ""} ${i.masterId ?? ""} ${i.entityId ?? ""}`.toLowerCase().includes(search.toLowerCase()))
       .sort((a, b) => {
@@ -141,7 +146,7 @@ export function ActionItemsBlock() {
       ) : (
         <div className="space-y-2">
           {filtered.slice(0, 6).map((item: Item) => (
-            <ActionItemCard item={item} onOpen={setOpenId} />
+            <ActionItemCard key={item.id} item={item} onOpen={setOpenId} />
           ))}
           {filtered.length > 6 && (
             <div className="pt-2 flex justify-center">
