@@ -74,12 +74,19 @@ export function ActionItemsBlock() {
     if (id) setOpenId(id);
   }, []);
 
+  const [showAll, setShowAll] = useState(false);
+
+  useEffect(() => { setShowAll(false); }, [scope, search, period, myOnly]);
+
   const filtered = useMemo(() => {
     const ranked = items
       .filter((i) => {
         if (scope === "all") return true;
         if (scope === "critical") return i.priority === "critical";
-        if (scope === "finance") return i.entityType === "finance" || i.type.includes("payment");
+        if (scope === "orders") return i.entityType === "order";
+        if (scope === "masters") return i.entityType === "master";
+        if (scope === "finance") return i.entityType === "finance" || i.type.includes("payment") || i.type === "low_avito_balance";
+        if (scope === "system") return i.entityType === "system";
         return i.entityType === scope;
       })
       .filter((i) => !myOnly || !currentUserId || String(i.assigneeId ?? "") === String(currentUserId))
@@ -145,12 +152,14 @@ export function ActionItemsBlock() {
         </div>
       ) : (
         <div className="space-y-2">
-          {filtered.slice(0, 6).map((item: Item) => (
+          {(showAll ? filtered : filtered.slice(0, 6)).map((item: Item) => (
             <ActionItemCard key={item.id} item={item} onOpen={setOpenId} />
           ))}
-          {filtered.length > 6 && (
+          {filtered.length > 6 && !showAll && (
             <div className="pt-2 flex justify-center">
-              <Button variant="outline" size="sm" onClick={() => setScope("all")}>Показать все</Button>
+              <Button variant="outline" size="sm" onClick={() => setShowAll(true)}>
+                Показать все {filtered.length} задач
+              </Button>
             </div>
           )}
         </div>
