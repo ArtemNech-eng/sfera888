@@ -79,6 +79,57 @@ function SectionBox({ title, children }: { title: string; children: ReactNode })
   );
 }
 
+const MESSAGE_TEMPLATES: Record<string, { label: string; text: (orderId?: number | string) => string }[]> = {
+  no_estimate: [
+    { label: "Пришлите смету", text: (id) => `Добрый день! По заказу${id ? ` #${id}` : ""} — пришлите смету клиенту до конца дня. Спасибо!` },
+    { label: "Срочно", text: (id) => `По заказу${id ? ` #${id}` : ""} смета нужна срочно! Пришлите в течение 2 часов.` },
+    { label: "Риск передачи", text: (id) => `Заказ${id ? ` #${id}` : ""}: если смета не будет отправлена сегодня, заказ перейдёт другому мастеру.` },
+  ],
+  no_payment: [
+    { label: "Уточните статус", text: (id) => `Добрый день! Клиент ещё не оплатил предоплату по заказу${id ? ` #${id}` : ""}. Уточните статус у клиента.` },
+    { label: "Подтвердите в приложении", text: (id) => `По заказу${id ? ` #${id}` : ""}: клиент должен подтвердить оплату через приложение. Напомните ему.` },
+    { label: "Риск отмены", text: (id) => `Заказ${id ? ` #${id}` : ""}: без оплаты до конца дня будем вынуждены его отменить.` },
+  ],
+  no_master_response: [
+    { label: "Подтвердите заказ", text: (id) => `Добрый день! Подтвердите принятие заказа${id ? ` #${id}` : ""} через приложение.` },
+    { label: "Срок истекает", text: (id) => `Заказ${id ? ` #${id}` : ""} ожидает вашего отклика. Через 2 часа передадим другому мастеру.` },
+    { label: "Нет ответа", text: () => "Добрый день! Вы не отвечаете на звонки. Свяжитесь с нами срочно." },
+  ],
+  blocked_master: [
+    { label: "О блокировке", text: () => "Добрый день! Ваш аккаунт временно заблокирован. Свяжитесь с нами для уточнения причин." },
+    { label: "Нужны документы", text: () => "Для снятия блокировки пришлите фото паспорта в ответ на это сообщение." },
+    { label: "Разблокирован", text: () => "Ваш аккаунт разблокирован! Можете снова принимать заказы." },
+  ],
+  possible_bypass: [
+    { label: "Предупреждение", text: (id) => `По заказу${id ? ` #${id}` : ""}: работайте только через нашу платформу. Обход системы ведёт к немедленной блокировке.` },
+    { label: "Объяснитесь", text: (id) => `Заказ${id ? ` #${id}` : ""}: зафиксированы признаки работы вне платформы. Объясните ситуацию.` },
+  ],
+  conflict: [
+    { label: "Разберём вместе", text: (id) => `По заказу${id ? ` #${id}` : ""} есть разногласия с клиентом. Свяжитесь с нами для урегулирования.` },
+    { label: "Возврат средств", text: (id) => `Заказ${id ? ` #${id}` : ""}: клиент требует возврат. Срочно свяжитесь с нами.` },
+  ],
+};
+
+function TemplateChips({ type, orderId, onSelect }: { type: string; orderId?: number | string; onSelect: (text: string) => void }) {
+  const templates = MESSAGE_TEMPLATES[type] ?? [];
+  if (templates.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      <span className="text-xs text-muted-foreground self-center">Шаблоны:</span>
+      {templates.map((t) => (
+        <button
+          key={t.label}
+          type="button"
+          onClick={() => onSelect(t.text(orderId))}
+          className="text-xs px-2.5 py-1 rounded-full border border-slate-200 bg-white hover:bg-violet-50 hover:border-violet-300 hover:text-violet-700 text-slate-600 transition"
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function ActionItemModal({ id, open, onOpenChange }: {
   id: string | null;
   open: boolean;
@@ -199,6 +250,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
 
             <div className="border-t pt-3 space-y-3">
               <div className="text-sm font-semibold">Написать мастеру</div>
+              <TemplateChips type="no_estimate" orderId={ctx.order?.id} onSelect={setMessageText} />
               <Textarea
                 value={messageText}
                 onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setMessageText(e.target.value)}
@@ -305,6 +357,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
             </div>
             <div className="border-t pt-3 space-y-3">
               <div className="text-sm font-semibold">Напомнить мастеру о подтверждении</div>
+              <TemplateChips type="no_payment" orderId={ctx.order?.id} onSelect={setMessageText} />
               <Textarea
                 value={messageText}
                 onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setMessageText(e.target.value)}
@@ -440,6 +493,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
             )}
             <div className="border-t pt-3 space-y-3">
               <div className="text-sm font-semibold">Написать мастеру</div>
+              <TemplateChips type="blocked_master" orderId={undefined} onSelect={setMessageText} />
               <Textarea
                 value={messageText}
                 onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setMessageText(e.target.value)}
@@ -536,6 +590,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
             </div>
             <div className="border-t pt-3 space-y-3">
               <div className="text-sm font-semibold">Написать мастеру</div>
+              <TemplateChips type={data?.type ?? "possible_bypass"} orderId={ctx.order?.id} onSelect={setMessageText} />
               <Textarea
                 value={messageText}
                 onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setMessageText(e.target.value)}

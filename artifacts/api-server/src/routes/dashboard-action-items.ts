@@ -172,7 +172,7 @@ async function buildItems(): Promise<Item[]> {
   return items;
 }
 
-async function orchestrateDashboardAction(action: string, item: Item, payload: any) {
+async function orchestrateDashboardAction(action: string, item: Item, payload: any, operatorName = "Оператор") {
   const route = actionToRoute[action as keyof typeof actionToRoute] ?? "/tasks";
 
   if (action === "update_balance" && payload.balance != null) {
@@ -233,7 +233,7 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
         telegramChatId: chatId,
         text,
         fromMaster: false,
-        senderName: "Оператор",
+        senderName: operatorName,
         isRead: true,
       });
     }
@@ -307,7 +307,8 @@ router.post("/action-items/:id/action", ops, async (req: any, res: any) => {
   const item = items.find((i) => i.id === req.params.id);
   if (!item) return res.status(404).json({ error: "Не найдено" });
   if (!["message_master", "call_client", "reassign", "cancel_order", "return_to_pool", "resolve", "dismiss", "update_balance", "manual_unblock", "call_master", "resend", "block_master", "manual_control", "open_issue_order"].includes(action)) return res.status(400).json({ error: "Недопустимое действие" });
-  const result = await orchestrateDashboardAction(action, item, payload);
+  const operatorName = (req as any).user?.name ?? "Оператор";
+  const result = await orchestrateDashboardAction(action, item, payload, operatorName);
 
   const actionCtx: Record<string, any> = {};
   if (action === "reassign" && payload.masterId != null && item.orderId != null) {
