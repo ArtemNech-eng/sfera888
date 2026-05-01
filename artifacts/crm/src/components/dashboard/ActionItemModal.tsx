@@ -71,11 +71,30 @@ function InfoRow({ icon, label, value }: { icon: ReactNode; label: string; value
   );
 }
 
-function SectionBox({ title, children }: { title: string; children: ReactNode }) {
+function SectionBox({ title, children }: { title: string; children?: ReactNode }) {
   return (
     <div className="rounded-xl border bg-slate-50 p-4 space-y-3">
       <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</div>
       {children}
+    </div>
+  );
+}
+
+function PaymentProgress({ total, paid }: { total?: number | null; paid?: number | null }) {
+  const totalNum = Number(total ?? 0);
+  const paidNum = Number(paid ?? 0);
+  if (!Number.isFinite(totalNum) || totalNum <= 0) return null;
+  const clampedPaid = Math.max(0, Math.min(paidNum, totalNum));
+  const percent = Math.round((clampedPaid / totalNum) * 100);
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-muted-foreground">Частичная оплата</span>
+        <span className="font-semibold">{clampedPaid.toLocaleString("ru-RU")} ₽ / {totalNum.toLocaleString("ru-RU")} ₽ ({percent}%)</span>
+      </div>
+      <div className="h-2.5 rounded-full bg-slate-200 overflow-hidden">
+        <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${percent}%` }} />
+      </div>
     </div>
   );
 }
@@ -405,6 +424,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
             {ctx.order?.proposedAmount != null && (
               <InfoRow icon={<Banknote className="w-4 h-4" />} label="Сумма сметы" value={`${Number(ctx.order.proposedAmount).toLocaleString("ru-RU")} ₽`} />
             )}
+            <PaymentProgress total={ctx.order?.proposedAmount} paid={ctx.receipt?.prepaymentAmount} />
             {ctx.receipt && (
               <div className="space-y-2">
                 {ctx.receipt.prepaymentAmount && (
