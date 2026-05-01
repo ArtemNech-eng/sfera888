@@ -206,6 +206,15 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
       .where(eq(mastersTable.id, Number(item.masterId)));
   }
 
+  if (action === "reassign" && item.orderId != null && payload.masterId != null) {
+    const [targetMaster] = await db.select({ id: mastersTable.id, status: mastersTable.status }).from(mastersTable).where(and(eq(mastersTable.id, Number(payload.masterId)), isNull(mastersTable.deletedAt))).limit(1);
+    if (targetMaster) {
+      await db.update(ordersTable)
+        .set({ masterId: Number(payload.masterId), status: "in_progress", updatedAt: new Date() })
+        .where(eq(ordersTable.id, Number(item.orderId)));
+    }
+  }
+
   return { routedTo: route, applied: true, action, payload, itemId: item.id };
 }
 
@@ -266,7 +275,21 @@ router.post("/action-items/:id/action", ops, async (req: any, res: any) => {
   if (!item) return res.status(404).json({ error: "Не найдено" });
   if (!["message_master", "call_client", "reassign", "cancel_order", "return_to_pool", "resolve", "dismiss", "update_balance", "manual_unblock", "call_master", "resend", "block_master", "manual_control", "open_issue_order"].includes(action)) return res.status(400).json({ error: "Недопустимое действие" });
   const result = await orchestrateDashboardAction(action, item, payload);
-  res.json({ ...item, status: action === "dismiss" ? "dismissed" : action === "resolve" ? "done" : "in_progress", orchestration: result, timeline: [], context: {}, related: {}, notes: [] });
+
+  const actionCtx: Record<string, any> = {};
+  if (action === "reassign" && payload.masterId != null && item.orderId != null) {
+    const [updatedOrder] = await db.select({ id: ordersTable.id, masterId: ordersTable.masterId, status: ordersTable.status, city: ordersTable.city }).from(ordersTable).where(eq(ordersTable.id, Number(item.orderId))).limit(1);
+    if (!updatedOrder || updatedOrder.masterId !== Number(payload.masterId)) {
+      return res.status(500).json({ error: "Назначение не прошло — заказ не найден или мастер не был обновлён" });
+    }
+    actionCtx.order = { id: updatedOrder.id, status: updatedOrder.status, masterId: updatedOrder.masterId, city: updatedOrder.city };
+    const [newMaster] = await db.select({ id: mastersTable.id, alias: mastersTable.alias, phone: mastersTable.phone, city: mastersTable.city, status: mastersTable.status }).from(mastersTable).where(eq(mastersTable.id, updatedOrder.masterId!)).limit(1);
+    if (newMaster) {
+      actionCtx.assignedMaster = { id: newMaster.id, name: newMaster.alias ?? `Мастер #${newMaster.id}`, phone: newMaster.phone ?? null, city: newMaster.city, status: newMaster.status };
+    }
+  }
+
+  res.json({ ...item, status: action === "dismiss" ? "dismissed" : action === "resolve" ? "done" : "in_progress", orchestration: result, timeline: [], context: actionCtx, related: {}, notes: [] });
 });
 
 export default router;

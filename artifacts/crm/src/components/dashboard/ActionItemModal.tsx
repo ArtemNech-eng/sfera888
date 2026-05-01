@@ -92,6 +92,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
   const [balanceInput, setBalanceInput] = useState("");
   const [confirmInput, setConfirmInput] = useState("");
   const [comment, setComment] = useState("");
+  const [assignedMasterConfirm, setAssignedMasterConfirm] = useState<{ id: number; name: string; city: string | null } | null>(null);
 
   const { data, refetch } = useQuery({
     queryKey: ["action-item", id],
@@ -102,7 +103,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
   useEffect(() => {
     if (!open) {
       setMessageText(""); setSelectedMasterId(null); setMasterSearch("");
-      setBalanceInput(""); setConfirmInput(""); setToast(null);
+      setBalanceInput(""); setConfirmInput(""); setToast(null); setAssignedMasterConfirm(null);
     }
   }, [open]);
 
@@ -135,9 +136,17 @@ export function ActionItemModal({ id, open, onOpenChange }: {
         body: JSON.stringify({ action, payload: { comment, ...payload } }),
       });
       if (!r.ok) throw new Error("err");
-      await refetch();
+      const resultJson = await r.json().catch(() => null);
+      const assignedMaster = resultJson?.context?.assignedMaster;
+      const confirmedOrderMasterId = resultJson?.context?.order?.masterId;
+      const isReassignConfirmed = assignedMaster && confirmedOrderMasterId === assignedMaster.id;
+      if (isReassignConfirmed) setAssignedMasterConfirm(assignedMaster);
+      const successMsg = isReassignConfirmed
+        ? `Назначен: ${assignedMaster.name}${assignedMaster.city ? ` (${assignedMaster.city})` : ""}`
+        : "Действие выполнено";
+      try { await refetch(); } catch { /* item may be gone after status change, that's ok */ }
       window.dispatchEvent(new CustomEvent("dashboard-action-items:changed"));
-      showToast("Действие выполнено");
+      showToast(successMsg);
     } catch {
       showToast("Ошибка при выполнении", false);
     } finally {
@@ -236,6 +245,12 @@ export function ActionItemModal({ id, open, onOpenChange }: {
               >
                 Назначить выбранного мастера
               </Button>
+              {assignedMasterConfirm && (
+                <div className="mt-2 flex items-center gap-2 rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-800">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-green-600" />
+                  <span>Назначен: <strong>{assignedMasterConfirm.name}</strong>{assignedMasterConfirm.city ? ` · ${assignedMasterConfirm.city}` : ""}</span>
+                </div>
+              )}
             </div>
           </SectionBox>
         );
@@ -392,6 +407,12 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                   Отменить заказ
                 </Button>
               </div>
+              {assignedMasterConfirm && (
+                <div className="mt-2 flex items-center gap-2 rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-800">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-green-600" />
+                  <span>Назначен: <strong>{assignedMasterConfirm.name}</strong>{assignedMasterConfirm.city ? ` · ${assignedMasterConfirm.city}` : ""}</span>
+                </div>
+              )}
             </div>
           </SectionBox>
         );
