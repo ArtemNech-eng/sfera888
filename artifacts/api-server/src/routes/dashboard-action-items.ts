@@ -160,6 +160,10 @@ async function buildItems(): Promise<Item[]> {
 
     const cOrderId = (c as any).orderId ?? null;
     const linkedOrder = cOrderId ? orderMap.get(Number(cOrderId)) : null;
+
+    // If the linked order is no longer in the active pool (completed / cancelled / deleted) — skip
+    if (cOrderId && !linkedOrder) continue;
+
     const hasEstimate = linkedOrder && Number(linkedOrder.proposedAmount ?? 0) > 0;
     const hasPaid = linkedOrder && Number(linkedOrder.orderAmount ?? 0) > 0;
     const orderCancelled = linkedOrder && ["cancelled", "completed", "done"].includes(String(linkedOrder.status ?? ""));
@@ -457,8 +461,9 @@ router.post("/action-items/:id/action", ops, async (req: any, res: any) => {
   try {
     result = await orchestrateDashboardAction(action, item, payload, operatorName, operatorRole);
   } catch (e: any) {
+    console.error(`[dashboard-action] action=${action} itemId=${item.id} error:`, e);
     if (e?.status === 403) return res.status(403).json({ error: e.message });
-    throw e;
+    return res.status(500).json({ error: e?.message ?? "Внутренняя ошибка сервера" });
   }
 
   const actionCtx: Record<string, any> = {};
