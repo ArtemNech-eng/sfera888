@@ -16,6 +16,12 @@ const NEXT_ACTION_RU: Record<string, string> = {
   manual_control: "Перевести в ручной контроль",
   review: "Проверить",
   wait: "Ожидать",
+  ask_master_status: "Уточнить статус у мастера",
+  remind_master_estimate: "Напомнить мастеру о смете",
+  remind_master_payment: "Напомнить мастеру об оплате",
+  review_for_cancel: "Проверить — возможна отмена",
+  review_for_reassign: "Проверить — возможно переназначение",
+  no_action: "Ожидать",
 };
 
 const router = Router();
@@ -123,6 +129,7 @@ async function buildItems(): Promise<Item[]> {
     db.select().from(systemTasksTable).orderBy(desc(systemTasksTable.createdAt)).limit(50),
   ]);
   const leadMap = new Map(leads.map((l: any) => [l.id, l]));
+  const orderMap = new Map(orders.map((o: any) => [o.id, o]));
   for (const o of orders) {
     const ageH = (now.getTime() - new Date(o.createdAt).getTime()) / 3600000;
     const lead = leadMap.get(o.leadId!) as any;
@@ -137,7 +144,27 @@ async function buildItems(): Promise<Item[]> {
   for (const m of masters) { const status = String(m.status ?? "").toLowerCase(); if (status.includes("blocked") || status.includes("fomo_blocked")) items.push({ id: `blocked_master-${m.id}`, type: "blocked_master", priority: "critical", title: `Мастер ${m.alias} заблокирован`, shortDescription: `${m.city ?? ""}`.trim(), fullDescription: `Мастер в блокировке / FOMO_BLOCKED и требует проверки.`, createdAt: new Date(m.createdAt).toISOString(), updatedAt: new Date(m.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "master", entityId: m.id, orderId: null, masterId: m.id, clientId: null, city: m.city ?? null, amountAtRisk: null, actions: actionSet("blocked_master") }); }
   const balance = avitoRows[0] as any;
   if (balance && Number(balance.manualBalance ?? 0) < 1000) items.push({ id: "low_avito_balance-1", type: "low_avito_balance", priority: "high", title: "Баланс Avito ниже нормы", shortDescription: `Текущий баланс: ${Number(balance.manualBalance ?? 0).toLocaleString("ru-RU")} ₽`, fullDescription: "Баланс Avito ниже рекомендуемого порога.", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "finance", entityId: balance.id ?? null, orderId: null, masterId: null, clientId: null, city: null, amountAtRisk: null, actions: actionSet("low_avito_balance") });
-  for (const c of cases) { const risk = String((c as any).riskLevel ?? (c as any).risk ?? ""); if (risk === "red" || risk === "yellow") { const rawNext = String((c as any).nextAction ?? ""); const nextRu = NEXT_ACTION_RU[rawNext] ?? (rawNext || "Требует внимания"); items.push({ id: `case-${(c as any).id}`, type: risk === "red" ? "possible_bypass" : "conflict", priority: risk === "red" ? "critical" : "high", title: String((c as any).summary ?? (c as any).title ?? "Кейс"), shortDescription: nextRu, fullDescription: String((c as any).summary ?? ""), createdAt: new Date((c as any).updatedAt ?? now).toISOString(), updatedAt: new Date((c as any).updatedAt ?? now).toISOString(), lastActionBy: (c as any).lastActionBy ?? null, deadline: null, status: "open", entityType: "system", entityId: (c as any).id, orderId: (c as any).orderId ?? null, masterId: (c as any).masterId ?? null, clientId: null, city: null, amountAtRisk: null, actions: actionSet(risk === "red" ? "possible_bypass" : "conflict") }); } }
+  for (const c of cases) {
+    let risk = String((c as any).riskLevel ?? (c as any).risk ?? "");
+    if (risk !== "red" && risk !== "yellow") continue;
+
+    const cOrderId = (c as any).orderId ?? null;
+    const linkedOrder = cOrderId ? orderMap.get(Number(cOrderId)) : null;
+    const hasEstimate = linkedOrder && Number(linkedOrder.proposedAmount ?? 0) > 0;
+    const hasPaid = linkedOrder && Number(linkedOrder.orderAmount ?? 0) > 0;
+    const orderCancelled = linkedOrder && ["cancelled", "completed", "done"].includes(String(linkedOrder.status ?? ""));
+
+    // If the order is already paid or cancelled — the bypass flag is stale, skip entirely
+    if (hasPaid || orderCancelled) continue;
+
+    // If estimate was already sent — downgrade "red" (possible_bypass) to "yellow" (conflict)
+    if (risk === "red" && hasEstimate) risk = "yellow";
+
+    const rawNext = String((c as any).nextAction ?? "");
+    const nextRu = NEXT_ACTION_RU[rawNext] ?? (rawNext || "Требует внимания");
+    const type = risk === "red" ? "possible_bypass" : "conflict";
+    items.push({ id: `case-${(c as any).id}`, type, priority: risk === "red" ? "critical" : "high", title: String((c as any).summary ?? (c as any).title ?? "Кейс"), shortDescription: nextRu, fullDescription: String((c as any).summary ?? ""), createdAt: new Date((c as any).updatedAt ?? now).toISOString(), updatedAt: new Date((c as any).updatedAt ?? now).toISOString(), lastActionBy: (c as any).lastActionBy ?? null, deadline: null, status: "open", entityType: "system", entityId: (c as any).id, orderId: cOrderId, masterId: (c as any).masterId ?? null, clientId: null, city: null, amountAtRisk: null, actions: actionSet(type) });
+  }
   for (const t of manualTasks) if ((t as any).status !== "done" && (t as any).status !== "dismissed") items.push({ id: `manual-${(t as any).id}`, type: "custom_manual", priority: "low", title: String((t as any).title ?? "Ручная задача"), shortDescription: String((t as any).description ?? ""), fullDescription: String((t as any).description ?? ""), createdAt: new Date((t as any).createdAt ?? now).toISOString(), updatedAt: new Date((t as any).updatedAt ?? t.createdAt ?? now).toISOString(), lastActionBy: (t as any).lastActionBy ?? null, deadline: (t as any).dueAt ? new Date((t as any).dueAt).toISOString() : null, status: (t as any).status ?? "open", entityType: "system", entityId: (t as any).id, orderId: (t as any).relatedOrderId ?? null, masterId: (t as any).relatedMasterId ?? null, clientId: null, city: null, amountAtRisk: null, actions: actionSet("custom_manual") });
   items.sort((a,b)=>({critical:0,high:1,medium:2,low:3}[a.priority]-({critical:0,high:1,medium:2,low:3}[b.priority])) || ((a.deadline?new Date(a.deadline).getTime():Number.MAX_SAFE_INTEGER)-(b.deadline?new Date(b.deadline).getTime():Number.MAX_SAFE_INTEGER)) || (new Date(b.createdAt).getTime()-new Date(a.createdAt).getTime()));
   return items;
