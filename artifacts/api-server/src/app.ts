@@ -28,6 +28,8 @@ function getAllowedOrigins(): string[] {
 
   const defaults = [
     "https://crm-production-6fdc.up.railway.app",
+    "https://sfera-master.ru",
+    "https://www.sfera-master.ru",
   ];
 
   return Array.from(new Set([...raw, ...defaults]));
