@@ -26,11 +26,12 @@ export function ActionItemModal({ id, open, onOpenChange }: { id: string | null;
   const [masterId, setMasterId] = useState("");
   const [balance, setBalance] = useState("");
   const [confirmTyped, setConfirmTyped] = useState("");
+  const [confirmDanger, setConfirmDanger] = useState(false);
   const { data, refetch } = useQuery({ queryKey: ["action-item", id], queryFn: () => fetchDetail(id!), enabled: !!id && open });
 
   useEffect(() => { if (id) setComment(localStorage.getItem(`action-item-comment-${id}`) ?? ""); }, [id]);
   useEffect(() => { if (id) localStorage.setItem(`action-item-comment-${id}`, comment); }, [id, comment]);
-  useEffect(() => { if (!open) { setSubAction(null); setToast(null); setMessage(""); setMasterQuery(""); setMasterId(""); setBalance(""); setConfirmTyped(""); } }, [open]);
+  useEffect(() => { if (!open) { setSubAction(null); setToast(null); setMessage(""); setMasterQuery(""); setMasterId(""); setBalance(""); setConfirmTyped(""); setConfirmDanger(false); } }, [open]);
 
   const item = data;
   const timeline = useMemo(() => item?.timeline ?? [], [item]);
@@ -45,6 +46,7 @@ export function ActionItemModal({ id, open, onOpenChange }: { id: string | null;
 
   const fire = async (action: string, payload: Record<string, unknown> = {}) => {
     if (!id) return;
+    if (["cancel_order", "return_to_pool", "manual_unblock", "reassign"].includes(action) && !confirmDanger) return;
     setBusy(action);
     await fetch(`/api/dashboard/action-items/${id}/action`, {
       method: "POST",
