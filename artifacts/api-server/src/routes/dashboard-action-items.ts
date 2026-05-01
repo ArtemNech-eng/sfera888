@@ -132,6 +132,7 @@ async function buildItems(): Promise<Item[]> {
   ]);
   const leadMap = new Map(leads.map((l: any) => [l.id, l]));
   const orderMap = new Map(orders.map((o: any) => [o.id, o]));
+  const masterMap = new Map(masters.map((m: any) => [m.id, m]));
   for (const o of orders) {
     const ageH = (now.getTime() - new Date(o.createdAt).getTime()) / 3600000;
     const lead = leadMap.get(o.leadId!) as any;
@@ -165,7 +166,39 @@ async function buildItems(): Promise<Item[]> {
     const rawNext = String((c as any).nextAction ?? "");
     const nextRu = NEXT_ACTION_RU[rawNext] ?? (rawNext || "Требует внимания");
     const type = risk === "red" ? "possible_bypass" : "conflict";
-    items.push({ id: `case-${(c as any).id}`, type, priority: risk === "red" ? "critical" : "high", title: String((c as any).summary ?? (c as any).title ?? "Кейс"), shortDescription: nextRu, fullDescription: String((c as any).summary ?? ""), createdAt: new Date((c as any).updatedAt ?? now).toISOString(), updatedAt: new Date((c as any).updatedAt ?? now).toISOString(), lastActionBy: (c as any).lastActionBy ?? null, deadline: null, status: "open", entityType: "system", entityId: (c as any).id, orderId: cOrderId, masterId: (c as any).masterId ?? null, clientId: null, city: null, amountAtRisk: null, actions: actionSet(type) });
+
+    // Build fresh human-readable title + description (never use stale summary from DB)
+    const hEst = Number((c as any).hoursWithoutEstimate ?? 0);
+    const hPay = Number((c as any).hoursWithoutPayment ?? 0);
+    const hCont = Number((c as any).hoursWithoutContact ?? 0);
+    const stage = String((c as any).currentStage ?? "");
+    const cMaster = masterMap.get(Number((c as any).masterId));
+    const masterLabel = cMaster?.alias ?? `Мастер #${(c as any).masterId}`;
+    const cLead = linkedOrder ? leadMap.get((linkedOrder as any).leadId) as any : null;
+    const clientName = (cLead?.clientName ?? null) as string | null;
+    const cCity = String((c as any).city || linkedOrder?.city || "");
+
+    let freshTitle: string;
+    let freshDesc: string;
+    if (hEst > 24) {
+      freshTitle = `${masterLabel} — смета не отправлена ${fmtAge(hEst)}`;
+      freshDesc = `Заказ #${cOrderId}: мастер ${masterLabel} не отправил смету уже ${fmtAge(hEst)}.`;
+    } else if (hPay > 24) {
+      freshTitle = `${masterLabel} — клиент не оплатил ${fmtAge(hPay)}`;
+      freshDesc = `Заказ #${cOrderId}: смета отправлена, клиент не платит уже ${fmtAge(hPay)}.`;
+    } else if (hCont > 12 || stage === "waiting_update") {
+      freshTitle = `${masterLabel} — нет связи ${fmtAge(hCont)}`;
+      freshDesc = `Заказ #${cOrderId}: мастер ${masterLabel} не выходит на связь ${fmtAge(hCont)}.`;
+    } else if (type === "possible_bypass") {
+      freshTitle = `${masterLabel} — подозрение на обход платформы`;
+      freshDesc = `Заказ #${cOrderId}: зафиксированы признаки работы в обход платформы.`;
+    } else {
+      freshTitle = `${masterLabel} — конфликт по заказу #${cOrderId}`;
+      freshDesc = `Заказ #${cOrderId}: требует внимания оператора.`;
+    }
+    const shortDesc = clientName ? `${clientName}${cCity ? ` · ${cCity}` : ""}` : (cCity || nextRu);
+
+    items.push({ id: `case-${(c as any).id}`, type, priority: risk === "red" ? "critical" : "high", title: freshTitle, shortDescription: shortDesc, fullDescription: freshDesc, createdAt: new Date((c as any).updatedAt ?? now).toISOString(), updatedAt: new Date((c as any).updatedAt ?? now).toISOString(), lastActionBy: (c as any).lastActionBy ?? null, deadline: (c as any).nextActionDeadline ? new Date((c as any).nextActionDeadline).toISOString() : null, status: "open", entityType: "system", entityId: (c as any).id, orderId: cOrderId, masterId: (c as any).masterId ?? null, clientId: null, city: cCity || null, amountAtRisk: null, actions: actionSet(type) });
   }
   for (const t of manualTasks) if ((t as any).status !== "done" && (t as any).status !== "dismissed") items.push({ id: `manual-${(t as any).id}`, type: "custom_manual", priority: "low", title: String((t as any).title ?? "Ручная задача"), shortDescription: String((t as any).description ?? ""), fullDescription: String((t as any).description ?? ""), createdAt: new Date((t as any).createdAt ?? now).toISOString(), updatedAt: new Date((t as any).updatedAt ?? t.createdAt ?? now).toISOString(), lastActionBy: (t as any).lastActionBy ?? null, deadline: (t as any).dueAt ? new Date((t as any).dueAt).toISOString() : null, status: (t as any).status ?? "open", entityType: "system", entityId: (t as any).id, orderId: (t as any).relatedOrderId ?? null, masterId: (t as any).relatedMasterId ?? null, clientId: null, city: null, amountAtRisk: null, actions: actionSet("custom_manual") });
   items.sort((a,b)=>({critical:0,high:1,medium:2,low:3}[a.priority]-({critical:0,high:1,medium:2,low:3}[b.priority])) || ((a.deadline?new Date(a.deadline).getTime():Number.MAX_SAFE_INTEGER)-(b.deadline?new Date(b.deadline).getTime():Number.MAX_SAFE_INTEGER)) || (new Date(b.createdAt).getTime()-new Date(a.createdAt).getTime()));
