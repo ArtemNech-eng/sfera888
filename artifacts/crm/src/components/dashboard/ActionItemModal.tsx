@@ -110,6 +110,32 @@ const MESSAGE_TEMPLATES: Record<string, { label: string; text: (orderId?: number
   ],
 };
 
+function NextActionBanner({ text, phone, phoneLabel, callLabel }: {
+  text: string;
+  phone?: string | null;
+  phoneLabel?: string;
+  callLabel?: string;
+}) {
+  return (
+    <div className="flex items-start gap-3 rounded-xl bg-amber-50 border border-amber-200 p-3">
+      <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-semibold text-amber-900 mb-0.5">Что делать прямо сейчас</div>
+        <div className="text-sm text-amber-800">{text}</div>
+      </div>
+      {phone && (
+        <a
+          href={`tel:${phone}`}
+          className="shrink-0 flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white text-sm font-bold px-3 py-2 rounded-lg transition whitespace-nowrap"
+        >
+          <Phone className="w-4 h-4" />
+          {callLabel ?? phoneLabel ?? "Позвонить"}
+        </a>
+      )}
+    </div>
+  );
+}
+
 function TemplateChips({ type, orderId, onSelect }: { type: string; orderId?: number | string; onSelect: (text: string) => void }) {
   const templates = MESSAGE_TEMPLATES[type] ?? [];
   if (templates.length === 0) return null;
@@ -219,6 +245,11 @@ export function ActionItemModal({ id, open, onOpenChange }: {
       case "no_estimate":
         return (
           <SectionBox title="Ситуация: заказ без сметы">
+            <NextActionBanner
+              text={`Мастер не отправил смету уже ${ctx.order?.hoursOld != null ? fmtAge(ctx.order.hoursOld) : "долго"}. Позвоните мастеру и выясните причину.`}
+              phone={ctx.master?.phone}
+              callLabel="Позвонить мастеру"
+            />
             <div className="space-y-2">
               {ctx.order && (
                 <>
@@ -311,6 +342,11 @@ export function ActionItemModal({ id, open, onOpenChange }: {
       case "no_payment":
         return (
           <SectionBox title="Ситуация: предоплата не получена">
+            <NextActionBanner
+              text={`Клиент не оплатил смету${ctx.order?.hoursOld != null ? ` уже ${fmtAge(ctx.order.hoursOld)}` : ""}. Позвоните клиенту и напомните об оплате.`}
+              phone={ctx.order?.clientPhone ?? ctx.client?.clientPhone}
+              callLabel={`Позвонить${(ctx.order?.clientName ?? ctx.client?.clientName) ? ` ${ctx.order?.clientName ?? ctx.client?.clientName}` : " клиенту"}`}
+            />
             <div className="space-y-2">
               {ctx.order && (
                 <>
@@ -356,20 +392,21 @@ export function ActionItemModal({ id, open, onOpenChange }: {
               )}
             </div>
             <div className="border-t pt-3 space-y-3">
-              <div className="text-sm font-semibold">Напомнить мастеру о подтверждении</div>
+              <div className="text-sm font-semibold text-muted-foreground">Написать мастеру (если клиент не отвечает)</div>
               <TemplateChips type="no_payment" orderId={ctx.order?.id} onSelect={setMessageText} />
               <Textarea
                 value={messageText}
                 onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setMessageText(e.target.value)}
-                placeholder="Привет! Клиент оплатил. Подтвердите получение оплаты в приложении."
+                placeholder="Привет! Клиент пока не оплатил смету. Свяжитесь с ним и напомните."
                 className="min-h-[80px] bg-white"
               />
               <Button
                 onClick={() => fire("message_master", { message: messageText })}
                 disabled={busy === "message_master" || !messageText.trim()}
                 size="sm"
+                variant="outline"
               >
-                <MessageSquare className="w-4 h-4" /> Отправить напоминание мастеру
+                <MessageSquare className="w-4 h-4" /> Написать мастеру
               </Button>
             </div>
             <div className="border-t pt-3 flex flex-wrap gap-2">
@@ -394,6 +431,11 @@ export function ActionItemModal({ id, open, onOpenChange }: {
       case "no_master_response":
         return (
           <SectionBox title="Ситуация: мастер не откликается">
+            <NextActionBanner
+              text={`Мастер не откликается${ctx.order?.hoursOld != null ? ` уже ${fmtAge(ctx.order.hoursOld)}` : ""}. Назначьте другого мастера или позвоните текущему.`}
+              phone={ctx.master?.phone}
+              callLabel="Позвонить мастеру"
+            />
             <div className="space-y-2">
               {ctx.order && (
                 <>
@@ -474,6 +516,11 @@ export function ActionItemModal({ id, open, onOpenChange }: {
       case "blocked_master":
         return (
           <SectionBox title="Ситуация: мастер заблокирован">
+            <NextActionBanner
+              text={ctx.master?.blockedReason ? `Причина блокировки: ${ctx.master.blockedReason}. Свяжитесь с мастером и решите вопрос.` : "Мастер заблокирован. Свяжитесь с ним, выясните причину и разблокируйте вручную если всё в порядке."}
+              phone={ctx.master?.phone}
+              callLabel="Позвонить мастеру"
+            />
             {ctx.master && (
               <div className="space-y-2">
                 <InfoRow icon={<UserRoundPen className="w-4 h-4" />} label="Мастер" value={`${ctx.master.name} (#${ctx.master.id})`} />
@@ -564,6 +611,13 @@ export function ActionItemModal({ id, open, onOpenChange }: {
       case "conflict":
         return (
           <SectionBox title={item.type === "possible_bypass" ? "Ситуация: подозрение на обход" : "Ситуация: конфликт"}>
+            <NextActionBanner
+              text={item.type === "possible_bypass"
+                ? "Мастер, возможно, работает в обход платформы. Позвоните ему и предупредите — следующий раз будет блокировка."
+                : "Конфликтная ситуация по заказу. Позвоните мастеру, выясните детали и урегулируйте."}
+              phone={ctx.master?.phone}
+              callLabel="Позвонить мастеру"
+            />
             <div className="space-y-2">
               {ctx.order && (
                 <>
