@@ -274,7 +274,13 @@ export function ActionItemModal({ id, open, onOpenChange }: {
         : "Действие выполнено";
       window.dispatchEvent(new CustomEvent("dashboard-action-items:changed"));
       if (action === "complete_as_master") {
-        window.alert("✅ Заказ завершён. Комиссия засчитана как оплаченная, мастеру отправлено уведомление.");
+        const mode = (payload as { commissionMode?: string }).commissionMode;
+        const msg = mode === "as_debt"
+          ? "✅ Заказ завершён. Комиссия добавлена к долгу мастера, уведомление отправлено."
+          : mode === "no_debt"
+          ? "✅ Заказ завершён без начисления комиссии. Уведомление мастеру отправлено."
+          : "✅ Заказ завершён. Комиссия засчитана как оплаченная, мастеру отправлено уведомление.";
+        window.alert(msg);
         onOpenChange(false);
         return;
       }
