@@ -71,7 +71,7 @@ function InfoRow({ icon, label, value }: { icon: ReactNode; label: string; value
   );
 }
 
-function SectionBox({ title, children }: { title: string; children?: ReactNode }) {
+function SectionBox({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="rounded-xl border bg-slate-50 p-4 space-y-3">
       <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</div>
@@ -231,6 +231,8 @@ export function ActionItemModal({ id, open, onOpenChange }: {
   const [completeAsMasterPending, setCompleteAsMasterPending] = useState(false);
   const [completeAmount, setCompleteAmount] = useState<string>("");
   const [commissionMode, setCommissionMode] = useState<"no_debt" | "as_debt" | "as_paid">("as_paid");
+  const [partialOrderAmount, setPartialOrderAmount] = useState<string>("");
+  const [partialPaidAmount, setPartialPaidAmount] = useState<string>("");
   const { user: authUser } = useAuth();
   const isAdmin = authUser?.role === "admin";
 
@@ -437,7 +439,17 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                   <div>
                     <div className="text-xs text-muted-foreground mb-1">Скриншот оплаты:</div>
                     <a href={ctx.receipt.prepaymentScreenshotUrl} target="_blank" rel="noopener noreferrer">
-                      <img src={ctx.receipt.prepaymentScreenshotUrl} alt="Скриншот" className="max-h-32 rounded-lg border object-contain" />
+                      <img
+                        src={ctx.receipt.prepaymentScreenshotUrl}
+                        alt="Скриншот"
+                        className="max-h-32 rounded-lg border object-contain bg-slate-100"
+                        onError={(e) => {
+                          console.warn("[screenshot] failed to load:", ctx.receipt.prepaymentScreenshotUrl);
+                          (e.target as HTMLImageElement).style.display = "none";
+                          (e.target as HTMLImageElement).nextElementSibling?.removeAttribute("hidden");
+                        }}
+                      />
+                      <span hidden className="text-xs text-blue-600 underline">Открыть скриншот ↗</span>
                     </a>
                   </div>
                 )}
@@ -461,6 +473,25 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                 <MessageSquare className="w-4 h-4" /> Написать мастеру
               </Button>
             </div>
+            <div className="border-t pt-3 space-y-3">
+              <div className="text-sm font-semibold">Внести частичную оплату комиссии</div>
+              <div className="text-xs text-muted-foreground">Заказ не закрывается — только фиксируется оплата части комиссии. Мастеру придёт уведомление.</div>
+              <div className="flex gap-2 flex-wrap items-end">
+                <div>
+                  <label className="text-xs text-muted-foreground block mb-1">Полная сумма сметы, ₽</label>
+                  <Input type="number" inputMode="decimal" min={0} step={100} value={partialOrderAmount} onChange={(e: ChangeEvent<HTMLInputElement>) => setPartialOrderAmount(e.target.value)} placeholder="Например: 10000" className="bg-white w-40" disabled={busy === "partial_payment"} />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground block mb-1">Оплачено мастером, ₽</label>
+                  <Input type="number" inputMode="decimal" min={0} step={100} value={partialPaidAmount} onChange={(e: ChangeEvent<HTMLInputElement>) => setPartialPaidAmount(e.target.value)} placeholder="Например: 3000" className="bg-white w-40" disabled={busy === "partial_payment"} />
+                </div>
+                <Button size="sm" variant="outline" className="border-emerald-400 text-emerald-700 hover:bg-emerald-50" disabled={busy === "partial_payment" || !partialOrderAmount || !partialPaidAmount} onClick={async () => { const n = Number(partialOrderAmount); const p = Number(partialPaidAmount); if (!Number.isFinite(n) || n <= 0) { showToast("Укажите полную сумму сметы", false); return; } if (!Number.isFinite(p) || p <= 0) { showToast("Укажите оплаченную сумму", false); return; } await fire("partial_payment", { orderAmount: n, paidAmount: p }); setPartialOrderAmount(""); setPartialPaidAmount(""); }}>
+                  <Banknote className="w-4 h-4" /> Зафиксировать оплату
+                </Button>
+              </div>
+              {(() => { const n = Number(partialOrderAmount); const p = Number(partialPaidAmount); if (!Number.isFinite(n) || n <= 0 || !Number.isFinite(p) || p <= 0) return null; const totalComm = n <= 50000 ? 5000 : Math.round(n * 0.15); const fraction = Math.min(p / n, 1); const paidComm = Math.round(totalComm * fraction); const remaining = Math.max(0, totalComm - paidComm); return (<div className="text-xs text-emerald-700 bg-emerald-50 rounded-lg px-3 py-2 border border-emerald-200">Комиссия с {n.toLocaleString("ru-RU")} ₽ ≈ {totalComm.toLocaleString("ru-RU")} ₽ · Оплачено {paidComm.toLocaleString("ru-RU")} ₽{remaining > 0 ? ` · Остаток ${remaining.toLocaleString("ru-RU")} ₽` : " · Полностью оплачено ✅"}</div>); })()}
+            </div>
+
             <div className="border-t pt-3 flex flex-wrap gap-2">
               <Button size="sm" variant="outline" onClick={() => fire("return_to_pool")} disabled={busy === "return_to_pool"}>
                 <RefreshCw className="w-4 h-4" /> Вернуть в пул
