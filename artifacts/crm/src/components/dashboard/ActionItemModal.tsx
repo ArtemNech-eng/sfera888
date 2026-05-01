@@ -648,11 +648,14 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                         size="sm"
                         className="bg-green-600 hover:bg-green-700 text-white"
                         disabled={busy === "complete_as_master"}
-                        onClick={() => { fire("complete_as_master"); setCompleteAsMasterPending(false); }}
+                        onClick={async () => {
+                          await fire("complete_as_master");
+                          setCompleteAsMasterPending(false);
+                        }}
                       >
-                        <CheckCircle2 className="w-4 h-4 mr-1" /> Да, завершить заказ
+                        <CheckCircle2 className="w-4 h-4 mr-1" /> {busy === "complete_as_master" ? "Завершаем..." : "Да, завершить заказ"}
                       </Button>
-                      <Button size="sm" variant="outline" onClick={() => setCompleteAsMasterPending(false)}>
+                      <Button size="sm" variant="outline" disabled={busy === "complete_as_master"} onClick={() => setCompleteAsMasterPending(false)}>
                         Отмена
                       </Button>
                     </div>
@@ -685,13 +688,17 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                         size="sm"
                         variant="destructive"
                         disabled={busy === "cancel_as_master"}
-                        onClick={() => { fire("cancel_as_master"); setCancelAsMasterPending(false); }}
+                        onClick={async () => {
+                          await fire("cancel_as_master");
+                          setCancelAsMasterPending(false);
+                        }}
                       >
-                        Да, отменить (вина мастера)
+                        {busy === "cancel_as_master" ? "Отменяем..." : "Да, отменить (вина мастера)"}
                       </Button>
                       <Button
                         size="sm"
                         variant="outline"
+                        disabled={busy === "cancel_as_master"}
                         onClick={() => setCancelAsMasterPending(false)}
                       >
                         Отмена
