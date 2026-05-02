@@ -179,7 +179,7 @@ async function buildItems(): Promise<Item[]> {
 
     const rawNext = String((c as any).nextAction ?? "");
     const nextRu = NEXT_ACTION_RU[rawNext] ?? (rawNext || "Требует внимания");
-    const type = risk === "red" ? "possible_bypass" : "conflict";
+    const baseType = risk === "red" ? "possible_bypass" : "conflict";
 
     // Build fresh human-readable title + description (never use stale summary from DB)
     const hEst = Number((c as any).hoursWithoutEstimate ?? 0);
@@ -192,21 +192,28 @@ async function buildItems(): Promise<Item[]> {
     const clientName = (cLead?.clientName ?? null) as string | null;
     const cCity = String((c as any).city || linkedOrder?.city || "");
 
+    // Derive the most specific type based on what's actually missing
+    let type: TaskType;
     let freshTitle: string;
     let freshDesc: string;
     if (hEst > 24) {
+      type = "no_estimate";
       freshTitle = `${masterLabel} — смета не отправлена ${fmtAge(hEst)}`;
       freshDesc = `Заказ #${cOrderId}: мастер ${masterLabel} не отправил смету уже ${fmtAge(hEst)}.`;
     } else if (hPay > 24) {
+      type = "no_payment";
       freshTitle = `${masterLabel} — клиент не оплатил ${fmtAge(hPay)}`;
       freshDesc = `Заказ #${cOrderId}: смета отправлена, клиент не платит уже ${fmtAge(hPay)}.`;
     } else if (hCont > 12 || stage === "waiting_update") {
+      type = "no_master_response";
       freshTitle = `${masterLabel} — нет связи ${fmtAge(hCont)}`;
       freshDesc = `Заказ #${cOrderId}: мастер ${masterLabel} не выходит на связь ${fmtAge(hCont)}.`;
-    } else if (type === "possible_bypass") {
+    } else if (baseType === "possible_bypass") {
+      type = "possible_bypass";
       freshTitle = `${masterLabel} — подозрение на обход платформы`;
       freshDesc = `Заказ #${cOrderId}: зафиксированы признаки работы в обход платформы.`;
     } else {
+      type = "conflict";
       freshTitle = `${masterLabel} — конфликт по заказу #${cOrderId}`;
       freshDesc = `Заказ #${cOrderId}: требует внимания оператора.`;
     }
