@@ -489,7 +489,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                   <Banknote className="w-4 h-4" /> Зафиксировать оплату
                 </Button>
               </div>
-              {(() => { const n = Number(partialOrderAmount); const p = Number(partialPaidAmount); if (!Number.isFinite(n) || n <= 0 || !Number.isFinite(p) || p <= 0) return null; const totalComm = n <= 50000 ? 5000 : Math.round(n * 0.15); const fraction = Math.min(p / n, 1); const paidComm = Math.round(totalComm * fraction); const remaining = Math.max(0, totalComm - paidComm); return (<div className="text-xs text-emerald-700 bg-emerald-50 rounded-lg px-3 py-2 border border-emerald-200">Комиссия с {n.toLocaleString("ru-RU")} ₽ ≈ {totalComm.toLocaleString("ru-RU")} ₽ · Оплачено {paidComm.toLocaleString("ru-RU")} ₽{remaining > 0 ? ` · Остаток ${remaining.toLocaleString("ru-RU")} ₽` : " · Полностью оплачено ✅"}</div>); })()}
+              {(() => { const n = Number(partialOrderAmount); const p = Number(partialPaidAmount); if (!Number.isFinite(n) || n <= 0 || !Number.isFinite(p) || p <= 0) return null; const totalComm = n <= 50000 ? 5000 : Math.round(n * 0.15); const remaining = Math.max(0, totalComm - p); return (<div className="text-xs text-emerald-700 bg-emerald-50 rounded-lg px-3 py-2 border border-emerald-200">Комиссия с {n.toLocaleString("ru-RU")} ₽ ≈ {totalComm.toLocaleString("ru-RU")} ₽ · Оплачено {p.toLocaleString("ru-RU")} ₽{remaining > 0 ? ` · Остаток ${remaining.toLocaleString("ru-RU")} ₽` : " · Полностью оплачено ✅"}</div>); })()}
             </div>
 
             <div className="border-t pt-3 flex flex-wrap gap-2">
@@ -1010,12 +1010,10 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                     const p = Number(partialPaidAmount);
                     if (!Number.isFinite(n) || n <= 0 || !Number.isFinite(p) || p <= 0) return null;
                     const totalComm = n <= 50000 ? 5000 : Math.round(n * 0.15);
-                    const fraction = Math.min(p / n, 1);
-                    const paidComm = Math.round(totalComm * fraction);
-                    const remaining = Math.max(0, totalComm - paidComm);
+                    const remaining = Math.max(0, totalComm - p);
                     return (
                       <div className="text-xs text-emerald-700 bg-emerald-50 rounded-lg px-3 py-2 border border-emerald-200">
-                        Комиссия с {n.toLocaleString("ru-RU")} ₽ ≈ {totalComm.toLocaleString("ru-RU")} ₽ · Оплачено {paidComm.toLocaleString("ru-RU")} ₽{remaining > 0 ? ` · Остаток ${remaining.toLocaleString("ru-RU")} ₽` : " · Полностью оплачено ✅"}
+                        Комиссия с {n.toLocaleString("ru-RU")} ₽ ≈ {totalComm.toLocaleString("ru-RU")} ₽ · Оплачено {p.toLocaleString("ru-RU")} ₽{remaining > 0 ? ` · Остаток ${remaining.toLocaleString("ru-RU")} ₽` : " · Полностью оплачено ✅"}
                       </div>
                     );
                   })()}
