@@ -246,7 +246,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
   const { user: authUser } = useAuth();
   const isAdmin = authUser?.role === "admin";
 
-  const { data, refetch } = useQuery({
+  const { data, isLoading, refetch } = useQuery({
     queryKey: ["action-item", id],
     queryFn: () => fetchDetail(id!),
     enabled: !!id && open,
@@ -977,7 +977,23 @@ export function ActionItemModal({ id, open, onOpenChange }: {
         {/* Цветная полоса приоритета */}
         <div className={`absolute left-0 top-0 bottom-0 w-1.5 rounded-l-[18px] ${leftColor}`} />
 
-        <div className="max-h-[85vh] overflow-y-auto">
+        {/* Скелетон загрузки — показываем пока данные не пришли */}
+        {isLoading && (
+          <div className="pl-7 pr-6 pt-6 pb-6 space-y-4 min-h-[200px] flex flex-col justify-center">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-slate-200 animate-pulse shrink-0" />
+              <div className="flex-1 space-y-2">
+                <div className="h-4 bg-slate-200 rounded animate-pulse w-3/4" />
+                <div className="h-3 bg-slate-100 rounded animate-pulse w-1/2" />
+              </div>
+            </div>
+            <div className="h-20 bg-slate-100 rounded-xl animate-pulse" />
+            <div className="h-12 bg-slate-100 rounded-xl animate-pulse" />
+          </div>
+        )}
+
+        {!isLoading && (
+          <div className="max-h-[85vh] overflow-y-auto">
           <div className="pl-7 pr-6 pt-6 pb-4 space-y-4">
 
             {/* Шапка */}
