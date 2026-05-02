@@ -495,19 +495,19 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                 <MessageSquare className="w-4 h-4" /> Написать мастеру
               </Button>
             </div>
-            <div className="border-t pt-3 space-y-3">
+              <div className="border-t pt-3 space-y-3">
               <div className="text-sm font-semibold">Внести частичную оплату комиссии</div>
               <div className="text-xs text-muted-foreground">Заказ не закрывается — только фиксируется оплата части комиссии. Мастеру придёт уведомление.</div>
               <div className="flex gap-2 flex-wrap items-end">
                 <div>
                   <label className="text-xs text-muted-foreground block mb-1">Полная сумма сметы, ₽</label>
-                  <Input type="number" inputMode="decimal" min={0} step={100} value={partialOrderAmount} onChange={(e: ChangeEvent<HTMLInputElement>) => setPartialOrderAmount(e.target.value)} placeholder="Например: 10000" className="bg-white w-40" disabled={busy === "partial_payment"} />
+                  <Input type="number" inputMode="decimal" min={0} step={100} value={partialOrderAmount} onChange={(e: ChangeEvent<HTMLInputElement>) => setPartialOrderAmount(e.target.value)} placeholder="Например: 150000" className="bg-white w-40" disabled={busy === "partial_payment"} />
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground block mb-1">Оплачено мастером, ₽</label>
-                  <Input type="number" inputMode="decimal" min={0} step={100} value={partialPaidAmount} onChange={(e: ChangeEvent<HTMLInputElement>) => setPartialPaidAmount(e.target.value)} placeholder="Например: 3000" className="bg-white w-40" disabled={busy === "partial_payment"} />
+                  <label className="text-xs text-muted-foreground block mb-1">Оплачено комиссии, ₽</label>
+                  <Input type="number" inputMode="decimal" min={0} step={100} value={partialPaidAmount} onChange={(e: ChangeEvent<HTMLInputElement>) => setPartialPaidAmount(e.target.value)} placeholder="Например: 20000" className="bg-white w-40" disabled={busy === "partial_payment"} />
                 </div>
-                <Button size="sm" variant="outline" className="border-emerald-400 text-emerald-700 hover:bg-emerald-50" disabled={busy === "partial_payment" || !partialOrderAmount || !partialPaidAmount} onClick={async () => { const n = Number(partialOrderAmount); const p = Number(partialPaidAmount); if (!Number.isFinite(n) || n <= 0) { showToast("Укажите полную сумму сметы", false); return; } if (!Number.isFinite(p) || p <= 0) { showToast("Укажите оплаченную сумму", false); return; } await fire("partial_payment", { orderAmount: n, paidAmount: p }); setPartialOrderAmount(""); setPartialPaidAmount(""); }}>
+                <Button size="sm" variant="outline" className="border-emerald-400 text-emerald-700 hover:bg-emerald-50" disabled={busy === "partial_payment" || !partialOrderAmount || !partialPaidAmount} onClick={async () => { const n = Number(partialOrderAmount); const p = Number(partialPaidAmount); if (!Number.isFinite(n) || n <= 0) { showToast("Укажите полную сумму сметы", false); return; } if (!Number.isFinite(p) || p <= 0) { showToast("Укажите оплаченную сумму комиссии", false); return; } await fire("partial_payment", { orderAmount: n, paidAmount: p }); setPartialOrderAmount(""); setPartialPaidAmount(""); }}>
                   <Banknote className="w-4 h-4" /> Зафиксировать оплату
                 </Button>
               </div>
@@ -999,15 +999,27 @@ export function ActionItemModal({ id, open, onOpenChange }: {
               <SectionBox title="Частичная оплата комиссии">
                 <>
                   <div className="text-xs text-muted-foreground">Заказ не закрывается — только фиксируется оплата части комиссии. Мастеру придёт уведомление.</div>
-                  <PaymentProgress total={ctx.order?.proposedAmount ?? ctx.order?.orderAmount} paid={ctx.receipt?.prepaymentAmount} />
+                  {/* Прогресс-бар по реальным данным из transaction_payments */}
+                  <PaymentProgress total={ctx.transaction?.commission ?? null} paid={ctx.transaction?.paidCommission ?? null} />
+                  {ctx.transaction?.payments?.length > 0 && (
+                    <div className="space-y-1">
+                      <div className="text-xs font-semibold text-muted-foreground">История платежей:</div>
+                      {ctx.transaction.payments.map((p: any, i: number) => (
+                        <div key={i} className="flex items-center justify-between text-xs bg-emerald-50 rounded-lg px-3 py-1.5 border border-emerald-100">
+                          <span className="text-emerald-800 font-medium">+{Number(p.amount).toLocaleString("ru-RU")} ₽</span>
+                          <span className="text-muted-foreground">{p.paidAt ? new Date(p.paidAt).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <div className="flex gap-2 flex-wrap items-end">
                     <div>
                       <label className="text-xs text-muted-foreground block mb-1">Полная сумма сметы, ₽</label>
                       <Input type="number" inputMode="decimal" min={0} step={100} value={partialOrderAmount} onChange={(e: ChangeEvent<HTMLInputElement>) => setPartialOrderAmount(e.target.value)} placeholder="Например: 10000" className="bg-white w-40" disabled={busy === "partial_payment"} />
                     </div>
                     <div>
-                      <label className="text-xs text-muted-foreground block mb-1">Оплачено мастером, ₽</label>
-                      <Input type="number" inputMode="decimal" min={0} step={100} value={partialPaidAmount} onChange={(e: ChangeEvent<HTMLInputElement>) => setPartialPaidAmount(e.target.value)} placeholder="Например: 3000" className="bg-white w-40" disabled={busy === "partial_payment"} />
+                      <label className="text-xs text-muted-foreground block mb-1">Оплачено комиссии, ₽</label>
+                      <Input type="number" inputMode="decimal" min={0} step={100} value={partialPaidAmount} onChange={(e: ChangeEvent<HTMLInputElement>) => setPartialPaidAmount(e.target.value)} placeholder="Например: 20000" className="bg-white w-40" disabled={busy === "partial_payment"} />
                     </div>
                     <Button
                       size="sm"
