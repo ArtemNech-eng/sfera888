@@ -309,14 +309,15 @@ export function ActionItemModal({ id, open, onOpenChange }: {
       if (action === "partial_payment") {
         const n = Number((payload as any).orderAmount ?? 0);
         const p = Number((payload as any).paidAmount ?? 0);
+        // paidAmount is direct commission payment, totalComm is calculated from orderAmount
         const totalComm = n <= 50000 ? 5000 : Math.round(n * 0.15);
-        const paidFrac = Math.min(p / n, 1);
-        const paidComm = Math.round(totalComm * paidFrac);
+        const paidComm = Math.min(p, totalComm);
         const remaining = Math.max(0, totalComm - paidComm);
         const msg = remaining > 0
           ? `✅ Принято ${paidComm.toLocaleString("ru-RU")} ₽. Остаток: ${remaining.toLocaleString("ru-RU")} ₽. Мастеру отправлено уведомление.`
           : `✅ Комиссия полностью оплачена: ${paidComm.toLocaleString("ru-RU")} ₽. Мастеру отправлено уведомление.`;
         showToast(msg);
+        // Refetch to update ctx.transaction with new payment data
         try { await refetch(); } catch { /* ok */ }
         return;
       }
@@ -999,8 +1000,16 @@ export function ActionItemModal({ id, open, onOpenChange }: {
               <SectionBox title="Частичная оплата комиссии">
                 <>
                   <div className="text-xs text-muted-foreground">Заказ не закрывается — только фиксируется оплата части комиссии. Мастеру придёт уведомление.</div>
-                  {/* Прогресс-бар по реальным данным из transaction_payments */}
-                  <PaymentProgress total={ctx.transaction?.commission ?? null} paid={ctx.transaction?.paidCommission ?? null} />
+                  {/* Прогресс-бар: если транзакция есть — берём реальные данные, иначе считаем комиссию из сметы */}
+                  {(() => {
+                    const totalComm = ctx.transaction?.commission != null
+                      ? ctx.transaction.commission
+                      : ctx.order?.proposedAmount != null
+                        ? (Number(ctx.order.proposedAmount) <= 50000 ? 5000 : Math.round(Number(ctx.order.proposedAmount) * 0.15))
+                        : null;
+                    const paidComm = ctx.transaction?.paidCommission ?? 0;
+                    return <PaymentProgress total={totalComm} paid={paidComm} />;
+                  })()}
                   {ctx.transaction?.payments?.length > 0 && (
                     <div className="space-y-1">
                       <div className="text-xs font-semibold text-muted-foreground">История платежей:</div>
