@@ -182,15 +182,29 @@ async function buildItems(): Promise<Item[]> {
     const baseType = risk === "red" ? "possible_bypass" : "conflict";
 
     // Build fresh human-readable title + description (never use stale summary from DB)
-    const hEst = Number((c as any).hoursWithoutEstimate ?? 0);
-    const hPay = Number((c as any).hoursWithoutPayment ?? 0);
+    // Prefer DB fields, but fall back to computing from order data if null/zero
+    const linkedOrderAny = linkedOrder as any;
+    const orderAgeH = linkedOrderAny
+      ? (now.getTime() - new Date(linkedOrderAny.createdAt).getTime()) / 3600000
+      : 0;
+    const hasEstimateInOrder = linkedOrderAny && Number(linkedOrderAny.proposedAmount ?? 0) > 0;
+    const hasPaidInOrder = linkedOrderAny && Number(linkedOrderAny.orderAmount ?? 0) > 0;
+
+    const hEstRaw = Number((c as any).hoursWithoutEstimate ?? 0);
+    // If DB field is missing/zero but order has no estimate — use order age as fallback
+    const hEst = hEstRaw > 0 ? hEstRaw : (!hasEstimateInOrder ? orderAgeH : 0);
+
+    const hPayRaw = Number((c as any).hoursWithoutPayment ?? 0);
+    // If DB field is missing/zero but order has estimate but no payment — use order age as fallback
+    const hPay = hPayRaw > 0 ? hPayRaw : (hasEstimateInOrder && !hasPaidInOrder ? orderAgeH : 0);
+
     const hCont = Number((c as any).hoursWithoutContact ?? 0);
     const stage = String((c as any).currentStage ?? "");
-    const cMaster = masterMap.get(Number((c as any).masterId));
+    const cMaster = masterMap.get(Number((c as any).masterId)) as any;
     const masterLabel = cMaster?.alias ?? `Мастер #${(c as any).masterId}`;
     const cLead = linkedOrder ? leadMap.get((linkedOrder as any).leadId) as any : null;
     const clientName = (cLead?.clientName ?? null) as string | null;
-    const cCity = String((c as any).city || linkedOrder?.city || "");
+    const cCity = String((c as any).city || (linkedOrder as any)?.city || "");
 
     // Derive the most specific type based on what's actually missing
     let type: TaskType;
