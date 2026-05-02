@@ -1119,13 +1119,6 @@ export function ActionItemModal({ id, open, onOpenChange }: {
           >
             <X className="w-4 h-4" /> Закрыть
           </button>
-          <button
-            onClick={() => fire("dismiss")}
-            disabled={busy === "dismiss"}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[14px] border border-[#E5E5EA] bg-white text-[#8E8E93] text-sm font-semibold transition hover:bg-[#F5F5F5] disabled:opacity-50"
-          >
-            Отложить
-          </button>
           {/* Snooze */}
           <div className="inline-flex items-center gap-1.5 rounded-[14px] border border-[#E5E5EA] bg-white overflow-hidden">
             <select
