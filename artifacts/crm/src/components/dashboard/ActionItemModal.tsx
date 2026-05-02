@@ -1119,6 +1119,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
             </div>
           </div>
         </div>
+        )}
 
         {/* Toast */}
         {toast && (
