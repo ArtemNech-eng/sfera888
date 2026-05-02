@@ -1075,7 +1075,7 @@ export default function Leads() {
                               onClick={() => { setActiveTab("work"); setOpenDispatchId(lead.orderId!); }}
                               className="flex-1 flex items-center justify-center gap-1 py-2.5 text-emerald-700 hover:bg-emerald-50 text-xs font-medium"
                             >
-                              <ExternalLink className="w-3.5 h-3.5" />Заказ #{lead.id}
+                              <ExternalLink className="w-3.5 h-3.5" />Заказ #{lead.orderId}
                             </button>
                           )}
                           <button
@@ -1156,7 +1156,7 @@ export default function Leads() {
                                   {(lead.photos?.length ?? 0) > 0 && <span className="inline-flex items-center gap-1 text-[10px] bg-slate-100 text-slate-500 rounded-full px-1.5 py-0.5"><Images className="w-2.5 h-2.5" />{lead.photos!.length}</span>}
                                   {lead.status === "sent_to_work" && lead.orderId && (
                                     <button onClick={e => { e.stopPropagation(); setActiveTab("work"); setOpenDispatchId(lead.orderId!); }} className="inline-flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-2 py-0.5 font-medium hover:bg-emerald-100 transition-colors">
-                                      <ExternalLink className="w-2.5 h-2.5" />Заказ #{lead.id}
+                                      <ExternalLink className="w-2.5 h-2.5" />Заказ #{lead.orderId}
                                     </button>
                                   )}
                                   {isActive && (
