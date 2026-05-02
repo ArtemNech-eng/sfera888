@@ -1,4 +1,5 @@
 import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
+import { BellRing } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -241,6 +242,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
   const [commissionMode, setCommissionMode] = useState<"no_debt" | "as_debt" | "as_paid">("as_paid");
   const [partialOrderAmount, setPartialOrderAmount] = useState<string>("");
   const [partialPaidAmount, setPartialPaidAmount] = useState<string>("");
+  const [snoozeDays, setSnoozeDays] = useState<number>(1);
   const { user: authUser } = useAuth();
   const isAdmin = authUser?.role === "admin";
 
@@ -1124,6 +1126,26 @@ export function ActionItemModal({ id, open, onOpenChange }: {
           >
             Отложить
           </button>
+          {/* Snooze */}
+          <div className="inline-flex items-center gap-1.5 rounded-[14px] border border-[#E5E5EA] bg-white overflow-hidden">
+            <select
+              value={snoozeDays}
+              onChange={e => setSnoozeDays(Number(e.target.value))}
+              className="pl-3 pr-1 py-2 text-sm text-[#1A1A1A] bg-transparent outline-none cursor-pointer"
+            >
+              <option value={1}>1 день</option>
+              <option value={2}>2 дня</option>
+              <option value={3}>3 дня</option>
+              <option value={7}>7 дней</option>
+            </select>
+            <button
+              onClick={() => fire("snooze", { days: snoozeDays })}
+              disabled={busy === "snooze"}
+              className="inline-flex items-center gap-1 pr-3 py-2 text-sm font-semibold text-[#FF9500] disabled:opacity-50 transition hover:text-[#e08600]"
+            >
+              <BellRing className="w-4 h-4" /> Напомнить
+            </button>
+          </div>
           <button
             onClick={() => fire("resolve")}
             disabled={busy === "resolve"}
