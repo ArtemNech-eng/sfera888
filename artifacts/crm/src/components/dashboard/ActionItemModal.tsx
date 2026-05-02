@@ -993,7 +993,6 @@ export function ActionItemModal({ id, open, onOpenChange }: {
         )}
 
         <div className="max-h-[85vh] overflow-y-auto">
-          <div className="max-h-[85vh] overflow-y-auto">
           <div className="pl-7 pr-6 pt-6 pb-4 space-y-4">
 
             {/* Шапка */}
