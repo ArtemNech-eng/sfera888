@@ -1121,6 +1121,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
         </div>
         )}
 
+        {!isLoading && (<>
         {/* Toast */}
         {toast && (
           <div className={`px-6 pb-2 text-sm font-medium ${toast.ok ? "text-green-700" : "text-red-600"}`}>
@@ -1168,6 +1169,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
             {busy === "resolve" ? "Завершаем..." : "Выполнено ✓"}
           </button>
         </DialogFooter>
+        </>)}
       </DialogContent>
     </Dialog>
   );
