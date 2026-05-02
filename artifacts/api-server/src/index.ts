@@ -240,6 +240,28 @@ async function runMigrations() {
       updated_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS task_snoozes (
+      id SERIAL PRIMARY KEY,
+      item_id TEXT NOT NULL UNIQUE,
+      snoozed_until TIMESTAMP NOT NULL,
+      snoozed_by TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS task_snoozes_until_idx ON task_snoozes(snoozed_until)
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS operator_push_subscriptions (
+      id SERIAL PRIMARY KEY,
+      operator_id TEXT NOT NULL,
+      endpoint TEXT NOT NULL UNIQUE,
+      p256dh TEXT NOT NULL,
+      auth TEXT NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
   console.log("[startup] Migrations applied");
 }
 
