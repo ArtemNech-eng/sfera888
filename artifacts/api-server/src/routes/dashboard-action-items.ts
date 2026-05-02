@@ -149,11 +149,26 @@ async function buildItems(): Promise<Item[]> {
     const clientLabel = lead?.clientName ? `${lead.clientName} · ${o.city ?? ""}` : (o.city ?? "");
     if (!(o.proposedAmount != null && Number(o.proposedAmount) > 0) && ageH >= 24) items.push({ id: `no_estimate-${o.id}`, type: "no_estimate", priority: pFromHours(ageH), title: `Заказ #${o.id} — нет сметы`, shortDescription: clientLabel.trim(), fullDescription: `У заказа нет сметы уже ${fmtAge(ageH)}.`, createdAt: new Date(o.createdAt).toISOString(), updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterMap.get(Number(o.masterId))?.alias ?? null) : null, amountAtRisk: o.orderAmount ? Number(o.orderAmount) : null, actions: actionSet("no_estimate") });
     if (o.status === "waiting_master") items.push({ id: `no_master_response-${o.id}`, type: "no_master_response", priority: pFromHours(ageH), title: `Заказ #${o.id} — нет отклика мастера`, shortDescription: clientLabel.trim(), fullDescription: `Заказ завис без отклика мастера ${fmtAge(ageH)}.`, createdAt: new Date(o.createdAt).toISOString(), updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterMap.get(Number(o.masterId))?.alias ?? null) : null, amountAtRisk: o.orderAmount ? Number(o.orderAmount) : null, actions: actionSet("no_master_response") });
+    // no_payment: смета есть, заказ не оплачен (orderAmount = null), ждём >= 24ч
+    // Дедупликация: если для этого orderId уже будет задача из receipts — не добавляем из orders
     if (o.proposedAmount && !o.orderAmount && ageH >= 24) items.push({ id: `no_payment-${o.id}`, type: "no_payment", priority: pFromHours(ageH), title: `Заказ #${o.id} — не оплачена предоплата`, shortDescription: clientLabel.trim(), fullDescription: `Смета ${Number(o.proposedAmount).toLocaleString("ru-RU")} ₽ отправлена, ожидаем оплату ${fmtAge(ageH)}.`, createdAt: new Date(o.createdAt).toISOString(), updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "finance", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterMap.get(Number(o.masterId))?.alias ?? null) : null, amountAtRisk: Number(o.proposedAmount), actions: actionSet("no_payment") });
     if (ageH >= 168) items.push({ id: `no_progress-${o.id}`, type: "no_progress", priority: "medium", title: `Заказ #${o.id} — нет движения`, shortDescription: `${fmtAge(ageH)} без обновлений`, fullDescription: `Заказ без движения уже ${fmtAge(ageH)}.`, createdAt: new Date(o.createdAt).toISOString(), updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterMap.get(Number(o.masterId))?.alias ?? null) : null, amountAtRisk: o.orderAmount ? Number(o.orderAmount) : null, actions: actionSet("no_progress") });
-    if (String(o.cancelReason ?? "").toLowerCase().includes("bypass")) items.push({ id: `possible_bypass-${o.id}`, type: "possible_bypass", priority: "high", title: `Заказ #${o.id} — подозрение на обход`, shortDescription: `${o.city ?? ""}`.trim(), fullDescription: `В заказе есть признаки обхода сценария или ручного ухода в сторонний канал.`, createdAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, amountAtRisk: o.orderAmount ? Number(o.orderAmount) : null, actions: actionSet("possible_bypass") });
+    // possible_bypass из cancelReason убран — заказы с cancelReason уже cancelled и не попадают в выборку
   }
-  for (const r of receipts) if (r.prepaymentSubmittedAt && !r.prepaymentSeenAt) { const ageH = (now.getTime() - new Date(r.prepaymentSubmittedAt).getTime()) / 3600000; items.push({ id: `no_payment-${r.id}`, type: "no_payment", priority: pFromHours(ageH), title: `Заказ #${r.orderId} — подтверждение оплаты`, shortDescription: `${r.city ?? ""}`.trim(), fullDescription: `Клиент подтвердил оплату ${Math.round(ageH)} ч назад.`, createdAt: new Date(r.prepaymentSubmittedAt).toISOString(), updatedAt: new Date(r.prepaymentSubmittedAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "finance", entityId: r.id, orderId: r.orderId, masterId: r.masterId, clientId: null, city: r.city ?? null, amountAtRisk: Number(r.prepaymentAmount ?? 0), actions: actionSet("no_payment") }); }
+  // Receipts: клиент подтвердил оплату, но оператор ещё не видел (prepaymentSeenAt = null)
+  // Дедупликация: если для этого orderId уже есть задача no_payment из orders — заменяем её (receipt-задача точнее)
+  const noPaymentOrderIds = new Set(items.filter(i => i.type === "no_payment").map(i => i.orderId != null ? Number(i.orderId) : null).filter(Boolean));
+  for (const r of receipts) {
+    if (r.prepaymentSubmittedAt && !r.prepaymentSeenAt) {
+      const ageH = (now.getTime() - new Date(r.prepaymentSubmittedAt).getTime()) / 3600000;
+      // Если уже есть задача no_payment для этого заказа из orders — удаляем её (receipt-задача приоритетнее)
+      if (r.orderId != null && noPaymentOrderIds.has(Number(r.orderId))) {
+        const idx = items.findIndex(i => i.type === "no_payment" && i.orderId != null && Number(i.orderId) === Number(r.orderId));
+        if (idx !== -1) items.splice(idx, 1);
+      }
+      items.push({ id: `receipt-${r.id}`, type: "no_payment", priority: pFromHours(ageH), title: `Заказ #${r.orderId} — подтверждение оплаты`, shortDescription: `${r.city ?? ""}`.trim(), fullDescription: `Клиент подтвердил оплату ${Math.round(ageH)} ч назад. Необходимо подтвердить получение.`, createdAt: new Date(r.prepaymentSubmittedAt).toISOString(), updatedAt: new Date(r.prepaymentSubmittedAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "finance", entityId: r.id, orderId: r.orderId, masterId: r.masterId, clientId: null, city: r.city ?? null, amountAtRisk: Number(r.prepaymentAmount ?? 0), actions: actionSet("no_payment") });
+    }
+  }
   for (const m of masters) { const status = String(m.status ?? "").toLowerCase(); if (status.includes("blocked") || status.includes("fomo_blocked")) items.push({ id: `blocked_master-${m.id}`, type: "blocked_master", priority: "critical", title: `Мастер ${m.alias} заблокирован`, shortDescription: `${m.city ?? ""}`.trim(), fullDescription: `Мастер в блокировке / FOMO_BLOCKED и требует проверки.`, createdAt: new Date(m.createdAt).toISOString(), updatedAt: new Date(m.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "master", entityId: m.id, orderId: null, masterId: m.id, clientId: null, city: m.city ?? null, amountAtRisk: null, actions: actionSet("blocked_master") }); }
   const balance = avitoRows[0] as any;
   if (balance && Number(balance.manualBalance ?? 0) < 1000) items.push({ id: "low_avito_balance-1", type: "low_avito_balance", priority: "high", title: "Баланс Avito ниже нормы", shortDescription: `Текущий баланс: ${Number(balance.manualBalance ?? 0).toLocaleString("ru-RU")} ₽`, fullDescription: "Баланс Avito ниже рекомендуемого порога.", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "finance", entityId: balance.id ?? null, orderId: null, masterId: null, clientId: null, city: null, amountAtRisk: null, actions: actionSet("low_avito_balance") });
@@ -479,8 +494,8 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
     if (!Number.isFinite(paidAmount) || paidAmount <= 0) throw Object.assign(new Error("Укажите оплаченную сумму"), { status: 400 });
     const commSettings = await getCommissionSettings();
     const totalCommission = calculateCommission(orderAmount, commSettings);
-    const paidFraction = Math.min(paidAmount / orderAmount, 1);
-    const paidCommission = Math.round(totalCommission * paidFraction);
+    // paidAmount — это сумма оплаченной комиссии (не доля от заказа)
+    const paidCommission = Math.min(Math.round(paidAmount), totalCommission);
     const remainingCommission = Math.max(0, totalCommission - paidCommission);
     const now = new Date();
 
@@ -558,11 +573,30 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
   }
 
   if (action === "reassign" && item.orderId != null && payload.masterId != null) {
-    const [targetMaster] = await db.select({ id: mastersTable.id, status: mastersTable.status }).from(mastersTable).where(and(eq(mastersTable.id, Number(payload.masterId)), isNull(mastersTable.deletedAt))).limit(1);
+    const [targetMaster] = await db.select({ id: mastersTable.id, alias: mastersTable.alias, maxChatId: mastersTable.maxChatId, status: mastersTable.status }).from(mastersTable).where(and(eq(mastersTable.id, Number(payload.masterId)), isNull(mastersTable.deletedAt))).limit(1);
     if (targetMaster) {
       await db.update(ordersTable)
         .set({ masterId: Number(payload.masterId), status: "in_progress", updatedAt: new Date() })
         .where(eq(ordersTable.id, Number(item.orderId)));
+      // Уведомить нового мастера о назначении
+      const notifyText = `📋 Вам назначен заказ #${item.orderId}. Пожалуйста, свяжитесь с клиентом и подтвердите выезд.`;
+      if (targetMaster.maxChatId) {
+        await sendMaxMessage(targetMaster.maxChatId, notifyText).catch((e: any) => console.error("[reassign] max send failed:", e));
+      }
+      sendPushToMaster(Number(payload.masterId), {
+        type: "new_message",
+        title: "Новый заказ",
+        body: `Вам назначен заказ #${item.orderId}`,
+      }).catch((e: any) => console.error("[reassign] push failed:", e));
+      const chatId = targetMaster.maxChatId ? `max_${targetMaster.maxChatId}` : `pwa_${payload.masterId}`;
+      await db.insert(masterMessagesTable).values({
+        masterId: Number(payload.masterId),
+        telegramChatId: chatId,
+        text: notifyText,
+        fromMaster: false,
+        senderName: operatorName,
+        isRead: true,
+      });
     }
   }
 
