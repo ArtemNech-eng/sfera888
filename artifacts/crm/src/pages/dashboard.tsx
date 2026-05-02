@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { MapPin, RefreshCw } from "lucide-react";
 import { Layout } from "@/components/layout";
 import { ProtectedRoute } from "@/hooks/use-auth";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { KPICards } from "../components/dashboard/KPICards";
 import { AlertsBlock } from "../components/dashboard/AlertsBlock";
 import { ActionItemsBlock } from "../components/dashboard/ActionItemsBlock";
@@ -34,6 +35,7 @@ async function fetchDashboard() {
 }
 
 function DashboardPage() {
+  usePushNotifications(); // register SW and auto-subscribe if permission already granted
   const [period, setPeriod] = useState<Period>("month");
   const [city, setCity] = useState("Все города");
   const [chartDays, setChartDays] = useState<30 | 60 | 90>(30);

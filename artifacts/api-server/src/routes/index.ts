@@ -1,5 +1,6 @@
 import { Router } from "express";
-import { db, serviceTypesTable } from "@workspace/db";
+import { db, serviceTypesTable, taskSnoozesTable, operatorPushSubscriptionsTable } from "@workspace/db";
+import { lt } from "drizzle-orm";
 import healthRouter from "./health.js";
 import authRouter from "./auth.js";
 import usersRouter from "./users.js";
@@ -31,8 +32,14 @@ import workMonitorRouter from "./work-monitor.js";
 import workBoardRouter from "./work-board.js";
 import dashboardActionItemsRouter from "./dashboard-action-items.js";
 import { processCases, scheduleDigest } from "../lib/casesEngine.js";
+import { sendPushToAllOperators } from "../lib/operatorPush.js";
+import { buildItems } from "./dashboard-action-items.js";
+import { requireRole } from "../middlewares/requireAuth.js";
+
+declare const console: any;
 
 const router = Router();
+const ops = requireRole("admin", "master_operator", "lead_operator");
 
 router.use("/", healthRouter);
 router.use("/auth", authRouter);
@@ -65,6 +72,26 @@ router.use("/work-monitor", workMonitorRouter);
 router.use("/work-board", workBoardRouter);
 router.use("/dashboard", dashboardActionItemsRouter);
 
+// Push subscription endpoint for operators (CRM)
+router.post("/push/operator-subscribe", ops, async (req: any, res: any) => {
+  const { endpoint, p256dh, auth } = req.body ?? {};
+  if (!endpoint || !p256dh || !auth) return res.status(400).json({ error: "Неверные данные подписки" });
+  const operatorId = String((req as any).user?.id ?? (req as any).user?.name ?? "unknown");
+  try {
+    await db
+      .insert(operatorPushSubscriptionsTable)
+      .values({ operatorId, endpoint, p256dh, auth })
+      .onConflictDoUpdate({
+        target: operatorPushSubscriptionsTable.endpoint,
+        set: { operatorId, p256dh, auth },
+      });
+    res.json({ ok: true });
+  } catch (e: any) {
+    console.error("[push/operator-subscribe]", e);
+    res.status(500).json({ error: "Ошибка сохранения подписки" });
+  }
+});
+
 // Seed popular repair services on startup (INSERT ... ON CONFLICT DO NOTHING)
 async function seedServices() {
   const popular = [
@@ -89,5 +116,46 @@ setInterval(() => runTrashCleanup().catch(console.error), 60 * 60 * 1000);
 setTimeout(() => processCases().catch(console.error), 10_000);
 setInterval(() => processCases().catch(console.error), 5 * 60 * 1000);
 scheduleDigest();
+
+// Snooze wakeup job: every 15 minutes check for expired snoozes and send push
+async function processExpiredSnoozes() {
+  const now = new Date();
+  const expired = await db
+    .select()
+    .from(taskSnoozesTable)
+    .where(lt(taskSnoozesTable.snoozedUntil, now));
+
+  if (expired.length === 0) return;
+
+  // Build current items to get titles for notifications
+  const itemTitles: Map<string, string> = new Map();
+  try {
+    const items = await buildItems();
+    for (const item of items) itemTitles.set(item.id, item.title);
+  } catch (e) {
+    console.error("[snooze-job] buildItems failed:", e);
+  }
+
+  for (const snooze of expired) {
+    const title = itemTitles.get((snooze as any).itemId) ?? "Задача требует внимания";
+    await sendPushToAllOperators({
+      type: "snooze_wakeup",
+      title: "Напоминание о задаче",
+      body: title,
+      itemId: (snooze as any).itemId,
+      url: "/dashboard",
+    }).catch((e: any) => console.error("[snooze-job] push failed:", e));
+    console.log(`[snooze-job] woke up item=${(snooze as any).itemId}, sent push`);
+  }
+
+  // Delete all expired snoozes in bulk
+  await db
+    .delete(taskSnoozesTable)
+    .where(lt(taskSnoozesTable.snoozedUntil, now))
+    .catch((e: any) => console.error("[snooze-job] delete failed:", e));
+}
+
+setTimeout(() => processExpiredSnoozes().catch(console.error), 30_000);
+setInterval(() => processExpiredSnoozes().catch(console.error), 15 * 60 * 1000);
 
 export default router;
