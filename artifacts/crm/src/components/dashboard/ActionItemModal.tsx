@@ -268,6 +268,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
 
   const item = data;
   const ctx = item?.context ?? {};
+  const showContent = !!item && !isLoading;
 
   const badgeColor = PRIORITY_BADGE[item?.priority ?? "low"] ?? PRIORITY_BADGE.low;
   const leftColor = PRIORITY_LEFT[item?.priority ?? "low"] ?? PRIORITY_LEFT.low;
@@ -978,7 +979,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
         <div className={`absolute left-0 top-0 bottom-0 w-1.5 rounded-l-[18px] ${leftColor}`} />
 
         {/* Скелетон загрузки — показываем пока данные не пришли */}
-        {isLoading && (
+        {!showContent && (
           <div className="pl-7 pr-6 pt-6 pb-6 space-y-4 min-h-[200px] flex flex-col justify-center">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-slate-200 animate-pulse shrink-0" />
@@ -992,7 +993,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
           </div>
         )}
 
-        {!isLoading && (
+        {showContent && (
           <div className="max-h-[85vh] overflow-y-auto">
           <div className="pl-7 pr-6 pt-6 pb-4 space-y-4">
 
@@ -1121,7 +1122,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
         </div>
         )}
 
-        {!isLoading && (<>
+        {showContent && (<>
         {/* Toast */}
         {toast && (
           <div className={`px-6 pb-2 text-sm font-medium ${toast.ok ? "text-green-700" : "text-red-600"}`}>
