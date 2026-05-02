@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { db, ordersTable, mastersTable, leadsTable, receiptsTable, avitoSettingsTable, chatCasesTable, systemTasksTable, masterMessagesTable, transactionsTable } from "@workspace/db";
-import { desc, isNull, eq, and, sql, not, inArray } from "drizzle-orm";
+import { db, ordersTable, mastersTable, leadsTable, receiptsTable, avitoSettingsTable, chatCasesTable, systemTasksTable, masterMessagesTable, transactionsTable, transactionPaymentsTable } from "@workspace/db";
+import { desc, isNull, eq, and, sql, not, inArray, sum } from "drizzle-orm";
 import { sendMaxMessage } from "../maxBot.js";
 import { sendPushToMaster } from "../lib/push.js";
 import { requireRole } from "../middlewares/requireAuth.js";
@@ -471,9 +471,11 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
     }
 
     // Record partial payment in transactions if order exists
+    let txId: number | null = null;
     if (orderId != null) {
       const [existingTx] = await db.select({ id: transactionsTable.id }).from(transactionsTable).where(eq(transactionsTable.orderId, orderId)).limit(1);
       if (existingTx) {
+        txId = existingTx.id;
         await db.update(transactionsTable).set({
           orderAmount: String(orderAmount),
           commission: String(totalCommission),
@@ -481,28 +483,44 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
           paidAt: remainingCommission <= 0 ? now : null,
         }).where(eq(transactionsTable.id, existingTx.id));
       } else {
-        await db.insert(transactionsTable).values({
+        const [inserted] = await db.insert(transactionsTable).values({
           orderId,
           masterId,
           orderAmount: String(orderAmount),
           commission: String(totalCommission),
           paymentStatus: remainingCommission <= 0 ? "paid" : "pending",
           paidAt: remainingCommission <= 0 ? now : null,
-        });
+        }).returning({ id: transactionsTable.id });
+        txId = inserted?.id ?? null;
       }
     }
 
+    // Always record the individual partial payment in transaction_payments
+    if (txId != null && paidCommission > 0) {
+      await db.insert(transactionPaymentsTable).values({
+        transactionId: txId,
+        amount: String(paidCommission),
+        note: `Частичная оплата комиссии оператором. Сумма заказа: ${orderAmount} ₽, оплачено: ${paidAmount} ₽`,
+        paidAt: now,
+      });
+    }
+
+    // Remaining order amount (not commission) — what the master still needs to collect from client
+    const remainingOrderAmount = Math.max(0, orderAmount - paidAmount);
+
     const [master] = await db.select({ id: mastersTable.id, maxChatId: mastersTable.maxChatId }).from(mastersTable).where(eq(mastersTable.id, masterId)).limit(1);
-    const notifyText = remainingCommission > 0
-      ? `💰 Частичная оплата комиссии по заказу${orderId ? ` #${orderId}` : ""} принята: ${paidCommission.toLocaleString("ru-RU")} ₽ из ${totalCommission.toLocaleString("ru-RU")} ₽. Остаток к оплате: ${remainingCommission.toLocaleString("ru-RU")} ₽.`
-      : `✅ Комиссия по заказу${orderId ? ` #${orderId}` : ""} полностью оплачена: ${paidCommission.toLocaleString("ru-RU")} ₽. Спасибо!`;
+    const notifyText = remainingOrderAmount > 0
+      ? `💰 Оплата по заказу${orderId ? ` #${orderId}` : ""} зафиксирована: ${paidAmount.toLocaleString("ru-RU")} ₽ из ${orderAmount.toLocaleString("ru-RU")} ₽. Остаток: ${remainingOrderAmount.toLocaleString("ru-RU")} ₽.`
+      : `✅ Оплата по заказу${orderId ? ` #${orderId}` : ""} полностью получена: ${paidAmount.toLocaleString("ru-RU")} ₽. Спасибо!`;
     if (master?.maxChatId) {
       await sendMaxMessage(master.maxChatId, notifyText).catch((e: any) => console.error("[partial_payment] max send failed:", e));
     }
     sendPushToMaster(masterId, {
       type: "new_message",
-      title: "Частичная оплата принята",
-      body: `Принято ${paidCommission.toLocaleString("ru-RU")} ₽${remainingCommission > 0 ? `, остаток ${remainingCommission.toLocaleString("ru-RU")} ₽` : ". Оплачено полностью."}`,
+      title: "Оплата зафиксирована",
+      body: remainingOrderAmount > 0
+        ? `Принято ${paidAmount.toLocaleString("ru-RU")} ₽, остаток ${remainingOrderAmount.toLocaleString("ru-RU")} ₽`
+        : `Оплата ${paidAmount.toLocaleString("ru-RU")} ₽ получена полностью`,
     }).catch((e: any) => console.error("[partial_payment] push failed:", e));
     const chatId = master?.maxChatId ? `max_${master.maxChatId}` : `pwa_${masterId}`;
     await db.insert(masterMessagesTable).values({ masterId, telegramChatId: chatId, text: notifyText, fromMaster: false, senderName: operatorName, isRead: true });
@@ -566,6 +584,16 @@ router.get("/action-items/:id", ops, async (req: any, res: any) => {
   if (item.type === "low_avito_balance") {
     const [av] = await db.select().from(avitoSettingsTable).limit(1);
     if (av) ctx.avitoBalance = (av as any).advanceBalance ?? 0;
+  }
+
+  // Always load transaction + partial payments for any item with an orderId
+  if (item.orderId != null) {
+    const [tx] = await db.select({ id: transactionsTable.id, commission: transactionsTable.commission, orderAmount: transactionsTable.orderAmount, paymentStatus: transactionsTable.paymentStatus, paidAt: transactionsTable.paidAt }).from(transactionsTable).where(eq(transactionsTable.orderId, Number(item.orderId))).limit(1);
+    if (tx) {
+      const paymentsRows = await db.select({ amount: transactionPaymentsTable.amount, paidAt: transactionPaymentsTable.paidAt, note: transactionPaymentsTable.note }).from(transactionPaymentsTable).where(eq(transactionPaymentsTable.transactionId, tx.id));
+      const paidCommission = paymentsRows.reduce((s: number, p: any) => s + Number(p.amount ?? 0), 0);
+      ctx.transaction = { id: tx.id, commission: Number(tx.commission), orderAmount: Number(tx.orderAmount), paymentStatus: tx.paymentStatus, paidAt: tx.paidAt, paidCommission, payments: paymentsRows };
+    }
   }
 
   res.json({ ...item, timeline: [], context: ctx, related: {}, notes: [] });
