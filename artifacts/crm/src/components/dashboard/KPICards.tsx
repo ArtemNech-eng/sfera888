@@ -35,11 +35,12 @@ interface KPICardProps {
   progressColor?: string;
   index: number;
   extraContent?: React.ReactNode;
+  changeLabel?: string;
 }
 
 function KPICard({
   title, value, prevValue, icon, iconBg, formatValue, subLabel,
-  subValue, progress, progressColor = '#34C759', index, extraContent
+  subValue, progress, progressColor = '#34C759', index, extraContent, changeLabel = 'vs вчера'
 }: KPICardProps) {
   const animated = useCountUp(value);
   const prevRef = useRef(value);
@@ -55,7 +56,8 @@ function KPICard({
     prevRef.current = value;
   }, [value]);
 
-  const change = prevValue !== undefined && prevValue > 0
+  // Не показываем изменение если текущее значение 0 — "-100%" вводит в заблуждение
+  const change = prevValue !== undefined && prevValue > 0 && value > 0
     ? ((value - prevValue) / prevValue) * 100
     : null;
   const isPositive = change !== null && change >= 0;
@@ -96,7 +98,7 @@ function KPICard({
           <span className={`text-[12px] font-medium ${isPositive ? 'text-[#34C759]' : 'text-[#EF4444]'}`}>
             {formatChange(change)}
           </span>
-          <span className="text-[12px] text-[#9CA3AF]">vs вчера</span>
+          <span className="text-[12px] text-[#9CA3AF]">{changeLabel}</span>
         </div>
       )}
 
@@ -164,6 +166,7 @@ export function KPICards({ data, isLoading, onEditAvitoBalance }: Props) {
         icon={<BarChart3 size={18} color="#3B82F6" />}
         iconBg="bg-[#EFF6FF]"
         formatValue={formatCurrency}
+        changeLabel="vs прошлый месяц"
       />
       <KPICard
         index={2}
