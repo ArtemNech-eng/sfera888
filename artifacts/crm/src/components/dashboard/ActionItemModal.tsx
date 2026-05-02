@@ -73,8 +73,8 @@ function InfoRow({ icon, label, value }: { icon: ReactNode; label: string; value
 
 function SectionBox({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="rounded-xl border bg-slate-50 p-4 space-y-3">
-      <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</div>
+    <div className="rounded-2xl bg-white p-5 space-y-3" style={{ boxShadow: "0 2px 16px rgba(0,0,0,0.07)" }}>
+      <div className="text-xs font-bold uppercase tracking-widest text-[#8E8E93]">{title}</div>
       {children}
     </div>
   );
@@ -140,16 +140,21 @@ function NextActionBanner({ text, phone, phoneLabel, callLabel }: {
   callLabel?: string;
 }) {
   return (
-    <div className="flex items-start gap-3 rounded-xl bg-amber-50 border border-amber-200 p-3">
-      <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+    <div className="flex items-start gap-3 rounded-2xl p-4" style={{ background: "rgba(52,199,89,0.07)", border: "1.5px solid rgba(52,199,89,0.25)" }}>
+      <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: "rgba(52,199,89,0.15)" }}>
+        <AlertTriangle className="w-4 h-4" style={{ color: "#34C759" }} />
+      </div>
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-semibold text-amber-900 mb-0.5">Что делать прямо сейчас</div>
-        <div className="text-sm text-amber-800">{text}</div>
+        <div className="text-sm font-bold text-[#1A1A1A] mb-0.5">Что делать прямо сейчас</div>
+        <div className="text-sm text-[#3A3A3A]">{text}</div>
       </div>
       {phone && (
         <a
           href={`tel:${phone}`}
-          className="shrink-0 flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white text-sm font-bold px-3 py-2 rounded-lg transition whitespace-nowrap"
+          className="shrink-0 flex items-center gap-1.5 text-white text-sm font-bold px-4 py-2 rounded-[14px] transition whitespace-nowrap"
+          style={{ background: "#34C759" }}
+          onMouseEnter={e => (e.currentTarget.style.background = "#2daf4e")}
+          onMouseLeave={e => (e.currentTarget.style.background = "#34C759")}
         >
           <Phone className="w-4 h-4" />
           {callLabel ?? phoneLabel ?? "Позвонить"}
