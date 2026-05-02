@@ -973,7 +973,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[860px] w-[95vw] max-h-[85vh] rounded-[18px] bg-white shadow-2xl p-0 overflow-hidden flex flex-col">
+      <DialogContent className="sm:max-w-[860px] w-[95vw] min-h-[420px] max-h-[85vh] rounded-[18px] bg-white shadow-2xl p-0 overflow-hidden flex flex-col">
         {/* Цветная полоса приоритета */}
         <div className={`absolute left-0 top-0 bottom-0 w-1.5 rounded-l-[18px] ${leftColor}`} />
 
