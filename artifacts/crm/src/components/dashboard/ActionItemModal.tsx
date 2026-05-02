@@ -202,13 +202,16 @@ function TemplateChips({ type, orderId, onSelect }: { type: string; orderId?: nu
   if (templates.length === 0) return null;
   return (
     <div className="flex flex-wrap gap-1.5">
-      <span className="text-xs text-muted-foreground self-center">Шаблоны:</span>
+      <span className="text-xs text-[#8E8E93] self-center font-medium">Шаблоны:</span>
       {templates.map((t) => (
         <button
           key={t.label}
           type="button"
           onClick={() => onSelect(t.text(orderId))}
-          className="text-xs px-2.5 py-1 rounded-full border border-slate-200 bg-white hover:bg-violet-50 hover:border-violet-300 hover:text-violet-700 text-slate-600 transition"
+          className="text-xs px-3 py-1.5 rounded-full border border-[#E5E5EA] bg-white text-[#1A1A1A] font-medium transition"
+          style={{ transition: "all 0.15s ease" }}
+          onMouseEnter={e => { e.currentTarget.style.background = "rgba(52,199,89,0.08)"; e.currentTarget.style.borderColor = "rgba(52,199,89,0.5)"; e.currentTarget.style.color = "#2daf4e"; }}
+          onMouseLeave={e => { e.currentTarget.style.background = "white"; e.currentTarget.style.borderColor = "#E5E5EA"; e.currentTarget.style.color = "#1A1A1A"; }}
         >
           {t.label}
         </button>
@@ -1047,17 +1050,31 @@ export function ActionItemModal({ id, open, onOpenChange }: {
         )}
 
         {/* Footer */}
-        <DialogFooter className="gap-2 flex-wrap px-6 pb-5 pt-0">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+        <DialogFooter className="gap-2 flex-wrap px-6 pb-5 pt-2 border-t border-[#F2F2F7]">
+          <button
+            onClick={() => onOpenChange(false)}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[14px] border border-[#E5E5EA] bg-white text-[#1A1A1A] text-sm font-semibold transition hover:bg-[#F5F5F5]"
+          >
             <X className="w-4 h-4" /> Закрыть
-          </Button>
-          <Button variant="secondary" onClick={() => fire("dismiss")} disabled={busy === "dismiss"}>
+          </button>
+          <button
+            onClick={() => fire("dismiss")}
+            disabled={busy === "dismiss"}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[14px] border border-[#E5E5EA] bg-white text-[#8E8E93] text-sm font-semibold transition hover:bg-[#F5F5F5] disabled:opacity-50"
+          >
             Отложить
-          </Button>
-          <Button onClick={() => fire("resolve")} disabled={busy === "resolve"} className="bg-violet-600 hover:bg-violet-700">
+          </button>
+          <button
+            onClick={() => fire("resolve")}
+            disabled={busy === "resolve"}
+            className="inline-flex items-center gap-1.5 px-5 py-2 rounded-[14px] text-white text-sm font-bold transition disabled:opacity-50"
+            style={{ background: "#34C759" }}
+            onMouseEnter={e => { if (!busy) e.currentTarget.style.background = "#2daf4e"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "#34C759"; }}
+          >
             <CheckCircle2 className="w-4 h-4" />
-            {busy === "resolve" ? "Завершаем..." : "Выполнено"}
-          </Button>
+            {busy === "resolve" ? "Завершаем..." : "Выполнено ✓"}
+          </button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
