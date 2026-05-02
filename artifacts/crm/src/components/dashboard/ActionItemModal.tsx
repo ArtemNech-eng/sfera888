@@ -1050,8 +1050,19 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                       : ctx.order?.proposedAmount != null
                         ? (Number(ctx.order.proposedAmount) <= 50000 ? 5000 : Math.round(Number(ctx.order.proposedAmount) * 0.15))
                         : null;
-                    const paidComm = ctx.transaction?.paidCommission ?? 0;
-                    return <PaymentProgress total={totalComm} paid={paidComm} />;
+                    const prepaymentDeducted = ctx.transaction?.prepaymentDeducted ?? 0;
+                    const paidComm = (ctx.transaction?.paidCommission ?? 0) + prepaymentDeducted;
+                    return (
+                      <>
+                        <PaymentProgress total={totalComm} paid={paidComm} />
+                        {prepaymentDeducted > 0 && (
+                          <div className="flex items-center gap-2 text-xs text-blue-700 bg-blue-50 rounded-lg px-3 py-2 border border-blue-200">
+                            <Banknote className="w-3.5 h-3.5 shrink-0" />
+                            <span>Бронь по смете: <strong>{Number(prepaymentDeducted).toLocaleString("ru-RU")} ₽</strong> уже зачтена в счёт комиссии</span>
+                          </div>
+                        )}
+                      </>
+                    );
                   })()}
                   {ctx.transaction?.payments?.length > 0 && (
                     <div className="space-y-1">
