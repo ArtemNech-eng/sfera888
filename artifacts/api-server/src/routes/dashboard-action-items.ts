@@ -632,11 +632,11 @@ router.get("/action-items/:id", ops, async (req: any, res: any) => {
 
   // Always load transaction + partial payments for any item with an orderId
   if (item.orderId != null) {
-    const [tx] = await db.select({ id: transactionsTable.id, commission: transactionsTable.commission, orderAmount: transactionsTable.orderAmount, paymentStatus: transactionsTable.paymentStatus, paidAt: transactionsTable.paidAt }).from(transactionsTable).where(eq(transactionsTable.orderId, Number(item.orderId))).limit(1);
+    const [tx] = await db.select({ id: transactionsTable.id, commission: transactionsTable.commission, orderAmount: transactionsTable.orderAmount, paymentStatus: transactionsTable.paymentStatus, paidAt: transactionsTable.paidAt, prepaymentDeducted: transactionsTable.prepaymentDeducted }).from(transactionsTable).where(eq(transactionsTable.orderId, Number(item.orderId))).limit(1);
     if (tx) {
       const paymentsRows = await db.select({ amount: transactionPaymentsTable.amount, paidAt: transactionPaymentsTable.paidAt, note: transactionPaymentsTable.note }).from(transactionPaymentsTable).where(eq(transactionPaymentsTable.transactionId, tx.id));
       const paidCommission = paymentsRows.reduce((s: number, p: any) => s + Number(p.amount ?? 0), 0);
-      ctx.transaction = { id: tx.id, commission: Number(tx.commission), orderAmount: Number(tx.orderAmount), paymentStatus: tx.paymentStatus, paidAt: tx.paidAt, paidCommission, payments: paymentsRows };
+      ctx.transaction = { id: tx.id, commission: Number(tx.commission), orderAmount: Number(tx.orderAmount), paymentStatus: tx.paymentStatus, paidAt: tx.paidAt, paidCommission, prepaymentDeducted: Number(tx.prepaymentDeducted ?? 0), payments: paymentsRows };
     }
   }
 

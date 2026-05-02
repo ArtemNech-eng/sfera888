@@ -451,7 +451,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
             {ctx.order?.proposedAmount != null && (
               <InfoRow icon={<Banknote className="w-4 h-4" />} label="Сумма сметы" value={`${Number(ctx.order.proposedAmount).toLocaleString("ru-RU")} ₽`} />
             )}
-            <PaymentProgress total={ctx.order?.proposedAmount} paid={ctx.receipt?.prepaymentAmount} />
+            <PaymentProgress total={ctx.order?.proposedAmount} paid={ctx.receipt?.prepaymentSeenAt ? ctx.receipt?.prepaymentAmount : 0} />
             {ctx.receipt && (
               <div className="space-y-2">
                 {ctx.receipt.prepaymentAmount && (
