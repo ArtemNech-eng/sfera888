@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { db, ordersTable, mastersTable, leadsTable, receiptsTable, avitoSettingsTable, chatCasesTable, systemTasksTable, masterMessagesTable, transactionsTable, transactionPaymentsTable } from "@workspace/db";
-import { desc, isNull, eq, and, sql, not, inArray, sum } from "drizzle-orm";
+import { db, ordersTable, mastersTable, leadsTable, receiptsTable, avitoSettingsTable, chatCasesTable, systemTasksTable, masterMessagesTable, transactionsTable, transactionPaymentsTable, taskSnoozesTable } from "@workspace/db";
+import { desc, isNull, eq, and, sql, not, inArray, lte, gt } from "drizzle-orm";
 import { sendMaxMessage } from "../maxBot.js";
 import { sendPushToMaster } from "../lib/push.js";
 import { requireRole } from "../middlewares/requireAuth.js";
@@ -548,6 +548,15 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
     console.log(`[partial_payment] master #${masterId} paid ${paidCommission} of ${totalCommission}, remaining=${remainingCommission}`);
   }
 
+  if (action === "snooze") {
+    const days = Math.max(1, Math.min(30, Number(payload?.days ?? 1)));
+    const snoozedUntil = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+    await db.insert(taskSnoozesTable)
+      .values({ itemId: item.id, snoozedUntil, snoozedBy: operatorName })
+      .onConflictDoUpdate({ target: taskSnoozesTable.itemId, set: { snoozedUntil, snoozedBy: operatorName } });
+    return { routedTo: "/tasks", applied: true, action, payload, itemId: item.id, snoozedUntil: snoozedUntil.toISOString() };
+  }
+
   if (action === "reassign" && item.orderId != null && payload.masterId != null) {
     const [targetMaster] = await db.select({ id: mastersTable.id, status: mastersTable.status }).from(mastersTable).where(and(eq(mastersTable.id, Number(payload.masterId)), isNull(mastersTable.deletedAt))).limit(1);
     if (targetMaster) {
@@ -562,7 +571,16 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
 
 router.get("/action-items", ops, async (req: any, res: any) => {
   const { period = "all", city = "all", priority = "all", status = "all" } = req.query ?? {};
-  const items = (await buildItems()).filter((item) => matchesFilters(item, { period: String(period), city: String(city), priority: String(priority), status: String(status) }));
+  const now = new Date();
+  // Load active snoozes (snoozedUntil > now)
+  const activeSnoozes = await db.select({ itemId: taskSnoozesTable.itemId })
+    .from(taskSnoozesTable)
+    .where(gt(taskSnoozesTable.snoozedUntil, now));
+  const snoozedIds = new Set(activeSnoozes.map((s: any) => s.itemId));
+
+  const items = (await buildItems())
+    .filter((item) => !snoozedIds.has(item.id))
+    .filter((item) => matchesFilters(item, { period: String(period), city: String(city), priority: String(priority), status: String(status) }));
   const summary = { critical: items.filter((i) => i.priority === "critical").length, high: items.filter((i) => i.priority === "high").length, medium: items.filter((i) => i.priority === "medium").length, low: items.filter((i) => i.priority === "low").length, doneToday: items.filter((i) => i.status === "done" && withinPeriod(i.createdAt, "today")).length };
   res.json({ summary, items });
 });
@@ -630,7 +648,7 @@ router.post("/action-items/:id/action", ops, async (req: any, res: any) => {
     item = items.find((i) => (Number.isFinite(orderId) && i.orderId != null && Number(i.orderId) === orderId) || (Number.isFinite(masterId) && i.masterId != null && Number(i.masterId) === masterId));
   }
   if (!item) return res.status(404).json({ error: "Не найдено" });
-  if (!["message_master", "call_client", "reassign", "cancel_order", "cancel_as_master", "complete_as_master", "partial_payment", "return_to_pool", "resolve", "dismiss", "update_balance", "manual_unblock", "call_master", "resend", "block_master", "manual_control", "open_issue_order"].includes(action)) return res.status(400).json({ error: "Недопустимое действие" });
+  if (!["message_master", "call_client", "reassign", "cancel_order", "cancel_as_master", "complete_as_master", "partial_payment", "return_to_pool", "resolve", "dismiss", "snooze", "update_balance", "manual_unblock", "call_master", "resend", "block_master", "manual_control", "open_issue_order"].includes(action)) return res.status(400).json({ error: "Недопустимое действие" });
   const operatorName = (req as any).user?.name ?? "Оператор";
   const operatorRole = (req as any).user?.role ?? "operator";
   let result: any;
