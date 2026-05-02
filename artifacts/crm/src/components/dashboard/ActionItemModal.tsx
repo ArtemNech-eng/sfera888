@@ -323,14 +323,14 @@ export function ActionItemModal({ id, open, onOpenChange }: {
         try { await refetch(); } catch { /* ok */ }
         return;
       }
-      if (action === "complete_as_master") {
+        if (action === "complete_as_master") {
         const mode = (payload as { commissionMode?: string }).commissionMode;
         const msg = mode === "as_debt"
           ? "✅ Заказ завершён. Комиссия добавлена к долгу мастера, уведомление отправлено."
           : mode === "no_debt"
           ? "✅ Заказ завершён без начисления комиссии. Уведомление мастеру отправлено."
           : "✅ Заказ завершён. Комиссия засчитана как оплаченная, мастеру отправлено уведомление.";
-        window.alert(msg);
+        showToast(msg);
         onOpenChange(false);
         return;
       }
@@ -343,7 +343,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
           : reason === "other"
           ? "⚠️ Заказ отменён (другая причина мастера). Рейтинг мастера обновлён, уведомление отправлено."
           : "⚠️ Заказ отменён (обход платформы). Рейтинг мастера обновлён, уведомление отправлено.";
-        window.alert(msg);
+        showToast(msg);
         onOpenChange(false);
         return;
       }
@@ -351,7 +351,6 @@ export function ActionItemModal({ id, open, onOpenChange }: {
       showToast(successMsg);
     } catch (e: any) {
       console.error("[ActionItemModal.fire] error:", e);
-      window.alert(`❌ Ошибка: ${e?.message ?? "Неизвестная ошибка"}`);
       showToast(e?.message ?? "Ошибка при выполнении", false);
     } finally {
       setBusy(null);
