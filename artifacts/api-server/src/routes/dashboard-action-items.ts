@@ -443,9 +443,15 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
     }
   }
 
-  if (action === "partial_payment" && item.masterId != null) {
-    const masterId = Number(item.masterId);
-    const orderId = item.orderId != null ? Number(item.orderId) : null;
+  if (action === "partial_payment") {
+    // masterId может быть null для некоторых задач — пробуем взять из payload или из заказа
+    const orderId = item.orderId != null ? Number(item.orderId) : (payload?.orderId != null ? Number(payload.orderId) : null);
+    let masterId = item.masterId != null ? Number(item.masterId) : null;
+    if (masterId == null && orderId != null) {
+      const [orderRow] = await db.select({ masterId: ordersTable.masterId }).from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1);
+      if (orderRow?.masterId) masterId = Number(orderRow.masterId);
+    }
+    if (masterId == null) throw Object.assign(new Error("Не удалось определить мастера для частичной оплаты"), { status: 400 });
     const orderAmount = Number(payload?.orderAmount ?? 0);
     const paidAmount = Number(payload?.paidAmount ?? 0);
     if (!Number.isFinite(orderAmount) || orderAmount <= 0) throw Object.assign(new Error("Укажите полную сумму сметы"), { status: 400 });

@@ -306,6 +306,20 @@ export function ActionItemModal({ id, open, onOpenChange }: {
         ? `Назначен: ${assignedMaster.name}${assignedMaster.city ? ` (${assignedMaster.city})` : ""}`
         : "Действие выполнено";
       window.dispatchEvent(new CustomEvent("dashboard-action-items:changed"));
+      if (action === "partial_payment") {
+        const n = Number((payload as any).orderAmount ?? 0);
+        const p = Number((payload as any).paidAmount ?? 0);
+        const totalComm = n <= 50000 ? 5000 : Math.round(n * 0.15);
+        const paidFrac = Math.min(p / n, 1);
+        const paidComm = Math.round(totalComm * paidFrac);
+        const remaining = Math.max(0, totalComm - paidComm);
+        const msg = remaining > 0
+          ? `✅ Принято ${paidComm.toLocaleString("ru-RU")} ₽. Остаток: ${remaining.toLocaleString("ru-RU")} ₽. Мастеру отправлено уведомление.`
+          : `✅ Комиссия полностью оплачена: ${paidComm.toLocaleString("ru-RU")} ₽. Мастеру отправлено уведомление.`;
+        showToast(msg);
+        try { await refetch(); } catch { /* ok */ }
+        return;
+      }
       if (action === "complete_as_master") {
         const mode = (payload as { commissionMode?: string }).commissionMode;
         const msg = mode === "as_debt"
