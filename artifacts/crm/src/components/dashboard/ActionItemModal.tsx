@@ -438,17 +438,43 @@ export function ActionItemModal({ id, open, onOpenChange }: {
         );
 
       // ─── Нет оплаты ──────────────────────────────────────────────
-      case "no_payment":
+      case "no_payment": {
+        // receipt-подтип: клиент уже прислал скриншот, оператор должен подтвердить
+        const isReceiptPending = !!(ctx.receipt?.prepaymentSubmittedAt && !ctx.receipt?.prepaymentSeenAt);
         return (
-          <SectionBox title="Ситуация: предоплата не получена">
-            <NextActionBanner
-              text={`Клиент не оплатил смету${ctx.order?.hoursOld != null ? ` уже ${fmtAge(ctx.order.hoursOld)}` : ""}. Позвоните клиенту и напомните об оплате.`}
-              phone={ctx.order?.clientPhone ?? ctx.client?.clientPhone}
-              callLabel={`Позвонить${(ctx.order?.clientName ?? ctx.client?.clientName) ? ` ${ctx.order?.clientName ?? ctx.client?.clientName}` : " клиенту"}`}
-            />
+          <SectionBox title={isReceiptPending ? "Ситуация: подтвердите получение оплаты" : "Ситуация: предоплата не получена"}>
+            {isReceiptPending ? (
+              <NextActionBanner
+                text={`Клиент подтвердил оплату${ctx.receipt?.prepaymentSubmittedAt ? ` ${fmtAge((Date.now() - new Date(ctx.receipt.prepaymentSubmittedAt).getTime()) / 3600000)} назад` : ""}. Проверьте скриншот и нажмите «Подтвердить получение».`}
+                phone={ctx.order?.clientPhone ?? ctx.client?.clientPhone}
+                callLabel="Позвонить клиенту"
+              />
+            ) : (
+              <NextActionBanner
+                text={`Клиент не оплатил смету${ctx.order?.hoursOld != null ? ` уже ${fmtAge(ctx.order.hoursOld)}` : ""}. Позвоните клиенту и напомните об оплате.`}
+                phone={ctx.order?.clientPhone ?? ctx.client?.clientPhone}
+                callLabel={`Позвонить${(ctx.order?.clientName ?? ctx.client?.clientName) ? ` ${ctx.order?.clientName ?? ctx.client?.clientName}` : " клиенту"}`}
+              />
+            )}
             <OrderInfoBlock ctx={ctx} ageLabel="Ожидаем оплату" />
             {ctx.order?.proposedAmount != null && (
               <InfoRow icon={<Banknote className="w-4 h-4" />} label="Сумма сметы" value={`${Number(ctx.order.proposedAmount).toLocaleString("ru-RU")} ₽`} />
+            )}
+            {isReceiptPending && (
+              <div className="border-t pt-3">
+                <Button
+                  size="sm"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white w-full"
+                  disabled={busy === "confirm_receipt"}
+                  onClick={async () => {
+                    await fire("confirm_receipt");
+                    onOpenChange(false);
+                  }}
+                >
+                  <CheckCircle2 className="w-4 h-4 mr-1" />
+                  {busy === "confirm_receipt" ? "Подтверждаем..." : "✅ Подтвердить получение оплаты"}
+                </Button>
+              </div>
             )}
             {ctx.receipt && (
               <div className="space-y-2">
@@ -557,6 +583,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
             </div>
           </SectionBox>
         );
+      }
 
       // ─── Нет отклика мастера ─────────────────────────────────────
       case "no_master_response":

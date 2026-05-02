@@ -600,6 +600,40 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
     }
   }
 
+  if (action === "confirm_receipt" && item.entityId != null) {
+    // entityId для receipt-задач — это id записи в receipts
+    const receiptId = Number(item.entityId);
+    const now = new Date();
+    await db.update(receiptsTable)
+      .set({ prepaymentSeenAt: now } as any)
+      .where(eq(receiptsTable.id, receiptId));
+    console.log(`[confirm_receipt] receipt #${receiptId} marked seen by ${operatorName}`);
+    // Уведомить мастера о подтверждении оплаты
+    if (item.masterId != null) {
+      const masterId = Number(item.masterId);
+      const [master] = await db.select({ id: mastersTable.id, maxChatId: mastersTable.maxChatId }).from(mastersTable).where(eq(mastersTable.id, masterId)).limit(1);
+      const notifyText = `✅ Оплата по заказу${item.orderId ? ` #${item.orderId}` : ""} подтверждена оператором. Можете приступать к работе!`;
+      if (master?.maxChatId) {
+        await sendMaxMessage(master.maxChatId, notifyText).catch((e: any) => console.error("[confirm_receipt] max send failed:", e));
+      }
+      sendPushToMaster(masterId, {
+        type: "new_message",
+        title: "Оплата подтверждена",
+        body: `Оплата по заказу${item.orderId ? ` #${item.orderId}` : ""} подтверждена.`,
+      }).catch((e: any) => console.error("[confirm_receipt] push failed:", e));
+      const chatId = master?.maxChatId ? `max_${master.maxChatId}` : `pwa_${masterId}`;
+      await db.insert(masterMessagesTable).values({
+        masterId,
+        telegramChatId: chatId,
+        text: notifyText,
+        fromMaster: false,
+        senderName: operatorName,
+        isRead: true,
+      });
+    }
+    return { routedTo: "/finance", applied: true, action, payload, itemId: item.id, confirmedAt: now.toISOString() };
+  }
+
   return { routedTo: route, applied: true, action, payload, itemId: item.id };
 }
 
@@ -687,7 +721,7 @@ router.post("/action-items/:id/action", ops, async (req: any, res: any) => {
     item = items.find((i) => (Number.isFinite(orderId) && i.orderId != null && Number(i.orderId) === orderId) || (Number.isFinite(masterId) && i.masterId != null && Number(i.masterId) === masterId));
   }
   if (!item) return res.status(404).json({ error: "Не найдено" });
-  if (!["message_master", "call_client", "reassign", "cancel_order", "cancel_as_master", "complete_as_master", "partial_payment", "return_to_pool", "resolve", "dismiss", "snooze", "update_balance", "manual_unblock", "call_master", "resend", "block_master", "manual_control", "open_issue_order"].includes(action)) return res.status(400).json({ error: "Недопустимое действие" });
+  if (!["message_master", "call_client", "reassign", "cancel_order", "cancel_as_master", "complete_as_master", "partial_payment", "return_to_pool", "resolve", "dismiss", "snooze", "update_balance", "manual_unblock", "call_master", "resend", "block_master", "manual_control", "open_issue_order", "confirm_receipt"].includes(action)) return res.status(400).json({ error: "Недопустимое действие" });
   const operatorName = (req as any).user?.name ?? "Оператор";
   const operatorRole = (req as any).user?.role ?? "operator";
   let result: any;
