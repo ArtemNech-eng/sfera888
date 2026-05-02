@@ -572,11 +572,16 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
 router.get("/action-items", ops, async (req: any, res: any) => {
   const { period = "all", city = "all", priority = "all", status = "all" } = req.query ?? {};
   const now = new Date();
-  // Load active snoozes (snoozedUntil > now)
-  const activeSnoozes = await db.select({ itemId: taskSnoozesTable.itemId })
-    .from(taskSnoozesTable)
-    .where(gt(taskSnoozesTable.snoozedUntil, now));
-  const snoozedIds = new Set(activeSnoozes.map((s: any) => s.itemId));
+  // Load active snoozes — wrapped in try/catch in case the table doesn't exist yet (migration pending)
+  let snoozedIds = new Set<string>();
+  try {
+    const activeSnoozes = await db.select({ itemId: taskSnoozesTable.itemId })
+      .from(taskSnoozesTable)
+      .where(gt(taskSnoozesTable.snoozedUntil, now));
+    snoozedIds = new Set(activeSnoozes.map((s: any) => s.itemId));
+  } catch (e: any) {
+    console.warn("[action-items] task_snoozes table not available yet, skipping snooze filter:", e?.message);
+  }
 
   const items = (await buildItems())
     .filter((item) => !snoozedIds.has(item.id))
