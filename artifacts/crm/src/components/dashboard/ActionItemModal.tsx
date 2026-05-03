@@ -474,6 +474,25 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                 </div>
               )}
             </div>
+
+            <div className="border-t pt-3 flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" onClick={() => fire("resolve")} disabled={busy === "resolve"}>
+                <CheckCircle2 className="w-4 h-4" /> Пометить выполненной
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => fire("dismiss")} disabled={busy === "dismiss"}>
+                <Clock className="w-4 h-4" /> Отложить
+              </Button>
+              <Button size="sm" variant="destructive" onClick={() => { if (confirmInput.toUpperCase() === "ОТМЕНИТЬ") fire("cancel_order"); else showToast('Введите "ОТМЕНИТЬ" для подтверждения', false); }} disabled={busy === "cancel_order"}>
+                Отменить заказ
+              </Button>
+              <Input
+                value={confirmInput}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setConfirmInput(e.target.value)}
+                placeholder='Введите ОТМЕНИТЬ'
+                className="w-36 bg-white"
+                size={10}
+              />
+            </div>
           </SectionBox>
         );
 
