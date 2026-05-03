@@ -404,12 +404,17 @@ export function WorkBoardKanban({ onOpenOrder }: { onOpenOrder: (orderId: number
     if (!q) return data.columns;
     return data.columns.map(col => ({
       ...col,
-      cards: col.cards.filter(c =>
-        String(c.leadId ?? c.orderId).includes(q) ||
-        c.title.toLowerCase().includes(q) ||
-        c.address.toLowerCase().includes(q) ||
-        (c.master ?? "").toLowerCase().includes(q),
-      ),
+      cards: col.cards.filter(c => {
+        // Если запрос — чистое число, ищем точное совпадение по orderId
+        const isNumeric = /^\d+$/.test(q);
+        if (isNumeric) return String(c.orderId) === q;
+        return (
+          String(c.orderId).includes(q) ||
+          c.title.toLowerCase().includes(q) ||
+          c.address.toLowerCase().includes(q) ||
+          (c.master ?? "").toLowerCase().includes(q)
+        );
+      }),
     }));
   }, [data, search]);
 
