@@ -131,7 +131,7 @@ function actionSet(type: TaskType) {
 async function buildItems(): Promise<Item[]> {
   const items: Item[] = [];
   const now = new Date();
-  const [orders, masters, leads, receipts, cases, avitoRows, manualTasks] = await Promise.all([
+  const [orders, masters, leads, receipts, cases, avitoRows, manualTasks, txRows] = await Promise.all([
     db.select({ id: ordersTable.id, leadId: ordersTable.leadId, masterId: ordersTable.masterId, city: ordersTable.city, status: ordersTable.status, proposedAmount: ordersTable.proposedAmount, orderAmount: ordersTable.orderAmount, createdAt: ordersTable.createdAt, updatedAt: ordersTable.updatedAt, cancelReason: ordersTable.cancelReason }).from(ordersTable).where(and(isNull(ordersTable.deletedAt), not(inArray(ordersTable.status, ["completed", "cancelled"])))),
     db.select({ id: mastersTable.id, alias: mastersTable.alias, city: mastersTable.city, status: mastersTable.status, createdAt: mastersTable.createdAt }).from(mastersTable).where(isNull(mastersTable.deletedAt)),
     db.select({ id: leadsTable.id, clientName: leadsTable.clientName, clientPhone: leadsTable.clientPhone, city: leadsTable.city, createdAt: leadsTable.createdAt }).from(leadsTable).where(isNull(leadsTable.deletedAt)),
@@ -139,18 +139,23 @@ async function buildItems(): Promise<Item[]> {
     db.select().from(chatCasesTable).orderBy(desc(chatCasesTable.updatedAt)).limit(50),
     db.select().from(avitoSettingsTable).limit(1),
     db.select().from(systemTasksTable).orderBy(desc(systemTasksTable.createdAt)).limit(50),
+    db.select({ orderId: transactionsTable.orderId, orderAmount: transactionsTable.orderAmount }).from(transactionsTable),
   ]);
   const leadMap = new Map(leads.map((l: any) => [l.id, l]));
   const orderMap = new Map(orders.map((o: any) => [o.id, o]));
   const masterMap = new Map(masters.map((m: any) => [m.id, m]));
   // Orders that already have a receipt with prepaymentAmount > 0 — estimate was effectively sent
   const receiptOrderIds = new Set(receipts.filter((r: any) => Number(r.prepaymentAmount ?? 0) > 0).map((r: any) => Number(r.orderId)).filter(Boolean));
+  // Orders that already have a transaction with orderAmount > 0 — estimate definitely exists
+  const txOrderIds = new Set(txRows.filter((t: any) => Number(t.orderAmount ?? 0) > 0).map((t: any) => Number(t.orderId)).filter(Boolean));
   for (const o of orders) {
     const ageH = (now.getTime() - new Date(o.createdAt).getTime()) / 3600000;
     const lead = leadMap.get(o.leadId!) as any;
     const clientLabel = lead?.clientName ? `${lead.clientName} · ${o.city ?? ""}` : (o.city ?? "");
-    // no_estimate: proposedAmount missing AND no receipt with amount (receipt means estimate was sent outside CRM)
-    const hasEstimate = (o.proposedAmount != null && Number(o.proposedAmount) > 0) || receiptOrderIds.has(Number(o.id));
+    // no_estimate: proposedAmount missing AND no receipt AND no transaction with amount
+    const hasEstimate = (o.proposedAmount != null && Number(o.proposedAmount) > 0)
+      || receiptOrderIds.has(Number(o.id))
+      || txOrderIds.has(Number(o.id));
     if (!hasEstimate && ageH >= 24) items.push({ id: `no_estimate-${o.id}`, type: "no_estimate", priority: pFromHours(ageH), title: `Заказ #${o.id} — нет сметы`, shortDescription: clientLabel.trim(), fullDescription: `У заказа нет сметы уже ${fmtAge(ageH)}.`, createdAt: new Date(o.createdAt).toISOString(), updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterMap.get(Number(o.masterId))?.alias ?? null) : null, amountAtRisk: o.orderAmount ? Number(o.orderAmount) : null, actions: actionSet("no_estimate") });
     if (o.status === "waiting_master") items.push({ id: `no_master_response-${o.id}`, type: "no_master_response", priority: pFromHours(ageH), title: `Заказ #${o.id} — нет отклика мастера`, shortDescription: clientLabel.trim(), fullDescription: `Заказ завис без отклика мастера ${fmtAge(ageH)}.`, createdAt: new Date(o.createdAt).toISOString(), updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterMap.get(Number(o.masterId))?.alias ?? null) : null, amountAtRisk: o.orderAmount ? Number(o.orderAmount) : null, actions: actionSet("no_master_response") });
     // no_payment: смета есть, заказ не оплачен (orderAmount = null), ждём >= 24ч
