@@ -1799,7 +1799,7 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                           className="text-xs font-semibold text-blue-600 hover:underline"
                           title={`Заказ #${o.id}${o.leadId ? ` / Заявка #${o.leadId}` : ""}`}
                         >
-                          #{o.leadId ?? o.id}
+                          #{o.id}
                         </a>
                         <span className="text-xs font-semibold text-gray-700">· {o.serviceType}</span>
                       </div>
