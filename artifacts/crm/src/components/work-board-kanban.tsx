@@ -137,11 +137,11 @@ function OrderCard({
       <button
         type="button"
         onClick={() => onOpen(card.orderId)}
-        aria-label={`Заявка #${card.leadId ?? card.orderId} — ${card.title}`}
+      aria-label={`Заявка #${card.orderId} — ${card.title}`}
         className="block w-full text-left px-3 pt-2.5 pb-2 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
       >
         <div className="flex items-center justify-between mb-1">
-          <span className="font-mono text-[11px] text-slate-400">#{card.leadId ?? card.orderId}</span>
+          <span className="font-mono text-[11px] text-slate-400">#{card.orderId}</span>
           <span className="text-[10px] text-slate-400 flex items-center gap-1">
             <Clock className="w-3 h-3" />
             {card.timeInStage}
