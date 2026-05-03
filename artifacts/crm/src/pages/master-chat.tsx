@@ -8,6 +8,7 @@ import { MasterDrawer, type DrawerMaster, type DrawerColumn } from "@/components
 import { format, formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 
 function resolvePhotoUrl(url: string): string {
   if (!url) return url;
@@ -132,6 +133,7 @@ function fmt(n: number) { return n.toLocaleString("ru-RU") + " ₽"; }
 
 export default function MasterChat() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [location] = useLocation();
   const queryClient = useQueryClient();
   const [threads, setThreads] = useState<Thread[]>([]);
@@ -1447,7 +1449,7 @@ export default function MasterChat() {
                                   ? <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
                                   : <DollarSign className="w-4 h-4 text-amber-500 flex-shrink-0" />}
                                 <span className={`text-xs font-semibold ${isCancelRequest ? "text-red-700" : "text-amber-700"}`}>
-                                  {isCancelRequest ? `Запрос на отмену заказа #${order.leadId ?? order.id}` : `Предложена сумма по заказу #${order.leadId ?? order.id}`}
+                                  {isCancelRequest ? `Запрос на отмену заказа #${order.id}` : `Предложена сумма по заказу #${order.id}`}
                                 </span>
                                 <span className="text-xs text-gray-400">{order.serviceType}</span>
                               </div>
