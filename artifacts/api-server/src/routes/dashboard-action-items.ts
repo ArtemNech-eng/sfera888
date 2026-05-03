@@ -136,7 +136,7 @@ async function buildItems(): Promise<Item[]> {
     db.select({ id: mastersTable.id, alias: mastersTable.alias, city: mastersTable.city, status: mastersTable.status, createdAt: mastersTable.createdAt }).from(mastersTable).where(isNull(mastersTable.deletedAt)),
     db.select({ id: leadsTable.id, clientName: leadsTable.clientName, clientPhone: leadsTable.clientPhone, city: leadsTable.city, createdAt: leadsTable.createdAt }).from(leadsTable).where(isNull(leadsTable.deletedAt)),
     db.select({ id: receiptsTable.id, orderId: receiptsTable.orderId, masterId: receiptsTable.masterId, city: receiptsTable.city, prepaymentSubmittedAt: receiptsTable.prepaymentSubmittedAt, prepaymentSeenAt: receiptsTable.prepaymentSeenAt, prepaymentAmount: receiptsTable.prepaymentAmount }).from(receiptsTable),
-    db.select().from(chatCasesTable).orderBy(desc(chatCasesTable.updatedAt)).limit(50),
+    db.select().from(chatCasesTable).where(eq(chatCasesTable.isArchived, false)).orderBy(desc(chatCasesTable.updatedAt)).limit(50),
     db.select().from(avitoSettingsTable).limit(1),
     db.select().from(systemTasksTable).orderBy(desc(systemTasksTable.createdAt)).limit(50),
     db.select({ orderId: transactionsTable.orderId, orderAmount: transactionsTable.orderAmount }).from(transactionsTable),
