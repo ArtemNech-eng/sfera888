@@ -491,7 +491,8 @@ export default function Leads() {
       if (leadStatusFilter && l.status !== leadStatusFilter) return false;
       if (leadSourceFilter && l.source !== leadSourceFilter) return false;
       if (q) {
-        const matches = l.clientName?.toLowerCase().includes(q) || l.clientPhone?.toLowerCase().includes(q) || l.city?.toLowerCase().includes(q) || (l.district ?? "").toLowerCase().includes(q);
+        const orderIdMatch = l.orderId != null && String(l.orderId) === q.replace(/^#/, "");
+        const matches = orderIdMatch || l.clientName?.toLowerCase().includes(q) || l.clientPhone?.toLowerCase().includes(q) || l.city?.toLowerCase().includes(q) || (l.district ?? "").toLowerCase().includes(q);
         if (!matches) return false;
       }
       return true;
@@ -1036,7 +1037,7 @@ export default function Leads() {
                           <div className="flex items-start justify-between gap-2 mb-1.5">
                             <div className="flex items-center gap-2 flex-wrap">
                               <StatusBadge status={lead.status} type="lead" />
-                              <span className="text-xs font-bold text-foreground/60">#{lead.id}</span>
+                              <span className="text-xs font-bold text-foreground/60">#{lead.orderId ?? lead.id}</span>
                               {age && (
                                 <span className={`text-[10px] font-medium flex items-center gap-0.5 ${age.urgent ? "text-red-500" : age.warning ? "text-orange-500" : "text-muted-foreground"}`}>
                                   <Clock className="w-2.5 h-2.5" />{age.label}
@@ -1132,7 +1133,7 @@ export default function Leads() {
                                 {age && <div className={`flex items-center gap-0.5 mt-0.5 text-[10px] font-medium ${age.urgent ? "text-red-500" : age.warning ? "text-orange-500" : "text-muted-foreground"}`}><Clock className="w-2.5 h-2.5" />{age.label}</div>}
                               </td>
                               <td className="px-3 py-2.5 whitespace-nowrap">
-                                <span className="font-semibold text-foreground">#{lead.id}</span>
+                                <span className="font-semibold text-foreground">#{lead.orderId ?? lead.id}</span>
                                 <div className="text-[10px] text-muted-foreground mt-0.5">{formatDate(lead.createdAt)}</div>
                               </td>
                               <td className="px-3 py-2.5 max-w-[160px]">
@@ -2159,7 +2160,7 @@ export default function Leads() {
                 </div>
                 <div>
                   <h3 className="font-bold text-gray-900">{reasonDialog.targetStatus === "non_target" ? "Нецелевая заявка" : "Отказ клиента"}</h3>
-                  <p className="text-xs text-gray-500 mt-0.5">Заявка #{reasonDialog.lead.id} · {reasonDialog.lead.clientName}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Заказ #{reasonDialog.lead.orderId ?? reasonDialog.lead.id} · {reasonDialog.lead.clientName}</p>
                 </div>
               </div>
               <div className="space-y-3 mb-5">
