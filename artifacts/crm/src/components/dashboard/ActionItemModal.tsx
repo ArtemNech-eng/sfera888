@@ -221,6 +221,46 @@ function TemplateChips({ type, orderId, onSelect }: { type: string; orderId?: nu
   );
 }
 
+function ScreenshotBlock({ url }: { url: string }) {
+  const [imgError, setImgError] = useState(false);
+  return (
+    <div className="space-y-1">
+      <div className="text-xs text-muted-foreground">Скриншот оплаты:</div>
+      {!imgError ? (
+        <a href={url} target="_blank" rel="noopener noreferrer" className="block">
+          <img
+            src={url}
+            alt="Скриншот оплаты"
+            className="max-h-40 rounded-lg border object-contain bg-slate-100 cursor-zoom-in hover:opacity-90 transition-opacity"
+            onError={() => {
+              console.warn("[screenshot] failed to load:", url);
+              setImgError(true);
+            }}
+          />
+        </a>
+      ) : (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2">
+          <div className="flex items-center gap-2 text-xs text-amber-700">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>Не удалось загрузить изображение. Возможно, хранилище файлов не настроено.</span>
+          </div>
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 underline hover:text-blue-800 break-all"
+          >
+            Открыть скриншот напрямую ↗
+          </a>
+          <div className="text-[10px] text-muted-foreground font-mono break-all select-all bg-white rounded px-2 py-1 border">
+            {url}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ActionItemModal({ id, open, onOpenChange }: {
   id: string | null;
   open: boolean;
@@ -485,22 +525,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                   <InfoRow icon={<Clock className="w-4 h-4" />} label="Клиент оплатил" value={new Date(ctx.receipt.prepaymentSubmittedAt).toLocaleString("ru-RU")} />
                 )}
                 {ctx.receipt.prepaymentScreenshotUrl && (
-                  <div>
-                    <div className="text-xs text-muted-foreground mb-1">Скриншот оплаты:</div>
-                    <a href={ctx.receipt.prepaymentScreenshotUrl} target="_blank" rel="noopener noreferrer">
-                      <img
-                        src={ctx.receipt.prepaymentScreenshotUrl}
-                        alt="Скриншот"
-                        className="max-h-32 rounded-lg border object-contain bg-slate-100"
-                        onError={(e) => {
-                          console.warn("[screenshot] failed to load:", ctx.receipt.prepaymentScreenshotUrl);
-                          (e.target as HTMLImageElement).style.display = "none";
-                          (e.target as HTMLImageElement).nextElementSibling?.removeAttribute("hidden");
-                        }}
-                      />
-                      <span hidden className="text-xs text-blue-600 underline">Открыть скриншот ↗</span>
-                    </a>
-                  </div>
+                  <ScreenshotBlock url={ctx.receipt.prepaymentScreenshotUrl} />
                 )}
               </div>
             )}
