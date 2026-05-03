@@ -191,7 +191,7 @@ async function buildItems(): Promise<Item[]> {
     // If the linked order is no longer in the active pool (completed / cancelled / deleted) — skip
     if (cOrderId && !linkedOrder) continue;
 
-    const hasEstimate = linkedOrder && Number(linkedOrder.proposedAmount ?? 0) > 0;
+    const hasEstimate = (linkedOrder && Number(linkedOrder.proposedAmount ?? 0) > 0) || (cOrderId && receiptOrderIds.has(Number(cOrderId))) || (cOrderId && txOrderIds.has(Number(cOrderId)));
     const hasPaid = linkedOrder && Number(linkedOrder.orderAmount ?? 0) > 0;
     const orderCancelled = linkedOrder && ["cancelled", "completed", "done"].includes(String(linkedOrder.status ?? ""));
 
@@ -211,7 +211,7 @@ async function buildItems(): Promise<Item[]> {
     const orderAgeH = linkedOrderAny
       ? (now.getTime() - new Date(linkedOrderAny.createdAt).getTime()) / 3600000
       : 0;
-    const hasEstimateInOrder = linkedOrderAny && Number(linkedOrderAny.proposedAmount ?? 0) > 0;
+    const hasEstimateInOrder = (linkedOrderAny && Number(linkedOrderAny.proposedAmount ?? 0) > 0) || (cOrderId && receiptOrderIds.has(Number(cOrderId))) || (cOrderId && txOrderIds.has(Number(cOrderId)));
     const hasPaidInOrder = linkedOrderAny && Number(linkedOrderAny.orderAmount ?? 0) > 0;
 
     const hEstRaw = Number((c as any).hoursWithoutEstimate ?? 0);
