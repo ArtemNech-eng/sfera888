@@ -206,12 +206,12 @@ async function buildItems(): Promise<Item[]> {
     const hasPaidInOrder = linkedOrderAny && Number(linkedOrderAny.orderAmount ?? 0) > 0;
 
     const hEstRaw = Number((c as any).hoursWithoutEstimate ?? 0);
-    // If DB field is missing/zero but order has no estimate — use order age as fallback
-    const hEst = hEstRaw > 0 ? hEstRaw : (!hasEstimateInOrder ? orderAgeH : 0);
+    // Real-time ordersTable always wins: if estimate already exists in orders — hEst = 0
+    const hEst = hasEstimateInOrder ? 0 : (hEstRaw > 0 ? hEstRaw : orderAgeH);
 
     const hPayRaw = Number((c as any).hoursWithoutPayment ?? 0);
-    // If DB field is missing/zero but order has estimate but no payment — use order age as fallback
-    const hPay = hPayRaw > 0 ? hPayRaw : (hasEstimateInOrder && !hasPaidInOrder ? orderAgeH : 0);
+    // Real-time ordersTable always wins: if order is already paid — hPay = 0
+    const hPay = hasPaidInOrder ? 0 : (hPayRaw > 0 ? hPayRaw : (hasEstimateInOrder ? orderAgeH : 0));
 
     const hCont = Number((c as any).hoursWithoutContact ?? 0);
     const stage = String((c as any).currentStage ?? "");
