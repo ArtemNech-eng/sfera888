@@ -324,7 +324,8 @@ export default function Finance() {
       list = list.filter(t => t.masterAlias.toLowerCase().includes(q));
     }
     if (orderSearch.trim()) {
-      list = list.filter(t => String(t.orderId ?? "").includes(orderSearch.trim()));
+      const oq = orderSearch.trim();
+      list = list.filter(t => String(t.orderId ?? "") === oq);
     }
     const { from, to } = getPeriodRange(txPeriod, txFrom, txTo);
     if (from !== undefined || to !== undefined) {
@@ -1716,7 +1717,7 @@ function TransactionDetailModal({ tx, onClose }: { tx: Transaction; onClose: () 
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-base font-bold text-gray-900">
-                Заказ #{tx.leadId ?? tx.orderId ?? tx.id}
+                Заказ #{tx.orderId ?? tx.id}
               </h2>
               {st && <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${st.cls}`}>{st.label}</span>}
             </div>

@@ -449,8 +449,9 @@ export default function Leads() {
     else if (wmTab === "problematic") list = list.filter(o => o.problemReasons.length > 0);
     if (wmSearch.trim()) {
       const q = wmSearch.toLowerCase();
+      const isNumeric = /^\d+$/.test(q);
       list = list.filter(o =>
-        String(o.id).includes(q) ||
+        (isNumeric ? String(o.id) === q : String(o.id).includes(q)) ||
         (o.masterAlias ?? "").toLowerCase().includes(q) ||
         (o.clientName ?? "").toLowerCase().includes(q) ||
         o.city.toLowerCase().includes(q) ||
@@ -517,7 +518,8 @@ export default function Leads() {
       if (o.status === "cancelled" || o.status === "completed") return false;
       if (orderSubFilter !== "all" && o.status !== orderSubFilter) return false;
       if (q) {
-        const m = String(o.id).includes(q) || o.city?.toLowerCase().includes(q) || o.serviceType?.toLowerCase().includes(q) || o.masterName?.toLowerCase().includes(q) || (o as any).clientPhone?.toLowerCase().includes(q);
+        const isNumeric = /^\d+$/.test(q);
+        const m = (isNumeric ? String(o.id) === q : String(o.id).includes(q)) || o.city?.toLowerCase().includes(q) || o.serviceType?.toLowerCase().includes(q) || o.masterName?.toLowerCase().includes(q) || (o as any).clientPhone?.toLowerCase().includes(q);
         if (!m) return false;
       }
       return true;
@@ -544,7 +546,8 @@ export default function Leads() {
       if (archiveStatusFilter !== "all" && o.status !== archiveStatusFilter) return false;
       if (archiveCityFilter !== "all" && o.city !== archiveCityFilter) return false;
       if (q) {
-        const m = String(o.id).includes(q) || o.city?.toLowerCase().includes(q) || o.serviceType?.toLowerCase().includes(q) || o.masterName?.toLowerCase().includes(q) || (o as any).clientPhone?.toLowerCase().includes(q);
+        const isNumeric = /^\d+$/.test(q);
+        const m = (isNumeric ? String(o.id) === q : String(o.id).includes(q)) || o.city?.toLowerCase().includes(q) || o.serviceType?.toLowerCase().includes(q) || o.masterName?.toLowerCase().includes(q) || (o as any).clientPhone?.toLowerCase().includes(q);
         if (!m) return false;
       }
       if (archiveDateFilter !== "all") {
