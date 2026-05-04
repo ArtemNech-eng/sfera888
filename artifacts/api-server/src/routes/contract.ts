@@ -3,9 +3,6 @@ import { db, mastersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import multer from "multer";
 import { Readable } from "stream";
-import { ObjectStorageService } from "../lib/objectStorage.js";
-
-const objectStorageService = new ObjectStorageService();
 
 const router = Router();
 
@@ -24,19 +21,8 @@ function requireMasterPwa(req: any, res: any, next: any) {
   next();
 }
 
-async function uploadPassportViaSignedUrl(_masterId: number, _suffix: string, buffer: Buffer, mimetype: string): Promise<string> {
-  const signedUrl = await objectStorageService.getObjectEntityUploadURL();
-  const uploadRes = await fetch(signedUrl, {
-    method: "PUT",
-    body: buffer,
-    headers: { "Content-Type": mimetype },
-  });
-  if (!uploadRes.ok) {
-    const errText = await uploadRes.text().catch(() => "");
-    throw new Error(`Storage upload failed (${uploadRes.status}): ${errText}`);
-  }
-  const objectPath = objectStorageService.normalizeObjectEntityPath(signedUrl);
-  return `/api/contract/obj${objectPath}`;
+function bufferToDataUri(buffer: Buffer, mimetype: string): string {
+  return `data:${mimetype};base64,${buffer.toString("base64")}`;
 }
 
 type PageType = "main" | "registration";
@@ -156,18 +142,9 @@ router.post(
 
     const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ?? req.socket.remoteAddress ?? "unknown";
 
-    // Upload both passport photos to GCS
-    let passportUrl: string;
-    let passportRegUrl: string;
-    try {
-      [passportUrl, passportRegUrl] = await Promise.all([
-        uploadPassportViaSignedUrl(masterId, "main", passportFile.buffer, passportFile.mimetype),
-        uploadPassportViaSignedUrl(masterId, "reg", passportRegFile.buffer, passportRegFile.mimetype),
-      ]);
-    } catch (err) {
-      console.error("[Contract] Passport upload error:", err);
-      return res.status(500).json({ error: "Ошибка загрузки фото" });
-    }
+    // Store passport photos as base64 data URIs directly in DB
+    const passportUrl = bufferToDataUri(passportFile.buffer, passportFile.mimetype);
+    const passportRegUrl = bufferToDataUri(passportRegFile.buffer, passportRegFile.mimetype);
 
     // AI verification for both pages (in parallel)
     const [verifyMain, verifyReg] = await Promise.all([
