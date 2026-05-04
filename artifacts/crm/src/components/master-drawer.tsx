@@ -20,25 +20,38 @@ function resolvePhotoUrl(url: string): string {
 }
 
 function PassportPhotoLink({ url, label }: { url: string; label: string }) {
-  const handleOpen = () => {
-    if (url.startsWith("data:")) {
-      const win = window.open();
-      if (win) {
-        win.document.write(`<html><body style="margin:0;background:#000;display:flex;align-items:center;justify-content:center;min-height:100vh"><img src="${url}" style="max-width:100%;max-height:100vh;object-fit:contain"/></body></html>`);
-        win.document.close();
-      }
-    } else {
-      window.open(url, "_blank", "noopener,noreferrer");
-    }
-  };
+  const [open, setOpen] = useState(false);
   return (
-    <button
-      type="button"
-      onClick={handleOpen}
-      className="inline-flex items-center gap-1.5 text-[11px] text-blue-600 hover:text-blue-800 font-medium transition-colors cursor-pointer bg-transparent border-none p-0"
-    >
-      <Eye className="w-3 h-3" /> {label}
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="inline-flex items-center gap-1.5 text-[11px] text-blue-600 hover:text-blue-800 font-medium transition-colors cursor-pointer bg-transparent border-none p-0"
+      >
+        <Eye className="w-3 h-3" /> {label}
+      </button>
+      {open && (
+        <div
+          className="fixed inset-0 z-[9999] bg-black/80 flex items-center justify-center p-4"
+          onClick={() => setOpen(false)}
+        >
+          <div className="relative max-w-3xl max-h-[90vh] flex flex-col items-center" onClick={e => e.stopPropagation()}>
+            <button
+              onClick={() => setOpen(false)}
+              className="absolute -top-8 right-0 text-white text-sm font-medium hover:text-gray-300"
+            >
+              ✕ Закрыть
+            </button>
+            <p className="text-white text-xs mb-2 font-semibold">{label}</p>
+            <img
+              src={url}
+              alt={label}
+              className="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl"
+            />
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
