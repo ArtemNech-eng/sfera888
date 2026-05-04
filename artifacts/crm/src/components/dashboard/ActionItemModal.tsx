@@ -417,6 +417,14 @@ export function ActionItemModal({ id, open, onOpenChange }: {
               callLabel="Позвонить мастеру"
             />
             <OrderInfoBlock ctx={ctx} ageLabel="Без сметы" />
+            {ctx.receipt?.token && (
+              <div className="flex items-center gap-2 text-sm">
+                <Banknote className="w-4 h-4 text-muted-foreground shrink-0" />
+                <a href={`/api/receipt/${ctx.receipt.token}`} target="_blank" rel="noopener noreferrer"
+                  className="text-xs font-semibold text-teal-600 hover:text-teal-800 underline underline-offset-2"
+                >Открыть смету ↗</a>
+              </div>
+            )}
 
             <div className="border-t pt-3 space-y-3">
               <div className="text-sm font-semibold">Написать мастеру</div>
@@ -516,9 +524,18 @@ export function ActionItemModal({ id, open, onOpenChange }: {
               />
             )}
             <OrderInfoBlock ctx={ctx} ageLabel="Ожидаем оплату" />
-            {ctx.order?.proposedAmount != null && (
-              <InfoRow icon={<Banknote className="w-4 h-4" />} label="Сумма сметы" value={`${Number(ctx.order.proposedAmount).toLocaleString("ru-RU")} ₽`} />
+      {ctx.order?.proposedAmount != null && (
+        <InfoRow icon={<Banknote className="w-4 h-4" />} label="Сумма сметы" value={
+          <span className="inline-flex items-center gap-2">
+            {`${Number(ctx.order.proposedAmount).toLocaleString("ru-RU")} ₽`}
+            {ctx.receipt?.token && (
+              <a href={`/api/receipt/${ctx.receipt.token}`} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-xs font-semibold text-teal-600 hover:text-teal-800 underline underline-offset-2"
+              >Открыть смету ↗</a>
             )}
+          </span>
+        } />
+      )}
             {isReceiptPending && (
               <div className="border-t pt-3">
                 <Button

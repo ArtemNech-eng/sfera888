@@ -705,8 +705,9 @@ router.get("/action-items/:id", ops, async (req: any, res: any) => {
     ctx.availableMasters = avail.map((m: any) => ({ id: m.id, name: m.alias ?? `Мастер #${m.id}`, city: m.city }));
   }
 
-  if (item.type === "no_payment" && item.orderId != null) {
-    const [r] = await db.select({ id: receiptsTable.id, prepaymentAmount: receiptsTable.prepaymentAmount, prepaymentSubmittedAt: receiptsTable.prepaymentSubmittedAt, prepaymentSeenAt: receiptsTable.prepaymentSeenAt, prepaymentScreenshotUrl: receiptsTable.prepaymentScreenshotUrl, clientName: receiptsTable.clientName, clientPhone: receiptsTable.clientPhone }).from(receiptsTable).where(eq(receiptsTable.orderId, Number(item.orderId))).limit(1);
+  // Load receipt (with token for estimate link) for no_estimate and no_payment
+  if ((item.type === "no_estimate" || item.type === "no_payment") && item.orderId != null) {
+    const [r] = await db.select({ id: receiptsTable.id, token: receiptsTable.token, prepaymentAmount: receiptsTable.prepaymentAmount, prepaymentSubmittedAt: receiptsTable.prepaymentSubmittedAt, prepaymentSeenAt: receiptsTable.prepaymentSeenAt, prepaymentScreenshotUrl: receiptsTable.prepaymentScreenshotUrl, clientName: receiptsTable.clientName, clientPhone: receiptsTable.clientPhone }).from(receiptsTable).where(eq(receiptsTable.orderId, Number(item.orderId))).limit(1);
     if (r) ctx.receipt = r;
   }
 
