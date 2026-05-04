@@ -10,7 +10,8 @@ import { fileURLToPath } from "url";
 import fs from "fs";
 import multer from "multer";
 import { UPLOAD_BASE } from "./config.js";
-import { objectStorageClient } from "./lib/objectStorage.js";
+import { ObjectStorageService } from "./lib/objectStorage.js";
+
 import { handleMaxUpdate, registerWebhook, sendMaxMessage } from "./maxBot.js";
 import { handleManagerUpdate, registerManagerWebhook, notifyManagerReceiptPaid } from "./managerBot.js";
 import { db } from "@workspace/db";
@@ -44,14 +45,22 @@ const screenshotUpload = multer({
   },
 });
 
+const _objectStorageService = new ObjectStorageService();
+
 async function uploadScreenshotToStorage(buffer: Buffer, mimetype: string): Promise<string> {
-  const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
-  if (!bucketId) throw new Error("Object storage not configured");
-  const ext = mimetype === "image/png" ? "png" : "jpg";
-  const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-  const bucket = objectStorageClient.bucket(bucketId);
-  await bucket.file(`public/receipt-screenshots/${filename}`).save(buffer, { contentType: mimetype, resumable: false });
-  return `/api/storage/public-objects/receipt-screenshots/${filename}`;
+  const signedUrl = await _objectStorageService.getObjectEntityUploadURL();
+  const uploadRes = await fetch(signedUrl, {
+    method: "PUT",
+    body: buffer,
+    headers: { "Content-Type": mimetype },
+  });
+  if (!uploadRes.ok) {
+    const errText = await uploadRes.text().catch(() => "");
+    throw new Error(`Screenshot upload failed (${uploadRes.status}): ${errText}`);
+  }
+  const objectPath = _objectStorageService.normalizeObjectEntityPath(signedUrl);
+  // Return as a path the CRM can serve; objects route serves private files
+  return `/api/storage/objects${objectPath.replace(/^\/objects/, "")}`;
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
