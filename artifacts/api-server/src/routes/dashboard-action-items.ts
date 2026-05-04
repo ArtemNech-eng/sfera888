@@ -132,7 +132,7 @@ async function buildItems(): Promise<Item[]> {
   const items: Item[] = [];
   const now = new Date();
   const [orders, masters, leads, receipts, cases, avitoRows, manualTasks, txRows] = await Promise.all([
-    db.select({ id: ordersTable.id, leadId: ordersTable.leadId, masterId: ordersTable.masterId, city: ordersTable.city, status: ordersTable.status, proposedAmount: ordersTable.proposedAmount, orderAmount: ordersTable.orderAmount, createdAt: ordersTable.createdAt, updatedAt: ordersTable.updatedAt, cancelReason: ordersTable.cancelReason }).from(ordersTable).where(and(isNull(ordersTable.deletedAt), not(inArray(ordersTable.status, ["completed", "cancelled"])))),
+    db.select({ id: ordersTable.id, leadId: ordersTable.leadId, masterId: ordersTable.masterId, city: ordersTable.city, status: ordersTable.status, proposedAmount: ordersTable.proposedAmount, orderAmount: ordersTable.orderAmount, createdAt: ordersTable.createdAt, updatedAt: ordersTable.updatedAt, assignedAt: ordersTable.assignedAt, cancelReason: ordersTable.cancelReason }).from(ordersTable).where(and(isNull(ordersTable.deletedAt), not(inArray(ordersTable.status, ["completed", "cancelled"])))),
     db.select({ id: mastersTable.id, alias: mastersTable.alias, city: mastersTable.city, status: mastersTable.status, createdAt: mastersTable.createdAt }).from(mastersTable).where(isNull(mastersTable.deletedAt)),
     db.select({ id: leadsTable.id, clientName: leadsTable.clientName, clientPhone: leadsTable.clientPhone, city: leadsTable.city, createdAt: leadsTable.createdAt }).from(leadsTable).where(isNull(leadsTable.deletedAt)),
     db.select({ id: receiptsTable.id, orderId: receiptsTable.orderId, masterId: receiptsTable.masterId, city: receiptsTable.city, prepaymentSubmittedAt: receiptsTable.prepaymentSubmittedAt, prepaymentSeenAt: receiptsTable.prepaymentSeenAt, prepaymentAmount: receiptsTable.prepaymentAmount }).from(receiptsTable),
@@ -152,13 +152,18 @@ async function buildItems(): Promise<Item[]> {
   const txOrderIds = new Set(txRows.filter((t: any) => Number(t.orderAmount ?? 0) > 0).map((t: any) => Number(t.orderId)).filter(Boolean));
   for (const o of orders) {
     const ageH = (now.getTime() - new Date(o.createdAt).getTime()) / 3600000;
+    // For no_estimate: count from assignedAt (when current master was assigned), not from order creation.
+    // This prevents stale "2 days without estimate" when order was returned to pool and reassigned.
+    const estimateAgeH = o.assignedAt
+      ? (now.getTime() - new Date(o.assignedAt).getTime()) / 3600000
+      : (now.getTime() - new Date(o.updatedAt ?? o.createdAt).getTime()) / 3600000;
     const lead = leadMap.get(o.leadId!) as any;
     const clientLabel = lead?.clientName ? `${lead.clientName} · ${o.city ?? ""}` : (o.city ?? "");
     // no_estimate: proposedAmount missing AND no receipt AND no transaction with amount
     const hasEstimate = (o.proposedAmount != null && Number(o.proposedAmount) > 0)
       || receiptOrderIds.has(Number(o.id))
       || txOrderIds.has(Number(o.id));
-    if (!hasEstimate && ageH >= 24) items.push({ id: `no_estimate-${o.id}`, type: "no_estimate", priority: pFromHours(ageH), title: `Заказ #${o.id} — нет сметы`, shortDescription: clientLabel.trim(), fullDescription: `У заказа нет сметы уже ${fmtAge(ageH)}.`, createdAt: new Date(o.createdAt).toISOString(), updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterMap.get(Number(o.masterId))?.alias ?? null) : null, amountAtRisk: o.orderAmount ? Number(o.orderAmount) : null, actions: actionSet("no_estimate") });
+    if (!hasEstimate && estimateAgeH >= 24) items.push({ id: `no_estimate-${o.id}`, type: "no_estimate", priority: pFromHours(estimateAgeH), title: `Заказ #${o.id} — нет сметы`, shortDescription: clientLabel.trim(), fullDescription: `У заказа нет сметы уже ${fmtAge(estimateAgeH)}.`, createdAt: new Date(o.assignedAt ?? o.updatedAt ?? o.createdAt).toISOString(), updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterMap.get(Number(o.masterId))?.alias ?? null) : null, amountAtRisk: o.orderAmount ? Number(o.orderAmount) : null, actions: actionSet("no_estimate") });
     if (o.status === "waiting_master") items.push({ id: `no_master_response-${o.id}`, type: "no_master_response", priority: pFromHours(ageH), title: `Заказ #${o.id} — нет отклика мастера`, shortDescription: clientLabel.trim(), fullDescription: `Заказ завис без отклика мастера ${fmtAge(ageH)}.`, createdAt: new Date(o.createdAt).toISOString(), updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterMap.get(Number(o.masterId))?.alias ?? null) : null, amountAtRisk: o.orderAmount ? Number(o.orderAmount) : null, actions: actionSet("no_master_response") });
     // no_payment: смета есть, заказ не оплачен (orderAmount = null), ждём >= 24ч
     // Дедупликация: если для этого orderId есть receipt с prepaymentSubmittedAt — не добавляем из orders,
@@ -444,7 +449,7 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
 
   if (action === "return_to_pool" && item.orderId != null) {
     await db.update(ordersTable)
-      .set({ masterId: null, status: "waiting_master", updatedAt: new Date() } as any)
+      .set({ masterId: null, status: "waiting_master", assignedAt: null, updatedAt: new Date() } as any)
       .where(eq(ordersTable.id, Number(item.orderId)));
   }
 
@@ -588,7 +593,7 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
     const [targetMaster] = await db.select({ id: mastersTable.id, alias: mastersTable.alias, maxChatId: mastersTable.maxChatId, status: mastersTable.status }).from(mastersTable).where(and(eq(mastersTable.id, Number(payload.masterId)), isNull(mastersTable.deletedAt))).limit(1);
     if (targetMaster) {
       await db.update(ordersTable)
-        .set({ masterId: Number(payload.masterId), status: "in_progress", updatedAt: new Date() })
+        .set({ masterId: Number(payload.masterId), status: "in_progress", assignedAt: new Date(), updatedAt: new Date() })
         .where(eq(ordersTable.id, Number(item.orderId)));
       // Уведомить нового мастера о назначении
       const notifyText = `📋 Вам назначен заказ #${item.orderId}. Пожалуйста, свяжитесь с клиентом и подтвердите выезд.`;
