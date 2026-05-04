@@ -19,6 +19,29 @@ function resolvePhotoUrl(url: string): string {
   return url;
 }
 
+function PassportPhotoLink({ url, label }: { url: string; label: string }) {
+  const handleOpen = () => {
+    if (url.startsWith("data:")) {
+      const win = window.open();
+      if (win) {
+        win.document.write(`<html><body style="margin:0;background:#000;display:flex;align-items:center;justify-content:center;min-height:100vh"><img src="${url}" style="max-width:100%;max-height:100vh;object-fit:contain"/></body></html>`);
+        win.document.close();
+      }
+    } else {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+  };
+  return (
+    <button
+      type="button"
+      onClick={handleOpen}
+      className="inline-flex items-center gap-1.5 text-[11px] text-blue-600 hover:text-blue-800 font-medium transition-colors cursor-pointer bg-transparent border-none p-0"
+    >
+      <Eye className="w-3 h-3" /> {label}
+    </button>
+  );
+}
+
 // ─── Checkin History Section ──────────────────────────────────────────────────
 
 interface CheckinRecord {
@@ -1543,24 +1566,10 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                         <FileSignature className="w-3 h-3" /> Открыть договор
                       </a>
                       {master.passportPhotoUrl && (
-                        <a
-                          href={master.passportPhotoUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 text-[11px] text-blue-600 hover:text-blue-800 font-medium transition-colors"
-                        >
-                          <Eye className="w-3 h-3" /> Разворот с фото
-                        </a>
+                        <PassportPhotoLink url={master.passportPhotoUrl} label="Разворот с фото" />
                       )}
                       {master.passportRegPhotoUrl && (
-                        <a
-                          href={master.passportRegPhotoUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 text-[11px] text-blue-600 hover:text-blue-800 font-medium transition-colors"
-                        >
-                          <Eye className="w-3 h-3" /> Страница прописки
-                        </a>
+                        <PassportPhotoLink url={master.passportRegPhotoUrl} label="Страница прописки" />
                       )}
                     </div>
                   </div>
