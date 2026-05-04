@@ -59,8 +59,7 @@ async function uploadScreenshotToStorage(buffer: Buffer, mimetype: string): Prom
     throw new Error(`Screenshot upload failed (${uploadRes.status}): ${errText}`);
   }
   const objectPath = _objectStorageService.normalizeObjectEntityPath(signedUrl);
-  // Return as a path the CRM can serve; objects route serves private files
-  return `/api/storage/objects${objectPath.replace(/^\/objects/, "")}`;
+  return `/api/storage/public-objects${objectPath.replace(/^\/objects/, "")}`;
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
