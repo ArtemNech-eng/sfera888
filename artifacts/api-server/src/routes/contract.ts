@@ -2,7 +2,10 @@ import { Router } from "express";
 import { db, mastersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import multer from "multer";
-import { objectStorageClient } from "../lib/objectStorage.js";
+import { Readable } from "stream";
+import { ObjectStorageService } from "../lib/objectStorage.js";
+
+const objectStorageService = new ObjectStorageService();
 
 const router = Router();
 
@@ -21,15 +24,19 @@ function requireMasterPwa(req: any, res: any, next: any) {
   next();
 }
 
-async function uploadPassportToGCS(masterId: number, suffix: string, buffer: Buffer, mimetype: string): Promise<string> {
-  const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
-  if (!bucketId) throw new Error("Object storage not configured");
-  const ts = Date.now();
-  const ext = mimetype === "image/png" ? "png" : "jpg";
-  const filename = `passport-${masterId}-${suffix}-${ts}.${ext}`;
-  const bucket = objectStorageClient.bucket(bucketId);
-  await bucket.file(`passports/${filename}`).save(buffer, { contentType: mimetype, resumable: false });
-  return `/api/contract/passport/${filename}`;
+async function uploadPassportViaSignedUrl(_masterId: number, _suffix: string, buffer: Buffer, mimetype: string): Promise<string> {
+  const signedUrl = await objectStorageService.getObjectEntityUploadURL();
+  const uploadRes = await fetch(signedUrl, {
+    method: "PUT",
+    body: buffer,
+    headers: { "Content-Type": mimetype },
+  });
+  if (!uploadRes.ok) {
+    const errText = await uploadRes.text().catch(() => "");
+    throw new Error(`Storage upload failed (${uploadRes.status}): ${errText}`);
+  }
+  const objectPath = objectStorageService.normalizeObjectEntityPath(signedUrl);
+  return `/api/contract/obj${objectPath}`;
 }
 
 type PageType = "main" | "registration";
@@ -154,11 +161,11 @@ router.post(
     let passportRegUrl: string;
     try {
       [passportUrl, passportRegUrl] = await Promise.all([
-        uploadPassportToGCS(masterId, "main", passportFile.buffer, passportFile.mimetype),
-        uploadPassportToGCS(masterId, "reg", passportRegFile.buffer, passportRegFile.mimetype),
+        uploadPassportViaSignedUrl(masterId, "main", passportFile.buffer, passportFile.mimetype),
+        uploadPassportViaSignedUrl(masterId, "reg", passportRegFile.buffer, passportRegFile.mimetype),
       ]);
     } catch (err) {
-      console.error("[Contract] GCS upload error:", err);
+      console.error("[Contract] Passport upload error:", err);
       return res.status(500).json({ error: "Ошибка загрузки фото" });
     }
 
@@ -338,31 +345,38 @@ ${passportImgTags ? `<h2>Фото документов</h2><div class="photos">$
   res.send(html);
 });
 
-// GET /api/contract/passport/:filename — serve passport photo (admin only, or own)
-router.get("/passport/:filename", async (req, res) => {
+// GET /api/contract/obj/objects/* — serve uploaded passport photos (via Replit Object Storage)
+router.get("/obj/objects/*path", async (req, res) => {
   const sessionUserId = (req.session as any).userId;
   const sessionMasterId = (req.session as any).masterId;
   if (!sessionUserId && !sessionMasterId) return res.status(401).json({ error: "Не авторизован" });
 
-  const { filename } = req.params;
-  if (!filename || filename.includes("..")) return res.status(400).json({ error: "Недопустимое имя" });
-
-  const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
-  if (!bucketId) return res.status(500).json({ error: "Storage not configured" });
-
   try {
-    const bucket = objectStorageClient.bucket(bucketId);
-    const file = bucket.file(`passports/${filename}`);
-    const [exists] = await file.exists();
-    if (!exists) return res.status(404).json({ error: "Файл не найден" });
-    const [metadata] = await file.getMetadata();
-    res.setHeader("Content-Type", (metadata as any).contentType ?? "image/jpeg");
-    res.setHeader("Cache-Control", "private, max-age=3600");
-    file.createReadStream().pipe(res);
+    const raw = req.params.path;
+    const wildcardPath = Array.isArray(raw) ? raw.join("/") : raw;
+    const objectPath = `/objects/${wildcardPath}`;
+    const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
+    const response = await objectStorageService.downloadObject(objectFile, 3600);
+    res.status(response.status);
+    response.headers.forEach((value, key) => res.setHeader(key, value));
+    if (response.body) {
+      const nodeStream = Readable.fromWeb(response.body as ReadableStream<Uint8Array>);
+      nodeStream.pipe(res);
+    } else {
+      res.end();
+    }
   } catch (err) {
-    console.error("[Contract] Serve passport error:", err);
+    console.error("[Contract] Serve obj error:", err);
     res.status(500).json({ error: "Ошибка чтения файла" });
   }
+});
+
+// GET /api/contract/passport/:filename — legacy serve (old GCS uploads, kept for backward compat)
+router.get("/passport/:filename", async (req, res) => {
+  const sessionUserId = (req.session as any).userId;
+  const sessionMasterId = (req.session as any).masterId;
+  if (!sessionUserId && !sessionMasterId) return res.status(401).json({ error: "Не авторизован" });
+  return res.status(404).json({ error: "Файл не найден (устаревший формат)" });
 });
 
 export default router;
