@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/layout";
 import { ProtectedRoute } from "@/hooks/use-auth";
@@ -85,7 +85,7 @@ function PaymentCard({ payload, time }: { payload: ReturnType<typeof parsePaymen
             <div className="ml-auto text-sm font-bold text-green-700">{payload.amount.toLocaleString("ru-RU")} ₽</div>
           </div>
           {payload.screenshotUrl && (
-            <>
+            <React.Fragment>
             <button type="button" onClick={() => setScreenshotLightbox(true)} className="block w-full text-left p-0 bg-transparent border-none">
               <img src={payload.screenshotUrl} alt="Скриншот оплаты" className="w-full rounded-xl max-h-52 object-cover border border-green-200 hover:opacity-90 transition-opacity cursor-zoom-in" />
             </button>
@@ -98,7 +98,7 @@ function PaymentCard({ payload, time }: { payload: ReturnType<typeof parsePaymen
                 </div>
               </div>
             )}
-            </>
+            </React.Fragment>
           )}
           {!payload.screenshotUrl && <div className="px-3 pb-3 text-xs text-green-600">Скриншот не прикреплён</div>}
         </div>
