@@ -106,7 +106,6 @@ function PaymentCard({ payload, time }: { payload: ReturnType<typeof parsePaymen
 }
 
 function ChatPanel({ token }: { token: string }) {
-  const [screenshotLightbox, setScreenshotLightbox] = useState(false);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);

@@ -100,7 +100,6 @@ interface PendingTransaction {
 
 // Inline avatar — falls back to coloured initials
 function ChatAvatar({ name, id, avatarUrl, size = 32 }: { name: string; id: number; avatarUrl?: string | null; size?: number }) {
-  const [chatPhotoLightbox, setChatPhotoLightbox] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const PALLETE = ["#6366f1","#8b5cf6","#ec4899","#f43f5e","#f97316","#eab308","#22c55e","#14b8a6","#0ea5e9","#3b82f6"];
   const bg = PALLETE[id % PALLETE.length];
@@ -156,6 +155,9 @@ export default function MasterChat() {
   const [collapsedTxIds, setCollapsedTxIds]     = useState<Set<number>>(new Set());
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deletingDialog, setDeletingDialog] = useState(false);
+
+  // Photo lightbox
+  const [chatPhotoLightbox, setChatPhotoLightbox] = useState<string | null>(null);
 
   // Master drawer overlay
   const [drawerMaster, setDrawerMaster] = useState<DrawerMaster | null>(null);
@@ -1162,9 +1164,13 @@ export default function MasterChat() {
                             <div className={`max-w-[70%] rounded-2xl px-3.5 py-2.5 ${isMaster ? "bg-gray-100 text-gray-800 rounded-bl-sm" : "bg-blue-500 text-white rounded-br-sm"}`}>
                               <p className={`text-[10px] font-semibold mb-1 ${isMaster ? "text-gray-500" : "text-blue-100"}`}>{senderLabel}</p>
                               {msg.photoUrl && (
-                                <a href={resolvePhotoUrl(msg.photoUrl)} target="_blank" rel="noopener noreferrer" className="block mb-2">
+                                <button
+                                  type="button"
+                                  onClick={() => msg.photoUrl && setChatPhotoLightbox(resolvePhotoUrl(msg.photoUrl))}
+                                  className="block mb-2 w-full text-left p-0 bg-transparent border-none"
+                                >
                                   <img src={resolvePhotoUrl(msg.photoUrl)} alt="фото" className="rounded-xl max-w-full max-h-52 object-cover cursor-zoom-in" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                                </a>
+                                </button>
                               )}
                               {isEditing ? (
                                 <div className="space-y-1.5 mt-1">
@@ -1666,6 +1672,14 @@ export default function MasterChat() {
             onClose={() => setDrawerMaster(null)}
             onMasterUpdate={(id, data) => setDrawerMaster(prev => prev ? { ...prev, ...data } : prev)}
           />
+        )}
+        {chatPhotoLightbox && (
+          <div className="fixed inset-0 z-[9999] bg-black/80 flex items-center justify-center p-4" onClick={() => setChatPhotoLightbox(null)}>
+            <div className="relative max-w-3xl max-h-[90vh] flex flex-col items-center" onClick={e => e.stopPropagation()}>
+              <button onClick={() => setChatPhotoLightbox(null)} className="absolute -top-8 right-0 text-white text-sm font-medium hover:text-gray-300">✕ Закрыть</button>
+              <img src={chatPhotoLightbox} alt="Фото" className="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl" />
+            </div>
+          </div>
         )}
       </Layout>
     </ProtectedRoute>
