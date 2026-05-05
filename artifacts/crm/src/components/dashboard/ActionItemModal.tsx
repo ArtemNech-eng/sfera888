@@ -118,23 +118,35 @@ function PaymentProgress({ total, paid }: { total?: number | null; paid?: number
   );
 }
 
-const MESSAGE_TEMPLATES: Record<string, { label: string; text: (orderId?: number | string) => string }[]> = {
+type OrderCtx = { orderId?: number | string; city?: string; district?: string; clientName?: string; proposedAmount?: number | string | null };
+
+function orderLabel(o: OrderCtx): string {
+  const parts: string[] = [];
+  if (o.orderId) parts.push(`#${o.orderId}`);
+  if (o.city) parts.push(o.city);
+  if (o.district) parts.push(o.district);
+  if (o.clientName) parts.push(`клиент ${o.clientName}`);
+  if (o.proposedAmount != null && Number(o.proposedAmount) > 0) parts.push(`${Number(o.proposedAmount).toLocaleString("ru-RU")} ₽`);
+  return parts.length > 0 ? ` (${parts.join(", ")})` : "";
+}
+
+const MESSAGE_TEMPLATES: Record<string, { label: string; text: (o: OrderCtx) => string }[]> = {
   no_estimate: [
-    { label: "Пришлите смету", text: (id) => `Добрый день! По заказу${id ? ` #${id}` : ""} — пришлите смету клиенту до конца дня. Спасибо!` },
-    { label: "Срочно", text: (id) => `По заказу${id ? ` #${id}` : ""} смета нужна срочно! Пришлите в течение 2 часов.` },
-    { label: "Риск передачи", text: (id) => `Заказ${id ? ` #${id}` : ""}: если смета не будет отправлена сегодня, заказ перейдёт другому мастеру.` },
+    { label: "Пришлите смету", text: (o) => `Добрый день! По заказу${orderLabel(o)} — пришлите смету клиенту до конца дня. Спасибо!` },
+    { label: "Срочно", text: (o) => `По заказу${orderLabel(o)} смета нужна срочно! Пришлите в течение 2 часов.` },
+    { label: "Риск передачи", text: (o) => `Заказ${orderLabel(o)}: если смета не будет отправлена сегодня, заказ перейдёт другому мастеру.` },
   ],
   no_payment: [
-    { label: "Уточните статус", text: (id) => `Добрый день! Клиент ещё не оплатил предоплату по заказу${id ? ` #${id}` : ""}. Уточните статус у клиента.` },
-    { label: "Подтвердите в приложении", text: (id) => `По заказу${id ? ` #${id}` : ""}: клиент должен подтвердить оплату через приложение. Напомните ему.` },
-    { label: "Риск отмены", text: (id) => `Заказ${id ? ` #${id}` : ""}: без оплаты до конца дня будем вынуждены его отменить.` },
-    { label: "Новости по заказу", text: (id) => `Добрый день! По заказу${id ? ` #${id}` : ""} — какие новости? Обновите статус в приложении.` },
-    { label: "Когда оплата?", text: (id) => `Добрый день! По заказу${id ? ` #${id}` : ""} — когда ожидается оплата от заказчика? Напишите примерный срок.` },
-    { label: "Когда заканчиваете?", text: (id) => `Добрый день! По заказу${id ? ` #${id}` : ""} — когда планируете завершить работу? Обновите сроки в приложении.` },
+    { label: "Уточните статус", text: (o) => `Добрый день! Клиент ещё не оплатил предоплату по заказу${orderLabel(o)}. Уточните статус у клиента.` },
+    { label: "Подтвердите в приложении", text: (o) => `По заказу${orderLabel(o)}: клиент должен подтвердить оплату через приложение. Напомните ему.` },
+    { label: "Риск отмены", text: (o) => `Заказ${orderLabel(o)}: без оплаты до конца дня будем вынуждены его отменить.` },
+    { label: "Новости по заказу", text: (o) => `Добрый день! По заказу${orderLabel(o)} — какие новости? Обновите статус в приложении.` },
+    { label: "Когда оплата?", text: (o) => `Добрый день! По заказу${orderLabel(o)} — когда ожидается оплата от заказчика? Напишите примерный срок.` },
+    { label: "Когда заканчиваете?", text: (o) => `Добрый день! По заказу${orderLabel(o)} — когда планируете завершить работу? Обновите сроки в приложении.` },
   ],
   no_master_response: [
-    { label: "Подтвердите заказ", text: (id) => `Добрый день! Подтвердите принятие заказа${id ? ` #${id}` : ""} через приложение.` },
-    { label: "Срок истекает", text: (id) => `Заказ${id ? ` #${id}` : ""} ожидает вашего отклика. Через 2 часа передадим другому мастеру.` },
+    { label: "Подтвердите заказ", text: (o) => `Добрый день! Подтвердите принятие заказа${orderLabel(o)} через приложение.` },
+    { label: "Срок истекает", text: (o) => `Заказ${orderLabel(o)} ожидает вашего отклика. Через 2 часа передадим другому мастеру.` },
     { label: "Нет ответа", text: () => "Добрый день! Вы не отвечаете на звонки. Свяжитесь с нами срочно." },
   ],
   blocked_master: [
@@ -143,20 +155,20 @@ const MESSAGE_TEMPLATES: Record<string, { label: string; text: (orderId?: number
     { label: "Разблокирован", text: () => "Ваш аккаунт разблокирован! Можете снова принимать заказы." },
   ],
   possible_bypass: [
-    { label: "Предупреждение", text: (id) => `По заказу${id ? ` #${id}` : ""}: работайте только через нашу платформу. Обход системы ведёт к немедленной блокировке.` },
-    { label: "Объяснитесь", text: (id) => `Заказ${id ? ` #${id}` : ""}: зафиксированы признаки работы вне платформы. Объясните ситуацию.` },
-    { label: "Подтвердите работу", text: (id) => `Заказ${id ? ` #${id}` : ""}: подтвердите, что общение с клиентом и закрытие заказа идут только через платформу.` },
-    { label: "Устраните нарушение", text: (id) => `По заказу${id ? ` #${id}` : ""}: прекратите любые действия вне платформы и отчитайтесь по заказу.` },
-    { label: "Финальное предупреждение", text: (id) => `Заказ${id ? ` #${id}` : ""}: повторный обход платформы приведёт к блокировке аккаунта.` },
+    { label: "Предупреждение", text: (o) => `По заказу${orderLabel(o)}: работайте только через нашу платформу. Обход системы ведёт к немедленной блокировке.` },
+    { label: "Объяснитесь", text: (o) => `Заказ${orderLabel(o)}: зафиксированы признаки работы вне платформы. Объясните ситуацию.` },
+    { label: "Подтвердите работу", text: (o) => `Заказ${orderLabel(o)}: подтвердите, что общение с клиентом и закрытие заказа идут только через платформу.` },
+    { label: "Устраните нарушение", text: (o) => `По заказу${orderLabel(o)}: прекратите любые действия вне платформы и отчитайтесь по заказу.` },
+    { label: "Финальное предупреждение", text: (o) => `Заказ${orderLabel(o)}: повторный обход платформы приведёт к блокировке аккаунта.` },
   ],
   conflict: [
-    { label: "Разберём вместе", text: (id) => `По заказу${id ? ` #${id}` : ""} есть разногласия с клиентом. Свяжитесь с нами для урегулирования.` },
-    { label: "Возврат средств", text: (id) => `Заказ${id ? ` #${id}` : ""}: клиент требует возврат. Срочно свяжитесь с нами.` },
+    { label: "Разберём вместе", text: (o) => `По заказу${orderLabel(o)} есть разногласия с клиентом. Свяжитесь с нами для урегулирования.` },
+    { label: "Возврат средств", text: (o) => `Заказ${orderLabel(o)}: клиент требует возврат. Срочно свяжитесь с нами.` },
   ],
   no_progress: [
-    { label: "Статус заказа", text: (id) => `Добрый день! По заказу${id ? ` #${id}` : ""} — какой текущий статус? Обновите информацию в приложении.` },
-    { label: "Срочно ответьте", text: (id) => `Заказ${id ? ` #${id}` : ""} без движения уже давно. Срочно свяжитесь с нами или обновите статус.` },
-    { label: "Риск отмены", text: (id) => `Заказ${id ? ` #${id}` : ""}: если не будет обновлений сегодня, заказ может быть передан другому мастеру.` },
+    { label: "Статус заказа", text: (o) => `Добрый день! По заказу${orderLabel(o)} — какой текущий статус? Обновите информацию в приложении.` },
+    { label: "Срочно ответьте", text: (o) => `Заказ${orderLabel(o)} без движения уже давно. Срочно свяжитесь с нами или обновите статус.` },
+    { label: "Риск отмены", text: (o) => `Заказ${orderLabel(o)}: если не будет обновлений сегодня, заказ может быть передан другому мастеру.` },
   ],
 };
 
@@ -224,9 +236,10 @@ function OrderInfoBlock({ ctx, ageLabel }: { ctx: any; ageLabel?: string }) {
   );
 }
 
-function TemplateChips({ type, orderId, onSelect }: { type: string; orderId?: number | string; onSelect: (text: string) => void }) {
+function TemplateChips({ type, orderCtx, onSelect }: { type: string; orderCtx?: OrderCtx; onSelect: (text: string) => void }) {
   const templates = MESSAGE_TEMPLATES[type] ?? [];
   if (templates.length === 0) return null;
+  const o: OrderCtx = orderCtx ?? {};
   return (
     <div className="flex flex-wrap gap-1.5">
       <span className="text-xs text-[#8E8E93] self-center font-medium">Шаблоны:</span>
@@ -234,7 +247,7 @@ function TemplateChips({ type, orderId, onSelect }: { type: string; orderId?: nu
         <button
           key={t.label}
           type="button"
-          onClick={() => onSelect(t.text(orderId))}
+          onClick={() => onSelect(t.text(o))}
           className="text-xs px-3 py-1.5 rounded-full border border-[#E5E5EA] bg-white text-[#1A1A1A] font-medium transition"
           style={{ transition: "all 0.15s ease" }}
           onMouseEnter={e => { e.currentTarget.style.background = "rgba(52,199,89,0.08)"; e.currentTarget.style.borderColor = "rgba(52,199,89,0.5)"; e.currentTarget.style.color = "#2daf4e"; }}
@@ -486,7 +499,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
 
             <div className="border-t pt-3 space-y-3">
               <div className="text-sm font-semibold">Написать мастеру</div>
-              <TemplateChips type="no_estimate" orderId={ctx.order?.id} onSelect={setMessageText} />
+              <TemplateChips type="no_estimate" orderCtx={{ orderId: ctx.order?.id, city: ctx.order?.city, district: ctx.order?.district, clientName: ctx.order?.clientName ?? ctx.client?.clientName, proposedAmount: ctx.order?.proposedAmount }} onSelect={setMessageText} />
               <Textarea
                 value={messageText}
                 onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setMessageText(e.target.value)}
@@ -656,7 +669,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
             )}
             <div className="border-t pt-3 space-y-3">
               <div className="text-sm font-semibold text-muted-foreground">Написать мастеру</div>
-              <TemplateChips type="no_payment" orderId={ctx.order?.id} onSelect={setMessageText} />
+              <TemplateChips type="no_payment" orderCtx={{ orderId: ctx.order?.id, city: ctx.order?.city, district: ctx.order?.district, clientName: ctx.order?.clientName ?? ctx.client?.clientName, proposedAmount: ctx.order?.proposedAmount }} onSelect={setMessageText} />
               <Textarea
                 value={messageText}
                 onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setMessageText(e.target.value)}
@@ -887,7 +900,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
             )}
             <div className="border-t pt-3 space-y-3">
               <div className="text-sm font-semibold">Написать мастеру</div>
-              <TemplateChips type="blocked_master" orderId={undefined} onSelect={setMessageText} />
+              <TemplateChips type="blocked_master" orderCtx={undefined} onSelect={setMessageText} />
               <Textarea
                 value={messageText}
                 onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setMessageText(e.target.value)}
@@ -968,7 +981,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
             <OrderInfoBlock ctx={ctx} />
             <div className="border-t pt-3 space-y-3">
               <div className="text-sm font-semibold">Написать мастеру</div>
-              <TemplateChips type={data?.type ?? "possible_bypass"} orderId={ctx.order?.id} onSelect={setMessageText} />
+              <TemplateChips type={data?.type ?? "possible_bypass"} orderCtx={{ orderId: ctx.order?.id, city: ctx.order?.city, district: ctx.order?.district, clientName: ctx.order?.clientName ?? ctx.client?.clientName, proposedAmount: ctx.order?.proposedAmount }} onSelect={setMessageText} />
               <Textarea
                 value={messageText}
                 onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setMessageText(e.target.value)}
@@ -1227,7 +1240,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
 
             <div className="border-t pt-3 space-y-3">
               <div className="text-sm font-semibold">Написать мастеру</div>
-              <TemplateChips type="no_progress" orderId={ctx.order?.id} onSelect={setMessageText} />
+              <TemplateChips type="no_progress" orderCtx={{ orderId: ctx.order?.id, city: ctx.order?.city, district: ctx.order?.district, clientName: ctx.order?.clientName ?? ctx.client?.clientName, proposedAmount: ctx.order?.proposedAmount }} onSelect={setMessageText} />
               <Textarea
                 value={messageText}
                 onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setMessageText(e.target.value)}
