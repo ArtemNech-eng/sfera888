@@ -84,9 +84,18 @@ function PaymentCard({ payload, time }: { payload: ReturnType<typeof parsePaymen
             <div className="ml-auto text-sm font-bold text-green-700">{payload.amount.toLocaleString("ru-RU")} ₽</div>
           </div>
           {payload.screenshotUrl && (
-            <a href={payload.screenshotUrl} target="_blank" rel="noopener noreferrer" className="block px-3 pb-3">
+            <button type="button" onClick={() => setScreenshotLightbox(true)} className="block w-full text-left p-0 bg-transparent border-none">
               <img src={payload.screenshotUrl} alt="Скриншот оплаты" className="w-full rounded-xl max-h-52 object-cover border border-green-200 hover:opacity-90 transition-opacity cursor-zoom-in" />
-            </a>
+            </button>
+            {screenshotLightbox && (
+              <div className="fixed inset-0 z-[9999] bg-black/80 flex items-center justify-center p-4" onClick={() => setScreenshotLightbox(false)}>
+                <div className="relative max-w-3xl max-h-[90vh] flex flex-col items-center" onClick={e => e.stopPropagation()}>
+                  <button onClick={() => setScreenshotLightbox(false)} className="absolute -top-8 right-0 text-white text-sm font-medium hover:text-gray-300">✕ Закрыть</button>
+                  <p className="text-white text-xs mb-2 font-semibold">Скриншот оплаты</p>
+                  <img src={payload.screenshotUrl} alt="Скриншот оплаты" className="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl" />
+                </div>
+              </div>
+            )}
           )}
           {!payload.screenshotUrl && <div className="px-3 pb-3 text-xs text-green-600">Скриншот не прикреплён</div>}
         </div>
@@ -97,6 +106,7 @@ function PaymentCard({ payload, time }: { payload: ReturnType<typeof parsePaymen
 }
 
 function ChatPanel({ token }: { token: string }) {
+  const [screenshotLightbox, setScreenshotLightbox] = useState(false);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);

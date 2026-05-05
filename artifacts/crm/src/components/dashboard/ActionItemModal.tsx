@@ -228,6 +228,46 @@ function TemplateChips({ type, orderId, onSelect }: { type: string; orderId?: nu
 
 function ScreenshotBlock({ url }: { url: string }) {
   const [imgError, setImgError] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  return (
+    <div className="space-y-1">
+      <div className="text-xs text-muted-foreground">Скриншот оплаты:</div>
+      {!imgError ? (
+        <button type="button" onClick={() => setLightboxOpen(true)} className="block w-full text-left p-0 bg-transparent border-none">
+          <img
+            src={url}
+            alt="Скриншот оплаты"
+            className="max-h-40 rounded-lg border object-contain bg-slate-100 cursor-zoom-in hover:opacity-90 transition-opacity"
+            onError={() => { console.warn("[screenshot] failed to load:", url); setImgError(true); }}
+          />
+        </button>
+      ) : (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2">
+          <div className="flex items-center gap-2 text-xs text-amber-700">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>Не удалось загрузить изображение. Возможно, хранилище файлов не настроено.</span>
+          </div>
+          <button type="button" onClick={() => setLightboxOpen(true)} className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 underline hover:text-blue-800 break-all bg-transparent border-none p-0 cursor-pointer">
+            Открыть скриншот ↗
+          </button>
+          <div className="text-[10px] text-muted-foreground font-mono break-all select-all bg-white rounded px-2 py-1 border">
+            {url}
+          </div>
+        </div>
+      )}
+      {lightboxOpen && (
+        <div className="fixed inset-0 z-[9999] bg-black/80 flex items-center justify-center p-4" onClick={() => setLightboxOpen(false)}>
+          <div className="relative max-w-3xl max-h-[90vh] flex flex-col items-center" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setLightboxOpen(false)} className="absolute -top-8 right-0 text-white text-sm font-medium hover:text-gray-300">✕ Закрыть</button>
+            <p className="text-white text-xs mb-2 font-semibold">Скриншот оплаты</p>
+            <img src={url} alt="Скриншот оплаты" className="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl" />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}: { url: string }) {
+  const [imgError, setImgError] = useState(false);
   return (
     <div className="space-y-1">
       <div className="text-xs text-muted-foreground">Скриншот оплаты:</div>

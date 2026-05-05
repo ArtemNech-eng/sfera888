@@ -100,6 +100,7 @@ interface PendingTransaction {
 
 // Inline avatar — falls back to coloured initials
 function ChatAvatar({ name, id, avatarUrl, size = 32 }: { name: string; id: number; avatarUrl?: string | null; size?: number }) {
+  const [chatPhotoLightbox, setChatPhotoLightbox] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const PALLETE = ["#6366f1","#8b5cf6","#ec4899","#f43f5e","#f97316","#eab308","#22c55e","#14b8a6","#0ea5e9","#3b82f6"];
   const bg = PALLETE[id % PALLETE.length];
