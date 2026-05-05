@@ -47,19 +47,9 @@ const screenshotUpload = multer({
 
 const _objectStorageService = new ObjectStorageService();
 
-async function uploadScreenshotToStorage(buffer: Buffer, mimetype: string): Promise<string> {
-  const signedUrl = await _objectStorageService.getObjectEntityUploadURL();
-  const uploadRes = await fetch(signedUrl, {
-    method: "PUT",
-    body: buffer,
-    headers: { "Content-Type": mimetype },
-  });
-  if (!uploadRes.ok) {
-    const errText = await uploadRes.text().catch(() => "");
-    throw new Error(`Screenshot upload failed (${uploadRes.status}): ${errText}`);
-  }
-  const objectPath = _objectStorageService.normalizeObjectEntityPath(signedUrl);
-  return `/api/storage/public-objects${objectPath.replace(/^\/objects/, "")}`;
+/** Convert file buffer to base64 data URI — stored directly in DB (like passport photos) */
+function bufferToDataUri(buffer: Buffer, mimetype: string): string {
+  return `data:${mimetype};base64,${buffer.toString("base64")}`;
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -808,7 +798,7 @@ app.post("/api/receipt/:token/confirm", screenshotUpload.single("screenshot"), a
 
     let screenshotUrl: string | null = null;
     if (req.file) {
-      screenshotUrl = await uploadScreenshotToStorage(req.file.buffer, req.file.mimetype);
+      screenshotUrl = bufferToDataUri(req.file.buffer, req.file.mimetype);
     }
 
     await db.update(receiptsTable).set({
