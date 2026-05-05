@@ -805,6 +805,15 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                 >
                   <RefreshCw className="w-4 h-4" /> Разослать повторно
                 </Button>
+                <Button size="sm" variant="outline" onClick={() => fire("return_to_pool")} disabled={busy === "return_to_pool"}>
+                  <RefreshCw className="w-4 h-4" /> Вернуть в пул
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => fire("resolve")} disabled={busy === "resolve"}>
+                  <CheckCircle2 className="w-4 h-4" /> Пометить выполненной
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => fire("dismiss")} disabled={busy === "dismiss"}>
+                  <Clock className="w-4 h-4" /> Отложить
+                </Button>
                 {!cancelConfirmStep ? (
                   <Button size="sm" variant="destructive" onClick={() => setCancelConfirmStep("select")} disabled={busy === "cancel_order"}>
                     Отменить заказ
