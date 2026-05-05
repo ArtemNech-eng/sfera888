@@ -137,15 +137,21 @@ async function processExpiredSnoozes() {
   }
 
   for (const snooze of expired) {
-    const title = itemTitles.get((snooze as any).itemId) ?? "Задача требует внимания";
+    const itemId = (snooze as any).itemId;
+    const title = itemTitles.get(itemId);
+    // Skip if the task is no longer in the active items list (already resolved/dismissed)
+    if (!title) {
+      console.log(`[snooze-job] item=${itemId} no longer active, skipping notification`);
+      continue;
+    }
     await sendPushToAllOperators({
       type: "snooze_wakeup",
       title: "Напоминание о задаче",
       body: title,
-      itemId: (snooze as any).itemId,
+      itemId,
       url: "/dashboard",
     }).catch((e: any) => console.error("[snooze-job] push failed:", e));
-    console.log(`[snooze-job] woke up item=${(snooze as any).itemId}, sent push`);
+    console.log(`[snooze-job] woke up item=${itemId}, sent push`);
   }
 
   // Delete all expired snoozes in bulk

@@ -94,9 +94,16 @@ function pFromHours(hours: number): Priority {
 function fmtAge(hours: number): string {
   if (hours >= 48) {
     const days = Math.round(hours / 24);
-    return `${days} д`;
+    const form = days % 10 === 1 && days % 100 !== 11 ? "день"
+      : [2, 3, 4].includes(days % 10) && ![12, 13, 14].includes(days % 100) ? "дня"
+      : "дней";
+    return `${days} ${form}`;
   }
-  return `${Math.round(hours)} ч`;
+  const h = Math.round(hours);
+  const form = h % 10 === 1 && h % 100 !== 11 ? "ч"
+      : [2, 3, 4].includes(h % 10) && ![12, 13, 14].includes(h % 100) ? "ч"
+      : "ч";
+  return `${h} ${form}`;
 }
 
 function withinPeriod(createdAt: string, period?: string) {
@@ -281,7 +288,7 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
     const rows = await db.select().from(avitoSettingsTable).limit(1);
     if (rows[0]) {
       await db.update(avitoSettingsTable)
-        .set({ advanceBalance: Number(payload.balance) } as any)
+        .set({ manualBalance: Number(payload.balance) } as any)
         .where(eq(avitoSettingsTable.id, (rows[0] as any).id));
     }
   }
@@ -714,7 +721,7 @@ router.get("/action-items/:id", ops, async (req: any, res: any) => {
 
   if (item.type === "low_avito_balance") {
     const [av] = await db.select().from(avitoSettingsTable).limit(1);
-    if (av) ctx.avitoBalance = (av as any).advanceBalance ?? 0;
+    if (av) ctx.avitoBalance = (av as any).manualBalance ?? (av as any).advanceBalance ?? 0;
   }
 
   // Always load transaction + partial payments for any item with an orderId

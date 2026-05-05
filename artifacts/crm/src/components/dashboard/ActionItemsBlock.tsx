@@ -153,7 +153,7 @@ export function ActionItemsBlock() {
       ) : (
         <div className="space-y-2">
           {(showAll ? filtered : filtered.slice(0, 6)).map((item: Item) => (
-            <ActionItemCard item={item} onOpen={setOpenId} />
+            <ActionItemCard key={item.id} item={item} onOpen={setOpenId} />
           ))}
           {filtered.length > 6 && !showAll && (
             <div className="pt-2 flex justify-center">

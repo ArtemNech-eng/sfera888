@@ -72,12 +72,24 @@ function DashboardPage() {
     }
   }, [isRefreshing, refetch]);
 
-  const handleEditAvitoBalance = useCallback(() => {
+  const handleEditAvitoBalance = useCallback(async () => {
     const val = prompt("Введите новый баланс Авито (₽):");
     if (val && !isNaN(Number(val))) {
-      alert(`Баланс обновлён: ${Number(val).toLocaleString("ru-RU")} ₽`);
+      try {
+        const res = await fetch("/api/dashboard/action-items/low_avito_balance-1/action", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "update_balance", payload: { balance: Number(val) } }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        alert(`Баланс обновлён: ${Number(val).toLocaleString("ru-RU")} ₽`);
+        refetch();
+      } catch (e) {
+        alert("Не удалось обновить баланс. Попробуйте ещё раз.");
+      }
     }
-  }, []);
+  }, [refetch]);
 
   const formatUpdated = () => {
     if (secondsAgo < 60) return `${secondsAgo}с назад`;
