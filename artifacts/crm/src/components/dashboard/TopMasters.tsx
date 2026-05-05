@@ -56,7 +56,13 @@ export function TopMasters({ data, isLoading }: Props) {
       </div>
 
       <div className="space-y-1">
-        {data.map((master, index) => {
+        {data.length === 0 ? (
+          <div className="py-8 text-center">
+            <Trophy size={28} className="mx-auto text-[#D1D5DB] mb-2" />
+            <div className="text-sm text-[#9CA3AF]">Пока нет данных о мастерах</div>
+            <div className="text-xs text-[#D1D5DB] mt-1">Рейтинг появится после завершения заказов</div>
+          </div>
+        ) : data.map((master, index) => {
           const rank = index + 1;
           const rankColor = rankColors[rank] || '#D1D5DB';
           const isTop3 = rank <= 3;
@@ -102,9 +108,9 @@ export function TopMasters({ data, isLoading }: Props) {
         })}
       </div>
 
-      <button className="mt-4 text-[13px] font-medium text-[#34C759] hover:text-[#2aad4a] transition-colors">
-        Все мастера
-      </button>
+      <a href="/masters" className="mt-4 text-[13px] font-medium text-[#34C759] hover:text-[#2aad4a] transition-colors">
+        Все мастера →
+      </a>
     </div>
   );
 }

@@ -71,7 +71,13 @@ export function LiveFeed({ data, isLoading }: Props) {
       <div className="text-[12px] text-[#9CA3AF] mb-4">Последние 24 часа</div>
 
       <div className="overflow-y-auto" style={{ maxHeight: 320 }}>
-        {data.map((item, idx) => {
+        {data.length === 0 ? (
+          <div className="py-8 text-center">
+            <Activity size={28} className="mx-auto text-[#D1D5DB] mb-2" />
+            <div className="text-sm text-[#9CA3AF]">Пока нет событий</div>
+            <div className="text-xs text-[#D1D5DB] mt-1">События появятся, когда начнутся заказы</div>
+          </div>
+        ) : data.map((item, idx) => {
           const { icon, bg } = getEventConfig(item.type);
           return (
             <div key={item.id}>

@@ -45,7 +45,13 @@ export function CitiesCard({ data, isLoading }: Props) {
       </div>
 
       <div className="space-y-1">
-        {data.map(city => {
+        {data.length === 0 ? (
+          <div className="py-8 text-center">
+            <MapPin size={28} className="mx-auto text-[#D1D5DB] mb-2" />
+            <div className="text-sm text-[#9CA3AF]">Нет данных по городам</div>
+            <div className="text-xs text-[#D1D5DB] mt-1">Данные появятся после первых заказов</div>
+          </div>
+        ) : data.map(city => {
           const cc = convColor(city.conversion);
           const widthPct = (city.revenue / maxRevenue) * 100;
           return (
@@ -73,10 +79,10 @@ export function CitiesCard({ data, isLoading }: Props) {
         })}
       </div>
 
-      <button className="mt-4 flex items-center gap-1.5 text-[13px] font-medium text-[#34C759] hover:text-[#2aad4a] transition-colors">
+      <a href="/settings?tab=cities" className="mt-4 flex items-center gap-1.5 text-[13px] font-medium text-[#34C759] hover:text-[#2aad4a] transition-colors">
         <Plus size={15} />
         Добавить город
-      </button>
+      </a>
     </div>
   );
 }

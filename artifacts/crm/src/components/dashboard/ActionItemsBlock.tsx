@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ActionItemModal } from "./ActionItemModal";
 import { ActionItemCard } from "./ActionItemCard";
+import { useAuth } from "@/hooks/use-auth";
 
 type Priority = "critical" | "high" | "medium" | "low";
 type Item = {
@@ -46,13 +47,19 @@ async function fetcher(period: string) {
   return r.json();
 }
 
-export function ActionItemsBlock() {
-  const [period, setPeriod] = useState<string>("all");
+export function ActionItemsBlock({ period: externalPeriod, city }: { period?: string; city?: string }) {
+  const [period, setPeriod] = useState<string>(externalPeriod ?? "all");
   const [scope, setScope] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [myOnly, setMyOnly] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
-  const currentUserId = typeof window !== "undefined" ? localStorage.getItem("userId") : null;
+  const { user: authUser } = useAuth();
+  const currentUserId = authUser?.id ?? null;
+
+  // Синхронизируем период с внешним пропсом
+  useEffect(() => {
+    if (externalPeriod) setPeriod(externalPeriod);
+  }, [externalPeriod]);
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["action-items", period],
@@ -89,6 +96,7 @@ export function ActionItemsBlock() {
         if (scope === "system") return i.entityType === "system";
         return i.entityType === scope;
       })
+      .filter((i) => !city || city === "Все города" || i.city === city)
       .filter((i) => !myOnly || !currentUserId || String(i.assigneeId ?? "") === String(currentUserId))
       .filter((i) => search.trim() === "" || `${i.title} ${i.shortDescription} ${i.orderId ?? ""} ${i.masterId ?? ""} ${i.entityId ?? ""}`.toLowerCase().includes(search.toLowerCase()))
       .sort((a, b) => {
@@ -101,7 +109,7 @@ export function ActionItemsBlock() {
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       });
     return ranked;
-  }, [items, scope, myOnly, currentUserId, search]);
+  }, [items, scope, myOnly, currentUserId, search, city]);
 
   return (
     <section className="bg-white rounded-2xl border shadow-sm p-5">
@@ -114,6 +122,7 @@ export function ActionItemsBlock() {
           <span className="px-2 py-1 text-xs rounded-full bg-red-100 text-red-700">Критичные {summary.critical}</span>
           <span className="px-2 py-1 text-xs rounded-full bg-orange-100 text-orange-700">Высокий {summary.high}</span>
           <span className="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-700">Средние {summary.medium}</span>
+          {summary.low > 0 && <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600">Низкие {summary.low}</span>}
           <span className="px-2 py-1 text-xs rounded-full bg-slate-100 text-slate-700">Выполнено сегодня {summary.doneToday}</span>
         </div>
       </div>

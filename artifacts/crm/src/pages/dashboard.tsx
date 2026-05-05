@@ -50,6 +50,15 @@ function DashboardPage() {
     refetchInterval: 60000,
   });
 
+  // Сброс таймера «Обновлено X назад» при авторефетче
+  const prevDataRef = useRef(data);
+  useEffect(() => {
+    if (data !== prevDataRef.current) {
+      setSecondsAgo(0);
+      prevDataRef.current = data;
+    }
+  }, [data]);
+
   useEffect(() => {
     const onChanged = () => refetch();
     window.addEventListener("dashboard-action-items:changed", onChanged);
@@ -170,7 +179,7 @@ function DashboardPage() {
 
         {/* TASKS FEED — что делать прямо сейчас */}
         <div className="mb-6">
-          <ActionItemsBlock />
+          <ActionItemsBlock period={period} city={city} />
         </div>
 
         {/* KPI CARDS */}

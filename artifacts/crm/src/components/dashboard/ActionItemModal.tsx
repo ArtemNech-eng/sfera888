@@ -20,6 +20,14 @@ async function fetchDetail(id: string) {
 }
 
 function fmtAge(hours: number): string {
+  if (hours < 1) {
+    const mins = Math.max(1, Math.round(hours * 60));
+    if (mins <= 1) return "только что";
+    const minForm = mins % 10 === 1 && mins % 100 !== 11 ? "минута"
+      : [2, 3, 4].includes(mins % 10) && ![12, 13, 14].includes(mins % 100) ? "минуты"
+      : "минут";
+    return `${mins} ${minForm}`;
+  }
   if (hours >= 48) {
     const days = Math.round(hours / 24);
     const form = days % 10 === 1 && days % 100 !== 11 ? "день"
@@ -27,7 +35,11 @@ function fmtAge(hours: number): string {
       : "дней";
     return `${days} ${form}`;
   }
-  return `${Math.round(hours)} ч`;
+  const h = Math.round(hours);
+  const hForm = h % 10 === 1 && h % 100 !== 11 ? "час"
+    : [2, 3, 4].includes(h % 10) && ![12, 13, 14].includes(h % 100) ? "часа"
+    : "часов";
+  return `${h} ${hForm}`;
 }
 
 const PRIORITY_RU: Record<string, string> = {
@@ -320,6 +332,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
     if (!open) {
       setMessageText(""); setSelectedMasterId(null); setMasterSearch("");
       setBalanceInput(""); setConfirmInput(""); setToast(null); setAssignedMasterConfirm(null); setCancelAsMasterPending(false); setCancelReason("bypass"); setCompleteAsMasterPending(false); setCompleteAmount(""); setCommissionMode("as_paid");
+      setPartialOrderAmount(""); setPartialPaidAmount("");
     }
   }, [open]);
 
@@ -1162,6 +1175,58 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                 className="w-36 bg-white"
                 size={10}
               />
+            </div>
+          </SectionBox>
+        );
+
+      // ─── Нет менеджера ────────────────────────────────────────────
+      case "no_manager_id":
+        return (
+          <SectionBox title="Ситуация: нет менеджера">
+            <NextActionBanner
+              text="На заказе не назначен ответственный менеджер (оператор). Назначьте себя или передайте коллеге."
+            />
+            <OrderInfoBlock ctx={ctx} />
+            <div className="border-t pt-3 flex flex-wrap gap-2">
+              <Button size="sm" onClick={() => fire("assign_self")} disabled={busy === "assign_self"}>
+                <UserRoundPen className="w-4 h-4" /> Назначить себя
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => fire("resolve")} disabled={busy === "resolve"}>
+                <CheckCircle2 className="w-4 h-4" /> Пометить выполненной
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => fire("dismiss")} disabled={busy === "dismiss"}>
+                <Clock className="w-4 h-4" /> Отложить
+              </Button>
+            </div>
+          </SectionBox>
+        );
+
+      // ─── Ручная задача ────────────────────────────────────────────
+      case "custom_manual":
+        return (
+          <SectionBox title="Ручная задача">
+            {item.fullDescription && (
+              <div className="text-sm text-foreground bg-slate-50 rounded-xl border p-3 leading-relaxed">
+                {item.fullDescription}
+              </div>
+            )}
+            <OrderInfoBlock ctx={ctx} />
+            <div className="border-t pt-3 space-y-3">
+              <div className="text-sm font-semibold">Комментарий оператора</div>
+              <Textarea
+                value={messageText}
+                onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setMessageText(e.target.value)}
+                placeholder="Опишите выполненное действие..."
+                className="min-h-[80px] bg-white"
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" onClick={() => fire("resolve", { note: messageText })} disabled={busy === "resolve"}>
+                  <CheckCircle2 className="w-4 h-4" /> Выполнено
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => fire("dismiss")} disabled={busy === "dismiss"}>
+                  <Clock className="w-4 h-4" /> Отложить
+                </Button>
+              </div>
             </div>
           </SectionBox>
         );
