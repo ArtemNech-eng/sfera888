@@ -499,6 +499,11 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
   }
 
   if (action === "return_to_pool" && item.orderId != null) {
+    // Record cancellation for reputation before resetting masterId
+    if (item.masterId != null) {
+      await recordOrderCancelled(Number(item.masterId), Number(item.orderId))
+        .catch((e: any) => console.error("[return_to_pool] reputation update failed:", e));
+    }
     await db.update(ordersTable)
       .set({ masterId: null, status: "waiting_master", assignedAt: null, updatedAt: new Date() } as any)
       .where(eq(ordersTable.id, Number(item.orderId)));

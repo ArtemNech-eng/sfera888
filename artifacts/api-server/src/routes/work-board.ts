@@ -18,6 +18,7 @@ import { EventEmitter } from "node:events";
 import { db, ordersTable, mastersTable, leadsTable, receiptsTable, transactionsTable } from "@workspace/db";
 import { inArray, isNull, eq, and, gte } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
+import { recordOrderCancelled } from "../lib/masterReputation.js";
 
 // Только эти роли могут менять статус заявок (эскалировать/возвращать в пул).
 const operatorRoles = requireRole("admin", "lead_operator", "master_operator");
@@ -558,6 +559,11 @@ router.post("/return-to-pool/:orderId", operatorRoles, async (req, res) => {
   if (!Number.isFinite(orderId)) return res.status(400).json({ error: "bad orderId" });
   if (!req.body?.confirmed) return res.status(400).json({ error: "confirmation_required" });
   try {
+    // Get current masterId before resetting — needed for reputation tracking
+    const [order] = await db.select({ masterId: ordersTable.masterId })
+      .from(ordersTable)
+      .where(eq(ordersTable.id, orderId));
+
     await db
       .update(ordersTable)
       .set({
@@ -568,6 +574,13 @@ router.post("/return-to-pool/:orderId", operatorRoles, async (req, res) => {
         updatedAt: new Date(),
       })
       .where(eq(ordersTable.id, orderId));
+
+    // Record cancellation for reputation — master lost the order
+    if (order?.masterId) {
+      await recordOrderCancelled(order.masterId, orderId)
+        .catch((e: any) => console.error("[return-to-pool] reputation update failed:", e));
+    }
+
     notifyWorkBoardChanged("return-to-pool");
     res.json({ ok: true });
   } catch (e) {
