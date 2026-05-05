@@ -294,9 +294,30 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
   }
 
   if (action === "cancel_order" && item.orderId != null) {
+    const reason = String(payload?.cancelReason ?? "crm_manual");
     await db.update(ordersTable)
-      .set({ status: "cancelled", cancelReason: "crm_manual", updatedAt: new Date() } as any)
+      .set({ status: "cancelled", cancelReason: reason, updatedAt: new Date() } as any)
       .where(eq(ordersTable.id, Number(item.orderId)));
+    // Notify master about cancellation
+    if (item.masterId != null) {
+      const masterId = Number(item.masterId);
+      const [master] = await db.select({ id: mastersTable.id, maxChatId: mastersTable.maxChatId }).from(mastersTable).where(eq(mastersTable.id, masterId)).limit(1);
+      const reasonLabels: Record<string, string> = {
+        client_refused: "клиент отказался",
+        master_no_response: "мастер не выходит на связь",
+        wrong_order: "ошибка создания заказа",
+        crm_manual: "отменено оператором",
+        other: "другая причина",
+      };
+      const reasonText = reasonLabels[reason] ?? reason;
+      const notifyText = `❌ Заказ #${item.orderId} отменён (${reasonText}). Свяжитесь с нами для уточнения деталей.`;
+      if (master?.maxChatId) {
+        await sendMaxMessage(master.maxChatId, notifyText).catch((e: any) => console.error("[cancel_order] max send failed:", e));
+      }
+      sendPushToMaster(masterId, { type: "new_message", title: "Заказ отменён", body: `Заказ #${item.orderId} отменён: ${reasonText}.` }).catch((e: any) => console.error("[cancel_order] push failed:", e));
+      const chatId = master?.maxChatId ? `max_${master.maxChatId}` : `pwa_${masterId}`;
+      await db.insert(masterMessagesTable).values({ masterId, telegramChatId: chatId, text: notifyText, fromMaster: false, senderName: operatorName, isRead: true });
+    }
   }
 
   if (action === "complete_as_master") {

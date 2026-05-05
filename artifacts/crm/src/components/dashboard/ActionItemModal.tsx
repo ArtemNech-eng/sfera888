@@ -297,7 +297,8 @@ export function ActionItemModal({ id, open, onOpenChange }: {
   const [selectedMasterId, setSelectedMasterId] = useState<number | null>(null);
   const [masterSearch, setMasterSearch] = useState("");
   const [balanceInput, setBalanceInput] = useState("");
-  const [confirmInput, setConfirmInput] = useState("");
+  const [cancelConfirmStep, setCancelConfirmStep] = useState<false | "select" | "confirm">("select");
+  const [cancelOrderReason, setCancelOrderReason] = useState("");
   const [comment, setComment] = useState("");
   const [assignedMasterConfirm, setAssignedMasterConfirm] = useState<{ id: number; name: string; city: string | null } | null>(null);
   const [cancelAsMasterPending, setCancelAsMasterPending] = useState(false);
@@ -331,7 +332,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
   useEffect(() => {
     if (!open) {
       setMessageText(""); setSelectedMasterId(null); setMasterSearch("");
-      setBalanceInput(""); setConfirmInput(""); setToast(null); setAssignedMasterConfirm(null); setCancelAsMasterPending(false); setCancelReason("bypass"); setCompleteAsMasterPending(false); setCompleteAmount(""); setCommissionMode("as_paid");
+      setBalanceInput(""); setCancelConfirmStep(false); setCancelOrderReason(""); setToast(null); setAssignedMasterConfirm(null); setCancelAsMasterPending(false); setCancelReason("bypass"); setCompleteAsMasterPending(false); setCompleteAmount(""); setCommissionMode("as_paid");
       setPartialOrderAmount(""); setPartialPaidAmount("");
     }
   }, [open]);
@@ -411,6 +412,20 @@ export function ActionItemModal({ id, open, onOpenChange }: {
           ? "✅ Заказ завершён без начисления комиссии. Уведомление мастеру отправлено."
           : "✅ Заказ завершён. Комиссия засчитана как оплаченная, мастеру отправлено уведомление.";
         showToast(msg);
+        onOpenChange(false);
+        return;
+      }
+      if (action === "cancel_order") {
+        const reasonLabels: Record<string, string> = {
+          client_refused: "клиент отказался",
+          master_no_response: "мастер не выходит на связь",
+          wrong_order: "ошибка создания",
+          crm_manual: "отменено оператором",
+          other: "другая причина",
+        };
+        const reason = String((payload as { cancelReason?: string })?.cancelReason ?? "crm_manual");
+        const reasonText = reasonLabels[reason] ?? reason;
+        showToast(`❌ Заказ отменён (${reasonText}). Мастер получил уведомление.`, false);
         onOpenChange(false);
         return;
       }
@@ -530,16 +545,44 @@ export function ActionItemModal({ id, open, onOpenChange }: {
               <Button size="sm" variant="ghost" onClick={() => fire("dismiss")} disabled={busy === "dismiss"}>
                 <Clock className="w-4 h-4" /> Отложить
               </Button>
-              <Button size="sm" variant="destructive" onClick={() => { if (confirmInput.toUpperCase() === "ОТМЕНИТЬ") fire("cancel_order"); else showToast('Введите "ОТМЕНИТЬ" для подтверждения', false); }} disabled={busy === "cancel_order"}>
-                Отменить заказ
-              </Button>
-              <Input
-                value={confirmInput}
-                onChange={(e: ChangeEvent<HTMLInputElement>) => setConfirmInput(e.target.value)}
-                placeholder='Введите ОТМЕНИТЬ'
-                className="w-36 bg-white"
-                size={10}
-              />
+              {!cancelConfirmStep ? (
+                <Button size="sm" variant="destructive" onClick={() => setCancelConfirmStep("select")} disabled={busy === "cancel_order"}>
+                  Отменить заказ
+                </Button>
+              ) : cancelConfirmStep === "select" ? (
+                <div className="w-full rounded-xl border-2 border-red-200 bg-red-50 p-3 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                    <div className="text-xs text-red-800">Заказ будет отменён. Мастер и клиент получат уведомления. Действие необратимо.</div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {[
+                      { value: "client_refused", label: "Клиент отказался" },
+                      { value: "master_no_response", label: "Мастер не выходит на связь" },
+                      { value: "wrong_order", label: "Ошибка создания" },
+                      { value: "other", label: "Другая причина" },
+                    ].map(r => (
+                      <button key={r.value} type="button" onClick={() => { setCancelOrderReason(r.value); setCancelConfirmStep("confirm"); }}
+                        className="text-xs px-3 py-2 rounded-lg border border-red-200 bg-white hover:bg-red-100 text-red-900 font-medium transition">
+                        {r.label}
+                      </button>
+                    ))}
+                  </div>
+                  <Button size="sm" variant="outline" onClick={() => setCancelConfirmStep(false)}>Отмена</Button>
+                </div>
+              ) : (
+                <div className="w-full rounded-xl border-2 border-red-300 bg-red-50 p-3 space-y-2">
+                  <div className="text-xs font-bold text-red-800">Подтвердите отмену заказа</div>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="destructive" disabled={busy === "cancel_order"}
+                      onClick={async () => { await fire("cancel_order", { cancelReason: cancelOrderReason }); setCancelConfirmStep(false); setCancelOrderReason(""); }}>
+                      {busy === "cancel_order" ? "Отменяем..." : "Да, отменить заказ"}
+                    </Button>
+                    <Button size="sm" variant="outline" disabled={busy === "cancel_order"}
+                      onClick={() => { setCancelConfirmStep(false); setCancelOrderReason(""); }}>Отмена</Button>
+                  </div>
+                </div>
+              )}
             </div>
           </SectionBox>
         );
@@ -671,16 +714,44 @@ export function ActionItemModal({ id, open, onOpenChange }: {
               <Button size="sm" variant="outline" onClick={() => fire("return_to_pool")} disabled={busy === "return_to_pool"}>
                 <RefreshCw className="w-4 h-4" /> Вернуть в пул
               </Button>
-              <Button size="sm" variant="destructive" onClick={() => { if (confirmInput.toUpperCase() === "ОТМЕНИТЬ") fire("cancel_order"); else showToast('Введите "ОТМЕНИТЬ" для подтверждения', false); }} disabled={busy === "cancel_order"}>
-                Отменить заказ
-              </Button>
-              <Input
-                value={confirmInput}
-                onChange={(e: ChangeEvent<HTMLInputElement>) => setConfirmInput(e.target.value)}
-                placeholder='Введите ОТМЕНИТЬ'
-                className="w-36 bg-white"
-                size={10}
-              />
+              {!cancelConfirmStep ? (
+                <Button size="sm" variant="destructive" onClick={() => setCancelConfirmStep("select")} disabled={busy === "cancel_order"}>
+                  Отменить заказ
+                </Button>
+              ) : cancelConfirmStep === "select" ? (
+                <div className="w-full rounded-xl border-2 border-red-200 bg-red-50 p-3 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                    <div className="text-xs text-red-800">Заказ будет отменён. Мастер и клиент получат уведомления. Действие необратимо.</div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {[
+                      { value: "client_refused", label: "Клиент отказался" },
+                      { value: "master_no_response", label: "Мастер не выходит на связь" },
+                      { value: "wrong_order", label: "Ошибка создания" },
+                      { value: "other", label: "Другая причина" },
+                    ].map(r => (
+                      <button key={r.value} type="button" onClick={() => { setCancelOrderReason(r.value); setCancelConfirmStep("confirm"); }}
+                        className="text-xs px-3 py-2 rounded-lg border border-red-200 bg-white hover:bg-red-100 text-red-900 font-medium transition">
+                        {r.label}
+                      </button>
+                    ))}
+                  </div>
+                  <Button size="sm" variant="outline" onClick={() => setCancelConfirmStep(false)}>Отмена</Button>
+                </div>
+              ) : (
+                <div className="w-full rounded-xl border-2 border-red-300 bg-red-50 p-3 space-y-2">
+                  <div className="text-xs font-bold text-red-800">Подтвердите отмену заказа</div>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="destructive" disabled={busy === "cancel_order"}
+                      onClick={async () => { await fire("cancel_order", { cancelReason: cancelOrderReason }); setCancelConfirmStep(false); setCancelOrderReason(""); }}>
+                      {busy === "cancel_order" ? "Отменяем..." : "Да, отменить заказ"}
+                    </Button>
+                    <Button size="sm" variant="outline" disabled={busy === "cancel_order"}
+                      onClick={() => { setCancelConfirmStep(false); setCancelOrderReason(""); }}>Отмена</Button>
+                  </div>
+                </div>
+              )}
             </div>
           </SectionBox>
         );
@@ -734,14 +805,44 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                 >
                   <RefreshCw className="w-4 h-4" /> Разослать повторно
                 </Button>
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  disabled={busy === "cancel_order"}
-                  onClick={() => fire("cancel_order")}
-                >
-                  Отменить заказ
-                </Button>
+                {!cancelConfirmStep ? (
+                  <Button size="sm" variant="destructive" onClick={() => setCancelConfirmStep("select")} disabled={busy === "cancel_order"}>
+                    Отменить заказ
+                  </Button>
+                ) : cancelConfirmStep === "select" ? (
+                  <div className="w-full rounded-xl border-2 border-red-200 bg-red-50 p-3 space-y-2">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                      <div className="text-xs text-red-800">Заказ будет отменён. Мастер и клиент получат уведомления. Действие необратимо.</div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {[
+                        { value: "client_refused", label: "Клиент отказался" },
+                        { value: "master_no_response", label: "Мастер не выходит на связь" },
+                        { value: "wrong_order", label: "Ошибка создания" },
+                        { value: "other", label: "Другая причина" },
+                      ].map(r => (
+                        <button key={r.value} type="button" onClick={() => { setCancelOrderReason(r.value); setCancelConfirmStep("confirm"); }}
+                          className="text-xs px-3 py-2 rounded-lg border border-red-200 bg-white hover:bg-red-100 text-red-900 font-medium transition">
+                          {r.label}
+                        </button>
+                      ))}
+                    </div>
+                    <Button size="sm" variant="outline" onClick={() => setCancelConfirmStep(false)}>Отмена</Button>
+                  </div>
+                ) : (
+                  <div className="w-full rounded-xl border-2 border-red-300 bg-red-50 p-3 space-y-2">
+                    <div className="text-xs font-bold text-red-800">Подтвердите отмену заказа</div>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="destructive" disabled={busy === "cancel_order"}
+                        onClick={async () => { await fire("cancel_order", { cancelReason: cancelOrderReason }); setCancelConfirmStep(false); setCancelOrderReason(""); }}>
+                        {busy === "cancel_order" ? "Отменяем..." : "Да, отменить заказ"}
+                      </Button>
+                      <Button size="sm" variant="outline" disabled={busy === "cancel_order"}
+                        onClick={() => { setCancelConfirmStep(false); setCancelOrderReason(""); }}>Отмена</Button>
+                    </div>
+                  </div>
+                )}
               </div>
               {assignedMasterConfirm && (
                 <div className="mt-2 flex items-center gap-2 rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-800">
@@ -1165,16 +1266,44 @@ export function ActionItemModal({ id, open, onOpenChange }: {
               <Button size="sm" variant="ghost" onClick={() => fire("dismiss")} disabled={busy === "dismiss"}>
                 <Clock className="w-4 h-4" /> Отложить
               </Button>
-              <Button size="sm" variant="destructive" onClick={() => { if (confirmInput.toUpperCase() === "ОТМЕНИТЬ") fire("cancel_order"); else showToast('Введите "ОТМЕНИТЬ" для подтверждения', false); }} disabled={busy === "cancel_order"}>
-                Отменить заказ
-              </Button>
-              <Input
-                value={confirmInput}
-                onChange={(e: ChangeEvent<HTMLInputElement>) => setConfirmInput(e.target.value)}
-                placeholder='Введите ОТМЕНИТЬ'
-                className="w-36 bg-white"
-                size={10}
-              />
+              {!cancelConfirmStep ? (
+                <Button size="sm" variant="destructive" onClick={() => setCancelConfirmStep("select")} disabled={busy === "cancel_order"}>
+                  Отменить заказ
+                </Button>
+              ) : cancelConfirmStep === "select" ? (
+                <div className="w-full rounded-xl border-2 border-red-200 bg-red-50 p-3 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                    <div className="text-xs text-red-800">Заказ будет отменён. Мастер и клиент получат уведомления. Действие необратимо.</div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {[
+                      { value: "client_refused", label: "Клиент отказался" },
+                      { value: "master_no_response", label: "Мастер не выходит на связь" },
+                      { value: "wrong_order", label: "Ошибка создания" },
+                      { value: "other", label: "Другая причина" },
+                    ].map(r => (
+                      <button key={r.value} type="button" onClick={() => { setCancelOrderReason(r.value); setCancelConfirmStep("confirm"); }}
+                        className="text-xs px-3 py-2 rounded-lg border border-red-200 bg-white hover:bg-red-100 text-red-900 font-medium transition">
+                        {r.label}
+                      </button>
+                    ))}
+                  </div>
+                  <Button size="sm" variant="outline" onClick={() => setCancelConfirmStep(false)}>Отмена</Button>
+                </div>
+              ) : (
+                <div className="w-full rounded-xl border-2 border-red-300 bg-red-50 p-3 space-y-2">
+                  <div className="text-xs font-bold text-red-800">Подтвердите отмену заказа</div>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="destructive" disabled={busy === "cancel_order"}
+                      onClick={async () => { await fire("cancel_order", { cancelReason: cancelOrderReason }); setCancelConfirmStep(false); setCancelOrderReason(""); }}>
+                      {busy === "cancel_order" ? "Отменяем..." : "Да, отменить заказ"}
+                    </Button>
+                    <Button size="sm" variant="outline" disabled={busy === "cancel_order"}
+                      onClick={() => { setCancelConfirmStep(false); setCancelOrderReason(""); }}>Отмена</Button>
+                  </div>
+                </div>
+              )}
             </div>
           </SectionBox>
         );
