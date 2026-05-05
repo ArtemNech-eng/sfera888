@@ -107,7 +107,7 @@ function useOperators() {
 }
 
 interface MasterOption { id: number; alias: string; city: string; }
-interface OrderOption  { id: number; serviceType: string; city: string; }
+interface OrderOption  { id: number; leadId?: number | null; serviceType: string; city: string; }
 
 function useMastersList() {
   return useQuery<MasterOption[]>({
@@ -129,7 +129,7 @@ function useOrdersList() {
       const r = await fetch("/api/orders", { credentials: "include" });
       if (!r.ok) return [];
       const data = await r.json();
-      return Array.isArray(data) ? data.map((o: any) => ({ id: o.id, serviceType: o.serviceType, city: o.city })) : [];
+      return Array.isArray(data) ? data.map((o: any) => ({ id: o.id, leadId: o.leadId ?? null, serviceType: o.serviceType, city: o.city })) : [];
     },
     staleTime: 30_000,
   });
@@ -767,7 +767,7 @@ function CreateModal({
               >
                 <option value="">— Не связано —</option>
                 {orders.map(o => (
-                  <option key={o.id} value={o.id}>#{o.id} {o.serviceType} · {o.city}</option>
+                  <option key={o.id} value={o.id}>#{o.leadId ?? o.id} {o.serviceType} · {o.city}</option>
                 ))}
               </select>
             </div>
