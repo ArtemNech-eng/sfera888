@@ -1,0 +1,33 @@
+(node:3168) Warning: SECURITY WARNING: The SSL modes 'prefer', 'require', and 'verify-ca' are treated as aliases for 'verify-full'.
+In the next major version (pg-connection-string v3.0.0 and pg v9.0.0), these modes will adopt standard libpq semantics, which have weaker security guarantees.
+
+To prepare for this change:
+- If you want the current behavior, explicitly use 'sslmode=verify-full'
+- If you want libpq compatibility now, use 'uselibpqcompat=true&sslmode=require'
+
+See https://www.postgresql.org/docs/current/libpq-ssl.html for libpq SSL mode definitions.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Active cases: 19
+Stale cases to archive: 10
+  case 13 order 69 has_est proposed=null orderAmt=null status=in_progress
+  case 18 order 77 has_est proposed=null orderAmt=null status=master_assigned
+  case 34 order 93 paid proposed=148000.00 orderAmt=148000.00 status=in_progress
+  case 38 order 98 has_est proposed=30000.00 orderAmt=null status=master_assigned
+  case 39 order 100 has_est proposed=134850.00 orderAmt=null status=in_progress
+  case 42 order 103 has_est proposed=40920.00 orderAmt=null status=in_progress
+  case 43 order 104 has_est proposed=71400.00 orderAmt=null status=master_assigned
+  case 44 order 107 has_est proposed=54500.00 orderAmt=null status=cancellation_requested
+  case 47 order 105 has_est proposed=60000.00 orderAmt=null status=in_progress
+  case 53 order 118 has_est proposed=14200.00 orderAmt=null status=master_assigned
+
+Archived: 10 cases
+  archived case 44 order 107
+  archived case 38 order 98
+  archived case 53 order 118
+  archived case 34 order 93
+  archived case 47 order 105
+  archived case 13 order 69
+  archived case 18 order 77
+  archived case 43 order 104
+  archived case 42 order 103
+  archived case 39 order 100

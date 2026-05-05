@@ -121,6 +121,7 @@ function actionSet(type: TaskType) {
   if (type === "no_estimate") return [{ key: "message_master", label: "Написать мастеру", style: "primary" as const }, { key: "call_master", label: "Позвонить мастеру", style: "secondary" as const }, { key: "reassign", label: "Переназначить", style: "secondary" as const }, { key: "cancel_order", label: "Отменить заказ", style: "danger" as const }, { key: "resolve", label: "Пометить задачу выполненной", style: "secondary" as const }];
   if (type === "no_payment") return [{ key: "message_master", label: "Напомнить мастеру", style: "primary" as const }, { key: "call_client", label: "Позвонить клиенту", style: "secondary" as const }, { key: "return_to_pool", label: "Вернуть в пул", style: "secondary" as const }, { key: "cancel_order", label: "Отменить заказ", style: "danger" as const }, { key: "resolve", label: "Пометить выполненной", style: "secondary" as const }];
   if (type === "no_master_response") return [{ key: "message_master", label: "Написать мастеру", style: "primary" as const }, { key: "resend", label: "Повторно разослать", style: "secondary" as const }, { key: "reassign", label: "Назначить вручную", style: "secondary" as const }, { key: "cancel_order", label: "Отменить заказ", style: "danger" as const }];
+  if (type === "no_progress") return [{ key: "message_master", label: "Написать мастеру", style: "primary" as const }, { key: "call_master", label: "Позвонить мастеру", style: "secondary" as const }, { key: "reassign", label: "Переназначить", style: "secondary" as const }, { key: "cancel_order", label: "Отменить заказ", style: "danger" as const }, { key: "resolve", label: "Пометить задачу выполненной", style: "secondary" as const }];
   if (type === "blocked_master") return [{ key: "message_master", label: "Написать мастеру", style: "primary" as const }, { key: "manual_unblock", label: "Разблокировать вручную", style: "danger" as const }, { key: "open_issue_order", label: "Открыть проблемный заказ", style: "secondary" as const }, { key: "resolve", label: "Пометить как проверено", style: "secondary" as const }];
   if (type === "low_avito_balance") return [{ key: "update_balance", label: "Обновить баланс вручную", style: "primary" as const }, { key: "resolve", label: "Пометить как решено", style: "secondary" as const }];
   if (type === "possible_bypass" || type === "conflict") return [{ key: "message_master", label: "Написать мастеру", style: "primary" as const }, { key: "complete_as_master", label: "Завершить как выполненный (только admin)", style: "secondary" as const }, { key: "cancel_as_master", label: "Отменить заказ (вина мастера)", style: "danger" as const }, { key: "block_master", label: "Заблокировать мастера", style: "danger" as const }, { key: "manual_control", label: "Перевести заказ в ручной контроль", style: "secondary" as const }, { key: "resolve", label: "Пометить как проверено", style: "secondary" as const }];
@@ -700,13 +701,13 @@ router.get("/action-items/:id", ops, async (req: any, res: any) => {
     if (l) ctx.client = l;
   }
 
-  if (item.type === "no_master_response" || item.type === "no_estimate") {
+  if (item.type === "no_master_response" || item.type === "no_estimate" || item.type === "no_progress") {
     const avail = await db.select({ id: mastersTable.id, alias: mastersTable.alias, city: mastersTable.city, status: mastersTable.status }).from(mastersTable).where(and(eq(mastersTable.status, "active"), isNull(mastersTable.deletedAt))).limit(30);
     ctx.availableMasters = avail.map((m: any) => ({ id: m.id, name: m.alias ?? `Мастер #${m.id}`, city: m.city }));
   }
 
-  // Load receipt (with token for estimate link) for no_estimate and no_payment
-  if ((item.type === "no_estimate" || item.type === "no_payment") && item.orderId != null) {
+  // Load receipt (with token for estimate link) for no_estimate, no_payment and no_progress
+  if ((item.type === "no_estimate" || item.type === "no_payment" || item.type === "no_progress") && item.orderId != null) {
     const [r] = await db.select({ id: receiptsTable.id, token: receiptsTable.token, prepaymentAmount: receiptsTable.prepaymentAmount, prepaymentSubmittedAt: receiptsTable.prepaymentSubmittedAt, prepaymentSeenAt: receiptsTable.prepaymentSeenAt, prepaymentScreenshotUrl: receiptsTable.prepaymentScreenshotUrl, clientName: receiptsTable.clientName, clientPhone: receiptsTable.clientPhone }).from(receiptsTable).where(eq(receiptsTable.orderId, Number(item.orderId))).limit(1);
     if (r) ctx.receipt = r;
   }

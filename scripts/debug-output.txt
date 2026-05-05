@@ -1,0 +1,193 @@
+(node:16536) Warning: SECURITY WARNING: The SSL modes 'prefer', 'require', and 'verify-ca' are treated as aliases for 'verify-full'.
+In the next major version (pg-connection-string v3.0.0 and pg v9.0.0), these modes will adopt standard libpq semantics, which have weaker security guarantees.
+
+To prepare for this change:
+- If you want the current behavior, explicitly use 'sslmode=verify-full'
+- If you want libpq compatibility now, use 'uselibpqcompat=true&sslmode=require'
+
+See https://www.postgresql.org/docs/current/libpq-ssl.html for libpq SSL mode definitions.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Active cases: [
+  {
+    "id": 10,
+    "order_id": 65,
+    "master_id": 13,
+    "risk_level": "red",
+    "hours_without_estimate": "0.00",
+    "hours_without_payment": "0.00"
+  },
+  {
+    "id": 13,
+    "order_id": 69,
+    "master_id": 37,
+    "risk_level": "red",
+    "hours_without_estimate": "555.60",
+    "hours_without_payment": "0.00"
+  },
+  {
+    "id": 15,
+    "order_id": 73,
+    "master_id": 26,
+    "risk_level": "red",
+    "hours_without_estimate": "0.00",
+    "hours_without_payment": "0.00"
+  },
+  {
+    "id": 16,
+    "order_id": 85,
+    "master_id": 8,
+    "risk_level": "red",
+    "hours_without_estimate": "0.00",
+    "hours_without_payment": "0.00"
+  },
+  {
+    "id": 18,
+    "order_id": 77,
+    "master_id": 26,
+    "risk_level": "red",
+    "hours_without_estimate": "461.20",
+    "hours_without_payment": "0.00"
+  },
+  {
+    "id": 24,
+    "order_id": 83,
+    "master_id": 22,
+    "risk_level": "red",
+    "hours_without_estimate": "415.50",
+    "hours_without_payment": "0.00"
+  },
+  {
+    "id": 34,
+    "order_id": 93,
+    "master_id": 65,
+    "risk_level": "yellow",
+    "hours_without_estimate": "0.00",
+    "hours_without_payment": "0.00"
+  },
+  {
+    "id": 37,
+    "order_id": 99,
+    "master_id": 22,
+    "risk_level": "red",
+    "hours_without_estimate": "276.10",
+    "hours_without_payment": "0.00"
+  },
+  {
+    "id": 38,
+    "order_id": 98,
+    "master_id": 66,
+    "risk_level": "yellow",
+    "hours_without_estimate": "0.00",
+    "hours_without_payment": "0.00"
+  },
+  {
+    "id": 39,
+    "order_id": 100,
+    "master_id": 37,
+    "risk_level": "red",
+    "hours_without_estimate": "0.00",
+    "hours_without_payment": "248.90"
+  },
+  {
+    "id": 40,
+    "order_id": 101,
+    "master_id": 66,
+    "risk_level": "yellow",
+    "hours_without_estimate": "0.00",
+    "hours_without_payment": "0.00"
+  },
+  {
+    "id": 42,
+    "order_id": 103,
+    "master_id": 66,
+    "risk_level": "yellow",
+    "hours_without_estimate": "0.00",
+    "hours_without_payment": "0.00"
+  },
+  {
+    "id": 43,
+    "order_id": 104,
+    "master_id": 66,
+    "risk_level": "yellow",
+    "hours_without_estimate": "0.00",
+    "hours_without_payment": "0.00"
+  },
+  {
+    "id": 44,
+    "order_id": 107,
+    "master_id": 38,
+    "risk_level": "yellow",
+    "hours_without_estimate": "0.00",
+    "hours_without_payment": "0.00"
+  },
+  {
+    "id": 47,
+    "order_id": 105,
+    "master_id": 50,
+    "risk_level": "green",
+    "hours_without_estimate": "0.00",
+    "hours_without_payment": "0.00"
+  },
+  {
+    "id": 52,
+    "order_id": 116,
+    "master_id": 42,
+    "risk_level": "green",
+    "hours_without_estimate": "0.00",
+    "hours_without_payment": "0.00"
+  },
+  {
+    "id": 53,
+    "order_id": 118,
+    "master_id": 29,
+    "risk_level": "green",
+    "hours_without_estimate": "0.00",
+    "hours_without_payment": "0.00"
+  },
+  {
+    "id": 54,
+    "order_id": 117,
+    "master_id": 45,
+    "risk_level": "yellow",
+    "hours_without_estimate": "0.00",
+    "hours_without_payment": "0.00"
+  },
+  {
+    "id": 55,
+    "order_id": 119,
+    "master_id": 33,
+    "risk_level": "yellow",
+    "hours_without_estimate": "0.00",
+    "hours_without_payment": "0.00"
+  }
+]
+
+Order 103: [
+  {
+    "id": 103,
+    "proposed_amount": "40920.00",
+    "order_amount": null,
+    "status": "in_progress",
+    "prepayment_amount": "0.00"
+  }
+]
+
+Receipts for order 103: [
+  {
+    "id": 30,
+    "order_id": 103,
+    "prepayment_amount": "5000.00",
+    "prepayment_submitted_at": "2026-04-24T10:27:33.964Z",
+    "prepayment_seen_at": null
+  }
+]
+
+Transactions for order 103: [
+  {
+    "id": 27,
+    "order_id": 103,
+    "order_amount": "40920.00",
+    "commission": "5000.00",
+    "payment_status": "paid"
+  }
+]

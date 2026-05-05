@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
+import React, { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
 import { BellRing } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
@@ -131,6 +131,11 @@ const MESSAGE_TEMPLATES: Record<string, { label: string; text: (orderId?: number
   conflict: [
     { label: "Разберём вместе", text: (id) => `По заказу${id ? ` #${id}` : ""} есть разногласия с клиентом. Свяжитесь с нами для урегулирования.` },
     { label: "Возврат средств", text: (id) => `Заказ${id ? ` #${id}` : ""}: клиент требует возврат. Срочно свяжитесь с нами.` },
+  ],
+  no_progress: [
+    { label: "Статус заказа", text: (id) => `Добрый день! По заказу${id ? ` #${id}` : ""} — какой текущий статус? Обновите информацию в приложении.` },
+    { label: "Срочно ответьте", text: (id) => `Заказ${id ? ` #${id}` : ""} без движения уже давно. Срочно свяжитесь с нами или обновите статус.` },
+    { label: "Риск отмены", text: (id) => `Заказ${id ? ` #${id}` : ""}: если не будет обновлений сегодня, заказ может быть передан другому мастеру.` },
   ],
 };
 
@@ -290,7 +295,18 @@ export function ActionItemModal({ id, open, onOpenChange }: {
     queryKey: ["action-item", id],
     queryFn: () => fetchDetail(id!),
     enabled: !!id && open,
+    refetchInterval: open && id ? 30_000 : false,
   });
+
+  // Автозакрытие: если при refetch заказ исчез из списка (движение произошло) — закрываем попап
+  const prevDataRef = React.useRef<any>(null);
+  useEffect(() => {
+    if (open && prevDataRef.current && !data && !isLoading) {
+      // Раньше данные были, теперь нет — заказ обновился, карточка больше не актуальна
+      onOpenChange(false);
+    }
+    prevDataRef.current = data;
+  }, [data, isLoading, open]);
 
   useEffect(() => {
     if (!open) {
@@ -1032,6 +1048,110 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                 )}
               </div>
             )}
+          </SectionBox>
+        );
+
+
+      // ─── Нет движения ─────────────────────────────────────────────
+      case "no_progress":
+        return (
+          <SectionBox title="Ситуация: заказ без движения">
+            <NextActionBanner
+              text={`Заказ без движения${ctx.order?.hoursOld != null ? ` уже ${fmtAge(ctx.order.hoursOld)}` : ""}. Позвоните мастеру и выясните статус.`}
+              phone={ctx.master?.phone}
+              callLabel="Позвонить мастеру"
+            />
+            <OrderInfoBlock ctx={ctx} ageLabel="Без движения" />
+            {ctx.order?.orderAmount != null && (
+              <InfoRow icon={<Banknote className="w-4 h-4" />} label="Сумма заказа" value={`${Number(ctx.order.orderAmount).toLocaleString("ru-RU")} ₽`} />
+            )}
+            {ctx.order?.proposedAmount != null && ctx.order?.orderAmount == null && (
+              <InfoRow icon={<Banknote className="w-4 h-4" />} label="Сумма сметы" value={`${Number(ctx.order.proposedAmount).toLocaleString("ru-RU")} ₽`} />
+            )}
+            {ctx.receipt?.token && (
+              <div className="flex items-center gap-2 text-sm">
+                <Banknote className="w-4 h-4 text-muted-foreground shrink-0" />
+                <a href={`/api/receipt/${ctx.receipt.token}`} target="_blank" rel="noopener noreferrer"
+                  className="text-xs font-semibold text-teal-600 hover:text-teal-800 underline underline-offset-2"
+                >Открыть смету ↗</a>
+              </div>
+            )}
+
+            <div className="border-t pt-3 space-y-3">
+              <div className="text-sm font-semibold">Написать мастеру</div>
+              <TemplateChips type="no_progress" orderId={ctx.order?.id} onSelect={setMessageText} />
+              <Textarea
+                value={messageText}
+                onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setMessageText(e.target.value)}
+                placeholder="Добрый день! По заказу #... Какой статус?"
+                className="min-h-[80px] bg-white"
+              />
+              <Button
+                onClick={() => fire("message_master", { message: messageText })}
+                disabled={busy === "message_master" || !messageText.trim()}
+                size="sm"
+              >
+                <MessageSquare className="w-4 h-4" /> Отправить мастеру
+              </Button>
+            </div>
+
+            <div className="border-t pt-3">
+              <div className="text-sm font-semibold mb-2">Переназначить мастера</div>
+              <Input
+                value={masterSearch}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setMasterSearch(e.target.value)}
+                placeholder="Поиск мастера по имени или городу"
+                className="mb-2 bg-white"
+              />
+              <div className="max-h-36 overflow-y-auto space-y-1 rounded-xl border bg-white p-2">
+                {filteredMasters.length === 0 && <div className="text-xs text-muted-foreground p-2">Нет доступных мастеров</div>}
+                {filteredMasters.slice(0, 8).map((m) => (
+                  <button
+                    key={m.id}
+                    className={`w-full text-left px-3 py-2 rounded-lg text-sm border transition ${selectedMasterId === m.id ? "border-violet-500 bg-violet-50" : "hover:bg-slate-50"}`}
+                    onClick={() => setSelectedMasterId(m.id)}
+                  >
+                    <span className="font-medium">{m.name}</span>
+                    {m.city && <span className="text-muted-foreground ml-2">· {m.city}</span>}
+                    <ChevronRight className="w-3 h-3 inline ml-1 text-muted-foreground" />
+                  </button>
+                ))}
+              </div>
+              <Button
+                className="mt-2"
+                size="sm"
+                variant="outline"
+                disabled={!selectedMasterId || busy === "reassign"}
+                onClick={() => fire("reassign", { masterId: selectedMasterId })}
+              >
+                Назначить выбранного мастера
+              </Button>
+              {assignedMasterConfirm && (
+                <div className="mt-2 flex items-center gap-2 rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-800">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-green-600" />
+                  <span>Назначен: <strong>{assignedMasterConfirm.name}</strong>{assignedMasterConfirm.city ? ` · ${assignedMasterConfirm.city}` : ""}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="border-t pt-3 flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" onClick={() => fire("resolve")} disabled={busy === "resolve"}>
+                <CheckCircle2 className="w-4 h-4" /> Пометить выполненной
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => fire("dismiss")} disabled={busy === "dismiss"}>
+                <Clock className="w-4 h-4" /> Отложить
+              </Button>
+              <Button size="sm" variant="destructive" onClick={() => { if (confirmInput.toUpperCase() === "ОТМЕНИТЬ") fire("cancel_order"); else showToast('Введите "ОТМЕНИТЬ" для подтверждения', false); }} disabled={busy === "cancel_order"}>
+                Отменить заказ
+              </Button>
+              <Input
+                value={confirmInput}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setConfirmInput(e.target.value)}
+                placeholder='Введите ОТМЕНИТЬ'
+                className="w-36 bg-white"
+                size={10}
+              />
+            </div>
           </SectionBox>
         );
 
