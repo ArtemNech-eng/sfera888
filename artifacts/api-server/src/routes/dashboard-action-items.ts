@@ -295,8 +295,17 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
 
   if (action === "cancel_order" && item.orderId != null) {
     const reason = String(payload?.cancelReason ?? "crm_manual");
+    // Map CRM cancel reasons to cancelType for scoring (selfCancelRate)
+    const cancelTypeMap: Record<string, string> = {
+      client_refused: "client_refused",
+      master_no_response: "master_cant",
+      wrong_order: "other",
+      crm_manual: "other",
+      other: "other",
+    };
+    const cancelType = cancelTypeMap[reason] ?? "other";
     await db.update(ordersTable)
-      .set({ status: "cancelled", cancelReason: reason, updatedAt: new Date() } as any)
+      .set({ status: "cancelled", cancelType, cancelReason: reason, updatedAt: new Date() } as any)
       .where(eq(ordersTable.id, Number(item.orderId)));
     // Lower master reputation as if master cancelled the order
     if (item.masterId != null) {
@@ -435,9 +444,17 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
     const now = new Date();
     const rawReason = String((payload as { cancelReason?: string })?.cancelReason ?? "bypass").trim();
     const cancelReason = rawReason === "bypass" || rawReason === "no_contact" || rawReason === "no_estimate" || rawReason === "other" ? rawReason : "bypass";
+    // Map to cancelType for scoring (selfCancelRate in masterScoring.ts)
+    const cancelTypeMap: Record<string, string> = {
+      bypass: "other",
+      no_contact: "master_cant",
+      no_estimate: "master_cant",
+      other: "other",
+    };
+    const cancelType = cancelTypeMap[cancelReason] ?? "other";
 
     await db.update(ordersTable)
-      .set({ status: "cancelled", cancelReason: cancelReason === "bypass" ? "master_cancel_bypass" : `master_cancel_${cancelReason}`, updatedAt: now } as any)
+      .set({ status: "cancelled", cancelType, cancelReason: cancelReason === "bypass" ? "master_cancel_bypass" : `master_cancel_${cancelReason}`, updatedAt: now } as any)
       .where(eq(ordersTable.id, orderId));
     console.log(`[cancel_as_master] order #${orderId} marked cancelled (reason=${cancelReason})`);
 
