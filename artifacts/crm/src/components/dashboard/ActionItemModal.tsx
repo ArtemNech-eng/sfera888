@@ -128,6 +128,9 @@ const MESSAGE_TEMPLATES: Record<string, { label: string; text: (orderId?: number
     { label: "Уточните статус", text: (id) => `Добрый день! Клиент ещё не оплатил предоплату по заказу${id ? ` #${id}` : ""}. Уточните статус у клиента.` },
     { label: "Подтвердите в приложении", text: (id) => `По заказу${id ? ` #${id}` : ""}: клиент должен подтвердить оплату через приложение. Напомните ему.` },
     { label: "Риск отмены", text: (id) => `Заказ${id ? ` #${id}` : ""}: без оплаты до конца дня будем вынуждены его отменить.` },
+    { label: "Новости по заказу", text: (id) => `Добрый день! По заказу${id ? ` #${id}` : ""} — какие новости? Обновите статус в приложении.` },
+    { label: "Когда оплата?", text: (id) => `Добрый день! По заказу${id ? ` #${id}` : ""} — когда ожидается оплата от заказчика? Напишите примерный срок.` },
+    { label: "Когда заканчиваете?", text: (id) => `Добрый день! По заказу${id ? ` #${id}` : ""} — когда планируете завершить работу? Обновите сроки в приложении.` },
   ],
   no_master_response: [
     { label: "Подтвердите заказ", text: (id) => `Добрый день! Подтвердите принятие заказа${id ? ` #${id}` : ""} через приложение.` },
@@ -652,7 +655,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
               </div>
             )}
             <div className="border-t pt-3 space-y-3">
-              <div className="text-sm font-semibold text-muted-foreground">Написать мастеру (если клиент не отвечает)</div>
+              <div className="text-sm font-semibold text-muted-foreground">Написать мастеру</div>
               <TemplateChips type="no_payment" orderId={ctx.order?.id} onSelect={setMessageText} />
               <Textarea
                 value={messageText}

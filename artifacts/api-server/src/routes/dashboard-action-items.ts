@@ -544,6 +544,23 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
         senderName: operatorName,
         isRead: true,
       });
+
+      // Обновляем chatCase: помечаем как разрешённый на 24ч, чтобы ИИ-диспетчер не дублировал
+      if (item.orderId != null) {
+        const now = new Date();
+        const resolvedUntil = new Date(now.getTime() + 24 * 3600000);
+        await db.update(chatCasesTable)
+          .set({
+            isResolved: true,
+            resolvedUntil,
+            lastAiMessageAt: now,
+            nextAction: "wait",
+            summary: `Оператор ${operatorName} ведёт диалог с мастером (сообщение отправлено ${now.toISOString()})`,
+            updatedAt: now,
+          })
+          .where(eq(chatCasesTable.orderId, Number(item.orderId)))
+          .catch((e: any) => console.error("[message_master] chatCase update failed:", e));
+      }
     }
   }
 
