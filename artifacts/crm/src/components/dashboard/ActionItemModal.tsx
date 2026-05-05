@@ -425,7 +425,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
         };
         const reason = String((payload as { cancelReason?: string })?.cancelReason ?? "crm_manual");
         const reasonText = reasonLabels[reason] ?? reason;
-        showToast(`❌ Заказ отменён (${reasonText}). Мастер получил уведомление.`, false);
+        showToast(`❌ Заказ отменён (${reasonText}). Рейтинг мастера понижен, уведомление отправлено.`, false);
         onOpenChange(false);
         return;
       }
@@ -553,7 +553,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                 <div className="w-full rounded-xl border-2 border-red-200 bg-red-50 p-3 space-y-2">
                   <div className="flex items-start gap-2">
                     <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                    <div className="text-xs text-red-800">Заказ будет отменён. Мастер и клиент получат уведомления. Действие необратимо.</div>
+                    <div className="text-xs text-red-800">Заказ будет отменён, рейтинг мастера будет понижен. Мастер получит уведомление. Действие необратимо.</div>
                   </div>
                   <div className="grid grid-cols-2 gap-1.5">
                     {[
@@ -722,7 +722,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                 <div className="w-full rounded-xl border-2 border-red-200 bg-red-50 p-3 space-y-2">
                   <div className="flex items-start gap-2">
                     <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                    <div className="text-xs text-red-800">Заказ будет отменён. Мастер и клиент получат уведомления. Действие необратимо.</div>
+                    <div className="text-xs text-red-800">Заказ будет отменён, рейтинг мастера будет понижен. Мастер получит уведомление. Действие необратимо.</div>
                   </div>
                   <div className="grid grid-cols-2 gap-1.5">
                     {[
@@ -813,7 +813,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                   <div className="w-full rounded-xl border-2 border-red-200 bg-red-50 p-3 space-y-2">
                     <div className="flex items-start gap-2">
                       <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                      <div className="text-xs text-red-800">Заказ будет отменён. Мастер и клиент получат уведомления. Действие необратимо.</div>
+                      <div className="text-xs text-red-800">Заказ будет отменён, рейтинг мастера будет понижен. Мастер получит уведомление. Действие необратимо.</div>
                     </div>
                     <div className="grid grid-cols-2 gap-1.5">
                       {[
@@ -1274,7 +1274,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                 <div className="w-full rounded-xl border-2 border-red-200 bg-red-50 p-3 space-y-2">
                   <div className="flex items-start gap-2">
                     <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                    <div className="text-xs text-red-800">Заказ будет отменён. Мастер и клиент получат уведомления. Действие необратимо.</div>
+                    <div className="text-xs text-red-800">Заказ будет отменён, рейтинг мастера будет понижен. Мастер получит уведомление. Действие необратимо.</div>
                   </div>
                   <div className="grid grid-cols-2 gap-1.5">
                     {[

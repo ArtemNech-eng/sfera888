@@ -298,6 +298,11 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
     await db.update(ordersTable)
       .set({ status: "cancelled", cancelReason: reason, updatedAt: new Date() } as any)
       .where(eq(ordersTable.id, Number(item.orderId)));
+    // Lower master reputation as if master cancelled the order
+    if (item.masterId != null) {
+      const masterId = Number(item.masterId);
+      await recordOrderCancelled(masterId, Number(item.orderId)).catch((e: any) => console.error("[cancel_order] reputation update failed:", e));
+    }
     // Notify master about cancellation
     if (item.masterId != null) {
       const masterId = Number(item.masterId);
