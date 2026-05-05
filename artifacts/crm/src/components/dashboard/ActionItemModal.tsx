@@ -539,6 +539,9 @@ export function ActionItemModal({ id, open, onOpenChange }: {
             </div>
 
             <div className="border-t pt-3 flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" onClick={() => fire("return_to_pool")} disabled={busy === "return_to_pool"}>
+                <RefreshCw className="w-4 h-4" /> Вернуть в пул
+              </Button>
               <Button size="sm" variant="outline" onClick={() => fire("resolve")} disabled={busy === "resolve"}>
                 <CheckCircle2 className="w-4 h-4" /> Пометить выполненной
               </Button>
@@ -980,6 +983,14 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                 <Button
                   size="sm"
                   variant="outline"
+                  onClick={() => fire("return_to_pool")}
+                  disabled={busy === "return_to_pool"}
+                >
+                  <RefreshCw className="w-4 h-4" /> Вернуть в пул
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
                   onClick={() => fire("manual_control")}
                   disabled={busy === "manual_control"}
                 >
@@ -1269,6 +1280,9 @@ export function ActionItemModal({ id, open, onOpenChange }: {
             </div>
 
             <div className="border-t pt-3 flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" onClick={() => fire("return_to_pool")} disabled={busy === "return_to_pool"}>
+                <RefreshCw className="w-4 h-4" /> Вернуть в пул
+              </Button>
               <Button size="sm" variant="outline" onClick={() => fire("resolve")} disabled={busy === "resolve"}>
                 <CheckCircle2 className="w-4 h-4" /> Пометить выполненной
               </Button>
