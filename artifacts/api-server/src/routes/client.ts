@@ -462,12 +462,31 @@ router.post("/estimate/submit", async (req, res) => {
 // ─── CRM: GET /api/client/chat-threads — all support chats ──────────────────
 
 router.get("/chat-threads", requireRole("admin", "master_operator"), async (_req, res) => {
-  const messages = await db.select()
-    .from(clientSupportMessagesTable)
-    .orderBy(desc(clientSupportMessagesTable.createdAt));
+  // Efficient: single SQL query with GROUP BY — no full table download
+  const result = await db.execute(sql`
+    SELECT
+      csm.receipt_token AS token,
+      csm.message AS "lastMessage",
+      csm.from_client AS "lastFromClient",
+      csm.created_at AS "lastAt",
+      COALESCE(unread.cnt, 0) AS unread
+    FROM client_support_messages csm
+    JOIN (
+      SELECT receipt_token, MAX(created_at) AS max_at
+      FROM client_support_messages
+      GROUP BY receipt_token
+    ) latest ON csm.receipt_token = latest.receipt_token AND csm.created_at = latest.max_at
+    LEFT JOIN (
+      SELECT receipt_token, COUNT(*)::int AS cnt
+      FROM client_support_messages
+      WHERE from_client = true AND seen_at IS NULL
+      GROUP BY receipt_token
+    ) unread ON csm.receipt_token = unread.receipt_token
+    ORDER BY csm.created_at DESC
+  `);
 
-  const tokenSet = new Set(messages.map(m => m.receiptToken));
-  const tokens = [...tokenSet];
+  const rows = result.rows as any[];
+  const tokens: string[] = [...new Set(rows.map(r => r.token as string))];
 
   const receipts = tokens.length
     ? await db.select({
@@ -480,20 +499,17 @@ router.get("/chat-threads", requireRole("admin", "master_operator"), async (_req
 
   const receiptMap = new Map(receipts.map(r => [r.token, r]));
 
-  const threads = tokens.map(token => {
-    const threadMsgs = messages.filter(m => m.receiptToken === token);
-    const last = threadMsgs[0];
-    const unread = threadMsgs.filter(m => m.fromClient && !m.seenAt).length;
-    const receipt = receiptMap.get(token);
+  const threads = rows.map(r => {
+    const receipt = receiptMap.get(r.token);
     return {
-      token,
+      token: r.token,
       clientName: receipt?.clientName ?? "Клиент",
       clientPhone: receipt?.clientPhone ?? "",
       serviceType: receipt?.serviceType ?? "",
-      lastMessage: last.message,
-      lastAt: last.createdAt,
-      lastFromClient: last.fromClient,
-      unread,
+      lastMessage: r.lastMessage,
+      lastAt: r.lastAt,
+      lastFromClient: r.lastFromClient,
+      unread: Number(r.unread),
     };
   });
 
@@ -547,12 +563,14 @@ router.post("/chat/:token/reply", requireRole("admin", "master_operator"), async
 // ─── CRM: GET /api/client/chat-unread ────────────────────────────────────────
 
 router.get("/chat-unread", requireRole("admin", "master_operator"), async (_req, res) => {
-  const unread = await db.select()
-    .from(clientSupportMessagesTable)
-    .where(and(eq(clientSupportMessagesTable.fromClient, true)));
-
-  const count = unread.filter(m => !m.seenAt).length;
-  res.json({ count });
+  // Efficient: COUNT in DB instead of downloading all rows
+  const result = await db.execute(sql`
+    SELECT COUNT(*)::int AS count
+    FROM client_support_messages
+    WHERE from_client = true AND seen_at IS NULL
+  `);
+  const count = (result.rows[0] as any)?.count ?? 0;
+  res.json({ count: Number(count) });
 });
 
 // ─── General support chat (phone-based, no smeta token required) ─────────────
@@ -601,18 +619,44 @@ router.post("/support/:phone", async (req, res) => {
 // ─── CRM: GET /api/client/support-threads — all general support chats ─────────
 
 router.get("/support-threads", requireRole("admin", "master_operator"), async (_req, res) => {
-  const messages = await db.select()
-    .from(generalSupportMessagesTable)
-    .orderBy(desc(generalSupportMessagesTable.createdAt));
+  // Efficient: single SQL query with GROUP BY — no full table download
+  const result = await db.execute(sql`
+    SELECT
+      gsm.client_phone AS phone,
+      gsm.message AS "lastMessage",
+      gsm.from_client AS "lastFromClient",
+      gsm.created_at AS "lastAt",
+      COALESCE(unread.cnt, 0) AS unread,
+      cn.client_name AS "clientName"
+    FROM general_support_messages gsm
+    JOIN (
+      SELECT client_phone, MAX(created_at) AS max_at
+      FROM general_support_messages
+      GROUP BY client_phone
+    ) latest ON gsm.client_phone = latest.client_phone AND gsm.created_at = latest.max_at
+    LEFT JOIN (
+      SELECT client_phone, COUNT(*)::int AS cnt
+      FROM general_support_messages
+      WHERE from_client = true AND seen_at IS NULL
+      GROUP BY client_phone
+    ) unread ON gsm.client_phone = unread.client_phone
+    LEFT JOIN (
+      SELECT client_phone, MAX(client_name) AS client_name
+      FROM general_support_messages
+      WHERE client_name IS NOT NULL
+      GROUP BY client_phone
+    ) cn ON gsm.client_phone = cn.client_phone
+    ORDER BY gsm.created_at DESC
+  `);
 
-  const phoneSet = new Set(messages.map(m => m.clientPhone));
-  const threads = [...phoneSet].map(phone => {
-    const threadMsgs = messages.filter(m => m.clientPhone === phone);
-    const last = threadMsgs[0];
-    const unread = threadMsgs.filter(m => m.fromClient && !m.seenAt).length;
-    const clientName = threadMsgs.find(m => m.clientName)?.clientName ?? null;
-    return { phone, clientName, lastMessage: last.message, lastAt: last.createdAt, lastFromClient: last.fromClient, unread };
-  });
+  const threads = (result.rows as any[]).map(r => ({
+    phone: r.phone,
+    clientName: r.clientName ?? null,
+    lastMessage: r.lastMessage,
+    lastAt: r.lastAt,
+    lastFromClient: r.lastFromClient,
+    unread: Number(r.unread),
+  }));
 
   res.json({ threads });
 });
@@ -642,7 +686,7 @@ router.get("/support-messages/:phone", requireRole("admin", "master_operator"), 
 // ─── CRM: POST /api/client/support-reply/:phone — operator replies ────────────
 
 router.post("/support-reply/:phone", requireRole("admin", "master_operator"), async (req: any, res) => {
-  const phone = req.params.phone.replace(/\D/g, "").slice(-10);
+  const phone = String(req.params.phone).replace(/\D/g, "").slice(-10);
   const { message } = req.body;
   if (!message?.trim()) return res.status(400).json({ error: "Пустое сообщение" });
   const operatorName = req.user?.username ?? "Оператор";

@@ -118,7 +118,8 @@ function ChatPanel({ token }: { token: string }) {
   const { data, isLoading } = useQuery<{ messages: ChatMessage[] }>({
     queryKey: ["/api/client/chat", token, "messages"],
     queryFn: () => fetch(`/api/client/chat/${token}/messages`, { credentials: "include" }).then(r => r.json()),
-    refetchInterval: 5000,
+    refetchInterval: 8000,
+    staleTime: 5000,
   });
 
   const messages = data?.messages ?? [];
@@ -209,7 +210,8 @@ function SupportChatPanel({ phone }: { phone: string }) {
   const { data, isLoading } = useQuery<{ messages: ChatMessage[] }>({
     queryKey: [`/api/client/support-messages/${phone}`],
     queryFn: () => fetch(`/api/client/support-messages/${phone}`, { credentials: "include" }).then(r => r.json()),
-    refetchInterval: 5_000,
+    refetchInterval: 8000,
+    staleTime: 5000,
   });
 
   const messages = data?.messages ?? [];
@@ -291,19 +293,22 @@ function DialogsContent() {
   const { data: chatData } = useQuery<{ threads: ChatThread[] }>({
     queryKey: ["/api/client/chat-threads"],
     queryFn: () => fetch("/api/client/chat-threads", { credentials: "include" }).then(r => r.json()),
-    refetchInterval: 10_000,
+    refetchInterval: 15_000,
+    staleTime: 10_000,
   });
 
   const { data: unreadData } = useQuery<{ count: number }>({
     queryKey: ["/api/client/chat-unread"],
     queryFn: () => fetch("/api/client/chat-unread", { credentials: "include" }).then(r => r.json()),
-    refetchInterval: 10_000,
+    refetchInterval: 15_000,
+    staleTime: 10_000,
   });
 
   const { data: supportData } = useQuery<{ threads: SupportThread[] }>({
     queryKey: ["/api/client/support-threads"],
     queryFn: () => fetch("/api/client/support-threads", { credentials: "include" }).then(r => r.json()),
-    refetchInterval: 8_000,
+    refetchInterval: 15_000,
+    staleTime: 10_000,
   });
 
   const threads = chatData?.threads ?? [];
