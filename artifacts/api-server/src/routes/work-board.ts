@@ -344,14 +344,11 @@ async function buildBoard() {
       continue;
     }
 
-    // estimate_paid: receipt prepayment confirmed.
-    // Important: only the *prepayment* is actually in our hands. The card must show
-    // the real money received, not the full estimate (otherwise the board overstates
-    // cash flow). The full estimate (`total`) still drives expected commission and
-    // determines the commission tier (5к / 15%).
+    // Receipt with prepayment confirmed — route based on commission status:
+    // If commission is still owed → commission_left (needs follow-up).
+    // If commission is fully covered → estimate_paid (work in progress, all good).
     if (receipt && (receipt as any).prepaymentSeenAt) {
       const tier = commissionTier(total);
-      if (tier === "fixed") estPaidFixed++; else estPaidPercent++;
       const realPaid = prepayment > 0 ? prepayment : total;
       const commTotal = calcCommission(total);
       // Use transaction data for accurate commission tracking:
@@ -364,24 +361,49 @@ async function buildBoard() {
         note: p.note ?? null,
         paidAt: p.paidAt.toISOString(),
       }));
-      const card: Card = {
-        ...baseCard,
-        commission: {
-          orderTotal: total,
-          total: commTotal,
-          paid: commPaid,
-          left: commLeft,
-          tier,
-          ...(orderPrepDeduct > 0 ? { prepaymentDeducted: orderPrepDeduct } : {}),
-          ...(orderTotalPartialPaid > 0 ? { totalPartialPaid: orderTotalPartialPaid } : {}),
-          ...(partialPaymentsList.length > 0 ? { partialPayments: partialPaymentsList } : {}),
-        },
-        bot: { action: "ждём отчёт мастера", eta: "норма", tone: "ok" },
-      };
-      columns.estimate_paid.cards.push(card);
-      columns.estimate_paid.count++;
-      columns.estimate_paid.sumPaid! += realPaid;
-      columns.estimate_paid.expectedCommission! += commTotal;
+
+      if (commLeft > 0) {
+        // Commission still owed → commission_left
+        if (tier === "fixed") commLeftFixed++; else commLeftPercent++;
+        const card: Card = {
+          ...baseCard,
+          commission: {
+            orderTotal: total,
+            total: commTotal,
+            paid: commPaid,
+            left: commLeft,
+            tier,
+            ...(orderPrepDeduct > 0 ? { prepaymentDeducted: orderPrepDeduct } : {}),
+            ...(orderTotalPartialPaid > 0 ? { totalPartialPaid: orderTotalPartialPaid } : {}),
+            ...(partialPaymentsList.length > 0 ? { partialPayments: partialPaymentsList } : {}),
+          },
+          bot: { action: "напомню мастеру", eta: "через 2ч", tone: "warn" },
+        };
+        columns.commission_left.cards.push(card);
+        columns.commission_left.count++;
+        columns.commission_left.sumPending! += commLeft;
+      } else {
+        // Commission fully covered → estimate_paid (work in progress)
+        if (tier === "fixed") estPaidFixed++; else estPaidPercent++;
+        const card: Card = {
+          ...baseCard,
+          commission: {
+            orderTotal: total,
+            total: commTotal,
+            paid: commPaid,
+            left: 0,
+            tier,
+            ...(orderPrepDeduct > 0 ? { prepaymentDeducted: orderPrepDeduct } : {}),
+            ...(orderTotalPartialPaid > 0 ? { totalPartialPaid: orderTotalPartialPaid } : {}),
+            ...(partialPaymentsList.length > 0 ? { partialPayments: partialPaymentsList } : {}),
+          },
+          bot: { action: "ждём отчёт мастера", eta: "норма", tone: "ok" },
+        };
+        columns.estimate_paid.cards.push(card);
+        columns.estimate_paid.count++;
+        columns.estimate_paid.sumPaid! += realPaid;
+        columns.estimate_paid.expectedCommission! += commTotal;
+      }
       continue;
     }
 
