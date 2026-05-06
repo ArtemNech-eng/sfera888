@@ -1432,6 +1432,16 @@ export default function Orders() {
                           <button onClick={() => { setEditAmountId(openDispatchId); setEditAmountValue(""); }} className="text-xs text-primary hover:underline flex items-center gap-1">
                             <Pencil className="w-3 h-3" />Указать сумму
                           </button>
+                          <button
+                            onClick={() => {
+                              setEditAmountId(openDispatchId);
+                              setEditAmountValue("");
+                              toast({ title: "Укажите сумму заказа", description: "Чтобы добавить оплату комиссии, сначала укажите сумму заказа" });
+                            }}
+                            className="mt-1 inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 border border-emerald-200 rounded-lg text-[10px] font-medium text-emerald-700 hover:bg-emerald-100 transition-colors"
+                          >
+                            <Banknote className="w-2.5 h-2.5" />Оплата комиссии
+                          </button>
                         </div>
                       );
                     })()}
