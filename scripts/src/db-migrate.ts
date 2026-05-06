@@ -124,6 +124,23 @@ const queries: string[] = [
     ADD COLUMN IF NOT EXISTS master_comment TEXT,
     ADD COLUMN IF NOT EXISTS photos TEXT[],
     ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'crm'`,
+
+  // ── order_master_history ──────────────────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS order_master_history (
+    id SERIAL PRIMARY KEY,
+    order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    master_id INTEGER NOT NULL REFERENCES masters(id) ON DELETE CASCADE,
+    status TEXT NOT NULL,
+    assigned_at TIMESTAMP,
+    removed_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    cancel_reason TEXT,
+    order_amount NUMERIC(12,2),
+    service_type TEXT,
+    city TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_order_master_history_master_id ON order_master_history(master_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_order_master_history_order_id ON order_master_history(order_id)`,
 ];
 
 async function run() {

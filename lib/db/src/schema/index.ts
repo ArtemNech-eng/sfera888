@@ -32,3 +32,4 @@ export * from "./chat-cases";
 export * from "./fomo-events";
 export * from "./task-snoozes";
 export * from "./operator-push-subscriptions";
+export * from "./order-master-history";

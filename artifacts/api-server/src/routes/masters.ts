@@ -576,6 +576,29 @@ router.get("/:id/orders", allMasterRoles, async (req, res) => {
   }));
 });
 
+// ─── Order Master History ────────────────────────────────────────────────────
+
+// GET /api/masters/:id/order-history
+router.get("/:id/order-history", allMasterRoles, async (req, res) => {
+  const masterId = parseInt(req.params.id);
+  const statusFilter = req.query.status as string | undefined;
+
+  const { orderMasterHistoryTable } = await import("@workspace/db");
+  const { eq, desc, and } = await import("drizzle-orm");
+
+  const conditions = [eq(orderMasterHistoryTable.masterId, masterId)];
+  if (statusFilter) conditions.push(eq(orderMasterHistoryTable.status, statusFilter));
+
+  const rows = await db
+    .select()
+    .from(orderMasterHistoryTable)
+    .where(and(...conditions))
+    .orderBy(desc(orderMasterHistoryTable.removedAt))
+    .limit(100);
+
+  res.json(rows);
+});
+
 // ─── Tasks ────────────────────────────────────────────────────────────────────
 
 // GET /api/masters/:id/tasks

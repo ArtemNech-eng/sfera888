@@ -19,6 +19,7 @@ import { db, ordersTable, mastersTable, leadsTable, receiptsTable, transactionsT
 import { inArray, isNull, eq, and, gte } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
 import { recordOrderCancelled } from "../lib/masterReputation.js";
+import { recordOrderMasterHistory } from "../lib/orderMasterHistory.js";
 import { sendMaxMessage } from "../maxBot.js";
 import { sendPushToMaster } from "../lib/push.js";
 
@@ -577,11 +578,13 @@ router.post("/return-to-pool/:orderId", operatorRoles, async (req, res) => {
       })
       .where(eq(ordersTable.id, orderId));
 
-    // Record cancellation for reputation + notify master
+    // Record cancellation for reputation + history + notify master
     if (order?.masterId) {
       const masterId = order.masterId;
       await recordOrderCancelled(masterId, orderId)
         .catch((e: any) => console.error("[return-to-pool] reputation update failed:", e));
+      await recordOrderMasterHistory(masterId, orderId, "returned_to_pool", "Возвращён в пул оператором")
+        .catch((e: any) => console.error("[return-to-pool] history record failed:", e));
 
       // Notify master that order was returned to pool
       const [master] = await db.select({ id: mastersTable.id, maxChatId: mastersTable.maxChatId, alias: mastersTable.alias })

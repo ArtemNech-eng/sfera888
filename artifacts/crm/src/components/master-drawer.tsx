@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
+import { OrderHistorySection } from "./OrderHistorySection";
 
 function resolvePhotoUrl(url: string): string {
   if (!url) return url;
@@ -1401,6 +1402,9 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
 
               {/* Checkin history — last 30 days */}
               <CheckinHistorySection masterId={master.id} />
+
+              {/* Order history — completed / cancelled / returned to pool */}
+              <OrderHistorySection masterId={master.id} />
 
               {/* Test order button — shown only for test masters */}
               {master.isTestMaster && (

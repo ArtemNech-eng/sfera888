@@ -6,6 +6,7 @@ import { sendPushToMaster } from "../lib/push.js";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { recordOrderCancelled } from "../lib/masterReputation.js";
 import { recordOrderCompleted } from "../lib/masterReputation.js";
+import { recordOrderMasterHistory } from "../lib/orderMasterHistory.js";
 import { calculateCommission, getCommissionSettings } from "../lib/commission.js";
 
 declare const console: any;
@@ -307,10 +308,11 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
     await db.update(ordersTable)
       .set({ status: "cancelled", cancelType, cancelReason: reason, updatedAt: new Date() } as any)
       .where(eq(ordersTable.id, Number(item.orderId)));
-    // Lower master reputation as if master cancelled the order
+    // Lower master reputation + record history as if master cancelled the order
     if (item.masterId != null) {
       const masterId = Number(item.masterId);
       await recordOrderCancelled(masterId, Number(item.orderId)).catch((e: any) => console.error("[cancel_order] reputation update failed:", e));
+      await recordOrderMasterHistory(masterId, Number(item.orderId), "cancelled", reason).catch((e: any) => console.error("[cancel_order] history record failed:", e));
     }
     // Notify master about cancellation
     if (item.masterId != null) {
@@ -410,6 +412,7 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
       }
 
       await recordOrderCompleted(masterId).catch(() => {});
+      await recordOrderMasterHistory(masterId, orderId, "completed").catch((e: any) => console.error("[complete_as_master] history record failed:", e));
 
       const commFmt = effectiveCommission > 0 ? `${Math.round(effectiveCommission).toLocaleString("ru-RU")} ₽` : "0 ₽";
       const notifyText = commissionMode === "as_debt"
@@ -459,6 +462,7 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
     console.log(`[cancel_as_master] order #${orderId} marked cancelled (reason=${cancelReason})`);
 
     await recordOrderCancelled(masterId, orderId).catch((e) => console.error("[cancel_as_master] reputation update failed:", e));
+    await recordOrderMasterHistory(masterId, orderId, "cancelled", cancelReason === "bypass" ? "Обход платформы" : cancelReason).catch((e: any) => console.error("[cancel_as_master] history record failed:", e));
 
     const reasonText = cancelReason === "no_contact"
       ? "мастер не выходит на связь"
@@ -505,6 +509,8 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
       const orderId = Number(item.orderId);
       await recordOrderCancelled(masterId, orderId)
         .catch((e: any) => console.error("[return_to_pool] reputation update failed:", e));
+      await recordOrderMasterHistory(masterId, orderId, "returned_to_pool", "Возвращён в пул оператором")
+        .catch((e: any) => console.error("[return_to_pool] history record failed:", e));
 
       // Notify master that order was returned to pool
       const [master] = await db.select({ id: mastersTable.id, maxChatId: mastersTable.maxChatId })
