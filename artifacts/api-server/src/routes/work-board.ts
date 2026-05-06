@@ -716,4 +716,83 @@ router.post("/return-to-pool/:orderId", operatorRoles, async (req, res) => {
   }
 });
 
+// POST /api/work-board/orders/:orderId/partial-payment — add partial commission payment by orderId
+router.post("/orders/:orderId/partial-payment", operatorRoles, async (req, res) => {
+  const orderId = Number(req.params.orderId);
+  if (!Number.isFinite(orderId)) return res.status(400).json({ error: "bad orderId" });
+  const { amount, note } = req.body;
+  if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+    return res.status(400).json({ error: "Сумма должна быть положительным числом" });
+  }
+
+  try {
+    // Find the transaction for this order
+    const txRows = await db.select().from(transactionsTable)
+      .where(eq(transactionsTable.orderId, orderId));
+    const tx = txRows.find(t => Number(t.commission) > 0 && t.paymentStatus !== "paid");
+    if (!tx) {
+      return res.status(404).json({ error: "Не найдена активная транзакция с комиссией по этому заказу" });
+    }
+
+    // Insert the partial payment
+    const [payment] = await db.insert(transactionPaymentsTable).values({
+      transactionId: tx.id,
+      amount: String(Number(amount)),
+      note: note ?? null,
+      paidAt: new Date(),
+    }).returning();
+
+    // Recalculate: prepaymentDeducted + all partial payments
+    const allPartials = await db.select().from(transactionPaymentsTable)
+      .where(eq(transactionPaymentsTable.transactionId, tx.id));
+    const totalPartialPaid = allPartials.reduce((s, p) => s + Number(p.amount), 0);
+    const commission = Number(tx.commission);
+    const prepaymentDeducted = Number(tx.prepaymentDeducted ?? 0);
+    const remaining = Math.max(0, commission - prepaymentDeducted - totalPartialPaid);
+
+    // If fully paid, mark as paid
+    if (remaining === 0) {
+      await db.update(transactionsTable)
+        .set({ paymentStatus: "paid", paidAt: new Date() })
+        .where(eq(transactionsTable.id, tx.id));
+
+      // Update master debt
+      const masterRows = await db.select({ debt: mastersTable.debt, maxChatId: mastersTable.maxChatId })
+        .from(mastersTable).where(eq(mastersTable.id, tx.masterId));
+      const master = masterRows[0];
+      if (master) {
+        const newDebt = Math.max(0, Number(master.debt) - Number(amount));
+        await db.update(mastersTable).set({ debt: String(newDebt) }).where(eq(mastersTable.id, tx.masterId));
+        if (master.maxChatId) {
+          await sendMaxMessage(master.maxChatId,
+            `✅ Оплата по заказу #${orderId} принята.\nКомиссия полностью закрыта! 🟢`
+          ).catch(() => {});
+        }
+      }
+    } else {
+      // Notify master about partial payment
+      const masterRows = await db.select({ maxChatId: mastersTable.maxChatId })
+        .from(mastersTable).where(eq(mastersTable.id, tx.masterId));
+      if (masterRows[0]?.maxChatId) {
+        await sendMaxMessage(masterRows[0].maxChatId,
+          `💰 Частичная оплата по заказу #${orderId} принята: ${Number(amount).toLocaleString("ru-RU")} ₽\nОстаток: ${remaining.toLocaleString("ru-RU")} ₽`
+        ).catch(() => {});
+      }
+    }
+
+    notifyWorkBoardChanged("partial-payment");
+    res.json({
+      ok: true,
+      payment: { id: payment.id, amount: Number(payment.amount), note: payment.note, paidAt: payment.paidAt.toISOString() },
+      remaining,
+      totalPartialPaid,
+      commission,
+      prepaymentDeducted,
+    });
+  } catch (e) {
+    console.error("[partial-payment] error:", e);
+    res.status(500).json({ error: String(e) });
+  }
+});
+
 export default router;

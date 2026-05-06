@@ -10,7 +10,7 @@ import {
   DollarSign, Check, Pencil, AlertCircle, MessageSquare, Trash2, Search,
   ClipboardList, CalendarDays, ChevronDown, Filter, Settings, AlertTriangle,
   FileText, History, Timer, RefreshCw, CopyX, XCircle, ReceiptText, ExternalLink, Plus, Copy,
-  LayoutList, Kanban, Bell, Printer, Lock,
+  LayoutList, Kanban, Bell, Printer, Lock, Banknote,
 } from "lucide-react";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -416,6 +416,30 @@ export default function Orders() {
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [cancelDialogReason, setCancelDialogReason] = useState("");
   const [cancelDialogNote, setCancelDialogNote] = useState("");
+  const [showPartialPayment, setShowPartialPayment] = useState(false);
+  const [partialAmount, setPartialAmount] = useState("");
+  const [partialNote, setPartialNote] = useState("");
+
+  const partialPaymentMutation = useMutation({
+    mutationFn: async ({ orderId, amount, note }: { orderId: number; amount: number; note?: string }) => {
+      const r = await fetch(`/api/work-board/orders/${orderId}/partial-payment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ amount, note }),
+      });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error ?? "Ошибка"); }
+      return r.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      setShowPartialPayment(false);
+      setPartialAmount("");
+      setPartialNote("");
+      toast({ title: "Частичная оплата добавлена", description: `Остаток комиссии: ${Number(data.remaining).toLocaleString("ru-RU")} ₽` });
+    },
+    onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
+  });
 
   const { data: activeMasters } = useQuery<{ id: number; alias: string; city: string | null }[]>({
     queryKey: ["/api/masters"],
@@ -1428,6 +1452,14 @@ export default function Orders() {
                     <button onClick={() => { setOpenDispatchId(null); setLocation(`/tasks?newOrder=${openDispatchId}`); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-border rounded-lg text-xs font-medium text-foreground hover:bg-slate-100 transition-colors">
                       <ClipboardList className="w-3 h-3" />Создать задачу
                     </button>
+                    {(openOrder as any).orderAmount && openOrder.masterId && (
+                      <button
+                        onClick={() => { setShowPartialPayment(!showPartialPayment); setPartialAmount(""); setPartialNote(""); }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-emerald-200 rounded-lg text-xs font-medium text-emerald-700 hover:bg-emerald-50 transition-colors"
+                      >
+                        <Banknote className="w-3 h-3" />Частичная оплата
+                      </button>
+                    )}
                     {openOrder.status === "cancelled" && (
                       <button
                         onClick={() => restoreOrderMutation.mutate(openDispatchId!)}
@@ -1450,6 +1482,58 @@ export default function Orders() {
                       <Trash2 className="w-3 h-3" />В корзину
                     </button>
                   </div>
+
+                  {/* Partial payment form */}
+                  {showPartialPayment && (
+                    <div className="border border-emerald-200 bg-emerald-50 rounded-xl p-3 space-y-2.5">
+                      <p className="text-xs font-semibold text-emerald-800">Частичная оплата комиссии</p>
+                      <p className="text-xs text-emerald-600">Сумма, которую мастер внёс в счёт оплаты комиссии по заказу #{openDispatchId}</p>
+                      <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <input
+                            type="number"
+                            value={partialAmount}
+                            onChange={e => setPartialAmount(e.target.value)}
+                            placeholder="Сумма, ₽"
+                            className="w-full pr-8 pl-3 py-1.5 text-sm border border-emerald-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                            autoFocus
+                          />
+                          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-emerald-400 text-xs">₽</span>
+                        </div>
+                      </div>
+                      <input
+                        type="text"
+                        value={partialNote}
+                        onChange={e => setPartialNote(e.target.value)}
+                        placeholder="Примечание (необязательно)"
+                        className="w-full px-3 py-1.5 text-xs border border-emerald-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            const amt = parseFloat(partialAmount);
+                            if (!isNaN(amt) && amt > 0) {
+                              partialPaymentMutation.mutate({ orderId: openDispatchId!, amount: amt, note: partialNote.trim() || undefined });
+                            }
+                          }}
+                          disabled={!partialAmount || parseFloat(partialAmount) <= 0 || partialPaymentMutation.isPending}
+                          className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-medium hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                        >
+                          {partialPaymentMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Banknote className="w-3 h-3" />}
+                          Добавить оплату
+                        </button>
+                        <button
+                          onClick={() => { setShowPartialPayment(false); setPartialAmount(""); setPartialNote(""); }}
+                          className="px-3 py-1.5 bg-white border border-emerald-200 rounded-lg text-xs font-medium text-emerald-700 hover:bg-emerald-50 transition-colors"
+                        >
+                          Отмена
+                        </button>
+                      </div>
+                      {partialPaymentMutation.isError && (
+                        <p className="text-xs text-red-600">{(partialPaymentMutation.error as Error).message}</p>
+                      )}
+                    </div>
+                  )}
 
                   {/* Inline cancel dialog */}
                   {showCancelDialog && openOrder.status !== "cancelled" && openOrder.status !== "completed" && (
