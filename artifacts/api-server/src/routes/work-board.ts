@@ -353,12 +353,17 @@ async function buildBoard() {
       const tier = commissionTier(total);
       if (tier === "fixed") estPaidFixed++; else estPaidPercent++;
       const realPaid = prepayment > 0 ? prepayment : total;
-      // Convention: the 5к prepayment goes straight into commission. So whatever the
-      // client transferred as a deposit counts as commission already received,
-      // capped at the total expected commission.
       const commTotal = calcCommission(total);
-      const commPaid = Math.min(commTotal, realPaid);
+      // Use transaction data for accurate commission tracking:
+      // prepaymentDeducted = бронь зачтённая в комиссию, totalPartialPaid = частичные оплаты мастера
+      const commPaid = orderPrepDeduct + orderTotalPartialPaid;
       const commLeft = Math.max(0, commTotal - commPaid);
+      const partialPaymentsList = orderPartials.map((p) => ({
+        id: p.id,
+        amount: Number(p.amount),
+        note: p.note ?? null,
+        paidAt: p.paidAt.toISOString(),
+      }));
       const card: Card = {
         ...baseCard,
         commission: {
@@ -367,6 +372,9 @@ async function buildBoard() {
           paid: commPaid,
           left: commLeft,
           tier,
+          ...(orderPrepDeduct > 0 ? { prepaymentDeducted: orderPrepDeduct } : {}),
+          ...(orderTotalPartialPaid > 0 ? { totalPartialPaid: orderTotalPartialPaid } : {}),
+          ...(partialPaymentsList.length > 0 ? { partialPayments: partialPaymentsList } : {}),
         },
         bot: { action: "ждём отчёт мастера", eta: "норма", tone: "ok" },
       };
