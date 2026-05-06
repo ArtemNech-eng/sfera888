@@ -19,7 +19,7 @@ import {
   CheckCircle2, Clock, ArrowRight, ExternalLink, AlertTriangle, History, Send, Users,
   UserCheck, DollarSign, Check, AlertCircle, FileText, Timer, RefreshCw, XCircle,
   ReceiptText, Copy, Bell, Archive, Inbox, Briefcase, CopyX, ClipboardList,
-  CalendarDays, ChevronRight, Eye, Lock, Activity,
+  CalendarDays, ChevronRight, Eye, Lock, Activity, Banknote,
 } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -332,6 +332,9 @@ export default function Leads() {
   const [editAmountId, setEditAmountId] = useState<number | null>(null);
   const [editAmountValue, setEditAmountValue] = useState("");
   const [notifCopied, setNotifCopied] = useState(false);
+  const [showPartialPayment, setShowPartialPayment] = useState(false);
+  const [partialAmount, setPartialAmount] = useState("");
+  const [partialNote, setPartialNote] = useState("");
 
   // ── Archive (Tab 3) state ─────────────────────────────────────────────────
   const [archiveStatusFilter, setArchiveStatusFilter] = useState<"all" | "completed" | "cancelled" | "non_target" | "client_refusal" | "sent_to_work">("all");
@@ -777,6 +780,28 @@ export default function Leads() {
       return r.json();
     },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/receipts/order", openDispatchId] }); toast({ title: "Смета удалена" }); },
+    onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
+  });
+
+  const partialPaymentMutation = useMutation({
+    mutationFn: async ({ orderId, amount, note }: { orderId: number; amount: number; note?: string }) => {
+      const r = await fetch(`/api/work-board/orders/${orderId}/partial-payment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ amount, note }),
+      });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error ?? "Ошибка"); }
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dispatch", openDispatchId] });
+      setShowPartialPayment(false);
+      setPartialAmount("");
+      setPartialNote("");
+      toast({ title: "Оплата комиссии зафиксирована" });
+    },
     onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
   });
 
@@ -1552,10 +1577,42 @@ export default function Leads() {
                         <div className="pt-1.5 border-t border-border/40 flex items-center gap-2 flex-wrap">
                           {openOrder.masterId && <button onClick={() => openMasterChat(openOrder.masterId!)} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-border rounded-lg text-xs font-medium text-foreground hover:bg-slate-100 transition-colors"><MessageSquare className="w-3 h-3" />Чат с мастером</button>}
                           <button onClick={() => { closeOrderPanel(); setLocation(`/tasks?newOrder=${openDispatchId}`); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-border rounded-lg text-xs font-medium text-foreground hover:bg-slate-100 transition-colors"><ClipboardList className="w-3 h-3" />Создать задачу</button>
+                          {openOrder.masterId && (
+                            <button
+                              onClick={() => {
+                                if (!(openOrder as any).orderAmount) {
+                                  setEditAmountId(openDispatchId);
+                                  setEditAmountValue("");
+                                }
+                                setShowPartialPayment(!showPartialPayment);
+                                setPartialAmount("");
+                                setPartialNote("");
+                              }}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-50 border border-violet-200 rounded-lg text-xs font-medium text-violet-700 hover:bg-violet-100 transition-colors"
+                            >
+                              <Banknote className="w-3 h-3" />{(openOrder as any).orderAmount ? "Частичная оплата" : "Оплата комиссии"}
+                            </button>
+                          )}
                           {openOrder.status === "cancelled" && <button onClick={() => restoreOrderMutation.mutate(openDispatchId!)} disabled={restoreOrderMutation.isPending} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-300 rounded-lg text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 transition-colors">{restoreOrderMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}Восстановить</button>}
                           {openOrder.status !== "cancelled" && openOrder.status !== "completed" && !showCancelDialog && <button onClick={() => { setShowCancelDialog(true); setCancelDialogReason(""); setCancelDialogNote(""); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-orange-200 rounded-lg text-xs font-medium text-orange-600 hover:bg-orange-50 transition-colors"><XCircle className="w-3 h-3" />Отменить заказ</button>}
                           <button onClick={() => { if (confirm(`Удалить заказ #${openDispatchId}?`)) { deleteOrderMutation.mutate(openDispatchId!); closeOrderPanel(); } }} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-red-200 rounded-lg text-xs font-medium text-red-500 hover:bg-red-50 transition-colors"><Trash2 className="w-3 h-3" />В корзину</button>
                         </div>
+                        {/* Partial payment form */}
+                        {showPartialPayment && (
+                          <div className="border border-emerald-200 bg-emerald-50 rounded-xl p-3 space-y-2.5">
+                            <p className="text-xs font-semibold text-emerald-800">Частичная оплата комиссии</p>
+                            <p className="text-xs text-emerald-600">Сумма, которую мастер внёс в счёт оплаты комиссии по заказу #{openDispatchId}</p>
+                            <div className="flex gap-2">
+                              <input type="number" placeholder="Сумма ₽" value={partialAmount} onChange={e => setPartialAmount(e.target.value)} className="flex-1 border border-emerald-200 rounded-lg px-2.5 py-1.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-emerald-400" autoFocus />
+                            </div>
+                            <input type="text" placeholder="Примечание (необязательно)" value={partialNote} onChange={e => setPartialNote(e.target.value)} className="w-full border border-emerald-200 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-emerald-400" />
+                            <div className="flex gap-2">
+                              <button onClick={() => { const amt = parseFloat(partialAmount); if (!isNaN(amt) && amt > 0) { partialPaymentMutation.mutate({ orderId: openDispatchId!, amount: amt, note: partialNote.trim() || undefined }); } }} disabled={!partialAmount || parseFloat(partialAmount) <= 0 || partialPaymentMutation.isPending} className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-medium hover:bg-emerald-700 disabled:opacity-50 transition-colors" > {partialPaymentMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Banknote className="w-3 h-3" />} Добавить оплату </button>
+                              <button onClick={() => { setShowPartialPayment(false); setPartialAmount(""); setPartialNote(""); }} className="px-3 py-1.5 bg-white border border-emerald-200 rounded-lg text-xs font-medium text-emerald-700 hover:bg-emerald-50 transition-colors">Отмена</button>
+                            </div>
+                            {partialPaymentMutation.isError && <p className="text-xs text-red-600">{(partialPaymentMutation.error as Error).message}</p>}
+                          </div>
+                        )}
                         {/* Cancel dialog */}
                         {showCancelDialog && openOrder.status !== "cancelled" && openOrder.status !== "completed" && (
                           <div className="border border-orange-200 bg-orange-50 rounded-xl p-3 space-y-2.5">
