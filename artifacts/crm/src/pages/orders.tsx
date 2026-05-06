@@ -1452,12 +1452,22 @@ export default function Orders() {
                     <button onClick={() => { setOpenDispatchId(null); setLocation(`/tasks?newOrder=${openDispatchId}`); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-border rounded-lg text-xs font-medium text-foreground hover:bg-slate-100 transition-colors">
                       <ClipboardList className="w-3 h-3" />Создать задачу
                     </button>
-                    {(openOrder as any).orderAmount && openOrder.masterId && (
+                    {openOrder.masterId && (
                       <button
-                        onClick={() => { setShowPartialPayment(!showPartialPayment); setPartialAmount(""); setPartialNote(""); }}
+                        onClick={() => {
+                          if (!(openOrder as any).orderAmount) {
+                            setEditAmountId(openDispatchId);
+                            setEditAmountValue("");
+                            toast({ title: "Укажите сумму заказа", description: "Чтобы добавить частичную оплату комиссии, сначала укажите сумму заказа" });
+                            return;
+                          }
+                          setShowPartialPayment(!showPartialPayment);
+                          setPartialAmount("");
+                          setPartialNote("");
+                        }}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-emerald-200 rounded-lg text-xs font-medium text-emerald-700 hover:bg-emerald-50 transition-colors"
                       >
-                        <Banknote className="w-3 h-3" />Частичная оплата
+                        <Banknote className="w-3 h-3" />{(openOrder as any).orderAmount ? "Частичная оплата" : "Оплата комиссии"}
                       </button>
                     )}
                     {openOrder.status === "cancelled" && (
