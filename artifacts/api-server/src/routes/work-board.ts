@@ -15,10 +15,12 @@
 // Возврат в пул выполняется ТОЛЬКО оператором — здесь нет автозадач/cron, которые бы это делали.
 import { Router } from "express";
 import { EventEmitter } from "node:events";
-import { db, ordersTable, mastersTable, leadsTable, receiptsTable, transactionsTable } from "@workspace/db";
+import { db, ordersTable, mastersTable, leadsTable, receiptsTable, transactionsTable, masterMessagesTable } from "@workspace/db";
 import { inArray, isNull, eq, and, gte } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
 import { recordOrderCancelled } from "../lib/masterReputation.js";
+import { sendMaxMessage } from "../maxBot.js";
+import { sendPushToMaster } from "../lib/push.js";
 
 // Только эти роли могут менять статус заявок (эскалировать/возвращать в пул).
 const operatorRoles = requireRole("admin", "lead_operator", "master_operator");
@@ -575,10 +577,34 @@ router.post("/return-to-pool/:orderId", operatorRoles, async (req, res) => {
       })
       .where(eq(ordersTable.id, orderId));
 
-    // Record cancellation for reputation — master lost the order
+    // Record cancellation for reputation + notify master
     if (order?.masterId) {
-      await recordOrderCancelled(order.masterId, orderId)
+      const masterId = order.masterId;
+      await recordOrderCancelled(masterId, orderId)
         .catch((e: any) => console.error("[return-to-pool] reputation update failed:", e));
+
+      // Notify master that order was returned to pool
+      const [master] = await db.select({ id: mastersTable.id, maxChatId: mastersTable.maxChatId, alias: mastersTable.alias })
+        .from(mastersTable)
+        .where(eq(mastersTable.id, masterId))
+        .limit(1);
+
+      if (master) {
+        const notifyText = `🔄 Заказ #${orderId} возвращён в пул и переназначен другому мастеру. Частые возвраты снижают ваш рейтинг и могут привести к блокировке.`;
+        if (master.maxChatId) {
+          await sendMaxMessage(master.maxChatId, notifyText).catch((e: any) => console.error("[return-to-pool] max send failed:", e));
+        }
+        sendPushToMaster(masterId, { type: "new_message", title: "Заказ возвращён в пул", body: `Заказ #${orderId} переназначен другому мастеру.` }).catch((e: any) => console.error("[return-to-pool] push failed:", e));
+        const chatId = master.maxChatId ? `max_${master.maxChatId}` : `pwa_${masterId}`;
+        await db.insert(masterMessagesTable).values({
+          masterId,
+          telegramChatId: chatId,
+          text: notifyText,
+          fromMaster: false,
+          senderName: "Оператор",
+          isRead: true,
+        }).catch((e: any) => console.error("[return-to-pool] message save failed:", e));
+      }
     }
 
     notifyWorkBoardChanged("return-to-pool");

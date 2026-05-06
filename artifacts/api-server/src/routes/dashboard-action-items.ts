@@ -499,10 +499,34 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
   }
 
   if (action === "return_to_pool" && item.orderId != null) {
-    // Record cancellation for reputation before resetting masterId
+    // Record cancellation for reputation + notify master before resetting masterId
     if (item.masterId != null) {
-      await recordOrderCancelled(Number(item.masterId), Number(item.orderId))
+      const masterId = Number(item.masterId);
+      const orderId = Number(item.orderId);
+      await recordOrderCancelled(masterId, orderId)
         .catch((e: any) => console.error("[return_to_pool] reputation update failed:", e));
+
+      // Notify master that order was returned to pool
+      const [master] = await db.select({ id: mastersTable.id, maxChatId: mastersTable.maxChatId })
+        .from(mastersTable)
+        .where(eq(mastersTable.id, masterId))
+        .limit(1);
+      if (master) {
+        const notifyText = `🔄 Заказ #${orderId} возвращён в пул и переназначен другому мастеру. Частые возвраты снижают ваш рейтинг и могут привести к блокировке.`;
+        if (master.maxChatId) {
+          await sendMaxMessage(master.maxChatId, notifyText).catch((e: any) => console.error("[return_to_pool] max send failed:", e));
+        }
+        sendPushToMaster(masterId, { type: "new_message", title: "Заказ возвращён в пул", body: `Заказ #${orderId} переназначен другому мастеру.` }).catch((e: any) => console.error("[return_to_pool] push failed:", e));
+        const chatId = master.maxChatId ? `max_${master.maxChatId}` : `pwa_${masterId}`;
+        await db.insert(masterMessagesTable).values({
+          masterId,
+          telegramChatId: chatId,
+          text: notifyText,
+          fromMaster: false,
+          senderName: operatorName,
+          isRead: true,
+        }).catch((e: any) => console.error("[return_to_pool] message save failed:", e));
+      }
     }
     await db.update(ordersTable)
       .set({ masterId: null, status: "waiting_master", assignedAt: null, updatedAt: new Date() } as any)
