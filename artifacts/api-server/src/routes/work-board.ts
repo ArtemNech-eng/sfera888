@@ -15,7 +15,7 @@
 // Возврат в пул выполняется ТОЛЬКО оператором — здесь нет автозадач/cron, которые бы это делали.
 import { Router } from "express";
 import { EventEmitter } from "node:events";
-import { db, ordersTable, mastersTable, leadsTable, receiptsTable, transactionsTable, masterMessagesTable } from "@workspace/db";
+import { db, ordersTable, mastersTable, leadsTable, receiptsTable, transactionsTable, transactionPaymentsTable, masterMessagesTable } from "@workspace/db";
 import { inArray, isNull, eq, and, gte } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
 import { recordOrderCancelled } from "../lib/masterReputation.js";
@@ -91,9 +91,12 @@ interface Card {
   commission?: {
     orderTotal: number;   // full estimate / order amount (the "Сумма")
     total: number;        // total commission expected (5к fixed or 15% percent)
-    paid: number;         // commission already received
-    left: number;         // remaining commission (max(total-paid, 0))
+    paid: number;         // commission already received (prepaymentDeducted + totalPartialPaid)
+    left: number;         // remaining commission (netPayable)
     tier: "fixed" | "percent";
+    prepaymentDeducted?: number;  // бронь по смете, зачтённая в комиссию
+    totalPartialPaid?: number;    // сумма частичных оплат мастера
+    partialPayments?: { id: number; amount: number; note: string | null; paidAt: string }[];
   };
   bot?: { action: string; eta: string; tone: BotTone };
   badge?: { text: string; tone: BadgeTone };
@@ -173,13 +176,27 @@ async function buildBoard() {
     db.select().from(receiptsTable).where(inArray(receiptsTable.orderId, orderIds)),
     db
       .select({
+        id: transactionsTable.id,
         orderId: transactionsTable.orderId,
         commission: transactionsTable.commission,
         paymentStatus: transactionsTable.paymentStatus,
+        prepaymentDeducted: transactionsTable.prepaymentDeducted,
       })
       .from(transactionsTable)
       .where(inArray(transactionsTable.orderId, orderIds)),
   ]);
+
+  // Load partial payments for all transaction IDs
+  const txIds = transactions.map((t) => t.id);
+  const partialPayments = txIds.length > 0
+    ? await db.select().from(transactionPaymentsTable).where(inArray(transactionPaymentsTable.transactionId, txIds))
+    : [];
+  const partialsByTx = new Map<number, typeof partialPayments>();
+  for (const p of partialPayments) {
+    const arr = partialsByTx.get(p.transactionId) ?? [];
+    arr.push(p);
+    partialsByTx.set(p.transactionId, arr);
+  }
 
   const masterMap = new Map(masters.map((m) => [m.id, m]));
   const leadMap = new Map(leads.map((l) => [l.id, l]));
@@ -232,7 +249,16 @@ async function buildBoard() {
     const expectedCommission = orderAmount > 0 ? calcCommission(orderAmount) : total > 0 ? calcCommission(total) : 0;
     const realTxs = txs.filter((t) => Number(t.commission) > 0);
     const commissionPaid = realTxs.length > 0 && realTxs.every((t) => t.paymentStatus === "paid");
-    const commissionUnpaidAmount = realTxs.filter((t) => t.paymentStatus !== "paid").reduce((s, t) => s + Number(t.commission), 0);
+    // Calculate net payable per order: commission - prepaymentDeducted - totalPartialPaid
+    const orderPrepDeduct = realTxs.reduce((s, t) => s + Number(t.prepaymentDeducted ?? 0), 0);
+    const orderPartials = realTxs.flatMap((t) => partialsByTx.get(t.id) ?? []);
+    const orderTotalPartialPaid = orderPartials.reduce((s, p) => s + Number(p.amount ?? 0), 0);
+    const commissionUnpaidAmount = realTxs.filter((t) => t.paymentStatus !== "paid")
+      .reduce((s, t) => {
+        const pd = Number(t.prepaymentDeducted ?? 0);
+        const tp = (partialsByTx.get(t.id) ?? []).reduce((ss, p) => ss + Number(p.amount ?? 0), 0);
+        return s + Math.max(0, Number(t.commission) - pd - tp);
+      }, 0);
 
     const address = [o.city, o.district].filter(Boolean).join(", ");
     const title = (o as any).serviceType ?? "Заявка";
@@ -291,7 +317,13 @@ async function buildBoard() {
       const tier = commissionTier(orderAmount);
       if (tier === "fixed") commLeftFixed++; else commLeftPercent++;
       const commTotal = calcCommission(orderAmount);
-      const commPaid = Math.max(0, commTotal - commissionUnpaidAmount);
+      const commPaid = orderPrepDeduct + orderTotalPartialPaid;
+      const partialPaymentsList = orderPartials.map((p) => ({
+        id: p.id,
+        amount: Number(p.amount),
+        note: p.note ?? null,
+        paidAt: p.paidAt.toISOString(),
+      }));
       const card: Card = {
         ...baseCard,
         commission: {
@@ -300,6 +332,9 @@ async function buildBoard() {
           paid: commPaid,
           left: commissionUnpaidAmount,
           tier,
+          ...(orderPrepDeduct > 0 ? { prepaymentDeducted: orderPrepDeduct } : {}),
+          ...(orderTotalPartialPaid > 0 ? { totalPartialPaid: orderTotalPartialPaid } : {}),
+          ...(partialPaymentsList.length > 0 ? { partialPayments: partialPaymentsList } : {}),
         },
         bot: { action: "напомню мастеру", eta: "через 2ч", tone: "warn" },
       };

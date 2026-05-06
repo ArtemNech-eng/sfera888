@@ -34,6 +34,9 @@ interface BoardCard {
     paid: number;
     left: number;
     tier: "fixed" | "percent";
+    prepaymentDeducted?: number;
+    totalPartialPaid?: number;
+    partialPayments?: { id: number; amount: number; note: string | null; paidAt: string }[];
   };
   bot?: { action: string; eta: string; tone: BotTone };
   badge?: { text: string; tone: BadgeTone };
@@ -185,8 +188,21 @@ function OrderCard({
                 style={{ width: `${card.commission.total > 0 ? Math.min(100, Math.round((card.commission.paid / card.commission.total) * 100)) : 0}%` }}
               />
             </div>
+            {/* Breakdown: prepayment + partials */}
+            {card.commission.prepaymentDeducted != null && card.commission.prepaymentDeducted > 0 && (
+              <div className="mt-1 text-[10px] text-blue-700 flex items-center justify-between">
+                <span>Бронь по смете</span>
+                <span className="font-mono">−{fmtMoney(card.commission.prepaymentDeducted)}</span>
+              </div>
+            )}
+            {card.commission.totalPartialPaid != null && card.commission.totalPartialPaid > 0 && (
+              <div className="mt-0.5 text-[10px] text-violet-700 flex items-center justify-between">
+                <span>Оплачено мастером {card.commission.partialPayments && card.commission.partialPayments.length > 1 && <span className="text-violet-500">({card.commission.partialPayments.length} пл.)</span>}</span>
+                <span className="font-mono">−{fmtMoney(card.commission.totalPartialPaid)}</span>
+              </div>
+            )}
             {card.commission.left > 0 ? (
-              <div className="mt-1 text-[10px] text-amber-700">
+              <div className="mt-1 text-[10px] text-amber-700 border-t border-slate-200 pt-1">
                 остаток: <span className="font-semibold font-mono">{fmtMoney(card.commission.left)}</span>
               </div>
             ) : (
