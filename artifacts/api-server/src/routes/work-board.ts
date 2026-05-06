@@ -278,33 +278,66 @@ async function buildBoard() {
 
     // Determine column
     // Problem detection (highest priority)
+    // Note: operatorNote starting with "[ИИ]:" is AI-bot communication (scheduling calls,
+    // meetings, etc.) — NOT a real problem. These notes are shown as a badge instead.
+    const opNote = (o as any).operatorNote as string | undefined;
+    const isAiNote = opNote?.startsWith("[ИИ]:") ?? false;
     let problem: string | null = null;
     if (o.status === "cancellation_requested") problem = "Запрос на отмену от мастера";
-    else if ((o as any).operatorNote) problem = "Помечена оператором: " + String((o as any).operatorNote).slice(0, 60);
+    else if (opNote && !isAiNote) problem = "Помечена оператором: " + opNote.slice(0, 60);
     else if (!receipt && o.assignedAt && now - new Date(o.assignedAt).getTime() > 48 * 3_600_000) problem = "Без сметы более 48 часов";
     else if (receipt && !(receipt as any).prepaymentSeenAt && now - new Date(receipt.createdAt).getTime() > 48 * 3_600_000) problem = "Оплата не подтверждена > 48ч";
     else if (commissionUnpaidAmount > 0 && o.status === "completed" && o.completedAt && now - new Date(o.completedAt).getTime() > 7 * 86_400_000) problem = "Комиссия не оплачена > 7 дней";
 
     if (problem) {
+      // For problem cards with receipt + prepaymentSeenAt, show commission block
+      // instead of misleading "оплачено {total}" badge
+      const commTotal = receipt && total > 0 ? calcCommission(total) : 0;
+      const commPaid = commTotal > 0 ? orderPrepDeduct + orderTotalPartialPaid : 0;
+      const commLeft = commTotal > 0 ? Math.max(0, commTotal - commPaid) : 0;
+      const tier = commTotal > 0 ? commissionTier(total) : null;
+      const partialPaymentsList = orderPartials.map((p) => ({
+        id: p.id,
+        amount: Number(p.amount),
+        note: p.note ?? null,
+        paidAt: p.paidAt.toISOString(),
+      }));
       const card: Card = {
         ...baseCard,
         badge: { text: "нужен оператор", tone: "bad" },
         bot: { action: "ждёт твоего решения", eta: "связаться?", tone: "bad" },
         problemReason: problem,
-        ...(receipt && total > 0
-          ? { money: { kind: (receipt as any).prepaymentSeenAt ? "paid" : "estimate", amount: total } }
-          : {}),
+        ...(tier && commTotal > 0
+          ? { commission: {
+              orderTotal: total,
+              total: commTotal,
+              paid: commPaid,
+              left: commLeft,
+              tier,
+              ...(orderPrepDeduct > 0 ? { prepaymentDeducted: orderPrepDeduct } : {}),
+              ...(orderTotalPartialPaid > 0 ? { totalPartialPaid: orderTotalPartialPaid } : {}),
+              ...(partialPaymentsList.length > 0 ? { partialPayments: partialPaymentsList } : {}),
+            } }
+          : receipt && total > 0
+            ? { money: { kind: (receipt as any).prepaymentSeenAt ? "paid" : "estimate", amount: total } }
+            : {}),
       };
       columns.problem.cards.push(card);
       columns.problem.count++;
       continue;
     }
 
+    // AI-bot note badge (shown on non-problem cards so operator sees context)
+    const aiNoteBadge = isAiNote && opNote
+      ? { badge: { text: opNote.slice(5).trim().slice(0, 40), tone: "info" as BadgeTone } }
+      : {};
+
     if (o.status === "completed") {
       const card: Card = {
         ...baseCard,
         money: { kind: "paid", amount: total > 0 ? total : orderAmount, tier: commissionTier(total || orderAmount) },
         badge: { text: `комиссия ${formatMoney(expectedCommission)}`, tone: "ok" },
+        ...aiNoteBadge,
       };
       columns.closed_24h.cards.push(card);
       columns.closed_24h.count++;
@@ -378,6 +411,7 @@ async function buildBoard() {
             ...(partialPaymentsList.length > 0 ? { partialPayments: partialPaymentsList } : {}),
           },
           bot: { action: "напомню мастеру", eta: "через 2ч", tone: "warn" },
+          ...aiNoteBadge,
         };
         columns.commission_left.cards.push(card);
         columns.commission_left.count++;
