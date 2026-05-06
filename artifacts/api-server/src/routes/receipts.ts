@@ -299,8 +299,16 @@ router.patch("/:id", async (req: any, res) => {
   }).where(eq(receiptsTable.id, id)).returning();
 
   // Sync proposed_amount to order so FOMO block is lifted
+  // Also auto-set orderAmount if not yet confirmed by operator
+  const [orderForUpdate] = await db.select().from(ordersTable).where(eq(ordersTable.id, updated.orderId));
+  const patchOrderUpdate: Record<string, any> = { proposedAmount: String(totalAmount), updatedAt: new Date() };
+  if (orderForUpdate && !orderForUpdate.orderAmount) {
+    patchOrderUpdate.orderAmount = String(totalAmount);
+    const commSettings = await getCommissionSettings();
+    patchOrderUpdate.commission = String(calculateCommission(totalAmount, commSettings));
+  }
   await db.update(ordersTable)
-    .set({ proposedAmount: String(totalAmount), updatedAt: new Date() })
+    .set(patchOrderUpdate)
     .where(eq(ordersTable.id, updated.orderId));
   checkFomoTransition(updated.masterId, false).catch(() => {});
 
@@ -342,8 +350,15 @@ router.post("/crm", requireRole("admin", "master_operator"), async (req, res) =>
   }).returning();
 
   // Sync proposed_amount to order so FOMO block is lifted
+  // Also auto-set orderAmount if not yet confirmed by operator
+  const orderUpdate: Record<string, any> = { proposedAmount: String(totalAmount), updatedAt: new Date() };
+  if (!order.orderAmount) {
+    orderUpdate.orderAmount = String(totalAmount);
+    const commSettings = await getCommissionSettings();
+    orderUpdate.commission = String(calculateCommission(totalAmount, commSettings));
+  }
   await db.update(ordersTable)
-    .set({ proposedAmount: String(totalAmount), updatedAt: new Date() })
+    .set(orderUpdate)
     .where(eq(ordersTable.id, orderId));
   checkFomoTransition(order.masterId, false).catch(() => {});
 
@@ -404,8 +419,15 @@ router.post("/", async (req: any, res) => {
   }).returning();
 
   // Sync proposed_amount to order so FOMO block is lifted
+  // Also auto-set orderAmount if not yet confirmed by operator
+  const masterOrderUpdate: Record<string, any> = { proposedAmount: String(totalAmount), updatedAt: new Date() };
+  if (!order.orderAmount) {
+    masterOrderUpdate.orderAmount = String(totalAmount);
+    const commSettings = await getCommissionSettings();
+    masterOrderUpdate.commission = String(calculateCommission(totalAmount, commSettings));
+  }
   await db.update(ordersTable)
-    .set({ proposedAmount: String(totalAmount), updatedAt: new Date() })
+    .set(masterOrderUpdate)
     .where(eq(ordersTable.id, orderId));
   checkFomoTransition(masterId, false).catch(() => {});
 
