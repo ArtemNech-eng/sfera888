@@ -66,7 +66,19 @@ router.get("/", allOrderRoles, async (req, res) => {
   const leads = await db.select().from(leadsTable);
   const leadMap = new Map(leads.map(l => [l.id, l]));
 
-  res.json(orders.map(o => ({
+  // Fetch transaction info for all orders (orderAmount, commission, paymentStatus from finance)
+  const orderIds = orders.map(o => o.id);
+  let txMap = new Map<number, any>();
+  if (orderIds.length > 0) {
+    const txRows = await db.select().from(transactionsTable).where(inArray(transactionsTable.orderId, orderIds));
+    for (const t of txRows) {
+      if (!txMap.has(t.orderId)) txMap.set(t.orderId, t);
+    }
+  }
+
+  res.json(orders.map(o => {
+    const tx = txMap.get(o.id);
+    return {
     id: o.id,
     leadId: o.leadId,
     city: o.city,
@@ -95,11 +107,20 @@ router.get("/", allOrderRoles, async (req, res) => {
     photoAct: (o as any).photoAct ?? null,
     createdAt: o.createdAt,
     updatedAt: o.updatedAt,
-  })));
+    // Transaction info from finance (may exist even if order fields are empty)
+    transactionInfo: tx ? {
+      orderAmount: Number(tx.orderAmount),
+      commission: Number(tx.commission),
+      prepaymentDeducted: Number(tx.prepaymentDeducted ?? 0),
+      paymentStatus: tx.paymentStatus,
+      paidAt: tx.paidAt ?? null,
+    } : null,
+  };
+  }));
 });
 
 router.get("/:id", allOrderRoles, async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id as string);
   const rows = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
   if (!rows[0]) return res.status(404).json({ error: "Order not found" });
   const o = rows[0];
@@ -108,6 +129,9 @@ router.get("/:id", allOrderRoles, async (req, res) => {
     const m = await db.select().from(mastersTable).where(eq(mastersTable.id, o.masterId));
     masterName = m[0]?.alias ?? null;
   }
+  // Fetch transaction info for this order
+  const txRows = await db.select().from(transactionsTable).where(eq(transactionsTable.orderId, id));
+  const tx = txRows[0] ?? null;
   res.json({
     id: o.id,
     leadId: o.leadId,
@@ -131,6 +155,14 @@ router.get("/:id", allOrderRoles, async (req, res) => {
     completedAt: (o as any).completedAt ?? null,
     createdAt: o.createdAt,
     updatedAt: o.updatedAt,
+    // Transaction info from finance (may exist even if order fields are empty)
+    transactionInfo: tx ? {
+      orderAmount: Number(tx.orderAmount),
+      commission: Number(tx.commission),
+      prepaymentDeducted: Number(tx.prepaymentDeducted ?? 0),
+      paymentStatus: tx.paymentStatus,
+      paidAt: tx.paidAt ?? null,
+    } : null,
   });
 });
 
@@ -548,6 +580,9 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
     const m = await db.select().from(mastersTable).where(eq(mastersTable.id, o.masterId));
     masterName = m[0]?.alias ?? null;
   }
+  // Fetch transaction info for this order
+  const patchTxRows = await db.select().from(transactionsTable).where(eq(transactionsTable.orderId, id));
+  const patchTx = patchTxRows[0] ?? null;
   res.json({
     id: o.id,
     leadId: o.leadId,
@@ -571,6 +606,14 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
     completedAt: (o as any).completedAt ?? null,
     createdAt: o.createdAt,
     updatedAt: o.updatedAt,
+    // Transaction info from finance
+    transactionInfo: patchTx ? {
+      orderAmount: Number(patchTx.orderAmount),
+      commission: Number(patchTx.commission),
+      prepaymentDeducted: Number(patchTx.prepaymentDeducted ?? 0),
+      paymentStatus: patchTx.paymentStatus,
+      paidAt: patchTx.paidAt ?? null,
+    } : null,
   });
 });
 

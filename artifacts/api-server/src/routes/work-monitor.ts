@@ -35,6 +35,13 @@ export type WorkOrder = {
   hoursWithoutPayment: number | null;
   problemReasons: string[];
   commissionPaid: boolean;
+  transactionInfo: {
+    orderAmount: number;
+    commission: number;
+    prepaymentDeducted: number;
+    paymentStatus: string;
+    paidAt: string | null;
+  } | null;
 };
 
 // GET /api/work-monitor
@@ -80,6 +87,9 @@ router.get("/", requireAuth, async (_req, res) => {
       orderId: transactionsTable.orderId,
       paymentStatus: transactionsTable.paymentStatus,
       commission: transactionsTable.commission,
+      prepaymentDeducted: transactionsTable.prepaymentDeducted,
+      orderAmount: transactionsTable.orderAmount,
+      paidAt: transactionsTable.paidAt,
     }).from(transactionsTable).where(inArray(transactionsTable.orderId, orderIds)),
   ]);
 
@@ -130,6 +140,15 @@ router.get("/", requireAuth, async (_req, res) => {
     const updatedMs = o.updatedAt ? new Date(o.updatedAt).getTime() : null;
     const daysSinceUpdate = updatedMs ? (now - updatedMs) / 86_400_000 : null;
 
+    // Determine commissionPaid early so we can use it for problemReasons
+    const commissionPaid = (() => {
+      const txs = txByOrder.get(o.id) ?? [];
+      if (txs.length === 0) return false;
+      const real = txs.filter(t => Number(t.commission) > 0);
+      if (real.length === 0) return false;
+      return real.every(t => t.paymentStatus === "paid");
+    })();
+
     const problemReasons: string[] = [];
     if (hoursWithoutEstimate !== null && hoursWithoutEstimate >= 48) {
       problemReasons.push(`🔴 Без сметы ${Math.floor(hoursWithoutEstimate / 24)}д ${hoursWithoutEstimate % 24}ч`);
@@ -140,9 +159,24 @@ router.get("/", requireAuth, async (_req, res) => {
         : `🔴 Без оплаты ${Math.floor(hoursWithoutPayment / 24)}д ${hoursWithoutPayment % 24}ч`;
       problemReasons.push(payLabel);
     }
-    if (daysSinceUpdate !== null && daysSinceUpdate >= 7) {
+    // Don't flag "no updates" as a problem if commission is already paid — order is financially settled
+    if (daysSinceUpdate !== null && daysSinceUpdate >= 7 && !commissionPaid) {
       problemReasons.push(`🔴 Нет обновлений ${Math.floor(daysSinceUpdate)} дн.`);
     }
+
+    // Transaction info for this order (from finance)
+    const transactionInfo = (() => {
+      const txs = txByOrder.get(o.id) ?? [];
+      const real = txs.find(t => Number(t.commission) > 0);
+      if (!real) return null;
+      return {
+        orderAmount: Number(real.orderAmount ?? 0),
+        commission: Number(real.commission),
+        prepaymentDeducted: Number(real.prepaymentDeducted ?? 0),
+        paymentStatus: real.paymentStatus,
+        paidAt: real.paidAt ? real.paidAt.toISOString() : null,
+      };
+    })();
 
     return {
       id: o.id,
@@ -177,14 +211,8 @@ router.get("/", requireAuth, async (_req, res) => {
       hoursWithoutEstimate,
       hoursWithoutPayment,
       problemReasons,
-      commissionPaid: (() => {
-        const txs = txByOrder.get(o.id) ?? [];
-        if (txs.length === 0) return false;
-        // All transactions with real commission must be paid
-        const real = txs.filter(t => Number(t.commission) > 0);
-        if (real.length === 0) return false;
-        return real.every(t => t.paymentStatus === "paid");
-      })(),
+      commissionPaid,
+      transactionInfo,
     };
   });
 

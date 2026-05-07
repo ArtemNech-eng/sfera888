@@ -39,6 +39,13 @@ type WorkOrder = {
   receiptPrepaymentSubmittedAt: string | null; receiptPrepaymentPaidAt: string | null; receiptToken: string | null;
   hoursWithoutEstimate: number | null; hoursWithoutPayment: number | null;
   problemReasons: string[];
+  transactionInfo: {
+    orderAmount: number;
+    commission: number;
+    prepaymentDeducted: number;
+    paymentStatus: string;
+    paidAt: string | null;
+  } | null;
 };
 
 interface ServiceRow {
@@ -1553,6 +1560,7 @@ export default function Leads() {
                                   <button onClick={() => { setEditAmountId(openDispatchId); setEditAmountValue(String(confirmed)); }} className="text-muted-foreground/50 hover:text-primary"><Pencil className="w-3 h-3" /></button>
                                 </div>
                                 {(openOrder as any).commission && <p className="text-[10px] text-muted-foreground">ком. {fmtMoney(Number((openOrder as any).commission))}</p>}
+                                {(openOrder as any).transactionInfo?.paymentStatus === "paid" ? <p className="text-[10px] text-green-600 font-medium">✅ комиссия оплачена</p> : (openOrder as any).transactionInfo?.paymentStatus && Number((openOrder as any).transactionInfo.commission) > 0 ? <p className="text-[10px] text-amber-600">⏳ комиссия не оплачена</p> : null}
                               </div>
                             );
                             if (proposed) return (
