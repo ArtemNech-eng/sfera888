@@ -710,6 +710,22 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
     const chatId = master?.maxChatId ? `max_${master.maxChatId}` : `pwa_${masterId}`;
     await db.insert(masterMessagesTable).values({ masterId, telegramChatId: chatId, text: notifyText, fromMaster: false, senderName: operatorName, isRead: true });
     console.log(`[partial_payment] master #${masterId} paid ${paidCommission} of ${totalCommission}, remaining=${remainingCommission}`);
+
+    // Update proposedAmount on the order so hasEstimate logic works correctly
+    if (orderId != null && orderAmount > 0) {
+      await db.update(ordersTable)
+        .set({ proposedAmount: String(orderAmount), updatedAt: now } as any)
+        .where(eq(ordersTable.id, orderId));
+      console.log(`[partial_payment] order #${orderId} proposedAmount set to ${orderAmount}`);
+    }
+
+    // Archive linked chat case so the order doesn't reappear in "problems" from chatCases
+    if (orderId != null) {
+      await db.update(chatCasesTable)
+        .set({ isResolved: true, isArchived: true, updatedAt: now } as any)
+        .where(eq(chatCasesTable.orderId, orderId))
+        .catch((e: any) => console.error("[partial_payment] chatCase archive failed:", e));
+    }
   }
 
   if (action === "snooze") {
