@@ -672,9 +672,11 @@ router.post("/return-to-pool/:orderId", operatorRoles, async (req, res) => {
         status: "waiting_master",
         masterId: null,
         assignedAt: null,
+        lastBroadcastAt: null,
+        broadcastCount: 0,
         operatorNote: null,
         updatedAt: new Date(),
-      })
+      } as any)
       .where(eq(ordersTable.id, orderId));
 
     // Record cancellation for reputation + history + notify master

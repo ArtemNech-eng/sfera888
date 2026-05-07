@@ -564,7 +564,7 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
       }
     }
     await db.update(ordersTable)
-      .set({ masterId: null, status: "waiting_master", assignedAt: null, updatedAt: new Date() } as any)
+      .set({ masterId: null, status: "waiting_master", assignedAt: null, lastBroadcastAt: null, broadcastCount: 0, updatedAt: new Date() } as any)
       .where(eq(ordersTable.id, Number(item.orderId)));
   }
 
