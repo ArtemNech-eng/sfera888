@@ -53,6 +53,30 @@ const lastBotMessageAt = new Map<number, number>();
 /** Timestamp of the last message received from each master (in-memory) */
 const lastMasterReplyAt = new Map<number, number>();
 
+/** Minimum interval (ms) between proactive bot messages to the same master — prevents duplicates */
+const PROACTIVE_COOLDOWN_MS = 2 * 60 * 1000; // 2 minutes
+
+/**
+ * Returns true if the bot sent any message to this master within the last `withinMs` milliseconds.
+ * Checks DB (survives server restarts) — used as a guard before sending proactive messages.
+ */
+async function botSentRecently(masterId: number, withinMs: number): Promise<boolean> {
+  // Fast in-memory check first
+  const lastSent = lastBotMessageAt.get(masterId);
+  if (lastSent && (Date.now() - lastSent) < withinMs) return true;
+  // DB check (survives restarts)
+  const since = new Date(Date.now() - withinMs);
+  const rows = await db.select({ id: masterMessagesTable.id })
+    .from(masterMessagesTable)
+    .where(and(
+      eq(masterMessagesTable.masterId, masterId),
+      eq(masterMessagesTable.fromMaster, false),
+      gte(masterMessagesTable.createdAt, since),
+    ))
+    .limit(1);
+  return rows.length > 0;
+}
+
 /**
  * In-memory send locks — prevents race conditions when the scheduler fires
  * while a previous cycle is still awaiting sendMaxMessage / saveBotReply.
@@ -1245,7 +1269,13 @@ async function sendSmartProactive(opts: SmartProactiveOpts): Promise<void> {
       return;
     }
 
-    // 2. Has master already addressed this topic on their own?
+    // 2. Global cooldown: did the bot send ANY message to this master in the last 2 minutes?
+    if (await botSentRecently(masterId, PROACTIVE_COOLDOWN_MS)) {
+      console.log(`[dispatcherAI] Proactive SKIP (cooldown ${Math.round(PROACTIVE_COOLDOWN_MS/60000)}min) ${type} for ${masterAlias} order #${orderId}`);
+      return;
+    }
+
+    // 3. Has master already addressed this topic on their own?
     if (masterKeywords) {
       if (await masterAlreadyMentioned(masterId, masterKeywords.words, masterKeywords.withinHours)) {
         console.log(`[dispatcherAI] Proactive SKIP (master mentioned it) ${type} for ${masterAlias} order #${orderId}`);
@@ -1407,6 +1437,12 @@ export async function sendClientCallCheckin(
   orderId: number,
   orderStatus?: string,
 ) {
+  // Load order + lead for client name and address context
+  const data = await getOrderWithLead(orderId);
+  const clientInfo = data?.lead ? `клиент: ${data.lead.clientName || "—"}` : "";
+  const addrInfo = data ? [data.order.city, data.order.district].filter(Boolean).join(", ") : "";
+  const orderCtx = [clientInfo, addrInfo].filter(Boolean).join(", адрес: ");
+
   return sendSmartProactive({
     masterId, masterAlias, maxChatId, orderId,
     type: "callcheckin",
@@ -1423,7 +1459,7 @@ export async function sendClientCallCheckin(
       ],
       withinHours: 48,
     },
-    situation: `Мастеру назначен заказ #${orderId}. Нужно уточнить: позвонил ли он уже клиенту и на какое время договорились о визите. Если в переписке уже есть информация о звонке, договорённости, приезде или о том что работы идут / завершены — не спрашивай снова, это лишнее.`,
+    situation: `Мастеру назначен заказ #${orderId}${orderCtx ? ` (${orderCtx})` : ""}. Нужно уточнить: позвонил ли он уже клиенту и на какое время договорились о визите. Обязательно упомяни в сообщении имя клиента и адрес. Если в переписке уже есть информация о звонке, договорённости, приезде или о том что работы идут / завершены — не спрашивай снова, это лишнее.`,
   });
 }
 
