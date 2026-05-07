@@ -295,6 +295,7 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
   }
 
   if (action === "cancel_order" && item.orderId != null) {
+    const orderId = Number(item.orderId);
     const reason = String(payload?.cancelReason ?? "crm_manual");
     // Map CRM cancel reasons to cancelType for scoring (selfCancelRate)
     const cancelTypeMap: Record<string, string> = {
@@ -305,19 +306,32 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
       other: "other",
     };
     const cancelType = cancelTypeMap[reason] ?? "other";
+
+    // Load order details for notification context (client name, address)
+    const [orderRow] = await db.select({
+      masterId: ordersTable.masterId,
+      clientName: ordersTable.clientName,
+      clientPhone: ordersTable.clientPhone,
+      city: ordersTable.city,
+      district: ordersTable.district,
+    }).from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1);
+
+    // Resolve masterId: prefer item.masterId, fall back to order's masterId from DB
+    const effectiveMasterId = item.masterId != null ? Number(item.masterId) : (orderRow?.masterId != null ? Number(orderRow.masterId) : null);
+
     await db.update(ordersTable)
       .set({ status: "cancelled", cancelType, cancelReason: reason, updatedAt: new Date() } as any)
-      .where(eq(ordersTable.id, Number(item.orderId)));
-    // Lower master reputation + record history as if master cancelled the order
-    if (item.masterId != null) {
-      const masterId = Number(item.masterId);
-      await recordOrderCancelled(masterId, Number(item.orderId)).catch((e: any) => console.error("[cancel_order] reputation update failed:", e));
-      await recordOrderMasterHistory(masterId, Number(item.orderId), "cancelled", reason).catch((e: any) => console.error("[cancel_order] history record failed:", e));
+      .where(eq(ordersTable.id, orderId));
+
+    // Lower master reputation + record history — always if masterId is known
+    if (effectiveMasterId != null) {
+      await recordOrderCancelled(effectiveMasterId, orderId).catch((e: any) => console.error("[cancel_order] reputation update failed:", e));
+      await recordOrderMasterHistory(effectiveMasterId, orderId, "cancelled", reason).catch((e: any) => console.error("[cancel_order] history record failed:", e));
     }
-    // Notify master about cancellation
-    if (item.masterId != null) {
-      const masterId = Number(item.masterId);
-      const [master] = await db.select({ id: mastersTable.id, maxChatId: mastersTable.maxChatId }).from(mastersTable).where(eq(mastersTable.id, masterId)).limit(1);
+
+    // Notify master about cancellation with order details (client name, address)
+    if (effectiveMasterId != null) {
+      const [master] = await db.select({ id: mastersTable.id, maxChatId: mastersTable.maxChatId }).from(mastersTable).where(eq(mastersTable.id, effectiveMasterId)).limit(1);
       const reasonLabels: Record<string, string> = {
         client_refused: "клиент отказался",
         master_no_response: "мастер не выходит на связь",
@@ -326,13 +340,24 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
         other: "другая причина",
       };
       const reasonText = reasonLabels[reason] ?? reason;
-      const notifyText = `❌ Заказ #${item.orderId} отменён (${reasonText}). Свяжитесь с нами для уточнения деталей.`;
+
+      // Build order context for notification
+      const orderParts: string[] = [];
+      const clientName = orderRow?.clientName ?? null;
+      const orderCity = orderRow?.city ?? null;
+      const orderDistrict = orderRow?.district ?? null;
+      if (clientName) orderParts.push(`клиент: ${clientName}`);
+      if (orderCity) orderParts.push(orderCity);
+      if (orderDistrict) orderParts.push(orderDistrict);
+      const orderCtx = orderParts.length > 0 ? ` (${orderParts.join(", ")})` : "";
+
+      const notifyText = `❌ Заказ #${orderId} отменён (${reasonText})${orderCtx}. Отмена влияет на ваш рейтинг. Свяжитесь с нами для уточнения деталей.`;
       if (master?.maxChatId) {
         await sendMaxMessage(master.maxChatId, notifyText).catch((e: any) => console.error("[cancel_order] max send failed:", e));
       }
-      sendPushToMaster(masterId, { type: "new_message", title: "Заказ отменён", body: `Заказ #${item.orderId} отменён: ${reasonText}.` }).catch((e: any) => console.error("[cancel_order] push failed:", e));
-      const chatId = master?.maxChatId ? `max_${master.maxChatId}` : `pwa_${masterId}`;
-      await db.insert(masterMessagesTable).values({ masterId, telegramChatId: chatId, text: notifyText, fromMaster: false, senderName: operatorName, isRead: true });
+      sendPushToMaster(effectiveMasterId, { type: "new_message", title: "Заказ отменён", body: `Заказ #${orderId} отменён: ${reasonText}${orderCtx}.` }).catch((e: any) => console.error("[cancel_order] push failed:", e));
+      const chatId = master?.maxChatId ? `max_${master.maxChatId}` : `pwa_${effectiveMasterId}`;
+      await db.insert(masterMessagesTable).values({ masterId: effectiveMasterId, telegramChatId: chatId, text: notifyText, fromMaster: false, senderName: operatorName, isRead: true });
     }
   }
 

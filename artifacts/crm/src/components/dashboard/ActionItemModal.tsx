@@ -453,7 +453,17 @@ export function ActionItemModal({ id, open, onOpenChange }: {
         };
         const reason = String((payload as { cancelReason?: string })?.cancelReason ?? "crm_manual");
         const reasonText = reasonLabels[reason] ?? reason;
-        showToast(`❌ Заказ отменён (${reasonText}). Рейтинг мастера понижен, уведомление отправлено.`, false);
+        // Build order context for toast
+        const orderParts: string[] = [];
+        const clientName = ctx.order?.clientName ?? ctx.client?.clientName;
+        const orderCity = ctx.order?.city;
+        const orderDistrict = ctx.order?.district;
+        if (clientName) orderParts.push(`клиент: ${clientName}`);
+        if (orderCity) orderParts.push(orderCity);
+        if (orderDistrict) orderParts.push(orderDistrict);
+        const orderCtx = orderParts.length > 0 ? ` (${orderParts.join(", ")})` : "";
+        const orderIdLabel = ctx.order?.id ? `#${ctx.order?.id}` : "";
+        showToast(`❌ Заказ ${orderIdLabel} отменён (${reasonText})${orderCtx}. Рейтинг мастера понижен, уведомление отправлено.`, false);
         onOpenChange(false);
         return;
       }
