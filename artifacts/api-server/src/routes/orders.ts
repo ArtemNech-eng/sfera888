@@ -79,7 +79,7 @@ router.get("/", allOrderRoles, async (req, res) => {
     dispatchStatus: o.dispatchStatus,
     masterId: o.masterId ?? null,
     masterName: o.masterId ? (masterMap.get(o.masterId)?.alias ?? null) : null,
-    clientPhone: leadMap.get(o.leadId)?.phone ?? null,
+    clientPhone: leadMap.get(o.leadId)?.clientPhone ?? null,
     clientName: leadMap.get(o.leadId)?.clientName ?? null,
     proposedAmount: o.proposedAmount ? Number(o.proposedAmount) : null,
     orderAmount: o.orderAmount ? Number(o.orderAmount) : null,

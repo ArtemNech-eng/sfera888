@@ -1511,12 +1511,12 @@ export default function Leads() {
                         <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
                           <div><p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide">Дата заявки</p><p className="font-medium text-foreground">{formatDate(openOrder.createdAt)}</p></div>
                           <div><p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide">Площадь</p><p className="font-medium text-foreground">{openOrder.area} м²</p></div>
-                          {(openOrder as any).clientPhone && (
+                          {((openOrder as any).clientName || (openOrder as any).clientPhone) && (
                             <div className="col-span-2">
                               <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide mb-1">Клиент</p>
                               <div className="flex items-center gap-3 flex-wrap">
-                                <span className="font-medium text-foreground">{(openOrder as any).clientName}</span>
-                                <a href={`tel:${(openOrder as any).clientPhone}`} className="font-medium text-blue-600 hover:underline">{(openOrder as any).clientPhone}</a>
+                                {(openOrder as any).clientName && <span className="font-medium text-foreground">{(openOrder as any).clientName}</span>}
+                                {(openOrder as any).clientPhone && <a href={`tel:${(openOrder as any).clientPhone}`} className="font-medium text-blue-600 hover:underline">{(openOrder as any).clientPhone}</a>}
                                 <button onClick={() => {
                                   const text = openOrder.status === "master_assigned"
                                     ? `Здравствуйте! Мастер ${openOrder.masterName} назначен на вашу заявку (${openOrder.serviceType}, ${openOrder.city}).`
