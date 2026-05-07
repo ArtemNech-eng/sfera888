@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, ordersTable, mastersTable, leadsTable, receiptsTable, avitoSettingsTable, chatCasesTable, systemTasksTable, masterMessagesTable, transactionsTable, transactionPaymentsTable, taskSnoozesTable } from "@workspace/db";
+import { db, ordersTable, mastersTable, leadsTable, receiptsTable, avitoSettingsTable, chatCasesTable, systemTasksTable, masterMessagesTable, transactionsTable, transactionPaymentsTable, taskSnoozesTable, orderDispatchesTable } from "@workspace/db";
 import { desc, isNull, eq, and, sql, not, inArray, lte, gt } from "drizzle-orm";
 import { sendMaxMessage } from "../maxBot.js";
 import { sendPushToMaster } from "../lib/push.js";
@@ -563,8 +563,12 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
         }).catch((e: any) => console.error("[return_to_pool] message save failed:", e));
       }
     }
+    // Delete all dispatch records so the order can be re-broadcast from scratch
+    await db.delete(orderDispatchesTable)
+      .where(eq(orderDispatchesTable.orderId, Number(item.orderId)))
+      .catch((e: any) => console.error("[return_to_pool] dispatches delete failed:", e));
     await db.update(ordersTable)
-      .set({ masterId: null, status: "waiting_master", assignedAt: null, lastBroadcastAt: null, broadcastCount: 0, updatedAt: new Date() } as any)
+      .set({ masterId: null, status: "waiting_master", assignedAt: null, lastBroadcastAt: null, broadcastCount: 0, dispatchStatus: "none", dispatchWave: 1, updatedAt: new Date() } as any)
       .where(eq(ordersTable.id, Number(item.orderId)));
   }
 

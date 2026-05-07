@@ -15,7 +15,7 @@
 // Возврат в пул выполняется ТОЛЬКО оператором — здесь нет автозадач/cron, которые бы это делали.
 import { Router } from "express";
 import { EventEmitter } from "node:events";
-import { db, ordersTable, mastersTable, leadsTable, receiptsTable, transactionsTable, transactionPaymentsTable, masterMessagesTable } from "@workspace/db";
+import { db, ordersTable, mastersTable, leadsTable, receiptsTable, transactionsTable, transactionPaymentsTable, masterMessagesTable, orderDispatchesTable } from "@workspace/db";
 import { inArray, isNull, eq, and, gte } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
 import { recordOrderCancelled } from "../lib/masterReputation.js";
@@ -666,6 +666,11 @@ router.post("/return-to-pool/:orderId", operatorRoles, async (req, res) => {
       .from(ordersTable)
       .where(eq(ordersTable.id, orderId));
 
+    // Delete all dispatch records so the order can be re-broadcast from scratch
+    await db.delete(orderDispatchesTable)
+      .where(eq(orderDispatchesTable.orderId, orderId))
+      .catch((e: any) => console.error("[return-to-pool] dispatches delete failed:", e));
+
     await db
       .update(ordersTable)
       .set({
@@ -674,6 +679,8 @@ router.post("/return-to-pool/:orderId", operatorRoles, async (req, res) => {
         assignedAt: null,
         lastBroadcastAt: null,
         broadcastCount: 0,
+        dispatchStatus: "none",
+        dispatchWave: 1,
         operatorNote: null,
         updatedAt: new Date(),
       } as any)
