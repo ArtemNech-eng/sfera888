@@ -692,7 +692,7 @@ async function buildMasterContext(masterId: number): Promise<string> {
         ? `\n    Заметки: ${o.operatorNote.substring(0, 400)}`
         : "";
 
-      const addr = [o.city, o.district, o.address].filter(Boolean).join(", ");
+      const addr = [o.city, o.district].filter(Boolean).join(", ");
       const line = `• Заказ #${o.id} [${statusLabel[o.status] ?? o.status}]: ${o.serviceType}` +
         `\n    Адрес: ${addr}, ${o.area} м²` +
         clientInfo +

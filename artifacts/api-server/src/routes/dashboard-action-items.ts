@@ -153,8 +153,8 @@ async function buildItems(): Promise<Item[]> {
   const leadMap = new Map(leads.map((l: any) => [l.id, l]));
   const orderMap = new Map(orders.map((o: any) => [o.id, o]));
   const masterMap = new Map(masters.map((m: any) => [m.id, m]));
-  // Orders that already have a receipt with prepaymentAmount > 0 — estimate was effectively sent
-  const receiptOrderIds = new Set(receipts.filter((r: any) => Number(r.prepaymentAmount ?? 0) > 0).map((r: any) => Number(r.orderId)).filter(Boolean));
+  // Orders that already have a receipt — estimate was effectively sent (any receipt means estimate exists)
+  const receiptOrderIds = new Set(receipts.filter((r: any) => r.orderId != null).map((r: any) => Number(r.orderId)).filter(Boolean));
   // Orders that already have a receipt with prepaymentSubmittedAt — client already paid, receipt task will handle it
   const receiptSubmittedOrderIds = new Set(receipts.filter((r: any) => r.prepaymentSubmittedAt != null).map((r: any) => Number(r.orderId)).filter(Boolean));
   // Orders that already have a transaction with orderAmount > 0 — estimate definitely exists
