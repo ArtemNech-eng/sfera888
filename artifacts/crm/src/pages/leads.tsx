@@ -1511,24 +1511,30 @@ export default function Leads() {
                         <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
                           <div><p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide">Дата заявки</p><p className="font-medium text-foreground">{formatDate(openOrder.createdAt)}</p></div>
                           <div><p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide">Площадь</p><p className="font-medium text-foreground">{openOrder.area} м²</p></div>
-                          {((openOrder as any).clientName || (openOrder as any).clientPhone) && (
-                            <div className="col-span-2">
-                              <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide mb-1">Клиент</p>
-                              <div className="flex items-center gap-3 flex-wrap">
-                                {(openOrder as any).clientName && <span className="font-medium text-foreground">{(openOrder as any).clientName}</span>}
-                                {(openOrder as any).clientPhone && <a href={`tel:${(openOrder as any).clientPhone}`} className="font-medium text-blue-600 hover:underline">{(openOrder as any).clientPhone}</a>}
-                                <button onClick={() => {
-                                  const text = openOrder.status === "master_assigned"
-                                    ? `Здравствуйте! Мастер ${openOrder.masterName} назначен на вашу заявку (${openOrder.serviceType}, ${openOrder.city}).`
-                                    : `Здравствуйте! Ваша заявка (${openOrder.serviceType}, ${openOrder.city}) принята в обработку.`;
-                                  navigator.clipboard.writeText(text).then(() => { setNotifCopied(true); setTimeout(() => setNotifCopied(false), 2500); });
-                                }} className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-xl bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-100 transition-colors">
-                                  {notifCopied ? <Check className="w-3 h-3 text-emerald-600" /> : <Bell className="w-3 h-3" />}
-                                  {notifCopied ? "Скопировано!" : "Уведомить клиента"}
-                                </button>
-                              </div>
+                          <div className="col-span-2 border-t border-border/30 pt-2">
+                            <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide mb-1.5">Клиент</p>
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                              {(openOrder as any).clientName && (
+                                <div><p className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Имя</p><p className="font-medium text-foreground">{(openOrder as any).clientName}</p></div>
+                              )}
+                              {(openOrder as any).clientPhone && (
+                                <div><p className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Телефон</p><a href={`tel:${(openOrder as any).clientPhone}`} className="font-medium text-blue-600 hover:underline">{(openOrder as any).clientPhone}</a></div>
+                              )}
+                              <div><p className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Город</p><p className="font-medium text-foreground">{openOrder.city}</p></div>
+                              {openOrder.district && (
+                                <div><p className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Район / Адрес</p><p className="font-medium text-foreground">{openOrder.district}</p></div>
+                              )}
                             </div>
-                          )}
+                            <button onClick={() => {
+                              const text = openOrder.status === "master_assigned"
+                                ? `Здравствуйте! Мастер ${openOrder.masterName} назначен на вашу заявку (${openOrder.serviceType}, ${openOrder.city}).`
+                                : `Здравствуйте! Ваша заявка (${openOrder.serviceType}, ${openOrder.city}) принята в обработку.`;
+                              navigator.clipboard.writeText(text).then(() => { setNotifCopied(true); setTimeout(() => setNotifCopied(false), 2500); });
+                            }} className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-xl bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-100 transition-colors mt-2">
+                              {notifCopied ? <Check className="w-3 h-3 text-emerald-600" /> : <Bell className="w-3 h-3" />}
+                              {notifCopied ? "Скопировано!" : "Уведомить клиента"}
+                            </button>
+                          </div>
                           {openOrder.scheduledAt && <div><p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide">Дата визита</p><p className="font-medium text-blue-600">{new Date(openOrder.scheduledAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p></div>}
                           {openOrder.masterName && <div><p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide">Мастер</p><button onClick={() => openOrder.masterId && openMasterChat(openOrder.masterId)} className="font-medium text-blue-600 hover:underline text-left">{openOrder.masterName}</button></div>}
                           {openOrder.masterId && receipts && receipts.length === 0 && ["master_assigned","in_progress"].includes(openOrder.status) && (
