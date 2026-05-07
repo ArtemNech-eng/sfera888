@@ -763,21 +763,54 @@ router.post("/orders/:orderId/partial-payment", operatorRoles, async (req, res) 
       if (master) {
         const newDebt = Math.max(0, Number(master.debt) - Number(amount));
         await db.update(mastersTable).set({ debt: String(newDebt) }).where(eq(mastersTable.id, tx.masterId));
+
+        const notifyText = `✅ Оплата по заказу #${orderId} принята.\nКомиссия полностью закрыта! 🟢`;
+
+        // Max notification
         if (master.maxChatId) {
-          await sendMaxMessage(master.maxChatId,
-            `✅ Оплата по заказу #${orderId} принята.\nКомиссия полностью закрыта! 🟢`
-          ).catch(() => {});
+          await sendMaxMessage(master.maxChatId, notifyText)
+            .catch((e: any) => console.error("[partial-payment] max send failed:", e));
         }
+        // PWA push notification
+        sendPushToMaster(tx.masterId, { type: "new_message", title: "Комиссия закрыта", body: `Оплата по заказу #${orderId} принята. Комиссия полностью закрыта!` })
+          .catch((e: any) => console.error("[partial-payment] push failed:", e));
+        // Save to master dialog (visible in CRM chat)
+        const chatId = master.maxChatId ? `max_${master.maxChatId}` : `pwa_${tx.masterId}`;
+        await db.insert(masterMessagesTable).values({
+          masterId: tx.masterId,
+          telegramChatId: chatId,
+          text: notifyText,
+          fromMaster: false,
+          senderName: "Система",
+          isRead: true,
+        }).catch((e: any) => console.error("[partial-payment] save message failed:", e));
       }
     } else {
       // Notify master about partial payment
       const masterRows = await db.select({ maxChatId: mastersTable.maxChatId })
         .from(mastersTable).where(eq(mastersTable.id, tx.masterId));
-      if (masterRows[0]?.maxChatId) {
-        await sendMaxMessage(masterRows[0].maxChatId,
-          `💰 Частичная оплата по заказу #${orderId} принята: ${Number(amount).toLocaleString("ru-RU")} ₽\nОстаток: ${remaining.toLocaleString("ru-RU")} ₽`
-        ).catch(() => {});
+      const masterMaxChatId = masterRows[0]?.maxChatId;
+
+      const notifyText = `💰 Частичная оплата по заказу #${orderId} принята: ${Number(amount).toLocaleString("ru-RU")} ₽\nОстаток: ${remaining.toLocaleString("ru-RU")} ₽`;
+
+      // Max notification
+      if (masterMaxChatId) {
+        await sendMaxMessage(masterMaxChatId, notifyText)
+          .catch((e: any) => console.error("[partial-payment] max send failed:", e));
       }
+      // PWA push notification
+      sendPushToMaster(tx.masterId, { type: "new_message", title: "Частичная оплата", body: `Оплата ${Number(amount).toLocaleString("ru-RU")} ₽ по заказу #${orderId} принята. Остаток: ${remaining.toLocaleString("ru-RU")} ₽` })
+        .catch((e: any) => console.error("[partial-payment] push failed:", e));
+      // Save to master dialog (visible in CRM chat)
+      const chatId = masterMaxChatId ? `max_${masterMaxChatId}` : `pwa_${tx.masterId}`;
+      await db.insert(masterMessagesTable).values({
+        masterId: tx.masterId,
+        telegramChatId: chatId,
+        text: notifyText,
+        fromMaster: false,
+        senderName: "Система",
+        isRead: true,
+      }).catch((e: any) => console.error("[partial-payment] save message failed:", e));
     }
 
     notifyWorkBoardChanged("partial-payment");
