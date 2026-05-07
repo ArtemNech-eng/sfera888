@@ -159,6 +159,9 @@ async function buildItems(): Promise<Item[]> {
   const receiptSubmittedOrderIds = new Set(receipts.filter((r: any) => r.prepaymentSubmittedAt != null).map((r: any) => Number(r.orderId)).filter(Boolean));
   // Orders that already have a transaction with orderAmount > 0 — estimate definitely exists
   const txOrderIds = new Set(txRows.filter((t: any) => Number(t.orderAmount ?? 0) > 0).map((t: any) => Number(t.orderId)).filter(Boolean));
+  // Orders that have at least one partial payment in transaction_payments — work is in progress, don't flag as "no estimate"
+  const txIdsWithPayments = new Set((await db.select({ transactionId: transactionPaymentsTable.transactionId }).from(transactionPaymentsTable).limit(5000)).map((p: any) => p.transactionId));
+  const txOrderIdsWithPayments = new Set(txRows.filter((t: any) => txIdsWithPayments.has(t.id)).map((t: any) => Number(t.orderId)).filter(Boolean));
   for (const o of orders) {
     const ageH = (now.getTime() - new Date(o.createdAt).getTime()) / 3600000;
     // For no_estimate: count from assignedAt (when current master was assigned), not from order creation.
@@ -168,10 +171,11 @@ async function buildItems(): Promise<Item[]> {
       : (now.getTime() - new Date(o.updatedAt ?? o.createdAt).getTime()) / 3600000;
     const lead = leadMap.get(o.leadId!) as any;
     const clientLabel = lead?.clientName ? `${lead.clientName} · ${o.city ?? ""}` : (o.city ?? "");
-    // no_estimate: proposedAmount missing AND no receipt AND no transaction with amount
+    // no_estimate: proposedAmount missing AND no receipt AND no transaction with amount AND no partial payments
     const hasEstimate = (o.proposedAmount != null && Number(o.proposedAmount) > 0)
       || receiptOrderIds.has(Number(o.id))
-      || txOrderIds.has(Number(o.id));
+      || txOrderIds.has(Number(o.id))
+      || txOrderIdsWithPayments.has(Number(o.id));
     if (!hasEstimate && estimateAgeH >= 24) items.push({ id: `no_estimate-${o.id}`, type: "no_estimate", priority: pFromHours(estimateAgeH), title: `Заказ #${o.id} — нет сметы`, shortDescription: clientLabel.trim(), fullDescription: `У заказа нет сметы уже ${fmtAge(estimateAgeH)}.`, createdAt: new Date(o.assignedAt ?? o.updatedAt ?? o.createdAt).toISOString(), updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterMap.get(Number(o.masterId))?.alias ?? null) : null, amountAtRisk: o.orderAmount ? Number(o.orderAmount) : null, actions: actionSet("no_estimate") });
     if (o.status === "waiting_master") items.push({ id: `no_master_response-${o.id}`, type: "no_master_response", priority: pFromHours(ageH), title: `Заказ #${o.id} — нет отклика мастера`, shortDescription: clientLabel.trim(), fullDescription: `Заказ завис без отклика мастера ${fmtAge(ageH)}.`, createdAt: new Date(o.createdAt).toISOString(), updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterMap.get(Number(o.masterId))?.alias ?? null) : null, amountAtRisk: o.orderAmount ? Number(o.orderAmount) : null, actions: actionSet("no_master_response") });
     // no_payment: смета есть, заказ не оплачен (orderAmount = null), ждём >= 24ч
@@ -208,7 +212,7 @@ async function buildItems(): Promise<Item[]> {
     // If the linked order is no longer in the active pool (completed / cancelled / deleted) — skip
     if (cOrderId && !linkedOrder) continue;
 
-    const hasEstimate = (linkedOrder && Number(linkedOrder.proposedAmount ?? 0) > 0) || (cOrderId && receiptOrderIds.has(Number(cOrderId))) || (cOrderId && txOrderIds.has(Number(cOrderId)));
+    const hasEstimate = (linkedOrder && Number(linkedOrder.proposedAmount ?? 0) > 0) || (cOrderId && receiptOrderIds.has(Number(cOrderId))) || (cOrderId && txOrderIds.has(Number(cOrderId))) || (cOrderId && txOrderIdsWithPayments.has(Number(cOrderId)));
     const hasPaid = linkedOrder && Number(linkedOrder.orderAmount ?? 0) > 0;
     const orderCancelled = linkedOrder && ["cancelled", "completed", "done"].includes(String(linkedOrder.status ?? ""));
 
@@ -228,7 +232,7 @@ async function buildItems(): Promise<Item[]> {
     const orderAgeH = linkedOrderAny
       ? (now.getTime() - new Date(linkedOrderAny.createdAt).getTime()) / 3600000
       : 0;
-    const hasEstimateInOrder = (linkedOrderAny && Number(linkedOrderAny.proposedAmount ?? 0) > 0) || (cOrderId && receiptOrderIds.has(Number(cOrderId))) || (cOrderId && txOrderIds.has(Number(cOrderId)));
+    const hasEstimateInOrder = (linkedOrderAny && Number(linkedOrderAny.proposedAmount ?? 0) > 0) || (cOrderId && receiptOrderIds.has(Number(cOrderId))) || (cOrderId && txOrderIds.has(Number(cOrderId))) || (cOrderId && txOrderIdsWithPayments.has(Number(cOrderId)));
     const hasPaidInOrder = linkedOrderAny && Number(linkedOrderAny.orderAmount ?? 0) > 0;
 
     const hEstRaw = Number((c as any).hoursWithoutEstimate ?? 0);
