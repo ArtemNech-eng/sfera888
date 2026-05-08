@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { sql, and, eq, isNull, inArray, lt } from "drizzle-orm";
 import { mastersTable, ordersTable, masterMessagesTable, orderDispatchesTable } from "@workspace/db";
 import { sendMaxMessage } from "../maxBot.js";
+import { sendPushToMaster } from "../lib/push.js";
 import { calculateCommission, getCommissionSettings } from "../lib/commission.js";
 
 const router = Router();
@@ -306,69 +307,111 @@ async function runBroadcastOrders() {
         console.error(`[broadcast-orders] Wave 1 error for order #${order.id}:`, e?.message ?? e);
       }
 
-    // ── Wave 2: Re-broadcast 2h after wave 1 — force re-send via performBroadcast ───
+    // ── Wave 2: Reminder 2h after wave 1 — send directly to masters who haven't responded ───
     } else if (wave1Time && !wave2Time && elapsedMin1 >= WAVE_INTERVAL_MIN) {
       try {
-        // Force re-broadcast: deletes old "sent" dispatches, sends fresh notifications
+        // Send reminder to masters with status="sent" (haven't responded yet)
         // Masters who already responded (status='responded') are NOT re-notified
-        const result = await performBroadcast(order.id, true);
-        if (result.ok && result.sent > 0) {
-          await db.execute(sql`
-            UPDATE order_broadcast_waves
-            SET current_wave = 2, wave_2_sent_at = NOW(), wave_2_count = ${result.sent}, updated_at = NOW()
-            WHERE order_id = ${order.id}
-          `);
-          await updateOrderBroadcastState(order.id);
-          // Record notifications for dedup
-          const dispatches = await db.execute(sql`
-            SELECT master_id FROM order_dispatches WHERE order_id = ${order.id} AND status = 'sent'
-          `);
-          for (const d of dispatches.rows as any[]) {
-            await recordNotification("broadcast-orders", order.id, Number(d.master_id), "wave-2");
+        const reminderMsg = buildBroadcastMessage(order, 2);
+        const sentDispatches = await db.execute(sql`
+          SELECT od.master_id, od.id AS dispatch_id
+          FROM order_dispatches od
+          WHERE od.order_id = ${order.id} AND od.status = 'sent'
+        `);
+        let reminderSent = 0;
+        for (const d of sentDispatches.rows as any[]) {
+          const masterId = Number(d.master_id);
+          // Dedup: don't re-notify if already sent wave-2 reminder within DEDUP_HOURS
+          const alreadyNotified = await wasNotified("broadcast-orders", order.id, masterId, "wave-2-reminder");
+          if (alreadyNotified) continue;
+          // Load master's Max chat ID and PWA login for push
+          const [masterRow] = await db.select({
+            maxChatId: mastersTable.maxChatId,
+            pwaLogin: mastersTable.pwaLogin,
+          }).from(mastersTable).where(eq(mastersTable.id, masterId));
+          if (!masterRow) continue;
+          // Send Max message
+          if (masterRow.maxChatId) {
+            await sendMaxMessage(masterRow.maxChatId, reminderMsg).catch(() => {});
           }
-          totalSent += result.sent;
+          // Send PWA push
+          if (masterRow.pwaLogin) {
+            await sendPushToMaster(masterId, {
+              type: "new_order",
+              title: "Напоминание — заказ ещё открыт!",
+              body: `${order.city}${order.district ? ", " + order.district : ""} · ${order.service_type} · ${order.area ? Number(order.area).toFixed(0) : "—"} м²`,
+              orderId: order.id,
+            }).catch(() => {});
+          }
+          await recordNotification("broadcast-orders", order.id, masterId, "wave-2-reminder");
+          reminderSent++;
+          await sleep(MSG_DELAY_MS);
+        }
+        await db.execute(sql`
+          UPDATE order_broadcast_waves
+          SET current_wave = 2, wave_2_sent_at = NOW(), wave_2_count = ${reminderSent}, updated_at = NOW()
+          WHERE order_id = ${order.id}
+        `);
+        await updateOrderBroadcastState(order.id);
+        totalSent += reminderSent;
+        if (reminderSent > 0) {
           wave2Sent++;
-          console.log(`[broadcast-orders] Wave 2: order #${order.id} → ${result.sent} masters`);
+          console.log(`[broadcast-orders] Wave 2: order #${order.id} → ${reminderSent} reminders to unresponsive masters`);
         } else {
-          // Even if 0 new masters, mark wave 2 as sent so we can proceed to wave 3
-          await db.execute(sql`
-            UPDATE order_broadcast_waves
-            SET current_wave = 2, wave_2_sent_at = NOW(), wave_2_count = 0, updated_at = NOW()
-            WHERE order_id = ${order.id}
-          `);
-          console.log(`[broadcast-orders] Wave 2: order #${order.id} no new masters: ${result.error ?? "all notified"}`);
+          console.log(`[broadcast-orders] Wave 2: order #${order.id} no unresponsive masters to remind`);
         }
       } catch (e: any) {
         console.error(`[broadcast-orders] Wave 2 error for order #${order.id}:`, e?.message ?? e);
       }
 
-    // ── Wave 3: Final re-broadcast 2h after wave 2 ─────────────────────────────
+    // ── Wave 3: Final reminder 2h after wave 2 ─────────────────────────────
     } else if (wave2Time && !wave3Time && elapsedMin2 >= WAVE_INTERVAL_MIN) {
       try {
-        const result = await performBroadcast(order.id, true);
-        if (result.ok && result.sent > 0) {
-          await db.execute(sql`
-            UPDATE order_broadcast_waves
-            SET current_wave = 3, wave_3_sent_at = NOW(), wave_3_count = ${result.sent}, updated_at = NOW()
-            WHERE order_id = ${order.id}
-          `);
-          await updateOrderBroadcastState(order.id);
-          const dispatches = await db.execute(sql`
-            SELECT master_id FROM order_dispatches WHERE order_id = ${order.id} AND status = 'sent'
-          `);
-          for (const d of dispatches.rows as any[]) {
-            await recordNotification("broadcast-orders", order.id, Number(d.master_id), "wave-3");
+        // Send final reminder to masters who still haven't responded
+        const reminderMsg = buildBroadcastMessage(order, 3);
+        const sentDispatches = await db.execute(sql`
+          SELECT od.master_id, od.id AS dispatch_id
+          FROM order_dispatches od
+          WHERE od.order_id = ${order.id} AND od.status = 'sent'
+        `);
+        let reminderSent = 0;
+        for (const d of sentDispatches.rows as any[]) {
+          const masterId = Number(d.master_id);
+          // Dedup: don't re-notify if already sent wave-3 reminder within DEDUP_HOURS
+          const alreadyNotified = await wasNotified("broadcast-orders", order.id, masterId, "wave-3-reminder");
+          if (alreadyNotified) continue;
+          const [masterRow] = await db.select({
+            maxChatId: mastersTable.maxChatId,
+            pwaLogin: mastersTable.pwaLogin,
+          }).from(mastersTable).where(eq(mastersTable.id, masterId));
+          if (!masterRow) continue;
+          if (masterRow.maxChatId) {
+            await sendMaxMessage(masterRow.maxChatId, reminderMsg).catch(() => {});
           }
-          totalSent += result.sent;
+          if (masterRow.pwaLogin) {
+            await sendPushToMaster(masterId, {
+              type: "new_order",
+              title: "⏳ Последний шанс — заказ ещё открыт!",
+              body: `${order.city}${order.district ? ", " + order.district : ""} · ${order.service_type} · ${order.area ? Number(order.area).toFixed(0) : "—"} м²`,
+              orderId: order.id,
+            }).catch(() => {});
+          }
+          await recordNotification("broadcast-orders", order.id, masterId, "wave-3-reminder");
+          reminderSent++;
+          await sleep(MSG_DELAY_MS);
+        }
+        await db.execute(sql`
+          UPDATE order_broadcast_waves
+          SET current_wave = 3, wave_3_sent_at = NOW(), wave_3_count = ${reminderSent}, updated_at = NOW()
+          WHERE order_id = ${order.id}
+        `);
+        await updateOrderBroadcastState(order.id);
+        totalSent += reminderSent;
+        if (reminderSent > 0) {
           wave3Sent++;
-          console.log(`[broadcast-orders] Wave 3: order #${order.id} → ${result.sent} masters`);
+          console.log(`[broadcast-orders] Wave 3: order #${order.id} → ${reminderSent} final reminders to unresponsive masters`);
         } else {
-          await db.execute(sql`
-            UPDATE order_broadcast_waves
-            SET current_wave = 3, wave_3_sent_at = NOW(), wave_3_count = 0, updated_at = NOW()
-            WHERE order_id = ${order.id}
-          `);
-          console.log(`[broadcast-orders] Wave 3: order #${order.id} no new masters: ${result.error ?? "all notified"}`);
+          console.log(`[broadcast-orders] Wave 3: order #${order.id} no unresponsive masters to remind`);
         }
       } catch (e: any) {
         console.error(`[broadcast-orders] Wave 3 error for order #${order.id}:`, e?.message ?? e);
