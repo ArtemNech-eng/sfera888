@@ -184,7 +184,6 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
   }, [items]);
 
   const trendCritical = trendData.map(d => d.critical);
-  const trendHigh = trendData.map(d => d.high);
   const trendDirection = trendCritical.length >= 2
     ? trendCritical[trendCritical.length - 1] > trendCritical[0] ? "up" : trendCritical[trendCritical.length - 1] < trendCritical[0] ? "down" : "flat"
     : "flat";
@@ -203,9 +202,8 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
     const ages = filtered.map(i => (Date.now() - new Date(i.createdAt).getTime()) / 3600000);
     const avgAgeH = ages.length > 0 ? ages.reduce((a, b) => a + b, 0) / ages.length : 0;
     const total = summary.critical + summary.high + summary.medium + summary.low;
-    const doneRate = total > 0 ? Math.round((summary.doneToday / Math.max(total, 1)) * 100) : 0;
     const oldestH = ages.length > 0 ? Math.max(...ages) : 0;
-    return { totalAtRisk, avgAgeH, doneRate, oldestH, total };
+    return { totalAtRisk, avgAgeH, oldestH, total };
   }, [filtered, summary]);
 
   // ─── Фаза 3: Drag-and-drop состояние ─────────────────────────────
@@ -214,6 +212,17 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
   const [pinnedOrder, setPinnedOrder] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem("action-items-pinned-order") || "[]"); } catch { return []; }
   });
+
+  // Очистка pinnedOrder от ID задач, которых больше нет в filtered
+  useEffect(() => {
+    if (pinnedOrder.length === 0) return;
+    const currentIds = new Set(filtered.map(i => i.id));
+    const cleaned = pinnedOrder.filter(id => currentIds.has(id));
+    if (cleaned.length !== pinnedOrder.length) {
+      setPinnedOrder(cleaned);
+      localStorage.setItem("action-items-pinned-order", JSON.stringify(cleaned));
+    }
+  }, [filtered, pinnedOrder]);
 
   // Применяем pinned порядок к filtered
   const displayItems = useMemo(() => {
@@ -486,9 +495,20 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
 
   // Snooze dropdown state
   const [snoozeMenuId, setSnoozeMenuId] = useState<string | null>(null);
+  // Закрытие snooze dropdown при клике вне
+  useEffect(() => {
+    if (!snoozeMenuId) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest("[data-snooze-menu]")) setSnoozeMenuId(null);
+    };
+    document.addEventListener("click", handler);
+    return () => document.removeEventListener("click", handler);
+  }, [snoozeMenuId]);
 
   // Рендер карточки с учётом выбора + фокуса + drag
-  const renderCard = (item: Item, idx?: number) => (
+  // showDragAndSnooze: false в групповом виде (drag/snooze не нужны)
+  const renderCard = (item: Item, idx?: number, showDragAndSnooze = true) => (
     <div
       key={item.id}
       data-item-id={item.id}
@@ -496,18 +516,20 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
         dragOverId === item.id ? "ring-2 ring-violet-400 ring-offset-1 rounded-xl" : ""
       } ${dragItemId === item.id ? "opacity-50" : ""}`}
     >
-      {/* Drag handle — только отсюда можно начать drag */}
-      <div
-        draggable
-        onDragStart={(e) => handleDragStart(e, item.id)}
-        onDragOver={(e) => handleDragOver(e, item.id)}
-        onDrop={(e) => handleDrop(e, item.id)}
-        onDragEnd={handleDragEnd}
-        className="flex items-center px-1 cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500 transition shrink-0"
-        title="Перетащите для изменения порядка"
-      >
-        <GripVertical className="w-4 h-4" />
-      </div>
+      {/* Drag handle — только в списочном виде */}
+      {showDragAndSnooze && (
+        <div
+          draggable
+          onDragStart={(e) => handleDragStart(e, item.id)}
+          onDragOver={(e) => handleDragOver(e, item.id)}
+          onDrop={(e) => handleDrop(e, item.id)}
+          onDragEnd={handleDragEnd}
+          className="flex items-center px-1 cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500 transition shrink-0"
+          title="Перетащите для изменения порядка"
+        >
+          <GripVertical className="w-4 h-4" />
+        </div>
+      )}
       <div className="flex-1 min-w-0">
         <ActionItemCard
           item={{
@@ -525,19 +547,21 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
           aiHintText={aiHints[item.id] ?? null}
         />
       </div>
-      {/* Snooze кнопка-триггер */}
-      <div className="flex flex-col items-center justify-start pt-2 shrink-0 gap-1">
-        <button
-          onClick={(e) => { e.stopPropagation(); setSnoozeMenuId(snoozeMenuId === item.id ? null : item.id); }}
-          className="w-7 h-7 rounded-lg bg-slate-50 hover:bg-slate-100 border flex items-center justify-center transition"
-          title="Отложить задачу"
-        >
-          <Timer className="w-3.5 h-3.5 text-slate-500" />
-        </button>
-      </div>
+      {/* Snooze кнопка-триггер — только в списочном виде */}
+      {showDragAndSnooze && (
+        <div className="flex flex-col items-center justify-start pt-2 shrink-0 gap-1" data-snooze-menu>
+          <button
+            onClick={(e) => { e.stopPropagation(); setSnoozeMenuId(snoozeMenuId === item.id ? null : item.id); }}
+            className="w-7 h-7 rounded-lg bg-slate-50 hover:bg-slate-100 border flex items-center justify-center transition"
+            title="Отложить задачу"
+          >
+            <Timer className="w-3.5 h-3.5 text-slate-500" />
+          </button>
+        </div>
+      )}
       {/* Snooze dropdown — позиционирован относительно relative-родителя */}
       {snoozeMenuId === item.id && (
-        <div className="absolute right-0 top-full mt-1 z-50 bg-white border rounded-xl shadow-lg p-2 min-w-[140px]">
+        <div className="absolute right-0 top-full mt-1 z-50 bg-white border rounded-xl shadow-lg p-2 min-w-[140px]" data-snooze-menu>
           <div className="text-[10px] font-bold text-muted-foreground mb-1.5 px-1">Отложить на:</div>
           {[1, 2, 3, 7].map(d => (
             <button
@@ -695,7 +719,11 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
 
       {/* Период + Только мои + Переключатель вида + Шорткаты */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
-        <Button variant={period === "all" ? "default" : "outline"} size="sm" onClick={() => setPeriod("all")}>Все периоды</Button>
+        <div className="flex items-center bg-slate-100 rounded-lg p-0.5">
+          {[{ k: "all", l: "Все" }, { k: "today", l: "Сегодня" }, { k: "week", l: "Неделя" }, { k: "month", l: "Месяц" }].map(p => (
+            <button key={p.k} onClick={() => setPeriod(p.k)} className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${period === p.k ? "bg-white shadow-sm text-foreground font-semibold" : "text-muted-foreground hover:text-foreground"}`}>{p.l}</button>
+          ))}
+        </div>
         <Button variant={myOnly ? "default" : "outline"} size="sm" onClick={() => setMyOnly((v: boolean) => !v)}>
           {myOnly ? "Только мои" : "Все задачи"}
         </Button>
@@ -841,7 +869,7 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
                   </div>
                 </div>
                 <div className="p-2 space-y-2">
-                  {group.items.map(item => renderCard(item))}
+                  {group.items.map((item, gIdx) => renderCard(item, gIdx, false))}
                 </div>
               </div>
             );

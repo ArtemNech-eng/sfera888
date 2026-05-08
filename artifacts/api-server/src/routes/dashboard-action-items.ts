@@ -102,9 +102,9 @@ function fmtAge(hours: number): string {
     return `${days} ${form}`;
   }
   const h = Math.round(hours);
-  const form = h % 10 === 1 && h % 100 !== 11 ? "ч"
-      : [2, 3, 4].includes(h % 10) && ![12, 13, 14].includes(h % 100) ? "ч"
-      : "ч";
+  const form = h % 10 === 1 && h % 100 !== 11 ? "час"
+      : [2, 3, 4].includes(h % 10) && ![12, 13, 14].includes(h % 100) ? "часа"
+      : "часов";
   return `${h} ${form}`;
 }
 
