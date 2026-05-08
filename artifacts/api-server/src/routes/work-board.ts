@@ -16,7 +16,7 @@
 import { Router } from "express";
 import { EventEmitter } from "node:events";
 import { db, ordersTable, mastersTable, leadsTable, receiptsTable, transactionsTable, transactionPaymentsTable, masterMessagesTable, orderDispatchesTable } from "@workspace/db";
-import { inArray, isNull, eq, and, gte } from "drizzle-orm";
+import { inArray, isNull, eq, and, gte, sql } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
 import { recordOrderCancelled } from "../lib/masterReputation.js";
 import { recordOrderMasterHistory } from "../lib/orderMasterHistory.js";
@@ -102,6 +102,7 @@ interface Card {
   badge?: { text: string; tone: BadgeTone };
   status: string;
   problemReason?: string;
+  responseCount?: number;
 }
 
 interface Column {
@@ -185,6 +186,23 @@ async function buildBoard() {
       .from(transactionsTable)
       .where(inArray(transactionsTable.orderId, orderIds)),
   ]);
+
+  // Count responded dispatches per order (for "waiting_master" column — real response count)
+  const dispatchCounts = orderIds.length > 0
+    ? await db
+        .select({
+          orderId: orderDispatchesTable.orderId,
+          responded: sql<number>`count(*) filter (where ${orderDispatchesTable.status} = 'responded')`.as("responded"),
+          sent: sql<number>`count(*) filter (where ${orderDispatchesTable.status} = 'sent')`.as("sent"),
+        })
+        .from(orderDispatchesTable)
+        .where(inArray(orderDispatchesTable.orderId, orderIds))
+        .groupBy(orderDispatchesTable.orderId)
+    : [];
+  const responseCountMap = new Map<number, { responded: number; sent: number }>();
+  for (const row of dispatchCounts) {
+    responseCountMap.set(row.orderId, { responded: Number(row.responded), sent: Number(row.sent) });
+  }
 
   // Load partial payments for all transaction IDs
   const txIds = transactions.map((t) => t.id);
@@ -498,12 +516,23 @@ async function buildBoard() {
       const nextWaveMin = Math.max(1, 120 - Math.floor(minutesSinceBroadcast)); // 2h interval
       const etaStr = nextWaveMin <= 1 ? "1 мин" : nextWaveMin < 60 ? `${nextWaveMin} мин` : `${Math.floor(nextWaveMin / 60)}ч ${nextWaveMin % 60}мин`;
 
+      // Real response count from order_dispatches table
+      const dispatchInfo = responseCountMap.get(o.id);
+      const respondedCount = dispatchInfo?.responded ?? 0;
+      const responseWord = respondedCount === 1 ? "отклик" : respondedCount < 5 ? "отклика" : "откликов";
+
       let action: string;
       let eta: string;
       let tone: BotTone;
       let badge: { text: string; tone: BadgeTone } | undefined;
 
-      if (waveNum >= 3 && minutesSinceBroadcast > 120) {
+      if (respondedCount > 0) {
+        // Masters have responded — show positive status
+        action = `${respondedCount} ${responseWord}, ждём назначение`;
+        eta = "выбери мастера";
+        tone = "ok";
+        badge = { text: `${respondedCount} ${responseWord}`, tone: "ok" };
+      } else if (waveNum >= 3 && minutesSinceBroadcast > 120) {
         // After 3 waves + 2h — admin alerted, stuck
         action = "нет мастера, алерт админу";
         eta = "ручное решение";
@@ -526,6 +555,7 @@ async function buildBoard() {
         ...baseCard,
         bot: { action, eta, tone },
         ...(badge ? { badge } : {}),
+        responseCount: respondedCount,
       };
       columns.waiting_master.cards.push(card);
       columns.waiting_master.count++;

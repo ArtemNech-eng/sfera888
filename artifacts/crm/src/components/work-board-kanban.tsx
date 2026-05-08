@@ -42,6 +42,7 @@ interface BoardCard {
   badge?: { text: string; tone: BadgeTone };
   status: string;
   problemReason?: string;
+  responseCount?: number;
 }
 
 interface BoardColumn {
