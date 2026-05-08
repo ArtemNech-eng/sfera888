@@ -184,7 +184,11 @@ async function buildItems(): Promise<Item[]> {
     // Skip no_payment if commission was already partially/fully paid (transaction_payments exist)
     // — if operator recorded commission payment, prepayment is definitely received
     if (o.proposedAmount && !o.orderAmount && ageH >= 24 && !receiptSubmittedOrderIds.has(Number(o.id)) && !txOrderIdsWithPayments.has(Number(o.id))) items.push({ id: `no_payment-${o.id}`, type: "no_payment", priority: pFromHours(ageH), title: `Заказ #${o.id} — не оплачена предоплата`, shortDescription: clientLabel.trim(), fullDescription: `Смета ${Number(o.proposedAmount).toLocaleString("ru-RU")} ₽ отправлена, ожидаем оплату ${fmtAge(ageH)}.`, createdAt: new Date(o.createdAt).toISOString(), updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "finance", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterMap.get(Number(o.masterId))?.alias ?? null) : null, amountAtRisk: Number(o.proposedAmount), actions: actionSet("no_payment") });
-    if (ageH >= 168) items.push({ id: `no_progress-${o.id}`, type: "no_progress", priority: "medium", title: `Заказ #${o.id} — нет движения`, shortDescription: `${fmtAge(ageH)} без обновлений`, fullDescription: `Заказ без движения уже ${fmtAge(ageH)}.`, createdAt: new Date(o.createdAt).toISOString(), updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterMap.get(Number(o.masterId))?.alias ?? null) : null, amountAtRisk: o.orderAmount ? Number(o.orderAmount) : null, actions: actionSet("no_progress") });
+    // no_progress: count from updatedAt (last activity), not from createdAt
+    const progressAgeH = o.updatedAt
+      ? (now.getTime() - new Date(o.updatedAt).getTime()) / 3600000
+      : ageH;
+    if (progressAgeH >= 168) items.push({ id: `no_progress-${o.id}`, type: "no_progress", priority: "medium", title: `Заказ #${o.id} — нет движения`, shortDescription: `${fmtAge(progressAgeH)} без обновлений`, fullDescription: `Заказ без движения уже ${fmtAge(progressAgeH)}.`, createdAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterMap.get(Number(o.masterId))?.alias ?? null) : null, amountAtRisk: o.orderAmount ? Number(o.orderAmount) : null, actions: actionSet("no_progress") });
     // possible_bypass из cancelReason убран — заказы с cancelReason уже cancelled и не попадают в выборку
   }
   // Receipts: клиент подтвердил оплату, но оператор ещё не видел (prepaymentSeenAt = null)
@@ -844,10 +848,20 @@ router.get("/action-items/:id", ops, async (req: any, res: any) => {
   }
 
   if (item.orderId != null) {
-    const [o] = await db.select({ id: ordersTable.id, proposedAmount: ordersTable.proposedAmount, orderAmount: ordersTable.orderAmount, prepaymentAmount: ordersTable.prepaymentAmount, status: ordersTable.status, clientName: ordersTable.clientName, clientPhone: ordersTable.clientPhone, city: ordersTable.city, district: ordersTable.district, createdAt: ordersTable.createdAt }).from(ordersTable).where(eq(ordersTable.id, Number(item.orderId))).limit(1);
+    const [o] = await db.select({ id: ordersTable.id, proposedAmount: ordersTable.proposedAmount, orderAmount: ordersTable.orderAmount, prepaymentAmount: ordersTable.prepaymentAmount, status: ordersTable.status, clientName: ordersTable.clientName, clientPhone: ordersTable.clientPhone, city: ordersTable.city, district: ordersTable.district, createdAt: ordersTable.createdAt, assignedAt: ordersTable.assignedAt, updatedAt: ordersTable.updatedAt }).from(ordersTable).where(eq(ordersTable.id, Number(item.orderId))).limit(1);
     if (o) {
       const ageH = Math.round((Date.now() - new Date(o.createdAt).getTime()) / 3600000);
-      ctx.order = { id: o.id, proposedAmount: o.proposedAmount ? Number(o.proposedAmount) : null, orderAmount: o.orderAmount ? Number(o.orderAmount) : null, prepaymentAmount: o.prepaymentAmount ? Number(o.prepaymentAmount) : null, status: o.status, clientName: (o as any).clientName ?? null, clientPhone: (o as any).clientPhone ?? null, city: o.city, district: o.district ?? null, hoursOld: ageH };
+      const assignedAt = (o as any).assignedAt ?? null;
+      const updatedAt = (o as any).updatedAt ?? null;
+      // hoursWithoutEstimate: count from assignedAt (when current master was assigned), not from order creation
+      const hoursWithoutEstimate = assignedAt
+        ? Math.round((Date.now() - new Date(assignedAt).getTime()) / 3600000)
+        : ageH;
+      // hoursWithoutProgress: count from updatedAt (last activity), not from order creation
+      const hoursWithoutProgress = updatedAt
+        ? Math.round((Date.now() - new Date(updatedAt).getTime()) / 3600000)
+        : ageH;
+      ctx.order = { id: o.id, proposedAmount: o.proposedAmount ? Number(o.proposedAmount) : null, orderAmount: o.orderAmount ? Number(o.orderAmount) : null, prepaymentAmount: o.prepaymentAmount ? Number(o.prepaymentAmount) : null, status: o.status, clientName: (o as any).clientName ?? null, clientPhone: (o as any).clientPhone ?? null, city: o.city, district: o.district ?? null, hoursOld: ageH, hoursWithoutEstimate, hoursWithoutProgress };
     }
   }
 

@@ -225,9 +225,13 @@ function OrderInfoBlock({ ctx, ageLabel }: { ctx: any; ageLabel?: string }) {
       {ctx.order?.id != null && (
         <InfoRow icon={<Package className="w-4 h-4" />} label="Заказ" value={`#${ctx.order.id}`} />
       )}
-      {ctx.order?.hoursOld != null && (
+      {ctx.order?.hoursWithoutEstimate != null && ageLabel === "Без сметы" ? (
+        <InfoRow icon={<Clock className="w-4 h-4" />} label={ageLabel ?? "Возраст заказа"} value={fmtAge(ctx.order.hoursWithoutEstimate)} />
+      ) : ctx.order?.hoursWithoutProgress != null && ageLabel === "Без движения" ? (
+        <InfoRow icon={<Clock className="w-4 h-4" />} label={ageLabel ?? "Возраст заказа"} value={fmtAge(ctx.order.hoursWithoutProgress)} />
+      ) : ctx.order?.hoursOld != null ? (
         <InfoRow icon={<Clock className="w-4 h-4" />} label={ageLabel ?? "Возраст заказа"} value={fmtAge(ctx.order.hoursOld)} />
-      )}
+      ) : null}
       {city && <InfoRow icon={<MapPin className="w-4 h-4" />} label="Город" value={city} />}
       {district && <InfoRow icon={<MapPin className="w-4 h-4" />} label="Адрес" value={district} />}
       {clientName && <InfoRow icon={<UserRoundPen className="w-4 h-4" />} label="Клиент" value={clientName} />}
@@ -505,7 +509,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
         return (
           <SectionBox title="Ситуация: заказ без сметы">
             <NextActionBanner
-              text={`Мастер не отправил смету уже ${ctx.order?.hoursOld != null ? fmtAge(ctx.order.hoursOld) : "долго"}. Позвоните мастеру и выясните причину.`}
+              text={`Мастер не отправил смету уже ${ctx.order?.hoursWithoutEstimate != null ? fmtAge(ctx.order.hoursWithoutEstimate) : ctx.order?.hoursOld != null ? fmtAge(ctx.order.hoursOld) : "долго"}. Позвоните мастеру и выясните причину.`}
               phone={ctx.master?.phone}
               callLabel="Позвонить мастеру"
             />
@@ -1240,7 +1244,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
         return (
           <SectionBox title="Ситуация: заказ без движения">
             <NextActionBanner
-              text={`Заказ без движения${ctx.order?.hoursOld != null ? ` уже ${fmtAge(ctx.order.hoursOld)}` : ""}. Позвоните мастеру и выясните статус.`}
+              text={`Заказ без движения${ctx.order?.hoursWithoutProgress != null ? ` уже ${fmtAge(ctx.order.hoursWithoutProgress)}` : ctx.order?.hoursOld != null ? ` уже ${fmtAge(ctx.order.hoursOld)}` : ""}. Позвоните мастеру и выясните статус.`}
               phone={ctx.master?.phone}
               callLabel="Позвонить мастеру"
             />
