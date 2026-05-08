@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef, type ChangeEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CheckCircle2, Filter, Search } from "lucide-react";
+import { CheckCircle2, Search, Users, List, X, BellRing, Keyboard, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ActionItemModal } from "./ActionItemModal";
-import { ActionItemCard } from "./ActionItemCard";
+import { ActionItemCard, isBurning } from "./ActionItemCard";
 import { useAuth } from "@/hooks/use-auth";
 
 type Priority = "critical" | "high" | "medium" | "low";
@@ -27,10 +27,11 @@ type Item = {
   amountAtRisk: number | null;
   assigneeId?: string | number | null;
   assigneeName?: string | null;
+  masterName?: string | null;
   actions: { key: string; label: string; style: string }[];
 };
 
-const FILTERS = [
+const SCOPE_TABS = [
   { key: "all", label: "Все" },
   { key: "critical", label: "Критичные" },
   { key: "orders", label: "Заказы" },
@@ -47,16 +48,42 @@ async function fetcher(period: string) {
   return r.json();
 }
 
+/** Мини-спарклайн (SVG) */
+function Sparkline({ data, width = 80, height = 20, color = "#ef4444" }: { data: number[]; width?: number; height?: number; color?: string }) {
+  if (data.length < 2) return null;
+  const max = Math.max(...data, 1);
+  const min = Math.min(...data, 0);
+  const range = max - min || 1;
+  const points = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * width;
+    const y = height - ((v - min) / range) * (height - 4) - 2;
+    return `${x},${y}`;
+  }).join(" ");
+  return (
+    <svg width={width} height={height} className="inline-block">
+      <polyline fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" points={points} />
+    </svg>
+  );
+}
+
 export function ActionItemsBlock({ period: externalPeriod, city }: { period?: string; city?: string }) {
   const [period, setPeriod] = useState<string>(externalPeriod ?? "all");
   const [scope, setScope] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [myOnly, setMyOnly] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"list" | "grouped">("list");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkActionBusy, setBulkActionBusy] = useState<string | null>(null);
+  const [bulkToast, setBulkToast] = useState<{ msg: string; ok: boolean } | null>(null);
+  const [focusedIndex, setFocusedIndex] = useState(-1);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const [aiHints, setAiHints] = useState<Record<string, string>>({});
+  const [aiHintLoadingId, setAiHintLoadingId] = useState<string | null>(null);
+  const sectionRef = useRef<HTMLElement>(null);
   const { user: authUser } = useAuth();
   const currentUserId = authUser?.id ?? null;
 
-  // Синхронизируем период с внешним пропсом
   useEffect(() => {
     if (externalPeriod) setPeriod(externalPeriod);
   }, [externalPeriod]);
@@ -83,13 +110,16 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
 
   const [showAll, setShowAll] = useState(false);
 
-  useEffect(() => { setShowAll(false); }, [scope, search, period, myOnly]);
+  useEffect(() => { setShowAll(false); setSelectedIds(new Set()); setFocusedIndex(-1); }, [scope, search, period, myOnly]);
 
   const filtered = useMemo(() => {
-    const ranked = items
+    return items
       .filter((i) => {
         if (scope === "all") return true;
         if (scope === "critical") return i.priority === "critical";
+        if (scope === "high") return i.priority === "high";
+        if (scope === "medium") return i.priority === "medium";
+        if (scope === "low") return i.priority === "low";
         if (scope === "orders") return i.entityType === "order";
         if (scope === "masters") return i.entityType === "master";
         if (scope === "finance") return i.entityType === "finance" || i.type.includes("payment") || i.type === "low_avito_balance";
@@ -100,53 +130,439 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
       .filter((i) => !myOnly || !currentUserId || String(i.assigneeId ?? "") === String(currentUserId))
       .filter((i) => search.trim() === "" || `${i.title} ${i.shortDescription} ${i.orderId ?? ""} ${i.masterId ?? ""} ${i.entityId ?? ""}`.toLowerCase().includes(search.toLowerCase()))
       .sort((a, b) => {
-        const p = { critical: 0, high: 1, medium: 2, low: 3 };
+        // 1. Горящие задачи (burning) всегда наверх
+        const aBurning = isBurning(a as any) ? 0 : 1;
+        const bBurning = isBurning(b as any) ? 0 : 1;
+        if (aBurning !== bBurning) return aBurning - bBurning;
+        // 2. По приоритету
+        const p: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
         const pDiff = p[a.priority] - p[b.priority];
         if (pDiff !== 0) return pDiff;
+        // 3. По дедлайну
         const aDeadline = a.deadline ? new Date(a.deadline).getTime() : Number.MAX_SAFE_INTEGER;
         const bDeadline = b.deadline ? new Date(b.deadline).getTime() : Number.MAX_SAFE_INTEGER;
         if (aDeadline !== bDeadline) return aDeadline - bDeadline;
+        // 4. По свежести
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       });
-    return ranked;
   }, [items, scope, myOnly, currentUserId, search, city]);
 
+  // Группировка по мастеру
+  const grouped = useMemo(() => {
+    if (viewMode !== "grouped") return null;
+    const groups = new Map<string, { masterLabel: string; items: Item[] }>();
+    for (const item of filtered) {
+      const key = item.masterId != null ? String(item.masterId) : "__no_master__";
+      const label = item.masterName ?? (item.masterId != null ? `Мастер #${item.masterId}` : "Без мастера");
+      if (!groups.has(key)) groups.set(key, { masterLabel: label, items: [] });
+      groups.get(key)!.items.push(item);
+    }
+    return [...groups.entries()].sort((a, b) => {
+      const aCritical = a[1].items.filter(i => i.priority === "critical").length;
+      const bCritical = b[1].items.filter(i => i.priority === "critical").length;
+      if (bCritical !== aCritical) return bCritical - aCritical;
+      return b[1].items.length - a[1].items.length;
+    });
+  }, [filtered, viewMode]);
+
+  // Мини-график тренда (из текущих items, без доп. запроса)
+  const trendData = useMemo(() => {
+    const days: Record<string, { critical: number; high: number }> = {};
+    const now = Date.now();
+    for (let d = 6; d >= 0; d--) {
+      const key = new Date(now - d * 86400000).toISOString().slice(0, 10);
+      days[key] = { critical: 0, high: 0 };
+    }
+    for (const item of items) {
+      const key = new Date(item.createdAt).toISOString().slice(0, 10);
+      if (days[key]) {
+        if (item.priority === "critical") days[key].critical++;
+        else if (item.priority === "high") days[key].high++;
+      }
+    }
+    return Object.values(days);
+  }, [items]);
+
+  const trendCritical = trendData.map(d => d.critical);
+  const trendHigh = trendData.map(d => d.high);
+  const trendDirection = trendCritical.length >= 2
+    ? trendCritical[trendCritical.length - 1] > trendCritical[0] ? "up" : trendCritical[trendCritical.length - 1] < trendCritical[0] ? "down" : "flat"
+    : "flat";
+
+  // Количество горящих задач
+  const burningCount = useMemo(() => filtered.filter(i => isBurning(i as any)).length, [filtered]);
+
+  // Авто-эскалация: есть ли критичные >24ч
+  const hasStaleCritical = useMemo(() => {
+    return items.some(i => i.priority === "critical" && (Date.now() - new Date(i.createdAt).getTime()) > 24 * 3600000);
+  }, [items]);
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAll = () => {
+    const visibleIds = (showAll ? filtered : filtered.slice(0, 6)).map(i => i.id);
+    setSelectedIds(new Set(visibleIds));
+  };
+
+  const deselectAll = () => setSelectedIds(new Set());
+
+  const bulkAction = async (action: string) => {
+    if (selectedIds.size === 0) return;
+    setBulkActionBusy(action);
+    let ok = 0;
+    let fail = 0;
+    for (const id of [...selectedIds]) {
+      try {
+        const r = await fetch(`/api/dashboard/action-items/${id}/action`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action, payload: {} }),
+        });
+        if (r.ok) ok++; else fail++;
+      } catch { fail++; }
+    }
+    window.dispatchEvent(new CustomEvent("dashboard-action-items:changed"));
+    setSelectedIds(new Set());
+    setBulkActionBusy(null);
+    const msg = action === "dismiss"
+      ? `Отложено ${ok} задач${fail > 0 ? `, ${fail} ош.` : ""}`
+      : `Выполнено ${ok} из ${ok + fail}${fail > 0 ? ` (${fail} ошибок)` : ""}`;
+    setBulkToast({ msg, ok: fail === 0 });
+    setTimeout(() => setBulkToast(null), 3000);
+  };
+
+  const handleQuickCall = (id: string) => setOpenId(id);
+  const handleQuickMessage = (id: string) => setOpenId(id);
+
+  const handlePriorityClick = (p: string) => {
+    if (scope === p) { setScope("all"); } else { setScope(p); }
+  };
+
+  // AI-подсказка
+  const handleAiHint = useCallback(async (id: string) => {
+    // Кеш в localStorage на 30 мин
+    const cacheKey = `ai-hint-${id}`;
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      const { text, ts } = JSON.parse(cached);
+      if (Date.now() - ts < 30 * 60 * 1000) {
+        setAiHints(prev => ({ ...prev, [id]: text }));
+        return;
+      }
+    }
+    setAiHintLoadingId(id);
+    try {
+      const r = await fetch(`/api/dashboard/action-items/${id}/ai-hint`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!r.ok) throw new Error("Ошибка");
+      const { hint } = await r.json();
+      setAiHints(prev => ({ ...prev, [id]: hint }));
+      localStorage.setItem(cacheKey, JSON.stringify({ text: hint, ts: Date.now() }));
+    } catch {
+      setAiHints(prev => ({ ...prev, [id]: "Не удалось получить подсказку. Попробуйте позже." }));
+    } finally {
+      setAiHintLoadingId(null);
+    }
+  }, []);
+
+  // ─── Клавиатурные шорткаты ──────────────────────────────────────
+  const visibleItems = showAll ? filtered : filtered.slice(0, 6);
+
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    // Не перехватываем если фокус в input/textarea
+    const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select") return;
+
+    switch (e.key.toLowerCase()) {
+      case "j":
+        e.preventDefault();
+        setFocusedIndex(prev => Math.min(prev + 1, visibleItems.length - 1));
+        break;
+      case "k":
+        e.preventDefault();
+        setFocusedIndex(prev => Math.max(prev - 1, 0));
+        break;
+      case "enter":
+        if (focusedIndex >= 0 && focusedIndex < visibleItems.length) {
+          e.preventDefault();
+          setOpenId(visibleItems[focusedIndex].id);
+        }
+        break;
+      case "x":
+        if (focusedIndex >= 0 && focusedIndex < visibleItems.length) {
+          e.preventDefault();
+          toggleSelect(visibleItems[focusedIndex].id);
+        }
+        break;
+      case "e":
+        if (focusedIndex >= 0 && focusedIndex < visibleItems.length) {
+          e.preventDefault();
+          const itemId = visibleItems[focusedIndex].id;
+          fetch(`/api/dashboard/action-items/${itemId}/action`, {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "dismiss", payload: {} }),
+          }).then(() => {
+            window.dispatchEvent(new CustomEvent("dashboard-action-items:changed"));
+          });
+        }
+        break;
+      case "r":
+        if (focusedIndex >= 0 && focusedIndex < visibleItems.length) {
+          e.preventDefault();
+          const itemId = visibleItems[focusedIndex].id;
+          fetch(`/api/dashboard/action-items/${itemId}/action`, {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "resolve", payload: {} }),
+          }).then(() => {
+            window.dispatchEvent(new CustomEvent("dashboard-action-items:changed"));
+          });
+        }
+        break;
+      case "?":
+        e.preventDefault();
+        setShowShortcuts(prev => !prev);
+        break;
+      case "escape":
+        setShowShortcuts(false);
+        setFocusedIndex(-1);
+        break;
+    }
+  }, [focusedIndex, visibleItems]);
+
+  useEffect(() => {
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleKeyDown]);
+
+  // Прокрутка к сфокусированной карточке
+  useEffect(() => {
+    if (focusedIndex >= 0 && sectionRef.current) {
+      const cards = sectionRef.current.querySelectorAll("[data-item-id]");
+      if (cards[focusedIndex]) {
+        cards[focusedIndex].scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+    }
+  }, [focusedIndex]);
+
+  // Рендер карточки с учётом выбора + фокуса
+  const renderCard = (item: Item, idx?: number) => (
+    <div key={item.id} data-item-id={item.id}>
+      <ActionItemCard
+        item={{
+          ...item,
+          selected: selectedIds.has(item.id),
+          focused: idx !== undefined && idx === focusedIndex,
+          createdAt: item.createdAt,
+        }}
+        onOpen={setOpenId}
+        onToggleSelect={toggleSelect}
+        onQuickCall={handleQuickCall}
+        onQuickMessage={handleQuickMessage}
+        onAiHint={handleAiHint}
+        aiHintLoading={aiHintLoadingId === item.id}
+        aiHintText={aiHints[item.id] ?? null}
+      />
+    </div>
+  );
+
   return (
-    <section className="bg-white rounded-2xl border shadow-sm p-5">
+    <section
+      ref={sectionRef}
+      className={`rounded-2xl border shadow-sm p-5 transition-colors ${
+        hasStaleCritical
+          ? "bg-red-50/40 border-red-300"
+          : "bg-white"
+      }`}
+    >
+      {/* Шапка: заголовок + кликабельные счётчики + тренд */}
       <div className="flex items-start justify-between gap-3 mb-4">
         <div>
-          <h2 className="text-base font-bold text-foreground">Что делать сейчас</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-bold text-foreground">Что делать сейчас</h2>
+            {burningCount > 0 && (
+              <span className="flex items-center gap-1 px-2 py-0.5 text-xs font-bold rounded-full bg-red-100 text-red-700">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+                </span>
+                🔥 {burningCount} горящ.
+              </span>
+            )}
+            {hasStaleCritical && (
+              <span className="text-xs font-semibold text-red-600 animate-pulse">⚠ Требует внимания</span>
+            )}
+          </div>
           <p className="text-xs text-muted-foreground">Задачи, требующие вашего действия</p>
         </div>
-        <div className="flex gap-2 flex-wrap">
-          <span className="px-2 py-1 text-xs rounded-full bg-red-100 text-red-700">Критичные {summary.critical}</span>
-          <span className="px-2 py-1 text-xs rounded-full bg-orange-100 text-orange-700">Высокий {summary.high}</span>
-          <span className="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-700">Средние {summary.medium}</span>
-          {summary.low > 0 && <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600">Низкие {summary.low}</span>}
-          <span className="px-2 py-1 text-xs rounded-full bg-slate-100 text-slate-700">Выполнено сегодня {summary.doneToday}</span>
+        <div className="flex gap-2 flex-wrap items-center">
+          {/* Мини-график тренда */}
+          <div className="flex items-center gap-1 mr-1" title="Тренд критичных задач за 7 дней">
+            {trendDirection === "up" && <TrendingUp className="w-3.5 h-3.5 text-red-500" />}
+            {trendDirection === "down" && <TrendingDown className="w-3.5 h-3.5 text-green-500" />}
+            {trendDirection === "flat" && <Minus className="w-3.5 h-3.5 text-slate-400" />}
+            <Sparkline data={trendCritical} width={50} height={16} color={trendDirection === "up" ? "#ef4444" : trendDirection === "down" ? "#22c55e" : "#94a3b8"} />
+          </div>
+          <button
+            onClick={() => handlePriorityClick("critical")}
+            className={`px-2.5 py-1 text-xs rounded-full font-semibold cursor-pointer transition ${scope === "critical" ? "bg-red-500 text-white ring-2 ring-red-300" : "bg-red-100 text-red-700 hover:bg-red-200"}`}
+          >
+            Критичные {summary.critical}
+          </button>
+          <button
+            onClick={() => handlePriorityClick("high")}
+            className={`px-2.5 py-1 text-xs rounded-full font-semibold cursor-pointer transition ${scope === "high" ? "bg-orange-500 text-white ring-2 ring-orange-300" : "bg-orange-100 text-orange-700 hover:bg-orange-200"}`}
+          >
+            Высокий {summary.high}
+          </button>
+          <button
+            onClick={() => handlePriorityClick("medium")}
+            className={`px-2.5 py-1 text-xs rounded-full font-semibold cursor-pointer transition ${scope === "medium" ? "bg-blue-500 text-white ring-2 ring-blue-300" : "bg-blue-100 text-blue-700 hover:bg-blue-200"}`}
+          >
+            Средние {summary.medium}
+          </button>
+          {summary.low > 0 && (
+            <button
+              onClick={() => handlePriorityClick("low")}
+              className={`px-2.5 py-1 text-xs rounded-full font-semibold cursor-pointer transition ${scope === "low" ? "bg-slate-500 text-white ring-2 ring-slate-300" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+            >
+              Низкие {summary.low}
+            </button>
+          )}
+          <span className="px-2.5 py-1 text-xs rounded-full bg-emerald-50 text-emerald-700 font-semibold">
+            Выполнено сегодня {summary.doneToday}
+          </span>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+      {/* Поиск + Табы фильтров */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
         <div className="relative md:col-span-1">
           <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
           <Input value={search} onChange={(e: ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)} placeholder="Поиск по названию, заказу или мастеру" className="pl-9" />
         </div>
-        <div className="flex gap-2 flex-wrap md:col-span-2">
-          {FILTERS.map((f) => (
-            <Button key={f.key} variant={scope === f.key ? "default" : "outline"} size="sm" onClick={() => setScope(f.key)}>
-              <Filter className="w-4 h-4" />
-              {f.label}
-            </Button>
-          ))}
+        <div className="md:col-span-2">
+          <div className="flex items-center bg-slate-100 rounded-xl p-1 gap-0.5 overflow-x-auto">
+            {SCOPE_TABS.map((f) => (
+              <button
+                key={f.key}
+                onClick={() => setScope(f.key)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
+                  scope === f.key
+                    ? "bg-white shadow-sm text-foreground font-semibold"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      <div className="flex items-center gap-2 mb-4">
+      {/* Период + Только мои + Переключатель вида + Шорткаты */}
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
         <Button variant={period === "all" ? "default" : "outline"} size="sm" onClick={() => setPeriod("all")}>Все периоды</Button>
-        <Button variant={myOnly ? "default" : "outline"} size="sm" onClick={() => setMyOnly((v: boolean) => !v)}>{myOnly ? "Только мои" : "Все задачи"}</Button>
+        <Button variant={myOnly ? "default" : "outline"} size="sm" onClick={() => setMyOnly((v: boolean) => !v)}>
+          {myOnly ? "Только мои" : "Все задачи"}
+        </Button>
+        <div className="flex items-center bg-slate-100 rounded-lg p-0.5 ml-auto">
+          <button
+            onClick={() => setViewMode("list")}
+            className={`p-1.5 rounded-md transition ${viewMode === "list" ? "bg-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+            title="Список"
+          >
+            <List className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setViewMode("grouped")}
+            className={`p-1.5 rounded-md transition ${viewMode === "grouped" ? "bg-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+            title="По мастерам"
+          >
+            <Users className="w-4 h-4" />
+          </button>
+        </div>
+        <button
+          onClick={() => setShowShortcuts(prev => !prev)}
+          className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-slate-100 transition"
+          title="Клавиатурные шорткаты (?)"
+        >
+          <Keyboard className="w-4 h-4" />
+        </button>
       </div>
 
+      {/* Подсказка по шорткатам */}
+      {showShortcuts && (
+        <div className="mb-3 p-3 rounded-xl bg-slate-50 border text-xs space-y-1.5">
+          <div className="font-bold text-sm mb-2">⌨️ Клавиатурные шорткаты</div>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-1">
+            <div><kbd className="px-1.5 py-0.5 bg-white rounded border font-mono text-[11px]">J</kbd> Вниз</div>
+            <div><kbd className="px-1.5 py-0.5 bg-white rounded border font-mono text-[11px]">K</kbd> Вверх</div>
+            <div><kbd className="px-1.5 py-0.5 bg-white rounded border font-mono text-[11px]">Enter</kbd> Открыть задачу</div>
+            <div><kbd className="px-1.5 py-0.5 bg-white rounded border font-mono text-[11px]">X</kbd> Выбрать / снять</div>
+            <div><kbd className="px-1.5 py-0.5 bg-white rounded border font-mono text-[11px]">E</kbd> Отложить задачу</div>
+            <div><kbd className="px-1.5 py-0.5 bg-white rounded border font-mono text-[11px]">R</kbd> Пометить выполненной</div>
+            <div><kbd className="px-1.5 py-0.5 bg-white rounded border font-mono text-[11px]">?</kbd> Эта подсказка</div>
+            <div><kbd className="px-1.5 py-0.5 bg-white rounded border font-mono text-[11px]">Esc</kbd> Снять фокус</div>
+          </div>
+        </div>
+      )}
+
+      {/* Панель массовых действий */}
+      {selectedIds.size > 0 && (
+        <div className="mb-3 flex items-center gap-2 p-2.5 rounded-xl bg-violet-50 border border-violet-200">
+          <span className="text-xs font-semibold text-violet-700">
+            Выбрано: {selectedIds.size}
+          </span>
+          <Button size="sm" variant="outline" onClick={selectAll} className="text-xs h-7">
+            Все
+          </Button>
+          <Button size="sm" variant="outline" onClick={deselectAll} className="text-xs h-7">
+            <X className="w-3 h-3" /> Сброс
+          </Button>
+          <div className="h-4 w-px bg-violet-200 mx-1" />
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-xs h-7 border-violet-300 text-violet-700 hover:bg-violet-100"
+            disabled={bulkActionBusy === "dismiss"}
+            onClick={() => bulkAction("dismiss")}
+          >
+            <BellRing className="w-3 h-3" /> Отложить все
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-xs h-7 border-emerald-300 text-emerald-700 hover:bg-emerald-100"
+            disabled={bulkActionBusy === "resolve"}
+            onClick={() => bulkAction("resolve")}
+          >
+            <CheckCircle2 className="w-3 h-3" /> Пометить выполненными
+          </Button>
+        </div>
+      )}
+
+      {/* Toast массового действия */}
+      {bulkToast && (
+        <div className={`mb-3 text-xs font-semibold px-3 py-2 rounded-lg ${bulkToast.ok ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
+          {bulkToast.msg}
+        </div>
+      )}
+
+      {/* Контент: список / группировка */}
       {isLoading ? (
         <div className="space-y-2">
           {[1, 2, 3].map((i) => (
@@ -159,26 +575,67 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
           <div>{scope === "critical" ? "Нет критичных задач" : "Нет задач"}</div>
           <div className="text-xs">{summary.critical === 0 ? "Все критичные задачи выполнены" : "Попробуйте изменить фильтры"}</div>
         </div>
+      ) : viewMode === "grouped" && grouped ? (
+        <div className="space-y-3">
+          {grouped.map(([masterKey, group]) => {
+            const criticalCount = group.items.filter(i => i.priority === "critical").length;
+            const highCount = group.items.filter(i => i.priority === "high").length;
+            return (
+              <div key={masterKey} className="rounded-xl border bg-slate-50/50 overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2 bg-white border-b">
+                  <div className="flex items-center gap-2">
+                    <Users className="w-4 h-4 text-violet-600" />
+                    <span className="text-sm font-semibold text-foreground">{group.masterLabel}</span>
+                    <span className="text-xs text-muted-foreground">({group.items.length} задач)</span>
+                  </div>
+                  <div className="flex gap-1.5">
+                    {criticalCount > 0 && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700">
+                        {criticalCount} критичн.
+                      </span>
+                    )}
+                    {highCount > 0 && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700">
+                        {highCount} высок.
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="p-2 space-y-2">
+                  {group.items.map(item => renderCard(item))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       ) : (
+        /* ─── Обычный список ─── */
         <div className="space-y-2">
-          {(showAll ? filtered : filtered.slice(0, 6)).map((item: Item) => (
-            <ActionItemCard key={item.id} item={item} onOpen={setOpenId} />
-          ))}
+          {(showAll ? filtered : filtered.slice(0, 6)).map((item, idx) => renderCard(item, idx))}
           {filtered.length > 6 && !showAll && (
-            <div className="pt-2 flex justify-center">
-              <Button variant="outline" size="sm" onClick={() => setShowAll(true)}>
-                Показать все {filtered.length} задач
-              </Button>
-            </div>
+            <button
+              onClick={() => setShowAll(true)}
+              className="w-full py-2 text-xs font-semibold text-violet-600 hover:text-violet-800 transition"
+            >
+              Показать все {filtered.length} задач
+            </button>
           )}
         </div>
       )}
 
-      <div className="mt-4 flex justify-end">
-        <Button variant="outline" size="sm" onClick={() => refetch()}>Обновить</Button>
+      {/* Кнопка обновить */}
+      <div className="mt-3 flex justify-end">
+        <Button variant="ghost" size="sm" onClick={() => refetch()} className="text-xs text-muted-foreground">
+          Обновить
+        </Button>
       </div>
 
-      <ActionItemModal id={openId} open={!!openId} onOpenChange={(o) => !o && setOpenId(null)} />
+      {/* Модалка задачи */}
+      <ActionItemModal
+        id={openId}
+        open={!!openId}
+        onOpenChange={(open) => { if (!open) { setOpenId(null); refetch(); } }}
+      />
     </section>
   );
 }

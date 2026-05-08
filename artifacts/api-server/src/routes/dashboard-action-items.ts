@@ -8,6 +8,7 @@ import { recordOrderCancelled } from "../lib/masterReputation.js";
 import { recordOrderCompleted } from "../lib/masterReputation.js";
 import { recordOrderMasterHistory } from "../lib/orderMasterHistory.js";
 import { calculateCommission, getCommissionSettings } from "../lib/commission.js";
+import OpenAI from "openai";
 
 declare const console: any;
 
@@ -976,6 +977,84 @@ router.post("/action-items/:id/action", ops, async (req: any, res: any) => {
   }
 
   res.json({ ...item, status: action === "dismiss" ? "dismissed" : action === "resolve" ? "done" : "in_progress", orchestration: result, timeline: [], context: actionCtx, related: {}, notes: [] });
+});
+
+// ─── AI-hint endpoint ────────────────────────────────────────────────────────
+const openaiApiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+const openaiBaseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
+const openaiClient = openaiApiKey
+  ? new OpenAI({ apiKey: openaiApiKey, baseURL: openaiBaseURL })
+  : null;
+
+const TYPE_HINT_CONTEXT: Record<string, string> = {
+  no_estimate: "Мастер не отправил смету клиенту. Нужно срочно связаться с мастером и напомнить, либо переназначить заказ другому мастеру.",
+  no_payment: "Клиент не оплатил предоплату после получения сметы. Нужно напомнить клиенту или уточнить у мастера статус оплаты.",
+  no_master_response: "Заказ висит без отклика мастера. Нужно либо повторно разослать, либо назначить мастера вручную.",
+  no_progress: "Заказ давно без обновлений. Нужно уточнить у мастера статус работ.",
+  blocked_master: "Мастер заблокирован. Нужно проверить причину и решить — разблокировать или оставить.",
+  possible_bypass: "Подозрение на обход платформы. Нужно связаться с мастером и проверить ситуацию.",
+  conflict: "Конфликтная ситуация по заказу. Требует внимания оператора.",
+  low_avito_balance: "Баланс Avito ниже нормы. Нужно пополнить баланс вручную.",
+  no_manager_id: "Нет назначенного менеджера. Нужно назначить ответственного.",
+  custom_manual: "Ручная задача. Требует внимания оператора.",
+};
+
+router.post("/action-items/:id/ai-hint", ops, async (req: any, res: any) => {
+  const items = await buildItems();
+  const item = items.find((i) => i.id === req.params.id);
+  if (!item) return res.status(404).json({ error: "Не найдено" });
+
+  if (!openaiClient) {
+    // Fallback: return a rule-based hint without AI
+    const typeHint = TYPE_HINT_CONTEXT[item.type] ?? "Требует внимания оператора.";
+    const ageH = Math.round((Date.now() - new Date(item.createdAt).getTime()) / 3600000);
+    const ageStr = ageH >= 48 ? `${Math.round(ageH / 24)} дн.` : `${ageH} ч`;
+    const hint = `${typeHint} Задача висит уже ${ageStr}. Приоритет: ${item.priority}. ${item.masterName ? `Мастер: ${item.masterName}.` : ""} ${item.amountAtRisk ? `Под риском: ${Number(item.amountAtRisk).toLocaleString("ru-RU")} ₽.` : ""}`;
+    return res.json({ hint });
+  }
+
+  try {
+    const ageH = Math.round((Date.now() - new Date(item.createdAt).getTime()) / 3600000);
+    const ageStr = ageH >= 48 ? `${Math.round(ageH / 24)} дней` : `${ageH} часов`;
+    const deadlineStr = item.deadline ? `Дедлайн: ${new Date(item.deadline).toLocaleString("ru-RU")}.` : "Дедлайна нет.";
+    const actionsStr = item.actions.map(a => a.label).join(", ");
+
+    const prompt = `Ты — AI-ассистент диспетчера CRM-системы ремонта квартир. Дай короткий конкретный совет (1-2 предложения) по задаче:
+
+Задача: ${item.title}
+Описание: ${item.fullDescription}
+Тип: ${item.type}
+Приоритет: ${item.priority}
+Возраст: ${ageStr}
+${deadlineStr}
+Мастер: ${item.masterName ?? "не назначен"}
+Город: ${item.city ?? "не указан"}
+Сумма под риском: ${item.amountAtRisk ? `${Number(item.amountAtRisk).toLocaleString("ru-RU")} ₽` : "нет"}
+Доступные действия: ${actionsStr}
+
+Дай конкретный совет: что лучше сделать прямо сейчас и почему. Ответь на русском, 1-2 предложения, без лишних слов.`;
+
+    const completion = await openaiClient.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 150,
+      temperature: 0.7,
+    });
+
+    const hint = completion.choices?.[0]?.message?.content?.trim()
+      ?? TYPE_HINT_CONTEXT[item.type]
+      ?? "Свяжитесь с мастером и уточните статус.";
+
+    return res.json({ hint });
+  } catch (e: any) {
+    console.error("[ai-hint] OpenAI call failed:", e?.message);
+    // Fallback to rule-based hint
+    const typeHint = TYPE_HINT_CONTEXT[item.type] ?? "Требует внимания оператора.";
+    const ageH = Math.round((Date.now() - new Date(item.createdAt).getTime()) / 3600000);
+    const ageStr = ageH >= 48 ? `${Math.round(ageH / 24)} дн.` : `${ageH} ч`;
+    const hint = `${typeHint} Задача висит уже ${ageStr}. ${item.masterName ? `Мастер: ${item.masterName}.` : ""}`;
+    return res.json({ hint });
+  }
 });
 
 export default router;
