@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, useCallback, useRef, type ChangeEvent } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef, type ChangeEvent, type DragEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CheckCircle2, Search, Users, List, X, BellRing, Keyboard, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { CheckCircle2, Search, Users, List, X, BellRing, Keyboard, TrendingUp, TrendingDown, Minus, Download, Bell, Timer, AlertTriangle, DollarSign, Clock, BarChart3, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ActionItemModal } from "./ActionItemModal";
@@ -197,6 +197,129 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
     return items.some(i => i.priority === "critical" && (Date.now() - new Date(i.createdAt).getTime()) > 24 * 3600000);
   }, [items]);
 
+  // ─── Фаза 3: KPI-метрики ─────────────────────────────────────────
+  const kpi = useMemo(() => {
+    const totalAtRisk = filtered.reduce((s, i) => s + (Number(i.amountAtRisk) || 0), 0);
+    const ages = filtered.map(i => (Date.now() - new Date(i.createdAt).getTime()) / 3600000);
+    const avgAgeH = ages.length > 0 ? ages.reduce((a, b) => a + b, 0) / ages.length : 0;
+    const total = summary.critical + summary.high + summary.medium + summary.low;
+    const doneRate = total > 0 ? Math.round((summary.doneToday / Math.max(total, 1)) * 100) : 0;
+    const oldestH = ages.length > 0 ? Math.max(...ages) : 0;
+    return { totalAtRisk, avgAgeH, doneRate, oldestH, total };
+  }, [filtered, summary]);
+
+  // ─── Фаза 3: Drag-and-drop состояние ─────────────────────────────
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [dragItemId, setDragItemId] = useState<string | null>(null);
+  const [pinnedOrder, setPinnedOrder] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem("action-items-pinned-order") || "[]"); } catch { return []; }
+  });
+
+  // Применяем pinned порядок к filtered
+  const displayItems = useMemo(() => {
+    if (pinnedOrder.length === 0) return filtered;
+    const pinned = new Set(pinnedOrder);
+    const ordered: Item[] = [];
+    for (const id of pinnedOrder) {
+      const item = filtered.find(i => i.id === id);
+      if (item) ordered.push(item);
+    }
+    for (const item of filtered) {
+      if (!pinned.has(item.id)) ordered.push(item);
+    }
+    return ordered;
+  }, [filtered, pinnedOrder]);
+
+  const handleDragStart = (e: DragEvent, id: string) => {
+    setDragItemId(id);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", id);
+  };
+
+  const handleDragOver = (e: DragEvent, targetId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (dragItemId && targetId !== dragItemId) {
+      setDragOverId(targetId);
+    }
+  };
+
+  const handleDrop = (e: DragEvent, targetId: string) => {
+    e.preventDefault();
+    if (!dragItemId || dragItemId === targetId) { setDragOverId(null); setDragItemId(null); return; }
+    // Переставляем в pinnedOrder
+    const currentOrder = displayItems.map(i => i.id);
+    const fromIdx = currentOrder.indexOf(dragItemId);
+    const toIdx = currentOrder.indexOf(targetId);
+    if (fromIdx === -1 || toIdx === -1) { setDragOverId(null); setDragItemId(null); return; }
+    const newOrder = [...currentOrder];
+    newOrder.splice(fromIdx, 1);
+    newOrder.splice(toIdx, 0, dragItemId);
+    setPinnedOrder(newOrder);
+    localStorage.setItem("action-items-pinned-order", JSON.stringify(newOrder));
+    setDragOverId(null);
+    setDragItemId(null);
+  };
+
+  const handleDragEnd = () => { setDragOverId(null); setDragItemId(null); };
+
+  // ─── Фаза 3: Snooze с таймером ───────────────────────────────────
+  const [snoozeTimers, setSnoozeTimers] = useState<Record<string, number>>({});
+
+  const handleSnooze = useCallback(async (id: string, days: number) => {
+    try {
+      await fetch(`/api/dashboard/action-items/${id}/action`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "snooze", payload: { days } }),
+      });
+      setSnoozeTimers(prev => ({ ...prev, [id]: days }));
+      window.dispatchEvent(new CustomEvent("dashboard-action-items:changed"));
+    } catch { /* ignore */ }
+  }, []);
+
+  // ─── Фаза 3: Экспорт CSV ─────────────────────────────────────────
+  const handleExportCSV = useCallback(() => {
+    const rows = [
+      ["Приоритет", "Тип", "Заголовок", "Описание", "Город", "Мастер", "Заказ", "Сумма под риском", "Возраст (ч)", "Дедлайн", "Создана"],
+      ...displayItems.map(i => {
+        const ageH = Math.round((Date.now() - new Date(i.createdAt).getTime()) / 3600000);
+        return [
+          i.priority, i.type, `"${i.title.replace(/"/g, '""')}"`, `"${i.shortDescription.replace(/"/g, '""')}"`,
+          i.city ?? "", i.masterName ?? (i.masterId ? `#${i.masterId}` : ""), i.orderId ?? "",
+          i.amountAtRisk ?? "", ageH, i.deadline ?? "", i.createdAt,
+        ];
+      }),
+    ];
+    const csv = rows.map(r => r.join(";")).join("\n");
+    const BOM = "\uFEFF";
+    const blob = new Blob([BOM + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `tasks_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [displayItems]);
+
+  // ─── Фаза 3: Браузерные уведомления при новых критичных ──────────
+  const prevCriticalCountRef = useRef(summary.critical);
+  useEffect(() => {
+    const prev = prevCriticalCountRef.current;
+    if (summary.critical > prev && prev >= 0 && "Notification" in window) {
+      if (Notification.permission === "granted") {
+        new Notification("🔥 Новые критичные задачи", {
+          body: `Критичных задач: ${summary.critical} (+${summary.critical - prev})`,
+          tag: "action-items-critical",
+        });
+      } else if (Notification.permission !== "denied") {
+        Notification.requestPermission();
+      }
+    }
+    prevCriticalCountRef.current = summary.critical;
+  }, [summary.critical]);
+
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -358,24 +481,68 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
     }
   }, [focusedIndex]);
 
-  // Рендер карточки с учётом выбора + фокуса
+  // Snooze dropdown state
+  const [snoozeMenuId, setSnoozeMenuId] = useState<string | null>(null);
+
+  // Рендер карточки с учётом выбора + фокуса + drag
   const renderCard = (item: Item, idx?: number) => (
-    <div key={item.id} data-item-id={item.id}>
-      <ActionItemCard
-        item={{
-          ...item,
-          selected: selectedIds.has(item.id),
-          focused: idx !== undefined && idx === focusedIndex,
-          createdAt: item.createdAt,
-        }}
-        onOpen={setOpenId}
-        onToggleSelect={toggleSelect}
-        onQuickCall={handleQuickCall}
-        onQuickMessage={handleQuickMessage}
-        onAiHint={handleAiHint}
-        aiHintLoading={aiHintLoadingId === item.id}
-        aiHintText={aiHints[item.id] ?? null}
-      />
+    <div
+      key={item.id}
+      data-item-id={item.id}
+      draggable
+      onDragStart={(e) => handleDragStart(e, item.id)}
+      onDragOver={(e) => handleDragOver(e, item.id)}
+      onDrop={(e) => handleDrop(e, item.id)}
+      onDragEnd={handleDragEnd}
+      className={`flex items-stretch gap-1 transition-all ${
+        dragOverId === item.id ? "ring-2 ring-violet-400 ring-offset-1 rounded-xl" : ""
+      } ${dragItemId === item.id ? "opacity-50" : ""}`}
+    >
+      {/* Drag handle */}
+      <div
+        className="flex items-center px-1 cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500 transition shrink-0"
+        title="Перетащите для изменения порядка"
+      >
+        <GripVertical className="w-4 h-4" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <ActionItemCard
+          item={{
+            ...item,
+            selected: selectedIds.has(item.id),
+            focused: idx !== undefined && idx === focusedIndex,
+            createdAt: item.createdAt,
+          }}
+          onOpen={setOpenId}
+          onToggleSelect={toggleSelect}
+          onQuickCall={handleQuickCall}
+          onQuickMessage={handleQuickMessage}
+          onAiHint={handleAiHint}
+          aiHintLoading={aiHintLoadingId === item.id}
+          aiHintText={aiHints[item.id] ?? null}
+        />
+      </div>
+      {/* Snooze dropdown */}
+      {snoozeMenuId === item.id && (
+        <div className="absolute right-0 top-full mt-1 z-50 bg-white border rounded-xl shadow-lg p-2 min-w-[140px]">
+          <div className="text-[10px] font-bold text-muted-foreground mb-1.5 px-1">Отложить на:</div>
+          {[1, 2, 3, 7].map(d => (
+            <button
+              key={d}
+              onClick={() => { handleSnooze(item.id, d); setSnoozeMenuId(null); }}
+              className="w-full text-left px-2 py-1.5 text-xs hover:bg-slate-100 rounded-lg transition"
+            >
+              {d} {d === 1 ? "день" : d < 5 ? "дня" : "дней"}
+            </button>
+          ))}
+          <button
+            onClick={() => setSnoozeMenuId(null)}
+            className="w-full text-left px-2 py-1.5 text-xs text-red-600 hover:bg-red-50 rounded-lg transition mt-1"
+          >
+            Отмена
+          </button>
+        </div>
+      )}
     </div>
   );
 
@@ -448,6 +615,46 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
         </div>
       </div>
 
+      {/* ─── Фаза 3: KPI-панель ──────────────────────────────────── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
+        <div className="rounded-xl border bg-white p-3 flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center shrink-0">
+            <DollarSign className="w-4 h-4 text-red-600" />
+          </div>
+          <div>
+            <div className="text-[10px] text-muted-foreground font-medium">Под риском</div>
+            <div className="text-sm font-bold text-red-700">{kpi.totalAtRisk.toLocaleString("ru-RU")} ₽</div>
+          </div>
+        </div>
+        <div className="rounded-xl border bg-white p-3 flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center shrink-0">
+            <Clock className="w-4 h-4 text-amber-600" />
+          </div>
+          <div>
+            <div className="text-[10px] text-muted-foreground font-medium">Средний возраст</div>
+            <div className="text-sm font-bold text-amber-700">{kpi.avgAgeH >= 24 ? `${Math.round(kpi.avgAgeH / 24)} дн.` : `${Math.round(kpi.avgAgeH)} ч`}</div>
+          </div>
+        </div>
+        <div className="rounded-xl border bg-white p-3 flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center shrink-0">
+            <AlertTriangle className="w-4 h-4 text-violet-600" />
+          </div>
+          <div>
+            <div className="text-[10px] text-muted-foreground font-medium">Самая старая</div>
+            <div className="text-sm font-bold text-violet-700">{kpi.oldestH >= 24 ? `${Math.round(kpi.oldestH / 24)} дн.` : `${Math.round(kpi.oldestH)} ч`}</div>
+          </div>
+        </div>
+        <div className="rounded-xl border bg-white p-3 flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
+            <BarChart3 className="w-4 h-4 text-emerald-600" />
+          </div>
+          <div>
+            <div className="text-[10px] text-muted-foreground font-medium">Выполнено сегодня</div>
+            <div className="text-sm font-bold text-emerald-700">{kpi.doneRate}% <span className="text-[10px] font-normal text-muted-foreground">({summary.doneToday}/{kpi.total})</span></div>
+          </div>
+        </div>
+      </div>
+
       {/* Поиск + Табы фильтров */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
         <div className="relative md:col-span-1">
@@ -502,6 +709,25 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
         >
           <Keyboard className="w-4 h-4" />
         </button>
+        {/* Фаза 3: Export CSV */}
+        <button
+          onClick={handleExportCSV}
+          className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-slate-100 transition"
+          title="Экспорт CSV"
+          disabled={displayItems.length === 0}
+        >
+          <Download className="w-4 h-4" />
+        </button>
+        {/* Фаза 3: Включить уведомления */}
+        {"Notification" in window && Notification.permission !== "granted" && (
+          <button
+            onClick={() => Notification.requestPermission()}
+            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-slate-100 transition"
+            title="Включить уведомления браузера"
+          >
+            <Bell className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       {/* Подсказка по шорткатам */}
@@ -609,15 +835,15 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
           })}
         </div>
       ) : (
-        /* ─── Обычный список ─── */
+        /* ─── Обычный список (с учётом drag-and-drop порядка) ─── */
         <div className="space-y-2">
-          {(showAll ? filtered : filtered.slice(0, 6)).map((item, idx) => renderCard(item, idx))}
-          {filtered.length > 6 && !showAll && (
+          {(showAll ? displayItems : displayItems.slice(0, 6)).map((item, idx) => renderCard(item, idx))}
+          {displayItems.length > 6 && !showAll && (
             <button
               onClick={() => setShowAll(true)}
               className="w-full py-2 text-xs font-semibold text-violet-600 hover:text-violet-800 transition"
             >
-              Показать все {filtered.length} задач
+              Показать все {displayItems.length} задач
             </button>
           )}
         </div>
