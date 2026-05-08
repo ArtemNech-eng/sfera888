@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useCallback, useRef, type ChangeEvent, type DragEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CheckCircle2, Search, Users, List, X, BellRing, Keyboard, TrendingUp, TrendingDown, Minus, Download, Bell, Timer, AlertTriangle, DollarSign, Clock, BarChart3, GripVertical } from "lucide-react";
+import { CheckCircle2, Search, Users, List, X, BellRing, Keyboard, TrendingUp, TrendingDown, Minus, Download, Bell, AlertTriangle, DollarSign, Clock, BarChart3, GripVertical, Timer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ActionItemModal } from "./ActionItemModal";
@@ -304,8 +304,11 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
   }, [displayItems]);
 
   // ─── Фаза 3: Браузерные уведомления при новых критичных ──────────
-  const prevCriticalCountRef = useRef(summary.critical);
+  const dataLoadedRef = useRef(false);
+  const prevCriticalCountRef = useRef(-1);
   useEffect(() => {
+    if (isLoading) return;
+    if (!dataLoadedRef.current) { dataLoadedRef.current = true; prevCriticalCountRef.current = summary.critical; return; }
     const prev = prevCriticalCountRef.current;
     if (summary.critical > prev && prev >= 0 && "Notification" in window) {
       if (Notification.permission === "granted") {
@@ -318,7 +321,7 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
       }
     }
     prevCriticalCountRef.current = summary.critical;
-  }, [summary.critical]);
+  }, [summary.critical, isLoading]);
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
@@ -329,7 +332,7 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
   };
 
   const selectAll = () => {
-    const visibleIds = (showAll ? filtered : filtered.slice(0, 6)).map(i => i.id);
+    const visibleIds = (showAll ? displayItems : displayItems.slice(0, 6)).map(i => i.id);
     setSelectedIds(new Set(visibleIds));
   };
 
@@ -399,7 +402,7 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
   }, []);
 
   // ─── Клавиатурные шорткаты ──────────────────────────────────────
-  const visibleItems = showAll ? filtered : filtered.slice(0, 6);
+  const visibleItems = showAll ? displayItems : displayItems.slice(0, 6);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     // Не перехватываем если фокус в input/textarea
@@ -489,17 +492,17 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
     <div
       key={item.id}
       data-item-id={item.id}
-      draggable
-      onDragStart={(e) => handleDragStart(e, item.id)}
-      onDragOver={(e) => handleDragOver(e, item.id)}
-      onDrop={(e) => handleDrop(e, item.id)}
-      onDragEnd={handleDragEnd}
-      className={`flex items-stretch gap-1 transition-all ${
+      className={`relative flex items-stretch gap-1 transition-all ${
         dragOverId === item.id ? "ring-2 ring-violet-400 ring-offset-1 rounded-xl" : ""
       } ${dragItemId === item.id ? "opacity-50" : ""}`}
     >
-      {/* Drag handle */}
+      {/* Drag handle — только отсюда можно начать drag */}
       <div
+        draggable
+        onDragStart={(e) => handleDragStart(e, item.id)}
+        onDragOver={(e) => handleDragOver(e, item.id)}
+        onDrop={(e) => handleDrop(e, item.id)}
+        onDragEnd={handleDragEnd}
         className="flex items-center px-1 cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500 transition shrink-0"
         title="Перетащите для изменения порядка"
       >
@@ -522,7 +525,17 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
           aiHintText={aiHints[item.id] ?? null}
         />
       </div>
-      {/* Snooze dropdown */}
+      {/* Snooze кнопка-триггер */}
+      <div className="flex flex-col items-center justify-start pt-2 shrink-0 gap-1">
+        <button
+          onClick={(e) => { e.stopPropagation(); setSnoozeMenuId(snoozeMenuId === item.id ? null : item.id); }}
+          className="w-7 h-7 rounded-lg bg-slate-50 hover:bg-slate-100 border flex items-center justify-center transition"
+          title="Отложить задачу"
+        >
+          <Timer className="w-3.5 h-3.5 text-slate-500" />
+        </button>
+      </div>
+      {/* Snooze dropdown — позиционирован относительно relative-родителя */}
       {snoozeMenuId === item.id && (
         <div className="absolute right-0 top-full mt-1 z-50 bg-white border rounded-xl shadow-lg p-2 min-w-[140px]">
           <div className="text-[10px] font-bold text-muted-foreground mb-1.5 px-1">Отложить на:</div>
@@ -650,7 +663,7 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
           </div>
           <div>
             <div className="text-[10px] text-muted-foreground font-medium">Выполнено сегодня</div>
-            <div className="text-sm font-bold text-emerald-700">{kpi.doneRate}% <span className="text-[10px] font-normal text-muted-foreground">({summary.doneToday}/{kpi.total})</span></div>
+            <div className="text-sm font-bold text-emerald-700">{summary.doneToday} <span className="text-[10px] font-normal text-muted-foreground">из {kpi.total}</span></div>
           </div>
         </div>
       </div>
