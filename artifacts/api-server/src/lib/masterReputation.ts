@@ -25,15 +25,20 @@ export async function recordOrderCompleted(masterId: number): Promise<void> {
  * Реализация: один UPDATE ... RETURNING делает инкремент атомарно (без RMW-гонки).
  * Затем при необходимости второй UPDATE ставит блок-флаг и пишет уведомления.
  */
+/** How much to lower the rating per cancellation (0.1 per cancel, min 1.0) */
+const RATING_PENALTY = 0.1;
+const RATING_MIN = 1.0;
+
 export async function recordOrderCancelled(
   masterId: number,
   orderId: number,
 ): Promise<{ counter: number; blocked: boolean; wasAlreadyBlocked: boolean; alias: string } | null> {
-  // Атомарный инкремент: одна транзакция, никаких read-modify-write
+  // Атомарный инкремент + rating penalty: одна транзакция, никаких read-modify-write
   const [updated] = await db.update(mastersTable)
     .set({
       consecutiveCancellations: sql`${mastersTable.consecutiveCancellations} + 1`,
       lastCancelAt: new Date(),
+      rating: sql`GREATEST(${mastersTable.rating} - ${RATING_PENALTY}, ${RATING_MIN})`,
     })
     .where(eq(mastersTable.id, masterId))
     .returning({

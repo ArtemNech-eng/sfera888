@@ -167,21 +167,37 @@ async function getAlreadyNotifiedForOrder(orderId: number): Promise<Set<number>>
   return new Set((rows.rows as any[]).map(r => Number(r.master_id)));
 }
 
-function buildBroadcastMessage(order: any): string {
+function buildBroadcastMessage(order: any, wave: number = 1): string {
   const areaStr = order.area ? `${Number(order.area).toFixed(0)} м²` : "—";
   const scheduledText = order.scheduled_at
     ? new Date(order.scheduled_at).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })
     : "по договорённости";
   const location = order.district ? `${order.city}, ${order.district}` : order.city;
+  if (wave === 1) {
+    return (
+      `🔔 Новый заказ!\n\n` +
+      `📍 ${location}\n` +
+      `🔨 ${order.service_type}\n` +
+      `📐 ${areaStr}\n` +
+      `📅 ${scheduledText}\n\n` +
+      `Откликнитесь в приложении 👍`
+    );
+  }
+  // Wave 2/3: reminder — master not yet assigned, still open for responses
+  const waveLabel = wave === 2 ? "напоминание" : "последний шанс";
   return (
-    `🔔 Новый заказ!\n\n` +
+    `📋 ${waveLabel === "последний шанс" ? "⏳ Последний шанс" : "Напоминание"} — заказ ещё открыт!\n\n` +
     `📍 ${location}\n` +
     `🔨 ${order.service_type}\n` +
     `📐 ${areaStr}\n` +
-    `📅 ${scheduledText}\n\n` +
+    `📅 ${scheduledText}\n` +
+    `👤 Мастер ещё не назначен\n\n` +
     `Откликнитесь в приложении 👍`
   );
 }
+
+/** Interval between broadcast waves (minutes) */
+const WAVE_INTERVAL_MIN = 120; // 2 hours between waves
 
 async function upsertBroadcastRecord(orderId: number, count: number): Promise<void> {
   await db.execute(sql`
@@ -192,13 +208,36 @@ async function upsertBroadcastRecord(orderId: number, count: number): Promise<vo
   `);
 }
 
+/** Update order's lastBroadcastAt and broadcastCount so work-board moves it to "Ждут мастера" */
+async function updateOrderBroadcastState(orderId: number): Promise<void> {
+  await db.execute(sql`
+    UPDATE orders
+    SET last_broadcast_at = NOW(),
+        broadcast_count = COALESCE(broadcast_count, 0) + 1,
+        updated_at = NOW()
+    WHERE id = ${orderId}
+  `);
+}
+
+/** Get master IDs that already responded to this order (should not be re-notified) */
+async function getRespondedMasterIds(orderId: number): Promise<Set<number>> {
+  const rows = await db.execute(sql`
+    SELECT DISTINCT master_id FROM order_dispatches
+    WHERE order_id = ${orderId} AND status IN ('responded', 'assigned')
+  `);
+  return new Set((rows.rows as any[]).map(r => Number(r.master_id)));
+}
+
 async function runBroadcastOrders() {
   const now = new Date();
 
-  // 1. Load open orders with their broadcast state
+  // 1. Load open orders with their broadcast state (all waves)
   const ordersResult = await db.execute(sql`
     SELECT o.id, o.lead_id, o.city, o.district, o.service_type, o.area, o.scheduled_at, o.created_at,
-           w.wave_1_sent_at, w.wave_1_count, w.admin_alerted_at
+           w.wave_1_sent_at, w.wave_1_count,
+           w.wave_2_sent_at, w.wave_2_count,
+           w.wave_3_sent_at, w.wave_3_count,
+           w.admin_alerted_at
     FROM orders o
     LEFT JOIN order_broadcast_waves w ON w.order_id = o.id
     WHERE o.status = 'waiting_master' AND o.deleted_at IS NULL
@@ -206,7 +245,7 @@ async function runBroadcastOrders() {
   `);
 
   if ((ordersResult.rows as any[]).length === 0) {
-    return { totalOrders: 0, totalSent: 0, newOrders: 0, adminAlerts: 0 };
+    return { totalOrders: 0, totalSent: 0, newOrders: 0, wave2Sent: 0, wave3Sent: 0, adminAlerts: 0 };
   }
 
   // 2. Load all eligible active masters sorted by broadcast score (conv + rating)
@@ -227,25 +266,29 @@ async function runBroadcastOrders() {
   const allMasters = mastersResult.rows as any[];
   let totalSent = 0;
   let newOrders = 0;
+  let wave2Sent = 0;
+  let wave3Sent = 0;
   let adminAlerts = 0;
 
   for (const order of ordersResult.rows as any[]) {
-    const sentTime = order.wave_1_sent_at ? new Date(order.wave_1_sent_at) : null;
-    const elapsedMin = sentTime ? (now.getTime() - sentTime.getTime()) / 60000 : -1;
+    const wave1Time = order.wave_1_sent_at ? new Date(order.wave_1_sent_at) : null;
+    const wave2Time = order.wave_2_sent_at ? new Date(order.wave_2_sent_at) : null;
+    const wave3Time = order.wave_3_sent_at ? new Date(order.wave_3_sent_at) : null;
+    const elapsedMin1 = wave1Time ? (now.getTime() - wave1Time.getTime()) / 60000 : -1;
+    const elapsedMin2 = wave2Time ? (now.getTime() - wave2Time.getTime()) / 60000 : -1;
+    const elapsedMin3 = wave3Time ? (now.getTime() - wave3Time.getTime()) / 60000 : -1;
 
-    if (!sentTime) {
-      // ── New order: send to ALL eligible masters simultaneously ─────────────
-      // No priority ordering — everyone gets the notification at the same time.
-      // Selection of who gets assigned is based on rating+conversion when they respond.
+    // ── Wave 1: New order — send to ALL eligible masters ───────────────────
+    if (!wave1Time) {
       const notified = await getAlreadyNotifiedForOrder(order.id);
       const toSend = allMasters
         .filter(m => masterMatchesOrder(m, order) && !notified.has(m.id));
 
-      const message = buildBroadcastMessage(order);
+      const message = buildBroadcastMessage(order, 1);
       let sent = 0;
       for (const m of toSend) {
         await sendAndSaveMasterMessage(m.id, m.max_chat_id, message, "📋 Рассылка заказов");
-        await recordNotification("broadcast-orders", order.id, m.id, "sent");
+        await recordNotification("broadcast-orders", order.id, m.id, "wave-1");
         await db.execute(sql`
           UPDATE masters SET total_leads_received = COALESCE(total_leads_received, 0) + 1
           WHERE id = ${m.id}
@@ -254,16 +297,76 @@ async function runBroadcastOrders() {
         await sleep(MSG_DELAY_MS);
       }
       await upsertBroadcastRecord(order.id, sent);
+      // Update order broadcast state so work-board moves it to "Ждут мастера"
+      await updateOrderBroadcastState(order.id);
       totalSent += sent;
       newOrders++;
 
-    } else if (!order.admin_alerted_at && elapsedMin >= ADMIN_ALERT_MINUTES) {
-      // ── No response after 75 min → alert admin in Max ─────────────────────
+    // ── Wave 2: Reminder 2h after wave 1 — exclude masters who responded ───
+    } else if (wave1Time && !wave2Time && elapsedMin1 >= WAVE_INTERVAL_MIN) {
+      const responded = await getRespondedMasterIds(order.id);
+      const notified = await getAlreadyNotifiedForOrder(order.id);
+      const toSend = allMasters
+        .filter(m => masterMatchesOrder(m, order) && !responded.has(m.id) && !notified.has(m.id));
+
+      const message = buildBroadcastMessage(order, 2);
+      let sent = 0;
+      for (const m of toSend) {
+        await sendAndSaveMasterMessage(m.id, m.max_chat_id, message, "📋 Напоминание о заказе");
+        await recordNotification("broadcast-orders", order.id, m.id, "wave-2");
+        await db.execute(sql`
+          UPDATE masters SET total_leads_received = COALESCE(total_leads_received, 0) + 1
+          WHERE id = ${m.id}
+        `);
+        sent++;
+        await sleep(MSG_DELAY_MS);
+      }
+      await db.execute(sql`
+        UPDATE order_broadcast_waves
+        SET current_wave = 2, wave_2_sent_at = NOW(), wave_2_count = ${sent}, updated_at = NOW()
+        WHERE order_id = ${order.id}
+      `);
+      await updateOrderBroadcastState(order.id);
+      totalSent += sent;
+      wave2Sent++;
+
+    // ── Wave 3: Final reminder 2h after wave 2 — exclude masters who responded ─
+    } else if (wave2Time && !wave3Time && elapsedMin2 >= WAVE_INTERVAL_MIN) {
+      const responded = await getRespondedMasterIds(order.id);
+      const notified = await getAlreadyNotifiedForOrder(order.id);
+      const toSend = allMasters
+        .filter(m => masterMatchesOrder(m, order) && !responded.has(m.id) && !notified.has(m.id));
+
+      const message = buildBroadcastMessage(order, 3);
+      let sent = 0;
+      for (const m of toSend) {
+        await sendAndSaveMasterMessage(m.id, m.max_chat_id, message, "📋 Последнее напоминание");
+        await recordNotification("broadcast-orders", order.id, m.id, "wave-3");
+        await db.execute(sql`
+          UPDATE masters SET total_leads_received = COALESCE(total_leads_received, 0) + 1
+          WHERE id = ${m.id}
+        `);
+        sent++;
+        await sleep(MSG_DELAY_MS);
+      }
+      await db.execute(sql`
+        UPDATE order_broadcast_waves
+        SET current_wave = 3, wave_3_sent_at = NOW(), wave_3_count = ${sent}, updated_at = NOW()
+        WHERE order_id = ${order.id}
+      `);
+      await updateOrderBroadcastState(order.id);
+      totalSent += sent;
+      wave3Sent++;
+
+    // ── Admin alert: 2h after wave 3, still no master ──────────────────────
+    } else if (wave3Time && !order.admin_alerted_at && elapsedMin3 >= WAVE_INTERVAL_MIN) {
       const cityMasters = allMasters.filter(m => m.city === order.city).length;
       const freeMasters = allMasters.filter(m =>
         m.city === order.city && Number(m.active_orders ?? 0) < 3
       ).length;
-      const sentCount = Number(order.wave_1_count ?? 0);
+      const w1Count = Number(order.wave_1_count ?? 0);
+      const w2Count = Number(order.wave_2_count ?? 0);
+      const w3Count = Number(order.wave_3_count ?? 0);
       const location = order.district ? `${order.city}, ${order.district}` : order.city;
       const areaStr = order.area ? `${Number(order.area).toFixed(0)} м²` : "—";
       const scheduledText = order.scheduled_at
@@ -273,7 +376,7 @@ async function runBroadcastOrders() {
       await sendAdminMax(
         `⚠️ ЗАКАЗ БЕЗ МАСТЕРА\n\n` +
         `Заявка: #${order.lead_id ?? order.id}\nВид работ: ${order.service_type}\nГород: ${location}\nПлощадь: ${areaStr}\nКогда нужно: ${scheduledText}\n\n` +
-        `Разослано ${sentCount} мастерам — никто не откликнулся за 75 минут.\n\n` +
+        `3 рассылки: ${w1Count} + ${w2Count} + ${w3Count} уведомлений — никто не откликнулся.\n\n` +
         `Мастеров в городе: ${cityMasters}\nСвободных: ${freeMasters}\n\n` +
         `Решение в ИИ Офис → Открытые заказы`
       );
@@ -283,10 +386,10 @@ async function runBroadcastOrders() {
       `);
       adminAlerts++;
     }
-    // else: already sent, waiting for master response — nothing to do
+    // else: waiting for next wave interval — nothing to do
   }
 
-  return { totalOrders: (ordersResult.rows as any[]).length, totalSent, newOrders, adminAlerts };
+  return { totalOrders: (ordersResult.rows as any[]).length, totalSent, newOrders, wave2Sent, wave3Sent, adminAlerts };
 }
 
 // ─── Scenario 2: Payment Reminders ────────────────────────────────────────────

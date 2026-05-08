@@ -319,13 +319,15 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
     };
     const cancelType = cancelTypeMap[reason] ?? "other";
 
-    // Load order details for notification context (client name, address)
+    // Load order details for notification context (client name, address, service type)
     const [orderRow] = await db.select({
       masterId: ordersTable.masterId,
+      leadId: ordersTable.leadId,
       clientName: ordersTable.clientName,
       clientPhone: ordersTable.clientPhone,
       city: ordersTable.city,
       district: ordersTable.district,
+      serviceType: ordersTable.serviceType,
     }).from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1);
 
     // Resolve masterId: prefer item.masterId, fall back to order's masterId from DB
@@ -353,21 +355,24 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
       };
       const reasonText = reasonLabels[reason] ?? reason;
 
-      // Build order context for notification
+      // Build order context for notification — include service type, client name, address
       const orderParts: string[] = [];
+      const displayId = orderRow?.leadId ?? orderId;
       const clientName = orderRow?.clientName ?? null;
       const orderCity = orderRow?.city ?? null;
       const orderDistrict = orderRow?.district ?? null;
+      const serviceType = (orderRow as any)?.serviceType ?? null;
+      if (serviceType) orderParts.push(serviceType);
       if (clientName) orderParts.push(`клиент: ${clientName}`);
       if (orderCity) orderParts.push(orderCity);
       if (orderDistrict) orderParts.push(orderDistrict);
       const orderCtx = orderParts.length > 0 ? ` (${orderParts.join(", ")})` : "";
 
-      const notifyText = `❌ Заказ #${orderId} отменён (${reasonText})${orderCtx}. Отмена влияет на ваш рейтинг. Свяжитесь с нами для уточнения деталей.`;
+      const notifyText = `❌ Заказ #${displayId} отменён (${reasonText})${orderCtx}. Отмена влияет на ваш рейтинг. Свяжитесь с нами для уточнения деталей.`;
       if (master?.maxChatId) {
         await sendMaxMessage(master.maxChatId, notifyText).catch((e: any) => console.error("[cancel_order] max send failed:", e));
       }
-      sendPushToMaster(effectiveMasterId, { type: "new_message", title: "Заказ отменён", body: `Заказ #${orderId} отменён: ${reasonText}${orderCtx}.` }).catch((e: any) => console.error("[cancel_order] push failed:", e));
+      sendPushToMaster(effectiveMasterId, { type: "new_message", title: "Заказ отменён", body: `Заказ #${displayId} отменён: ${reasonText}${orderCtx}.` }).catch((e: any) => console.error("[cancel_order] push failed:", e));
       const chatId = master?.maxChatId ? `max_${master.maxChatId}` : `pwa_${effectiveMasterId}`;
       await db.insert(masterMessagesTable).values({ masterId: effectiveMasterId, telegramChatId: chatId, text: notifyText, fromMaster: false, senderName: operatorName, isRead: true });
     }
@@ -501,6 +506,15 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
     await recordOrderCancelled(masterId, orderId).catch((e) => console.error("[cancel_as_master] reputation update failed:", e));
     await recordOrderMasterHistory(masterId, orderId, "cancelled", cancelReason === "bypass" ? "Обход платформы" : cancelReason).catch((e: any) => console.error("[cancel_as_master] history record failed:", e));
 
+    // Load order details for notification context
+    const [orderRow] = await db.select({
+      leadId: ordersTable.leadId,
+      clientName: ordersTable.clientName,
+      city: ordersTable.city,
+      district: ordersTable.district,
+      serviceType: ordersTable.serviceType,
+    }).from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1);
+
     const reasonText = cancelReason === "no_contact"
       ? "мастер не выходит на связь"
       : cancelReason === "no_estimate"
@@ -508,7 +522,21 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
       : cancelReason === "other"
       ? "другая причина"
       : "обход платформы";
-    const notifyText = `⚠️ Заказ #${orderId} отменён оператором (причина: ${reasonText}). Отмена засчитана вам. Свяжитесь с нами для уточнения деталей.`;
+
+    // Build order context for notification — include service type, client name, address
+    const orderParts: string[] = [];
+    const displayId = orderRow?.leadId ?? orderId;
+    const clientName = orderRow?.clientName ?? null;
+    const orderCity = orderRow?.city ?? null;
+    const orderDistrict = orderRow?.district ?? null;
+    const serviceType = (orderRow as any)?.serviceType ?? null;
+    if (serviceType) orderParts.push(serviceType);
+    if (clientName) orderParts.push(`клиент: ${clientName}`);
+    if (orderCity) orderParts.push(orderCity);
+    if (orderDistrict) orderParts.push(orderDistrict);
+    const orderCtx = orderParts.length > 0 ? ` (${orderParts.join(", ")})` : "";
+
+    const notifyText = `⚠️ Заказ #${displayId} отменён оператором (причина: ${reasonText})${orderCtx}. Отмена засчитана вам. Свяжитесь с нами для уточнения деталей.`;
     const [master] = await db
       .select({ id: mastersTable.id, maxChatId: mastersTable.maxChatId })
       .from(mastersTable)
@@ -522,7 +550,7 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
     sendPushToMaster(masterId, {
       type: "new_message",
       title: "Заказ отменён",
-      body: `Заказ #${orderId} отменён: ${reasonText}.`,
+      body: `Заказ #${displayId} отменён: ${reasonText}${orderCtx}.`,
     }).catch((e: any) => console.error("[cancel_as_master] push failed:", e));
 
     const chatId = master?.maxChatId ? `max_${master.maxChatId}` : `pwa_${masterId}`;

@@ -477,24 +477,55 @@ async function buildBoard() {
     // waiting_master vs new
     const isFreshlyCreated = !o.lastBroadcastAt && o.broadcastCount === 0;
     if (isFreshlyCreated) {
+      // New order — not yet broadcast. ETA = time until next 15-min cycle
+      const minutesSinceCreation = o.createdAt ? (now - new Date(o.createdAt).getTime()) / 60_000 : 0;
+      const nextCycleMin = Math.max(1, 15 - (Math.floor(minutesSinceCreation) % 15));
+      const etaStr = nextCycleMin <= 1 ? "1 мин" : `${nextCycleMin} мин`;
+      const tone: BotTone = minutesSinceCreation > 15 ? "warn" : "ok";
       const card: Card = {
         ...baseCard,
-        bot: { action: "разошлю мастерам через", eta: "1 мин", tone: "ok" },
-        badge: { text: "автопул", tone: "info" },
+        bot: { action: "разошлю мастерам через", eta: etaStr, tone },
+        badge: { text: minutesSinceCreation > 15 ? "задержка" : "автопул", tone: minutesSinceCreation > 15 ? "warn" as BadgeTone : "info" as BadgeTone },
       };
       columns.new.cards.push(card);
       columns.new.count++;
     } else {
       const minutesSinceBroadcast = o.lastBroadcastAt ? (now - new Date(o.lastBroadcastAt).getTime()) / 60_000 : 0;
-      const tone: BotTone = minutesSinceBroadcast > 60 ? "warn" : "ok";
+      const broadcastCount = Number(o.broadcastCount ?? 1);
+      // Wave info: broadcastCount corresponds to wave number
+      const waveNum = Math.min(broadcastCount, 3);
+      const waveLabel = waveNum === 1 ? "рассылка 1" : waveNum === 2 ? "рассылка 2" : "рассылка 3";
+      const nextWaveMin = Math.max(1, 120 - Math.floor(minutesSinceBroadcast)); // 2h interval
+      const etaStr = nextWaveMin <= 1 ? "1 мин" : nextWaveMin < 60 ? `${nextWaveMin} мин` : `${Math.floor(nextWaveMin / 60)}ч ${nextWaveMin % 60}мин`;
+
+      let action: string;
+      let eta: string;
+      let tone: BotTone;
+      let badge: { text: string; tone: BadgeTone } | undefined;
+
+      if (waveNum >= 3 && minutesSinceBroadcast > 120) {
+        // After 3 waves + 2h — admin alerted, stuck
+        action = "нет мастера, алерт админу";
+        eta = "ручное решение";
+        tone = "bad";
+        badge = { text: "3 рассылки без отклика", tone: "bad" };
+      } else if (minutesSinceBroadcast > 60) {
+        // Waiting for next wave
+        action = `повторная рассылка через`;
+        eta = etaStr;
+        tone = "warn";
+        badge = { text: `${waveLabel} · 0 откликов`, tone: "warn" };
+      } else {
+        // Recently broadcast — waiting for response
+        action = `разослано мастерам (${waveLabel})`;
+        eta = "ждём отклик";
+        tone = "ok";
+      }
+
       const card: Card = {
         ...baseCard,
-        bot: {
-          action: minutesSinceBroadcast > 60 ? "повторная рассылка через" : "разослано мастерам",
-          eta: minutesSinceBroadcast > 60 ? "13 мин" : "ждём отклик",
-          tone,
-        },
-        ...(minutesSinceBroadcast > 60 ? { badge: { text: "0 откликов", tone: "warn" as BadgeTone } } : {}),
+        bot: { action, eta, tone },
+        ...(badge ? { badge } : {}),
       };
       columns.waiting_master.cards.push(card);
       columns.waiting_master.count++;
