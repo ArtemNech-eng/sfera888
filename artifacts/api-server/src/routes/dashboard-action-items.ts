@@ -220,7 +220,7 @@ async function buildItems(): Promise<Item[]> {
   }
   for (const m of masters) { const status = String(m.status ?? "").toLowerCase(); if (status.includes("blocked") || status.includes("fomo_blocked")) items.push({ id: `blocked_master-${m.id}`, type: "blocked_master", priority: "critical", title: `Мастер ${m.alias} заблокирован`, shortDescription: `${m.city ?? ""}`.trim(), fullDescription: `Мастер в блокировке / FOMO_BLOCKED и требует проверки.`, createdAt: new Date(m.createdAt).toISOString(), updatedAt: new Date(m.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "master", entityId: m.id, orderId: null, masterId: m.id, clientId: null, city: m.city ?? null, amountAtRisk: null, actions: actionSet("blocked_master") }); }
   const balance = avitoRows[0] as any;
-  if (balance && Number(balance.manualBalance ?? 0) < 1000) items.push({ id: "low_avito_balance-1", type: "low_avito_balance", priority: "high", title: "Баланс Avito ниже нормы", shortDescription: `Текущий баланс: ${Number(balance.manualBalance ?? 0).toLocaleString("ru-RU")} ₽`, fullDescription: "Баланс Avito ниже рекомендуемого порога.", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "finance", entityId: balance.id ?? null, orderId: null, masterId: null, clientId: null, city: null, amountAtRisk: null, actions: actionSet("low_avito_balance") });
+  if (balance && Number(balance.advanceBalance ?? 0) < 1000) items.push({ id: "low_avito_balance-1", type: "low_avito_balance", priority: "high", title: "Баланс Avito ниже нормы", shortDescription: `Текущий баланс: ${Number(balance.advanceBalance ?? 0).toLocaleString("ru-RU")} ₽`, fullDescription: "Баланс Avito ниже рекомендуемого порога.", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "finance", entityId: balance.id ?? null, orderId: null, masterId: null, clientId: null, city: null, amountAtRisk: null, actions: actionSet("low_avito_balance") });
   for (const c of cases) {
     let risk = String((c as any).riskLevel ?? (c as any).risk ?? "");
     if (risk !== "red" && risk !== "yellow") continue;
@@ -312,7 +312,7 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
     const rows = await db.select().from(avitoSettingsTable).limit(1);
     if (rows[0]) {
       await db.update(avitoSettingsTable)
-        .set({ manualBalance: Number(payload.balance) } as any)
+        .set({ advanceBalance: Number(payload.balance) } as any)
         .where(eq(avitoSettingsTable.id, (rows[0] as any).id));
     }
   }
@@ -924,7 +924,7 @@ router.get("/action-items/:id", ops, async (req: any, res: any) => {
 
   if (item.type === "low_avito_balance") {
     const [av] = await db.select().from(avitoSettingsTable).limit(1);
-    if (av) ctx.avitoBalance = (av as any).manualBalance ?? (av as any).advanceBalance ?? 0;
+    if (av) ctx.avitoBalance = (av as any).advanceBalance ?? 0;
   }
 
   // Always load transaction + partial payments for any item with an orderId

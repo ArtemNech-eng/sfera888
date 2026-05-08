@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, leadsTable, ordersTable, mastersTable, transactionsTable, transactionPaymentsTable, receiptsTable } from "@workspace/db";
+import { db, leadsTable, ordersTable, mastersTable, transactionsTable, transactionPaymentsTable, receiptsTable, avitoSettingsTable } from "@workspace/db";
 import { requirePermission } from "../middlewares/requireAuth.js";
 import { isNull, isNotNull, inArray } from "drizzle-orm";
 
@@ -35,9 +35,13 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
 
     // ── Helpers ────────────────────────────────────────────────────────────────
     function calcIncome(start: Date, end: Date) {
-      return txRows
+      const commission = txRows
         .filter(t => t.paymentStatus === "paid" && t.paidAt && t.paidAt >= start && t.paidAt < end)
         .reduce((s, t) => s + Number(t.commission), 0);
+      const prepayments = receiptRows
+        .filter(r => r.prepaymentSubmittedAt && r.prepaymentSubmittedAt >= start && r.prepaymentSubmittedAt < end)
+        .reduce((s, r) => s + Number(r.prepaymentAmount ?? 0), 0);
+      return commission + prepayments;
     }
     function pctChange(cur: number, prev: number) {
       return prev > 0 ? Math.round(((cur - prev) / prev) * 1000) / 10 : null;
@@ -73,7 +77,38 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
       masters_total: totalMasters,
       masters_new_today: newMastersToday,
       masters_new_today_prev: newMastersYesterday,
-      avito_balance: 0,
+      avito_balance: await (async () => {
+        try {
+          const [avSettings] = await db.select().from(avitoSettingsTable).limit(1);
+          if (!avSettings) return 0;
+          const manualBalance = Number((avSettings as any).advanceBalance ?? 0);
+          const clientId = (avSettings as any).clientId;
+          const clientSecret = (avSettings as any).clientSecret;
+          if (clientId && clientSecret) {
+            try {
+              const tokenResp = await fetch("https://api.avito.ru/token", {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: new URLSearchParams({ grant_type: "client_credentials", client_id: clientId, client_secret: clientSecret }),
+              });
+              if (tokenResp.ok) {
+                const tokenData = await tokenResp.json() as any;
+                const balanceResp = await fetch("https://api.avito.ru/cpa/v2/balanceInfo", {
+                  method: "POST",
+                  headers: { Authorization: `Bearer ${tokenData.access_token}`, "Content-Type": "application/json", "X-Source": "sfera-master" },
+                  body: "{}",
+                });
+                if (balanceResp.ok) {
+                  const balanceData = await balanceResp.json() as any;
+                  const balanceKop = balanceData?.result?.balance ?? balanceData?.balance;
+                  if (typeof balanceKop === "number") return Math.round(balanceKop / 100);
+                }
+              }
+            } catch { /* fallback to manual */ }
+          }
+          return manualBalance;
+        } catch { return 0; }
+      })(),
     };
 
     // ── Alerts ─────────────────────────────────────────────────────────────────
