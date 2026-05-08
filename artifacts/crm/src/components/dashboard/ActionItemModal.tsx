@@ -509,7 +509,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
         return (
           <SectionBox title="Ситуация: заказ без сметы">
             <NextActionBanner
-              text={`Мастер не отправил смету уже ${ctx.order?.hoursWithoutEstimate != null ? fmtAge(ctx.order.hoursWithoutEstimate) : ctx.order?.hoursOld != null ? fmtAge(ctx.order.hoursOld) : "долго"}. Позвоните мастеру и выясните причину.`}
+              text={`Мастер не отправил смету уже ${ctx.order?.hoursWithoutEstimate != null ? fmtAge(ctx.order.hoursWithoutEstimate) : ctx.order?.hoursOld != null ? fmtAge(ctx.order.hoursOld) : "долго"}.${(ctx.order as any)?.hoursWithCurrentMaster != null && (ctx.order as any).hoursWithCurrentMaster < (ctx.order?.hoursWithoutEstimate ?? 999) - 24 ? ` Текущий мастер назначен ${fmtAge((ctx.order as any).hoursWithCurrentMaster)} назад.` : ""} Позвоните мастеру и выясните причину.`}
               phone={ctx.master?.phone}
               callLabel="Позвонить мастеру"
             />

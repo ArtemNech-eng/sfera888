@@ -164,11 +164,14 @@ async function buildItems(): Promise<Item[]> {
   const txOrderIdsWithPayments = new Set(txRows.filter((t: any) => txIdsWithPayments.has(t.id)).map((t: any) => Number(t.orderId)).filter(Boolean));
   for (const o of orders) {
     const ageH = (now.getTime() - new Date(o.createdAt).getTime()) / 3600000;
-    // For no_estimate: count from assignedAt (when current master was assigned), not from order creation.
-    // This prevents stale "2 days without estimate" when order was returned to pool and reassigned.
-    const estimateAgeH = o.assignedAt
+    // For no_estimate: show the REAL age of the problem (from order creation),
+    // but also track how long the CURRENT master has had the order (from assignedAt).
+    // Previously counting only from assignedAt caused misleading "2 days" when assignedAt
+    // was updated by a broadcast/re-publish while the order was actually without estimate for weeks.
+    const estimateAgeH = (now.getTime() - new Date(o.createdAt).getTime()) / 3600000;
+    const currentMasterAgeH = o.assignedAt
       ? (now.getTime() - new Date(o.assignedAt).getTime()) / 3600000
-      : (now.getTime() - new Date(o.updatedAt ?? o.createdAt).getTime()) / 3600000;
+      : estimateAgeH;
     const lead = leadMap.get(o.leadId!) as any;
     const clientLabel = lead?.clientName ? `${lead.clientName} · ${o.city ?? ""}` : (o.city ?? "");
     // no_estimate: proposedAmount missing AND no receipt AND no transaction with amount AND no partial payments
@@ -176,7 +179,15 @@ async function buildItems(): Promise<Item[]> {
       || receiptOrderIds.has(Number(o.id))
       || txOrderIds.has(Number(o.id))
       || txOrderIdsWithPayments.has(Number(o.id));
-    if (!hasEstimate && estimateAgeH >= 24) items.push({ id: `no_estimate-${o.id}`, type: "no_estimate", priority: pFromHours(estimateAgeH), title: `Заказ #${o.id} — нет сметы`, shortDescription: clientLabel.trim(), fullDescription: `У заказа нет сметы уже ${fmtAge(estimateAgeH)}.`, createdAt: new Date(o.assignedAt ?? o.updatedAt ?? o.createdAt).toISOString(), updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterMap.get(Number(o.masterId))?.alias ?? null) : null, amountAtRisk: o.orderAmount ? Number(o.orderAmount) : null, actions: actionSet("no_estimate") });
+    if (!hasEstimate && estimateAgeH >= 24) {
+      // Show real order age + context about current master assignment time
+      const descParts = [`У заказа нет сметы уже ${fmtAge(estimateAgeH)}.`];
+      if (o.masterId && currentMasterAgeH < estimateAgeH - 24) {
+        // Master was assigned significantly later than order creation — show both
+        descParts.push(` Текущий мастер назначен ${fmtAge(currentMasterAgeH)} назад.`);
+      }
+      items.push({ id: `no_estimate-${o.id}`, type: "no_estimate", priority: pFromHours(estimateAgeH), title: `Заказ #${o.id} — нет сметы`, shortDescription: clientLabel.trim(), fullDescription: descParts.join(""), createdAt: new Date(o.createdAt).toISOString(), updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterMap.get(Number(o.masterId))?.alias ?? null) : null, amountAtRisk: o.orderAmount ? Number(o.orderAmount) : null, actions: actionSet("no_estimate") });
+    }
     if (o.status === "waiting_master") items.push({ id: `no_master_response-${o.id}`, type: "no_master_response", priority: pFromHours(ageH), title: `Заказ #${o.id} — нет отклика мастера`, shortDescription: clientLabel.trim(), fullDescription: `Заказ завис без отклика мастера ${fmtAge(ageH)}.`, createdAt: new Date(o.createdAt).toISOString(), updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterMap.get(Number(o.masterId))?.alias ?? null) : null, amountAtRisk: o.orderAmount ? Number(o.orderAmount) : null, actions: actionSet("no_master_response") });
     // no_payment: смета есть, заказ не оплачен (orderAmount = null), ждём >= 24ч
     // Дедупликация: если для этого orderId есть receipt с prepaymentSubmittedAt — не добавляем из orders,
@@ -881,15 +892,17 @@ router.get("/action-items/:id", ops, async (req: any, res: any) => {
       const ageH = Math.round((Date.now() - new Date(o.createdAt).getTime()) / 3600000);
       const assignedAt = (o as any).assignedAt ?? null;
       const updatedAt = (o as any).updatedAt ?? null;
-      // hoursWithoutEstimate: count from assignedAt (when current master was assigned), not from order creation
-      const hoursWithoutEstimate = assignedAt
+      // hoursWithoutEstimate: real age from order creation (not assignedAt which can be stale)
+      const hoursWithoutEstimate = ageH;
+      // hoursWithCurrentMaster: how long the current master has had the order
+      const hoursWithCurrentMaster = assignedAt
         ? Math.round((Date.now() - new Date(assignedAt).getTime()) / 3600000)
         : ageH;
       // hoursWithoutProgress: count from updatedAt (last activity), not from order creation
       const hoursWithoutProgress = updatedAt
         ? Math.round((Date.now() - new Date(updatedAt).getTime()) / 3600000)
         : ageH;
-      ctx.order = { id: o.id, proposedAmount: o.proposedAmount ? Number(o.proposedAmount) : null, orderAmount: o.orderAmount ? Number(o.orderAmount) : null, prepaymentAmount: o.prepaymentAmount ? Number(o.prepaymentAmount) : null, status: o.status, clientName: (o as any).clientName ?? null, clientPhone: (o as any).clientPhone ?? null, city: o.city, district: o.district ?? null, hoursOld: ageH, hoursWithoutEstimate, hoursWithoutProgress };
+      ctx.order = { id: o.id, proposedAmount: o.proposedAmount ? Number(o.proposedAmount) : null, orderAmount: o.orderAmount ? Number(o.orderAmount) : null, prepaymentAmount: o.prepaymentAmount ? Number(o.prepaymentAmount) : null, status: o.status, clientName: (o as any).clientName ?? null, clientPhone: (o as any).clientPhone ?? null, city: o.city, district: o.district ?? null, hoursOld: ageH, hoursWithoutEstimate, hoursWithCurrentMaster, hoursWithoutProgress };
     }
   }
 
