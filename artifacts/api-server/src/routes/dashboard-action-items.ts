@@ -181,7 +181,9 @@ async function buildItems(): Promise<Item[]> {
     // no_payment: смета есть, заказ не оплачен (orderAmount = null), ждём >= 24ч
     // Дедупликация: если для этого orderId есть receipt с prepaymentSubmittedAt — не добавляем из orders,
     // потому что receipt-задача (подтверждение оплаты) точнее и приоритетнее
-    if (o.proposedAmount && !o.orderAmount && ageH >= 24 && !receiptSubmittedOrderIds.has(Number(o.id))) items.push({ id: `no_payment-${o.id}`, type: "no_payment", priority: pFromHours(ageH), title: `Заказ #${o.id} — не оплачена предоплата`, shortDescription: clientLabel.trim(), fullDescription: `Смета ${Number(o.proposedAmount).toLocaleString("ru-RU")} ₽ отправлена, ожидаем оплату ${fmtAge(ageH)}.`, createdAt: new Date(o.createdAt).toISOString(), updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "finance", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterMap.get(Number(o.masterId))?.alias ?? null) : null, amountAtRisk: Number(o.proposedAmount), actions: actionSet("no_payment") });
+    // Skip no_payment if commission was already partially/fully paid (transaction_payments exist)
+    // — if operator recorded commission payment, prepayment is definitely received
+    if (o.proposedAmount && !o.orderAmount && ageH >= 24 && !receiptSubmittedOrderIds.has(Number(o.id)) && !txOrderIdsWithPayments.has(Number(o.id))) items.push({ id: `no_payment-${o.id}`, type: "no_payment", priority: pFromHours(ageH), title: `Заказ #${o.id} — не оплачена предоплата`, shortDescription: clientLabel.trim(), fullDescription: `Смета ${Number(o.proposedAmount).toLocaleString("ru-RU")} ₽ отправлена, ожидаем оплату ${fmtAge(ageH)}.`, createdAt: new Date(o.createdAt).toISOString(), updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "finance", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterMap.get(Number(o.masterId))?.alias ?? null) : null, amountAtRisk: Number(o.proposedAmount), actions: actionSet("no_payment") });
     if (ageH >= 168) items.push({ id: `no_progress-${o.id}`, type: "no_progress", priority: "medium", title: `Заказ #${o.id} — нет движения`, shortDescription: `${fmtAge(ageH)} без обновлений`, fullDescription: `Заказ без движения уже ${fmtAge(ageH)}.`, createdAt: new Date(o.createdAt).toISOString(), updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterMap.get(Number(o.masterId))?.alias ?? null) : null, amountAtRisk: o.orderAmount ? Number(o.orderAmount) : null, actions: actionSet("no_progress") });
     // possible_bypass из cancelReason убран — заказы с cancelReason уже cancelled и не попадают в выборку
   }
@@ -189,7 +191,9 @@ async function buildItems(): Promise<Item[]> {
   // Дедупликация: если для этого orderId уже есть задача no_payment из orders — заменяем её (receipt-задача точнее)
   const noPaymentOrderIds = new Set(items.filter(i => i.type === "no_payment").map(i => i.orderId != null ? Number(i.orderId) : null).filter(Boolean));
   for (const r of receipts) {
-    if (r.prepaymentSubmittedAt && !r.prepaymentSeenAt) {
+    // Skip receipt task if commission was already partially/fully paid (transaction_payments exist)
+    // — if operator recorded commission payment, prepayment is definitely received
+    if (r.prepaymentSubmittedAt && !r.prepaymentSeenAt && !txOrderIdsWithPayments.has(Number(r.orderId))) {
       const ageH = (now.getTime() - new Date(r.prepaymentSubmittedAt).getTime()) / 3600000;
       // Если уже есть задача no_payment для этого заказа из orders — удаляем её (receipt-задача приоритетнее)
       if (r.orderId != null && noPaymentOrderIds.has(Number(r.orderId))) {
