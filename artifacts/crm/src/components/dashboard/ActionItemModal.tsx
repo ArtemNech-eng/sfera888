@@ -2,6 +2,7 @@ import React, { useEffect, useState, type ChangeEvent, type ReactNode } from "re
 import { BellRing } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
+import { pluralRu } from "./types";
 import {
   AlertTriangle, CheckCircle2, Clock, X, Banknote, TriangleAlert,
   UserX, ShieldAlert, BadgeAlert, Wrench, MessageSquare, Settings,
@@ -23,23 +24,14 @@ function fmtAge(hours: number): string {
   if (hours < 1) {
     const mins = Math.max(1, Math.round(hours * 60));
     if (mins <= 1) return "только что";
-    const minForm = mins % 10 === 1 && mins % 100 !== 11 ? "минута"
-      : [2, 3, 4].includes(mins % 10) && ![12, 13, 14].includes(mins % 100) ? "минуты"
-      : "минут";
-    return `${mins} ${minForm}`;
+    return `${mins} ${pluralRu(mins, "минута", "минуты", "минут")}`;
   }
   if (hours >= 48) {
     const days = Math.round(hours / 24);
-    const form = days % 10 === 1 && days % 100 !== 11 ? "день"
-      : [2, 3, 4].includes(days % 10) && ![12, 13, 14].includes(days % 100) ? "дня"
-      : "дней";
-    return `${days} ${form}`;
+    return `${days} ${pluralRu(days, "день", "дня", "дней")}`;
   }
   const h = Math.round(hours);
-  const hForm = h % 10 === 1 && h % 100 !== 11 ? "час"
-    : [2, 3, 4].includes(h % 10) && ![12, 13, 14].includes(h % 100) ? "часа"
-    : "часов";
-  return `${h} ${hForm}`;
+  return `${h} ${pluralRu(h, "час", "часа", "часов")}`;
 }
 
 const PRIORITY_RU: Record<string, string> = {
@@ -373,6 +365,10 @@ export function ActionItemModal({ id, open, onOpenChange }: {
     if (id) {
       setComment(localStorage.getItem(`aitem-comment-${id}`) ?? "");
       setSnoozeDays(1);
+      setCancelConfirmStep(false);
+      setCancelOrderReason("");
+      setCancelAsMasterPending(false);
+      setCompleteAsMasterPending(false);
     }
   }, [id]);
   useEffect(() => {
@@ -413,6 +409,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
         throw new Error(errMsg);
       }
       const resultJson = await r.json().catch(() => null);
+      const orchestration = resultJson?.orchestration;
       const assignedMaster = resultJson?.context?.assignedMaster;
       const confirmedOrderMasterId = resultJson?.context?.order?.masterId;
       const isReassignConfirmed = assignedMaster && confirmedOrderMasterId === assignedMaster.id;
@@ -421,6 +418,22 @@ export function ActionItemModal({ id, open, onOpenChange }: {
         ? `Назначен: ${assignedMaster.name}${assignedMaster.city ? ` (${assignedMaster.city})` : ""}`
         : "Действие выполнено";
       window.dispatchEvent(new CustomEvent("dashboard-action-items:changed"));
+
+      // ─── call_master: открыть tel: ссылку с номером мастера ───
+      if (action === "call_master" && orchestration?.masterPhone) {
+        window.open(`tel:${orchestration.masterPhone}`, "_self");
+        showToast(`📞 Звоним мастеру: ${orchestration.masterPhone}`);
+        return;
+      }
+
+      // ─── open_issue_order: навигация к заказу ───
+      if (action === "open_issue_order" && orchestration?.orderId) {
+        showToast(`Переход к заказу #${orchestration.orderId}`);
+        // Navigate to orders page with the specific order highlighted
+        window.location.hash = `/orders?highlight=${orchestration.orderId}`;
+        onOpenChange(false);
+        return;
+      }
       if (action === "partial_payment") {
         const n = Number((payload as any).orderAmount ?? 0);
         const p = Number((payload as any).paidAmount ?? 0);
@@ -1382,7 +1395,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
             />
             <OrderInfoBlock ctx={ctx} />
             <div className="border-t pt-3 flex flex-wrap gap-2">
-              <Button size="sm" onClick={() => fire("assign_self")} disabled={busy === "assign_self"}>
+              <Button size="sm" onClick={() => fire("assign_self", { operatorId: authUser?.id ?? null })} disabled={busy === "assign_self"}>
                 <UserRoundPen className="w-4 h-4" /> Назначить себя
               </Button>
               <Button size="sm" variant="outline" onClick={() => fire("resolve")} disabled={busy === "resolve"}>
@@ -1630,10 +1643,9 @@ export function ActionItemModal({ id, open, onOpenChange }: {
               onChange={e => setSnoozeDays(Number(e.target.value))}
               className="pl-3 pr-1 py-2 text-sm text-[#1A1A1A] bg-transparent outline-none cursor-pointer"
             >
-              <option value={1}>1 день</option>
-              <option value={2}>2 дня</option>
-              <option value={3}>3 дня</option>
-              <option value={7}>7 дней</option>
+              {[1, 2, 3, 7].map(d => (
+                <option key={d} value={d}>{d} {pluralRu(d, "день", "дня", "дней")}</option>
+              ))}
             </select>
             <button
               onClick={() => fire("snooze", { days: snoozeDays })}

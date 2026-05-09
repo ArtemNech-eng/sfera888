@@ -3,33 +3,13 @@ import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Search, Users, List, X, BellRing, Keyboard, TrendingUp, TrendingDown, Minus, Download, Bell, AlertTriangle, DollarSign, Clock, BarChart3, GripVertical, Timer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { ActionItemModal } from "./ActionItemModal";
-import { ActionItemCard, isBurning } from "./ActionItemCard";
+import { ActionItemCard } from "./ActionItemCard";
 import { useAuth } from "@/hooks/use-auth";
+import { type ActionItem, type ActionItemCardData, isBurning, pluralRu, TYPE_LABEL } from "./types";
 
-type Priority = "critical" | "high" | "medium" | "low";
-type Item = {
-  id: string;
-  type: string;
-  priority: Priority;
-  title: string;
-  shortDescription: string;
-  fullDescription: string;
-  createdAt: string;
-  deadline: string | null;
-  status: string;
-  entityType: string;
-  entityId: string | number | null;
-  orderId: string | number | null;
-  masterId: string | number | null;
-  clientId: string | number | null;
-  city: string | null;
-  amountAtRisk: number | null;
-  assigneeId?: string | number | null;
-  assigneeName?: string | null;
-  masterName?: string | null;
-  actions: { key: string; label: string; style: string }[];
-};
+type Item = ActionItem;
 
 const SCOPE_TABS = [
   { key: "all", label: "Все" },
@@ -70,6 +50,7 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
   const [period, setPeriod] = useState<string>(externalPeriod ?? "all");
   const [scope, setScope] = useState<string>("all");
   const [search, setSearch] = useState("");
+  // myOnly временно скрыт — assigneeId не заполняется на сервере
   const [myOnly, setMyOnly] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"list" | "grouped">("list");
@@ -109,8 +90,11 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
   }, []);
 
   const [showAll, setShowAll] = useState(false);
+  // UX-2: Progressive loading — показываем по PAGE_SIZE, кнопка «Ещё»
+  const PAGE_SIZE = 10;
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
-  useEffect(() => { setShowAll(false); setSelectedIds(new Set()); setFocusedIndex(-1); }, [scope, search, period, myOnly]);
+  useEffect(() => { setShowAll(false); setVisibleCount(PAGE_SIZE); setSelectedIds(new Set()); setFocusedIndex(-1); }, [scope, search, period, myOnly]);
 
   const filtered = useMemo(() => {
     return items
@@ -120,19 +104,18 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
         if (scope === "high") return i.priority === "high";
         if (scope === "medium") return i.priority === "medium";
         if (scope === "low") return i.priority === "low";
-        if (scope === "orders") return i.entityType === "order";
-        if (scope === "masters") return i.entityType === "master";
+        if (scope === "orders") return i.orderId != null || i.entityType === "order";
+        if (scope === "masters") return i.masterId != null || i.entityType === "master";
         if (scope === "finance") return i.entityType === "finance" || i.type.includes("payment") || i.type === "low_avito_balance";
         if (scope === "system") return i.entityType === "system";
         return i.entityType === scope;
       })
       .filter((i) => !city || city === "Все города" || i.city === city)
-      .filter((i) => !myOnly || !currentUserId || String(i.assigneeId ?? "") === String(currentUserId))
-      .filter((i) => search.trim() === "" || `${i.title} ${i.shortDescription} ${i.orderId ?? ""} ${i.masterId ?? ""} ${i.entityId ?? ""}`.toLowerCase().includes(search.toLowerCase()))
+      .filter((i) => search.trim() === "" || `${i.title} ${i.shortDescription} ${i.orderId ?? ""} ${i.masterId ?? ""} ${i.masterName ?? ""} ${i.entityId ?? ""}`.toLowerCase().includes(search.toLowerCase()))
       .sort((a, b) => {
         // 1. Горящие задачи (burning) всегда наверх
-        const aBurning = isBurning(a as any) ? 0 : 1;
-        const bBurning = isBurning(b as any) ? 0 : 1;
+        const aBurning = isBurning(a) ? 0 : 1;
+        const bBurning = isBurning(b) ? 0 : 1;
         if (aBurning !== bBurning) return aBurning - bBurning;
         // 2. По приоритету
         const p: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
@@ -165,7 +148,7 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
     });
   }, [filtered, viewMode]);
 
-  // Мини-график тренда (из текущих items, без доп. запроса)
+  // Мини-график тренда (из filtered — учитывает текущие фильтры)
   const trendData = useMemo(() => {
     const days: Record<string, { critical: number; high: number }> = {};
     const now = Date.now();
@@ -173,7 +156,7 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
       const key = new Date(now - d * 86400000).toISOString().slice(0, 10);
       days[key] = { critical: 0, high: 0 };
     }
-    for (const item of items) {
+    for (const item of filtered) {
       const key = new Date(item.createdAt).toISOString().slice(0, 10);
       if (days[key]) {
         if (item.priority === "critical") days[key].critical++;
@@ -181,7 +164,7 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
       }
     }
     return Object.values(days);
-  }, [items]);
+  }, [filtered]);
 
   const trendCritical = trendData.map(d => d.critical);
   const trendDirection = trendCritical.length >= 2
@@ -189,22 +172,29 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
     : "flat";
 
   // Количество горящих задач
-  const burningCount = useMemo(() => filtered.filter(i => isBurning(i as any)).length, [filtered]);
+  const burningCount = useMemo(() => filtered.filter(i => isBurning(i)).length, [filtered]);
 
-  // Авто-эскалация: есть ли критичные >24ч
+  // Авто-эскалация: есть ли критичные >24ч (из filtered — учитывает текущие фильтры)
   const hasStaleCritical = useMemo(() => {
-    return items.some(i => i.priority === "critical" && (Date.now() - new Date(i.createdAt).getTime()) > 24 * 3600000);
-  }, [items]);
+    return filtered.some(i => i.priority === "critical" && (Date.now() - new Date(i.createdAt).getTime()) > 24 * 3600000);
+  }, [filtered]);
 
   // ─── Фаза 3: KPI-метрики ─────────────────────────────────────────
   const kpi = useMemo(() => {
     const totalAtRisk = filtered.reduce((s, i) => s + (Number(i.amountAtRisk) || 0), 0);
     const ages = filtered.map(i => (Date.now() - new Date(i.createdAt).getTime()) / 3600000);
     const avgAgeH = ages.length > 0 ? ages.reduce((a, b) => a + b, 0) / ages.length : 0;
-    const total = summary.critical + summary.high + summary.medium + summary.low;
+    const total = filtered.length;
     const oldestH = ages.length > 0 ? Math.max(...ages) : 0;
     return { totalAtRisk, avgAgeH, oldestH, total };
-  }, [filtered, summary]);
+  }, [filtered]);
+
+  // Счётчики по приоритету из filtered (учитывают текущие фильтры)
+  const filteredCounts = useMemo(() => {
+    const counts = { critical: 0, high: 0, medium: 0, low: 0 };
+    for (const i of filtered) counts[i.priority]++;
+    return counts;
+  }, [filtered]);
 
   // ─── Фаза 3: Drag-and-drop состояние ─────────────────────────────
   const [dragOverId, setDragOverId] = useState<string | null>(null);
@@ -272,9 +262,7 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
 
   const handleDragEnd = () => { setDragOverId(null); setDragItemId(null); };
 
-  // ─── Фаза 3: Snooze с таймером ───────────────────────────────────
-  const [snoozeTimers, setSnoozeTimers] = useState<Record<string, number>>({});
-
+  // ─── Snooze ──────────────────────────────────────────────────────
   const handleSnooze = useCallback(async (id: string, days: number) => {
     try {
       await fetch(`/api/dashboard/action-items/${id}/action`, {
@@ -283,21 +271,22 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "snooze", payload: { days } }),
       });
-      setSnoozeTimers(prev => ({ ...prev, [id]: days }));
       window.dispatchEvent(new CustomEvent("dashboard-action-items:changed"));
     } catch { /* ignore */ }
   }, []);
 
   // ─── Фаза 3: Экспорт CSV ─────────────────────────────────────────
+  const csvEscape = (v: string) => `"${v.replace(/\r?\n/g, " ").replace(/"/g, '""')}"`;
+
   const handleExportCSV = useCallback(() => {
     const rows = [
       ["Приоритет", "Тип", "Заголовок", "Описание", "Город", "Мастер", "Заказ", "Сумма под риском", "Возраст (ч)", "Дедлайн", "Создана"],
       ...displayItems.map(i => {
         const ageH = Math.round((Date.now() - new Date(i.createdAt).getTime()) / 3600000);
         return [
-          i.priority, i.type, `"${i.title.replace(/"/g, '""')}"`, `"${i.shortDescription.replace(/"/g, '""')}"`,
+          i.priority, i.type, csvEscape(i.title), csvEscape(i.shortDescription),
           i.city ?? "", i.masterName ?? (i.masterId ? `#${i.masterId}` : ""), i.orderId ?? "",
-          i.amountAtRisk ?? "", ageH, i.deadline ?? "", i.createdAt,
+          i.amountAtRisk != null ? `"${i.amountAtRisk}"` : "", ageH, i.deadline ?? "", i.createdAt,
         ];
       }),
     ];
@@ -319,36 +308,64 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
     if (isLoading) return;
     if (!dataLoadedRef.current) { dataLoadedRef.current = true; prevCriticalCountRef.current = summary.critical; return; }
     const prev = prevCriticalCountRef.current;
-    if (summary.critical > prev && prev >= 0 && "Notification" in window) {
-      if (Notification.permission === "granted") {
-        new Notification("🔥 Новые критичные задачи", {
-          body: `Критичных задач: ${summary.critical} (+${summary.critical - prev})`,
-          tag: "action-items-critical",
-        });
-      } else if (Notification.permission !== "denied") {
-        Notification.requestPermission();
+    if (summary.critical > prev && prev >= 0) {
+      // UX-8: Звук при новых критичных
+      try {
+        const ctx = new AudioContext();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = 880;
+        osc.type = "sine";
+        gain.gain.value = 0.15;
+        osc.start();
+        osc.stop(ctx.currentTime + 0.15);
+        setTimeout(() => { ctx.close(); }, 300);
+      } catch { /* AudioContext not available */ }
+      // Браузерное уведомление
+      if ("Notification" in window) {
+        if (Notification.permission === "granted") {
+          new Notification("🔥 Новые критичные задачи", {
+            body: `Критичных задач: ${summary.critical} (+${summary.critical - prev})`,
+            tag: "action-items-critical",
+          });
+        } else if (Notification.permission !== "denied") {
+          Notification.requestPermission();
+        }
       }
     }
     prevCriticalCountRef.current = summary.critical;
   }, [summary.critical, isLoading]);
 
-  const toggleSelect = (id: string) => {
+  const toggleSelect = useCallback((id: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
-  };
+  }, []);
 
   const selectAll = () => {
-    const visibleIds = (showAll ? displayItems : displayItems.slice(0, 6)).map(i => i.id);
+    const visibleIds = (showAll ? displayItems : displayItems.slice(0, visibleCount)).map(i => i.id);
     setSelectedIds(new Set(visibleIds));
   };
 
   const deselectAll = () => setSelectedIds(new Set());
 
-  const bulkAction = async (action: string) => {
+  // UX-1: AlertDialog state вместо window.confirm
+  const [confirmDialog, setConfirmDialog] = useState<{ action: string; label: string; count: number } | null>(null);
+
+  const bulkAction = (action: string) => {
     if (selectedIds.size === 0) return;
+    const actionLabel = action === "dismiss" ? "отложить" : "пометить выполненными";
+    setConfirmDialog({ action, label: actionLabel, count: selectedIds.size });
+  };
+
+  const bulkActionConfirmed = async () => {
+    if (!confirmDialog) return;
+    const action = confirmDialog.action;
+    setConfirmDialog(null);
     setBulkActionBusy(action);
     let ok = 0;
     let fail = 0;
@@ -375,6 +392,47 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
 
   const handleQuickCall = (id: string) => setOpenId(id);
   const handleQuickMessage = (id: string) => setOpenId(id);
+
+  // UX-7: Анимация при выполнении задачи
+  const [resolvingIds, setResolvingIds] = useState<Set<string>>(new Set());
+  const handleQuickResolve = useCallback(async (id: string) => {
+    setResolvingIds(prev => new Set(prev).add(id));
+    setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/dashboard/action-items/${id}/action`, {
+          method: "POST", credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "resolve", payload: {} }),
+        });
+        if (r.ok) window.dispatchEvent(new CustomEvent("dashboard-action-items:changed"));
+      } catch { /* ignore */ }
+      setResolvingIds(prev => { const n = new Set(prev); n.delete(id); return n; });
+    }, 600); // задержка для анимации
+  }, []);
+
+  // UX-4: Быстрый snooze из карточки
+  const handleQuickSnooze = useCallback(async (id: string) => {
+    try {
+      await fetch(`/api/dashboard/action-items/${id}/action`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "snooze", payload: { days: 1 } }),
+      });
+      window.dispatchEvent(new CustomEvent("dashboard-action-items:changed"));
+    } catch { /* ignore */ }
+  }, []);
+
+  // UX-9: Взять задачу на себя
+  const handleAssignSelf = useCallback(async (id: string) => {
+    try {
+      await fetch(`/api/dashboard/action-items/${id}/action`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "assign_self", payload: {} }),
+      });
+      window.dispatchEvent(new CustomEvent("dashboard-action-items:changed"));
+    } catch { /* ignore */ }
+  }, []);
 
   const handlePriorityClick = (p: string) => {
     if (scope === p) { setScope("all"); } else { setScope(p); }
@@ -411,7 +469,7 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
   }, []);
 
   // ─── Клавиатурные шорткаты ──────────────────────────────────────
-  const visibleItems = showAll ? displayItems : displayItems.slice(0, 6);
+  const visibleItems = useMemo(() => showAll ? displayItems : displayItems.slice(0, visibleCount), [showAll, displayItems, visibleCount]);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     // Не перехватываем если фокус в input/textarea
@@ -476,7 +534,7 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
         setFocusedIndex(-1);
         break;
     }
-  }, [focusedIndex, visibleItems]);
+  }, [focusedIndex, visibleItems, toggleSelect]);
 
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
@@ -495,6 +553,7 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
 
   // Snooze dropdown state
   const [snoozeMenuId, setSnoozeMenuId] = useState<string | null>(null);
+  const [snoozeOpenUp, setSnoozeOpenUp] = useState(false);
   // Закрытие snooze dropdown при клике вне
   useEffect(() => {
     if (!snoozeMenuId) return;
@@ -545,13 +604,33 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
           onAiHint={handleAiHint}
           aiHintLoading={aiHintLoadingId === item.id}
           aiHintText={aiHints[item.id] ?? null}
+          compact={viewMode === "grouped"}
+          onQuickResolve={handleQuickResolve}
+          onQuickSnooze={handleQuickSnooze}
+          onAssignSelf={handleAssignSelf}
         />
+        {/* UX-7: Анимация при выполнении */}
+        {resolvingIds.has(item.id) && (
+          <div className="absolute inset-0 bg-green-50/60 rounded-xl flex items-center justify-center z-10 pointer-events-none">
+            <div className="flex items-center gap-1.5 text-green-700 font-bold text-sm animate-pulse">
+              <CheckCircle2 className="w-5 h-5" /> Выполнено!
+            </div>
+          </div>
+        )}
       </div>
       {/* Snooze кнопка-триггер — только в списочном виде */}
       {showDragAndSnooze && (
         <div className="flex flex-col items-center justify-start pt-2 shrink-0 gap-1" data-snooze-menu>
           <button
-            onClick={(e) => { e.stopPropagation(); setSnoozeMenuId(snoozeMenuId === item.id ? null : item.id); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              const newOpen = snoozeMenuId === item.id ? null : item.id;
+              if (newOpen) {
+                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                setSnoozeOpenUp(rect.bottom + 160 > window.innerHeight);
+              }
+              setSnoozeMenuId(newOpen);
+            }}
             className="w-7 h-7 rounded-lg bg-slate-50 hover:bg-slate-100 border flex items-center justify-center transition"
             title="Отложить задачу"
           >
@@ -559,9 +638,9 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
           </button>
         </div>
       )}
-      {/* Snooze dropdown — позиционирован относительно relative-родителя */}
+      {/* Snooze dropdown — умное позиционирование (вверх/вниз) */}
       {snoozeMenuId === item.id && (
-        <div className="absolute right-0 top-full mt-1 z-50 bg-white border rounded-xl shadow-lg p-2 min-w-[140px]" data-snooze-menu>
+        <div className={`absolute right-0 z-50 bg-white border rounded-xl shadow-lg p-2 min-w-[140px] ${snoozeOpenUp ? "bottom-full mb-1" : "top-full mt-1"}`} data-snooze-menu>
           <div className="text-[10px] font-bold text-muted-foreground mb-1.5 px-1">Отложить на:</div>
           {[1, 2, 3, 7].map(d => (
             <button
@@ -569,7 +648,7 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
               onClick={() => { handleSnooze(item.id, d); setSnoozeMenuId(null); }}
               className="w-full text-left px-2 py-1.5 text-xs hover:bg-slate-100 rounded-lg transition"
             >
-              {d} {d === 1 ? "день" : d < 5 ? "дня" : "дней"}
+              {d} {pluralRu(d, "день", "дня", "дней")}
             </button>
           ))}
           <button
@@ -624,26 +703,26 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
             onClick={() => handlePriorityClick("critical")}
             className={`px-2.5 py-1 text-xs rounded-full font-semibold cursor-pointer transition ${scope === "critical" ? "bg-red-500 text-white ring-2 ring-red-300" : "bg-red-100 text-red-700 hover:bg-red-200"}`}
           >
-            Критичные {summary.critical}
+            Критичные {filteredCounts.critical}
           </button>
           <button
             onClick={() => handlePriorityClick("high")}
             className={`px-2.5 py-1 text-xs rounded-full font-semibold cursor-pointer transition ${scope === "high" ? "bg-orange-500 text-white ring-2 ring-orange-300" : "bg-orange-100 text-orange-700 hover:bg-orange-200"}`}
           >
-            Высокий {summary.high}
+            Высокий {filteredCounts.high}
           </button>
           <button
             onClick={() => handlePriorityClick("medium")}
             className={`px-2.5 py-1 text-xs rounded-full font-semibold cursor-pointer transition ${scope === "medium" ? "bg-blue-500 text-white ring-2 ring-blue-300" : "bg-blue-100 text-blue-700 hover:bg-blue-200"}`}
           >
-            Средние {summary.medium}
+            Средние {filteredCounts.medium}
           </button>
-          {summary.low > 0 && (
+          {filteredCounts.low > 0 && (
             <button
               onClick={() => handlePriorityClick("low")}
               className={`px-2.5 py-1 text-xs rounded-full font-semibold cursor-pointer transition ${scope === "low" ? "bg-slate-500 text-white ring-2 ring-slate-300" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
             >
-              Низкие {summary.low}
+              Низкие {filteredCounts.low}
             </button>
           )}
           <span className="px-2.5 py-1 text-xs rounded-full bg-emerald-50 text-emerald-700 font-semibold">
@@ -724,9 +803,7 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
             <button key={p.k} onClick={() => setPeriod(p.k)} className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${period === p.k ? "bg-white shadow-sm text-foreground font-semibold" : "text-muted-foreground hover:text-foreground"}`}>{p.l}</button>
           ))}
         </div>
-        <Button variant={myOnly ? "default" : "outline"} size="sm" onClick={() => setMyOnly((v: boolean) => !v)}>
-          {myOnly ? "Только мои" : "Все задачи"}
-        </Button>
+        {/* «Только мои» скрыт: assigneeId не заполняется на сервере, фильтр не работает */}
         <div className="flex items-center bg-slate-100 rounded-lg p-0.5 ml-auto">
           <button
             onClick={() => setViewMode("list")}
@@ -790,7 +867,7 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
 
       {/* Панель массовых действий */}
       {selectedIds.size > 0 && (
-        <div className="mb-3 flex items-center gap-2 p-2.5 rounded-xl bg-violet-50 border border-violet-200">
+        <div className="mb-3 flex items-center gap-2 p-2.5 rounded-xl bg-violet-50 border border-violet-200 flex-wrap">
           <span className="text-xs font-semibold text-violet-700">
             Выбрано: {selectedIds.size}
           </span>
@@ -819,6 +896,34 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
           >
             <CheckCircle2 className="w-3 h-3" /> Пометить выполненными
           </Button>
+          {/* UX-6: Быстрые массовые действия по типу */}
+          {(() => {
+            const selectedItems = displayItems.filter(i => selectedIds.has(i.id));
+            const types = [...new Set(selectedItems.map(i => i.type))];
+            if (types.length > 0 && selectedIds.size > 1) {
+              return (
+                <>
+                  <div className="h-4 w-px bg-violet-200 mx-1" />
+                  <span className="text-[10px] text-violet-600 font-medium">По типу:</span>
+                  {types.slice(0, 4).map(t => (
+                    <Button
+                      key={t}
+                      size="sm"
+                      variant="outline"
+                      className="text-[10px] h-6 border-slate-200 text-slate-600 hover:bg-slate-50"
+                      onClick={() => {
+                        const idsOfType = selectedItems.filter(i => i.type === t).map(i => i.id);
+                        setSelectedIds(new Set(idsOfType));
+                      }}
+                    >
+                      {TYPE_LABEL[t] ?? t}
+                    </Button>
+                  ))}
+                </>
+              );
+            }
+            return null;
+          })()}
         </div>
       )}
 
@@ -878,11 +983,21 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
       ) : (
         /* ─── Обычный список (с учётом drag-and-drop порядка) ─── */
         <div className="space-y-2">
-          {(showAll ? displayItems : displayItems.slice(0, 6)).map((item, idx) => renderCard(item, idx))}
-          {displayItems.length > 6 && !showAll && (
+          {(showAll ? displayItems : displayItems.slice(0, visibleCount)).map((item, idx) => renderCard(item, idx))}
+          {/* UX-2: Progressive loading — кнопка «Ещё» вместо «Показать все» */}
+          {!showAll && displayItems.length > visibleCount && (
+            <button
+              onClick={() => setVisibleCount(prev => prev + PAGE_SIZE)}
+              className="w-full py-2.5 text-xs font-semibold text-violet-600 hover:text-violet-800 bg-violet-50 hover:bg-violet-100 rounded-lg transition flex items-center justify-center gap-1.5"
+            >
+              <List className="w-3.5 h-3.5" />
+              Ещё {Math.min(PAGE_SIZE, displayItems.length - visibleCount)} из {displayItems.length - visibleCount} задач
+            </button>
+          )}
+          {!showAll && displayItems.length > visibleCount + PAGE_SIZE && (
             <button
               onClick={() => setShowAll(true)}
-              className="w-full py-2 text-xs font-semibold text-violet-600 hover:text-violet-800 transition"
+              className="w-full py-1.5 text-[10px] font-medium text-slate-500 hover:text-slate-700 transition"
             >
               Показать все {displayItems.length} задач
             </button>
@@ -896,6 +1011,24 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
           Обновить
         </Button>
       </div>
+
+      {/* UX-1: AlertDialog для подтверждения массовых действий */}
+      <AlertDialog open={!!confirmDialog} onOpenChange={(open) => { if (!open) setConfirmDialog(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Подтвердите действие</AlertDialogTitle>
+            <AlertDialogDescription>
+              Вы уверены, что хотите {confirmDialog?.label} {confirmDialog?.count} задач? Это действие нельзя отменить.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction onClick={bulkActionConfirmed} className="bg-violet-600 hover:bg-violet-700">
+              Подтвердить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Модалка задачи */}
       <ActionItemModal

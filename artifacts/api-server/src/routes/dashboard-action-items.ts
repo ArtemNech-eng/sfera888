@@ -93,19 +93,24 @@ function pFromHours(hours: number): Priority {
   return "low";
 }
 
+function pluralRu(n: number, one: string, few: string, many: string): string {
+  const abs = Math.abs(n);
+  const last2 = abs % 100;
+  const last1 = abs % 10;
+  if (last2 >= 11 && last2 <= 14) return many;
+  if (last1 === 1) return one;
+  if (last1 >= 2 && last1 <= 4) return few;
+  return many;
+}
+
 function fmtAge(hours: number): string {
+  if (hours < 1) return "менее часа";
   if (hours >= 48) {
     const days = Math.round(hours / 24);
-    const form = days % 10 === 1 && days % 100 !== 11 ? "день"
-      : [2, 3, 4].includes(days % 10) && ![12, 13, 14].includes(days % 100) ? "дня"
-      : "дней";
-    return `${days} ${form}`;
+    return `${days} ${pluralRu(days, "день", "дня", "дней")}`;
   }
   const h = Math.round(hours);
-  const form = h % 10 === 1 && h % 100 !== 11 ? "час"
-      : [2, 3, 4].includes(h % 10) && ![12, 13, 14].includes(h % 100) ? "часа"
-      : "часов";
-  return `${h} ${form}`;
+  return `${h} ${pluralRu(h, "час", "часа", "часов")}`;
 }
 
 function withinPeriod(createdAt: string, period?: string) {
@@ -299,7 +304,25 @@ async function buildItems(): Promise<Item[]> {
     const shortDesc = clientName ? `${clientName}${cCity ? ` · ${cCity}` : ""}` : (cCity || nextRu);
 
     const cLeadId = (linkedOrder as any)?.leadId ?? null;
-    items.push({ id: `case-${(c as any).id}`, type, priority: risk === "red" ? "critical" : "high", title: freshTitle, shortDescription: shortDesc, fullDescription: freshDesc, createdAt: new Date((c as any).updatedAt ?? now).toISOString(), updatedAt: new Date((c as any).updatedAt ?? now).toISOString(), lastActionBy: (c as any).lastActionBy ?? null, deadline: (c as any).nextActionDeadline ? new Date((c as any).nextActionDeadline).toISOString() : null, status: "open", entityType: "system", entityId: (c as any).id, orderId: cOrderId, masterId: (c as any).masterId ?? null, clientId: cLeadId, city: cCity || null, amountAtRisk: null, actions: actionSet(type) });
+items.push({ id: `case-${(c as any).id}`, type, priority: risk === "red" ? "critical" : "high", title: freshTitle, shortDescription: shortDesc, fullDescription: freshDesc, createdAt: new Date((c as any).createdAt ?? now).toISOString(), updatedAt: new Date((c as any).updatedAt ?? now).toISOString(), lastActionBy: (c as any).lastActionBy ?? null, deadline: (c as any).nextActionDeadline ? new Date((c as any).nextActionDeadline).toISOString() : null, status: "open", entityType: "system", entityId: (c as any).id, orderId: cOrderId, masterId: (c as any).masterId ?? null, clientId: cLeadId, city: cCity || null, amountAtRisk: null, actions: actionSet(type) });
+  }
+  // Deduplicate: if chatCases produced a no_estimate/no_payment/no_master_response/no_progress item
+  // for an orderId that already has an item from orders — keep the orders version (more accurate),
+  // remove the chatCase duplicate (id starts with "case-")
+  const seenOrderType = new Map<string, string>();
+  for (const i of items) {
+    if (i.orderId != null && ["no_estimate", "no_payment", "no_master_response", "no_progress"].includes(i.type)) {
+      const key = `${i.type}-${i.orderId}`;
+      if (!seenOrderType.has(key)) seenOrderType.set(key, i.id);
+    }
+  }
+  for (let idx = items.length - 1; idx >= 0; idx--) {
+    const i = items[idx];
+    if (i.id.startsWith("case-") && i.orderId != null && ["no_estimate", "no_payment", "no_master_response", "no_progress"].includes(i.type)) {
+      const key = `${i.type}-${i.orderId}`;
+      const firstId = seenOrderType.get(key);
+      if (firstId && firstId !== i.id) items.splice(idx, 1);
+    }
   }
   for (const t of manualTasks) if ((t as any).status !== "done" && (t as any).status !== "dismissed") items.push({ id: `manual-${(t as any).id}`, type: "custom_manual", priority: "low", title: String((t as any).title ?? "Ручная задача"), shortDescription: String((t as any).description ?? ""), fullDescription: String((t as any).description ?? ""), createdAt: new Date((t as any).createdAt ?? now).toISOString(), updatedAt: new Date((t as any).updatedAt ?? t.createdAt ?? now).toISOString(), lastActionBy: (t as any).lastActionBy ?? null, deadline: (t as any).dueAt ? new Date((t as any).dueAt).toISOString() : null, status: (t as any).status ?? "open", entityType: "system", entityId: (t as any).id, orderId: (t as any).relatedOrderId ?? null, masterId: (t as any).relatedMasterId ?? null, clientId: null, city: null, amountAtRisk: null, actions: actionSet("custom_manual") });
   items.sort((a,b)=>({critical:0,high:1,medium:2,low:3}[a.priority]-({critical:0,high:1,medium:2,low:3}[b.priority])) || ((a.deadline?new Date(a.deadline).getTime():Number.MAX_SAFE_INTEGER)-(b.deadline?new Date(b.deadline).getTime():Number.MAX_SAFE_INTEGER)) || (new Date(a.createdAt).getTime()-new Date(b.createdAt).getTime()));
@@ -851,6 +874,94 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
     return { routedTo: "/finance", applied: true, action, payload, itemId: item.id, confirmedAt: now.toISOString() };
   }
 
+  // ─── assign_self: назначить текущего оператора на заказ ──────────
+  if (action === "assign_self" && item.orderId != null) {
+    const operatorId = (payload as any)?.operatorId ?? null;
+    if (operatorId) {
+      await db.update(ordersTable)
+        .set({ assigneeId: String(operatorId), updatedAt: new Date() } as any)
+        .where(eq(ordersTable.id, Number(item.orderId)));
+    }
+    // Для systemTask / chatCase — snooze на 7 дней (оператор взял на себя)
+    const snoozedUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    await db.insert(taskSnoozesTable)
+      .values({ itemId: item.id, snoozedUntil, snoozedBy: operatorName })
+      .onConflictDoUpdate({ target: taskSnoozesTable.itemId, set: { snoozedUntil, snoozedBy: operatorName } });
+    return { routedTo: "/orders", applied: true, action, payload, itemId: item.id, snoozedUntil: snoozedUntil.toISOString() };
+  }
+
+  // ─── manual_control: перевести заказ в ручной контроль ──────────
+  if (action === "manual_control" && item.orderId != null) {
+    await db.update(ordersTable)
+      .set({ dispatchStatus: "manual", updatedAt: new Date() } as any)
+      .where(eq(ordersTable.id, Number(item.orderId)));
+    // Archive chat case so AI dispatcher stops interfering
+    if (item.orderId != null) {
+      await db.update(chatCasesTable)
+        .set({ isResolved: true, nextAction: "wait", summary: `Переведён в ручной контроль оператором ${operatorName}`, updatedAt: new Date() } as any)
+        .where(eq(chatCasesTable.orderId, Number(item.orderId)))
+        .catch((e: any) => console.error("[manual_control] chatCase update failed:", e));
+    }
+  }
+
+  // ─── resend: повторная рассылка заказа мастерам ──────────────────
+  if (action === "resend" && item.orderId != null) {
+    // Delete old dispatch records so order can be re-broadcast
+    await db.delete(orderDispatchesTable)
+      .where(eq(orderDispatchesTable.orderId, Number(item.orderId)))
+      .catch((e: any) => console.error("[resend] dispatches delete failed:", e));
+    // Reset order to waiting_master for re-broadcast
+    await db.update(ordersTable)
+      .set({ status: "waiting_master", dispatchStatus: "none", dispatchWave: 1, lastBroadcastAt: null, broadcastCount: 0, updatedAt: new Date() } as any)
+      .where(eq(ordersTable.id, Number(item.orderId)));
+  }
+
+  // ─── dismiss: отложить задачу (snooze на 30 дней) ──────────────
+  if (action === "dismiss") {
+    const snoozedUntil = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    await db.insert(taskSnoozesTable)
+      .values({ itemId: item.id, snoozedUntil, snoozedBy: operatorName })
+      .onConflictDoUpdate({ target: taskSnoozesTable.itemId, set: { snoozedUntil, snoozedBy: operatorName } });
+    return { routedTo: "/tasks", applied: true, action, payload, itemId: item.id, snoozedUntil: snoozedUntil.toISOString() };
+  }
+
+  // ─── resolve: пометить задачу выполненной ───────────────────────
+  if (action === "resolve") {
+    // Для systemTask — пометить как done в БД
+    if (item.id.startsWith("manual-")) {
+      const taskId = Number(item.entityId);
+      if (Number.isFinite(taskId)) {
+        await db.update(systemTasksTable)
+          .set({ status: "done", updatedAt: new Date() } as any)
+          .where(eq(systemTasksTable.id, taskId));
+      }
+    }
+    // Для остальных — snooze на 7 дней (задача исчезнет, но вернётся если проблема не решена)
+    const snoozedUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    await db.insert(taskSnoozesTable)
+      .values({ itemId: item.id, snoozedUntil, snoozedBy: operatorName })
+      .onConflictDoUpdate({ target: taskSnoozesTable.itemId, set: { snoozedUntil, snoozedBy: operatorName } });
+    // Archive linked chat case if any
+    if (item.orderId != null) {
+      await db.update(chatCasesTable)
+        .set({ isResolved: true, isArchived: true, updatedAt: new Date() } as any)
+        .where(eq(chatCasesTable.orderId, Number(item.orderId)))
+        .catch(() => {});
+    }
+    return { routedTo: "/tasks", applied: true, action, payload, itemId: item.id, snoozedUntil: snoozedUntil.toISOString() };
+  }
+
+  // ─── call_master: вернуть телефон мастера для tel: ссылки ───────
+  if (action === "call_master" && item.masterId != null) {
+    const [m] = await db.select({ phone: mastersTable.phone }).from(mastersTable).where(eq(mastersTable.id, Number(item.masterId))).limit(1);
+    return { routedTo: "/master-chat", applied: true, action, payload, itemId: item.id, masterPhone: (m as any)?.phone ?? null };
+  }
+
+  // ─── open_issue_order: вернуть данные проблемного заказа ─────────
+  if (action === "open_issue_order" && item.orderId != null) {
+    return { routedTo: "/orders", applied: true, action, payload, itemId: item.id, orderId: Number(item.orderId) };
+  }
+
   return { routedTo: route, applied: true, action, payload, itemId: item.id };
 }
 
@@ -871,7 +982,18 @@ router.get("/action-items", ops, async (req: any, res: any) => {
   const items = (await buildItems())
     .filter((item) => !snoozedIds.has(item.id))
     .filter((item) => matchesFilters(item, { period: String(period), city: String(city), priority: String(priority), status: String(status) }));
-  const summary = { critical: items.filter((i) => i.priority === "critical").length, high: items.filter((i) => i.priority === "high").length, medium: items.filter((i) => i.priority === "medium").length, low: items.filter((i) => i.priority === "low").length, doneToday: items.filter((i) => i.status === "done" && withinPeriod(i.createdAt, "today")).length };
+  // doneToday: count tasks actually resolved today (NOT snoozes/dismisses which are just postponed)
+  let doneToday = 0;
+  try {
+    const startOfToday = new Date(now); startOfToday.setHours(0, 0, 0, 0);
+    // Only count systemTasks that were actually completed (status=done) today
+    // Snoozes are NOT "done" — they are postponed, so we exclude them
+    const doneSystemTasks = await db.select().from(systemTasksTable).where(eq(systemTasksTable.status, "done")).limit(200);
+    doneToday += doneSystemTasks.filter((t: any) => t.updatedAt && new Date(t.updatedAt) >= startOfToday).length;
+  } catch (e: any) {
+    console.warn("[action-items] doneToday count failed:", e?.message);
+  }
+  const summary = { critical: items.filter((i) => i.priority === "critical").length, high: items.filter((i) => i.priority === "high").length, medium: items.filter((i) => i.priority === "medium").length, low: items.filter((i) => i.priority === "low").length, doneToday };
   res.json({ summary, items });
 });
 
@@ -951,7 +1073,7 @@ router.post("/action-items/:id/action", ops, async (req: any, res: any) => {
     item = items.find((i) => (Number.isFinite(orderId) && i.orderId != null && Number(i.orderId) === orderId) || (Number.isFinite(masterId) && i.masterId != null && Number(i.masterId) === masterId));
   }
   if (!item) return res.status(404).json({ error: "Не найдено" });
-  if (!["message_master", "call_client", "reassign", "cancel_order", "cancel_as_master", "complete_as_master", "partial_payment", "return_to_pool", "resolve", "dismiss", "snooze", "update_balance", "manual_unblock", "call_master", "resend", "block_master", "manual_control", "open_issue_order", "confirm_receipt"].includes(action)) return res.status(400).json({ error: "Недопустимое действие" });
+  if (!["message_master", "call_client", "reassign", "cancel_order", "cancel_as_master", "complete_as_master", "partial_payment", "return_to_pool", "resolve", "dismiss", "snooze", "update_balance", "manual_unblock", "call_master", "resend", "block_master", "manual_control", "open_issue_order", "confirm_receipt", "assign_self"].includes(action)) return res.status(400).json({ error: "Недопустимое действие" });
   const operatorName = (req as any).user?.name ?? "Оператор";
   const operatorRole = (req as any).user?.role ?? "operator";
   let result: any;
@@ -1015,7 +1137,7 @@ router.post("/action-items/:id/ai-hint", ops, async (req: any, res: any) => {
 
   try {
     const ageH = Math.round((Date.now() - new Date(item.createdAt).getTime()) / 3600000);
-    const ageStr = ageH >= 48 ? `${Math.round(ageH / 24)} дней` : `${ageH} часов`;
+    const ageStr = ageH >= 48 ? `${Math.round(ageH / 24)} ${pluralRu(Math.round(ageH / 24), "день", "дня", "дней")}` : `${ageH} ${pluralRu(ageH, "час", "часа", "часов")}`;
     const deadlineStr = item.deadline ? `Дедлайн: ${new Date(item.deadline).toLocaleString("ru-RU")}.` : "Дедлайна нет.";
     const actionsStr = item.actions.map(a => a.label).join(", ");
 
