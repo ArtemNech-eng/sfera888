@@ -844,9 +844,20 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
     // entityId для receipt-задач — это id записи в receipts
     const receiptId = Number(item.entityId);
     const now = new Date();
+    // Обновляем prepaymentSeenAt на receipt
     await db.update(receiptsTable)
       .set({ prepaymentSeenAt: now } as any)
       .where(eq(receiptsTable.id, receiptId));
+    // Обновляем orderAmount на заказе (сумма предоплаты из receipt)
+    if (item.orderId != null) {
+      const prepaymentAmount = Number(item.amountAtRisk ?? 0);
+      if (prepaymentAmount > 0) {
+        await db.update(ordersTable)
+          .set({ orderAmount: String(prepaymentAmount), updatedAt: now } as any)
+          .where(eq(ordersTable.id, Number(item.orderId)));
+        console.log(`[confirm_receipt] order #${item.orderId} orderAmount set to ${prepaymentAmount}`);
+      }
+    }
     console.log(`[confirm_receipt] receipt #${receiptId} marked seen by ${operatorName}`);
     // Уведомить мастера о подтверждении оплаты
     if (item.masterId != null) {
@@ -982,14 +993,26 @@ router.get("/action-items", ops, async (req: any, res: any) => {
   const items = (await buildItems())
     .filter((item) => !snoozedIds.has(item.id))
     .filter((item) => matchesFilters(item, { period: String(period), city: String(city), priority: String(priority), status: String(status) }));
-  // doneToday: count tasks actually resolved today (NOT snoozes/dismisses which are just postponed)
+  // doneToday: count tasks actually resolved today (resolve action = real completion, dismiss = just postponed)
   let doneToday = 0;
   try {
     const startOfToday = new Date(now); startOfToday.setHours(0, 0, 0, 0);
-    // Only count systemTasks that were actually completed (status=done) today
-    // Snoozes are NOT "done" — they are postponed, so we exclude them
+    // 1) systemTasks completed today
     const doneSystemTasks = await db.select().from(systemTasksTable).where(eq(systemTasksTable.status, "done")).limit(200);
     doneToday += doneSystemTasks.filter((t: any) => t.updatedAt && new Date(t.updatedAt) >= startOfToday).length;
+    // 2) Snoozed tasks with short snooze (7 days = resolve) created today — these are "resolved" actions
+    //    Dismiss uses 30-day snooze, so we only count 7-day snoozes as "done"
+    const resolvedSnoozes = await db.select().from(taskSnoozesTable)
+      .where(and(
+        gt(taskSnoozesTable.snoozedUntil, new Date(startOfToday.getTime() + 6 * 24 * 60 * 60 * 1000)),
+        lte(taskSnoozesTable.snoozedUntil, new Date(startOfToday.getTime() + 8 * 24 * 60 * 60 * 1000)),
+      )).limit(500);
+    // Only count snoozes created today (snoozedBy is set, but we check snoozedUntil range as proxy)
+    // Resolve snoozes are ~7 days from now, dismiss are ~30 days
+    doneToday += resolvedSnoozes.filter((s: any) => {
+      const created = s.snoozedUntil ? new Date(s.snoozedUntil).getTime() - 7 * 24 * 60 * 60 * 1000 : 0;
+      return created >= startOfToday.getTime();
+    }).length;
   } catch (e: any) {
     console.warn("[action-items] doneToday count failed:", e?.message);
   }

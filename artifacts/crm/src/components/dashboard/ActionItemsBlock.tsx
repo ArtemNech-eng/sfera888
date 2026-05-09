@@ -51,7 +51,6 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
   const [scope, setScope] = useState<string>("all");
   const [search, setSearch] = useState("");
   // myOnly временно скрыт — assigneeId не заполняется на сервере
-  const [myOnly, setMyOnly] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"list" | "grouped">("list");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -94,7 +93,7 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
   const PAGE_SIZE = 10;
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
-  useEffect(() => { setShowAll(false); setVisibleCount(PAGE_SIZE); setSelectedIds(new Set()); setFocusedIndex(-1); }, [scope, search, period, myOnly]);
+  useEffect(() => { setShowAll(false); setVisibleCount(PAGE_SIZE); setSelectedIds(new Set()); setFocusedIndex(-1); }, [scope, search, period]);
 
   const filtered = useMemo(() => {
     return items
@@ -128,7 +127,7 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
         // 4. По свежести
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       });
-  }, [items, scope, myOnly, currentUserId, search, city]);
+  }, [items, scope, currentUserId, search, city]);
 
   // Группировка по мастеру
   const grouped = useMemo(() => {
@@ -309,7 +308,7 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
     if (!dataLoadedRef.current) { dataLoadedRef.current = true; prevCriticalCountRef.current = summary.critical; return; }
     const prev = prevCriticalCountRef.current;
     if (summary.critical > prev && prev >= 0) {
-      // UX-8: Звук при новых критичных
+      // UX-8: Звук при новых критичных (исправлена утечка AudioContext)
       try {
         const ctx = new AudioContext();
         const osc = ctx.createOscillator();
@@ -321,18 +320,14 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
         gain.gain.value = 0.15;
         osc.start();
         osc.stop(ctx.currentTime + 0.15);
-        setTimeout(() => { ctx.close(); }, 300);
+        osc.onended = () => { ctx.close(); };
       } catch { /* AudioContext not available */ }
-      // Браузерное уведомление
-      if ("Notification" in window) {
-        if (Notification.permission === "granted") {
-          new Notification("🔥 Новые критичные задачи", {
-            body: `Критичных задач: ${summary.critical} (+${summary.critical - prev})`,
-            tag: "action-items-critical",
-          });
-        } else if (Notification.permission !== "denied") {
-          Notification.requestPermission();
-        }
+      // Браузерное уведомление (убран авто-запрос permission — только если уже granted)
+      if ("Notification" in window && Notification.permission === "granted") {
+        new Notification("🔥 Новые критичные задачи", {
+          body: `Критичных задач: ${summary.critical} (+${summary.critical - prev})`,
+          tag: "action-items-critical",
+        });
       }
     }
     prevCriticalCountRef.current = summary.critical;
@@ -358,7 +353,7 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
 
   const bulkAction = (action: string) => {
     if (selectedIds.size === 0) return;
-    const actionLabel = action === "dismiss" ? "отложить" : "пометить выполненными";
+    const actionLabel = action === "dismiss" ? "отложить на 30 дней" : "пометить выполненными";
     setConfirmDialog({ action, label: actionLabel, count: selectedIds.size });
   };
 
@@ -799,7 +794,7 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
       {/* Период + Только мои + Переключатель вида + Шорткаты */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <div className="flex items-center bg-slate-100 rounded-lg p-0.5">
-          {[{ k: "all", l: "Все" }, { k: "today", l: "Сегодня" }, { k: "week", l: "Неделя" }, { k: "month", l: "Месяц" }].map(p => (
+          {[{ k: "all", l: "Все" }, { k: "today", l: "Сегодня" }, { k: "week", l: "Неделя" }, { k: "month", l: "Месяц" }, { k: "quarter", l: "Квартал" }].map(p => (
             <button key={p.k} onClick={() => setPeriod(p.k)} className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${period === p.k ? "bg-white shadow-sm text-foreground font-semibold" : "text-muted-foreground hover:text-foreground"}`}>{p.l}</button>
           ))}
         </div>

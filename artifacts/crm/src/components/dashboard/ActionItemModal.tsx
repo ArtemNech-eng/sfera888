@@ -333,6 +333,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
   const [partialOrderAmount, setPartialOrderAmount] = useState<string>("");
   const [partialPaidAmount, setPartialPaidAmount] = useState<string>("");
   const [snoozeDays, setSnoozeDays] = useState<number>(1);
+  const [returnToPoolPending, setReturnToPoolPending] = useState(false);
   const { user: authUser } = useAuth();
   const isAdmin = authUser?.role === "admin";
 
@@ -357,7 +358,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
     if (!open) {
       setMessageText(""); setSelectedMasterId(null); setMasterSearch("");
       setBalanceInput(""); setCancelConfirmStep(false); setCancelOrderReason(""); setToast(null); setAssignedMasterConfirm(null); setCancelAsMasterPending(false); setCancelReason("bypass"); setCompleteAsMasterPending(false); setCompleteAmount(""); setCommissionMode("as_paid");
-      setPartialOrderAmount(""); setPartialPaidAmount("");
+      setPartialOrderAmount(""); setPartialPaidAmount(""); setReturnToPoolPending(false);
     }
   }, [open]);
 
@@ -594,9 +595,26 @@ export function ActionItemModal({ id, open, onOpenChange }: {
             </div>
 
             <div className="border-t pt-3 flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" onClick={() => fire("return_to_pool")} disabled={busy === "return_to_pool"}>
-                <RefreshCw className="w-4 h-4" /> Вернуть в пул
-              </Button>
+              {!returnToPoolPending ? (
+                <Button size="sm" variant="outline" onClick={() => setReturnToPoolPending(true)} disabled={busy === "return_to_pool"}>
+                  <RefreshCw className="w-4 h-4" /> Вернуть в пул
+                </Button>
+              ) : (
+                <div className="w-full rounded-xl border-2 border-amber-200 bg-amber-50 p-3 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="text-xs text-amber-800">Рейтинг мастера будет понижен. Мастер получит уведомление о возврате заказа в пул.</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" className="border-amber-400 text-amber-700 hover:bg-amber-100" disabled={busy === "return_to_pool"}
+                      onClick={() => { fire("return_to_pool"); setReturnToPoolPending(false); }}>
+                      {busy === "return_to_pool" ? "Возвращаем..." : "Да, вернуть в пул"}
+                    </Button>
+                    <Button size="sm" variant="outline" disabled={busy === "return_to_pool"}
+                      onClick={() => setReturnToPoolPending(false)}>Отмена</Button>
+                  </div>
+                </div>
+              )}
               <Button size="sm" variant="outline" onClick={() => fire("resolve")} disabled={busy === "resolve"}>
                 <CheckCircle2 className="w-4 h-4" /> Пометить выполненной
               </Button>
@@ -683,10 +701,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                   size="sm"
                   className="bg-emerald-600 hover:bg-emerald-700 text-white w-full"
                   disabled={busy === "confirm_receipt"}
-                  onClick={async () => {
-                    await fire("confirm_receipt");
-                    onOpenChange(false);
-                  }}
+                  onClick={() => fire("confirm_receipt")}
                 >
                   <CheckCircle2 className="w-4 h-4 mr-1" />
                   {busy === "confirm_receipt" ? "Подтверждаем..." : "✅ Подтвердить получение оплаты"}
@@ -769,9 +784,26 @@ export function ActionItemModal({ id, open, onOpenChange }: {
             </div>
 
             <div className="border-t pt-3 flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" onClick={() => fire("return_to_pool")} disabled={busy === "return_to_pool"}>
-                <RefreshCw className="w-4 h-4" /> Вернуть в пул
-              </Button>
+              {!returnToPoolPending ? (
+                <Button size="sm" variant="outline" onClick={() => setReturnToPoolPending(true)} disabled={busy === "return_to_pool"}>
+                  <RefreshCw className="w-4 h-4" /> Вернуть в пул
+                </Button>
+              ) : (
+                <div className="w-full rounded-xl border-2 border-amber-200 bg-amber-50 p-3 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="text-xs text-amber-800">Рейтинг мастера будет понижен. Мастер получит уведомление о возврате заказа в пул.</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" className="border-amber-400 text-amber-700 hover:bg-amber-100" disabled={busy === "return_to_pool"}
+                      onClick={() => { fire("return_to_pool"); setReturnToPoolPending(false); }}>
+                      {busy === "return_to_pool" ? "Возвращаем..." : "Да, вернуть в пул"}
+                    </Button>
+                    <Button size="sm" variant="outline" disabled={busy === "return_to_pool"}
+                      onClick={() => setReturnToPoolPending(false)}>Отмена</Button>
+                  </div>
+                </div>
+              )}
               {!cancelConfirmStep ? (
                 <Button size="sm" variant="destructive" onClick={() => setCancelConfirmStep("select")} disabled={busy === "cancel_order"}>
                   Отменить заказ
@@ -863,9 +895,26 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                 >
                   <RefreshCw className="w-4 h-4" /> Разослать повторно
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => fire("return_to_pool")} disabled={busy === "return_to_pool"}>
-                  <RefreshCw className="w-4 h-4" /> Вернуть в пул
-                </Button>
+                {!returnToPoolPending ? (
+                  <Button size="sm" variant="outline" onClick={() => setReturnToPoolPending(true)} disabled={busy === "return_to_pool"}>
+                    <RefreshCw className="w-4 h-4" /> Вернуть в пул
+                  </Button>
+                ) : (
+                  <div className="w-full rounded-xl border-2 border-amber-200 bg-amber-50 p-3 space-y-2">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <div className="text-xs text-amber-800">Рейтинг мастера будет понижен. Мастер получит уведомление о возврате заказа в пул.</div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" className="border-amber-400 text-amber-700 hover:bg-amber-100" disabled={busy === "return_to_pool"}
+                        onClick={() => { fire("return_to_pool"); setReturnToPoolPending(false); }}>
+                        {busy === "return_to_pool" ? "Возвращаем..." : "Да, вернуть в пул"}
+                      </Button>
+                      <Button size="sm" variant="outline" disabled={busy === "return_to_pool"}
+                        onClick={() => setReturnToPoolPending(false)}>Отмена</Button>
+                    </div>
+                  </div>
+                )}
                 <Button size="sm" variant="outline" onClick={() => fire("resolve")} disabled={busy === "resolve"}>
                   <CheckCircle2 className="w-4 h-4" /> Пометить выполненной
                 </Button>
@@ -1035,14 +1084,31 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                 >
                   <MessageSquare className="w-4 h-4" /> Написать
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => fire("return_to_pool")}
-                  disabled={busy === "return_to_pool"}
-                >
-                  <RefreshCw className="w-4 h-4" /> Вернуть в пул
-                </Button>
+                {!returnToPoolPending ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setReturnToPoolPending(true)}
+                    disabled={busy === "return_to_pool"}
+                  >
+                    <RefreshCw className="w-4 h-4" /> Вернуть в пул
+                  </Button>
+                ) : (
+                  <div className="w-full rounded-xl border-2 border-amber-200 bg-amber-50 p-3 space-y-2">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <div className="text-xs text-amber-800">Рейтинг мастера будет понижен. Мастер получит уведомление о возврате заказа в пул.</div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" className="border-amber-400 text-amber-700 hover:bg-amber-100" disabled={busy === "return_to_pool"}
+                        onClick={() => { fire("return_to_pool"); setReturnToPoolPending(false); }}>
+                        {busy === "return_to_pool" ? "Возвращаем..." : "Да, вернуть в пул"}
+                      </Button>
+                      <Button size="sm" variant="outline" disabled={busy === "return_to_pool"}
+                        onClick={() => setReturnToPoolPending(false)}>Отмена</Button>
+                    </div>
+                  </div>
+                )}
                 <Button
                   size="sm"
                   variant="outline"
@@ -1335,9 +1401,26 @@ export function ActionItemModal({ id, open, onOpenChange }: {
             </div>
 
             <div className="border-t pt-3 flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" onClick={() => fire("return_to_pool")} disabled={busy === "return_to_pool"}>
-                <RefreshCw className="w-4 h-4" /> Вернуть в пул
-              </Button>
+              {!returnToPoolPending ? (
+                <Button size="sm" variant="outline" onClick={() => setReturnToPoolPending(true)} disabled={busy === "return_to_pool"}>
+                  <RefreshCw className="w-4 h-4" /> Вернуть в пул
+                </Button>
+              ) : (
+                <div className="w-full rounded-xl border-2 border-amber-200 bg-amber-50 p-3 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="text-xs text-amber-800">Рейтинг мастера будет понижен. Мастер получит уведомление о возврате заказа в пул.</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" className="border-amber-400 text-amber-700 hover:bg-amber-100" disabled={busy === "return_to_pool"}
+                      onClick={() => { fire("return_to_pool"); setReturnToPoolPending(false); }}>
+                      {busy === "return_to_pool" ? "Возвращаем..." : "Да, вернуть в пул"}
+                    </Button>
+                    <Button size="sm" variant="outline" disabled={busy === "return_to_pool"}
+                      onClick={() => setReturnToPoolPending(false)}>Отмена</Button>
+                  </div>
+                </div>
+              )}
               <Button size="sm" variant="outline" onClick={() => fire("resolve")} disabled={busy === "resolve"}>
                 <CheckCircle2 className="w-4 h-4" /> Пометить выполненной
               </Button>
