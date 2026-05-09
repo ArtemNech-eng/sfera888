@@ -5,7 +5,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { pluralRu } from "./types";
 import {
   AlertTriangle, CheckCircle2, Clock, X, Banknote, TriangleAlert,
-  UserX, ShieldAlert, BadgeAlert, Wrench, MessageSquare, Settings,
+  UserX, ShieldAlert, ShieldCheck, BadgeAlert, Wrench, MessageSquare, Settings,
   UserRoundPen, Phone, MapPin, Package, RefreshCw, CircleAlert,
   ChevronRight,
 } from "lucide-react";
@@ -1009,7 +1009,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                   onClick={() => fire("manual_unblock")}
                   disabled={busy === "manual_unblock"}
                 >
-                  Разблокировать вручную
+                  <ShieldCheck className="w-4 h-4" /> Разблокировать вручную
                 </Button>
               </div>
             </div>

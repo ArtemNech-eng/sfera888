@@ -45,10 +45,15 @@ export function pluralRu(n: number, one: string, few: string, many: string): str
 }
 
 /** Проверка: задача «горит» (критично просрочена) */
-export function isBurning(item: { createdAt: string; deadline: string | null }): boolean {
-  const hours = (Date.now() - new Date(item.createdAt).getTime()) / 3600000;
-  if (hours >= 48) return true;
+export function isBurning(item: { createdAt: string; deadline: string | null; priority: Priority }): boolean {
+  // Низкоприоритетные задачи никогда не «горят»
+  if (item.priority === "low") return false;
+  // Просроченный дедлайн — всегда горит для critical/high
   if (item.deadline && new Date(item.deadline).getTime() < Date.now()) return true;
+  // Возраст задачи: critical/high горят через 48ч, medium — через 72ч
+  const hours = (Date.now() - new Date(item.createdAt).getTime()) / 3600000;
+  if (item.priority === "critical" || item.priority === "high") return hours >= 48;
+  if (item.priority === "medium") return hours >= 72;
   return false;
 }
 
@@ -65,4 +70,19 @@ export const TYPE_LABEL: Record<string, string> = {
   no_estimate: "Нет сметы", no_payment: "Нет оплаты", no_master_response: "Нет отклика",
   no_progress: "Нет движения", low_avito_balance: "Avito баланс", blocked_master: "Заблокирован",
   possible_bypass: "Обход", conflict: "Конфликт", no_manager_id: "Нет менеджера", custom_manual: "Ручная",
+};
+
+/** Общие маппинги приоритетов — единый источник истины */
+export const PRIORITY_RU: Record<Priority, string> = {
+  critical: "Критично", high: "Высокий", medium: "Средний", low: "Низкий",
+};
+
+export const PRIORITY_PILL: Record<Priority, string> = {
+  critical: "bg-red-100 text-red-700", high: "bg-orange-100 text-orange-700",
+  medium: "bg-blue-100 text-blue-700", low: "bg-slate-100 text-slate-700",
+};
+
+export const PRIORITY_LEFT_BORDER: Record<Priority, string> = {
+  critical: "border-l-red-400", high: "border-l-orange-400",
+  medium: "border-l-blue-400", low: "border-l-slate-300",
 };

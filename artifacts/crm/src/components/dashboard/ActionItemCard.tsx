@@ -1,12 +1,11 @@
 import { Clock, Wrench, Banknote, MessageSquare, TriangleAlert, UserX, ShieldAlert, BadgeAlert, Settings, Phone, MessageCircle, Sparkles, Loader2, CheckCircle2, Timer, UserPlus } from "lucide-react";
 import { useState } from "react";
-import { type Priority, type ActionItemCardData, pluralRu, isBurning, TYPE_LEFT_BORDER, TYPE_LABEL } from "./types";
+import { type Priority, type ActionItemCardData, pluralRu, isBurning, TYPE_LEFT_BORDER, TYPE_LABEL, PRIORITY_RU, PRIORITY_PILL, PRIORITY_LEFT_BORDER } from "./types";
 
 type Item = ActionItemCardData;
 
-const PRIORITY_RU: Record<Priority, string> = { critical: "Критично", high: "Высокий", medium: "Средний", low: "Низкий" };
-const pill: Record<Priority, string> = { critical: "bg-red-100 text-red-700", high: "bg-orange-100 text-orange-700", medium: "bg-blue-100 text-blue-700", low: "bg-slate-100 text-slate-700" };
-const leftBorder: Record<Priority, string> = { critical: "border-l-red-400", high: "border-l-orange-400", medium: "border-l-blue-400", low: "border-l-slate-300" };
+const pill = PRIORITY_PILL;
+const leftBorder = PRIORITY_LEFT_BORDER;
 
 const TYPE_ICON: Record<string, React.ReactNode> = {
   no_estimate: <Wrench className="w-3.5 h-3.5" />, no_payment: <Banknote className="w-3.5 h-3.5" />,
@@ -23,7 +22,7 @@ function AgeIndicator({ createdAt }: { createdAt: string }) {
   else if (hours >= 24) { const h = Math.round(hours); label = `${h} ${pluralRu(h, "час", "часа", "часов")}`; color = "text-orange-600 bg-orange-50"; }
   else if (hours >= 8) { const h = Math.round(hours); label = `${h} ${pluralRu(h, "час", "часа", "часов")}`; color = "text-amber-600 bg-amber-50"; }
   else if (hours >= 1) { const h = Math.round(hours); label = `${h} ${pluralRu(h, "час", "часа", "часов")}`; color = "text-slate-600 bg-slate-50"; }
-  else { const m = Math.max(1, Math.round(hours * 60)); label = `${m} ${pluralRu(m, "мин", "мин", "мин")}`; color = "text-slate-600 bg-slate-50"; }
+  else { const m = Math.max(1, Math.round(hours * 60)); label = `${m} ${pluralRu(m, "минута", "минуты", "минут")}`; color = "text-slate-600 bg-slate-50"; }
   return <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${color}`}>{label}</span>;
 }
 

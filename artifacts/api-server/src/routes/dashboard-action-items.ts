@@ -148,7 +148,7 @@ async function buildItems(): Promise<Item[]> {
   const now = new Date();
   const [orders, masters, leads, receipts, cases, avitoRows, manualTasks, txRows] = await Promise.all([
     db.select({ id: ordersTable.id, leadId: ordersTable.leadId, masterId: ordersTable.masterId, city: ordersTable.city, status: ordersTable.status, proposedAmount: ordersTable.proposedAmount, orderAmount: ordersTable.orderAmount, createdAt: ordersTable.createdAt, updatedAt: ordersTable.updatedAt, assignedAt: ordersTable.assignedAt, cancelReason: ordersTable.cancelReason }).from(ordersTable).where(and(isNull(ordersTable.deletedAt), not(inArray(ordersTable.status, ["completed", "cancelled"])))),
-    db.select({ id: mastersTable.id, alias: mastersTable.alias, city: mastersTable.city, status: mastersTable.status, createdAt: mastersTable.createdAt }).from(mastersTable).where(isNull(mastersTable.deletedAt)),
+    db.select({ id: mastersTable.id, alias: mastersTable.alias, city: mastersTable.city, status: mastersTable.status, createdAt: mastersTable.createdAt, blockedAt: (mastersTable as any).blockedAt }).from(mastersTable).where(isNull(mastersTable.deletedAt)),
     db.select({ id: leadsTable.id, clientName: leadsTable.clientName, clientPhone: leadsTable.clientPhone, city: leadsTable.city, createdAt: leadsTable.createdAt }).from(leadsTable).where(isNull(leadsTable.deletedAt)),
     db.select({ id: receiptsTable.id, orderId: receiptsTable.orderId, masterId: receiptsTable.masterId, city: receiptsTable.city, prepaymentSubmittedAt: receiptsTable.prepaymentSubmittedAt, prepaymentSeenAt: receiptsTable.prepaymentSeenAt, prepaymentAmount: receiptsTable.prepaymentAmount }).from(receiptsTable),
     db.select().from(chatCasesTable).where(eq(chatCasesTable.isArchived, false)).orderBy(desc(chatCasesTable.updatedAt)).limit(50),
@@ -205,7 +205,11 @@ async function buildItems(): Promise<Item[]> {
     const progressAgeH = o.updatedAt
       ? (now.getTime() - new Date(o.updatedAt).getTime()) / 3600000
       : ageH;
-    if (progressAgeH >= 168) items.push({ id: `no_progress-${o.id}`, type: "no_progress", priority: "medium", title: `Заказ #${o.id} — нет движения`, shortDescription: `${fmtAge(progressAgeH)} без обновлений`, fullDescription: `Заказ без движения уже ${fmtAge(progressAgeH)}.`, createdAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterMap.get(Number(o.masterId))?.alias ?? null) : null, amountAtRisk: o.orderAmount ? Number(o.orderAmount) : null, actions: actionSet("no_progress") });
+    if (progressAgeH >= 168) {
+      // Динамический приоритет: чем дольше нет движения, тем выше
+      const progressPriority: Priority = progressAgeH >= 336 ? "critical" : progressAgeH >= 240 ? "high" : "medium";
+      items.push({ id: `no_progress-${o.id}`, type: "no_progress", priority: progressPriority, title: `Заказ #${o.id} — нет движения`, shortDescription: `${fmtAge(progressAgeH)} без обновлений`, fullDescription: `Заказ без движения уже ${fmtAge(progressAgeH)}.`, createdAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterMap.get(Number(o.masterId))?.alias ?? null) : null, amountAtRisk: o.orderAmount ? Number(o.orderAmount) : null, actions: actionSet("no_progress") });
+    }
     // possible_bypass из cancelReason убран — заказы с cancelReason уже cancelled и не попадают в выборку
   }
   // Receipts: клиент подтвердил оплату, но оператор ещё не видел (prepaymentSeenAt = null)
@@ -224,7 +228,17 @@ async function buildItems(): Promise<Item[]> {
       items.push({ id: `receipt-${r.id}`, type: "no_payment", priority: pFromHours(ageH), title: `Заказ #${r.orderId} — подтверждение оплаты`, shortDescription: `${r.city ?? ""}`.trim(), fullDescription: `Клиент подтвердил оплату ${Math.round(ageH)} ч назад. Необходимо подтвердить получение.`, createdAt: new Date(r.prepaymentSubmittedAt).toISOString(), updatedAt: new Date(r.prepaymentSubmittedAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "finance", entityId: r.id, orderId: r.orderId, masterId: r.masterId, clientId: null, city: r.city ?? null, amountAtRisk: Number(r.prepaymentAmount ?? 0), actions: actionSet("no_payment") });
     }
   }
-  for (const m of masters) { const status = String(m.status ?? "").toLowerCase(); if (status.includes("blocked") || status.includes("fomo_blocked")) items.push({ id: `blocked_master-${m.id}`, type: "blocked_master", priority: "critical", title: `Мастер ${m.alias} заблокирован`, shortDescription: `${m.city ?? ""}`.trim(), fullDescription: `Мастер в блокировке / FOMO_BLOCKED и требует проверки.`, createdAt: new Date(m.createdAt).toISOString(), updatedAt: new Date(m.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "master", entityId: m.id, orderId: null, masterId: m.id, clientId: null, city: m.city ?? null, amountAtRisk: null, actions: actionSet("blocked_master") }); }
+  for (const m of masters) {
+    const status = String(m.status ?? "").toLowerCase();
+    if (status.includes("blocked") || status.includes("fomo_blocked")) {
+      // Динамический приоритет: свежая блокировка — high, старая (>48ч) — critical
+      const blockedAt = (m as any).blockedAt ? new Date((m as any).blockedAt) : null;
+      const blockedAgeH = blockedAt ? (now.getTime() - blockedAt.getTime()) / 3600000 : (now.getTime() - new Date(m.createdAt).getTime()) / 3600000;
+      const blockedPriority: Priority = blockedAgeH >= 48 ? "critical" : blockedAgeH >= 24 ? "high" : "medium";
+      const ageStr = blockedAt ? fmtAge(blockedAgeH) : "давно";
+      items.push({ id: `blocked_master-${m.id}`, type: "blocked_master", priority: blockedPriority, title: `Мастер ${m.alias} заблокирован`, shortDescription: `${m.city ?? ""} · ${ageStr} в блокировке`.trim(), fullDescription: `Мастер в блокировке / FOMO_BLOCKED уже ${ageStr}. Требует проверки.`, createdAt: (blockedAt ?? new Date(m.createdAt)).toISOString(), updatedAt: (blockedAt ?? new Date(m.createdAt)).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "master", entityId: m.id, orderId: null, masterId: m.id, clientId: null, city: m.city ?? null, amountAtRisk: null, actions: actionSet("blocked_master") });
+    }
+  }
   const balance = avitoRows[0] as any;
   if (balance && Number(balance.advanceBalance ?? 0) < 1000) items.push({ id: "low_avito_balance-1", type: "low_avito_balance", priority: "high", title: "Баланс Avito ниже нормы", shortDescription: `Текущий баланс: ${Number(balance.advanceBalance ?? 0).toLocaleString("ru-RU")} ₽`, fullDescription: "Баланс Avito ниже рекомендуемого порога.", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "finance", entityId: balance.id ?? null, orderId: null, masterId: null, clientId: null, city: null, amountAtRisk: null, actions: actionSet("low_avito_balance") });
   for (const c of cases) {
@@ -603,8 +617,12 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
   }
 
   if (action === "return_to_pool" && item.orderId != null) {
+    // Проверяем что у заказа есть мастер — иначе возвращать в пул бессмысленно
+    if (item.masterId == null) {
+      throw Object.assign(new Error("У заказа нет назначенного мастера — возвращать в пул не нужно"), { status: 400 });
+    }
     // Record cancellation for reputation + notify master before resetting masterId
-    if (item.masterId != null) {
+    {
       const masterId = Number(item.masterId);
       const orderId = Number(item.orderId);
       await recordOrderCancelled(masterId, orderId)
@@ -844,18 +862,36 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
     // entityId для receipt-задач — это id записи в receipts
     const receiptId = Number(item.entityId);
     const now = new Date();
+    // Проверяем, не был ли receipt уже подтверждён (защита от двойной оплаты)
+    const [existingReceipt] = await db.select({ prepaymentSeenAt: receiptsTable.prepaymentSeenAt })
+      .from(receiptsTable)
+      .where(eq(receiptsTable.id, receiptId))
+      .limit(1);
+    if (existingReceipt?.prepaymentSeenAt) {
+      throw Object.assign(new Error(`Оплата по квитанции #${receiptId} уже подтверждена ${new Date(existingReceipt.prepaymentSeenAt).toLocaleString("ru-RU")}`), { status: 409 });
+    }
     // Обновляем prepaymentSeenAt на receipt
     await db.update(receiptsTable)
       .set({ prepaymentSeenAt: now } as any)
       .where(eq(receiptsTable.id, receiptId));
-    // Обновляем orderAmount на заказе (сумма предоплаты из receipt)
+    // Обновляем orderAmount на заказе (сумма предоплаты из receipt) — только если ещё не установлен
     if (item.orderId != null) {
       const prepaymentAmount = Number(item.amountAtRisk ?? 0);
       if (prepaymentAmount > 0) {
-        await db.update(ordersTable)
-          .set({ orderAmount: String(prepaymentAmount), updatedAt: now } as any)
-          .where(eq(ordersTable.id, Number(item.orderId)));
-        console.log(`[confirm_receipt] order #${item.orderId} orderAmount set to ${prepaymentAmount}`);
+        const [existingOrder] = await db.select({ orderAmount: ordersTable.orderAmount })
+          .from(ordersTable)
+          .where(eq(ordersTable.id, Number(item.orderId)))
+          .limit(1);
+        const currentAmount = Number(existingOrder?.orderAmount ?? 0);
+        // Обновляем только если текущая сумма не совпадает (защита от перезаписи)
+        if (currentAmount !== prepaymentAmount) {
+          await db.update(ordersTable)
+            .set({ orderAmount: String(prepaymentAmount), updatedAt: now } as any)
+            .where(eq(ordersTable.id, Number(item.orderId)));
+          console.log(`[confirm_receipt] order #${item.orderId} orderAmount set to ${prepaymentAmount}`);
+        } else {
+          console.log(`[confirm_receipt] order #${item.orderId} orderAmount already ${prepaymentAmount}, skipping update`);
+        }
       }
     }
     console.log(`[confirm_receipt] receipt #${receiptId} marked seen by ${operatorName}`);
@@ -937,8 +973,11 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
   }
 
   // ─── resolve: пометить задачу выполненной ───────────────────────
+  // ВНИМАНИЕ: resolve не удаляет задачу — она snooze'ится на 14 дней.
+  // Если проблема не решена по истечении 14 дней, задача появится снова.
+  // Это защита от случайного "выполнено" — оператор должен убедиться, что проблема реально устранена.
   if (action === "resolve") {
-    // Для systemTask — пометить как done в БД
+    // Для systemTask — пометить как done в БД (безвозвратно)
     if (item.id.startsWith("manual-")) {
       const taskId = Number(item.entityId);
       if (Number.isFinite(taskId)) {
@@ -947,8 +986,9 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
           .where(eq(systemTasksTable.id, taskId));
       }
     }
-    // Для остальных — snooze на 7 дней (задача исчезнет, но вернётся если проблема не решена)
-    const snoozedUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    // Для остальных — snooze на 14 дней (задача исчезнет, но вернётся если проблема не решена)
+    const RESOLVE_SNOOZE_DAYS = 14;
+    const snoozedUntil = new Date(Date.now() + RESOLVE_SNOOZE_DAYS * 24 * 60 * 60 * 1000);
     await db.insert(taskSnoozesTable)
       .values({ itemId: item.id, snoozedUntil, snoozedBy: operatorName })
       .onConflictDoUpdate({ target: taskSnoozesTable.itemId, set: { snoozedUntil, snoozedBy: operatorName } });
@@ -1000,17 +1040,17 @@ router.get("/action-items", ops, async (req: any, res: any) => {
     // 1) systemTasks completed today
     const doneSystemTasks = await db.select().from(systemTasksTable).where(eq(systemTasksTable.status, "done")).limit(200);
     doneToday += doneSystemTasks.filter((t: any) => t.updatedAt && new Date(t.updatedAt) >= startOfToday).length;
-    // 2) Snoozed tasks with short snooze (7 days = resolve) created today — these are "resolved" actions
-    //    Dismiss uses 30-day snooze, so we only count 7-day snoozes as "done"
+    // 2) Snoozed tasks with resolve snooze (14 days) created today — these are "resolved" actions
+    //    Dismiss uses 30-day snooze, so we only count 14-day snoozes as "done"
+    const RESOLVE_SNOOZE_DAYS = 14;
     const resolvedSnoozes = await db.select().from(taskSnoozesTable)
       .where(and(
-        gt(taskSnoozesTable.snoozedUntil, new Date(startOfToday.getTime() + 6 * 24 * 60 * 60 * 1000)),
-        lte(taskSnoozesTable.snoozedUntil, new Date(startOfToday.getTime() + 8 * 24 * 60 * 60 * 1000)),
+        gt(taskSnoozesTable.snoozedUntil, new Date(startOfToday.getTime() + (RESOLVE_SNOOZE_DAYS - 1) * 24 * 60 * 60 * 1000)),
+        lte(taskSnoozesTable.snoozedUntil, new Date(startOfToday.getTime() + (RESOLVE_SNOOZE_DAYS + 1) * 24 * 60 * 60 * 1000)),
       )).limit(500);
-    // Only count snoozes created today (snoozedBy is set, but we check snoozedUntil range as proxy)
-    // Resolve snoozes are ~7 days from now, dismiss are ~30 days
+    // Only count snoozes created today (check by reverse-calculating creation time from snoozedUntil)
     doneToday += resolvedSnoozes.filter((s: any) => {
-      const created = s.snoozedUntil ? new Date(s.snoozedUntil).getTime() - 7 * 24 * 60 * 60 * 1000 : 0;
+      const created = s.snoozedUntil ? new Date(s.snoozedUntil).getTime() - RESOLVE_SNOOZE_DAYS * 24 * 60 * 60 * 1000 : 0;
       return created >= startOfToday.getTime();
     }).length;
   } catch (e: any) {
@@ -1091,9 +1131,17 @@ router.post("/action-items/:id/action", ops, async (req: any, res: any) => {
   const items = await buildItems();
   let item = items.find((i) => i.id === req.params.id);
   if (!item && (action === "complete_as_master" || action === "cancel_as_master")) {
+    // Fallback: ищем по orderId И masterId одновременно (оба должны совпадать)
+    // Это предотвращает случайное нахождение чужой задачи
     const orderId = Number((payload as any)?.orderId);
     const masterId = Number((payload as any)?.masterId);
-    item = items.find((i) => (Number.isFinite(orderId) && i.orderId != null && Number(i.orderId) === orderId) || (Number.isFinite(masterId) && i.masterId != null && Number(i.masterId) === masterId));
+    if (Number.isFinite(orderId) && Number.isFinite(masterId)) {
+      item = items.find((i) => i.orderId != null && Number(i.orderId) === orderId && i.masterId != null && Number(i.masterId) === masterId);
+    }
+    if (!item && Number.isFinite(orderId)) {
+      // Последний fallback: только по orderId, но проверяем что задача подходящего типа
+      item = items.find((i) => i.orderId != null && Number(i.orderId) === orderId && ["possible_bypass", "conflict", "no_estimate", "no_payment", "no_progress"].includes(i.type));
+    }
   }
   if (!item) return res.status(404).json({ error: "Не найдено" });
   if (!["message_master", "call_client", "reassign", "cancel_order", "cancel_as_master", "complete_as_master", "partial_payment", "return_to_pool", "resolve", "dismiss", "snooze", "update_balance", "manual_unblock", "call_master", "resend", "block_master", "manual_control", "open_issue_order", "confirm_receipt", "assign_self"].includes(action)) return res.status(400).json({ error: "Недопустимое действие" });

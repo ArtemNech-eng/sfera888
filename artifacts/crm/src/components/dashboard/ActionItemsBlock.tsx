@@ -13,16 +13,16 @@ type Item = ActionItem;
 
 const SCOPE_TABS = [
   { key: "all", label: "Все" },
-  { key: "critical", label: "Критичные" },
   { key: "orders", label: "Заказы" },
   { key: "masters", label: "Мастера" },
   { key: "finance", label: "Финансы" },
   { key: "system", label: "Системные" },
 ] as const;
 
-async function fetcher(period: string) {
+async function fetcher(period: string, city?: string) {
   const q = new URLSearchParams();
   if (period && period !== "all") q.set("period", period);
+  if (city && city !== "all" && city !== "Все города") q.set("city", city);
   const r = await fetch(`/api/dashboard/action-items${q.toString() ? `?${q.toString()}` : ""}`, { credentials: "include" });
   if (!r.ok) throw new Error("load");
   return r.json();
@@ -47,7 +47,7 @@ function Sparkline({ data, width = 80, height = 20, color = "#ef4444" }: { data:
 }
 
 export function ActionItemsBlock({ period: externalPeriod, city }: { period?: string; city?: string }) {
-  const [period, setPeriod] = useState<string>(externalPeriod ?? "all");
+  const [period, setPeriod] = useState<string>(externalPeriod ?? "month");
   const [scope, setScope] = useState<string>("all");
   const [search, setSearch] = useState("");
   // myOnly временно скрыт — assigneeId не заполняется на сервере
@@ -69,8 +69,8 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
   }, [externalPeriod]);
 
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ["action-items", period],
-    queryFn: () => fetcher(period),
+    queryKey: ["action-items", period, city],
+    queryFn: () => fetcher(period, city),
     refetchInterval: 15000,
   });
 
@@ -88,12 +88,11 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
     if (id) setOpenId(id);
   }, []);
 
-  const [showAll, setShowAll] = useState(false);
   // UX-2: Progressive loading — показываем по PAGE_SIZE, кнопка «Ещё»
   const PAGE_SIZE = 10;
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
-  useEffect(() => { setShowAll(false); setVisibleCount(PAGE_SIZE); setSelectedIds(new Set()); setFocusedIndex(-1); }, [scope, search, period]);
+  useEffect(() => { setVisibleCount(PAGE_SIZE); setSelectedIds(new Set()); setFocusedIndex(-1); }, [scope, search, period]);
 
   const filtered = useMemo(() => {
     return items
@@ -110,7 +109,12 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
         return i.entityType === scope;
       })
       .filter((i) => !city || city === "Все города" || i.city === city)
-      .filter((i) => search.trim() === "" || `${i.title} ${i.shortDescription} ${i.orderId ?? ""} ${i.masterId ?? ""} ${i.masterName ?? ""} ${i.entityId ?? ""}`.toLowerCase().includes(search.toLowerCase()))
+      .filter((i) => {
+        if (search.trim() === "") return true;
+        const s = search.toLowerCase();
+        const typeLabel = TYPE_LABEL[i.type]?.toLowerCase() ?? "";
+        return `${i.title} ${i.shortDescription} ${i.orderId ?? ""} ${i.masterId ?? ""} ${i.masterName ?? ""} ${i.entityId ?? ""} ${i.type} ${typeLabel}`.toLowerCase().includes(s);
+      })
       .sort((a, b) => {
         // 1. Горящие задачи (burning) всегда наверх
         const aBurning = isBurning(a) ? 0 : 1;
@@ -227,6 +231,9 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
     }
     return ordered;
   }, [filtered, pinnedOrder]);
+
+  // showAll — производная переменная (не отдельный state)
+  const showAll = visibleCount >= displayItems.length;
 
   const handleDragStart = (e: DragEvent, id: string) => {
     setDragItemId(id);
@@ -364,7 +371,11 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
     setBulkActionBusy(action);
     let ok = 0;
     let fail = 0;
-    for (const id of [...selectedIds]) {
+    // Поддержка одиночного dismiss с шортката E
+    const pendingId = (window as any).__pendingDismissId;
+    const ids = pendingId ? [pendingId] : [...selectedIds];
+    if (pendingId) delete (window as any).__pendingDismissId;
+    for (const id of ids) {
       try {
         const r = await fetch(`/api/dashboard/action-items/${id}/action`, {
           method: "POST",
@@ -496,14 +507,10 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
         if (focusedIndex >= 0 && focusedIndex < visibleItems.length) {
           e.preventDefault();
           const itemId = visibleItems[focusedIndex].id;
-          fetch(`/api/dashboard/action-items/${itemId}/action`, {
-            method: "POST",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "dismiss", payload: {} }),
-          }).then(() => {
-            window.dispatchEvent(new CustomEvent("dashboard-action-items:changed"));
-          });
+          // Подтверждение перед откладыванием (dismiss = 30 дней)
+          setConfirmDialog({ action: "dismiss", label: "отложить на 30 дней", count: 1 });
+          // Сохраняем itemId для подтверждения
+          (window as any).__pendingDismissId = itemId;
         }
         break;
       case "r":
@@ -991,7 +998,7 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
           )}
           {!showAll && displayItems.length > visibleCount + PAGE_SIZE && (
             <button
-              onClick={() => setShowAll(true)}
+              onClick={() => setVisibleCount(displayItems.length)}
               className="w-full py-1.5 text-[10px] font-medium text-slate-500 hover:text-slate-700 transition"
             >
               Показать все {displayItems.length} задач
