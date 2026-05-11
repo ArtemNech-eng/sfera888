@@ -1051,10 +1051,10 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
 router.get("/action-items/debug", ops, async (req: any, res: any) => {
   try {
     const now = new Date();
-    const [allOrders, activeOrders, snoozes, blockedMasters, cases, manualTasks, receipts] = await Promise.all([
-      db.select({ id: ordersTable.id, status: ordersTable.status, createdAt: ordersTable.createdAt, updatedAt: ordersTable.updatedAt, proposedAmount: ordersTable.proposedAmount, orderAmount: ordersTable.orderAmount })
+    const [allOrders, activeOrders, snoozes, blockedMasters, cases, manualTasks, receipts, txRows, txPayments] = await Promise.all([
+      db.select({ id: ordersTable.id, status: ordersTable.status, createdAt: ordersTable.createdAt, updatedAt: ordersTable.updatedAt, proposedAmount: ordersTable.proposedAmount, orderAmount: ordersTable.orderAmount, masterId: ordersTable.masterId, assignedAt: ordersTable.assignedAt })
         .from(ordersTable).where(isNull(ordersTable.deletedAt)),
-      db.select({ id: ordersTable.id, status: ordersTable.status, createdAt: ordersTable.createdAt, updatedAt: ordersTable.updatedAt, proposedAmount: ordersTable.proposedAmount, orderAmount: ordersTable.orderAmount })
+      db.select({ id: ordersTable.id, status: ordersTable.status, createdAt: ordersTable.createdAt, updatedAt: ordersTable.updatedAt, proposedAmount: ordersTable.proposedAmount, orderAmount: ordersTable.orderAmount, masterId: ordersTable.masterId, assignedAt: ordersTable.assignedAt })
         .from(ordersTable).where(and(isNull(ordersTable.deletedAt), not(inArray(ordersTable.status, ["completed", "cancelled"])))),
       db.select().from(taskSnoozesTable).where(gt(taskSnoozesTable.snoozedUntil, now)),
       db.select({ id: mastersTable.id, alias: mastersTable.alias, status: mastersTable.status })
@@ -1065,6 +1065,8 @@ router.get("/action-items/debug", ops, async (req: any, res: any) => {
         .from(systemTasksTable),
       db.select({ id: receiptsTable.id, orderId: receiptsTable.orderId, prepaymentSubmittedAt: receiptsTable.prepaymentSubmittedAt, prepaymentSeenAt: receiptsTable.prepaymentSeenAt })
         .from(receiptsTable),
+      db.select({ id: transactionsTable.id, orderId: transactionsTable.orderId, orderAmount: transactionsTable.orderAmount }).from(transactionsTable),
+      db.select({ transactionId: transactionPaymentsTable.transactionId }).from(transactionPaymentsTable).limit(5000),
     ]);
 
     // Статусы активных заказов
@@ -1084,12 +1086,6 @@ router.get("/action-items/debug", ops, async (req: any, res: any) => {
       else ageGroups.gt168h++;
     }
 
-    // Заказы без сметы (старше 24ч)
-    const noEstimateCount = activeOrders.filter(o => {
-      const ageH = (now.getTime() - new Date(o.createdAt).getTime()) / 3600000;
-      return ageH >= 24 && !o.proposedAmount && !o.orderAmount;
-    }).length;
-
     // Receipts ожидающие подтверждения
     const pendingReceipts = receipts.filter((r: any) => r.prepaymentSubmittedAt && !r.prepaymentSeenAt).length;
 
@@ -1097,7 +1093,53 @@ router.get("/action-items/debug", ops, async (req: any, res: any) => {
     const openManualTasks = manualTasks.filter((t: any) => t.status !== "done" && t.status !== "dismissed").length;
 
     // Активные snooze
-    const activeSnoozedIds = snoozes.map((s: any) => s.taskId);
+    const activeSnoozedIds = snoozes.map((s: any) => s.itemId ?? s.taskId);
+
+    // Полная проверка hasEstimate (идентична buildItems)
+    const receiptOrderIds = new Set(receipts.filter((r: any) => r.orderId != null).map((r: any) => Number(r.orderId)));
+    const txIdsWithPayments = new Set(txPayments.map((p: any) => p.transactionId));
+    const txOrderIds = new Set(txRows.filter((t: any) => Number(t.orderAmount ?? 0) > 0).map((t: any) => Number(t.orderId)));
+    const txOrderIdsWithPayments = new Set(txRows.filter((t: any) => txIdsWithPayments.has(t.id)).map((t: any) => Number(t.orderId)));
+
+    // Детальный анализ каждого активного заказа
+    const orderDetails = activeOrders.map(o => {
+      const ageH = (now.getTime() - new Date(o.createdAt).getTime()) / 3600000;
+      const progressAgeH = o.updatedAt
+        ? (now.getTime() - new Date(o.updatedAt).getTime()) / 3600000
+        : ageH;
+      const hasEstimate = (o.proposedAmount != null && Number(o.proposedAmount) > 0)
+        || receiptOrderIds.has(Number(o.id))
+        || txOrderIds.has(Number(o.id))
+        || txOrderIdsWithPayments.has(Number(o.id));
+      const reasons: string[] = [];
+      // no_estimate
+      if (!hasEstimate && ageH >= 24) reasons.push("✅ ЗАДАЧА: no_estimate");
+      else if (!hasEstimate && ageH < 24) reasons.push(`⏳ no_estimate: слишком молодой (${Math.round(ageH)}ч < 24ч)`);
+      else reasons.push(`✅ no_estimate: не нужна (есть смета/оплата: proposedAmount=${o.proposedAmount}, receipt=${receiptOrderIds.has(Number(o.id))}, tx=${txOrderIds.has(Number(o.id))})`);
+      // no_payment
+      if (o.proposedAmount && !o.orderAmount && ageH >= 24) reasons.push("✅ ЗАДАЧА: no_payment");
+      // no_progress
+      if (progressAgeH >= 168) reasons.push(`✅ ЗАДАЧА: no_progress (${Math.round(progressAgeH)}ч без обновлений)`);
+      else reasons.push(`⏳ no_progress: ${Math.round(progressAgeH)}ч < 168ч`);
+      // snooze
+      const snoozedKeys = [`no_estimate-${o.id}`, `no_payment-${o.id}`, `no_progress-${o.id}`, `no_master_response-${o.id}`];
+      const snoozedSet = new Set(activeSnoozedIds);
+      const snoozedHere = snoozedKeys.filter(k => snoozedSet.has(k));
+      if (snoozedHere.length > 0) reasons.push(`😴 SNOOZE активен: ${snoozedHere.join(", ")}`);
+      return {
+        id: o.id,
+        status: o.status,
+        ageH: Math.round(ageH),
+        progressAgeH: Math.round(progressAgeH),
+        hasEstimate,
+        proposedAmount: o.proposedAmount,
+        orderAmount: o.orderAmount,
+        hasMaster: o.masterId != null,
+        reasons,
+      };
+    });
+
+    const noEstimateCount = orderDetails.filter(o => o.reasons.some(r => r.includes("ЗАДАЧА: no_estimate"))).length;
 
     res.json({
       summary: {
@@ -1115,13 +1157,17 @@ router.get("/action-items/debug", ops, async (req: any, res: any) => {
       activeOrderAgeBreakdown: ageGroups,
       activeSnoozedTaskIds: activeSnoozedIds,
       blockedMasters: blockedMasters.map(m => ({ id: m.id, alias: m.alias, status: m.status })),
+      // Детальный анализ — первые 20 активных заказов
+      orderDetails: orderDetails.slice(0, 20),
       diagnosis: (() => {
         const reasons: string[] = [];
         if (activeOrders.length === 0) reasons.push("❌ Нет активных заказов — все завершены или отменены");
         if (activeOrders.length > 0 && ageGroups.lt24h === activeOrders.length) reasons.push("⏳ Все активные заказы моложе 24 часов — задачи ещё не генерируются");
-        if (snoozes.length > 0) reasons.push(`😴 ${snoozes.length} задач отложены (snooze активен)`);
+        if (snoozes.length > 0) reasons.push(`😴 ${snoozes.length} задач отложены (snooze активен): ${activeSnoozedIds.slice(0, 10).join(", ")}`);
         if (activeOrders.length > 0 && noEstimateCount === 0 && ageGroups.lt24h < activeOrders.length) reasons.push("✅ У всех заказов старше 24ч есть смета или оплата — задача no_estimate не нужна");
-        if (reasons.length === 0 && activeOrders.length > 0) reasons.push("⚠️ Активные заказы есть, но задачи не генерируются — возможно кэш устарел или все условия выполнены");
+        if (pendingReceipts > 0) reasons.push(`⚠️ Есть ${pendingReceipts} неподтверждённых оплат — должны быть задачи receipt`);
+        if (blockedMasters.length > 0) reasons.push(`⚠️ Есть ${blockedMasters.length} заблокированных мастеров — должны быть задачи blocked_master`);
+        if (reasons.length === 0 && activeOrders.length > 0) reasons.push("⚠️ Активные заказы есть, но задачи не генерируются — все условия выполнены (нет проблем)");
         return reasons;
       })(),
     });
