@@ -793,22 +793,20 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
       });
     }
 
-    // Remaining order amount (not commission) — what the master still needs to collect from client
-    const remainingOrderAmount = Math.max(0, orderAmount - paidAmount);
-
     const [master] = await db.select({ id: mastersTable.id, maxChatId: mastersTable.maxChatId }).from(mastersTable).where(eq(mastersTable.id, masterId)).limit(1);
-    const notifyText = remainingOrderAmount > 0
-      ? `💰 Оплата по заказу${orderId ? ` #${orderId}` : ""} зафиксирована: ${paidAmount.toLocaleString("ru-RU")} ₽ из ${orderAmount.toLocaleString("ru-RU")} ₽. Остаток: ${remainingOrderAmount.toLocaleString("ru-RU")} ₽.`
-      : `✅ Оплата по заказу${orderId ? ` #${orderId}` : ""} полностью получена: ${paidAmount.toLocaleString("ru-RU")} ₽. Спасибо!`;
+    // Уведомление мастеру — говорим об остатке КОМИССИИ, а не суммы заказа
+    const notifyText = remainingCommission > 0
+      ? `💰 Комиссия по заказу${orderId ? ` #${orderId}` : ""} частично оплачена: ${paidCommission.toLocaleString("ru-RU")} ₽ из ${totalCommission.toLocaleString("ru-RU")} ₽. Остаток: ${remainingCommission.toLocaleString("ru-RU")} ₽.`
+      : `✅ Комиссия по заказу${orderId ? ` #${orderId}` : ""} полностью оплачена: ${paidCommission.toLocaleString("ru-RU")} ₽. Спасибо!`;
     if (master?.maxChatId) {
       await sendMaxMessage(master.maxChatId, notifyText).catch((e: any) => console.error("[partial_payment] max send failed:", e));
     }
     sendPushToMaster(masterId, {
       type: "new_message",
       title: "Оплата зафиксирована",
-      body: remainingOrderAmount > 0
-        ? `Принято ${paidAmount.toLocaleString("ru-RU")} ₽, остаток ${remainingOrderAmount.toLocaleString("ru-RU")} ₽`
-        : `Оплата ${paidAmount.toLocaleString("ru-RU")} ₽ получена полностью`,
+      body: remainingCommission > 0
+        ? `Комиссия: принято ${paidCommission.toLocaleString("ru-RU")} ₽, остаток ${remainingCommission.toLocaleString("ru-RU")} ₽`
+        : `Комиссия ${paidCommission.toLocaleString("ru-RU")} ₽ полностью оплачена`,
     }).catch((e: any) => console.error("[partial_payment] push failed:", e));
     const chatId = master?.maxChatId ? `max_${master.maxChatId}` : `pwa_${masterId}`;
     await db.insert(masterMessagesTable).values({ masterId, telegramChatId: chatId, text: notifyText, fromMaster: false, senderName: operatorName, isRead: true });
@@ -829,6 +827,8 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
         .where(eq(chatCasesTable.orderId, orderId))
         .catch((e: any) => console.error("[partial_payment] chatCase archive failed:", e));
     }
+    // Инвалидируем кэш — задача должна исчезнуть из списка сразу после оплаты
+    invalidateBuildItemsCache();
   }
 
   if (action === "snooze") {
@@ -928,6 +928,8 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
         isRead: true,
       });
     }
+    // Инвалидируем кэш — задача подтверждения оплаты должна исчезнуть сразу
+    invalidateBuildItemsCache();
     return { routedTo: "/finance", applied: true, action, payload, itemId: item.id, confirmedAt: now.toISOString() };
   }
 

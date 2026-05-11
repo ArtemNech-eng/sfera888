@@ -1,6 +1,7 @@
 import React, { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
 import { BellRing } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { pluralRu } from "./types";
 import {
@@ -321,7 +322,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
   const [selectedMasterId, setSelectedMasterId] = useState<number | null>(null);
   const [masterSearch, setMasterSearch] = useState("");
   const [balanceInput, setBalanceInput] = useState("");
-  const [cancelConfirmStep, setCancelConfirmStep] = useState<false | "select" | "confirm">("select");
+  const [cancelConfirmStep, setCancelConfirmStep] = useState<false | "select" | "confirm">(false);
   const [cancelOrderReason, setCancelOrderReason] = useState("");
   const [comment, setComment] = useState("");
   const [assignedMasterConfirm, setAssignedMasterConfirm] = useState<{ id: number; name: string; city: string | null } | null>(null);
@@ -334,6 +335,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
   const [partialPaidAmount, setPartialPaidAmount] = useState<string>("");
   const [snoozeDays, setSnoozeDays] = useState<number>(1);
   const [returnToPoolPending, setReturnToPoolPending] = useState(false);
+  const [, navigate] = useLocation();
   const { user: authUser } = useAuth();
   const isAdmin = authUser?.role === "admin";
 
@@ -430,9 +432,8 @@ export function ActionItemModal({ id, open, onOpenChange }: {
       // ─── open_issue_order: навигация к заказу ───
       if (action === "open_issue_order" && orchestration?.orderId) {
         showToast(`Переход к заказу #${orchestration.orderId}`);
-        // Navigate to orders page with the specific order highlighted
-        window.location.hash = `/orders?highlight=${orchestration.orderId}`;
         onOpenChange(false);
+        navigate(`/orders?highlight=${orchestration.orderId}`);
         return;
       }
       if (action === "partial_payment") {

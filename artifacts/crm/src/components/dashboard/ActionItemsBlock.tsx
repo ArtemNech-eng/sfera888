@@ -62,8 +62,8 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
   const [aiHints, setAiHints] = useState<Record<string, string>>({});
   const [aiHintLoadingId, setAiHintLoadingId] = useState<string | null>(null);
   const sectionRef = useRef<HTMLElement>(null);
-  const { user: authUser } = useAuth();
-  const currentUserId = authUser?.id ?? null;
+  // currentUserId не используется пока assigneeId не заполняется на сервере
+  useAuth(); // держим хук для будущего фильтра «Только мои»
 
   useEffect(() => {
     if (externalPeriod) setPeriod(externalPeriod);
@@ -139,7 +139,7 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
         // 4. По свежести
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       });
-  }, [items, scopeTab, priorityFilter, currentUserId, search, city]);
+  }, [items, scopeTab, priorityFilter, search, city]);
 
   // Группировка по мастеру
   const grouped = useMemo(() => {
@@ -1011,7 +1011,7 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
               className="w-full py-2.5 text-xs font-semibold text-violet-600 hover:text-violet-800 bg-violet-50 hover:bg-violet-100 rounded-lg transition flex items-center justify-center gap-1.5"
             >
               <List className="w-3.5 h-3.5" />
-              Ещё {Math.min(PAGE_SIZE, displayItems.length - visibleCount)} из {displayItems.length - visibleCount} задач
+              Показать ещё {Math.min(PAGE_SIZE, displayItems.length - visibleCount)}
             </button>
           )}
           {!showAll && displayItems.length > visibleCount + PAGE_SIZE && (
