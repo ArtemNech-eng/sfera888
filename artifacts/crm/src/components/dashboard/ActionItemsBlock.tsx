@@ -192,7 +192,17 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
 
   // ─── Фаза 3: KPI-метрики ─────────────────────────────────────────
   const kpi = useMemo(() => {
-    const totalAtRisk = filtered.reduce((s, i) => s + (Number(i.amountAtRisk) || 0), 0);
+    // Дедупликация по orderId: один заказ может породить несколько задач (no_estimate + no_progress + case-*),
+    // каждая со своей суммой. Берём максимальную сумму по каждому уникальному заказу, не складываем дубли.
+    const totalAtRisk = (() => {
+      const byOrder = new Map<string, number>();
+      for (const i of filtered) {
+        const key = i.orderId != null ? `order-${i.orderId}` : `item-${i.id}`;
+        const cur = byOrder.get(key) ?? 0;
+        byOrder.set(key, Math.max(cur, Number(i.amountAtRisk) || 0));
+      }
+      return [...byOrder.values()].reduce((s, v) => s + v, 0);
+    })();
     const ages = filtered.map(i => (Date.now() - new Date(i.createdAt).getTime()) / 3600000);
     const avgAgeH = ages.length > 0 ? ages.reduce((a, b) => a + b, 0) / ages.length : 0;
     const total = filtered.length;
