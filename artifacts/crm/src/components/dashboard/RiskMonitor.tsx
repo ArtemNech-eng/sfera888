@@ -1,4 +1,5 @@
 import { Shield, CheckCircle, ChevronRight } from 'lucide-react';
+import { useLocation } from 'wouter';
 import { formatCurrency } from '../../utils/format';
 
 interface RiskOrder {
@@ -23,6 +24,7 @@ interface Props {
 }
 
 export function RiskMonitor({ data, isLoading }: Props) {
+  const [, navigate] = useLocation();
   if (isLoading || !data) {
     return (
       <div className="bg-white border border-[#E5E7EB] rounded-2xl p-6">
@@ -78,6 +80,10 @@ export function RiskMonitor({ data, isLoading }: Props) {
                 <div
                   key={order.id}
                   className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-[#F8F9FA] cursor-pointer transition-colors"
+                  onClick={() => navigate(`/orders?id=${order.id}`)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={e => e.key === 'Enter' && navigate(`/orders?id=${order.id}`)}
                 >
                   <div className="w-[3px] h-10 rounded-full flex-shrink-0" style={{ backgroundColor: borderColor }} />
                   <div className="flex-1 min-w-0">
@@ -95,6 +101,15 @@ export function RiskMonitor({ data, isLoading }: Props) {
               );
             })}
           </div>
+
+          {data.orders.length > 5 && (
+            <button
+              onClick={() => navigate('/orders?filter=at_risk')}
+              className="mt-3 w-full text-center text-[12px] font-medium text-[#6B7280] hover:text-[#111827] transition-colors py-1"
+            >
+              Ещё {data.orders.length - 5} заказов под риском →
+            </button>
+          )}
         </>
       )}
     </div>

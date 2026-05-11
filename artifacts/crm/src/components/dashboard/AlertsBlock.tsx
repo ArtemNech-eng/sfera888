@@ -1,4 +1,5 @@
 import { AlertTriangle, ArrowRight } from 'lucide-react';
+import { useLocation } from 'wouter';
 
 interface Alert {
   id: number;
@@ -13,6 +14,7 @@ interface Props {
 }
 
 export function AlertsBlock({ alerts }: Props) {
+  const [, navigate] = useLocation();
   if (!alerts || alerts.length === 0) return null;
 
   const hasCritical = alerts.some(a => a.type === 'critical');
@@ -31,9 +33,9 @@ export function AlertsBlock({ alerts }: Props) {
 
       <div className="flex items-center gap-2 flex-wrap flex-1">
         {alerts.map(alert => (
-          <a
+          <button
             key={alert.id}
-            href={alert.link}
+            onClick={() => navigate(alert.link)}
             className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] font-medium
               transition-all cursor-pointer border
               ${alert.type === 'critical'
@@ -45,17 +47,23 @@ export function AlertsBlock({ alerts }: Props) {
             {alert.count > 1 && (
               <span className="font-bold ml-0.5">{alert.count}</span>
             )}
-          </a>
+          </button>
         ))}
       </div>
 
-      <a
-        href="/alerts"
+      <button
+        onClick={() => {
+          // Если есть критичный алерт с конкретной ссылкой — идём туда,
+          // иначе на страницу заказов
+          const critical = alerts.find(a => a.type === 'critical');
+          const target = critical?.link ?? alerts[0]?.link ?? '/orders';
+          navigate(target);
+        }}
         className="flex items-center gap-1 text-[12px] font-medium text-[#6B7280] hover:text-[#111827] transition-colors flex-shrink-0"
       >
         Все проблемы
         <ArrowRight size={13} />
-      </a>
+      </button>
     </div>
   );
 }

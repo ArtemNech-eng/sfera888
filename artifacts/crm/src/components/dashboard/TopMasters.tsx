@@ -1,4 +1,5 @@
 import { Trophy, Package, Star, ChevronRight } from 'lucide-react';
+import { useLocation } from 'wouter';
 import { formatCurrency } from '../../utils/format';
 
 interface Master {
@@ -27,6 +28,7 @@ function getInitials(name: string): string {
 }
 
 export function TopMasters({ data, isLoading }: Props) {
+  const [, navigate] = useLocation();
   if (isLoading || !data) {
     return (
       <div className="bg-white border border-[#E5E7EB] rounded-2xl p-6">
@@ -108,9 +110,12 @@ export function TopMasters({ data, isLoading }: Props) {
         })}
       </div>
 
-      <a href="/masters" className="mt-4 text-[13px] font-medium text-[#34C759] hover:text-[#2aad4a] transition-colors">
+      <button
+        onClick={() => navigate('/masters')}
+        className="mt-4 text-[13px] font-medium text-[#34C759] hover:text-[#2aad4a] transition-colors"
+      >
         Все мастера →
-      </a>
+      </button>
     </div>
   );
 }

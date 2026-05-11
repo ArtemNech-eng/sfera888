@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { MapPin, RefreshCw } from "lucide-react";
+import { MapPin, RefreshCw, X, Check } from "lucide-react";
 import { Layout } from "@/components/layout";
 import { ProtectedRoute } from "@/hooks/use-auth";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
@@ -34,6 +34,80 @@ async function fetchDashboard() {
   return resp.json();
 }
 
+// ── Avito balance modal ───────────────────────────────────────────────────────
+function AvitoBalanceModal({ onClose, onSave }: { onClose: () => void; onSave: (val: number) => Promise<void> }) {
+  const [value, setValue] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  const handleSave = async () => {
+    const num = Number(value.replace(/\s/g, "").replace(",", "."));
+    if (!value || isNaN(num) || num < 0) { setError("Введите корректную сумму"); return; }
+    setSaving(true);
+    setError("");
+    try {
+      await onSave(num);
+      setSuccess(true);
+      setTimeout(onClose, 900);
+    } catch {
+      setError("Не удалось обновить баланс. Попробуйте ещё раз.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm mx-4 animate-slide-down"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <span className="text-[16px] font-bold text-[#111827]">Баланс Авито</span>
+          <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[#F3F4F6] transition-colors">
+            <X size={16} color="#6B7280" />
+          </button>
+        </div>
+        <p className="text-[13px] text-[#6B7280] mb-4">Введите актуальный баланс авансового счёта Авито (₽)</p>
+        <input
+          ref={inputRef}
+          type="number"
+          min="0"
+          step="100"
+          value={value}
+          onChange={e => { setValue(e.target.value); setError(""); }}
+          onKeyDown={e => e.key === "Enter" && handleSave()}
+          placeholder="Например: 15000"
+          className="w-full px-4 py-2.5 border border-[#E5E7EB] rounded-xl text-[14px] text-[#111827]
+            outline-none focus:border-[#34C759] transition-colors mb-1"
+        />
+        {error && <p className="text-[12px] text-[#EF4444] mb-3">{error}</p>}
+        {!error && <div className="mb-3" />}
+        <div className="flex gap-2">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2 rounded-xl border border-[#E5E7EB] text-[13px] font-medium text-[#6B7280] hover:bg-[#F3F4F6] transition-colors"
+          >
+            Отмена
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || success}
+            className="flex-1 py-2 rounded-xl bg-[#34C759] text-white text-[13px] font-semibold
+              hover:bg-[#2aad4a] transition-colors disabled:opacity-60 flex items-center justify-center gap-1.5"
+          >
+            {success ? <><Check size={14} /> Сохранено</> : saving ? "Сохраняю..." : "Сохранить"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DashboardPage() {
   usePushNotifications(); // register SW and auto-subscribe if permission already granted
   const [period, setPeriod] = useState<Period>("month");
@@ -41,6 +115,7 @@ function DashboardPage() {
   const [chartDays, setChartDays] = useState<30 | 60 | 90>(30);
   const [secondsAgo, setSecondsAgo] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [avitoModalOpen, setAvitoModalOpen] = useState(false);
   const refreshBtnRef = useRef<HTMLButtonElement>(null);
 
   const { data, isLoading, refetch } = useQuery({
@@ -68,7 +143,7 @@ function DashboardPage() {
   useEffect(() => {
     const interval = setInterval(() => setSecondsAgo(s => s + 1), 1000);
     return () => clearInterval(interval);
-  }, [data]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps — интервал создаётся один раз, сброс через setSecondsAgo(0) в эффекте выше
 
   const handleRefresh = useCallback(() => {
     if (isRefreshing) return;
@@ -81,23 +156,25 @@ function DashboardPage() {
     }
   }, [isRefreshing, refetch]);
 
-  const handleEditAvitoBalance = useCallback(async () => {
-    const val = prompt("Введите новый баланс Авито (₽):");
-    if (val && !isNaN(Number(val))) {
-      try {
-        const res = await fetch("/api/dashboard/action-items/low_avito_balance-1/action", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "update_balance", payload: { balance: Number(val) } }),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        alert(`Баланс обновлён: ${Number(val).toLocaleString("ru-RU")} ₽`);
-        refetch();
-      } catch (e) {
-        alert("Не удалось обновить баланс. Попробуйте ещё раз.");
-      }
-    }
+  const handleEditAvitoBalance = useCallback(() => {
+    setAvitoModalOpen(true);
+  }, []);
+
+  const handleAvitoBalanceSave = useCallback(async (val: number) => {
+    // Получаем актуальный список задач, чтобы найти реальный ID задачи low_avito_balance
+    const itemsRes = await fetch("/api/dashboard/action-items?priority=all&status=all", { credentials: "include" });
+    const itemsData = itemsRes.ok ? await itemsRes.json() : null;
+    const avitoItem = itemsData?.items?.find((i: any) => i.type === "low_avito_balance");
+    // Если задача не найдена (баланс уже в норме) — используем fallback ID
+    const itemId = avitoItem?.id ?? "low_avito_balance-1";
+    const res = await fetch(`/api/dashboard/action-items/${itemId}/action`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "update_balance", payload: { balance: val } }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    refetch();
   }, [refetch]);
 
   const formatUpdated = () => {
@@ -125,6 +202,12 @@ function DashboardPage() {
 
   return (
     <div className="min-h-full bg-[#F8F9FA]">
+      {avitoModalOpen && (
+        <AvitoBalanceModal
+          onClose={() => setAvitoModalOpen(false)}
+          onSave={handleAvitoBalanceSave}
+        />
+      )}
       <div className="max-w-[1440px] mx-auto px-4 md:px-7 py-6">
 
         {/* HEADER */}
@@ -179,7 +262,8 @@ function DashboardPage() {
 
         {/* TASKS FEED — что делать прямо сейчас */}
         <div className="mb-6">
-          <ActionItemsBlock period={period} city={city} />
+          {/* Конвертируем "Все города" → "all" для API-фильтра */}
+          <ActionItemsBlock period={period} city={city === "Все города" ? "all" : city} />
         </div>
 
         {/* KPI CARDS */}

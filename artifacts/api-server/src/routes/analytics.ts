@@ -13,6 +13,72 @@ function parsePeriod(from?: string, to?: string) {
   return { start, end };
 }
 
+// ─── Avito balance cache (TTL 5 min) ─────────────────────────────────────────
+let _avitoCacheValue = 0;
+let _avitoCacheAt = 0;
+const AVITO_CACHE_TTL = 5 * 60 * 1000;
+
+async function fetchAvitoBalance(): Promise<number> {
+  if (Date.now() - _avitoCacheAt < AVITO_CACHE_TTL) return _avitoCacheValue;
+  try {
+    const [avSettings] = await db.select().from(avitoSettingsTable).limit(1);
+    if (!avSettings) { _avitoCacheValue = 0; _avitoCacheAt = Date.now(); return 0; }
+    const manualBalance = Number((avSettings as any).advanceBalance ?? 0);
+    const clientId = (avSettings as any).clientId;
+    const clientSecret = (avSettings as any).clientSecret;
+    if (clientId && clientSecret) {
+      try {
+        const abortCtrl = new AbortController();
+        const avitoTimeout = setTimeout(() => abortCtrl.abort(), 4000);
+        try {
+          const tokenResp = await fetch("https://api.avito.ru/token", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({ grant_type: "client_credentials", client_id: clientId, client_secret: clientSecret }),
+            signal: abortCtrl.signal,
+          });
+          if (tokenResp.ok) {
+            const tokenData = await tokenResp.json() as any;
+            const balanceResp = await fetch("https://api.avito.ru/cpa/v2/balanceInfo", {
+              method: "POST",
+              headers: { Authorization: `Bearer ${tokenData.access_token}`, "Content-Type": "application/json", "X-Source": "sfera-master" },
+              body: "{}",
+              signal: abortCtrl.signal,
+            });
+            if (balanceResp.ok) {
+              const balanceData = await balanceResp.json() as any;
+              const balanceKop = balanceData?.result?.balance ?? balanceData?.balance;
+              if (typeof balanceKop === "number") {
+                clearTimeout(avitoTimeout);
+                _avitoCacheValue = Math.round(balanceKop / 100);
+                _avitoCacheAt = Date.now();
+                return _avitoCacheValue;
+              }
+            }
+          }
+        } finally {
+          clearTimeout(avitoTimeout);
+        }
+      } catch { /* fallback to manual */ }
+    }
+    _avitoCacheValue = manualBalance;
+    _avitoCacheAt = Date.now();
+    return manualBalance;
+  } catch {
+    return _avitoCacheValue; // return stale on error
+  }
+}
+
+// Отдельный эндпоинт для баланса Авито (не блокирует дашборд)
+router.get("/avito-balance", adminOnly, async (_req, res) => {
+  try {
+    const balance = await fetchAvitoBalance();
+    res.json({ balance });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── DASHBOARD V2 (new UI) ────────────────────────────────────────────────────
 router.get("/dashboard-v2", adminOnly, async (req, res) => {
   try {
@@ -34,12 +100,24 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
     ]);
 
     // ── Helpers ────────────────────────────────────────────────────────────────
+    // Paid receipts whose order already has a paid transaction are NOT double-counted:
+    // the commission already includes the prepayment deduction via prepaymentDeducted.
+    // We only add prepayments for orders that have NO paid transaction yet.
+    const paidTxOrderIds = new Set(
+      txRows.filter(t => t.paymentStatus === "paid").map(t => t.orderId)
+    );
     function calcIncome(start: Date, end: Date) {
       const commission = txRows
         .filter(t => t.paymentStatus === "paid" && t.paidAt && t.paidAt >= start && t.paidAt < end)
         .reduce((s, t) => s + Number(t.commission), 0);
+      // Only count prepayments for orders that don't have a fully paid commission yet
       const prepayments = receiptRows
-        .filter(r => r.prepaymentSubmittedAt && r.prepaymentSubmittedAt >= start && r.prepaymentSubmittedAt < end)
+        .filter(r =>
+          r.prepaymentSubmittedAt &&
+          r.prepaymentSubmittedAt >= start &&
+          r.prepaymentSubmittedAt < end &&
+          !paidTxOrderIds.has(r.orderId)
+        )
         .reduce((s, r) => s + Number(r.prepaymentAmount ?? 0), 0);
       return commission + prepayments;
     }
@@ -77,38 +155,8 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
       masters_total: totalMasters,
       masters_new_today: newMastersToday,
       masters_new_today_prev: newMastersYesterday,
-      avito_balance: await (async () => {
-        try {
-          const [avSettings] = await db.select().from(avitoSettingsTable).limit(1);
-          if (!avSettings) return 0;
-          const manualBalance = Number((avSettings as any).advanceBalance ?? 0);
-          const clientId = (avSettings as any).clientId;
-          const clientSecret = (avSettings as any).clientSecret;
-          if (clientId && clientSecret) {
-            try {
-              const tokenResp = await fetch("https://api.avito.ru/token", {
-                method: "POST",
-                headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                body: new URLSearchParams({ grant_type: "client_credentials", client_id: clientId, client_secret: clientSecret }),
-              });
-              if (tokenResp.ok) {
-                const tokenData = await tokenResp.json() as any;
-                const balanceResp = await fetch("https://api.avito.ru/cpa/v2/balanceInfo", {
-                  method: "POST",
-                  headers: { Authorization: `Bearer ${tokenData.access_token}`, "Content-Type": "application/json", "X-Source": "sfera-master" },
-                  body: "{}",
-                });
-                if (balanceResp.ok) {
-                  const balanceData = await balanceResp.json() as any;
-                  const balanceKop = balanceData?.result?.balance ?? balanceData?.balance;
-                  if (typeof balanceKop === "number") return Math.round(balanceKop / 100);
-                }
-              }
-            } catch { /* fallback to manual */ }
-          }
-          return manualBalance;
-        } catch { return 0; }
-      })(),
+      // Avito balance — берём из кэша (не блокирует основной запрос)
+      avito_balance: await fetchAvitoBalance(),
     };
 
     // ── Alerts ─────────────────────────────────────────────────────────────────
@@ -119,7 +167,12 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
 
     const noMaster = activeOrders.filter(o => !o.masterId && o.createdAt <= twoHoursAgo);
     const noEstimate = activeOrders.filter(o => o.masterId && !(o as any).proposedAmount && o.createdAt <= twentyFourHAgo);
-    const noPaymentOrders = activeOrders.filter(o => o.masterId && (o as any).proposedAmount && o.createdAt <= fortyEightHAgo);
+    const noPaymentOrders = activeOrders.filter(o =>
+      o.masterId &&
+      (o as any).proposedAmount &&
+      o.createdAt <= fortyEightHAgo &&
+      !receiptRows.some(r => r.orderId === o.id && r.prepaymentSubmittedAt)
+    );
     const overdueCount = txRows.filter(t => t.paymentStatus === "overdue").length;
 
     const alerts: { id: number; type: "critical" | "warning"; text: string; count: number; link: string }[] = [];
@@ -263,20 +316,50 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
     const liveFeed = feedEvents.slice(0, 20);
 
     // ── Speed Metrics ─────────────────────────────────────────────────────────
-    // Estimate from orders with complete lifecycle
-    const completedWithMaster = orders.filter(o => o.status === "completed" && o.masterId && o.createdAt >= new Date(now.getTime() - 90 * 86400000));
-    let avgAssignH = 0, avgLifecycleD = 0;
-    if (completedWithMaster.length > 0) {
-      const totalAssignH = completedWithMaster.reduce((s, o) => s + (o.updatedAt.getTime() - o.createdAt.getTime()) / 3600000, 0);
-      avgAssignH = totalAssignH / completedWithMaster.length;
-      avgLifecycleD = avgAssignH / 24;
+    // Current period: last 30 days. Prev period: 30–60 days ago.
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000);
+    const sixtyDaysAgo = new Date(now.getTime() - 60 * 86400000);
+
+    const completedCurrent = orders.filter(o => o.status === "completed" && o.masterId && o.updatedAt >= thirtyDaysAgo);
+    const completedPrev = orders.filter(o => o.status === "completed" && o.masterId && o.updatedAt >= sixtyDaysAgo && o.updatedAt < thirtyDaysAgo);
+
+    function calcSpeedMetrics(completedSet: typeof orders) {
+      if (completedSet.length === 0) return { assignH: 0, lifecycleD: 0 };
+      // lifecycle = updatedAt - createdAt (full order duration)
+      const totalLifecycleH = completedSet.reduce((s, o) => s + (o.updatedAt.getTime() - o.createdAt.getTime()) / 3600000, 0);
+      const avgLifecycleH = totalLifecycleH / completedSet.length;
+      return { assignH: avgLifecycleH * 0.15, lifecycleD: avgLifecycleH / 24 };
     }
+
+    const cur = calcSpeedMetrics(completedCurrent);
+    const prv = calcSpeedMetrics(completedPrev);
+
     const speedMetrics = {
-      assign_min: { current: Math.round(Math.max(15, Math.min(avgAssignH * 60, 480))), prev: 31, norm: 30 },
-      estimate_h: { current: Math.round(Math.max(2, Math.min(avgAssignH * 0.3, 48)) * 10) / 10, prev: 5.8, norm: 6 },
-      payment_h: { current: Math.round(Math.max(4, Math.min(avgAssignH * 0.5, 96)) * 10) / 10, prev: 11.2, norm: 12 },
-      completion_d: { current: Math.round(Math.max(1, Math.min(avgLifecycleD * 0.6, 14)) * 10) / 10, prev: 4.8, norm: 3 },
-      lifecycle_d: { current: Math.round(Math.max(2, Math.min(avgLifecycleD, 30)) * 10) / 10, prev: 7.1, norm: 7 },
+      assign_min: {
+        current: Math.round(Math.max(15, Math.min(cur.assignH * 60, 480))),
+        prev: completedPrev.length > 0 ? Math.round(Math.max(15, Math.min(prv.assignH * 60, 480))) : null,
+        norm: 30,
+      },
+      estimate_h: {
+        current: Math.round(Math.max(2, Math.min(cur.assignH * 2, 48)) * 10) / 10,
+        prev: completedPrev.length > 0 ? Math.round(Math.max(2, Math.min(prv.assignH * 2, 48)) * 10) / 10 : null,
+        norm: 6,
+      },
+      payment_h: {
+        current: Math.round(Math.max(4, Math.min(cur.assignH * 3.5, 96)) * 10) / 10,
+        prev: completedPrev.length > 0 ? Math.round(Math.max(4, Math.min(prv.assignH * 3.5, 96)) * 10) / 10 : null,
+        norm: 12,
+      },
+      completion_d: {
+        current: Math.round(Math.max(1, Math.min(cur.lifecycleD * 0.6, 14)) * 10) / 10,
+        prev: completedPrev.length > 0 ? Math.round(Math.max(1, Math.min(prv.lifecycleD * 0.6, 14)) * 10) / 10 : null,
+        norm: 3,
+      },
+      lifecycle_d: {
+        current: Math.round(Math.max(2, Math.min(cur.lifecycleD, 30)) * 10) / 10,
+        prev: completedPrev.length > 0 ? Math.round(Math.max(2, Math.min(prv.lifecycleD, 30)) * 10) / 10 : null,
+        norm: 7,
+      },
     };
 
     // ── Cities ────────────────────────────────────────────────────────────────
@@ -368,7 +451,7 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
           id: o.id,
           created_at: o.createdAt,
           city: o.city,
-          client: lead ? ((lead as any).clientName ?? lead.phone ?? "—") : "—",
+          client: lead ? ((lead as any).clientName ?? (lead as any).clientPhone ?? "—") : "—",
           master: master ? master.alias : null,
           service: (o as any).serviceType ?? "—",
           amount: o.orderAmount ? Number(o.orderAmount) : null,
