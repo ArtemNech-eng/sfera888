@@ -262,8 +262,8 @@ function DashboardPage() {
 
         {/* TASKS FEED — что делать прямо сейчас */}
         <div className="mb-6">
-          {/* Конвертируем "Все города" → "all" для API-фильтра */}
-          <ActionItemsBlock period={period} city={city === "Все города" ? "all" : city} />
+          {/* Задачи всегда показываем все — period дашборда не должен их фильтровать */}
+          <ActionItemsBlock period="all" city={city === "Все города" ? "all" : city} />
         </div>
 
         {/* KPI CARDS */}
