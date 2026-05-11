@@ -304,7 +304,9 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
         if (priorityFilter !== "all" && i.priority !== priorityFilter) return false;
         return true;
       })
-      .filter((i) => !city || city === "Все города" || city === "all" || i.city === city)
+      // Фильтр по городу: системные задачи (city=null) всегда показываем,
+      // чтобы low_avito_balance и custom_manual не пропадали при выборе города
+      .filter((i) => !city || city === "Все города" || city === "all" || i.city === null || i.city === city)
       .filter((i) => {
         if (search.trim() === "") return true;
         const s = search.toLowerCase();
@@ -347,22 +349,30 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
     });
   }, [filtered, viewMode]);
 
-  // Мини-график тренда (из filtered — учитывает текущие фильтры)
+  // Мини-график тренда: для каждого из 7 дней считаем, сколько задач было активно в тот день.
+  // Задача считается активной в день D, если она была создана до конца дня D.
+  // Это даёт реальную динамику нагрузки, а не только дату появления задачи.
   const trendData = useMemo(() => {
-    const days: Record<string, { critical: number; high: number }> = {};
     const now = Date.now();
+    const result: { critical: number; high: number }[] = [];
     for (let d = 6; d >= 0; d--) {
-      const key = new Date(now - d * 86400000).toISOString().slice(0, 10);
-      days[key] = { critical: 0, high: 0 };
-    }
-    for (const item of filtered) {
-      const key = new Date(item.createdAt).toISOString().slice(0, 10);
-      if (days[key]) {
-        if (item.priority === "critical") days[key].critical++;
-        else if (item.priority === "high") days[key].high++;
+      // Конец дня D (23:59:59 UTC)
+      const dayEnd = new Date(now - d * 86400000);
+      dayEnd.setUTCHours(23, 59, 59, 999);
+      const dayEndMs = dayEnd.getTime();
+      let critical = 0;
+      let high = 0;
+      for (const item of filtered) {
+        const createdMs = new Date(item.createdAt).getTime();
+        // Задача была активна в этот день если создана до конца дня
+        if (createdMs <= dayEndMs) {
+          if (item.priority === "critical") critical++;
+          else if (item.priority === "high") high++;
+        }
       }
+      result.push({ critical, high });
     }
-    return Object.values(days);
+    return result;
   }, [filtered]);
 
   const trendCritical = trendData.map(d => d.critical);
@@ -974,7 +984,11 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
           </div>
           <div>
             <div className="text-[10px] text-muted-foreground font-medium">Выполнено сегодня</div>
-            <div className="text-sm font-bold text-emerald-700">{summary.doneToday} <span className="text-[10px] font-normal text-muted-foreground">из {kpi.total}</span></div>
+            {/* Знаменатель = активные + выполненные сегодня = все задачи за день */}
+            <div className="text-sm font-bold text-emerald-700">
+              {summary.doneToday}
+              <span className="text-[10px] font-normal text-muted-foreground"> из {summary.doneToday + kpi.total}</span>
+            </div>
           </div>
         </div>
       </div>

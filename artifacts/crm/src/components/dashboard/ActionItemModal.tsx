@@ -441,8 +441,11 @@ export function ActionItemModal({ id, open, onOpenChange }: {
       if (action === "partial_payment") {
         const n = Number((payload as any).orderAmount ?? 0);
         const p = Number((payload as any).paidAmount ?? 0);
-        // paidAmount is direct commission payment, totalComm is calculated from orderAmount
-        const totalComm = n <= 50000 ? 5000 : Math.round(n * 0.15);
+        // Используем totalComm из ответа сервера если есть, иначе fallback на клиентский расчёт
+        const serverTotalComm = resultJson?.context?.transaction?.commission;
+        const totalComm = serverTotalComm != null
+          ? Number(serverTotalComm)
+          : (n <= 50000 ? 5000 : Math.round(n * 0.15));
         const paidComm = Math.min(p, totalComm);
         const remaining = Math.max(0, totalComm - paidComm);
         const msg = remaining > 0
