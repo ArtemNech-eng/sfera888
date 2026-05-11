@@ -138,12 +138,22 @@ function actionSet(type: TaskType) {
   if (type === "no_progress") return [{ key: "message_master", label: "Написать мастеру", style: "primary" as const }, { key: "call_master", label: "Позвонить мастеру", style: "secondary" as const }, { key: "reassign", label: "Переназначить", style: "secondary" as const }, { key: "cancel_order", label: "Отменить заказ", style: "danger" as const }, { key: "resolve", label: "Пометить задачу выполненной", style: "secondary" as const }];
   if (type === "blocked_master") return [{ key: "message_master", label: "Написать мастеру", style: "primary" as const }, { key: "manual_unblock", label: "Разблокировать вручную", style: "danger" as const }, { key: "open_issue_order", label: "Открыть проблемный заказ", style: "secondary" as const }, { key: "resolve", label: "Пометить как проверено", style: "secondary" as const }];
   if (type === "low_avito_balance") return [{ key: "update_balance", label: "Обновить баланс вручную", style: "primary" as const }, { key: "resolve", label: "Пометить как решено", style: "secondary" as const }];
-  if (type === "possible_bypass" || type === "conflict") return [{ key: "message_master", label: "Написать мастеру", style: "primary" as const }, { key: "complete_as_master", label: "Завершить как выполненный (только admin)", style: "secondary" as const }, { key: "cancel_as_master", label: "Отменить заказ (вина мастера)", style: "danger" as const }, { key: "block_master", label: "Заблокировать мастера", style: "danger" as const }, { key: "manual_control", label: "Перевести заказ в ручной контроль", style: "secondary" as const }, { key: "resolve", label: "Пометить как проверено", style: "secondary" as const }];
+  if (type === "possible_bypass" || type === "conflict") return [{ key: "message_master", label: "Написать мастеру", style: "primary" as const }, { key: "complete_as_master", label: "Завершить как выполненный (только admin)", style: "secondary" as const }, { key: "cancel_order", label: "Отменить заказ", style: "danger" as const }, { key: "cancel_as_master", label: "Отменить заказ (вина мастера)", style: "danger" as const }, { key: "block_master", label: "Заблокировать мастера", style: "danger" as const }, { key: "manual_control", label: "Перевести заказ в ручной контроль", style: "secondary" as const }, { key: "resolve", label: "Пометить как проверено", style: "secondary" as const }];
   if (type === "no_manager_id") return [{ key: "reassign", label: "Назначить менеджера", style: "primary" as const }, { key: "resolve", label: "Пометить выполненной", style: "secondary" as const }];
   return [{ key: "resolve", label: "Пометить выполненной", style: "secondary" as const }, { key: "dismiss", label: "Отложить", style: "ghost" as const }];
 }
 
+// ─── In-memory TTL кэш для buildItems() ──────────────────────────
+// buildItems() делает 8+ SQL-запросов — кэшируем на 30 сек чтобы не грузить БД
+const BUILD_ITEMS_TTL_MS = 30_000;
+let buildItemsCache: { data: Item[]; ts: number } | null = null;
+
+function invalidateBuildItemsCache() { buildItemsCache = null; }
+
 async function buildItems(): Promise<Item[]> {
+  if (buildItemsCache && Date.now() - buildItemsCache.ts < BUILD_ITEMS_TTL_MS) {
+    return buildItemsCache.data;
+  }
   const items: Item[] = [];
   const now = new Date();
   const [orders, masters, leads, receipts, cases, avitoRows, manualTasks, txRows] = await Promise.all([

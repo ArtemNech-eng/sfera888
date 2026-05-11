@@ -9,8 +9,8 @@
  * 4. Active orders count >= limit (2)
  */
 
-import { db, ordersTable, fomoEventsTable, mastersTable } from "@workspace/db";
-import { eq, and, inArray, isNull } from "drizzle-orm";
+import { db, ordersTable, fomoEventsTable, mastersTable, receiptsTable } from "@workspace/db";
+import { eq, and, inArray, isNull, isNotNull } from "drizzle-orm";
 import { sendMaxMessage } from "../maxBot.js";
 
 export interface FomoBlockResult {
@@ -70,9 +70,22 @@ export async function getFomoBlock(masterId: number, _isTestMaster: boolean): Pr
   }
 
   // Priority 3: estimate sent but no payment 72h+
+  // Check receipts too: client may have submitted payment screenshot but operator hasn't confirmed yet
+  // (prepaymentSubmittedAt set, but orderAmount on order still null until operator confirms)
+  const paidReceiptOrderIds = new Set(
+    (await db.select({ orderId: receiptsTable.orderId })
+      .from(receiptsTable)
+      .where(and(
+        eq(receiptsTable.masterId, masterId),
+        isNotNull(receiptsTable.prepaymentSubmittedAt),
+      ))
+    ).map((r) => r.orderId)
+  );
+
   for (const order of activeOrders) {
     const hasEstimate = order.proposedAmount != null && Number(order.proposedAmount) > 0;
-    const hasPayment = order.orderAmount != null && Number(order.orderAmount) > 0;
+    const hasPayment = (order.orderAmount != null && Number(order.orderAmount) > 0)
+      || paidReceiptOrderIds.has(order.id);
     if (!hasEstimate || hasPayment) continue;
     // Approximate when estimate was sent: use updatedAt as proxy
     const estimateSentAt = order.updatedAt ?? order.createdAt;
