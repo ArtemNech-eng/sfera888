@@ -28,6 +28,16 @@ async function fetcher(period: string, city?: string) {
   return r.json();
 }
 
+async function fetchDebugInfo(): Promise<any> {
+  try {
+    const r = await fetch("/api/dashboard/action-items/debug", { credentials: "include" });
+    if (!r.ok) return null;
+    return r.json();
+  } catch {
+    return null;
+  }
+}
+
 async function fetchSnoozesCount(): Promise<number> {
   try {
     const r = await fetch("/api/dashboard/action-items/snoozes", { credentials: "include" });
@@ -80,10 +90,21 @@ function EmptyTasksState({
   const [snoozesCount, setSnoozesCount] = useState<number | null>(null);
   const [clearing, setClearing] = useState(false);
   const [cleared, setCleared] = useState<number | null>(null);
+  const [debugInfo, setDebugInfo] = useState<any>(null);
+  const [debugLoading, setDebugLoading] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
 
   useEffect(() => {
     fetchSnoozesCount().then(setSnoozesCount);
   }, []);
+
+  const handleLoadDebug = async () => {
+    setDebugLoading(true);
+    setShowDebug(true);
+    const info = await fetchDebugInfo();
+    setDebugInfo(info);
+    setDebugLoading(false);
+  };
 
   const handleClearSnoozes = async () => {
     setClearing(true);
@@ -154,6 +175,61 @@ function EmptyTasksState({
           Обновить
         </button>
       )}
+
+      {/* Кнопка диагностики — всегда доступна */}
+      <div className="mt-4">
+        {!showDebug ? (
+          <button
+            onClick={handleLoadDebug}
+            className="text-xs text-slate-500 hover:text-slate-700 underline underline-offset-2 transition"
+          >
+            🔍 Диагностика — почему нет задач?
+          </button>
+        ) : (
+          <div className="mx-auto max-w-sm rounded-xl border border-slate-200 bg-slate-50 p-4 text-left space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-700">🔍 Диагностика</span>
+              <button onClick={() => setShowDebug(false)} className="text-slate-400 hover:text-slate-600 text-xs">✕</button>
+            </div>
+            {debugLoading ? (
+              <div className="flex items-center gap-2 text-xs text-slate-500">
+                <span className="w-3 h-3 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+                Загружаем данные из БД…
+              </div>
+            ) : debugInfo ? (
+              <div className="space-y-2 text-xs">
+                {/* Диагноз */}
+                {debugInfo.diagnosis?.length > 0 && (
+                  <div className="space-y-1">
+                    {debugInfo.diagnosis.map((d: string, i: number) => (
+                      <div key={i} className="text-slate-700 font-medium">{d}</div>
+                    ))}
+                  </div>
+                )}
+                {/* Сводка */}
+                <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-slate-600 pt-1 border-t border-slate-200">
+                  <div>Активных заказов: <b>{debugInfo.summary?.activeOrders ?? 0}</b></div>
+                  <div>Завершено/отменено: <b>{debugInfo.summary?.completedOrCancelled ?? 0}</b></div>
+                  <div>Активных snooze: <b>{debugInfo.summary?.activeSnoozesCount ?? 0}</b></div>
+                  <div>Заблок. мастеров: <b>{debugInfo.summary?.blockedMastersCount ?? 0}</b></div>
+                  <div>Активных кейсов: <b>{debugInfo.summary?.activeChatCases ?? 0}</b></div>
+                  <div>Ручных задач: <b>{debugInfo.summary?.openManualTasks ?? 0}</b></div>
+                  <div>Ожид. оплат: <b>{debugInfo.summary?.pendingReceipts ?? 0}</b></div>
+                  <div>Без сметы &gt;24ч: <b>{debugInfo.summary?.noEstimateOrdersOlderThan24h ?? 0}</b></div>
+                </div>
+                {/* Возраст заказов */}
+                {debugInfo.activeOrderAgeBreakdown && (
+                  <div className="text-slate-500 pt-1 border-t border-slate-200">
+                    Возраст активных: &lt;24ч: {debugInfo.activeOrderAgeBreakdown.lt24h}, 24-48ч: {debugInfo.activeOrderAgeBreakdown.h24_48}, 2-7дн: {debugInfo.activeOrderAgeBreakdown.h48_168}, &gt;7дн: {debugInfo.activeOrderAgeBreakdown.gt168h}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-xs text-red-600">Не удалось загрузить данные</div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

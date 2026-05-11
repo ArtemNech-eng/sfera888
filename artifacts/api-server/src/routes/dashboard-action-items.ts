@@ -1036,6 +1036,88 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
 }
 
 // ─── Диагностика и сброс snooze-записей ─────────────────────────────────────
+router.get("/action-items/debug", ops, async (req: any, res: any) => {
+  try {
+    const now = new Date();
+    const [allOrders, activeOrders, snoozes, blockedMasters, cases, manualTasks, receipts] = await Promise.all([
+      db.select({ id: ordersTable.id, status: ordersTable.status, createdAt: ordersTable.createdAt, updatedAt: ordersTable.updatedAt, proposedAmount: ordersTable.proposedAmount, orderAmount: ordersTable.orderAmount })
+        .from(ordersTable).where(isNull(ordersTable.deletedAt)),
+      db.select({ id: ordersTable.id, status: ordersTable.status, createdAt: ordersTable.createdAt, updatedAt: ordersTable.updatedAt, proposedAmount: ordersTable.proposedAmount, orderAmount: ordersTable.orderAmount })
+        .from(ordersTable).where(and(isNull(ordersTable.deletedAt), not(inArray(ordersTable.status, ["completed", "cancelled"])))),
+      db.select().from(taskSnoozesTable).where(gt(taskSnoozesTable.snoozedUntil, now)),
+      db.select({ id: mastersTable.id, alias: mastersTable.alias, status: mastersTable.status })
+        .from(mastersTable).where(and(isNull(mastersTable.deletedAt), sql`lower(${mastersTable.status}) like '%blocked%'`)),
+      db.select({ id: (chatCasesTable as any).id, riskLevel: (chatCasesTable as any).riskLevel, isArchived: (chatCasesTable as any).isArchived })
+        .from(chatCasesTable).where(eq(chatCasesTable.isArchived, false)),
+      db.select({ id: (systemTasksTable as any).id, status: (systemTasksTable as any).status })
+        .from(systemTasksTable),
+      db.select({ id: receiptsTable.id, orderId: receiptsTable.orderId, prepaymentSubmittedAt: receiptsTable.prepaymentSubmittedAt, prepaymentSeenAt: receiptsTable.prepaymentSeenAt })
+        .from(receiptsTable),
+    ]);
+
+    // Статусы активных заказов
+    const statusCounts: Record<string, number> = {};
+    for (const o of activeOrders) {
+      const s = String(o.status ?? "unknown");
+      statusCounts[s] = (statusCounts[s] ?? 0) + 1;
+    }
+
+    // Возраст активных заказов
+    const ageGroups = { lt24h: 0, h24_48: 0, h48_168: 0, gt168h: 0 };
+    for (const o of activeOrders) {
+      const ageH = (now.getTime() - new Date(o.createdAt).getTime()) / 3600000;
+      if (ageH < 24) ageGroups.lt24h++;
+      else if (ageH < 48) ageGroups.h24_48++;
+      else if (ageH < 168) ageGroups.h48_168++;
+      else ageGroups.gt168h++;
+    }
+
+    // Заказы без сметы (старше 24ч)
+    const noEstimateCount = activeOrders.filter(o => {
+      const ageH = (now.getTime() - new Date(o.createdAt).getTime()) / 3600000;
+      return ageH >= 24 && !o.proposedAmount && !o.orderAmount;
+    }).length;
+
+    // Receipts ожидающие подтверждения
+    const pendingReceipts = receipts.filter((r: any) => r.prepaymentSubmittedAt && !r.prepaymentSeenAt).length;
+
+    // Ручные задачи не закрытые
+    const openManualTasks = manualTasks.filter((t: any) => t.status !== "done" && t.status !== "dismissed").length;
+
+    // Активные snooze
+    const activeSnoozedIds = snoozes.map((s: any) => s.taskId);
+
+    res.json({
+      summary: {
+        totalOrders: allOrders.length,
+        activeOrders: activeOrders.length,
+        completedOrCancelled: allOrders.length - activeOrders.length,
+        activeSnoozesCount: snoozes.length,
+        blockedMastersCount: blockedMasters.length,
+        activeChatCases: cases.length,
+        openManualTasks,
+        pendingReceipts,
+        noEstimateOrdersOlderThan24h: noEstimateCount,
+      },
+      activeOrderStatusBreakdown: statusCounts,
+      activeOrderAgeBreakdown: ageGroups,
+      activeSnoozedTaskIds: activeSnoozedIds,
+      blockedMasters: blockedMasters.map(m => ({ id: m.id, alias: m.alias, status: m.status })),
+      diagnosis: (() => {
+        const reasons: string[] = [];
+        if (activeOrders.length === 0) reasons.push("❌ Нет активных заказов — все завершены или отменены");
+        if (activeOrders.length > 0 && ageGroups.lt24h === activeOrders.length) reasons.push("⏳ Все активные заказы моложе 24 часов — задачи ещё не генерируются");
+        if (snoozes.length > 0) reasons.push(`😴 ${snoozes.length} задач отложены (snooze активен)`);
+        if (activeOrders.length > 0 && noEstimateCount === 0 && ageGroups.lt24h < activeOrders.length) reasons.push("✅ У всех заказов старше 24ч есть смета или оплата — задача no_estimate не нужна");
+        if (reasons.length === 0 && activeOrders.length > 0) reasons.push("⚠️ Активные заказы есть, но задачи не генерируются — возможно кэш устарел или все условия выполнены");
+        return reasons;
+      })(),
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: String(e?.message ?? e) });
+  }
+});
+
 router.get("/action-items/snoozes", ops, async (req: any, res: any) => {
   try {
     const now = new Date();
