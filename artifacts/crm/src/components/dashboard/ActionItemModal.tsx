@@ -339,22 +339,24 @@ export function ActionItemModal({ id, open, onOpenChange }: {
   const { user: authUser } = useAuth();
   const isAdmin = authUser?.role === "admin";
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["action-item", id],
     queryFn: () => fetchDetail(id!),
     enabled: !!id && open,
     refetchInterval: open && id ? 30_000 : false,
+    retry: false,
   });
 
-  // Автозакрытие: если при refetch заказ исчез из списка (движение произошло) — закрываем попап
+  // Автозакрытие: если при refetch сервер вернул 404 — задача исчезла (выполнена/отменена)
+  // Используем ref чтобы отличить "данные ещё не загружены" от "данные пропали после загрузки"
   const prevDataRef = React.useRef<any>(null);
   useEffect(() => {
-    if (open && prevDataRef.current && !data && !isLoading) {
-      // Раньше данные были, теперь нет — заказ обновился, карточка больше не актуальна
+    if (open && prevDataRef.current != null && isError && !isLoading) {
+      // Данные были загружены ранее, теперь запрос упал — задача исчезла из системы
       onOpenChange(false);
     }
-    prevDataRef.current = data;
-  }, [data, isLoading, open]);
+    if (data != null) prevDataRef.current = data;
+  }, [data, isLoading, isError, open]);
 
   useEffect(() => {
     if (!open) {
@@ -1006,7 +1008,8 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                 </Button>
                 <Button
                   size="sm"
-                  variant="destructive"
+                  variant="outline"
+                  className="border-green-500 text-green-700 hover:bg-green-50"
                   onClick={() => fire("manual_unblock")}
                   disabled={busy === "manual_unblock"}
                 >
