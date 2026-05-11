@@ -58,9 +58,10 @@ export function FunnelCard({ data, isLoading }: Props) {
       <div className="space-y-0">
         {stages.map((stage, index) => {
           const pct = Math.round((stage.value / first) * 100);
-          const prevValue = index > 0 ? stages[index - 1].value : stage.value;
-          const convPct = prevValue > 0 ? Math.round((stage.value / prevValue) * 100) : 100;
-          const cc = conversionColor(convPct);
+          // Конверсия между шагами: для первого шага не показываем (нет предыдущего)
+          const prevValue = index > 0 ? stages[index - 1].value : null;
+          const convPct = prevValue != null && prevValue > 0 ? Math.round((stage.value / prevValue) * 100) : null;
+          const cc = convPct != null ? conversionColor(convPct) : '#D1D5DB';
 
           return (
             <div key={stage.label}>
@@ -80,7 +81,7 @@ export function FunnelCard({ data, isLoading }: Props) {
                   />
                 </div>
               </div>
-              {index < stages.length - 1 && (
+              {index < stages.length - 1 && convPct != null && (
                 <div className="flex items-center gap-2 py-0.5">
                   <ChevronDown size={14} color="#D1D5DB" />
                   <span className="text-[11px] font-medium" style={{ color: cc }}>

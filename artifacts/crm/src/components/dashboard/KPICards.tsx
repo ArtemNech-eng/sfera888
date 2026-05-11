@@ -7,6 +7,8 @@ import { useCountUp } from '../../hooks/useCountUp';
 import { formatCurrency, formatChange } from '../../utils/format';
 
 interface KPIData {
+  days_passed?: number;
+  days_in_month?: number;
   revenue_today: number;
   revenue_today_prev: number;
   revenue_month: number;
@@ -138,7 +140,9 @@ export function KPICards({ data, isLoading, onEditAvitoBalance }: Props) {
     );
   }
 
-  const revenueDailyAvg = data.revenue_month / 30;
+  // Используем реальное число прошедших дней месяца вместо хардкода 30
+  const daysPassed = data.days_passed ?? new Date().getDate();
+  const revenueDailyAvg = daysPassed > 0 ? data.revenue_month / daysPassed : 0;
   const revenueTodayProgress = revenueDailyAvg > 0
     ? (data.revenue_today / revenueDailyAvg) * 100 : 0;
   const mastersProgress = data.masters_total > 0
