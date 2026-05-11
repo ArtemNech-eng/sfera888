@@ -158,7 +158,7 @@ async function buildItems(): Promise<Item[]> {
   const now = new Date();
   const [orders, masters, leads, receipts, cases, avitoRows, manualTasks, txRows] = await Promise.all([
     db.select({ id: ordersTable.id, leadId: ordersTable.leadId, masterId: ordersTable.masterId, city: ordersTable.city, status: ordersTable.status, proposedAmount: ordersTable.proposedAmount, orderAmount: ordersTable.orderAmount, createdAt: ordersTable.createdAt, updatedAt: ordersTable.updatedAt, assignedAt: ordersTable.assignedAt, cancelReason: ordersTable.cancelReason }).from(ordersTable).where(and(isNull(ordersTable.deletedAt), not(inArray(ordersTable.status, ["completed", "cancelled"])))),
-    db.select({ id: mastersTable.id, alias: mastersTable.alias, city: mastersTable.city, status: mastersTable.status, createdAt: mastersTable.createdAt, blockedAt: (mastersTable as any).blockedAt }).from(mastersTable).where(isNull(mastersTable.deletedAt)),
+    db.select({ id: mastersTable.id, alias: mastersTable.alias, city: mastersTable.city, status: mastersTable.status, createdAt: mastersTable.createdAt, blockedAt: (mastersTable as any).blockedAt }).from(mastersTable).where(and(isNull(mastersTable.deletedAt), sql`${mastersTable.status}::text ilike '%blocked%' or ${mastersTable.status}::text ilike '%fomo%'`)),
     db.select({ id: leadsTable.id, clientName: leadsTable.clientName, clientPhone: leadsTable.clientPhone, city: leadsTable.city, createdAt: leadsTable.createdAt }).from(leadsTable).where(isNull(leadsTable.deletedAt)),
     db.select({ id: receiptsTable.id, orderId: receiptsTable.orderId, masterId: receiptsTable.masterId, city: receiptsTable.city, prepaymentSubmittedAt: receiptsTable.prepaymentSubmittedAt, prepaymentSeenAt: receiptsTable.prepaymentSeenAt, prepaymentAmount: receiptsTable.prepaymentAmount }).from(receiptsTable),
     db.select().from(chatCasesTable).where(eq(chatCasesTable.isArchived, false)).orderBy(desc(chatCasesTable.updatedAt)).limit(50),
@@ -1058,7 +1058,7 @@ router.get("/action-items/debug", ops, async (req: any, res: any) => {
         .from(ordersTable).where(and(isNull(ordersTable.deletedAt), not(inArray(ordersTable.status, ["completed", "cancelled"])))),
       db.select().from(taskSnoozesTable).where(gt(taskSnoozesTable.snoozedUntil, now)),
       db.select({ id: mastersTable.id, alias: mastersTable.alias, status: mastersTable.status })
-        .from(mastersTable).where(and(isNull(mastersTable.deletedAt), sql`lower(${mastersTable.status}) like '%blocked%'`)),
+        .from(mastersTable).where(and(isNull(mastersTable.deletedAt), sql`${mastersTable.status}::text ilike '%blocked%'`)),
       db.select({ id: (chatCasesTable as any).id, riskLevel: (chatCasesTable as any).riskLevel, isArchived: (chatCasesTable as any).isArchived })
         .from(chatCasesTable).where(eq(chatCasesTable.isArchived, false)),
       db.select({ id: (systemTasksTable as any).id, status: (systemTasksTable as any).status })
