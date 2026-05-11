@@ -304,7 +304,7 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
         if (priorityFilter !== "all" && i.priority !== priorityFilter) return false;
         return true;
       })
-      .filter((i) => !city || city === "Все города" || i.city === city)
+      .filter((i) => !city || city === "Все города" || city === "all" || i.city === city)
       .filter((i) => {
         if (search.trim() === "") return true;
         const s = search.toLowerCase();
