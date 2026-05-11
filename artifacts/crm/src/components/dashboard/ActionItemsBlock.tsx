@@ -48,7 +48,8 @@ function Sparkline({ data, width = 80, height = 20, color = "#ef4444" }: { data:
 
 export function ActionItemsBlock({ period: externalPeriod, city }: { period?: string; city?: string }) {
   const [period, setPeriod] = useState<string>(externalPeriod ?? "month");
-  const [scope, setScope] = useState<string>("all");
+  const [scopeTab, setScopeTab] = useState<string>("all");
+  const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
   // myOnly временно скрыт — assigneeId не заполняется на сервере
   const [openId, setOpenId] = useState<string | null>(null);
@@ -92,21 +93,28 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
   const PAGE_SIZE = 10;
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
-  useEffect(() => { setVisibleCount(PAGE_SIZE); setSelectedIds(new Set()); setFocusedIndex(-1); }, [scope, search, period]);
+  useEffect(() => { setVisibleCount(PAGE_SIZE); setSelectedIds(new Set()); setFocusedIndex(-1); }, [scopeTab, priorityFilter, search, period]);
 
   const filtered = useMemo(() => {
     return items
       .filter((i) => {
-        if (scope === "all") return true;
-        if (scope === "critical") return i.priority === "critical";
-        if (scope === "high") return i.priority === "high";
-        if (scope === "medium") return i.priority === "medium";
-        if (scope === "low") return i.priority === "low";
-        if (scope === "orders") return i.orderId != null || i.entityType === "order";
-        if (scope === "masters") return i.masterId != null || i.entityType === "master";
-        if (scope === "finance") return i.entityType === "finance" || i.type.includes("payment") || i.type === "low_avito_balance";
-        if (scope === "system") return i.entityType === "system";
-        return i.entityType === scope;
+        // Фильтр по типу (scopeTab)
+        if (scopeTab === "all") {
+          // pass
+        } else if (scopeTab === "orders") {
+          if (!(i.orderId != null || i.entityType === "order")) return false;
+        } else if (scopeTab === "masters") {
+          if (!(i.masterId != null || i.entityType === "master")) return false;
+        } else if (scopeTab === "finance") {
+          if (!(i.entityType === "finance" || i.type.includes("payment") || i.type === "low_avito_balance")) return false;
+        } else if (scopeTab === "system") {
+          if (i.entityType !== "system") return false;
+        } else {
+          if (i.entityType !== scopeTab) return false;
+        }
+        // Фильтр по приоритету (priorityFilter)
+        if (priorityFilter !== "all" && i.priority !== priorityFilter) return false;
+        return true;
       })
       .filter((i) => !city || city === "Все города" || i.city === city)
       .filter((i) => {
@@ -131,7 +139,7 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
         // 4. По свежести
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       });
-  }, [items, scope, currentUserId, search, city]);
+  }, [items, scopeTab, priorityFilter, currentUserId, search, city]);
 
   // Группировка по мастеру
   const grouped = useMemo(() => {
@@ -441,7 +449,7 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
   }, []);
 
   const handlePriorityClick = (p: string) => {
-    if (scope === p) { setScope("all"); } else { setScope(p); }
+    if (priorityFilter === p) { setPriorityFilter("all"); } else { setPriorityFilter(p); }
   };
 
   // AI-подсказка
@@ -703,26 +711,26 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
           </div>
           <button
             onClick={() => handlePriorityClick("critical")}
-            className={`px-2.5 py-1 text-xs rounded-full font-semibold cursor-pointer transition ${scope === "critical" ? "bg-red-500 text-white ring-2 ring-red-300" : "bg-red-100 text-red-700 hover:bg-red-200"}`}
+            className={`px-2.5 py-1 text-xs rounded-full font-semibold cursor-pointer transition ${priorityFilter === "critical" ? "bg-red-500 text-white ring-2 ring-red-300" : "bg-red-100 text-red-700 hover:bg-red-200"}`}
           >
             Критичные {filteredCounts.critical}
           </button>
           <button
             onClick={() => handlePriorityClick("high")}
-            className={`px-2.5 py-1 text-xs rounded-full font-semibold cursor-pointer transition ${scope === "high" ? "bg-orange-500 text-white ring-2 ring-orange-300" : "bg-orange-100 text-orange-700 hover:bg-orange-200"}`}
+            className={`px-2.5 py-1 text-xs rounded-full font-semibold cursor-pointer transition ${priorityFilter === "high" ? "bg-orange-500 text-white ring-2 ring-orange-300" : "bg-orange-100 text-orange-700 hover:bg-orange-200"}`}
           >
             Высокий {filteredCounts.high}
           </button>
           <button
             onClick={() => handlePriorityClick("medium")}
-            className={`px-2.5 py-1 text-xs rounded-full font-semibold cursor-pointer transition ${scope === "medium" ? "bg-blue-500 text-white ring-2 ring-blue-300" : "bg-blue-100 text-blue-700 hover:bg-blue-200"}`}
+            className={`px-2.5 py-1 text-xs rounded-full font-semibold cursor-pointer transition ${priorityFilter === "medium" ? "bg-blue-500 text-white ring-2 ring-blue-300" : "bg-blue-100 text-blue-700 hover:bg-blue-200"}`}
           >
             Средние {filteredCounts.medium}
           </button>
           {filteredCounts.low > 0 && (
             <button
               onClick={() => handlePriorityClick("low")}
-              className={`px-2.5 py-1 text-xs rounded-full font-semibold cursor-pointer transition ${scope === "low" ? "bg-slate-500 text-white ring-2 ring-slate-300" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+            className={`px-2.5 py-1 text-xs rounded-full font-semibold cursor-pointer transition ${priorityFilter === "low" ? "bg-slate-500 text-white ring-2 ring-slate-300" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
             >
               Низкие {filteredCounts.low}
             </button>
@@ -784,9 +792,9 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
             {SCOPE_TABS.map((f) => (
               <button
                 key={f.key}
-                onClick={() => setScope(f.key)}
+                onClick={() => setScopeTab(f.key)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
-                  scope === f.key
+                  scopeTab === f.key
                     ? "bg-white shadow-sm text-foreground font-semibold"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
@@ -946,7 +954,7 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
       ) : filtered.length === 0 ? (
         <div className="py-8 text-center text-sm text-muted-foreground space-y-2">
           <CheckCircle2 className="w-6 h-6 mx-auto text-green-600" />
-          <div>{scope === "critical" ? "Нет критичных задач" : "Нет задач"}</div>
+          <div>{priorityFilter === "critical" ? "Нет критичных задач" : "Нет задач"}</div>
           <div className="text-xs">{summary.critical === 0 ? "Все критичные задачи выполнены" : "Попробуйте изменить фильтры"}</div>
         </div>
       ) : viewMode === "grouped" && grouped ? (
