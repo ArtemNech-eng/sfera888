@@ -349,30 +349,22 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
     });
   }, [filtered, viewMode]);
 
-  // Мини-график тренда: для каждого из 7 дней считаем, сколько задач было активно в тот день.
-  // Задача считается активной в день D, если она была создана до конца дня D.
-  // Это даёт реальную динамику нагрузки, а не только дату появления задачи.
+  // Мини-график тренда (из filtered — учитывает текущие фильтры)
   const trendData = useMemo(() => {
+    const days: Record<string, { critical: number; high: number }> = {};
     const now = Date.now();
-    const result: { critical: number; high: number }[] = [];
     for (let d = 6; d >= 0; d--) {
-      // Конец дня D (23:59:59 UTC)
-      const dayEnd = new Date(now - d * 86400000);
-      dayEnd.setUTCHours(23, 59, 59, 999);
-      const dayEndMs = dayEnd.getTime();
-      let critical = 0;
-      let high = 0;
-      for (const item of filtered) {
-        const createdMs = new Date(item.createdAt).getTime();
-        // Задача была активна в этот день если создана до конца дня
-        if (createdMs <= dayEndMs) {
-          if (item.priority === "critical") critical++;
-          else if (item.priority === "high") high++;
-        }
-      }
-      result.push({ critical, high });
+      const key = new Date(now - d * 86400000).toISOString().slice(0, 10);
+      days[key] = { critical: 0, high: 0 };
     }
-    return result;
+    for (const item of filtered) {
+      const key = new Date(item.createdAt).toISOString().slice(0, 10);
+      if (days[key]) {
+        if (item.priority === "critical") days[key].critical++;
+        else if (item.priority === "high") days[key].high++;
+      }
+    }
+    return Object.values(days);
   }, [filtered]);
 
   const trendCritical = trendData.map(d => d.critical);
@@ -1058,16 +1050,42 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
         >
           <Download className="w-4 h-4" />
         </button>
-        {/* Фаза 3: Включить уведомления */}
-        {"Notification" in window && Notification.permission !== "granted" && (
-          <button
-            onClick={() => Notification.requestPermission()}
-            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-slate-100 transition"
-            title="Включить уведомления браузера"
-          >
-            <Bell className="w-4 h-4" />
-          </button>
-        )}
+        {/* Фаза 3: Включить уведомления — показываем всегда если API доступен */}
+        {"Notification" in window && (() => {
+          const perm = Notification.permission;
+          if (perm === "granted") {
+            return (
+              <button
+                disabled
+                className="p-1.5 rounded-md text-emerald-600 bg-emerald-50 border border-emerald-200 cursor-default transition"
+                title="Уведомления браузера включены"
+              >
+                <Bell className="w-4 h-4" />
+              </button>
+            );
+          }
+          if (perm === "denied") {
+            return (
+              <button
+                disabled
+                className="p-1.5 rounded-md text-slate-400 bg-slate-50 border border-slate-200 cursor-not-allowed transition"
+                title="Уведомления заблокированы браузером. Разрешите их в настройках браузера (значок замка в адресной строке)"
+              >
+                <BellRing className="w-4 h-4" />
+              </button>
+            );
+          }
+          // "default" — ещё не запрашивали
+          return (
+            <button
+              onClick={() => Notification.requestPermission()}
+              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-slate-100 transition"
+              title="Включить уведомления браузера о новых критичных задачах"
+            >
+              <Bell className="w-4 h-4" />
+            </button>
+          );
+        })()}
       </div>
 
       {/* Подсказка по шорткатам */}
