@@ -1035,6 +1035,47 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
   return { routedTo: route, applied: true, action, payload, itemId: item.id };
 }
 
+// ─── Диагностика и сброс snooze-записей ─────────────────────────────────────
+router.get("/action-items/snoozes", ops, async (req: any, res: any) => {
+  try {
+    const now = new Date();
+    const activeSnoozes = await db.select()
+      .from(taskSnoozesTable)
+      .where(gt(taskSnoozesTable.snoozedUntil, now));
+    res.json({
+      count: activeSnoozes.length,
+      snoozes: activeSnoozes.map((s: any) => ({
+        itemId: s.itemId,
+        snoozedUntil: s.snoozedUntil,
+        snoozedBy: s.snoozedBy,
+        createdAt: s.createdAt,
+      })),
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message ?? "Ошибка" });
+  }
+});
+
+router.delete("/action-items/snoozes", ops, async (req: any, res: any) => {
+  try {
+    const now = new Date();
+    // Удаляем только активные snooze (snoozedUntil > now)
+    const active = await db.select({ id: taskSnoozesTable.id, itemId: taskSnoozesTable.itemId })
+      .from(taskSnoozesTable)
+      .where(gt(taskSnoozesTable.snoozedUntil, now));
+    if (active.length > 0) {
+      const ids = active.map((s: any) => s.id);
+      await db.delete(taskSnoozesTable)
+        .where(inArray(taskSnoozesTable.id, ids));
+    }
+    invalidateBuildItemsCache();
+    console.log(`[snoozes/reset] cleared ${active.length} active snoozes by ${(req as any).user?.name ?? "operator"}`);
+    res.json({ cleared: active.length, itemIds: active.map((s: any) => s.itemId) });
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message ?? "Ошибка" });
+  }
+});
+
 router.get("/action-items", ops, async (req: any, res: any) => {
   const { period = "all", city = "all", priority = "all", status = "all" } = req.query ?? {};
   const now = new Date();

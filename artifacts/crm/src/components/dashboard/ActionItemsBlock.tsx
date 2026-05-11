@@ -28,6 +28,27 @@ async function fetcher(period: string, city?: string) {
   return r.json();
 }
 
+async function fetchSnoozesCount(): Promise<number> {
+  try {
+    const r = await fetch("/api/dashboard/action-items/snoozes", { credentials: "include" });
+    if (!r.ok) return 0;
+    const data = await r.json();
+    return data.count ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+async function clearAllSnoozes(): Promise<number> {
+  const r = await fetch("/api/dashboard/action-items/snoozes", {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!r.ok) throw new Error("Ошибка сброса");
+  const data = await r.json();
+  return data.cleared ?? 0;
+}
+
 /** Мини-спарклайн (SVG) */
 function Sparkline({ data, width = 80, height = 20, color = "#ef4444" }: { data: number[]; width?: number; height?: number; color?: string }) {
   if (data.length < 2) return null;
@@ -43,6 +64,97 @@ function Sparkline({ data, width = 80, height = 20, color = "#ef4444" }: { data:
     <svg width={width} height={height} className="inline-block">
       <polyline fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" points={points} />
     </svg>
+  );
+}
+
+// ─── Пустое состояние с кнопкой восстановления задач ────────────────────────
+function EmptyTasksState({
+  priorityFilter,
+  summary,
+  onRefetch,
+}: {
+  priorityFilter: string;
+  summary: { critical: number; doneToday: number };
+  onRefetch: () => void;
+}) {
+  const [snoozesCount, setSnoozesCount] = useState<number | null>(null);
+  const [clearing, setClearing] = useState(false);
+  const [cleared, setCleared] = useState<number | null>(null);
+
+  useEffect(() => {
+    fetchSnoozesCount().then(setSnoozesCount);
+  }, []);
+
+  const handleClearSnoozes = async () => {
+    setClearing(true);
+    try {
+      const count = await clearAllSnoozes();
+      setCleared(count);
+      onRefetch();
+    } catch {
+      setCleared(0);
+    } finally {
+      setClearing(false);
+    }
+  };
+
+  return (
+    <div className="py-8 text-center text-sm text-muted-foreground space-y-3">
+      <CheckCircle2 className="w-8 h-8 mx-auto text-green-500" />
+      <div className="font-medium text-base text-foreground">
+        {priorityFilter === "critical" ? "Нет критичных задач" : "Нет задач"}
+      </div>
+      <div className="text-xs text-muted-foreground">
+        {summary.critical === 0 ? "Все критичные задачи выполнены" : "Попробуйте изменить фильтры"}
+      </div>
+
+      {/* Блок восстановления задач — показываем если есть активные snooze */}
+      {snoozesCount !== null && snoozesCount > 0 && (
+        <div className="mt-4 mx-auto max-w-sm rounded-xl border border-amber-200 bg-amber-50 p-4 text-left space-y-2">
+          <div className="flex items-center gap-2 text-amber-800 font-semibold text-sm">
+            <BellRing className="w-4 h-4 shrink-0" />
+            {snoozesCount} {snoozesCount === 1 ? "задача скрыта" : snoozesCount < 5 ? "задачи скрыты" : "задач скрыто"} (отложены)
+          </div>
+          <p className="text-xs text-amber-700">
+            Задачи были отложены через «Отложить» или «Пометить выполненными». Если задачи пропали неожиданно — нажмите кнопку ниже, чтобы восстановить их.
+          </p>
+          {cleared !== null ? (
+            <div className="text-xs font-semibold text-green-700 flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4" />
+              Восстановлено {cleared} задач. Обновляем список…
+            </div>
+          ) : (
+            <button
+              onClick={handleClearSnoozes}
+              disabled={clearing}
+              className="w-full mt-1 py-2 px-3 rounded-lg bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white text-xs font-semibold transition flex items-center justify-center gap-2"
+            >
+              {clearing ? (
+                <>
+                  <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  Восстанавливаем…
+                </>
+              ) : (
+                <>
+                  <BellRing className="w-3.5 h-3.5" />
+                  Восстановить все задачи
+                </>
+              )}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Если snooze нет — просто кнопка обновить */}
+      {snoozesCount === 0 && (
+        <button
+          onClick={onRefetch}
+          className="mt-2 text-xs text-violet-600 hover:text-violet-800 underline underline-offset-2 transition"
+        >
+          Обновить
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -962,11 +1074,11 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <div className="py-8 text-center text-sm text-muted-foreground space-y-2">
-          <CheckCircle2 className="w-6 h-6 mx-auto text-green-600" />
-          <div>{priorityFilter === "critical" ? "Нет критичных задач" : "Нет задач"}</div>
-          <div className="text-xs">{summary.critical === 0 ? "Все критичные задачи выполнены" : "Попробуйте изменить фильтры"}</div>
-        </div>
+        <EmptyTasksState
+          priorityFilter={priorityFilter}
+          summary={summary}
+          onRefetch={refetch}
+        />
       ) : viewMode === "grouped" && grouped ? (
         <div className="space-y-3">
           {grouped.map(([masterKey, group]) => {
