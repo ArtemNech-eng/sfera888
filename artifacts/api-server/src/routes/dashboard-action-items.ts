@@ -164,7 +164,7 @@ async function buildItems(): Promise<Item[]> {
     db.select().from(chatCasesTable).where(eq(chatCasesTable.isArchived, false)).orderBy(desc(chatCasesTable.updatedAt)).limit(50),
     db.select().from(avitoSettingsTable).limit(1),
     db.select().from(systemTasksTable).orderBy(desc(systemTasksTable.createdAt)).limit(50),
-    db.select({ orderId: transactionsTable.orderId, orderAmount: transactionsTable.orderAmount }).from(transactionsTable),
+    db.select({ id: transactionsTable.id, orderId: transactionsTable.orderId, orderAmount: transactionsTable.orderAmount }).from(transactionsTable),
   ]);
   const leadMap = new Map(leads.map((l: any) => [l.id, l]));
   const orderMap = new Map(orders.map((o: any) => [o.id, o]));
@@ -624,6 +624,7 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
     // Archive linked chat case so it doesn't reappear in dashboards
     await db.update(chatCasesTable).set({ isResolved: true, isArchived: true, updatedAt: now } as any).where(eq(chatCasesTable.orderId, orderId)).catch((e) => console.error("[cancel_as_master] case archive failed:", e));
     console.log(`[cancel_as_master] order #${orderId} fully processed (notifications sent, case archived)`);
+    invalidateBuildItemsCache();
   }
 
   if (action === "return_to_pool" && item.orderId != null) {
@@ -669,18 +670,21 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
     await db.update(ordersTable)
       .set({ masterId: null, status: "waiting_master", assignedAt: null, lastBroadcastAt: null, broadcastCount: 0, dispatchStatus: "none", dispatchWave: 1, updatedAt: new Date() } as any)
       .where(eq(ordersTable.id, Number(item.orderId)));
+    invalidateBuildItemsCache();
   }
 
   if (action === "manual_unblock" && item.masterId != null) {
     await db.update(mastersTable)
       .set({ status: "active", blockedAt: null, blockedReason: null } as any)
       .where(eq(mastersTable.id, Number(item.masterId)));
+    invalidateBuildItemsCache();
   }
 
   if (action === "block_master" && item.masterId != null) {
     await db.update(mastersTable)
       .set({ status: "blocked", blockedAt: new Date(), blockedReason: "crm_manual" } as any)
       .where(eq(mastersTable.id, Number(item.masterId)));
+    invalidateBuildItemsCache();
   }
 
   if (action === "message_master" && item.masterId != null && payload.message) {
@@ -866,6 +870,7 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
         isRead: true,
       });
     }
+    invalidateBuildItemsCache();
   }
 
   if (action === "confirm_receipt" && item.entityId != null) {
@@ -981,6 +986,7 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
     await db.insert(taskSnoozesTable)
       .values({ itemId: item.id, snoozedUntil, snoozedBy: operatorName })
       .onConflictDoUpdate({ target: taskSnoozesTable.itemId, set: { snoozedUntil, snoozedBy: operatorName } });
+    invalidateBuildItemsCache();
     return { routedTo: "/tasks", applied: true, action, payload, itemId: item.id, snoozedUntil: snoozedUntil.toISOString() };
   }
 
@@ -1011,6 +1017,7 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
         .where(eq(chatCasesTable.orderId, Number(item.orderId)))
         .catch(() => {});
     }
+    invalidateBuildItemsCache();
     return { routedTo: "/tasks", applied: true, action, payload, itemId: item.id, snoozedUntil: snoozedUntil.toISOString() };
   }
 
