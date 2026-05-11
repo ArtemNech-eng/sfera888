@@ -235,7 +235,7 @@ function EmptyTasksState({
 }
 
 export function ActionItemsBlock({ period: externalPeriod, city }: { period?: string; city?: string }) {
-  const [period, setPeriod] = useState<string>(externalPeriod ?? "month");
+  const [period, setPeriod] = useState<string>(externalPeriod ?? "all");
   const [scopeTab, setScopeTab] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
