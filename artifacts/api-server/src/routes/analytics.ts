@@ -184,7 +184,11 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
     // ── Forecast ───────────────────────────────────────────────────────────────
     const dailyAvg = daysPassed > 0 ? revenueMonth / daysPassed : 0;
     const forecast = Math.round(dailyAvg * daysInMonth);
-    const goal = 3_000_000;
+    // Получаем цель из настроек (по умолчанию 3 млн)
+    const goalSetting = await db.query.systemSettingsTable.findFirst({
+      where: (t, { eq }) => eq(t.key, "monthly_revenue_goal"),
+    });
+    const goal = goalSetting ? parseInt(goalSetting.value, 10) : 3_000_000;
     const progressPct = goal > 0 ? Math.round((forecast / goal) * 100) : 0;
     const forecastData = {
       days_passed: daysPassed,
@@ -324,11 +328,26 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
     const completedPrev = orders.filter(o => o.status === "completed" && o.masterId && o.updatedAt >= sixtyDaysAgo && o.updatedAt < thirtyDaysAgo);
 
     function calcSpeedMetrics(completedSet: typeof orders) {
-      if (completedSet.length === 0) return { assignH: 0, lifecycleD: 0 };
-      // lifecycle = updatedAt - createdAt (full order duration)
+      if (completedSet.length === 0) return { assignH: 0, estimateH: 0, paymentH: 0, completionD: 0, lifecycleD: 0 };
+
+      // Реальное время назначения мастера (assignedAt - createdAt)
+      const ordersWithAssign = completedSet.filter(o => (o as any).assignedAt);
+      const avgAssignH = ordersWithAssign.length > 0
+        ? ordersWithAssign.reduce((s, o) => s + ((o as any).assignedAt.getTime() - o.createdAt.getTime()) / 3600000, 0) / ordersWithAssign.length
+        : 0;
+
+      // Полный цикл (updatedAt - createdAt)
       const totalLifecycleH = completedSet.reduce((s, o) => s + (o.updatedAt.getTime() - o.createdAt.getTime()) / 3600000, 0);
       const avgLifecycleH = totalLifecycleH / completedSet.length;
-      return { assignH: avgLifecycleH * 0.15, lifecycleD: avgLifecycleH / 24 };
+
+      // Приблизительные метрики для остальных этапов (пока нет точных полей)
+      return {
+        assignH: avgAssignH,
+        estimateH: avgLifecycleH * 0.2,  // ~20% от цикла
+        paymentH: avgLifecycleH * 0.35,  // ~35% от цикла
+        completionD: avgLifecycleH / 24 * 0.6,  // ~60% от цикла
+        lifecycleD: avgLifecycleH / 24
+      };
     }
 
     const cur = calcSpeedMetrics(completedCurrent);
@@ -341,18 +360,18 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
         norm: 30,
       },
       estimate_h: {
-        current: Math.round(Math.max(2, Math.min(cur.assignH * 2, 48)) * 10) / 10,
-        prev: completedPrev.length > 0 ? Math.round(Math.max(2, Math.min(prv.assignH * 2, 48)) * 10) / 10 : null,
+        current: Math.round(Math.max(2, Math.min(cur.estimateH, 48)) * 10) / 10,
+        prev: completedPrev.length > 0 ? Math.round(Math.max(2, Math.min(prv.estimateH, 48)) * 10) / 10 : null,
         norm: 6,
       },
       payment_h: {
-        current: Math.round(Math.max(4, Math.min(cur.assignH * 3.5, 96)) * 10) / 10,
-        prev: completedPrev.length > 0 ? Math.round(Math.max(4, Math.min(prv.assignH * 3.5, 96)) * 10) / 10 : null,
+        current: Math.round(Math.max(4, Math.min(cur.paymentH, 96)) * 10) / 10,
+        prev: completedPrev.length > 0 ? Math.round(Math.max(4, Math.min(prv.paymentH, 96)) * 10) / 10 : null,
         norm: 12,
       },
       completion_d: {
-        current: Math.round(Math.max(1, Math.min(cur.lifecycleD * 0.6, 14)) * 10) / 10,
-        prev: completedPrev.length > 0 ? Math.round(Math.max(1, Math.min(prv.lifecycleD * 0.6, 14)) * 10) / 10 : null,
+        current: Math.round(Math.max(1, Math.min(cur.completionD, 14)) * 10) / 10,
+        prev: completedPrev.length > 0 ? Math.round(Math.max(1, Math.min(prv.completionD, 14)) * 10) / 10 : null,
         norm: 3,
       },
       lifecycle_d: {
@@ -393,9 +412,14 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
     const roiSources = Object.entries(SOURCE_LABELS).map(([src, label]) => {
       const srcLeads = leads.filter(l => (l.source ?? "other") === src);
       const srcOrders = orders.filter(o => o.leadId && srcLeads.find(l => l.id === o.leadId) && o.status === "completed");
+      // Собираем ID заказов с оплаченной комиссией для исключения двойного подсчёта
+      const paidTxOrderIds = new Set(txRows.filter(t => t.paymentStatus === "paid").map(t => t.orderId));
       const revenue = srcOrders.reduce((s, o) => {
         const tx = txRows.filter(t => t.orderId === o.id && t.paymentStatus === "paid").reduce((ss, t) => ss + Number(t.commission), 0);
-        const pr = receiptRows.filter(r => r.orderId === o.id && r.prepaymentSubmittedAt).reduce((ss, r) => ss + Number(r.prepaymentAmount), 0);
+        // Предоплаты учитываем только если комиссия ещё не оплачена
+        const pr = !paidTxOrderIds.has(o.id)
+          ? receiptRows.filter(r => r.orderId === o.id && r.prepaymentSubmittedAt).reduce((ss, r) => ss + Number(r.prepaymentAmount), 0)
+          : 0;
         return s + tx + pr;
       }, 0);
       return {

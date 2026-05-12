@@ -100,7 +100,13 @@ function AvitoBalanceModal({ onClose, onSave }: { onClose: () => void; onSave: (
             className="flex-1 py-2 rounded-xl bg-[#34C759] text-white text-[13px] font-semibold
               hover:bg-[#2aad4a] transition-colors disabled:opacity-60 flex items-center justify-center gap-1.5"
           >
-            {success ? <><Check size={14} /> Сохранено</> : saving ? "Сохраняю..." : "Сохранить"}
+            {success ? (
+              <><Check size={14} /> Сохранено</>
+            ) : saving ? (
+              <><div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Сохраняю...</>
+            ) : (
+              "Сохранить"
+            )}
           </button>
         </div>
       </div>
@@ -118,7 +124,7 @@ function DashboardPage() {
   const [avitoModalOpen, setAvitoModalOpen] = useState(false);
   const refreshBtnRef = useRef<HTMLButtonElement>(null);
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["/api/analytics/dashboard-v2"],
     queryFn: fetchDashboard,
     staleTime: 30000,
@@ -199,6 +205,29 @@ function DashboardPage() {
   // Apply city filter on the client side
   const cities = city === "Все города" ? citiesRaw : citiesRaw.filter((c: any) => c.city === city);
   const recentOrders = city === "Все города" ? recentOrdersRaw : recentOrdersRaw.filter((o: any) => o.city === city);
+
+  // Error state
+  if (error) {
+    return (
+      <div className="min-h-full bg-[#F8F9FA] flex items-center justify-center">
+        <div className="bg-white border border-[#FEE2E2] rounded-2xl p-8 max-w-md mx-4 text-center">
+          <div className="w-12 h-12 bg-[#FEF2F2] rounded-full flex items-center justify-center mx-auto mb-4">
+            <AlertTriangle size={24} color="#EF4444" />
+          </div>
+          <h2 className="text-[18px] font-bold text-[#111827] mb-2">Ошибка загрузки</h2>
+          <p className="text-[14px] text-[#6B7280] mb-6">
+            Не удалось загрузить данные дашборда. Проверьте подключение к интернету и попробуйте ещё раз.
+          </p>
+          <button
+            onClick={() => refetch()}
+            className="px-6 py-2.5 bg-[#3B82F6] text-white text-[14px] font-semibold rounded-xl hover:bg-[#2563EB] transition-colors"
+          >
+            Повторить попытку
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-full bg-[#F8F9FA]">
