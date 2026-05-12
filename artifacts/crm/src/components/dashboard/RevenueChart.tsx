@@ -56,7 +56,9 @@ export function RevenueChart({ data, isLoading, chartDays, onDaysChange }: Props
 
   const total = chartData.reduce((s, d) => s + d.amount, 0);
   const avg = chartData.length > 0 ? total / chartData.length : 0;
-  const best = chartData.reduce((best, d) => d.amount > best.amount ? d : best, chartData[0] || { date: '', amount: 0 });
+  const best = chartData.length > 0
+    ? chartData.reduce((best, d) => d.amount > best.amount ? d : best, chartData[0])
+    : { date: '', amount: 0 };
 
   return (
     <div className="bg-white border border-[#E5E7EB] rounded-2xl p-6 transition-all duration-200

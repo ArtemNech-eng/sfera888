@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { MapPin, RefreshCw, X, Check } from "lucide-react";
+import { RefreshCw, X, Check, AlertTriangle } from "lucide-react";
 import { Layout } from "@/components/layout";
 import { ProtectedRoute } from "@/hooks/use-auth";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
@@ -20,7 +20,6 @@ import { RecentOrders } from "../components/dashboard/RecentOrders";
 
 type Period = "today" | "week" | "month" | "quarter";
 
-const CITIES_FILTER = ["Все города", "Краснодар", "Ростов-на-Дону", "Сочи", "Новороссийск"];
 const PERIODS: { key: Period; label: string }[] = [
   { key: "today",   label: "Сегодня" },
   { key: "week",    label: "Неделя" },
@@ -117,7 +116,6 @@ function AvitoBalanceModal({ onClose, onSave }: { onClose: () => void; onSave: (
 function DashboardPage() {
   usePushNotifications(); // register SW and auto-subscribe if permission already granted
   const [period, setPeriod] = useState<Period>("month");
-  const [city, setCity] = useState("Все города");
   const [chartDays, setChartDays] = useState<30 | 60 | 90>(30);
   const [secondsAgo, setSecondsAgo] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -197,14 +195,10 @@ function DashboardPage() {
   const funnel = data?.funnel;
   const liveFeed = data?.liveFeed ?? [];
   const speedMetrics = data?.speedMetrics;
-  const citiesRaw = data?.cities ?? [];
+  const cities = data?.cities ?? [];
   const roiSources = data?.roiSources ?? [];
   const topMasters = data?.topMasters ?? [];
-  const recentOrdersRaw = data?.recentOrders ?? [];
-
-  // Apply city filter on the client side
-  const cities = city === "Все города" ? citiesRaw : citiesRaw.filter((c: any) => c.city === city);
-  const recentOrders = city === "Все города" ? recentOrdersRaw : recentOrdersRaw.filter((o: any) => o.city === city);
+  const recentOrders = data?.recentOrders ?? [];
 
   // Error state
   if (error) {
@@ -264,20 +258,6 @@ function DashboardPage() {
               ))}
             </div>
 
-            <div className="relative">
-              <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                <MapPin size={14} color="#6B7280" />
-              </div>
-              <select
-                value={city}
-                onChange={e => setCity(e.target.value)}
-                className="pl-8 pr-4 py-2 text-[13px] text-[#111827] bg-white border border-[#E5E7EB] rounded-xl
-                  outline-none cursor-pointer hover:border-[#34C759] transition-colors appearance-none"
-              >
-                {CITIES_FILTER.map(c => <option key={c}>{c}</option>)}
-              </select>
-            </div>
-
             <button
               ref={refreshBtnRef}
               onClick={handleRefresh}
@@ -292,7 +272,7 @@ function DashboardPage() {
         {/* TASKS FEED — что делать прямо сейчас */}
         <div className="mb-6">
           {/* Задачи всегда показываем все — period дашборда не должен их фильтровать */}
-          <ActionItemsBlock period="all" city={city === "Все города" ? "all" : city} />
+          <ActionItemsBlock period="all" city="all" />
         </div>
 
         {/* KPI CARDS */}
