@@ -54,7 +54,7 @@ const lastBotMessageAt = new Map<number, number>();
 const lastMasterReplyAt = new Map<number, number>();
 
 /** Minimum interval (ms) between proactive bot messages to the same master — prevents duplicates */
-const PROACTIVE_COOLDOWN_MS = 2 * 60 * 1000; // 2 minutes
+const PROACTIVE_COOLDOWN_MS = 15 * 60 * 1000; // 15 minutes — guards against restart-induced duplicates
 
 /**
  * Returns true if the bot sent any message to this master within the last `withinMs` milliseconds.
@@ -1473,12 +1473,17 @@ export async function sendCompletionCheck(
   return sendSmartProactive({
     masterId, masterAlias, maxChatId, orderId,
     type: "completion",
-    withinHours: 72,
+    // 168h (7 days) — prevents re-asking every 3 days on long projects.
+    // If master says "not done yet", the dedup window ensures we wait a full week
+    // before asking again, rather than resuming every 30-min scheduler cycle.
+    withinHours: 168,
     masterKeywords: {
-      words: ["завершил", "завершили", "закончил", "закончили", "сделали", "всё готово", "готово", "работы выполнены", "выполнил", "закончено", "завершено"],
-      withinHours: 72,
+      words: ["завершил", "завершили", "закончил", "закончили", "сделали", "всё готово", "готово",
+              "работы выполнены", "выполнил", "закончено", "завершено",
+              "не закончен", "не завершен", "ещё не", "еще не", "продолжаем", "продолжается"],
+      withinHours: 168,
     },
-    situation: `Запланированное время работ по заказу #${orderId} прошло 6+ часов назад, но заказ всё ещё не отмечен как выполненный. Уточни у мастера — работы завершены? Если да — пусть закроет заказ в приложении и попросит клиента оставить отзыв. Если в переписке уже есть информация о завершении или проблемах — учти это.`,
+    situation: `Запланированное время работ по заказу #${orderId} прошло 6+ часов назад, но заказ всё ещё не отмечен как выполненный. Уточни у мастера — работы завершены? Если да — пусть закроет заказ в приложении и попросит клиента оставить отзыв. Если мастер уже отвечал что работы ещё не завершены — не спрашивай снова раньше чем через неделю.`,
   });
 }
 
@@ -1778,7 +1783,7 @@ export async function runProactiveChecks(): Promise<void> {
       // 6. 24h no-response escalation — master didn't reply to any bot message
       if (hoursAssigned >= 24) {
         await escalate24hNoResponse(
-          master,
+          { ...master, maxChatId: master.maxChatId! },
           order.id,
           hoursAssigned,
         );
@@ -1787,7 +1792,7 @@ export async function runProactiveChecks(): Promise<void> {
       // 7. 14-day stale order escalation — order hanging too long
       if (hoursAssigned >= 336) { // 14 days = 336h
         await escalateStaleLongOrder(
-          master,
+          { ...master, maxChatId: master.maxChatId! },
           order.id,
           hoursAssigned,
         );
