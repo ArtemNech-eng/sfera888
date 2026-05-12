@@ -1212,12 +1212,14 @@ async function proactiveAlreadySent(
 ): Promise<boolean> {
   const key = `${type}:${orderId}`;
   const cutoff = new Date(Date.now() - withinHours * 3600_000);
+  // Use eq (exact match) instead of ilike — ilike without wildcards can miss records
+  // due to collation differences or unexpected whitespace in stored keys
   const rows = await db.select({ id: botMemoryTable.id, updatedAt: botMemoryTable.updatedAt })
     .from(botMemoryTable)
     .where(and(
       eq(botMemoryTable.masterId, masterId),
       eq(botMemoryTable.category, "proactive_sent"),
-      ilike(botMemoryTable.content, key),
+      eq(botMemoryTable.content, key),
     ))
     .limit(1);
   return rows.length > 0 && new Date(rows[0].updatedAt) > cutoff;
@@ -1230,7 +1232,7 @@ async function markProactiveSent(masterId: number, type: string, orderId: number
     .where(and(
       eq(botMemoryTable.masterId, masterId),
       eq(botMemoryTable.category, "proactive_sent"),
-      ilike(botMemoryTable.content, key),
+      eq(botMemoryTable.content, key),
     ))
     .limit(1);
   if (existing.length > 0) {
@@ -1738,8 +1740,9 @@ export async function runProactiveChecks(): Promise<void> {
       }
 
       // 1b. Client call check-in — send 30+ min after assignment
-      // GPT + keywords decide whether to skip based on conversation context and order status
-      if (hoursAssigned >= 0.5) {
+      // Skip entirely if order is already in_progress (master is working, call already happened)
+      // GPT + keywords also decide whether to skip based on conversation context
+      if (hoursAssigned >= 0.5 && order.status !== "in_progress") {
         await sendClientCallCheckin(master.id, master.alias, master.maxChatId, order.id, order.status);
       }
 
