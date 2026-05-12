@@ -1093,6 +1093,13 @@ router.post("/auth/register", async (req, res) => {
   if (!alias || !city || !login || !password) {
     return res.status(400).json({ error: "Заполните все обязательные поля" });
   }
+  // Валидация имени мастера
+  if (typeof alias !== 'string' || alias.trim().length < 2) {
+    return res.status(400).json({ error: "Имя должно содержать минимум 2 символа" });
+  }
+  if (/^Мастер\s*#\d+$/i.test(alias.trim())) {
+    return res.status(400).json({ error: "Укажите ваше реальное имя (не 'Мастер #ID')" });
+  }
   const specs: string[] = Array.isArray(specsArr) && specsArr.length > 0
     ? specsArr
     : specialization ? [specialization] : [];
@@ -1130,7 +1137,7 @@ router.post("/auth/register", async (req, res) => {
   const passwordHash = await hashPassword(password);
 
   const [master] = await db.insert(mastersTable).values({
-    alias,
+    alias: alias.trim(),
     phone: phone ?? null,
     city,
     specialization: specText,

@@ -158,9 +158,10 @@ async function buildItems(): Promise<Item[]> {
   const now = new Date();
   // Load commission settings once for amountAtRisk calculations
   const commSettings = await getCommissionSettings().catch(() => DEFAULT_COMMISSION);
-  const [orders, masters, leads, receipts, cases, avitoRows, manualTasks, txRows] = await Promise.all([
+  const [orders, masters, allMastersForNames, leads, receipts, cases, avitoRows, manualTasks, txRows] = await Promise.all([
     db.select({ id: ordersTable.id, leadId: ordersTable.leadId, masterId: ordersTable.masterId, city: ordersTable.city, status: ordersTable.status, proposedAmount: ordersTable.proposedAmount, orderAmount: ordersTable.orderAmount, createdAt: ordersTable.createdAt, updatedAt: ordersTable.updatedAt, assignedAt: ordersTable.assignedAt, cancelReason: ordersTable.cancelReason }).from(ordersTable).where(and(isNull(ordersTable.deletedAt), not(inArray(ordersTable.status, ["completed", "cancelled"])))),
     db.select({ id: mastersTable.id, alias: mastersTable.alias, city: mastersTable.city, status: mastersTable.status, createdAt: mastersTable.createdAt, blockedAt: (mastersTable as any).blockedAt }).from(mastersTable).where(and(isNull(mastersTable.deletedAt), sql`${mastersTable.status}::text ilike '%blocked%' or ${mastersTable.status}::text ilike '%fomo%'`)),
+    db.select({ id: mastersTable.id, alias: mastersTable.alias }).from(mastersTable).where(isNull(mastersTable.deletedAt)),
     db.select({ id: leadsTable.id, clientName: leadsTable.clientName, clientPhone: leadsTable.clientPhone, city: leadsTable.city, createdAt: leadsTable.createdAt }).from(leadsTable).where(isNull(leadsTable.deletedAt)),
     db.select({ id: receiptsTable.id, orderId: receiptsTable.orderId, masterId: receiptsTable.masterId, city: receiptsTable.city, prepaymentSubmittedAt: receiptsTable.prepaymentSubmittedAt, prepaymentSeenAt: receiptsTable.prepaymentSeenAt, prepaymentAmount: receiptsTable.prepaymentAmount }).from(receiptsTable),
     db.select().from(chatCasesTable).where(eq(chatCasesTable.isArchived, false)).orderBy(desc(chatCasesTable.updatedAt)).limit(50),
@@ -171,6 +172,8 @@ async function buildItems(): Promise<Item[]> {
   const leadMap = new Map(leads.map((l: any) => [l.id, l]));
   const orderMap = new Map(orders.map((o: any) => [o.id, o]));
   const masterMap = new Map(masters.map((m: any) => [m.id, m]));
+  // Full name map for ALL masters (not just blocked) — used to show master names in task cards
+  const masterNameMap = new Map(allMastersForNames.map((m: any) => [m.id, m.alias]));
   // Orders that already have a receipt — estimate was effectively sent (any receipt means estimate exists)
   const receiptOrderIds = new Set(receipts.filter((r: any) => r.orderId != null).map((r: any) => Number(r.orderId)).filter(Boolean));
   // Orders that already have a receipt with prepaymentSubmittedAt — client already paid, receipt task will handle it
@@ -207,13 +210,13 @@ async function buildItems(): Promise<Item[]> {
       // createdAt задачи = момент когда задача стала актуальной (через 24ч после создания заказа),
       // а не дата создания заказа — иначе фильтр "Месяц/Неделя" скрывает старые активные задачи
       const noEstimateTaskCreatedAt = new Date(new Date(o.createdAt).getTime() + 24 * 3600000).toISOString();
-      items.push({ id: `no_estimate-${o.id}`, type: "no_estimate", priority: pFromHours(estimateAgeH), title: `Заказ #${o.id} — нет сметы`, shortDescription: clientLabel.trim(), fullDescription: descParts.join(""), createdAt: noEstimateTaskCreatedAt, updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterMap.get(Number(o.masterId))?.alias ?? null) : null, amountAtRisk: o.orderAmount ? calculateCommission(Number(o.orderAmount), commSettings) : null, actions: actionSet("no_estimate") });
+      items.push({ id: `no_estimate-${o.id}`, type: "no_estimate", priority: pFromHours(estimateAgeH), title: `Заказ #${o.id} — нет сметы`, shortDescription: clientLabel.trim(), fullDescription: descParts.join(""), createdAt: noEstimateTaskCreatedAt, updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterNameMap.get(Number(o.masterId)) ?? null) : null, amountAtRisk: o.orderAmount ? calculateCommission(Number(o.orderAmount), commSettings) : null, actions: actionSet("no_estimate") });
     }
     if (o.status === "waiting_master") {
       // createdAt задачи = updatedAt заказа (последнее изменение статуса), чтобы задача не выпадала
       // из фильтра "Неделя/Месяц" только потому что заказ был создан давно
       const noMasterTaskCreatedAt = new Date(o.updatedAt ?? o.createdAt).toISOString();
-      items.push({ id: `no_master_response-${o.id}`, type: "no_master_response", priority: pFromHours(ageH), title: `Заказ #${o.id} — нет отклика мастера`, shortDescription: clientLabel.trim(), fullDescription: `Заказ завис без отклика мастера ${fmtAge(ageH)}.`, createdAt: noMasterTaskCreatedAt, updatedAt: noMasterTaskCreatedAt, lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterMap.get(Number(o.masterId))?.alias ?? null) : null, amountAtRisk: o.orderAmount ? calculateCommission(Number(o.orderAmount), commSettings) : null, actions: actionSet("no_master_response") });
+      items.push({ id: `no_master_response-${o.id}`, type: "no_master_response", priority: pFromHours(ageH), title: `Заказ #${o.id} — нет отклика мастера`, shortDescription: clientLabel.trim(), fullDescription: `Заказ завис без отклика мастера ${fmtAge(ageH)}.`, createdAt: noMasterTaskCreatedAt, updatedAt: noMasterTaskCreatedAt, lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterNameMap.get(Number(o.masterId)) ?? null) : null, amountAtRisk: o.orderAmount ? calculateCommission(Number(o.orderAmount), commSettings) : null, actions: actionSet("no_master_response") });
     }
     // no_payment: смета есть, заказ не оплачен (orderAmount = null), ждём >= 24ч
     // Дедупликация: если для этого orderId есть receipt с prepaymentSubmittedAt — не добавляем из orders,
@@ -223,7 +226,7 @@ async function buildItems(): Promise<Item[]> {
     if (o.proposedAmount && !o.orderAmount && ageH >= 24 && !receiptSubmittedOrderIds.has(Number(o.id)) && !txOrderIdsWithPayments.has(Number(o.id))) {
       // createdAt задачи = момент когда задача стала актуальной (через 24ч после создания заказа)
       const noPaymentTaskCreatedAt = new Date(new Date(o.createdAt).getTime() + 24 * 3600000).toISOString();
-      items.push({ id: `no_payment-${o.id}`, type: "no_payment", priority: pFromHours(ageH), title: `Заказ #${o.id} — не оплачена предоплата`, shortDescription: clientLabel.trim(), fullDescription: `Смета ${Number(o.proposedAmount).toLocaleString("ru-RU")} ₽ отправлена, ожидаем оплату ${fmtAge(ageH)}.`, createdAt: noPaymentTaskCreatedAt, updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "finance", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterMap.get(Number(o.masterId))?.alias ?? null) : null, amountAtRisk: calculateCommission(Number(o.proposedAmount), commSettings), actions: actionSet("no_payment") });
+      items.push({ id: `no_payment-${o.id}`, type: "no_payment", priority: pFromHours(ageH), title: `Заказ #${o.id} — не оплачена предоплата`, shortDescription: clientLabel.trim(), fullDescription: `Смета ${Number(o.proposedAmount).toLocaleString("ru-RU")} ₽ отправлена, ожидаем оплату ${fmtAge(ageH)}.`, createdAt: noPaymentTaskCreatedAt, updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "finance", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterNameMap.get(Number(o.masterId)) ?? null) : null, amountAtRisk: calculateCommission(Number(o.proposedAmount), commSettings), actions: actionSet("no_payment") });
     }
     // no_progress: count from updatedAt (last activity), not from createdAt
     const progressAgeH = o.updatedAt
@@ -232,7 +235,7 @@ async function buildItems(): Promise<Item[]> {
     if (progressAgeH >= 168) {
       // Динамический приоритет: чем дольше нет движения, тем выше
       const progressPriority: Priority = progressAgeH >= 336 ? "critical" : progressAgeH >= 240 ? "high" : "medium";
-      items.push({ id: `no_progress-${o.id}`, type: "no_progress", priority: progressPriority, title: `Заказ #${o.id} — нет движения`, shortDescription: `${fmtAge(progressAgeH)} без обновлений`, fullDescription: `Заказ без движения уже ${fmtAge(progressAgeH)}.`, createdAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterMap.get(Number(o.masterId))?.alias ?? null) : null, amountAtRisk: o.orderAmount ? calculateCommission(Number(o.orderAmount), commSettings) : null, actions: actionSet("no_progress") });
+      items.push({ id: `no_progress-${o.id}`, type: "no_progress", priority: progressPriority, title: `Заказ #${o.id} — нет движения`, shortDescription: `${fmtAge(progressAgeH)} без обновлений`, fullDescription: `Заказ без движения уже ${fmtAge(progressAgeH)}.`, createdAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterNameMap.get(Number(o.masterId)) ?? null) : null, amountAtRisk: o.orderAmount ? calculateCommission(Number(o.orderAmount), commSettings) : null, actions: actionSet("no_progress") });
     }
     // possible_bypass из cancelReason убран — заказы с cancelReason уже cancelled и не попадают в выборку
   }

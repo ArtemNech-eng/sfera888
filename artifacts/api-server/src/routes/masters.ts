@@ -146,8 +146,18 @@ router.post("/", requireRole("admin"), async (req, res) => {
   if (!alias || !city || !specialization) {
     return res.status(400).json({ error: "alias, city, specialization required" });
   }
+  // Запретить автоматические имена вида "Мастер #123"
+  if (/^Мастер\s*#\d+$/i.test(alias.trim())) {
+    return res.status(400).json({ error: "Укажите реальное имя мастера (не 'Мастер #ID')" });
+  }
+  // Требовать минимум 2 символа в имени
+  if (alias.trim().length < 2) {
+    return res.status(400).json({ error: "Имя мастера должно содержать минимум 2 символа" });
+  }
   const result = await db.insert(mastersTable).values({
-    alias, city, specialization,
+    alias: alias.trim(),
+    city,
+    specialization,
     telegramId: telegramId ?? null,
     phone: phone ?? null,
   }).returning();
@@ -330,12 +340,22 @@ router.patch("/:id", requireRole("admin", "master_operator"), async (req, res) =
   const id = parseInt(req.params.id);
   const { alias, city, specialization, specializations, telegramId, phone, status, isTestMaster, tags, rating, servicePrices, maxActiveOrders } = req.body;
 
+  // Валидация имени мастера
+  if (alias !== undefined) {
+    if (typeof alias !== 'string' || alias.trim().length < 2) {
+      return res.status(400).json({ error: "Имя мастера должно содержать минимум 2 символа" });
+    }
+    if (/^Мастер\s*#\d+$/i.test(alias.trim())) {
+      return res.status(400).json({ error: "Укажите реальное имя мастера (не 'Мастер #ID')" });
+    }
+  }
+
   // Get old status before update for notifications
   const oldRows = await db.select().from(mastersTable).where(eq(mastersTable.id, id));
   const oldStatus = oldRows[0]?.status;
 
   const updates: any = {};
-  if (alias !== undefined) updates.alias = alias;
+  if (alias !== undefined) updates.alias = alias.trim();
   if (city !== undefined) updates.city = city;
   if (specialization !== undefined) updates.specialization = specialization;
   if (specializations !== undefined) updates.specializations = specializations;
