@@ -1,19 +1,42 @@
-import { useEffect } from 'react';
-import { useLocation } from 'wouter';
+import { useRef } from 'react';
+import Header from './Header';
+import Hero from './Hero';
+import HowItWorks from './HowItWorks';
+import WhyBeneficial from './WhyBeneficial';
+import Conditions from './Conditions';
+import Earnings from './Earnings';
+import WhoWeNeed from './WhoWeNeed';
+import Trust from './Trust';
+import Principle from './Principle';
+import HowToStart from './HowToStart';
+import FAQ from './FAQ';
+import FinalCTA from './FinalCTA';
+import Footer from './Footer';
 
 export default function LegacyLanding() {
-  const [, navigate] = useLocation();
+  const ctaRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    navigate('/honest', { replace: true });
-  }, [navigate]);
+  const scrollToCta = () => {
+    ctaRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-900 text-white">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-honest-primary mx-auto mb-4"></div>
-        <p>Перенаправление на новый лендинг...</p>
+    <div className="min-h-screen bg-white">
+      <Header onCtaClick={scrollToCta} />
+      <Hero onCtaClick={scrollToCta} />
+      <HowItWorks />
+      <WhyBeneficial />
+      <Conditions />
+      <Earnings />
+      <WhoWeNeed />
+      <Trust />
+      <Principle />
+      <HowToStart />
+      <FAQ />
+      <div ref={ctaRef}>
+        <FinalCTA onCtaClick={scrollToCta} />
       </div>
+      <Footer />
     </div>
   );
 }
