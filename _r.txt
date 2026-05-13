@@ -1,4 +1,0 @@
-has transactionInfo type: false
-has prepaymentDeducted query: false
-has !commissionPaid: false
-has transactionInfo return: false
