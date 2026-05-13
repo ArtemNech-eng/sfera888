@@ -1,66 +1,55 @@
-import { Shield, Zap, Users, BarChart } from 'lucide-react';
+import { ArrowRight, CheckCircle, Package, Clock } from 'lucide-react';
 
 export default function System() {
-  const features = [
-    {
-      icon: <Shield className="w-8 h-8" />,
-      title: 'Защищённые сделки',
-      description: 'Гарантия оплаты после выполнения работы. Деньги хранятся на платформе до подтверждения клиентом.',
-    },
-    {
-      icon: <Zap className="w-8 h-8" />,
-      title: 'Автоматический подбор',
-      description: 'Система AI подбирает подходящие заказы по вашим навыкам и рейтингу. Никаких ручных поисков.',
-    },
-    {
-      icon: <Users className="w-8 h-8" />,
-      title: 'Прямые заказы',
-      description: 'Общайтесь напрямую с клиентами без посредников. Полная прозрачность и контроль над проектом.',
-    },
-    {
-      icon: <BarChart className="w-8 h-8" />,
-      title: 'Аналитика и рост',
-      description: 'Подробная статистика по выполненным заказам, рейтинговая система и рекомендации для роста доходов.',
-    },
-  ];
-
   return (
-    <section className="py-20 px-4 relative">
-      <div className="absolute inset-0 bg-gradient-to-b from-transparent to-honest-darker/50 z-0"></div>
-      
-      <div className="max-w-6xl mx-auto relative z-10">
-        <div className="text-center mb-16">
-          <h2 className="text-4xl md:text-5xl font-bold mb-6">
-            <span className="text-white">Как работает </span>
-            <span className="text-honest-primary">система</span>
-          </h2>
-          <p className="text-xl text-honest-light max-w-3xl mx-auto">
-            Технологичная платформа, которая соединяет мастеров с клиентами, автоматизирует процессы и гарантирует честные условия.
-          </p>
-        </div>
+    <section className="relative py-20 sm:py-28">
+      {/* Neon separator */}
+      <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-[#38BDF8]/30 to-transparent" />
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-          {features.map((feat, idx) => (
-            <div
-              key={idx}
-              className="group relative bg-honest-dark/40 backdrop-blur-sm border border-honest-primary/10 rounded-2xl p-6 hover:border-honest-primary/30 hover:shadow-honest-glow transition-all duration-300"
-            >
-              <div className="absolute -inset-1 bg-gradient-to-r from-honest-primary/10 to-honest-accent/10 rounded-2xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity -z-10"></div>
-              
-              <div className="mb-4 inline-flex p-3 bg-honest-dark/60 rounded-xl text-honest-primary">
-                {feat.icon}
-              </div>
-              <h3 className="text-xl font-bold text-white mb-3">{feat.title}</h3>
-              <p className="text-honest-light">{feat.description}</p>
-            </div>
-          ))}
-        </div>
+      <div className="max-w-6xl mx-auto px-4 sm:px-6">
+        <h2 className="text-3xl sm:text-4xl font-bold text-[#F8FAFC] mb-4 text-center">
+          Принцип конвейера: <span className="text-[#38BDF8]">взял → сделал → взял новый</span>
+        </h2>
 
-        <div className="mt-20 text-center">
-          <div className="inline-block px-6 py-3 bg-honest-dark/60 border border-honest-primary/20 rounded-full">
-            <span className="text-honest-primary font-semibold">Среднее время получения первого заказа:</span>
-            <span className="text-white ml-2 font-bold">2-4 часа</span>
+        <p className="text-[#94A3B8] text-center max-w-3xl mx-auto mb-12 text-lg">
+          Мы не позволяем мастерам браться за 5 объектов и срывать сроки.
+          По умолчанию: 1 активный заказ в одни руки.
+        </p>
+
+        {/* Flow visualization */}
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-2 mb-12">
+          <div className="flex items-center gap-3 px-6 py-4 rounded-xl bg-[#111827] border border-[#34F5A3]/20 backdrop-blur-sm">
+            <Package className="w-6 h-6 text-[#34F5A3]" />
+            <span className="text-[#F8FAFC] font-medium">Взял объект</span>
           </div>
+          <ArrowRight className="w-6 h-6 text-[#34F5A3] hidden sm:block" />
+          <div className="sm:hidden w-[1px] h-6 bg-[#34F5A3]/30" />
+          <div className="flex items-center gap-3 px-6 py-4 rounded-xl bg-[#111827] border border-[#38BDF8]/20 backdrop-blur-sm">
+            <Clock className="w-6 h-6 text-[#38BDF8]" />
+            <span className="text-[#F8FAFC] font-medium">Сделал</span>
+          </div>
+          <ArrowRight className="w-6 h-6 text-[#38BDF8] hidden sm:block" />
+          <div className="sm:hidden w-[1px] h-6 bg-[#38BDF8]/30" />
+          <div className="flex items-center gap-3 px-6 py-4 rounded-xl bg-[#111827] border border-[#FACC15]/20 backdrop-blur-sm">
+            <CheckCircle className="w-6 h-6 text-[#FACC15]" />
+            <span className="text-[#F8FAFC] font-medium">Закрыл</span>
+          </div>
+          <ArrowRight className="w-6 h-6 text-[#FACC15] hidden sm:block" />
+          <div className="sm:hidden w-[1px] h-6 bg-[#FACC15]/30" />
+          <div className="flex items-center gap-3 px-6 py-4 rounded-xl bg-[#111827] border border-[#34F5A3]/20 backdrop-blur-sm">
+            <Package className="w-6 h-6 text-[#34F5A3]" />
+            <span className="text-[#F8FAFC] font-medium">Получил следующий</span>
+          </div>
+        </div>
+
+        {/* Info card */}
+        <div className="max-w-2xl mx-auto p-6 rounded-2xl bg-[#111827]/60 border border-[#34F5A3]/10 backdrop-blur-sm">
+          <p className="text-[#94A3B8] text-center leading-relaxed">
+            Так система остаётся управляемой, клиенты довольны, а сильные мастера работают без простоев.
+          </p>
+          <p className="text-[#34F5A3] text-center mt-3 font-medium">
+            Для лучших мастеров с высокой конверсией лимит может быть увеличен до двух объектов одновременно.
+          </p>
         </div>
       </div>
     </section>

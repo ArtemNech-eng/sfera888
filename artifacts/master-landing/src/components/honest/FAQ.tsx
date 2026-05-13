@@ -1,98 +1,67 @@
-import { ChevronDown } from 'lucide-react';
 import { useState } from 'react';
+import { ChevronDown } from 'lucide-react';
+
+const faqItems = [
+  {
+    q: 'Я плачу процент с заказа?',
+    a: 'Нет! Вы забираете 100% денег с объекта. Вы оплачиваете только доступ к заказам (токены).',
+  },
+  {
+    q: 'А если я куплю токен, а клиент передумал до замера?',
+    a: 'Мы работаем честно. Вы нажимаете кнопку «Возврат», мы проверяем информацию и возвращаем токен вам на баланс. Вы платите только за реальные объекты.',
+  },
+  {
+    q: 'Я работаю по своим ценам?',
+    a: 'Да. Вы сами считаете смету. Но цены должны быть рыночными, иначе клиенты не будут закрываться, а ваша конверсия (и поток новых заказов) упадёт.',
+  },
+  {
+    q: 'Обязательно ли давать паспорт?',
+    a: 'Только если вы хотите получить первый тестовый заказ по постоплате. Если не хотите светить документы — можете сразу купить пакет заказов и работать.',
+  },
+  {
+    q: 'Можно ли брать 2 объекта одновременно?',
+    a: 'По умолчанию — 1 активный заказ. Взял → сделал → закрыл → получил новый. Для топ-мастеров лимит может быть увеличен.',
+  },
+];
 
 export default function FAQ() {
-  const [openIndex, setOpenIndex] = useState<number | null>(0);
-
-  const faqs = [
-    {
-      question: 'Сколько стоит регистрация и использование?',
-      answer: 'Регистрация и базовый функционал полностью бесплатны. Платформа зарабатывает только с комиссии 15% от выполненного заказа. Оплата тарифа «Профи» (500 ₽/месяц) — опциональна и даёт дополнительные преимущества.',
-    },
-    {
-      question: 'Как быстро поступают выплаты?',
-      answer: 'После принятия работы клиентом деньги автоматически резервируются на вашем балансе. Выплата на карту происходит в течение 24 часов. Вы можете запросить вывод в любое время.',
-    },
-    {
-      question: 'Как работает автоматический подбор заказов?',
-      answer: 'Система анализирует ваши навыки, рейтинг, портфолио и предпочтения. При появлении нового заказа, который соответствует вашим критериям, вы получаете уведомление. Вы можете откликаться на те проекты, которые вам интересны.',
-    },
-    {
-      question: 'Что делать, если клиент не принимает работу?',
-      answer: 'Платформа выступает гарантом. Если возникает спор, наша команда модерации рассматривает ситуацию и принимает решение на основе предоставленных доказательств. В 95% случаев споры решаются в пользу мастера.',
-    },
-    {
-      question: 'Можно ли работать с несколькими заказами одновременно?',
-      answer: 'Да, вы можете вести несколько проектов параллельно, главное — реалистично оценивать свои возможности и соблюдать дедлайны. Система показывает вашу загрузку клиентам.',
-    },
-    {
-      question: 'Есть ли мобильное приложение?',
-      answer: 'Да, у нас есть PWA‑приложение, которое работает на iOS и Android. Вы можете получать уведомления о новых заказах, общаться с клиентами и управлять проектами прямо с телефона.',
-    },
-    {
-      question: 'Как повысить свой рейтинг?',
-      answer: 'Рейтинг растёт при успешном выполнении заказов, положительных отзывах и соблюдении сроков. Также влияет активность и качество коммуникации с клиентами. Высокий рейтинг даёт приоритет в подборе заказов и возможность снижения комиссии.',
-    },
-    {
-      question: 'Какие гарантии, что заказы будут?',
-      answer: 'Мы гарантируем, что при активном заполненном профиле и адекватных ставках вы получите первый заказ в течение 48 часов. Если этого не произойдёт — предоставим месяц тарифа «Профи» бесплатно.',
-    },
-  ];
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   return (
-    <section className="py-20 px-4 relative overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-b from-honest-darker to-honest-dark z-0"></div>
-      <div className="absolute bottom-20 right-10 w-64 h-64 bg-honest-accent/5 rounded-full blur-3xl"></div>
-      
-      <div className="max-w-4xl mx-auto relative z-10">
-        <div className="text-center mb-16">
-          <h2 className="text-4xl md:text-5xl font-bold mb-6">
-            <span className="text-white">Частые </span>
-            <span className="text-honest-primary">вопросы</span>
-          </h2>
-          <p className="text-xl text-honest-light max-w-3xl mx-auto">
-            Ответы на самые популярные вопросы от мастеров.
-          </p>
-        </div>
+    <section className="relative py-20 sm:py-28">
+      <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-[#FACC15]/30 to-transparent" />
 
-        <div className="space-y-4">
-          {faqs.map((faq, idx) => (
+      <div className="max-w-3xl mx-auto px-4 sm:px-6">
+        <h2 className="text-3xl sm:text-4xl font-bold text-[#F8FAFC] mb-12 text-center">
+          Частые вопросы
+        </h2>
+
+        <div className="space-y-3">
+          {faqItems.map((item, i) => (
             <div
-              key={idx}
-              className="bg-honest-dark/40 backdrop-blur-sm border border-honest-primary/10 rounded-2xl overflow-hidden"
+              key={i}
+              className="rounded-xl bg-[#111827]/80 border border-[#94A3B8]/10 backdrop-blur-sm overflow-hidden"
             >
               <button
-                className="w-full px-6 py-5 text-left flex items-center justify-between hover:bg-honest-dark/60 transition-all"
-                onClick={() => setOpenIndex(openIndex === idx ? null : idx)}
+                onClick={() => setOpenIndex(openIndex === i ? null : i)}
+                className="w-full flex items-center justify-between p-5 text-left"
               >
-                <span className="text-lg font-semibold text-white">{faq.question}</span>
+                <span className="text-[#F8FAFC] font-medium pr-4">{item.q}</span>
                 <ChevronDown
-                  className={`w-5 h-5 text-honest-primary transition-transform ${
-                    openIndex === idx ? 'rotate-180' : ''
+                  className={`w-5 h-5 text-[#94A3B8] flex-shrink-0 transition-transform duration-300 ${
+                    openIndex === i ? 'rotate-180' : ''
                   }`}
                 />
               </button>
-              {openIndex === idx && (
-                <div className="px-6 pb-5">
-                  <p className="text-honest-light">{faq.answer}</p>
-                </div>
-              )}
+              <div
+                className={`overflow-hidden transition-all duration-300 ${
+                  openIndex === i ? 'max-h-40 pb-5' : 'max-h-0'
+                }`}
+              >
+                <p className="px-5 text-[#94A3B8] leading-relaxed">{item.a}</p>
+              </div>
             </div>
           ))}
-        </div>
-
-        <div className="mt-16 text-center">
-          <div className="inline-block px-8 py-6 bg-honest-dark/60 border border-honest-primary/20 rounded-2xl max-w-2xl">
-            <p className="text-white">
-              <span className="text-honest-primary font-bold">Не нашли ответ?</span>
-              <span className="ml-3">
-                Напишите нам в поддержку — ответим в течение 15 минут в рабочее время.
-              </span>
-            </p>
-            <button className="mt-4 px-6 py-3 border-2 border-honest-primary text-honest-primary font-semibold rounded-xl hover:bg-honest-primary/10 transition-all">
-              Написать в поддержку
-            </button>
-          </div>
         </div>
       </div>
     </section>
