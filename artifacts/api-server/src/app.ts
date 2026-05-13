@@ -900,20 +900,30 @@ if (fs.existsSync(pwaDistPath)) {
   });
 }
 
-// ── Serve master-landing as static files ──────────────────────────────────────
+// ── Serve master-landing-v2 (recruitment landing) — must be before v1 ─────────
+const landingV2DistPath = path.join(__dirname, "../../master-landing-v2/dist/public");
+
+if (fs.existsSync(landingV2DistPath)) {
+  app.use("/master-landing/v2", express.static(landingV2DistPath));
+  app.use("/master-landing/v2", (_req, res) => {
+    res.sendFile(path.join(landingV2DistPath, "index.html"));
+  });
+}
+
+// ── Serve master-landing (v1 — honest landing) ───────────────────────────────
 const landingDistPath = path.join(__dirname, "../../master-landing/dist/public");
 
 if (fs.existsSync(landingDistPath)) {
-  app.use("/landing", express.static(landingDistPath));
-  app.use("/landing", (_req, res) => {
+  app.use("/master-landing", express.static(landingDistPath));
+  app.use("/master-landing", (_req, res) => {
     res.sendFile(path.join(landingDistPath, "index.html"));
   });
 }
 
-// Root redirect: / → Landing
+// Root redirect: / → master-landing
 app.get("/", (_req, res) => {
   if (fs.existsSync(landingDistPath)) {
-    res.sendFile(path.join(landingDistPath, "index.html"));
+    res.redirect(301, "/master-landing/");
   } else {
     res.redirect(301, "/crm/");
   }
