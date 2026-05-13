@@ -10,7 +10,7 @@ import { ProtectedRoute } from "@/hooks/use-auth";
 import { StatusBadge } from "@/components/status-badge";
 import { formatDate } from "@/lib/utils";
 import { PhotoUploader } from "@/components/photo-uploader";
-import { WorkBoardKanban } from "@/components/work-board-kanban";
+import { WorkBoardTable } from "@/components/work-board-table";
 import { useQueryClient, useMutation, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -1218,7 +1218,7 @@ export default function Leads() {
               TAB 2: В РАБОТЕ
           ══════════════════════════════════════════════════════════ */}
           {activeTab === "work" && (
-            <WorkBoardKanban
+            <WorkBoardTable
               onOpenOrder={(id) => { setOpenDispatchId(id); broadcastMutation.reset(); }}
             />
           )}

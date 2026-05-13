@@ -236,14 +236,14 @@ export default function MasterChat() {
 
   useEffect(() => {
     fetchThreads();
-    const t = setInterval(fetchThreads, 6000);
+    const t = setInterval(fetchThreads, 12000);
     return () => clearInterval(t);
   }, [fetchThreads]);
 
   useEffect(() => {
     if (selectedId) {
       fetchConversation(selectedId);
-      const t = setInterval(() => fetchConversation(selectedId), 5000);
+      const t = setInterval(() => fetchConversation(selectedId), 10000);
       return () => clearInterval(t);
     }
   }, [selectedId, fetchConversation]);
@@ -312,8 +312,8 @@ export default function MasterChat() {
     if (selectedId) {
       fetchPendingOrders(selectedId);
       fetchRespondedOrders(selectedId);
-      const t1 = setInterval(() => fetchPendingOrders(selectedId), 8000);
-      const t2 = setInterval(() => fetchRespondedOrders(selectedId), 7000);
+      const t1 = setInterval(() => fetchPendingOrders(selectedId), 16000);
+      const t2 = setInterval(() => fetchRespondedOrders(selectedId), 14000);
       return () => { clearInterval(t1); clearInterval(t2); };
     } else {
       setPendingOrders([]);
@@ -479,6 +479,10 @@ export default function MasterChat() {
   const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast({ title: "Файл слишком большой", description: "Максимальный размер фото — 10 МБ", variant: "destructive" });
+      return;
+    }
     setPhotoFile(file);
     const reader = new FileReader();
     reader.onload = ev => setPhotoPreview(ev.target?.result as string);

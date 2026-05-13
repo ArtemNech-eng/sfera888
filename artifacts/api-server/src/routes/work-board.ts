@@ -41,8 +41,19 @@ const COMMISSION_THRESHOLD = 50_000;
 const COMMISSION_FIXED = 5_000;
 const COMMISSION_PERCENT = 0.15;
 
+function safeNumber(val: unknown, defaultValue = 0): number {
+  if (typeof val === 'number' && !isNaN(val)) return val;
+  const num = Number(val);
+  return isNaN(num) ? defaultValue : num;
+}
+
+function sanitizeNote(text: string): string {
+  // Remove HTML tags and limit length to prevent XSS and excessive storage
+  return text.replace(/[<>]/g, '').slice(0, 5000);
+}
+
 function calcCommission(total: number): number {
-  if (!total || total <= 0) return 0;
+  if (typeof total !== 'number' || isNaN(total) || total <= 0) return 0;
   return total <= COMMISSION_THRESHOLD ? COMMISSION_FIXED : Math.round(total * COMMISSION_PERCENT);
 }
 function commissionTier(total: number): "fixed" | "percent" {
@@ -201,7 +212,7 @@ async function buildBoard() {
     : [];
   const responseCountMap = new Map<number, { responded: number; sent: number }>();
   for (const row of dispatchCounts) {
-    responseCountMap.set(row.orderId, { responded: Number(row.responded), sent: Number(row.sent) });
+    responseCountMap.set(row.orderId, { responded: safeNumber(row.responded), sent: safeNumber(row.sent) });
   }
 
   // Load partial payments for all transaction IDs
@@ -258,24 +269,24 @@ async function buildBoard() {
     const txs = txByOrder.get(o.id) ?? [];
 
     const refTime = o.assignedAt ?? o.lastBroadcastAt ?? o.updatedAt ?? o.createdAt;
-    const ageMs = now - new Date(refTime).getTime();
+    const ageMs = Math.max(0, now - new Date(refTime || new Date()).getTime());
     const stageLabel = timeAgoLabel(ageMs);
 
-    const total = receipt ? Number(receipt.totalAmount) : 0;
-    const prepayment = receipt ? Number(receipt.prepaymentAmount) : 0;
-    const orderAmount = (o as any).orderAmount ? Number((o as any).orderAmount) : 0;
+    const total = receipt ? safeNumber(receipt.totalAmount) : 0;
+    const prepayment = receipt ? safeNumber(receipt.prepaymentAmount) : 0;
+    const orderAmount = safeNumber((o as any).orderAmount);
     const expectedCommission = orderAmount > 0 ? calcCommission(orderAmount) : total > 0 ? calcCommission(total) : 0;
-    const realTxs = txs.filter((t) => Number(t.commission) > 0);
+    const realTxs = txs.filter((t) => safeNumber(t.commission) > 0);
     const commissionPaid = realTxs.length > 0 && realTxs.every((t) => t.paymentStatus === "paid");
     // Calculate net payable per order: commission - prepaymentDeducted - totalPartialPaid
-    const orderPrepDeduct = realTxs.reduce((s, t) => s + Number(t.prepaymentDeducted ?? 0), 0);
+    const orderPrepDeduct = realTxs.reduce((s, t) => s + safeNumber(t.prepaymentDeducted, 0), 0);
     const orderPartials = realTxs.flatMap((t) => partialsByTx.get(t.id) ?? []);
-    const orderTotalPartialPaid = orderPartials.reduce((s, p) => s + Number(p.amount ?? 0), 0);
+    const orderTotalPartialPaid = orderPartials.reduce((s, p) => s + safeNumber(p.amount, 0), 0);
     const commissionUnpaidAmount = realTxs.filter((t) => t.paymentStatus !== "paid")
       .reduce((s, t) => {
-        const pd = Number(t.prepaymentDeducted ?? 0);
-        const tp = (partialsByTx.get(t.id) ?? []).reduce((ss, p) => ss + Number(p.amount ?? 0), 0);
-        return s + Math.max(0, Number(t.commission) - pd - tp);
+        const pd = safeNumber(t.prepaymentDeducted, 0);
+        const tp = (partialsByTx.get(t.id) ?? []).reduce((ss, p) => ss + safeNumber(p.amount, 0), 0);
+        return s + Math.max(0, safeNumber(t.commission) - pd - tp);
       }, 0);
 
     const address = [o.city, o.district].filter(Boolean).join(", ");
@@ -461,7 +472,7 @@ async function buildBoard() {
 
     // estimate_unpaid: receipt exists, prepayment not confirmed
     if (receipt) {
-      const hoursSinceReceipt = (now - new Date(receipt.createdAt).getTime()) / 3_600_000;
+      const hoursSinceReceipt = Math.max(0, (now - new Date(receipt.createdAt).getTime()) / 3_600_000);
       const tone: BotTone = hoursSinceReceipt > 24 ? "warn" : "ok";
       const eta = hoursSinceReceipt > 24 ? "сейчас" : "через 1ч";
       const card: Card = {
@@ -478,7 +489,7 @@ async function buildBoard() {
 
     // no_estimate: master assigned but no receipt
     if (o.status === "master_assigned" || o.status === "in_progress") {
-      const hoursAssigned = o.assignedAt ? (now - new Date(o.assignedAt).getTime()) / 3_600_000 : 0;
+      const hoursAssigned = o.assignedAt ? Math.max(0, (now - new Date(o.assignedAt).getTime()) / 3_600_000) : 0;
       const tone: BotTone = hoursAssigned > 24 ? "bad" : hoursAssigned > 6 ? "warn" : "ok";
       const action = hoursAssigned > 24 ? "эскалация в Проблему через" : hoursAssigned > 6 ? "напомню мастеру" : "ждём смету";
       const eta = hoursAssigned > 24 ? "2ч" : hoursAssigned > 6 ? "через 18 мин" : "норма";
@@ -496,7 +507,7 @@ async function buildBoard() {
     const isFreshlyCreated = !o.lastBroadcastAt && o.broadcastCount === 0;
     if (isFreshlyCreated) {
       // New order — not yet broadcast. ETA = time until next 15-min cycle
-      const minutesSinceCreation = o.createdAt ? (now - new Date(o.createdAt).getTime()) / 60_000 : 0;
+      const minutesSinceCreation = o.createdAt ? Math.max(0, (now - new Date(o.createdAt).getTime()) / 60_000) : 0;
       const nextCycleMin = Math.max(1, 15 - (Math.floor(minutesSinceCreation) % 15));
       const etaStr = nextCycleMin <= 1 ? "1 мин" : `${nextCycleMin} мин`;
       const tone: BotTone = minutesSinceCreation > 15 ? "warn" : "ok";
@@ -508,8 +519,8 @@ async function buildBoard() {
       columns.new.cards.push(card);
       columns.new.count++;
     } else {
-      const minutesSinceBroadcast = o.lastBroadcastAt ? (now - new Date(o.lastBroadcastAt).getTime()) / 60_000 : 0;
-      const broadcastCount = Number(o.broadcastCount ?? 1);
+      const minutesSinceBroadcast = o.lastBroadcastAt ? Math.max(0, (now - new Date(o.lastBroadcastAt).getTime()) / 60_000) : 0;
+      const broadcastCount = safeNumber(o.broadcastCount, 1);
       // Wave info: broadcastCount corresponds to wave number
       const waveNum = Math.min(broadcastCount, 3);
       const waveLabel = waveNum === 1 ? "рассылка 1" : waveNum === 2 ? "рассылка 2" : "рассылка 3";
@@ -686,8 +697,12 @@ router.get("/stream", requireAuth, (req, res) => {
 router.post("/escalate/:orderId", operatorRoles, async (req, res) => {
   const orderId = Number(req.params.orderId);
   if (!Number.isFinite(orderId)) return res.status(400).json({ error: "bad orderId" });
-  const note = (req.body?.note as string | undefined) || "Эскалация оператором";
+  const note = sanitizeNote((req.body?.note as string | undefined) || "Эскалация оператором");
   try {
+    // Check order exists
+    const [order] = await db.select({ id: ordersTable.id }).from(ordersTable).where(eq(ordersTable.id, orderId));
+    if (!order) return res.status(404).json({ error: "order not found" });
+    
     await db
       .update(ordersTable)
       .set({ operatorNote: note, updatedAt: new Date() })
@@ -704,6 +719,10 @@ router.post("/clear-problem/:orderId", operatorRoles, async (req, res) => {
   const orderId = Number(req.params.orderId);
   if (!Number.isFinite(orderId)) return res.status(400).json({ error: "bad orderId" });
   try {
+    // Check order exists
+    const [order] = await db.select({ id: ordersTable.id }).from(ordersTable).where(eq(ordersTable.id, orderId));
+    if (!order) return res.status(404).json({ error: "order not found" });
+    
     await db
       .update(ordersTable)
       .set({ operatorNote: null, updatedAt: new Date() })
@@ -726,26 +745,27 @@ router.post("/return-to-pool/:orderId", operatorRoles, async (req, res) => {
     const [order] = await db.select({ masterId: ordersTable.masterId })
       .from(ordersTable)
       .where(eq(ordersTable.id, orderId));
+    if (!order) return res.status(404).json({ error: "order not found" });
 
-    // Delete all dispatch records so the order can be re-broadcast from scratch
-    await db.delete(orderDispatchesTable)
-      .where(eq(orderDispatchesTable.orderId, orderId))
-      .catch((e: any) => console.error("[return-to-pool] dispatches delete failed:", e));
+    await db.transaction(async (tx) => {
+      // Delete all dispatch records so the order can be re-broadcast from scratch
+      await tx.delete(orderDispatchesTable)
+        .where(eq(orderDispatchesTable.orderId, orderId));
 
-    await db
-      .update(ordersTable)
-      .set({
-        status: "waiting_master",
-        masterId: null,
-        assignedAt: null,
-        lastBroadcastAt: null,
-        broadcastCount: 0,
-        dispatchStatus: "none",
-        dispatchWave: 1,
-        operatorNote: null,
-        updatedAt: new Date(),
-      } as any)
-      .where(eq(ordersTable.id, orderId));
+      await tx.update(ordersTable)
+        .set({
+          status: "waiting_master",
+          masterId: null,
+          assignedAt: null,
+          lastBroadcastAt: null,
+          broadcastCount: 0,
+          dispatchStatus: "none",
+          dispatchWave: 1,
+          operatorNote: null,
+          updatedAt: new Date(),
+        } as any)
+        .where(eq(ordersTable.id, orderId));
+    });
 
     // Record cancellation for reputation + history + notify master
     if (order?.masterId) {
@@ -791,7 +811,8 @@ router.post("/orders/:orderId/partial-payment", operatorRoles, async (req, res) 
   const orderId = Number(req.params.orderId);
   if (!Number.isFinite(orderId)) return res.status(400).json({ error: "bad orderId" });
   const { amount, note } = req.body;
-  if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+  const paymentAmount = safeNumber(amount);
+  if (paymentAmount <= 0) {
     return res.status(400).json({ error: "Сумма должна быть положительным числом" });
   }
 
@@ -799,80 +820,81 @@ router.post("/orders/:orderId/partial-payment", operatorRoles, async (req, res) 
     // Find the transaction for this order
     const txRows = await db.select().from(transactionsTable)
       .where(eq(transactionsTable.orderId, orderId));
-    const tx = txRows.find(t => Number(t.commission) > 0 && t.paymentStatus !== "paid");
+    const tx = txRows.find(t => safeNumber(t.commission) > 0 && t.paymentStatus !== "paid");
     if (!tx) {
       return res.status(404).json({ error: "Не найдена активная транзакция с комиссией по этому заказу" });
     }
 
-    // Insert the partial payment
-    const [payment] = await db.insert(transactionPaymentsTable).values({
-      transactionId: tx.id,
-      amount: String(Number(amount)),
-      note: note ?? null,
-      paidAt: new Date(),
-    }).returning();
-
-    // Recalculate: prepaymentDeducted + all partial payments
-    const allPartials = await db.select().from(transactionPaymentsTable)
+    // Get existing partial payments to validate amount
+    const existingPartials = await db.select().from(transactionPaymentsTable)
       .where(eq(transactionPaymentsTable.transactionId, tx.id));
-    const totalPartialPaid = allPartials.reduce((s, p) => s + Number(p.amount), 0);
-    const commission = Number(tx.commission);
-    const prepaymentDeducted = Number(tx.prepaymentDeducted ?? 0);
-    const remaining = Math.max(0, commission - prepaymentDeducted - totalPartialPaid);
+    const totalPartialPaidBefore = existingPartials.reduce((s, p) => s + safeNumber(p.amount), 0);
+    const commission = safeNumber(tx.commission);
+    const prepaymentDeducted = safeNumber(tx.prepaymentDeducted, 0);
+    const remainingBefore = Math.max(0, commission - prepaymentDeducted - totalPartialPaidBefore);
+    if (paymentAmount > remainingBefore) {
+      return res.status(400).json({ error: `Сумма превышает оставшийся долг комиссии (${remainingBefore.toLocaleString("ru-RU")} ₽)` });
+    }
 
-    // If fully paid, mark as paid
-    if (remaining === 0) {
-      await db.update(transactionsTable)
-        .set({ paymentStatus: "paid", paidAt: new Date() })
-        .where(eq(transactionsTable.id, tx.id));
+    let payment: typeof transactionPaymentsTable.$inferSelect;
+    let remaining = 0;
+    let totalPartialPaid = 0;
 
-      // Update master debt
-      const masterRows = await db.select({ debt: mastersTable.debt, maxChatId: mastersTable.maxChatId })
-        .from(mastersTable).where(eq(mastersTable.id, tx.masterId));
-      const master = masterRows[0];
-      if (master) {
-        const newDebt = Math.max(0, Number(master.debt) - Number(amount));
-        await db.update(mastersTable).set({ debt: String(newDebt) }).where(eq(mastersTable.id, tx.masterId));
+    await db.transaction(async (txDb) => {
+      // Insert the partial payment
+      const [insertedPayment] = await txDb.insert(transactionPaymentsTable).values({
+        transactionId: tx.id,
+        amount: String(paymentAmount),
+        note: note ?? null,
+        paidAt: new Date(),
+      }).returning();
+      payment = insertedPayment;
 
-        const notifyText = `✅ Оплата по заказу #${orderId} принята.\nКомиссия полностью закрыта! 🟢`;
+      // Recalculate after insertion
+      const allPartials = await txDb.select().from(transactionPaymentsTable)
+        .where(eq(transactionPaymentsTable.transactionId, tx.id));
+      totalPartialPaid = allPartials.reduce((s, p) => s + safeNumber(p.amount), 0);
+      remaining = Math.max(0, commission - prepaymentDeducted - totalPartialPaid);
 
-        // Max notification
-        if (master.maxChatId) {
-          await sendMaxMessage(master.maxChatId, notifyText)
-            .catch((e: any) => console.error("[partial-payment] max send failed:", e));
+      // If fully paid, mark as paid
+      if (remaining === 0) {
+        await txDb.update(transactionsTable)
+          .set({ paymentStatus: "paid", paidAt: new Date() })
+          .where(eq(transactionsTable.id, tx.id));
+
+        // Update master debt
+        const masterRows = await txDb.select({ debt: mastersTable.debt, maxChatId: mastersTable.maxChatId })
+          .from(mastersTable).where(eq(mastersTable.id, tx.masterId));
+        const master = masterRows[0];
+        if (master) {
+          const newDebt = Math.max(0, safeNumber(master.debt) - paymentAmount);
+          await txDb.update(mastersTable).set({ debt: String(newDebt) }).where(eq(mastersTable.id, tx.masterId));
         }
-        // PWA push notification
-        sendPushToMaster(tx.masterId, { type: "new_message", title: "Комиссия закрыта", body: `Оплата по заказу #${orderId} принята. Комиссия полностью закрыта!` })
-          .catch((e: any) => console.error("[partial-payment] push failed:", e));
-        // Save to master dialog (visible in CRM chat)
-        const chatId = master.maxChatId ? `max_${master.maxChatId}` : `pwa_${tx.masterId}`;
-        await db.insert(masterMessagesTable).values({
-          masterId: tx.masterId,
-          telegramChatId: chatId,
-          text: notifyText,
-          fromMaster: false,
-          senderName: "Система",
-          isRead: true,
-        }).catch((e: any) => console.error("[partial-payment] save message failed:", e));
       }
-    } else {
-      // Notify master about partial payment
-      const masterRows = await db.select({ maxChatId: mastersTable.maxChatId })
-        .from(mastersTable).where(eq(mastersTable.id, tx.masterId));
-      const masterMaxChatId = masterRows[0]?.maxChatId;
+    });
 
-      const notifyText = `💰 Частичная оплата по заказу #${orderId} принята: ${Number(amount).toLocaleString("ru-RU")} ₽\nОстаток: ${remaining.toLocaleString("ru-RU")} ₽`;
+    // Notify master about payment
+    const masterRows = await db.select({ debt: mastersTable.debt, maxChatId: mastersTable.maxChatId })
+      .from(mastersTable).where(eq(mastersTable.id, tx.masterId));
+    const master = masterRows[0];
+    if (master) {
+      const notifyText = remaining === 0
+        ? `✅ Оплата по заказу #${orderId} принята.\nКомиссия полностью закрыта! 🟢`
+        : `💰 Частичная оплата по заказу #${orderId} принята: ${paymentAmount.toLocaleString("ru-RU")} ₽\nОстаток: ${remaining.toLocaleString("ru-RU")} ₽`;
 
       // Max notification
-      if (masterMaxChatId) {
-        await sendMaxMessage(masterMaxChatId, notifyText)
+      if (master.maxChatId) {
+        await sendMaxMessage(master.maxChatId, notifyText)
           .catch((e: any) => console.error("[partial-payment] max send failed:", e));
       }
       // PWA push notification
-      sendPushToMaster(tx.masterId, { type: "new_message", title: "Частичная оплата", body: `Оплата ${Number(amount).toLocaleString("ru-RU")} ₽ по заказу #${orderId} принята. Остаток: ${remaining.toLocaleString("ru-RU")} ₽` })
+      const pushBody = remaining === 0
+        ? `Оплата по заказу #${orderId} принята. Комиссия полностью закрыта!`
+        : `Оплата ${paymentAmount.toLocaleString("ru-RU")} ₽ по заказу #${orderId} принята. Остаток: ${remaining.toLocaleString("ru-RU")} ₽`;
+      sendPushToMaster(tx.masterId, { type: "new_message", title: remaining === 0 ? "Комиссия закрыта" : "Частичная оплата", body: pushBody })
         .catch((e: any) => console.error("[partial-payment] push failed:", e));
       // Save to master dialog (visible in CRM chat)
-      const chatId = masterMaxChatId ? `max_${masterMaxChatId}` : `pwa_${tx.masterId}`;
+      const chatId = master.maxChatId ? `max_${master.maxChatId}` : `pwa_${tx.masterId}`;
       await db.insert(masterMessagesTable).values({
         masterId: tx.masterId,
         telegramChatId: chatId,
@@ -886,7 +908,7 @@ router.post("/orders/:orderId/partial-payment", operatorRoles, async (req, res) 
     notifyWorkBoardChanged("partial-payment");
     res.json({
       ok: true,
-      payment: { id: payment.id, amount: Number(payment.amount), note: payment.note, paidAt: payment.paidAt.toISOString() },
+      payment: { id: payment.id, amount: safeNumber(payment.amount), note: payment.note, paidAt: payment.paidAt.toISOString() },
       remaining,
       totalPartialPaid,
       commission,

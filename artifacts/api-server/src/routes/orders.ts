@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, Request, Response, NextFunction } from "express";
 import { db, ordersTable, mastersTable, transactionsTable, voronkaColumnsTable, orderDispatchesTable, leadsTable, masterMessagesTable, orderStatusLogsTable, usersTable, receiptsTable, fomoEventsTable } from "@workspace/db";
 import { eq, inArray, and, ne, isNull, isNotNull, desc } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
@@ -30,6 +30,28 @@ function buildOrderCard(order: any, orderId: number): string {
 }
 
 const router = Router();
+
+// Rate limiting for order operations
+const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+const RATE_LIMIT_MAX = 10; // max requests per window per IP
+
+const checkRateLimit = (req: Request, res: Response, next: NextFunction) => {
+  const ip = req.ip || req.socket.remoteAddress;
+  if (!ip) return next();
+  const now = Date.now();
+  const record = rateLimitStore.get(ip);
+  if (record && record.resetTime > now) {
+    if (record.count >= RATE_LIMIT_MAX) {
+      return res.status(429).json({ error: "Too many requests, please try again later." });
+    }
+    record.count += 1;
+  } else {
+    rateLimitStore.set(ip, { count: 1, resetTime: now + RATE_LIMIT_WINDOW_MS });
+  }
+  next();
+};
+
 const allOrderRoles = requireRole("admin", "master_operator");
 
 // ─── Column helpers ───────────────────────────────────────────────────────────
@@ -56,7 +78,10 @@ router.get("/", allOrderRoles, async (req, res) => {
   const { status, masterId } = req.query;
   const conditions: any[] = [];
   if (status) conditions.push(eq(ordersTable.status, status as any));
-  if (masterId) conditions.push(eq(ordersTable.masterId, parseInt(masterId as string)));
+  if (masterId) {
+    const masterIdNum = parseInt(String(masterId));
+    if (!isNaN(masterIdNum)) conditions.push(eq(ordersTable.masterId, masterIdNum));
+  }
   conditions.push(isNull(ordersTable.deletedAt));
   const orders = await db.select().from(ordersTable).where(and(...conditions)).orderBy(desc(ordersTable.createdAt));
 
@@ -121,6 +146,7 @@ router.get("/", allOrderRoles, async (req, res) => {
 
 router.get("/:id", allOrderRoles, async (req, res) => {
   const id = parseInt(req.params.id as string);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid order ID" });
   const rows = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
   if (!rows[0]) return res.status(404).json({ error: "Order not found" });
   const o = rows[0];
@@ -167,7 +193,8 @@ router.get("/:id", allOrderRoles, async (req, res) => {
 });
 
 router.patch("/:id", allOrderRoles, async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id as string);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid order ID" });
   const { status, orderAmount, commission, clientRating, proposedAmount, acceptProposed, approveCancellation, rejectCancellation, restoreOrder, operatorNote, clientCancelReason } = req.body;
 
   // Fetch current order to get masterId before update
@@ -352,7 +379,7 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
               title: "✅ Сумма по заказу подтверждена",
               body: pushBody,
               url: "/balance",
-            }).catch(() => {});
+}).catch((err) => console.error("[orders] log status change failed:", err));
           }
           // Telegram удалён — мастер видит детали комиссии в PWA push + балансе.
         } else if (commissionValue !== prevCommission || prepaymentDeducted !== prevPrepaymentDeducted) {
@@ -618,9 +645,12 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
 });
 
 router.post("/:id/assign-master", allOrderRoles, async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id as string);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid order ID" });
   const { masterId } = req.body;
   if (!masterId) return res.status(400).json({ error: "masterId required" });
+  const masterIdNum = Number(masterId);
+  if (isNaN(masterIdNum)) return res.status(400).json({ error: "Invalid master ID" });
 
   const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
   if (!masterRows[0]) return res.status(404).json({ error: "Master not found" });
@@ -707,7 +737,7 @@ router.post("/:id/assign-master", allOrderRoles, async (req, res) => {
 
 // ─── POST /api/orders/:id/unassign-master — admin removes master from order ───
 router.post("/:id/unassign-master", requireRole("admin", "master_operator"), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id as string);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid order id" });
 
   const { reason, rebroadcast } = req.body as { reason?: string; rebroadcast?: boolean };
@@ -782,8 +812,10 @@ router.post("/:id/unassign-master", requireRole("admin", "master_operator"), asy
 
 // ─── POST /api/orders/:id/manual-assign/:masterId — admin force-assigns master ─
 router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operator"), async (req, res) => {
-  const orderId = parseInt(req.params.id);
-  const masterId = parseInt(req.params.masterId);
+  const orderId = parseInt(req.params.id as string);
+  const masterId = parseInt(req.params.masterId as string);
+  if (isNaN(orderId)) return res.status(400).json({ error: "Invalid order ID" });
+  if (isNaN(masterId)) return res.status(400).json({ error: "Invalid master ID" });
   if (isNaN(orderId) || isNaN(masterId)) return res.status(400).json({ error: "Invalid ids" });
 
   const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
@@ -902,7 +934,7 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
 
 // ─── GET /api/orders/:id/status-log ───────────────────────────────────────────
 router.get("/:id/status-log", allOrderRoles, async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id as string);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid order id" });
 
   const logs = await db.select().from(orderStatusLogsTable)
@@ -935,7 +967,8 @@ router.get("/:id/fomo-presses", allOrderRoles, async (req, res) => {
 
 // DELETE /api/orders/:id — soft delete (move to trash)
 router.delete("/:id", requireRole("admin"), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id as string);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid order id" });
 
   // Read masterId before soft-delete so we can recalc the column after
   const [orderRow] = await db.select({ masterId: ordersTable.masterId })

@@ -15,7 +15,7 @@ export const orderStatusEnum = pgEnum("order_status", [
 
 export const ordersTable = pgTable("orders", {
   id: serial("id").primaryKey(),
-  leadId: integer("lead_id").notNull().references(() => leadsTable.id),
+  leadId: integer("lead_id").notNull().references(() => leadsTable.id, { onDelete: "cascade" }),
   city: text("city").notNull(),
   district: text("district").notNull(),
   serviceType: text("service_type").notNull(),

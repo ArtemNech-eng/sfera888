@@ -1,6 +1,6 @@
-import { Router } from "express";
+import { Router, Request, Response, NextFunction } from "express";
 import { db, masterMessagesTable, mastersTable, telegramChatsTable, transactionsTable, transactionPaymentsTable, usersTable } from "@workspace/db";
-import { eq, desc, and, inArray } from "drizzle-orm";
+import { eq, desc, and, inArray, sql, count, isNull } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
 import { sendPushToMaster } from "../lib/push.js";
 import { sendMaxMessage } from "../maxBot.js";
@@ -12,10 +12,31 @@ const router = Router();
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
+// Simple in-memory rate limiting for message sending
+const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+const RATE_LIMIT_MAX = 10; // max requests per window per IP
+
+const checkRateLimit = (req: Request, res: Response, next: NextFunction) => {
+  const ip = req.ip || req.socket.remoteAddress;
+  if (!ip) return next();
+  const now = Date.now();
+  const record = rateLimitStore.get(ip);
+  if (record && record.resetTime > now) {
+    if (record.count >= RATE_LIMIT_MAX) {
+      return res.status(429).json({ error: "Too many requests, please try again later." });
+    }
+    record.count += 1;
+  } else {
+    rateLimitStore.set(ip, { count: 1, resetTime: now + RATE_LIMIT_WINDOW_MS });
+  }
+  next();
+};
+
 // GET /api/master-chat — list threads with unread count
 router.get("/", requireRole("admin", "master_operator"), async (_req, res) => {
-  const messages = await db.select().from(masterMessagesTable).orderBy(desc(masterMessagesTable.createdAt));
-  const masters = await db.select().from(mastersTable);
+  // Получаем только активных мастеров (не удалённых)
+  const masters = await db.select().from(mastersTable).where(isNull(mastersTable.deletedAt));
   const masterMap = new Map(masters.map(m => [m.id, m]));
 
   // Lookup avatarUrl from telegram_chats by telegramId
@@ -27,26 +48,39 @@ router.get("/", requireRole("admin", "master_operator"), async (_req, res) => {
     : [];
   const tgAvatarMap = new Map(tgChats.map(c => [c.telegramChatId, c.avatarUrl ?? null]));
 
-  const threadMap = new Map<number, { lastMessage: string; lastAt: Date; unread: number; telegramChatId: string; lastFromMaster: boolean }>();
-  for (const msg of messages) {
-    if (!threadMap.has(msg.masterId)) {
-      threadMap.set(msg.masterId, {
-        lastMessage: msg.photoUrl ? "📷 Фото" : (msg.senderName === "system" ? `⚙ ${msg.text}` : msg.text),
-        lastAt: msg.createdAt,
-        unread: 0,
-        telegramChatId: msg.telegramChatId,
-        lastFromMaster: msg.fromMaster,
-      });
-    }
-    if (msg.fromMaster && !msg.isRead) {
-      threadMap.get(msg.masterId)!.unread += 1;
-    }
-  }
+  // 1. Последние сообщения для каждого мастера (оконная функция)
+  const lastMessagesQuery = await db.execute(sql`
+    SELECT DISTINCT ON (master_id) 
+      master_id, 
+      telegram_chat_id, 
+      text, 
+      photo_url, 
+      sender_name, 
+      from_master,
+      created_at
+    FROM master_messages 
+    ORDER BY master_id, created_at DESC
+  `);
+  const lastMessages = lastMessagesQuery.rows;
 
-  const threads = Array.from(threadMap.entries()).map(([masterId, info]) => {
+  // 2. Количество непрочитанных сообщений от мастеров (только from_master = true)
+  const unreadCountsQuery = await db.execute(sql`
+    SELECT master_id, COUNT(*) as unread_count
+    FROM master_messages 
+    WHERE from_master = true AND is_read = false
+    GROUP BY master_id
+  `);
+  const unreadCounts = unreadCountsQuery.rows;
+
+  const unreadMap = new Map(unreadCounts.map((row: any) => [row.master_id, parseInt(row.unread_count)]));
+
+  const threads = lastMessages.map((row: any) => {
+    const masterId = row.master_id;
     const master = masterMap.get(masterId);
     const tgAvatar = master?.telegramId ? (tgAvatarMap.get(master.telegramId) ?? null) : null;
     const avatarUrl = tgAvatar ?? master?.customAvatarUrl ?? null;
+    const lastMessage = row.photo_url ? "📷 Фото" : (row.sender_name === "system" ? `⚙ ${row.text}` : row.text);
+    
     return {
       masterId,
       alias: master?.alias ?? "Неизвестный мастер",
@@ -56,12 +90,15 @@ router.get("/", requireRole("admin", "master_operator"), async (_req, res) => {
       pwaLogin: master?.pwaLogin ?? null,
       lastSeenAt: master?.lastSeenAt ?? null,
       avatarUrl,
-      lastMessage: info.lastMessage,
-      lastAt: info.lastAt,
-      unread: info.unread,
-      lastFromMaster: info.lastFromMaster,
+      lastMessage,
+      lastAt: row.created_at,
+      unread: unreadMap.get(masterId) ?? 0,
+      lastFromMaster: row.from_master,
     };
   });
+
+  // Сортируем по дате последнего сообщения (новые сверху)
+  threads.sort((a, b) => new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime());
 
   res.json(threads);
 });
@@ -75,16 +112,16 @@ router.get("/stats/unread", requireRole("admin", "master_operator"), async (_req
 
 // GET /api/master-chat/:masterId — full conversation
 router.get("/:masterId", requireRole("admin", "master_operator", "lead_operator"), async (req, res) => {
-  const masterId = parseInt(req.params.masterId);
+  const masterId = parseInt(req.params.masterId as string);
   if (isNaN(masterId)) return res.status(400).json({ error: "Invalid masterId" });
 
   const messages = await db.select().from(masterMessagesTable)
     .where(eq(masterMessagesTable.masterId, masterId))
     .orderBy(masterMessagesTable.createdAt);
 
-  const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
+  const masterRows = await db.select().from(mastersTable).where(and(eq(mastersTable.id, masterId), isNull(mastersTable.deletedAt)));
   const master = masterRows[0];
-  if (!master) return res.status(404).json({ error: "Master not found" });
+  if (!master) return res.status(404).json({ error: "Master not found or deleted" });
 
   // Lookup avatarUrl from telegram_chats, then fall back to custom avatar
   let avatarUrl: string | null = master.customAvatarUrl ?? null;
@@ -156,16 +193,17 @@ router.get("/:masterId", requireRole("admin", "master_operator", "lead_operator"
 });
 
 // POST /api/master-chat/:masterId/reply — send text or photo reply
-router.post("/:masterId/reply", requireRole("admin", "master_operator"), upload.single("photo"), async (req, res) => {
-  const masterId = parseInt(req.params.masterId);
+router.post("/:masterId/reply", requireRole("admin", "master_operator"), checkRateLimit, upload.single("photo"), async (req, res) => {
+  const masterId = parseInt(req.params.masterId as string);
   const { text, operatorName } = req.body;
   const photoFile = req.file;
 
   if (!text && !photoFile) return res.status(400).json({ error: "text or photo required" });
+if (text && text.length > 5000) return res.status(400).json({ error: "Текст сообщения слишком длинный (макс. 5000 символов)" });
 
-  const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
+  const masterRows = await db.select().from(mastersTable).where(and(eq(mastersTable.id, masterId), isNull(mastersTable.deletedAt)));
   const master = masterRows[0];
-  if (!master) return res.status(404).json({ error: "Master not found" });
+  if (!master) return res.status(404).json({ error: "Master not found or deleted" });
 
   const senderLabel = operatorName ?? "Оператор";
   let savedPhotoUrl: string | null = null;
@@ -218,13 +256,13 @@ router.post("/:masterId/reply", requireRole("admin", "master_operator"), upload.
     title: `💬 ${senderLabel}`,
     body: pushBody,
     url: "/chat",
-  }).catch(() => {});
+  }).catch((err) => console.error("[master-chat] push notification failed:", err));
 
   if (master.maxChatId && (text || savedPhotoUrl)) {
     const maxText = text
       ? `💬 **${senderLabel}:** ${text}`
       : `💬 Фото от **${senderLabel}**`;
-    sendMaxMessage(master.maxChatId, maxText).catch(() => {});
+    sendMaxMessage(master.maxChatId, maxText).catch((err) => console.error("[master-chat] max message failed:", err));
   }
 
   res.json(saved);
@@ -232,7 +270,7 @@ router.post("/:masterId/reply", requireRole("admin", "master_operator"), upload.
 
 // PATCH /api/master-chat/messages/:messageId — edit operator message text
 router.patch("/messages/:messageId", requireRole("admin", "master_operator"), async (req, res) => {
-  const messageId = parseInt(req.params.messageId);
+  const messageId = parseInt(req.params.messageId as string);
   if (isNaN(messageId)) return res.status(400).json({ error: "Invalid messageId" });
 
   const { text } = req.body;
@@ -245,8 +283,9 @@ router.patch("/messages/:messageId", requireRole("admin", "master_operator"), as
 
   // Telegram удалён — синхронизация правок в TG больше не выполняется.
 
+  const user = (req as any).user;
   const [updated] = await db.update(masterMessagesTable)
-    .set({ text: text.trim(), editedAt: new Date() })
+    .set({ text: text.trim(), editedAt: new Date(), updatedByUserId: user.id })
     .where(eq(masterMessagesTable.id, messageId))
     .returning();
 
@@ -255,7 +294,7 @@ router.patch("/messages/:messageId", requireRole("admin", "master_operator"), as
 
 // PATCH /api/master-chat/:masterId/read
 router.patch("/:masterId/read", requireRole("admin", "master_operator"), async (req, res) => {
-  const masterId = parseInt(req.params.masterId);
+  const masterId = parseInt(req.params.masterId as string);
   await db.update(masterMessagesTable)
     .set({ isRead: true })
     .where(and(eq(masterMessagesTable.masterId, masterId), eq(masterMessagesTable.fromMaster, true)));
@@ -263,9 +302,10 @@ router.patch("/:masterId/read", requireRole("admin", "master_operator"), async (
 });
 
 // POST /api/master-chat/broadcast — send a message to multiple masters
-router.post("/broadcast", requireRole("admin", "master_operator"), async (req, res) => {
-  const { text, filter } = req.body;
-  if (!text?.trim()) return res.status(400).json({ error: "text required" });
+router.post("/broadcast", requireRole("admin", "master_operator"), checkRateLimit, async (req, res) => {
+const { text, filter } = req.body;
+if (!text?.trim()) return res.status(400).json({ error: "text required" });
+if (text.length > 5000) return res.status(400).json({ error: "Текст сообщения слишком длинный (макс. 5000 символов)" });
 
   const sessionUserId = (req as any).session?.userId ?? null;
   let senderLabel = "Оператор";
@@ -274,44 +314,58 @@ router.post("/broadcast", requireRole("admin", "master_operator"), async (req, r
     senderLabel = userRows[0]?.name ?? userRows[0]?.login ?? "Оператор";
   }
 
-  const allMasters = await db.select().from(mastersTable).where(eq(mastersTable.status, "active"));
+  const allMasters = await db.select().from(mastersTable).where(and(eq(mastersTable.status, "active"), isNull(mastersTable.deletedAt)));
 
   let targets = allMasters;
-  if (filter?.type === "city" && filter.city) {
+  if (filter?.type === "city") {
+    if (!filter.city || typeof filter.city !== "string") {
+      return res.status(400).json({ error: "При фильтре по городу необходимо указать город" });
+    }
     targets = allMasters.filter(m => m.city === filter.city);
-  } else if (filter?.type === "custom" && Array.isArray(filter.masterIds) && filter.masterIds.length > 0) {
+  } else if (filter?.type === "custom") {
+    if (!Array.isArray(filter.masterIds) || filter.masterIds.length === 0) {
+      return res.status(400).json({ error: "При выборе мастеров необходимо указать хотя бы одного мастера" });
+    }
     targets = allMasters.filter(m => filter.masterIds.includes(m.id));
   }
 
   if (targets.length === 0) return res.json({ sent: 0 });
 
-  await Promise.all(targets.map(async (master) => {
-    const chatId = master.telegramId ?? `pwa_${master.id}`;
-    await db.insert(masterMessagesTable).values({
-      masterId: master.id,
-      telegramChatId: chatId,
-      text: text.trim(),
-      fromMaster: false,
-      senderName: `📢 ${senderLabel}`,
-      isRead: true,
-    });
-    sendPushToMaster(master.id, {
-      title: `📢 Объявление`,
-      body: text.trim().length > 80 ? text.trim().slice(0, 77) + "…" : text.trim(),
-      url: "/chat",
-    }).catch(() => {});
-  }));
+  // Batch insert всех сообщений
+const messageValues = targets.map(master => ({
+  masterId: master.id,
+  telegramChatId: master.telegramId ?? `pwa_${master.id}`,
+  text: text.trim(),
+  fromMaster: false,
+  senderName: `📢 ${senderLabel}`,
+  isRead: true,
+  photoUrl: null,
+  telegramMessageId: null,
+  maxMid: null,
+  editedAt: null,
+  createdAt: new Date(),
+}));
+await db.insert(masterMessagesTable).values(messageValues);
+
+// Отправляем push-уведомления асинхронно
+for (const master of targets) {
+  sendPushToMaster(master.id, {
+    title: `📢 Объявление`,
+    body: text.trim().length > 80 ? text.trim().slice(0, 77) + "…" : text.trim(),
+    url: "/chat",
+  }).catch((err) => console.error("[master-chat] broadcast push failed for master", master.id, err));
+}
 
   res.json({ sent: targets.length });
 });
 
 // DELETE /api/master-chat/:masterId — clear all messages in this conversation
 router.delete("/:masterId", requireRole("admin"), async (req, res) => {
-  const masterId = parseInt(req.params.masterId);
+  const masterId = parseInt(req.params.masterId as string);
   if (isNaN(masterId)) return res.status(400).json({ error: "Invalid masterId" });
 
-  const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
-  if (!masterRows[0]) return res.status(404).json({ error: "Master not found" });
+  const masterRows = await db.select().from(mastersTable).where(and(eq(mastersTable.id, masterId), isNull(mastersTable.deletedAt)));
+  if (!masterRows[0]) return res.status(404).json({ error: "Master not found or deleted" });
 
   await db.delete(masterMessagesTable).where(eq(masterMessagesTable.masterId, masterId));
   res.json({ success: true });

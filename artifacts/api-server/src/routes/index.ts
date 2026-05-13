@@ -30,6 +30,7 @@ import memoryRouter from "./memory.js";
 import chatCasesRouter from "./chat-cases.js";
 import workMonitorRouter from "./work-monitor.js";
 import workBoardRouter from "./work-board.js";
+import workBoardTableRouter from "./work-board-table.js";
 import dashboardActionItemsRouter from "./dashboard-action-items.js";
 import { processCases, scheduleDigest } from "../lib/casesEngine.js";
 import { sendPushToAllOperators } from "../lib/operatorPush.js";
@@ -70,6 +71,7 @@ router.use("/agent-memory", memoryRouter);
 router.use("/chat-cases", chatCasesRouter);
 router.use("/work-monitor", workMonitorRouter);
 router.use("/work-board", workBoardRouter);
+router.use("/work-board/table", workBoardTableRouter);
 router.use("/dashboard", dashboardActionItemsRouter);
 
 // Push subscription endpoint for operators (CRM)

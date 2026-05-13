@@ -141,6 +141,16 @@ const queries: string[] = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_order_master_history_master_id ON order_master_history(master_id)`,
   `CREATE INDEX IF NOT EXISTS idx_order_master_history_order_id ON order_master_history(order_id)`,
+  `DELETE FROM master_messages WHERE master_id NOT IN (SELECT id FROM masters)`,
+  `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'master_messages_master_id_fkey') THEN ALTER TABLE master_messages ADD CONSTRAINT master_messages_master_id_fkey FOREIGN KEY (master_id) REFERENCES masters(id) ON DELETE CASCADE; END IF; END $$;`,
+  `CREATE INDEX IF NOT EXISTS master_messages_master_id_idx ON master_messages(master_id)`,
+  `CREATE INDEX IF NOT EXISTS master_messages_created_at_idx ON master_messages(created_at)`,
+  `CREATE INDEX IF NOT EXISTS master_messages_from_master_read_idx ON master_messages(from_master, is_read)`,
+  `CREATE INDEX IF NOT EXISTS master_messages_telegram_chat_id_idx ON master_messages(telegram_chat_id)`,
+  `ALTER TABLE master_messages ADD COLUMN IF NOT EXISTS updated_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL`,
+`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'orders_lead_id_fkey') THEN ALTER TABLE orders ADD CONSTRAINT orders_lead_id_fkey FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE; END IF; END $$;`,
+`CREATE INDEX IF NOT EXISTS idx_leads_status_updated_at ON leads(status_updated_at)`,
+`CREATE INDEX IF NOT EXISTS idx_orders_assigned_at ON orders(assigned_at)`,
 ];
 
 async function run() {

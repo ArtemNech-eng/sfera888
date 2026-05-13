@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, Request, Response, NextFunction } from "express";
 import { db, leadsTable, ordersTable, serviceTypesTable, citiesTable } from "@workspace/db";
 import { eq, and, isNull, desc, sql } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
@@ -8,6 +8,27 @@ import { getOperatorTasks } from "../lib/operatorTasks.js";
 import OpenAI from "openai";
 
 const router = Router();
+
+// Rate limiting for lead operations
+const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+const RATE_LIMIT_MAX = 10; // max requests per window per IP
+
+const checkRateLimit = (req: Request, res: Response, next: NextFunction) => {
+  const ip = req.ip || req.socket.remoteAddress;
+  if (!ip) return next();
+  const now = Date.now();
+  const record = rateLimitStore.get(ip);
+  if (record && record.resetTime > now) {
+    if (record.count >= RATE_LIMIT_MAX) {
+      return res.status(429).json({ error: "Too many requests, please try again later." });
+    }
+    record.count += 1;
+  } else {
+    rateLimitStore.set(ip, { count: 1, resetTime: now + RATE_LIMIT_WINDOW_MS });
+  }
+  next();
+};
 
 const allLeadRoles = requireRole("admin", "lead_operator");
 
@@ -24,20 +45,32 @@ function buildServiceSummary(services: Array<{type: string; area: number; priceP
   return { serviceType: types.join(", "), area: totalArea };
 }
 
+function validateServices(services: any[]): services is Array<{type: string; area: number; pricePerM2: number}> {
+  if (!Array.isArray(services)) return false;
+  for (const s of services) {
+    if (typeof s.type !== 'string' || s.type.trim() === '') return false;
+    if (typeof s.area !== 'number' || isNaN(s.area) || s.area <= 0) return false;
+    if (typeof s.pricePerM2 !== 'number' || isNaN(s.pricePerM2) || s.pricePerM2 < 0) return false;
+  }
+  return true;
+}
+
 async function logLeadEvent(leadId: number, eventType: string, description: string, userAlias?: string) {
   try {
     await db.execute(sql`
       INSERT INTO lead_events (lead_id, event_type, description, user_alias)
       VALUES (${leadId}, ${eventType}, ${description}, ${userAlias ?? null})
     `);
-  } catch {}
+  } catch (err) {
+    console.error("[leads] logLeadEvent failed:", err);
+  }
 }
 
 router.get("/", allLeadRoles, async (req, res) => {
   const { status, source } = req.query;
   const conditions: any[] = [isNull(leadsTable.deletedAt)];
-  if (status) conditions.push(eq(leadsTable.status, status as any));
-  if (source) conditions.push(eq(leadsTable.source, source as string));
+if (status) conditions.push(eq(leadsTable.status, status as any));
+if (source) conditions.push(eq(leadsTable.source, String(source)));
   const rows = await db.select().from(leadsTable)
     .where(and(...conditions))
     .orderBy(desc(leadsTable.createdAt));
@@ -71,16 +104,17 @@ router.get("/", allLeadRoles, async (req, res) => {
 
 // Duplicate phone check — must be BEFORE /:id route
 router.get("/check-phone", allLeadRoles, async (req, res) => {
-  const phone = req.query.phone as string;
+  const phone = req.query.phone;
   if (!phone) return res.json({ duplicate: false });
+  const phoneStr = String(phone).trim();
   const rows = await db.select({ id: leadsTable.id, clientName: leadsTable.clientName, status: leadsTable.status, createdAt: leadsTable.createdAt })
     .from(leadsTable)
-    .where(and(eq(leadsTable.clientPhone, phone.trim()), isNull(leadsTable.deletedAt)));
+    .where(and(eq(leadsTable.clientPhone, phoneStr), isNull(leadsTable.deletedAt)));
   if (rows.length === 0) return res.json({ duplicate: false });
   return res.json({ duplicate: true, existing: rows });
 });
 
-router.post("/", allLeadRoles, async (req, res) => {
+router.post("/", checkRateLimit, allLeadRoles, async (req, res) => {
   const { clientName, clientPhone, city, district, services, serviceType: rawServiceType, area: rawArea, scheduledAt, comment, source, photos } = req.body;
   if (!clientName || !clientPhone || !city || !district) {
     return res.status(400).json({ error: "Required fields missing" });
@@ -91,6 +125,7 @@ router.post("/", allLeadRoles, async (req, res) => {
   let servicesJson: string | null = null;
 
   if (Array.isArray(services) && services.length > 0) {
+    if (!validateServices(services)) return res.status(400).json({ error: "Некорректные данные услуг: проверьте тип, площадь и цену за м²" });
     const summary = buildServiceSummary(services);
     serviceType = summary.serviceType;
     area = summary.area;
@@ -98,7 +133,9 @@ router.post("/", allLeadRoles, async (req, res) => {
   } else {
     if (!rawServiceType || !rawArea) return res.status(400).json({ error: "Required fields missing" });
     serviceType = rawServiceType;
-    area = Number(rawArea);
+    const areaNum = Number(rawArea);
+    if (isNaN(areaNum) || areaNum <= 0) return res.status(400).json({ error: "Площадь должна быть положительным числом" });
+    area = areaNum;
   }
 
   const result = await db.insert(leadsTable).values({
@@ -128,7 +165,7 @@ router.post("/", allLeadRoles, async (req, res) => {
     city: lead.city,
     serviceType: lead.serviceType,
     source: lead.source,
-  }).catch(() => {});
+  }).catch((err) => console.error("[leads] notifyManagerNewLead failed:", err));
 
   return res.status(201).json({
     ...lead,
@@ -160,7 +197,8 @@ router.get("/tasks", allLeadRoles, async (_req, res) => {
 
 
 router.get("/:id", allLeadRoles, async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id as string);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid lead ID" });
   const rows = await db.select().from(leadsTable).where(eq(leadsTable.id, id));
   if (!rows[0]) return res.status(404).json({ error: "Lead not found" });
   const l = rows[0];
@@ -179,7 +217,8 @@ router.get("/:id", allLeadRoles, async (req, res) => {
 
 // Lead events timeline
 router.get("/:id/events", allLeadRoles, async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id as string);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid lead ID" });
   const rows = await db.execute(sql`
     SELECT id, lead_id, event_type, description, user_alias, created_at
     FROM lead_events
@@ -189,8 +228,9 @@ router.get("/:id/events", allLeadRoles, async (req, res) => {
   res.json((rows as any).rows ?? rows);
 });
 
-router.patch("/:id", allLeadRoles, async (req, res) => {
-  const id = parseInt(req.params.id);
+router.patch("/:id", checkRateLimit, allLeadRoles, async (req, res) => {
+  const id = parseInt(req.params.id as string);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid lead ID" });
   const { clientName, clientPhone, city, district, serviceType, area, scheduledAt, comment, source, status, services, photos, cancellationReason } = req.body;
   const updates: any = { updatedAt: new Date() };
   if (clientName !== undefined) updates.clientName = clientName;
@@ -205,6 +245,7 @@ router.patch("/:id", allLeadRoles, async (req, res) => {
     updates.photos = Array.isArray(photos) && photos.length > 0 ? JSON.stringify(photos) : null;
   }
   if (services !== undefined && Array.isArray(services) && services.length > 0) {
+    if (!validateServices(services)) return res.status(400).json({ error: "Некорректные данные услуг: проверьте тип, площадь и цену за м²" });
     const summary = buildServiceSummary(services);
     updates.services = JSON.stringify(services);
     updates.serviceType = summary.serviceType;
@@ -269,8 +310,9 @@ router.patch("/:id", allLeadRoles, async (req, res) => {
   });
 });
 
-router.post("/:id/send-to-buffer", allLeadRoles, async (req, res) => {
-  const id = parseInt(req.params.id);
+router.post("/:id/send-to-buffer", checkRateLimit, allLeadRoles, async (req, res) => {
+  const id = parseInt(req.params.id as string);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid lead ID" });
   const rows = await db.select().from(leadsTable).where(eq(leadsTable.id, id));
   const lead = rows[0];
   if (!lead) return res.status(404).json({ error: "Lead not found" });
@@ -320,8 +362,9 @@ router.post("/:id/send-to-buffer", allLeadRoles, async (req, res) => {
 });
 
 // DELETE /api/leads/:id — soft delete (move to trash)
-router.delete("/:id", allLeadRoles, async (req, res) => {
-  const id = parseInt(req.params.id);
+router.delete("/:id", checkRateLimit, allLeadRoles, async (req, res) => {
+  const id = parseInt(req.params.id as string);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid lead ID" });
   await db.update(leadsTable).set({ deletedAt: new Date() }).where(eq(leadsTable.id, id));
   res.json({ success: true });
 });
