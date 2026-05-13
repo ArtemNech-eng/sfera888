@@ -14,6 +14,32 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Fallback colors in case Tailwind custom colors fail */
+.bg-honest-dark {
+  background-color: #0B0F14;
+}
+.bg-honest-darker {
+  background-color: #090C10;
+}
+.text-honest-primary {
+  color: #34F5A3;
+}
+.text-honest-accent {
+  color: #38BDF8;
+}
+.text-honest-secondary {
+  color: #FACC15;
+}
+.text-honest-light {
+  color: #D1D5DB;
+}
+.text-honest-muted {
+  color: #6B7280;
+}
+.border-honest-primary {
+  border-color: #34F5A3;
+}
+
 .btn-primary {
   background-color: #34C759;
   color: #ffffff;
