@@ -900,7 +900,17 @@ if (fs.existsSync(pwaDistPath)) {
   });
 }
 
-// ── Serve master-landing-v2 (recruitment landing) — must be before v1 ─────────
+// ── Serve master-landing-v1 (первый лендинг — registration) ───────────────────
+const landingV1DistPath = path.join(__dirname, "../../master-landing-v1/dist");
+
+if (fs.existsSync(landingV1DistPath)) {
+  app.use("/master-landing/v1", express.static(landingV1DistPath));
+  app.use("/master-landing/v1", (_req, res) => {
+    res.sendFile(path.join(landingV1DistPath, "index.html"));
+  });
+}
+
+// ── Serve master-landing-v2 (recruitment landing) — must be before base ────────
 const landingV2DistPath = path.join(__dirname, "../../master-landing-v2/dist/public");
 
 if (fs.existsSync(landingV2DistPath)) {
