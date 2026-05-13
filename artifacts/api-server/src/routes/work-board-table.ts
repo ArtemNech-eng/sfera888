@@ -246,7 +246,7 @@ async function buildTableData(params: QueryParams): Promise<{
   const masterIds = [...new Set(orders.map(o => o.masterId).filter((x): x is number => !!x))];
   const leadIds = [...new Set(orders.map(o => o.leadId).filter((x): x is number => !!x))];
 
-  const [masters, leads, receipts, transactions, partialPayments] = await Promise.all([
+  const [masters, leads, receipts, transactions] = await Promise.all([
     masterIds.length
       ? db
           .select({
@@ -278,10 +278,13 @@ async function buildTableData(params: QueryParams): Promise<{
       })
       .from(transactionsTable)
       .where(inArray(transactionsTable.orderId, orderIds)),
-    db.select().from(transactionPaymentsTable).where(inArray(transactionPaymentsTable.transactionId,
-      transactions.map(t => t.id).filter(id => id !== undefined)
-    )),
   ]);
+
+  // Get partial payments after transactions are available
+  const transactionIds = transactions.map(t => t.id).filter(id => id !== undefined);
+  const partialPayments = transactionIds.length > 0
+    ? await db.select().from(transactionPaymentsTable).where(inArray(transactionPaymentsTable.transactionId, transactionIds))
+    : [];
 
   // Build maps for quick lookups
   const masterMap = new Map(masters.map(m => [m.id, m]));

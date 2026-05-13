@@ -1,5 +1,5 @@
 // /components/work-board-table.tsx — табличный интерфейс для контроля комиссий и оперативного управления заказами
-import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   flexRender,
@@ -752,7 +752,7 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
           <Filter className="h-4 w-4 text-muted-foreground" />
           <select
             className="bg-background border border-input rounded-md px-3 py-1 text-sm"
-            value={columnFilters.find(f => f.id === "status")?.value?.join(",") || ""}
+            value={(columnFilters.find(f => f.id === "status")?.value as string[] | undefined)?.join(",") || ""}
             onChange={e => {
               const value = e.target.value;
               setColumnFilters(prev => [
