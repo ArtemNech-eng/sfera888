@@ -900,17 +900,7 @@ if (fs.existsSync(pwaDistPath)) {
   });
 }
 
-// ── Serve master-landing-v1 (первый лендинг — registration) ───────────────────
-const landingV1DistPath = path.join(__dirname, "../../master-landing-v1/dist");
-
-if (fs.existsSync(landingV1DistPath)) {
-  app.use("/master-landing/v1", express.static(landingV1DistPath));
-  app.use("/master-landing/v1", (_req, res) => {
-    res.sendFile(path.join(landingV1DistPath, "index.html"));
-  });
-}
-
-// ── Serve master-landing-v2 (recruitment landing) — must be before base ────────
+// ── Serve master-landing-v2 (recruitment landing) ─────────────────────────────
 const landingV2DistPath = path.join(__dirname, "../../master-landing-v2/dist/public");
 
 if (fs.existsSync(landingV2DistPath)) {
@@ -920,19 +910,29 @@ if (fs.existsSync(landingV2DistPath)) {
   });
 }
 
-// ── Serve master-landing (v1 — honest landing) ───────────────────────────────
-const landingDistPath = path.join(__dirname, "../../master-landing/dist/public");
+// ── Serve master-landing-v3 (honest + legacy SPA) ────────────────────────────
+const landingV3DistPath = path.join(__dirname, "../../master-landing/dist/public");
 
-if (fs.existsSync(landingDistPath)) {
-  app.use("/master-landing", express.static(landingDistPath));
+if (fs.existsSync(landingV3DistPath)) {
+  app.use("/master-landing/v3", express.static(landingV3DistPath));
+  app.use("/master-landing/v3", (_req, res) => {
+    res.sendFile(path.join(landingV3DistPath, "index.html"));
+  });
+}
+
+// ── Serve master-landing (первый лендинг — registration) ──────────────────────
+const landingV1DistPath = path.join(__dirname, "../../master-landing-v1/dist");
+
+if (fs.existsSync(landingV1DistPath)) {
+  app.use("/master-landing", express.static(landingV1DistPath));
   app.use("/master-landing", (_req, res) => {
-    res.sendFile(path.join(landingDistPath, "index.html"));
+    res.sendFile(path.join(landingV1DistPath, "index.html"));
   });
 }
 
 // Root redirect: / → master-landing
 app.get("/", (_req, res) => {
-  if (fs.existsSync(landingDistPath)) {
+  if (fs.existsSync(landingV1DistPath)) {
     res.redirect(301, "/master-landing/");
   } else {
     res.redirect(301, "/crm/");

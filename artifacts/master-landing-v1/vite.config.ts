@@ -8,7 +8,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export default defineConfig({
-  base: "/master-landing/v1/",
+  base: "/master-landing/",
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
