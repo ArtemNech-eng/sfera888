@@ -1,4 +1,3 @@
-import { useRef } from 'react';
 import Header from './components/Header';
 import Hero from './components/Hero';
 import Principle from './components/Principle';
@@ -8,24 +7,21 @@ import Earnings from './components/Earnings';
 import Conditions from './components/Conditions';
 import WhoWeNeed from './components/WhoWeNeed';
 import HowToStart from './components/HowToStart';
-import RegistrationForm from './components/RegistrationForm';
 import FAQ from './components/FAQ';
 import Trust from './components/Trust';
 import FinalCTA from './components/FinalCTA';
 import Footer from './components/Footer';
 
 export default function App() {
-  const formRef = useRef<HTMLElement>(null);
-
-  const scrollToForm = () => {
-    formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const goToApp = () => {
+    window.location.href = '/master-pwa/';
   };
 
   return (
     <div className="min-h-screen">
-      <Header onCtaClick={scrollToForm} />
+      <Header onCtaClick={goToApp} />
       <main>
-        <Hero onCtaClick={scrollToForm} />
+        <Hero onCtaClick={goToApp} />
         <Principle />
         <HowItWorks />
         <WhyBeneficial />
@@ -33,10 +29,9 @@ export default function App() {
         <Conditions />
         <WhoWeNeed />
         <HowToStart />
-        <RegistrationForm ref={formRef} />
         <FAQ />
         <Trust />
-        <FinalCTA onCtaClick={scrollToForm} />
+        <FinalCTA onCtaClick={goToApp} />
       </main>
       <Footer />
     </div>
