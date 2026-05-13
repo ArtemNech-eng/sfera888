@@ -7,9 +7,24 @@ export default function App() {
   return (
     <Router base={import.meta.env.BASE_URL || '/'}>
       <Switch>
-        <Route path="/" component={LegacyLanding} />
-        <Route path="/honest" component={HonestLanding} />
-        <Route>404 - Not Found</Route>
+        <Route path="/">
+          {(params) => {
+            console.log('Route / matched, redirecting');
+            return <LegacyLanding />;
+          }}
+        </Route>
+        <Route path="/honest">
+          {(params) => {
+            console.log('Route /honest matched, rendering HonestLanding');
+            return <HonestLanding />;
+          }}
+        </Route>
+        <Route>
+          {(params) => {
+            console.log('404 route matched');
+            return <div>404 - Not Found</div>;
+          }}
+        </Route>
       </Switch>
     </Router>
   );

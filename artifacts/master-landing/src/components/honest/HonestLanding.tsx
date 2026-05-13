@@ -11,7 +11,11 @@ import FinalCTA from './FinalCTA';
 
 export default function HonestLanding() {
   return (
-    <div className="min-h-screen bg-honest-dark text-white">
+    <div 
+      className="min-h-screen bg-honest-dark text-white"
+      style={{ backgroundColor: '#0B0F14' }}
+      data-testid="honest-landing"
+    >
       <Hero />
       <System />
       <Model />
