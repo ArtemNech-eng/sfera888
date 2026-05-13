@@ -164,7 +164,10 @@ export default function LoginPage() {
   const { login, register } = useAuth();
   // Max bot ID from URL (?max=<chatId>) — set during registration/login to auto-link bot
   const maxChatId = new URLSearchParams(window.location.search).get("max");
-  const [tab, setTab] = useState<"login" | "register">("login");
+  const [tab, setTab] = useState<"login" | "register">(() => {
+    const urlTab = new URLSearchParams(window.location.search).get("tab");
+    return urlTab === "register" ? "register" : "login";
+  });
 
   // Login form
   const [form, setForm] = useState({ login: "", password: "" });

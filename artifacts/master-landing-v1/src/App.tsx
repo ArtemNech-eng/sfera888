@@ -14,7 +14,7 @@ import Footer from './components/Footer';
 
 export default function App() {
   const goToApp = () => {
-    window.location.href = '/master-pwa/';
+    window.location.href = '/master-pwa/login?tab=register';
   };
 
   return (
