@@ -7,7 +7,7 @@ export default function App() {
     <Router base={import.meta.env.BASE_URL || '/'}>
       <Switch>
         <Route path="/">
-          <HonestLanding />
+          <LegacyLanding />
         </Route>
         <Route path="/honest">
           <HonestLanding />
@@ -16,7 +16,7 @@ export default function App() {
           <LegacyLanding />
         </Route>
         <Route>
-          <HonestLanding />
+          <LegacyLanding />
         </Route>
       </Switch>
     </Router>
