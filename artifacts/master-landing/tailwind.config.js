@@ -4,15 +4,13 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        honest: {
-          dark: '#0B0F14',
-          darker: '#090C10',
-          light: '#D1D5DB',
-          primary: '#34F5A3',
-          accent: '#38BDF8',
-          secondary: '#FACC15',
-          muted: '#6B7280',
-        },
+        'honest-dark': '#0B0F14',
+        'honest-darker': '#090C10',
+        'honest-light': '#D1D5DB',
+        'honest-primary': '#34F5A3',
+        'honest-accent': '#38BDF8',
+        'honest-secondary': '#FACC15',
+        'honest-muted': '#6B7280',
       },
       boxShadow: {
         'honest-glow': '0 0 20px rgba(52, 245, 163, 0.5)',
