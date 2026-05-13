@@ -900,9 +900,23 @@ if (fs.existsSync(pwaDistPath)) {
   });
 }
 
-// Root redirect: / → CRM
+// ── Serve master-landing as static files ──────────────────────────────────────
+const landingDistPath = path.join(__dirname, "../../master-landing/dist/public");
+
+if (fs.existsSync(landingDistPath)) {
+  app.use("/landing", express.static(landingDistPath));
+  app.use("/landing", (_req, res) => {
+    res.sendFile(path.join(landingDistPath, "index.html"));
+  });
+}
+
+// Root redirect: / → Landing
 app.get("/", (_req, res) => {
-  res.redirect(301, "/crm/");
+  if (fs.existsSync(landingDistPath)) {
+    res.sendFile(path.join(landingDistPath, "index.html"));
+  } else {
+    res.redirect(301, "/crm/");
+  }
 });
 
 // ── Register Max Bot Webhooks on startup ──────────────────────────────────────
