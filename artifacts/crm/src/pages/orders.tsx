@@ -1081,13 +1081,13 @@ export default function Orders() {
                 <tbody className="divide-y divide-border/50">
                   {isLoading ? (
                     <tr>
-                      <td colSpan={6} className="px-4 py-12 text-center">
+                      <td colSpan={7} className="px-4 py-12 text-center">
                         <Loader2 className="w-6 h-6 animate-spin text-primary mx-auto" />
                       </td>
                     </tr>
                   ) : filteredOrders.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">
+                      <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
                         {search ? "Ничего не найдено" : "Заказов в буфере нет"}
                       </td>
                     </tr>
@@ -1237,7 +1237,7 @@ export default function Orders() {
                               </button>
                             ) : (
                               <button
-                                onClick={e => { e.stopPropagation(); deleteOrderMutation.mutate(order.id); }}
+                onClick={e => { e.stopPropagation(); if (confirm(`Переместить заказ #${order.id} в корзину?`)) deleteOrderMutation.mutate(order.id); }}
                                 title="В корзину"
                                 className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground/30 hover:text-red-500 hover:bg-red-50 transition-all"
                               >
@@ -1848,7 +1848,7 @@ export default function Orders() {
                         >
                           <option value="">— Выберите мастера —</option>
                           {(activeMasters ?? [])
-                            .filter(m => !openOrder || !m.city || m.city === (openOrder as any).city || true)
+                            .filter(m => !openOrder || !m.city || m.city === (openOrder as any).city)
                             .map(m => (
                               <option key={m.id} value={String(m.id)}>
                                 {m.alias}{m.city ? ` (${m.city})` : ""}
