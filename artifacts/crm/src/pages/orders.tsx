@@ -1229,9 +1229,9 @@ export default function Orders() {
                               </button>
                             ) : (
                               <button
-                onClick={e => { e.stopPropagation(); if (confirm(`Переместить заказ #${order.id} в корзину?`)) deleteOrderMutation.mutate(order.id); }}
-                                title="В корзину"
                                 disabled={deleteOrderMutation.isPending}
+                                onClick={e => { e.stopPropagation(); if (confirm(`Переместить заказ #${order.id} в корзину?`)) deleteOrderMutation.mutate(order.id); }}
+                                title="В корзину"
                                 className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground/30 hover:text-red-500 hover:bg-red-50 transition-all disabled:opacity-50"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />

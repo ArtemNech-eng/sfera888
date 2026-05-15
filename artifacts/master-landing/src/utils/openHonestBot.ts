@@ -7,7 +7,7 @@ declare global {
 export function openHonestBot(ref = 'honest-landing') {
   if (typeof window === 'undefined') return;
   
-  const baseUrl = import.meta.env.VITE_HONEST_PWA_URL || '/master-pwa/';
-  const url = `${baseUrl}?ref=${ref}`;
+  const botUrl = import.meta.env.VITE_HONEST_BOT_URL || 'https://t.me/MaxBotHonestMaster';
+  const url = `${botUrl}?start=${ref}`;
   window.open(url, '_blank');
 }

@@ -74,21 +74,23 @@ router.get("/", requireRole("admin", "master_operator"), async (_req, res) => {
 
   const unreadMap = new Map(unreadCounts.map((row: any) => [row.master_id, parseInt(row.unread_count)]));
 
-  const threads = lastMessages.map((row: any) => {
+  const threads = lastMessages
+    .filter((row: any) => masterMap.has(row.master_id)) // Skip deleted masters
+    .map((row: any) => {
     const masterId = row.master_id;
-    const master = masterMap.get(masterId);
-    const tgAvatar = master?.telegramId ? (tgAvatarMap.get(master.telegramId) ?? null) : null;
-    const avatarUrl = tgAvatar ?? master?.customAvatarUrl ?? null;
+    const master = masterMap.get(masterId)!;
+    const tgAvatar = master.telegramId ? (tgAvatarMap.get(master.telegramId) ?? null) : null;
+    const avatarUrl = tgAvatar ?? master.customAvatarUrl ?? null;
     const lastMessage = row.photo_url ? "📷 Фото" : (row.sender_name === "system" ? `⚙ ${row.text}` : row.text);
     
     return {
       masterId,
-      alias: master?.alias ?? "Неизвестный мастер",
-      city: master?.city ?? "",
-      phone: master?.phone ?? null,
-      telegramId: master?.telegramId ?? null,
-      pwaLogin: master?.pwaLogin ?? null,
-      lastSeenAt: master?.lastSeenAt ?? null,
+      alias: master.alias ?? "Неизвестный мастер",
+      city: master.city ?? "",
+      phone: master.phone ?? null,
+      telegramId: master.telegramId ?? null,
+      pwaLogin: master.pwaLogin ?? null,
+      lastSeenAt: master.lastSeenAt ?? null,
       avatarUrl,
       lastMessage,
       lastAt: row.created_at,

@@ -143,6 +143,8 @@ export default function MasterChat() {
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [convLoading, setConvLoading] = useState(false);
+  const [convError, setConvError] = useState<string | null>(null);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
@@ -220,17 +222,33 @@ export default function MasterChat() {
   ];
 
   const fetchThreads = useCallback(async () => {
-    const r = await fetch("/api/master-chat");
-    if (r.ok) { setThreads(await r.json()); setLoading(false); }
+    try {
+      const r = await fetch("/api/master-chat", { credentials: "include" });
+      if (r.ok) { setThreads(await r.json()); setLoading(false); }
+    } catch {}
   }, []);
 
   const fetchConversation = useCallback(async (masterId: number) => {
-    const r = await fetch(`/api/master-chat/${masterId}`);
-    if (r.ok) {
-      const data = await r.json();
-      setConv(data);
-      await fetch(`/api/master-chat/${masterId}/read`, { method: "PATCH" });
-      setThreads(p => p.map(t => t.masterId === masterId ? { ...t, unread: 0 } : t));
+    setConvLoading(true);
+    setConvError(null);
+    try {
+      const r = await fetch(`/api/master-chat/${masterId}`, { credentials: "include" });
+      if (r.ok) {
+        const data = await r.json();
+        setConv(data);
+        setConvError(null);
+        await fetch(`/api/master-chat/${masterId}/read`, { method: "PATCH", credentials: "include" });
+        setThreads(p => p.map(t => t.masterId === masterId ? { ...t, unread: 0 } : t));
+      } else {
+        const err = await r.json().catch(() => ({}));
+        setConvError(err.error ?? `Ошибка загрузки (${r.status})`);
+        setConv(null);
+      }
+    } catch (e: any) {
+      setConvError("Не удалось загрузить переписку");
+      setConv(null);
+    } finally {
+      setConvLoading(false);
     }
   }, []);
 
@@ -943,6 +961,20 @@ export default function MasterChat() {
                 </div>
               ) : (
                 <>
+                  {/* Loading / Error state */}
+                  {convLoading && !conv && (
+                    <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
+                      <Loader2 className="w-8 h-8 text-blue-400 animate-spin mb-3" />
+                      <p className="text-sm text-gray-400">Загрузка переписки...</p>
+                    </div>
+                  )}
+                  {convError && !conv && !convLoading && (
+                    <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
+                      <AlertCircle className="w-10 h-10 text-red-300 mb-3" />
+                      <p className="text-sm text-red-500 font-medium">{convError}</p>
+                      <button onClick={() => selectedId && fetchConversation(selectedId)} className="mt-3 text-xs text-blue-500 hover:underline">Попробовать снова</button>
+                    </div>
+                  )}
                   {/* Conv header */}
                   {conv && (
                     <div className="px-4 py-3 border-b border-gray-50 flex items-center gap-3 flex-shrink-0">
