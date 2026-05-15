@@ -137,7 +137,7 @@ const sessionMiddleware = session({
 app.use(sessionMiddleware);
 
 app.use((req, _res, next) => {
-  if (!req.session) return next();
+  if (!req.session?.cookie) return next();
   const host = req.hostname || "";
   const sessionCookieDomain = process.env.SESSION_COOKIE_DOMAIN?.trim();
   if (sessionCookieDomain) {
