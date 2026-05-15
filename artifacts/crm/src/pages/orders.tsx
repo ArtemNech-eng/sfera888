@@ -8,7 +8,7 @@ import { formatDate } from "@/lib/utils";
 import {
   Loader2, MapPin, Send, Users, CheckCircle2, Clock, X, UserCheck,
   DollarSign, Check, Pencil, AlertCircle, MessageSquare, Trash2, Search,
-  ClipboardList, CalendarDays, ChevronDown, Filter, Settings, AlertTriangle,
+  ClipboardList, CalendarDays, ChevronDown, AlertTriangle,
   FileText, History, Timer, RefreshCw, CopyX, XCircle, ReceiptText, ExternalLink, Plus, Copy,
   LayoutList, Kanban, Bell, Printer, Lock, Banknote,
 } from "lucide-react";
@@ -32,7 +32,7 @@ function printReceipt(r: {
   notes: string | null;
 }, order?: { city?: string; district?: string | null; serviceType?: string; area?: number } | null) {
   const date = new Date(r.createdAt).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
-  const fmt = (n: number) => Number(n).toLocaleString("ru-RU");
+  const fmtNum = (n: number) => Number(n).toLocaleString("ru-RU");
   const rows = (r.lineItems ?? []).map((item, i) => {
     const qty = item.quantity ?? 1;
     const total = qty * item.price;
@@ -41,8 +41,8 @@ function printReceipt(r: {
       <td style="padding:6px 8px;border:1px solid #ccc;">${item.description}</td>
       <td style="padding:6px 8px;border:1px solid #ccc;text-align:center;">${item.unit ?? "—"}</td>
       <td style="padding:6px 8px;border:1px solid #ccc;text-align:right;">${qty}</td>
-      <td style="padding:6px 8px;border:1px solid #ccc;text-align:right;">${fmt(item.price)}</td>
-      <td style="padding:6px 8px;border:1px solid #ccc;text-align:right;font-weight:600;">${fmt(total)}</td>
+      <td style="padding:6px 8px;border:1px solid #ccc;text-align:right;">${fmtNum(item.price)}</td>
+      <td style="padding:6px 8px;border:1px solid #ccc;text-align:right;font-weight:600;">${fmtNum(total)}</td>
     </tr>`;
   }).join("");
 
@@ -104,8 +104,8 @@ function printReceipt(r: {
   <tbody>${rows}</tbody>
 </table>
 <div class="summary">
-  <p>Итого: <strong>${fmt(r.totalAmount)} ₽</strong></p>
-  <p class="main">Предоплата (бронирование): <strong>${fmt(r.prepaymentAmount)} ₽</strong></p>
+  <p>Итого: <strong>${fmtNum(r.totalAmount)} ₽</strong></p>
+  <p class="main">Предоплата (бронирование): <strong>${fmtNum(r.prepaymentAmount)} ₽</strong></p>
 </div>
 ${r.notes ? `<div class="notes"><strong>Примечания:</strong> ${r.notes}</div>` : ""}
 <div class="signature">
@@ -157,15 +157,6 @@ function useDispatch(orderId: number | null) {
     enabled: !!orderId,
     refetchInterval: 5000,
   });
-}
-
-function DispatchBadge({ status }: { status: string }) {
-  if (status === "none") return null;
-  if (status === "dispatching")
-    return <span className="inline-flex items-center gap-1 text-[10px] bg-blue-50 text-blue-600 border border-blue-200 rounded-full px-2 py-0.5 font-medium"><Clock className="w-3 h-3" />Разослано</span>;
-  if (status === "assigned")
-    return <span className="inline-flex items-center gap-1 text-[10px] bg-green-50 text-green-700 border border-green-200 rounded-full px-2 py-0.5 font-medium"><CheckCircle2 className="w-3 h-3" />Назначен</span>;
-  return null;
 }
 
 function fmt(n: number) {
@@ -231,11 +222,6 @@ export default function Orders() {
   const highlightId = parseInt(new URLSearchParams(window.location.search).get("highlight") ?? "") || null;
   const highlightRowRef = useRef<HTMLTableRowElement | null>(null);
 
-  useEffect(() => {
-    if (highlightRowRef.current) {
-      highlightRowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
-  }, [highlightId]);
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -250,6 +236,12 @@ export default function Orders() {
   const openMasterChat = (masterId: number) => setLocation(`/master-chat?masterId=${masterId}`);
 
   const { data: orders, isLoading } = useGetOrders({}, { query: { refetchInterval: 8000 } });
+
+  useEffect(() => {
+    if (highlightRowRef.current) {
+      highlightRowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [highlightId, orders]);
   const { data: dispatchData, isLoading: dispatchLoading } = useDispatch(openDispatchId);
 
   const broadcastMutation = useMutation({
@@ -508,7 +500,7 @@ export default function Orders() {
     enabled: !!openDispatchId && showStatusLog,
   });
 
-  interface ReceiptEntry { id: number; token: string; prepaymentAmount: number; totalAmount: number; notes: string | null; clientName: string; clientPhone: string; createdAt: string; publicUrl: string; lineItems: { description: string; unit?: string; quantity?: number; price: number }[]; prepaymentSubmittedAt: string | null; clientSubmittedName: string | null; prepaymentScreenshotUrl: string | null; }
+  interface ReceiptEntry { id: number; token: string; prepaymentAmount: number; totalAmount: number; notes: string | null; clientName: string; clientPhone: string; createdAt: string; publicUrl: string; lineItems: { description: string; unit?: string; quantity?: number; price: number }[]; prepaymentSubmittedAt: string | null; clientSubmittedName: string | null; prepaymentScreenshotUrl: string | null; prepaymentSeenAt: string | null; }
   const { data: receipts } = useQuery<ReceiptEntry[]>({
     queryKey: ["/api/receipts/order", openDispatchId],
     queryFn: async () => {
@@ -1239,7 +1231,8 @@ export default function Orders() {
                               <button
                 onClick={e => { e.stopPropagation(); if (confirm(`Переместить заказ #${order.id} в корзину?`)) deleteOrderMutation.mutate(order.id); }}
                                 title="В корзину"
-                                className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground/30 hover:text-red-500 hover:bg-red-50 transition-all"
+                                disabled={deleteOrderMutation.isPending}
+                                className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground/30 hover:text-red-500 hover:bg-red-50 transition-all disabled:opacity-50"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
@@ -1498,7 +1491,7 @@ export default function Orders() {
                         <XCircle className="w-3 h-3" />Отменить заказ
                       </button>
                     )}
-                    <button onClick={() => { if (confirm(`Удалить заказ #${openDispatchId}?`)) { deleteOrderMutation.mutate(openDispatchId!); setOpenDispatchId(null); } }} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-red-200 rounded-lg text-xs font-medium text-red-500 hover:bg-red-50 transition-colors">
+                    <button onClick={() => { if (confirm(`Переместить заказ #${openDispatchId} в корзину?`)) { deleteOrderMutation.mutate(openDispatchId!); setOpenDispatchId(null); } }} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-red-200 rounded-lg text-xs font-medium text-red-500 hover:bg-red-50 transition-colors">
                       <Trash2 className="w-3 h-3" />В корзину
                     </button>
                   </div>
