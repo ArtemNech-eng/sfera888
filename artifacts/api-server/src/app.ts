@@ -134,7 +134,10 @@ const sessionMiddleware = session({
   },
 });
 
+app.use(sessionMiddleware);
+
 app.use((req, _res, next) => {
+  if (!req.session) return next();
   const host = req.hostname || "";
   const sessionCookieDomain = process.env.SESSION_COOKIE_DOMAIN?.trim();
   if (sessionCookieDomain) {
@@ -144,8 +147,6 @@ app.use((req, _res, next) => {
   }
   next();
 });
-
-app.use(sessionMiddleware);
 
 // ── Redirect old /receipt/:token links to new /api/receipt/:token ─────────────
 app.get("/receipt/:token", (req, res) => {
