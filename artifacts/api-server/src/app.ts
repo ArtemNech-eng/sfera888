@@ -29,6 +29,7 @@ function getAllowedOrigins(): string[] {
 
   const defaults = [
     "https://crm-production-6fdc.up.railway.app",
+    "https://sfera888-production.up.railway.app",
     "https://sfera-master.ru",
     "https://www.sfera-master.ru",
   ];
@@ -888,8 +889,14 @@ const crmDistPath = path.join(__dirname, "../../crm/dist/public");
 const pwaDistPath = path.join(__dirname, "../../master-pwa/dist/public");
 
 if (fs.existsSync(crmDistPath)) {
+  // Serve static files first
   app.use("/crm", express.static(crmDistPath));
-  app.use("/crm", (_req, res) => {
+  // SPA fallback: only for non-file paths (routes)
+  app.use("/crm", (req, res) => {
+    // If request looks like a file (has extension), don't send index.html
+    if (req.path.includes(".")) {
+      return res.status(404).send("Not found");
+    }
     res.sendFile(path.join(crmDistPath, "index.html"));
   });
 }
