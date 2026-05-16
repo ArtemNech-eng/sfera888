@@ -40,3 +40,4 @@ export * from "./wallet-transactions";
 export * from "./token-price-history";
 export * from "./traffic-partners";
 export * from "./partner-billing-periods";
+export * from "./legacy-tables";
