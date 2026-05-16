@@ -127,7 +127,7 @@ const sessionMiddleware = session({
   store: new PgSession({
     pool: pgPool,
     createTableIfMissing: true,
-    tableName: "user_sessions",
+    tableName: "sessions",
   }),
   secret: process.env.SESSION_SECRET || "crm-secret-key-2024",
   resave: false,
