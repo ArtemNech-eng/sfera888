@@ -1,2 +1,6 @@
 [deploy]
 preDeployCommand = "pnpm run db:migrate && pnpm --filter @workspace/db run push"
+
+[deploy.environment]
+DATABASE_URL = "${{Postgres-BkOp.DATABASE_URL}}"
+BASE_PATH = "/crm/"
