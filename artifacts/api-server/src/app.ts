@@ -62,11 +62,15 @@ const app: Express = express();
 app.set("trust proxy", 1);
 
 const allowedOrigins = getAllowedOrigins();
+console.log('[cors] Allowed origins:', allowedOrigins);
+
 app.use(cors({
   origin: (origin, callback) => {
+    console.log(`[cors] Checking origin: ${origin}`);
     if (!origin || allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
+    console.log(`[cors] BLOCKED origin: ${origin}`);
     return callback(new Error(`Origin not allowed: ${origin}`));
   },
   credentials: true,
