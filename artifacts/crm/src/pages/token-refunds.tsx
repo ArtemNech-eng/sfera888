@@ -53,6 +53,8 @@ const statusBadge: Record<string, { label: string; className: string }> = {
   cancelled: { label: "Отклонён",  className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" },
 };
 
+import { Layout } from "@/components/layout";
+
 export default function TokenRefundsPage() {
   const qc = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<string>("");
@@ -91,6 +93,7 @@ export default function TokenRefundsPage() {
   });
 
   return (
+    <Layout>
     <div className="p-6 space-y-6">
       <div className="flex items-center gap-3">
         <Coins size={24} className="text-amber-500" />
@@ -282,5 +285,6 @@ export default function TokenRefundsPage() {
         </div>
       )}
     </div>
+    </Layout>
   );
 }

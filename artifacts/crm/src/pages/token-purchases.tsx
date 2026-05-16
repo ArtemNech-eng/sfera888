@@ -65,6 +65,8 @@ const statusBadge: Record<string, { label: string; className: string }> = {
   cancelled: { label: "Отклонён", className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" },
 };
 
+import { Layout } from "@/components/layout";
+
 export default function TokenPurchasesPage() {
   const qc = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<string>("pending");
@@ -112,7 +114,8 @@ export default function TokenPurchasesPage() {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <Layout>
+      <div className="p-6 space-y-6">
       <div className="flex items-center gap-3">
         <Wallet size={24} className="text-green-600" />
         <div>
@@ -294,5 +297,6 @@ export default function TokenPurchasesPage() {
         </div>
       )}
     </div>
+    </Layout>
   );
 }
