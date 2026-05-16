@@ -7,6 +7,9 @@
 import { pool } from "@workspace/db";
 
 const queries: string[] = [
+  // ── Ensure orders table has PRIMARY KEY (required for FK references) ─────
+  `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'orders') THEN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'orders'::regclass AND contype = 'p') THEN ALTER TABLE orders ADD PRIMARY KEY (id); END IF; END IF; END $$;`,
+
   // ── transaction_payments ───────────────────────────────────────────────────
   `CREATE TABLE IF NOT EXISTS transaction_payments (
     id SERIAL PRIMARY KEY,
@@ -28,7 +31,7 @@ const queries: string[] = [
   )`,
 
   // ── master_reviews ─────────────────────────────────────────────────────────
-  `CREATE TABLE IF NOT EXISTS master_reviews (
+  `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'orders') AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'masters') THEN CREATE TABLE IF NOT EXISTS master_reviews (
     id SERIAL PRIMARY KEY,
     master_id INTEGER NOT NULL REFERENCES masters(id) ON DELETE CASCADE,
     order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL,
@@ -36,7 +39,7 @@ const queries: string[] = [
     comment TEXT,
     client_name TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
-  )`,
+  ); END IF; END $$;`,
 
   // ── master_tasks ───────────────────────────────────────────────────────────
   `CREATE TABLE IF NOT EXISTS master_tasks (
@@ -50,7 +53,7 @@ const queries: string[] = [
   )`,
 
   // ── dispatcher_followups ───────────────────────────────────────────────────
-  `CREATE TABLE IF NOT EXISTS dispatcher_followups (
+  `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'orders') AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'masters') THEN CREATE TABLE IF NOT EXISTS dispatcher_followups (
     id SERIAL PRIMARY KEY,
     master_id INTEGER NOT NULL REFERENCES masters(id) ON DELETE CASCADE,
     order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL,
@@ -58,10 +61,10 @@ const queries: string[] = [
     answer TEXT,
     asked_at TIMESTAMP NOT NULL DEFAULT NOW(),
     answered_at TIMESTAMP
-  )`,
+  ); END IF; END $$;`,
 
   // ── client_support_messages ────────────────────────────────────────────────
-  `CREATE TABLE IF NOT EXISTS client_support_messages (
+  `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'orders') THEN CREATE TABLE IF NOT EXISTS client_support_messages (
     id SERIAL PRIMARY KEY,
     order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL,
     sender_name TEXT NOT NULL,
@@ -69,7 +72,7 @@ const queries: string[] = [
     from_client BOOLEAN NOT NULL DEFAULT TRUE,
     is_read BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
-  )`,
+  ); END IF; END $$;`,
 
   // ── general_support_messages ───────────────────────────────────────────────
   `CREATE TABLE IF NOT EXISTS general_support_messages (
@@ -126,7 +129,7 @@ const queries: string[] = [
     ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'crm'`,
 
   // ── order_master_history ──────────────────────────────────────────────────
-  `CREATE TABLE IF NOT EXISTS order_master_history (
+  `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'orders') AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'masters') THEN CREATE TABLE IF NOT EXISTS order_master_history (
     id SERIAL PRIMARY KEY,
     order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
     master_id INTEGER NOT NULL REFERENCES masters(id) ON DELETE CASCADE,
@@ -138,9 +141,9 @@ const queries: string[] = [
     service_type TEXT,
     city TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
-  )`,
-  `CREATE INDEX IF NOT EXISTS idx_order_master_history_master_id ON order_master_history(master_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_order_master_history_order_id ON order_master_history(order_id)`,
+  ); END IF; END $$;`,
+  `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'order_master_history') THEN CREATE INDEX IF NOT EXISTS idx_order_master_history_master_id ON order_master_history(master_id); END IF; END $$;`,
+  `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'order_master_history') THEN CREATE INDEX IF NOT EXISTS idx_order_master_history_order_id ON order_master_history(order_id); END IF; END $$;`,
   `DELETE FROM master_messages WHERE master_id NOT IN (SELECT id FROM masters)`,
   `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'master_messages_master_id_fkey') THEN ALTER TABLE master_messages ADD CONSTRAINT master_messages_master_id_fkey FOREIGN KEY (master_id) REFERENCES masters(id) ON DELETE CASCADE; END IF; END $$;`,
   `CREATE INDEX IF NOT EXISTS master_messages_master_id_idx ON master_messages(master_id)`,
@@ -148,10 +151,10 @@ const queries: string[] = [
   `CREATE INDEX IF NOT EXISTS master_messages_from_master_read_idx ON master_messages(from_master, is_read)`,
   `CREATE INDEX IF NOT EXISTS master_messages_telegram_chat_id_idx ON master_messages(telegram_chat_id)`,
   `ALTER TABLE master_messages ADD COLUMN IF NOT EXISTS updated_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL`,
-`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'lead_id') THEN ALTER TABLE orders ADD COLUMN IF NOT EXISTS lead_id INTEGER; END IF; END $$;`,
-`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'leads' AND column_name = 'id') THEN RAISE NOTICE 'Table leads not ready, skipping FK'; ELSE IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'orders_lead_id_fkey') THEN ALTER TABLE orders ADD CONSTRAINT orders_lead_id_fkey FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE; END IF; END IF; END $$;`,
-`CREATE INDEX IF NOT EXISTS idx_leads_status_updated_at ON leads(status_updated_at)`,
-`DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'orders') AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'assigned_at') THEN CREATE INDEX IF NOT EXISTS idx_orders_assigned_at ON orders(assigned_at); END IF; END $$;`,
+  `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'lead_id') THEN ALTER TABLE orders ADD COLUMN IF NOT EXISTS lead_id INTEGER; END IF; END $$;`,
+  `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'leads' AND column_name = 'id') THEN RAISE NOTICE 'Table leads not ready, skipping FK'; ELSE IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'orders_lead_id_fkey') THEN ALTER TABLE orders ADD CONSTRAINT orders_lead_id_fkey FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE; END IF; END IF; END $$;`,
+  `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'leads') THEN CREATE INDEX IF NOT EXISTS idx_leads_status_updated_at ON leads(status_updated_at); END IF; END $$;`,
+  `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'orders') AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'assigned_at') THEN CREATE INDEX IF NOT EXISTS idx_orders_assigned_at ON orders(assigned_at); END IF; END $$;`,
 ];
 
 async function run() {
