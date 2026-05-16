@@ -7,8 +7,9 @@
 import { pool } from "@workspace/db";
 
 const queries: string[] = [
-  // ── Ensure orders table has PRIMARY KEY (required for FK references) ─────
+  // ── Ensure orders and masters tables have PRIMARY KEY (required for FK references) ─────
   `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'orders') THEN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'orders'::regclass AND contype = 'p') THEN ALTER TABLE orders ADD PRIMARY KEY (id); END IF; END IF; END $$;`,
+  `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'masters') THEN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'masters'::regclass AND contype = 'p') THEN ALTER TABLE masters ADD PRIMARY KEY (id); END IF; END IF; END $$;`,
 
   // ── transaction_payments ───────────────────────────────────────────────────
   `CREATE TABLE IF NOT EXISTS transaction_payments (
