@@ -142,22 +142,11 @@ const sessionMiddleware = session({
     secure: true,
     sameSite: "none",
     maxAge: 24 * 60 * 60 * 1000, // 1 day
+    domain: undefined, // Let browser set domain automatically
   },
 });
 
 app.use(sessionMiddleware);
-
-app.use((req, _res, next) => {
-  if (!req.session?.cookie) return next();
-  const host = req.hostname || "";
-  const sessionCookieDomain = process.env.SESSION_COOKIE_DOMAIN?.trim();
-  if (sessionCookieDomain) {
-    req.session.cookie.domain = sessionCookieDomain;
-  } else if (host.endsWith(".up.railway.app") || host.endsWith(".railway.app")) {
-    req.session.cookie.domain = host.replace(/^[^.]+\./, ".");
-  }
-  next();
-});
 
 // ── Redirect old /receipt/:token links to new /api/receipt/:token ─────────────
 app.get("/receipt/:token", (req, res) => {
