@@ -63,6 +63,15 @@ router.get("/storage/public-objects/*filePath", async (req: Request, res: Respon
   try {
     const raw = req.params.filePath;
     const filePath = Array.isArray(raw) ? raw.join("/") : raw;
+    
+    // Check if object storage is configured
+    const pathsStr = process.env.PUBLIC_OBJECT_SEARCH_PATHS || "";
+    if (!pathsStr) {
+      console.log(`[storage] PUBLIC_OBJECT_SEARCH_PATHS not set, returning 404 for ${filePath}`);
+      res.status(404).json({ error: "Object storage not configured" });
+      return;
+    }
+    
     const file = await objectStorageService.searchPublicObject(filePath);
     if (!file) {
       res.status(404).json({ error: "File not found" });
@@ -81,7 +90,7 @@ router.get("/storage/public-objects/*filePath", async (req: Request, res: Respon
       res.end();
     }
   } catch (error) {
-    console.error("Error serving public object:", error);
+    console.error("[storage] Error serving public object:", error);
     res.status(500).json({ error: "Failed to serve public object" });
   }
 });
