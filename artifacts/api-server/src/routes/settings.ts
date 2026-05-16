@@ -278,14 +278,31 @@ router.get("/token-packages/public", async (_req, res) => {
 // In-memory payment details (no DB table — stored as JSON file or env override)
 let paymentDetailsCache: { bankName: string; cardNumber: string; holder: string; comment: string } | null = null;
 
+// Load from environment variables on startup
+(function loadPaymentDetailsFromEnv() {
+  const bankName = process.env.PAYMENT_BANK_NAME;
+  const cardNumber = process.env.PAYMENT_CARD_NUMBER;
+  const holder = process.env.PAYMENT_CARD_HOLDER;
+  const comment = process.env.PAYMENT_COMMENT;
+  
+  if (bankName && cardNumber && holder) {
+    paymentDetailsCache = {
+      bankName,
+      cardNumber,
+      holder,
+      comment: comment || "Оплата за токены Сфера"
+    };
+    console.log("[settings] Payment details loaded from environment variables");
+  }
+})();
+
 // GET /api/settings/payment-details — реквизиты оплаты
 router.get("/payment-details", requireAuth, async (_req, res) => {
-  res.json(paymentDetailsCache ?? {
-    bankName: "",
-    cardNumber: "",
-    holder: "",
-    comment: "Оплата за токены Сфера",
-  });
+  // Return null if payment details are not configured
+  if (!paymentDetailsCache || !paymentDetailsCache.cardNumber) {
+    return res.json(null);
+  }
+  res.json(paymentDetailsCache);
 });
 
 // PUT /api/settings/payment-details — сохранить реквизиты (admin)
