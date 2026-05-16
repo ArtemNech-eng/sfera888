@@ -1,3 +1,9 @@
+[build]
+buildCommand = "pnpm run build"
+
+[build.environment]
+BASE_PATH = "/crm/"
+
 [deploy]
 preDeployCommand = "pnpm run db:migrate && pnpm --filter @workspace/db run push"
 
