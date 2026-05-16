@@ -1,0 +1,2 @@
+[deploy]
+preDeployCommand = "pnpm run db:migrate"
