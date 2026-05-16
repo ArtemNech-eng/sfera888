@@ -553,6 +553,21 @@ export default function Orders() {
     onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
   });
 
+  const setStatusMutation = useMutation({
+    mutationFn: async ({ orderId, status }: { orderId: number; status: string }) => {
+      const r = await fetch(`/api/orders/${orderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ status }),
+      });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Ошибка"); }
+      return r.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/orders"] }),
+    onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
+  });
+
   interface PendingDispatch {
     orderId: number;
     leadId: number | null;
@@ -576,7 +591,7 @@ export default function Orders() {
   const openOrder = openDispatchId ? orders?.find(o => o.id === openDispatchId) : null;
   const respondents = dispatchData?.dispatches.filter(d => d.status === "responded") ?? [];
   const rejectedDispatches = dispatchData?.dispatches.filter(d => d.status === "rejected") ?? [];
-  const pendingDispatched = dispatchData?.dispatches.filter(d => d.status === "dispatched") ?? [];
+  const pendingDispatched = dispatchData?.dispatches.filter(d => d.status === "sent") ?? [];
 
   const pendingAmountOrders = orders?.filter(o => (o as any).proposedAmount && !(o as any).orderAmount) ?? [];
   const cancellationOrders = orders?.filter(o => o.status === "cancellation_requested" as any) ?? [];
@@ -994,11 +1009,12 @@ export default function Orders() {
                 {isLoading ? (
                   <div className="flex items-center justify-center h-40"><Loader2 className="w-7 h-7 animate-spin text-primary" /></div>
                 ) : (
-                  <div className="grid grid-cols-3 gap-4 min-h-[300px]">
+                  <div className="grid grid-cols-4 gap-4 min-h-[300px]">
                     {[
                       { key: "waiting_master", label: "Ожидает мастера", color: "bg-amber-50 border-amber-200", headerColor: "bg-amber-100 text-amber-800", dot: "bg-amber-400" },
                       { key: "dispatching",    label: "Рассылка идёт",   color: "bg-blue-50 border-blue-200",   headerColor: "bg-blue-100 text-blue-800",   dot: "bg-blue-400" },
                       { key: "master_assigned",label: "Мастер назначен", color: "bg-emerald-50 border-emerald-200", headerColor: "bg-emerald-100 text-emerald-800", dot: "bg-emerald-500" },
+                      { key: "in_progress",    label: "В работе",        color: "bg-violet-50 border-violet-200",   headerColor: "bg-violet-100 text-violet-800",   dot: "bg-violet-500" },
                     ].map(col => {
                       const colOrders = filteredOrders.filter(o => {
                         if (col.key === "dispatching") return (o as any).dispatchStatus === "dispatching";
@@ -1361,6 +1377,8 @@ export default function Orders() {
                                 : null;
                               const text = openOrder.status === "master_assigned"
                                 ? `Здравствуйте! Мастер ${master} назначен на вашу заявку (${service}${city ? `, ${city}` : ""}).${scheduled ? ` Дата визита: ${scheduled}.` : ""} По вопросам пишите или звоните — sfera-master.ru`
+                                : openOrder.status === "in_progress"
+                                ? `Здравствуйте! Мастер ${master} уже выполняет работы по вашему заказу (${service}${city ? `, ${city}` : ""}). По вопросам пишите или звоните — sfera-master.ru`
                                 : `Здравствуйте! Ваша заявка (${service}${city ? `, ${city}` : ""}) принята в обработку. Мы свяжемся с вами в ближайшее время — sfera-master.ru`;
                               navigator.clipboard.writeText(text).then(() => {
                                 setNotifCopied(true);
@@ -1425,16 +1443,6 @@ export default function Orders() {
                           <button onClick={() => { setEditAmountId(openDispatchId); setEditAmountValue(""); }} className="text-xs text-primary hover:underline flex items-center gap-1">
                             <Pencil className="w-3 h-3" />Указать сумму
                           </button>
-                          <button
-                            onClick={() => {
-                              setEditAmountId(openDispatchId);
-                              setEditAmountValue("");
-                              toast({ title: "Укажите сумму заказа", description: "Чтобы добавить оплату комиссии, сначала укажите сумму заказа" });
-                            }}
-                            className="mt-1 inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 border border-emerald-200 rounded-lg text-[10px] font-medium text-emerald-700 hover:bg-emerald-100 transition-colors"
-                          >
-                            <Banknote className="w-2.5 h-2.5" />Оплата комиссии
-                          </button>
                         </div>
                       );
                     })()}
@@ -1481,6 +1489,26 @@ export default function Orders() {
                       >
                         {restoreOrderMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
                         Восстановить заказ
+                      </button>
+                    )}
+                    {openOrder.status === "master_assigned" && (
+                      <button
+                        onClick={() => setStatusMutation.mutate({ orderId: openDispatchId!, status: "in_progress" })}
+                        disabled={setStatusMutation.isPending}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-50 border border-violet-300 rounded-lg text-xs font-medium text-violet-700 hover:bg-violet-100 transition-colors disabled:opacity-50"
+                      >
+                        {setStatusMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Clock className="w-3 h-3" />}
+                        В работе
+                      </button>
+                    )}
+                    {openOrder.status === "in_progress" && (
+                      <button
+                        onClick={() => { if (confirm(`Завершить заказ #${openDispatchId}?`)) setStatusMutation.mutate({ orderId: openDispatchId!, status: "completed" }); }}
+                        disabled={setStatusMutation.isPending}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 text-white border border-emerald-500 rounded-lg text-xs font-medium hover:bg-emerald-600 transition-colors disabled:opacity-50"
+                      >
+                        {setStatusMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
+                        Завершить
                       </button>
                     )}
                     {openOrder.status !== "cancelled" && openOrder.status !== "completed" && !showCancelDialog && (
@@ -1764,7 +1792,7 @@ export default function Orders() {
                       </div>
                     )}
 
-                    {respondents.length === 0 && rejectedDispatches.length === 0 && (
+                    {respondents.length === 0 && rejectedDispatches.length === 0 && (openOrder as any).dispatchStatus !== "assigned" && (
                       <div className="text-center py-6 text-sm text-muted-foreground">
                         <Clock className="w-8 h-8 mx-auto mb-2 text-muted-foreground/40" />
                         Ожидаем откликов от мастеров...
