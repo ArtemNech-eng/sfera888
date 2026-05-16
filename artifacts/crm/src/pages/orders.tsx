@@ -10,7 +10,7 @@ import {
   DollarSign, Check, Pencil, AlertCircle, MessageSquare, Trash2, Search,
   ClipboardList, CalendarDays, ChevronDown, AlertTriangle,
   FileText, History, Timer, RefreshCw, CopyX, XCircle, ReceiptText, ExternalLink, Plus, Copy,
-  LayoutList, Kanban, Bell, Printer, Lock, Banknote,
+  Bell, Printer, Lock, Banknote,
 } from "lucide-react";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -209,7 +209,6 @@ export default function Orders() {
   const [location, setLocation] = useLocation();
   const [openDispatchId, setOpenDispatchId] = useState<number | null>(null);
   const [editAmountId, setEditAmountId] = useState<number | null>(null);
-  const [viewMode, setViewMode] = useState<"list" | "kanban">("list");
   const [notifCopied, setNotifCopied] = useState(false);
   const [editAmountValue, setEditAmountValue] = useState("");
   const [search, setSearch] = useState(() => {
@@ -984,95 +983,8 @@ export default function Orders() {
                   </div>
                 )}
 
-                {/* View toggle */}
-                <div className="ml-auto flex items-center gap-0.5 bg-muted/50 border border-border/50 rounded-xl p-0.5">
-                  <button
-                    onClick={() => setViewMode("list")}
-                    title="Таблица"
-                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${viewMode === "list" ? "bg-white shadow-sm text-primary" : "text-muted-foreground hover:text-foreground"}`}
-                  >
-                    <LayoutList className="w-3.5 h-3.5" />Список
-                  </button>
-                  <button
-                    onClick={() => setViewMode("kanban")}
-                    title="Доска"
-                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${viewMode === "kanban" ? "bg-white shadow-sm text-primary" : "text-muted-foreground hover:text-foreground"}`}
-                  >
-                    <Kanban className="w-3.5 h-3.5" />Доска
-                  </button>
-                </div>
               </div>
             </div>
-            {viewMode === "kanban" ? (
-              /* ── KANBAN VIEW ── */
-              <div className="p-4">
-                {isLoading ? (
-                  <div className="flex items-center justify-center h-40"><Loader2 className="w-7 h-7 animate-spin text-primary" /></div>
-                ) : (
-                  <div className="grid grid-cols-4 gap-4 min-h-[300px]">
-                    {[
-                      { key: "waiting_master", label: "Ожидает мастера", color: "bg-amber-50 border-amber-200", headerColor: "bg-amber-100 text-amber-800", dot: "bg-amber-400" },
-                      { key: "dispatching",    label: "Рассылка идёт",   color: "bg-blue-50 border-blue-200",   headerColor: "bg-blue-100 text-blue-800",   dot: "bg-blue-400" },
-                      { key: "master_assigned",label: "Мастер назначен", color: "bg-emerald-50 border-emerald-200", headerColor: "bg-emerald-100 text-emerald-800", dot: "bg-emerald-500" },
-                      { key: "in_progress",    label: "В работе",        color: "bg-violet-50 border-violet-200",   headerColor: "bg-violet-100 text-violet-800",   dot: "bg-violet-500" },
-                    ].map(col => {
-                      const colOrders = filteredOrders.filter(o => {
-                        if (col.key === "dispatching") return (o as any).dispatchStatus === "dispatching";
-                        if (col.key === "waiting_master") return o.status === "waiting_master" && (o as any).dispatchStatus !== "dispatching";
-                        return o.status === col.key;
-                      });
-                      return (
-                        <div key={col.key} className={`rounded-2xl border ${col.color} flex flex-col`}>
-                          <div className={`px-4 py-2.5 rounded-t-2xl flex items-center gap-2 ${col.headerColor}`}>
-                            <div className={`w-2 h-2 rounded-full ${col.dot}`} />
-                            <span className="text-xs font-semibold">{col.label}</span>
-                            <span className="ml-auto text-xs font-bold">{colOrders.length}</span>
-                          </div>
-                          <div className="flex-1 p-2 space-y-2 overflow-y-auto max-h-[520px]">
-                            {colOrders.length === 0 ? (
-                              <p className="text-xs text-muted-foreground text-center py-6">Пусто</p>
-                            ) : colOrders.map(order => {
-                              const confirmed = (order as any).orderAmount ? Number((order as any).orderAmount) : null;
-                              return (
-                                <div
-                                  key={order.id}
-                                  onClick={() => setOpenDispatchId(order.id)}
-                                  className="bg-white rounded-xl border border-border/50 p-3 cursor-pointer hover:shadow-md hover:border-primary/30 transition-all group"
-                                >
-                                  <div className="flex items-start justify-between gap-2 mb-2">
-                                    <span className="text-[10px] font-bold text-muted-foreground">#{order.id}</span>
-                                    {(order as any).dispatchStatus === "dispatching" && (
-                                      <span className="inline-flex items-center gap-1 text-[9px] bg-blue-100 text-blue-700 rounded-full px-1.5 py-0.5 font-medium"><Clock className="w-2.5 h-2.5" />Разослано</span>
-                                    )}
-                                    {order.status === "master_assigned" && (
-                                      <span className="inline-flex items-center gap-1 text-[9px] bg-emerald-100 text-emerald-700 rounded-full px-1.5 py-0.5 font-medium"><CheckCircle2 className="w-2.5 h-2.5" />Назначен</span>
-                                    )}
-                                  </div>
-                                  <p className="text-sm font-semibold text-foreground leading-tight mb-1 line-clamp-1">{order.serviceType}</p>
-                                  <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1">
-                                    <MapPin className="w-3 h-3 flex-shrink-0" />
-                                    <span className="truncate">{order.city}{order.district ? `, ${order.district}` : ""}</span>
-                                  </div>
-                                  {confirmed && <p className="text-xs font-semibold text-emerald-700 mt-1">{fmt(confirmed)}</p>}
-                                  {order.masterName && (
-                                    <div className="flex items-center gap-1.5 mt-2">
-                                      <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center text-[9px] font-bold text-primary">
-                                        {order.masterName.charAt(0)}
-                                      </div>
-                                      <span className="text-xs text-muted-foreground truncate">{order.masterName}</span>
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
                 <thead className="bg-slate-50/50 text-muted-foreground font-medium border-b border-border/50 text-xs">
@@ -1261,7 +1173,6 @@ export default function Orders() {
                 </tbody>
               </table>
             </div>
-            )}
           </div>
         </div>
 
