@@ -127,7 +127,11 @@ function formatMaster(m: any) {
 
 // GET /api/masters
 router.get("/", allMasterRoles, async (_req, res) => {
+  const startTime = Date.now();
+  console.log(`[masters] Loading masters...`);
+  
   const masters = await db.select().from(mastersTable).where(isNull(mastersTable.deletedAt)).orderBy(mastersTable.createdAt);
+  console.log(`[masters] Loaded ${masters.length} masters in ${Date.now() - startTime}ms`);
 
   // Count paid commissions per master (accurate conversion numerator — excludes cancelled orders)
   const paidCounts = await db
@@ -137,6 +141,7 @@ router.get("/", allMasterRoles, async (_req, res) => {
     .groupBy(transactionsTable.masterId);
   const paidMap = new Map(paidCounts.map(r => [r.masterId, Number(r.cnt)]));
 
+  console.log(`[masters] Total request time: ${Date.now() - startTime}ms`);
   res.json(masters.map(m => ({ ...formatMaster(m), paidOrdersCount: paidMap.get(m.id) ?? 0 })));
 });
 
