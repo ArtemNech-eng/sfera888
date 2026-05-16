@@ -474,8 +474,13 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
                 {hasCommissionLeft && (
                   <DropdownMenuItem
                     onClick={() => {
-                      const amount = Math.min(row.original.commissionLeft, 5000);
-                      if (confirm(`Принять частичную оплату ${fmtMoney(amount)} по заказу #${row.original.orderId}?`)) {
+                      const input = window.prompt(`Сумма оплаты (остаток ${fmtMoney(row.original.commissionLeft)}):`, String(row.original.commissionLeft));
+                      if (input === null) return;
+                      const amount = parseFloat(input.replace(/[^0-9.]/g, ""));
+                      if (!amount || amount <= 0 || amount > row.original.commissionLeft + 0.01) {
+                        alert("Некорректная сумма"); return;
+                      }
+                      if (confirm(`Принять оплату ${fmtMoney(amount)} по заказу #${row.original.orderId}?`)) {
                         partialPayment.mutate({ orderId: row.original.orderId, amount });
                       }
                     }}
@@ -658,8 +663,13 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
                 )}
                 {row.commissionLeft > 0 && (
                   <Button variant="default" size="sm" onClick={() => {
-                    const amount = Math.min(row.commissionLeft, 5000);
-                    partialPayment.mutate({ orderId: row.orderId, amount });
+                    const input = window.prompt(`Сумма оплаты (остаток ${fmtMoney(row.commissionLeft)}):`, String(row.commissionLeft));
+                    if (input === null) return;
+                    const amount = parseFloat(input.replace(/[^0-9.]/g, ""));
+                    if (!amount || amount <= 0 || amount > row.commissionLeft + 0.01) { alert("Некорректная сумма"); return; }
+                    if (confirm(`Принять оплату ${fmtMoney(amount)} по заказу #${row.orderId}?`)) {
+                      partialPayment.mutate({ orderId: row.orderId, amount });
+                    }
                   }}>
                     💰 Оплата
                   </Button>

@@ -21,8 +21,8 @@
 //     generatedAt: string;
 //   }
 import { Router } from "express";
-import { db, ordersTable, mastersTable, leadsTable, receiptsTable, transactionsTable, transactionPaymentsTable, orderDispatchesTable } from "@workspace/db";
-import { inArray, isNull, eq, and, gte, sql, desc, asc, count } from "drizzle-orm";
+import { db, ordersTable, mastersTable, leadsTable, receiptsTable, transactionsTable, transactionPaymentsTable, orderDispatchesTable, orderStatusLogsTable } from "@workspace/db";
+import { inArray, isNull, eq, and, gte, sql, desc } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth.js";
 import { workBoardBus, notifyWorkBoardChanged } from "./work-board.js";
 import { z } from "zod";
@@ -145,21 +145,16 @@ function determineColumnKey(
   // Problem detection (highest priority)
   if (problem) return "problem";
 
-  if (order.status === "completed") return "closed_24h";
-
-  // commission_left: order amount confirmed but commission not fully paid (still active)
-  if (orderAmount > 0 && commissionUnpaidAmount > 0 && (order.status === "in_progress" || order.status === "master_assigned")) {
+  // commission_left: confirmed order amount with unpaid commission (any active or completed status)
+  if (commissionUnpaidAmount > 0 && (order.status === "in_progress" || order.status === "master_assigned" || order.status === "completed")) {
     return "commission_left";
   }
 
+  if (order.status === "completed") return "closed_24h";
+
   // Receipt with prepayment confirmed
   if (receipt && receipt.prepaymentSeenAt) {
-    const commTotal = calcCommission(total);
-    const prepaymentDeducted = 0; // will be calculated later
-    const totalPartialPaid = 0; // will be calculated later
-    const commPaid = prepaymentDeducted + totalPartialPaid;
-    const commLeft = Math.max(0, commTotal - commPaid);
-    return commLeft > 0 ? "commission_left" : "estimate_paid";
+    return commissionUnpaidAmount > 0 ? "commission_left" : "estimate_paid";
   }
 
   // estimate_unpaid: receipt exists, prepayment not confirmed
@@ -213,27 +208,17 @@ async function buildTableData(params: QueryParams): Promise<{
   // Apply search filter (will filter after building cards)
   const searchTerm = params.search?.toLowerCase();
 
-  // Count total orders matching base filters (for pagination)
-  const countWhere = and(baseWhere, masterFilter);
-  const [{ totalCount }] = await db.select({ totalCount: count() }).from(ordersTable).where(countWhere);
-  const total = Number(totalCount);
-
-  // Calculate offset for pagination
-  const offset = (params.page - 1) * params.limit;
-
-  // Fetch orders with pagination
+  // Fetch ALL orders first (pagination applied after in-memory filtering for accurate totals)
   const orders = await db
     .select()
     .from(ordersTable)
     .where(and(baseWhere, masterFilter))
-    .orderBy(desc(ordersTable.createdAt)) // default order
-    .limit(params.limit)
-    .offset(offset);
+    .orderBy(desc(ordersTable.createdAt));
 
   if (orders.length === 0) {
     return {
       rows: [],
-      total,
+      total: 0,
       page: params.page,
       limit: params.limit,
       funnel: { activeCount: 0, sumInWork: 0, sumPaid: 0, expectedCommission: 0, conversionPct: 0, problemCount: 0 },
@@ -289,6 +274,28 @@ async function buildTableData(params: QueryParams): Promise<{
   // Build maps for quick lookups
   const masterMap = new Map(masters.map(m => [m.id, m]));
   const leadMap = new Map(leads.map(l => [l.id, l]));
+
+  // Recover names for hard-deleted masters via assignment logs
+  const missingMasterIds = [...new Set(orders.map(o => o.masterId).filter((id): id is number => !!id && !masterMap.has(id)))];
+  const recoveredMasterNames = new Map<number, string>(); // masterId → alias
+  if (missingMasterIds.length > 0) {
+    const missingOrderIds = orders.filter(o => o.masterId && missingMasterIds.includes(o.masterId)).map(o => o.id);
+    const assignLogs = await db
+      .select({ orderId: orderStatusLogsTable.orderId, note: orderStatusLogsTable.note, newStatus: orderStatusLogsTable.newStatus })
+      .from(orderStatusLogsTable)
+      .where(and(inArray(orderStatusLogsTable.orderId, missingOrderIds), eq(orderStatusLogsTable.newStatus, "master_assigned")));
+    const orderToMaster = new Map(orders.filter(o => o.masterId).map(o => [o.id, o.masterId!]));
+    for (const log of assignLogs) {
+      if (!log.note) continue;
+      const m = log.note.match(/Назначен(?:\s+вручную)?:\s*(.+)/);
+      if (m?.[1]) {
+        const masterId = orderToMaster.get(log.orderId);
+        if (masterId && !recoveredMasterNames.has(masterId)) {
+          recoveredMasterNames.set(masterId, m[1].trim());
+        }
+      }
+    }
+  }
   const receiptMap = new Map<number, typeof receipts[0]>();
   for (const r of receipts) {
     const existing = receiptMap.get(r.orderId);
@@ -341,23 +348,35 @@ async function buildTableData(params: QueryParams): Promise<{
     const orderPartials = realTxs.flatMap((t) => partialsByTx.get(t.id) ?? []);
     const orderTotalPartialPaid = orderPartials.reduce((s, p) => s + safeNumber(p.amount, 0), 0);
     
-    const commissionUnpaidAmount = realTxs.filter((t) => t.paymentStatus !== "paid")
+    const commissionUnpaidFromTxs = realTxs.filter((t) => t.paymentStatus !== "paid")
       .reduce((s, t) => {
         const pd = safeNumber(t.prepaymentDeducted, 0);
         const tp = (partialsByTx.get(t.id) ?? []).reduce((ss, p) => ss + safeNumber(p.amount, 0), 0);
         return s + Math.max(0, safeNumber(t.commission) - pd - tp);
       }, 0);
 
+    // For completed orders with no transactions, compute implicit commission debt from order/receipt amount
+    const implicitCommissionDebt = (o.status === "completed" && realTxs.length === 0)
+      ? Math.max(0, (orderAmount > 0 ? calcCommission(orderAmount) : total > 0 ? calcCommission(total) : 0) - orderPrepDeduct - orderTotalPartialPaid)
+      : 0;
+
+    const commissionUnpaidAmount = commissionUnpaidFromTxs + implicitCommissionDebt;
+
     const address = [o.city, o.district].filter(Boolean).join(", ");
     const title = (o as any).serviceType ?? "Заявка";
-    const masterAlias = master?.alias ?? null;
+    const masterAlias = master?.alias ?? (o.masterId ? recoveredMasterNames.get(o.masterId) ?? null : null);
+
+    // Pre-calculate commission totals (needed for problem detection)
+    const commTotal = total > 0 ? calcCommission(total) : orderAmount > 0 ? calcCommission(orderAmount) : 0;
+    const commPaid = orderPrepDeduct + orderTotalPartialPaid;
+    const commLeft = Math.max(0, commTotal - commPaid);
 
     // Problem detection (same logic as work-board.ts)
     const opNote = (o as any).operatorNote as string | undefined;
     const isAiNote = opNote?.startsWith("[ИИ]:") ?? false;
     let problem: string | null = null;
     if (o.status === "cancellation_requested") problem = "Запрос на отмену от мастера";
-    else if (opNote && !isAiNote) problem = "Помечена оператором: " + opNote.slice(0, 60);
+    else if (opNote && !isAiNote && commLeft > 0) problem = "Помечена оператором: " + opNote.slice(0, 60);
     else if (!receipt && o.assignedAt && now - new Date(o.assignedAt).getTime() > 48 * 3_600_000) problem = "Без сметы более 48 часов";
     else if (receipt && !(receipt as any).prepaymentSeenAt && now - new Date(receipt.createdAt).getTime() > 48 * 3_600_000) problem = "Оплата не подтверждена > 48ч";
     else if (commissionUnpaidAmount > 0 && o.status === "completed" && o.completedAt && now - new Date(o.completedAt).getTime() > 7 * 86_400_000) problem = "Комиссия не оплачена > 7 дней";
@@ -389,9 +408,6 @@ async function buildTableData(params: QueryParams): Promise<{
 
     // Build commission object if applicable
     let commissionObj = undefined;
-    const commTotal = total > 0 ? calcCommission(total) : orderAmount > 0 ? calcCommission(orderAmount) : 0;
-    const commPaid = orderPrepDeduct + orderTotalPartialPaid;
-    const commLeft = Math.max(0, commTotal - commPaid);
     
     if (commTotal > 0 || receipt) {
       const partialPaymentsList = orderPartials.map((p) => ({
@@ -503,6 +519,9 @@ async function buildTableData(params: QueryParams): Promise<{
       clientName: lead?.clientName ?? undefined,
     };
 
+    // Skip completed orders with 0 commission that are older than 14 days (archive them)
+    if (columnKey === "closed_24h" && ageMs > 14 * 86_400_000) continue;
+
     rows.push(row);
   }
 
@@ -534,9 +553,14 @@ async function buildTableData(params: QueryParams): Promise<{
   const totalAttempts = activeCount + (rows.filter(r => r.columnKey === "closed_24h").length);
   const conversionPct = totalAttempts > 0 ? Math.round((rows.filter(r => r.columnKey === "closed_24h").length / totalAttempts) * 100) : 0;
 
+  // Paginate after in-memory filtering (ensures total and pagination are accurate)
+  const filteredTotal = rows.length;
+  const offset = (params.page - 1) * params.limit;
+  const paginatedRows = rows.slice(offset, offset + params.limit);
+
   return {
-    rows,
-    total,
+    rows: paginatedRows,
+    total: filteredTotal,
     page: params.page,
     limit: params.limit,
     funnel: {

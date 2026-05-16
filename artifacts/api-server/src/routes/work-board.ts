@@ -282,12 +282,24 @@ async function buildBoard() {
     const orderPrepDeduct = realTxs.reduce((s, t) => s + safeNumber(t.prepaymentDeducted, 0), 0);
     const orderPartials = realTxs.flatMap((t) => partialsByTx.get(t.id) ?? []);
     const orderTotalPartialPaid = orderPartials.reduce((s, p) => s + safeNumber(p.amount, 0), 0);
-    const commissionUnpaidAmount = realTxs.filter((t) => t.paymentStatus !== "paid")
+    const commissionUnpaidFromTxs = realTxs.filter((t) => t.paymentStatus !== "paid")
       .reduce((s, t) => {
         const pd = safeNumber(t.prepaymentDeducted, 0);
         const tp = (partialsByTx.get(t.id) ?? []).reduce((ss, p) => ss + safeNumber(p.amount, 0), 0);
         return s + Math.max(0, safeNumber(t.commission) - pd - tp);
       }, 0);
+
+    // For completed orders with no transactions, compute implicit commission debt from order/receipt amount
+    const implicitCommissionDebt = (o.status === "completed" && realTxs.length === 0)
+      ? Math.max(0, (orderAmount > 0 ? calcCommission(orderAmount) : total > 0 ? calcCommission(total) : 0) - orderPrepDeduct - orderTotalPartialPaid)
+      : 0;
+
+    const commissionUnpaidAmount = commissionUnpaidFromTxs + implicitCommissionDebt;
+
+    // Pre-calculate commission totals for problem detection
+    const commTotalForProblem = total > 0 ? calcCommission(total) : orderAmount > 0 ? calcCommission(orderAmount) : 0;
+    const commPaidForProblem = orderPrepDeduct + orderTotalPartialPaid;
+    const commLeftForProblem = Math.max(0, commTotalForProblem - commPaidForProblem);
 
     const address = [o.city, o.district].filter(Boolean).join(", ");
     const title = (o as any).serviceType ?? "Заявка";
@@ -313,7 +325,7 @@ async function buildBoard() {
     const isAiNote = opNote?.startsWith("[ИИ]:") ?? false;
     let problem: string | null = null;
     if (o.status === "cancellation_requested") problem = "Запрос на отмену от мастера";
-    else if (opNote && !isAiNote) problem = "Помечена оператором: " + opNote.slice(0, 60);
+    else if (opNote && !isAiNote && commLeftForProblem > 0) problem = "Помечена оператором: " + opNote.slice(0, 60);
     else if (!receipt && o.assignedAt && now - new Date(o.assignedAt).getTime() > 48 * 3_600_000) problem = "Без сметы более 48 часов";
     else if (receipt && !(receipt as any).prepaymentSeenAt && now - new Date(receipt.createdAt).getTime() > 48 * 3_600_000) problem = "Оплата не подтверждена > 48ч";
     else if (commissionUnpaidAmount > 0 && o.status === "completed" && o.completedAt && now - new Date(o.completedAt).getTime() > 7 * 86_400_000) problem = "Комиссия не оплачена > 7 дней";
