@@ -35,12 +35,13 @@ router.post("/login", async (req, res) => {
   }
 
   req.session.userId = user.id;
+  console.log(`[auth] Saving session for user ${user.id}`);
   (req.session as any).save((err: unknown) => {
     if (err) {
-      console.error("session save error", err);
+      console.error("[auth] Session save error:", err);
       return res.status(500).json({ error: "Failed to create session" });
     }
-
+    console.log(`[auth] Session saved successfully for user ${user.id}`);
     return res.json({
       user: {
         id: user.id,
