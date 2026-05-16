@@ -5,6 +5,7 @@ import connectPgSimple from "connect-pg-simple";
 import pg from "pg";
 import cookieParser from "cookie-parser";
 import router from "./routes/index.js";
+import partnerPwaRouter from "./routes/partner-pwa.js";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
@@ -899,6 +900,7 @@ app.post("/api/manager-webhook", express.json(), async (req, res) => {
 });
 
 app.use("/api", router);
+app.use("/api/partner", partnerPwaRouter);
 
 // ── Serve CRM and master-pwa as static files (production deployment) ─────────
 // In development these are served by their own Vite dev servers via path routing.

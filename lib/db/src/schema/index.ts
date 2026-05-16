@@ -38,3 +38,5 @@ export * from "./service-token-prices";
 export * from "./master-wallet";
 export * from "./wallet-transactions";
 export * from "./token-price-history";
+export * from "./traffic-partners";
+export * from "./partner-billing-periods";

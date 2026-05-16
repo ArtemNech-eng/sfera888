@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, numeric, pgEnum, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, timestamp, numeric, pgEnum, index, integer, boolean, varchar } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -31,6 +31,11 @@ export const leadsTable = pgTable("leads", {
   deletedAt: timestamp("deleted_at"),
   cancellationReason: text("cancellation_reason"),
   statusUpdatedAt: timestamp("status_updated_at"),
+  trafficPartnerId: integer("traffic_partner_id"),
+  leadChannel: varchar("lead_channel", { length: 100 }).default("avito_partner"),
+  isPossibleDuplicate: boolean("is_possible_duplicate").default(false),
+  partnerLeadStatus: varchar("partner_lead_status", { length: 50 }),
+  partnerRejectionReason: varchar("partner_rejection_reason", { length: 500 }),
 }, (t) => ({
   // Поддержка частых выборок: задачи "Что делать сейчас", лента активных заявок,
   // быстрый поиск по телефону при создании заявки.
