@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, timestamp, numeric, pgEnum, boolean, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, numeric, pgEnum, boolean, index, varchar } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { leadsTable } from "./leads";
@@ -55,6 +55,8 @@ export const ordersTable = pgTable("orders", {
   masterComment: text("master_comment"),
   photos: text("photos").array(),
   source: text("source").notNull().default("crm"),
+  paymentModel: varchar("payment_model", { length: 50 }).notNull().default("token"),
+  tokensCharged: numeric("tokens_charged", { precision: 10, scale: 2 }).notNull().default("0"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   deletedAt: timestamp("deleted_at"),

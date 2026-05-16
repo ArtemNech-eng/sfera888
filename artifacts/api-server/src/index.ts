@@ -1,5 +1,5 @@
 import app from "./app";
-import { db, usersTable, voronkaColumnsTable, mastersTable, ordersTable, orderDispatchesTable } from "@workspace/db";
+import { db, usersTable, voronkaColumnsTable, mastersTable, ordersTable, orderDispatchesTable, tokenPackagesTable, serviceTokenPricesTable } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { eq, inArray, and, lte, isNull } from "drizzle-orm";
 import { hashPassword } from "./lib/auth.js";
@@ -262,6 +262,105 @@ async function runMigrations() {
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `);
+  // Add refund_requested to order_status enum (safe — IF NOT EXISTS via DO block)
+  await db.execute(sql`
+    DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_enum
+        WHERE enumlabel = 'refund_requested'
+          AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'order_status')
+      ) THEN
+        ALTER TYPE order_status ADD VALUE 'refund_requested';
+      END IF;
+    END $$
+  `);
+  // Token monetization tables
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS token_packages (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      tokens_count NUMERIC(10,2) NOT NULL,
+      price_rub INTEGER NOT NULL,
+      price_per_token NUMERIC(10,2) NOT NULL,
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS service_token_prices (
+      id SERIAL PRIMARY KEY,
+      service_name VARCHAR(255) NOT NULL,
+      service_key VARCHAR(100) NOT NULL UNIQUE,
+      tokens_cost NUMERIC(10,2) NOT NULL,
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS master_wallet (
+      id SERIAL PRIMARY KEY,
+      master_id INTEGER NOT NULL UNIQUE REFERENCES masters(id),
+      tokens_balance NUMERIC(10,2) NOT NULL DEFAULT 0,
+      total_tokens_purchased NUMERIC(10,2) NOT NULL DEFAULT 0,
+      total_tokens_spent NUMERIC(10,2) NOT NULL DEFAULT 0,
+      total_tokens_refunded NUMERIC(10,2) NOT NULL DEFAULT 0,
+      total_rub_spent INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS wallet_transactions (
+      id SERIAL PRIMARY KEY,
+      master_id INTEGER NOT NULL REFERENCES masters(id),
+      type VARCHAR(50) NOT NULL,
+      tokens_amount NUMERIC(10,2) NOT NULL,
+      rub_amount INTEGER,
+      package_id INTEGER REFERENCES token_packages(id),
+      order_id INTEGER REFERENCES orders(id),
+      reason TEXT,
+      created_by VARCHAR(100) NOT NULL DEFAULT 'system',
+      status VARCHAR(50) NOT NULL DEFAULT 'completed',
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS wallet_transactions_master_idx ON wallet_transactions(master_id, created_at DESC)
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS token_price_history (
+      id SERIAL PRIMARY KEY,
+      entity_type VARCHAR(50) NOT NULL,
+      entity_id INTEGER NOT NULL,
+      field_name VARCHAR(100) NOT NULL,
+      old_value TEXT,
+      new_value TEXT,
+      changed_by VARCHAR(100) NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  // Add payment_model and tokens_charged to orders
+  await db.execute(sql`
+    ALTER TABLE orders
+      ADD COLUMN IF NOT EXISTS payment_model VARCHAR(50) NOT NULL DEFAULT 'token',
+      ADD COLUMN IF NOT EXISTS tokens_charged NUMERIC(10,2) NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMP
+  `);
+  // Add credit tracking columns to master_wallet
+  await db.execute(sql`
+    ALTER TABLE master_wallet
+      ADD COLUMN IF NOT EXISTS credit_tokens_issued NUMERIC(10,2) NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS credit_tokens_spent NUMERIC(10,2) NOT NULL DEFAULT 0
+  `);
+  // Mark all existing orders as commission model
+  await db.execute(sql`
+    UPDATE orders SET payment_model = 'commission'
+    WHERE payment_model = 'token' AND created_at < NOW()
+  `);
   console.log("[startup] Migrations applied");
 }
 
@@ -321,6 +420,33 @@ async function seedVoronkaColumns() {
       await db.update(voronkaColumnsTable).set({ receivesOrders: true }).where(eq(voronkaColumnsTable.id, naObyekteCol.id));
       console.log("[startup] Updated 'На объекте' receivesOrders → true");
     }
+  }
+}
+
+// Seed default token packages and service prices if they don't exist yet.
+async function seedTokenData() {
+  const existingPackages = await db.select().from(tokenPackagesTable);
+  if (existingPackages.length === 0) {
+    await db.insert(tokenPackagesTable).values([
+      { name: "Старт",   tokensCount: "1", priceRub: 5000,  pricePerToken: "5000.00", sortOrder: 1 },
+      { name: "Оптима",  tokensCount: "3", priceRub: 12000, pricePerToken: "4000.00", sortOrder: 2 },
+      { name: "Профи",   tokensCount: "5", priceRub: 15000, pricePerToken: "3000.00", sortOrder: 3 },
+    ]);
+    console.log("[startup] Seeded default token packages");
+  }
+
+  const existingPrices = await db.select().from(serviceTokenPricesTable);
+  if (existingPrices.length === 0) {
+    await db.insert(serviceTokenPricesTable).values([
+      { serviceName: "Обои",                serviceKey: "oboi",      tokensCost: "1", sortOrder: 1 },
+      { serviceName: "Шпаклёвка",           serviceKey: "shpaklevka",tokensCost: "1", sortOrder: 2 },
+      { serviceName: "Покраска",            serviceKey: "pokraska",  tokensCost: "1", sortOrder: 3 },
+      { serviceName: "Плитка",              serviceKey: "plitka",    tokensCost: "2", sortOrder: 4 },
+      { serviceName: "Санузел под ключ",    serviceKey: "sanuzul",   tokensCost: "3", sortOrder: 5 },
+      { serviceName: "Ремонт квартиры",     serviceKey: "remont",    tokensCost: "5", sortOrder: 6 },
+      { serviceName: "Другое",              serviceKey: "other",     tokensCost: "1", sortOrder: 7 },
+    ]);
+    console.log("[startup] Seeded default service token prices");
   }
 }
 
@@ -491,6 +617,7 @@ runMigrations()
     seedVoronkaColumns().catch(console.error);
     grantPassportVerifiedToActiveMasters().catch(console.error);
     recalculateMasterVoronkaColumns().catch(console.error);
+    seedTokenData().catch(console.error);
     checkOverdueTransactions().catch(console.error);
     autoExpireDispatches().catch(console.error);
     autoCloseNoMasterOrders().catch(console.error);

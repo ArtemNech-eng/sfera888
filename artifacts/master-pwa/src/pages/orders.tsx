@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import {
   ChevronDown, ChevronUp, MapPin, Phone, Ruler, Calendar,
   Camera, CheckCircle2, Image, FileText, Loader2, X, XCircle,
-  ReceiptText, Copy, Check, Plus, Trash2, Printer,
+  ReceiptText, Copy, Check, Plus, Trash2, Printer, Coins, RotateCcw,
 } from "lucide-react";
 
 function printEstimate(
@@ -130,6 +130,9 @@ interface Order {
   clientPhone: string | null;
   createdAt: string;
   cancelReason?: string | null;
+  paymentModel?: string;
+  tokensCharged?: number | null;
+  assignedAt?: string | null;
 }
 
 const workStatusSteps = [
@@ -143,6 +146,7 @@ const statusLabel: Record<string, string> = {
   master_assigned: "Назначен",
   in_progress: "В работе",
   cancellation_requested: "Отмена запрошена",
+  refund_requested: "Возврат токена",
   completed: "Завершён",
   cancelled: "Отменён",
 };
@@ -736,6 +740,52 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
   const [showNewReceipt, setShowNewReceipt] = useState(false);
   const isActive = ["master_assigned", "in_progress"].includes(order.status);
   const isCancelRequested = order.status === "cancellation_requested";
+  const isRefundRequested = order.status === "refund_requested";
+
+  const [showRefund, setShowRefund] = useState(false);
+  const [refundReason, setRefundReason] = useState("");
+  const [refundCustom, setRefundCustom] = useState("");
+  const [submittingRefund, setSubmittingRefund] = useState(false);
+
+  const REFUND_REASONS = [
+    "Клиент не берёт трубку",
+    "Номер не существует",
+    "Клиент отказался до замера",
+    "Дубль / ошибочная заявка",
+    "Другое",
+  ];
+
+  const canRequestRefund = order.paymentModel === "token" &&
+    order.tokensCharged && order.tokensCharged > 0 &&
+    !isRefundRequested &&
+    order.status !== "completed" && order.status !== "cancelled" &&
+    !!order.assignedAt &&
+    (Date.now() - new Date(order.assignedAt).getTime()) < 48 * 60 * 60 * 1000;
+
+  const handleRefundSubmit = async () => {
+    const finalReason = refundReason === "Другое" && refundCustom.trim()
+      ? `Другое: ${refundCustom.trim()}`
+      : refundReason;
+    if (!finalReason) return;
+    setSubmittingRefund(true);
+    try {
+      const r = await fetch(`/api/master-pwa/orders/${order.id}/refund-request`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: finalReason }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error ?? "Ошибка");
+      toast.success(`Заявка на возврат ${data.tokensRequested} токен(а) отправлена`);
+      setShowRefund(false);
+      onRefresh();
+    } catch (e: any) {
+      toast.error(e.message ?? "Ошибка");
+    } finally {
+      setSubmittingRefund(false);
+    }
+  };
   const currentStepIdx = workStatusSteps.findIndex(s => s.key === order.masterWorkStatus);
 
   const fetchReceipts = async (showNotification = false) => {
@@ -1090,6 +1140,28 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
                   </button>
                 </div>
 
+                {/* Refund token button (token model, within 48h) */}
+                {canRequestRefund && (
+                  <div className="space-y-1">
+                    <button
+                      onClick={() => setShowRefund(true)}
+                      className="w-full h-10 rounded-xl border border-amber-300 text-amber-700 dark:text-amber-400 text-sm font-medium flex items-center justify-center gap-2 active:opacity-80 bg-amber-50 dark:bg-amber-900/20"
+                    >
+                      <RotateCcw size={15} />
+                      Запросить возврат токена ({order.tokensCharged} т.)
+                    </button>
+                    <p className="text-center text-[11px] text-muted-foreground">
+                      Доступно в течение 48 часов после отклика
+                    </p>
+                  </div>
+                )}
+                {isRefundRequested && (
+                  <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl px-3 py-2.5">
+                    <Coins size={15} className="text-amber-500 shrink-0" />
+                    <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">Заявка на возврат токена ожидает решения администратора</p>
+                  </div>
+                )}
+
                 <div className="space-y-1">
                   <button
                     onClick={() => setShowCancel(true)}
@@ -1123,6 +1195,55 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
           onDone={() => { setShowCancel(false); onRefresh(); }}
           onClose={() => setShowCancel(false)}
         />
+      )}
+
+      {/* Refund token modal */}
+      {showRefund && createPortal(
+        <div className="fixed inset-0 z-[70] flex items-end bg-black/40" onClick={() => setShowRefund(false)}>
+          <div className="w-full bg-background rounded-t-2xl pt-4 pb-8 px-4 space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="w-10 h-1 bg-border rounded-full mx-auto" />
+            <div className="flex items-center gap-2">
+              <Coins size={18} className="text-amber-500" />
+              <h3 className="font-bold text-base">Запрос на возврат токена</h3>
+            </div>
+            <p className="text-xs text-muted-foreground">Укажите причину возврата. Администратор рассмотрит заявку и вернёт {order.tokensCharged} токен(a) при одобрении.</p>
+            <div className="space-y-2">
+              {REFUND_REASONS.map(r => (
+                <button key={r} onClick={() => setRefundReason(r)}
+                  className={`w-full text-left px-4 py-3 rounded-xl border text-sm transition-all ${
+                    refundReason === r
+                      ? "border-amber-400 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 font-medium"
+                      : "border-border bg-card text-foreground"
+                  }`}>
+                  {r}
+                </button>
+              ))}
+              {refundReason === "Другое" && (
+                <textarea
+                  rows={2}
+                  placeholder="Опишите причину..."
+                  className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background resize-none outline-none focus:ring-2 focus:ring-amber-200"
+                  value={refundCustom}
+                  onChange={e => setRefundCustom(e.target.value)}
+                />
+              )}
+            </div>
+            <div className="flex gap-3 pt-1">
+              <button onClick={() => setShowRefund(false)}
+                className="flex-1 h-12 rounded-xl border border-border text-muted-foreground text-sm font-medium">
+                Отмена
+              </button>
+              <button
+                disabled={!refundReason || (refundReason === "Другое" && !refundCustom.trim()) || submittingRefund}
+                onClick={handleRefundSubmit}
+                className="flex-1 h-12 rounded-xl bg-amber-500 text-white text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2">
+                {submittingRefund ? <Loader2 size={16} className="animate-spin" /> : <RotateCcw size={16} />}
+                Отправить заявку
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
       {(showNewReceipt || editingReceipt) && (
         <ReceiptModal

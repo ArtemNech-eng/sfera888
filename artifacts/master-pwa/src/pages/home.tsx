@@ -9,7 +9,7 @@ import {
   MapPin, Calendar, MessageSquare, Clock,
   ChevronRight, X, Images, Wrench, Zap, PauseCircle,
   PlayCircle, Navigation, Users, Heart, ChevronDown, Briefcase,
-  Eye, EyeOff, Lock, FileText, Bot,
+  Eye, EyeOff, Lock, FileText, Bot, Coins,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -32,6 +32,8 @@ interface OrderCard {
   dispatchedAt: string | null;
   competitorCount: number;
   isRepeatClient: boolean;
+  tokensCost?: number;
+  paymentModel?: string;
 }
 
 interface PendingCard extends OrderCard { respondedAt: string | null; }
@@ -402,13 +404,109 @@ function RejectReasonSheet({ onConfirm, onCancel }: {
   );
 }
 
+// ─── Insufficient Tokens Screen ───────────────────────────────────────────────
+
+function InsufficientTokensScreen({
+  order,
+  walletBalance,
+  onClose,
+}: {
+  order: OrderCard;
+  walletBalance: number;
+  onClose: () => void;
+}) {
+  const [, setLocation] = useLocation();
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+
+  const handleContactAdmin = async () => {
+    setSending(true);
+    try {
+      await fetch("/api/master-pwa/contact-admin", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "token_request",
+          orderId: order.id,
+          message: `Мастер запросил тестовый токен / помощь по заявке #${order.leadId ?? order.id}`,
+        }),
+      });
+      setSent(true);
+    } catch {
+      setSent(true);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[70vh] px-6 text-center space-y-5">
+      <div className="text-6xl">🪙</div>
+      <div>
+        <h2 className="text-xl font-bold mb-2">Недостаточно токенов</h2>
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          У вас недостаточно токенов для отклика на этот заказ.
+        </p>
+      </div>
+
+      <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-2xl px-4 py-4 text-left w-full max-w-sm space-y-2">
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-muted-foreground">Нужно токенов</span>
+          <span className="font-bold text-amber-600 flex items-center gap-1">
+            <Coins size={13} /> {order.tokensCost ?? 1} т.
+          </span>
+        </div>
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-muted-foreground">Ваш баланс</span>
+          <span className="font-bold">{walletBalance} т.</span>
+        </div>
+      </div>
+
+      <p className="text-xs text-muted-foreground px-2 leading-relaxed">
+        Чтобы продолжить — пополните баланс или напишите администратору, если проходите тестовый период.
+      </p>
+
+      <div className="w-full max-w-sm space-y-3">
+        <button
+          onClick={() => { onClose(); setLocation("/wallet"); }}
+          className="w-full h-12 rounded-xl bg-amber-500 text-white font-semibold text-sm flex items-center justify-center gap-2"
+        >
+          <Coins size={16} /> Перейти в Кошелёк
+        </button>
+
+        {sent ? (
+          <div className="flex items-center justify-center gap-2 h-10 text-sm text-emerald-600 font-medium">
+            <CheckCircle2 size={16} /> Сообщение отправлено
+          </div>
+        ) : (
+          <button
+            onClick={handleContactAdmin}
+            disabled={sending}
+            className="w-full h-12 rounded-xl border border-border text-sm font-medium text-foreground flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            {sending
+              ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+              : <MessageSquare size={16} />}
+            Написать администратору
+          </button>
+        )}
+
+        <button onClick={onClose} className="w-full h-10 text-sm text-muted-foreground font-medium">
+          Закрыть
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Order Detail Sheet ───────────────────────────────────────────────────────
 
-function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
+function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock, walletBalance }: {
   order: OrderCard; onRespond: () => void; onReject: () => void; onClose: () => void;
-  fomoBlock?: FomoBlock | null;
+  fomoBlock?: FomoBlock | null; walletBalance?: number;
 }) {
-  const [state, setState] = useState<"idle" | "loading" | "success" | "constrained_success" | "fomo_blocked" | "needs_contract" | "rejecting">("idle");
+  const [state, setState] = useState<"idle" | "loading" | "success" | "constrained_success" | "fomo_blocked" | "needs_contract" | "insufficient_tokens" | "rejecting">("idle");
   const [contractFlags, setContractFlags] = useState<{ contractSigned: boolean; passportVerified: boolean }>({ contractSigned: false, passportVerified: false });
   const [constraintTags, setConstraintTags] = useState<string[]>([]);
   const [, setSheetLocation] = useLocation();
@@ -446,10 +544,19 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
   };
 
   const handleRespond = async () => {
+    if (order.paymentModel === "token" && (order.tokensCost ?? 1) > (walletBalance ?? 0)) {
+      setState("insufficient_tokens");
+      return;
+    }
     setState("loading");
     try {
       const result = await api.orders.respond(order.id, priceNote.trim() || undefined);
-      if (result?.needsContract) {
+      if (result?.insufficientTokens) {
+        setState("insufficient_tokens");
+      } else if (result?.tokenModel) {
+        toast.success("\u0417\u0430\u044f\u0432\u043a\u0430 \u0432\u0430\u0448\u0430! \u041a\u043e\u043d\u0442\u0430\u043a\u0442 \u043a\u043b\u0438\u0435\u043d\u0442\u0430 \u043e\u0442\u043a\u0440\u044b\u0442.");
+        onRespond();
+      } else if (result?.needsContract) {
         setContractFlags({ contractSigned: !!result.contractSigned, passportVerified: !!result.passportVerified });
         setState("needs_contract");
       } else if (result?.constraintTags?.length) {
@@ -459,8 +566,8 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
         setState("success");
       }
     } catch (e: any) {
-      toast.error(e.message ?? "Ошибка");
-      setState("idle");
+      if (e.status === 402 || (e.message ?? "").includes("токен")) setState("insufficient_tokens");
+      else { toast.error(e.message ?? "Ошибка"); setState("idle"); }
     }
   };
 
@@ -495,7 +602,13 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {state === "fomo_blocked" && fomoBlock ? (() => {
+        {state === "insufficient_tokens" ? (
+          <InsufficientTokensScreen
+            order={order}
+            walletBalance={walletBalance ?? 0}
+            onClose={onClose}
+          />
+        ) : state === "fomo_blocked" && fomoBlock ? (() => {
           const info = fomoBlock.type ? fomoTypeInfo[fomoBlock.type] : null;
           return (
             <div className="flex flex-col items-center justify-center min-h-[70vh] px-6 text-center space-y-5">
@@ -711,21 +824,44 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock }: {
         )}
       </div>
 
-      {state !== "success" && state !== "at_limit" && state !== "fomo_blocked" && state !== "needs_contract" && (
+      {state !== "success" && state !== "at_limit" && state !== "fomo_blocked" && state !== "needs_contract" && state !== "insufficient_tokens" && (
         <div className="shrink-0 bg-card border-t border-border px-4 py-4 space-y-2">
+          {order.paymentModel === "token" && order.tokensCost != null && (
+            <div className="flex items-center justify-between text-sm px-0.5 mb-0.5">
+              <span className="text-muted-foreground">Стоимость заявки</span>
+              <span className="flex items-center gap-1 font-semibold text-amber-600">
+                <Coins size={14} /> {order.tokensCost} токен(а)
+              </span>
+            </div>
+          )}
           {isFomoBlocked ? (
             <button onClick={handleRespond}
               className="w-full h-14 rounded-2xl bg-orange-500 text-white font-bold text-base flex items-center justify-center gap-2">
               <Lock size={20} />
               Отклик заблокирован
             </button>
+          ) : order.paymentModel === "token" && (order.tokensCost ?? 1) > (walletBalance ?? 0) ? (
+            <>
+              <button disabled
+                className="w-full h-14 rounded-2xl bg-slate-200 text-slate-400 font-bold text-base flex items-center justify-center gap-2 cursor-not-allowed">
+                <Coins size={20} /> Недостаточно токенов
+              </button>
+              <a href="/balance"
+                className="block text-center text-sm text-amber-600 font-medium hover:underline">
+                Пополнить баланс →
+              </a>
+            </>
           ) : (
             <button onClick={handleRespond} disabled={state !== "idle"}
               className="w-full h-14 rounded-2xl bg-primary text-primary-foreground font-bold text-base flex items-center justify-center gap-2 disabled:opacity-60">
               {state === "loading"
                 ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                : <CheckCircle2 size={22} />}
-              Откликнуться{priceNote.trim() ? " с предложением" : ""}
+                : order.paymentModel === "token"
+                  ? <Coins size={22} />
+                  : <CheckCircle2 size={22} />}
+              {order.paymentModel === "token"
+                ? `Откликнуться (${order.tokensCost ?? 1} т.)`
+                : `Откликнуться${priceNote.trim() ? " с предложением" : ""}`}
             </button>
           )}
           <button onClick={() => setShowRejectSheet(true)} disabled={state !== "idle"}
@@ -1138,7 +1274,14 @@ export default function HomePage() {
 
   const dismissSwipeHint = () => { localStorage.setItem(SWIPE_HINT_KEY, "1"); setShowSwipeHint(false); };
 
+  const walletBalance: number = data?.walletBalance ?? 0;
+
   const handleSwipeRespond = async (order: OrderCard) => {
+    // Token model: open detail sheet if balance insufficient
+    if (order.paymentModel === "token" && (order.tokensCost ?? 1) > walletBalance) {
+      setSelectedAvail(order);
+      return;
+    }
     const fomoBlock: FomoBlock | null = data?.fomoBlock ?? null;
     if (fomoBlock?.isBlocked) {
       api.fomoBlockPress(order.id, fomoBlock.reason ?? null).catch(() => {});
@@ -1199,6 +1342,12 @@ export default function HomePage() {
         </div>
         <div className="flex items-center gap-2">
           <AvailabilityToggle isAvailable={isAvailable} atLimit={atLimit} onChange={setIsAvailable} />
+          {(data?.walletBalance ?? 0) >= 0 && (
+            <a href="/balance" className="flex items-center gap-1 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-2.5 py-1.5 rounded-xl">
+              <Coins size={13} />
+              <span className="font-semibold text-sm">{data?.walletBalance ?? 0} т.</span>
+            </a>
+          )}
           <div className="flex items-center gap-1 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-2.5 py-1.5 rounded-xl">
             <Star size={13} fill="currentColor" />
             <span className="font-semibold text-sm">{master?.rating?.toFixed(1)}</span>
@@ -1321,6 +1470,19 @@ export default function HomePage() {
                       </div>
                     )}
                   </div>
+                  {/* Token cost row */}
+                  {order.paymentModel === "token" && order.tokensCost != null && (
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full">
+                        <Coins size={11} /> {order.tokensCost} токен(а)
+                      </span>
+                      {(order.tokensCost ?? 1) > walletBalance ? (
+                        <span className="text-xs text-slate-400 font-medium">Недостаточно токенов</span>
+                      ) : (
+                        <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Баланс: {walletBalance} т.</span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </button>
             </SwipeableCard>
@@ -1401,6 +1563,7 @@ export default function HomePage() {
           onReject={() => { setSelectedAvail(null); load(); }}
           onClose={() => setSelectedAvail(null)}
           fomoBlock={fomoBlock}
+          walletBalance={walletBalance}
         />
       )}
       {selectedPending && (

@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
-import { Home, ClipboardList, Wallet, User, MessageCircle } from "lucide-react";
+import { Home, ClipboardList, Wallet, User, MessageCircle, Coins } from "lucide-react";
 import { api } from "@/lib/api";
 
 const tabs = [
   { path: "/", icon: Home, label: "Главная" },
   { path: "/orders", icon: ClipboardList, label: "Заказы" },
+  { path: "/wallet", icon: Coins, label: "Кошелёк" },
   { path: "/chat", icon: MessageCircle, label: "Чат" },
-  { path: "/balance", icon: Wallet, label: "Баланс" },
   { path: "/profile", icon: User, label: "Профиль" },
 ];
 

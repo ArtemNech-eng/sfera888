@@ -191,6 +191,15 @@ app.get("/api/receipt/:token/data", async (req, res) => {
   }
 });
 
+// ── Avatar fallback (when Object Storage not configured) ────────────────────
+app.get("/api/masters/avatar/:filename", async (req, res) => {
+  // Return a transparent 1x1 pixel PNG as placeholder
+  const transparentPixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+  res.setHeader('Content-Type', 'image/png');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.send(transparentPixel);
+});
+
 // ── Public receipt page (no auth required) — served under /api/ so Replit's ──
 // ── deployment proxy doesn't intercept it (non-/api paths go to CRM static). ──
 app.get("/api/receipt/:token/print", async (req, res) => {

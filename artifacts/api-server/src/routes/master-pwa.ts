@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, mastersTable, ordersTable, orderDispatchesTable, transactionsTable, leadsTable, voronkaColumnsTable, masterMessagesTable, pushSubscriptionsTable, masterCheckinsTable, transactionPaymentsTable } from "@workspace/db";
+import { db, mastersTable, ordersTable, orderDispatchesTable, transactionsTable, leadsTable, voronkaColumnsTable, masterMessagesTable, pushSubscriptionsTable, masterCheckinsTable, transactionPaymentsTable, walletTransactionsTable } from "@workspace/db";
 import { maybeEarlyAssign } from "../lib/priorityAssign.js";
 import { eq, and, inArray, isNull, ne, asc, desc, gte } from "drizzle-orm";
 import { verifyPassword, hashPassword } from "../lib/auth.js";
@@ -9,6 +9,8 @@ import { objectStorageClient } from "../lib/objectStorage.js";
 import { getBotLink, sendOnboardingMemo, sendMaxMessage } from "../maxBot.js";
 import { notifyManagerMasterResponse, notifyManagerNewMaster } from "../managerBot.js";
 import { getFomoBlock, logFomoEvent, checkFomoTransition } from "../lib/fomoBlock.js";
+import { getOrderTokenCost, deductTokens, ensureWallet, checkTokenBalance } from "../lib/tokenWallet.js";
+import { sendPushToMaster } from "../lib/push.js";
 
 const avatarUpload = multer({
   storage: multer.memoryStorage(),
@@ -411,6 +413,21 @@ router.get("/home", requireMasterPwa, async (req, res) => {
   // Background: check if status changed (for unblock notifications)
   checkFomoTransition(masterId, master.isTestMaster).catch(() => {});
 
+  // Wallet balance for token model
+  const wallet = await ensureWallet(masterId);
+  const walletBalance = Number(wallet.tokensBalance);
+
+  // Enrich availableOrders with tokensCost
+  const allServiceTypes = [...new Set(availableOrders.map((o: any) => o.serviceType))];
+  const tokenCostMap = new Map<string, number>();
+  for (const st of allServiceTypes) {
+    tokenCostMap.set(st, await getOrderTokenCost(st));
+  }
+  for (const o of availableOrders) {
+    o.tokensCost = tokenCostMap.get(o.serviceType) ?? 1;
+    o.paymentModel = "token";
+  }
+
   res.json({
     master: {
       id: master.id,
@@ -429,6 +446,7 @@ router.get("/home", requireMasterPwa, async (req, res) => {
     pendingOrders,
     missedOrders,
     todayActivity,
+    walletBalance,
     activeOrders: activeOrders.map(o => ({
       id: o.id,
       leadId: o.leadId ?? null,
@@ -440,6 +458,9 @@ router.get("/home", requireMasterPwa, async (req, res) => {
       status: o.status,
       masterWorkStatus: o.masterWorkStatus ?? null,
       proposedAmount: o.proposedAmount ? Number(o.proposedAmount) : null,
+      paymentModel: (o as any).paymentModel ?? "token",
+      tokensCharged: (o as any).tokensCharged ? Number((o as any).tokensCharged) : null,
+      assignedAt: (o as any).assignedAt ?? null,
     })),
   });
 });
@@ -483,7 +504,7 @@ router.get("/orders/my", requireMasterPwa, async (req, res) => {
   } else if (filter === "completed") {
     statusFilter = ["completed", "cancelled"];
   } else {
-    statusFilter = ["master_assigned", "in_progress", "cancellation_requested", "completed", "cancelled"];
+    statusFilter = ["master_assigned", "in_progress", "cancellation_requested", "refund_requested", "completed", "cancelled"];
   }
 
   const orders = await db.select().from(ordersTable)
@@ -523,6 +544,9 @@ router.get("/orders/my", requireMasterPwa, async (req, res) => {
       clientPhone: lead?.clientPhone ?? null,
       createdAt: o.createdAt,
       updatedAt: o.updatedAt,
+      paymentModel: (o as any).paymentModel ?? "commission",
+      tokensCharged: (o as any).tokensCharged ? Number((o as any).tokensCharged) : null,
+      assignedAt: (o as any).assignedAt ?? null,
     };
   }));
 });
@@ -652,6 +676,89 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
     return res.status(400).json({ error: "Заявка больше недоступна" });
   }
 
+  // ── TOKEN MODEL: auto-assign, deduct tokens, return client contact ────────
+  if ((order as any).paymentModel === "token") {
+    const tokensCost = await getOrderTokenCost(order.serviceType);
+    const { ok, balance } = await checkTokenBalance(masterId, tokensCost);
+
+    if (!ok) {
+      return res.status(402).json({
+        error: `Недостаточно токенов. Баланс: ${balance} т., требуется: ${tokensCost} т.`,
+        insufficientTokens: true,
+        balance,
+        required: tokensCost,
+      });
+    }
+
+    // Deduct tokens
+    const deduction = await deductTokens({
+      masterId,
+      orderId,
+      tokensCost,
+      serviceType: order.serviceType,
+    });
+    if (!deduction.success) {
+      return res.status(402).json({ error: deduction.error, insufficientTokens: true });
+    }
+
+    // Auto-assign order to master
+    await db.update(ordersTable).set({
+      masterId,
+      status: "master_assigned" as any,
+      dispatchStatus: "assigned",
+      masterWorkStatus: "accepted",
+      assignedAt: new Date(),
+      tokensCharged: String(tokensCost),
+      updatedAt: new Date(),
+    }).where(eq(ordersTable.id, orderId));
+
+    // Mark this dispatch as assigned
+    await db.update(orderDispatchesTable)
+      .set({ status: "assigned", respondedAt: new Date() })
+      .where(eq(orderDispatchesTable.id, dispatches[0].id));
+
+    // Reject all other dispatches → order disappears from other masters' feeds
+    await db.update(orderDispatchesTable)
+      .set({ status: "rejected" })
+      .where(and(
+        eq(orderDispatchesTable.orderId, orderId),
+        ne(orderDispatchesTable.id, dispatches[0].id),
+        inArray(orderDispatchesTable.status, ["sent", "responded"]),
+      ));
+
+    // Update master stats and voronka column
+    const myActiveCount2 = await countActiveMasterOrders(masterId);
+    const targetColId = await getColumnIdForActiveCount(myActiveCount2 + 1);
+    await db.update(mastersTable).set({
+      totalOrders: master.totalOrders + 1,
+      acceptedOrders: master.acceptedOrders + 1,
+      voronkaColumnId: targetColId ?? master.voronkaColumnId,
+    }).where(eq(mastersTable.id, masterId));
+
+    // Fetch lead for client contact
+    const leadRow = await db.select().from(leadsTable).where(eq(leadsTable.id, order.leadId)).limit(1);
+    const lead = leadRow[0];
+
+    // Push notification
+    if (master.pwaLogin) {
+      sendPushToMaster(master.id, {
+        type: "order_assigned",
+        title: "✅ Заявка ваша!",
+        body: `${order.serviceType} · ${order.city}${order.district ? ", " + order.district : ""}` +
+          (lead ? ` · ${lead.clientPhone}` : ""),
+      }).catch(() => {});
+    }
+
+    return res.json({
+      success: true,
+      tokenModel: true,
+      tokensCharged: tokensCost,
+      newBalance: deduction.newBalance,
+      clientName: lead?.clientName ?? order.clientName ?? null,
+      clientPhone: lead?.clientPhone ?? order.clientPhone ?? null,
+    });
+  }
+
   // Collect constraint tags — master can always respond, but operator sees their status
   const constraintTags: string[] = [];
 
@@ -741,6 +848,77 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
     success: true,
     ...(constraintTags.length > 0 ? { constraintTags, constraintNote: tagPrefix } : {}),
   });
+});
+
+// ─── Token refund request (master PWA) ───────────────────────────────────────
+router.post("/orders/:id/refund-request", requireMasterPwa, async (req: any, res: any) => {
+  const masterId = (req.session as any).masterId;
+  const orderId = parseInt(req.params.id);
+  if (isNaN(orderId)) return res.status(400).json({ error: "Неверный orderId" });
+
+  const { reason } = req.body ?? {};
+  if (!reason?.trim()) return res.status(400).json({ error: "Укажите причину возврата" });
+
+  // Verify order is assigned to this master
+  const orderRows = await db.select().from(ordersTable)
+    .where(eq(ordersTable.id, orderId))
+    .limit(1);
+  const order = orderRows[0];
+  if (!order || order.masterId !== masterId) {
+    return res.status(403).json({ error: "Заказ не найден или не назначен вам" });
+  }
+  if ((order as any).paymentModel !== "token") {
+    return res.status(400).json({ error: "Возврат токена доступен только для token-модели" });
+  }
+
+  // Find spend transaction
+  const spendTx = await db.select().from(walletTransactionsTable)
+    .where(and(
+      eq(walletTransactionsTable.masterId, masterId),
+      eq(walletTransactionsTable.orderId, orderId),
+      eq(walletTransactionsTable.type, "spend"),
+      eq(walletTransactionsTable.status, "completed"),
+    ))
+    .limit(1);
+  if (!spendTx.length) {
+    return res.status(404).json({ error: "Транзакция списания не найдена" });
+  }
+
+  // 48h check
+  const spentAt = new Date(spendTx[0].createdAt!);
+  if (spentAt < new Date(Date.now() - 48 * 60 * 60 * 1000)) {
+    return res.status(400).json({ error: "Срок подачи заявки на возврат истёк (48 часов)" });
+  }
+
+  // Idempotency check
+  const existing = await db.select().from(walletTransactionsTable)
+    .where(and(
+      eq(walletTransactionsTable.masterId, masterId),
+      eq(walletTransactionsTable.orderId, orderId),
+      eq(walletTransactionsTable.type, "refund"),
+    ))
+    .limit(1);
+  if (existing.length) {
+    return res.status(409).json({ error: "Заявка на возврат уже существует" });
+  }
+
+  const tokensCost = Math.abs(Number(spendTx[0].tokensAmount));
+
+  const [tx] = await db.insert(walletTransactionsTable).values({
+    masterId,
+    type: "refund",
+    tokensAmount: String(tokensCost),
+    orderId,
+    reason: String(reason).trim().slice(0, 500),
+    createdBy: "master",
+    status: "pending",
+  }).returning();
+
+  await db.update(ordersTable)
+    .set({ status: "refund_requested" as any, updatedAt: new Date() })
+    .where(eq(ordersTable.id, orderId));
+
+  res.json({ success: true, transactionId: tx.id, tokensRequested: tokensCost });
 });
 
 // Log FOMO button press
@@ -1528,6 +1706,35 @@ router.post("/admin/reset-password-to-phone/:masterId", async (req: any, res: an
 
   console.log(`[admin] reset-password-to-phone: master ${targetId} (${master.alias}) → login=${login}`);
   res.json({ success: true, login, message: `Пароль сброшен. Логин и пароль = ${login}` });
+});
+
+// POST /api/master-pwa/contact-admin
+// Мастер запрашивает тестовый токен или помощь по заявке
+router.post("/contact-admin", requireMasterPwa, async (req: any, res: any) => {
+  const masterId = (req.session as any).masterId;
+  const { type, orderId, message } = req.body;
+
+  const master = await getMasterById(masterId);
+  if (!master) return res.status(404).json({ error: "Мастер не найден" });
+
+  const msgText = message || `Мастер ${master.alias} запросил тестовый токен`;
+  const tag = orderId ? `Заявка #${orderId}` : "Без заявки";
+
+  // Send a message to Max chat so manager sees it
+  if (master.maxChatId) {
+    sendMaxMessage(master.maxChatId, `🪙 Запрос тестового токена\n${tag}\n${msgText}`).catch(() => {});
+  }
+
+  // Log in master messages for CRM visibility
+  await db.insert(masterMessagesTable).values({
+    masterId,
+    direction: "in",
+    text: `[SYSTEM] ${type === "token_request" ? "Запрос тестового токена" : "Запрос помощи"}: ${msgText}`,
+    channel: "pwa",
+    isRead: false,
+  } as any).catch(() => {});
+
+  return res.json({ success: true });
 });
 
 export default router;

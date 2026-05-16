@@ -57,6 +57,9 @@ import AiOfficePage from "@/pages/ai-office";
 import MasterControlPage from "@/pages/master-control";
 import ScoreDistributionPage from "@/pages/score-distribution";
 import NotFound from "@/pages/not-found";
+import TokenSettingsPage from "@/pages/token-settings";
+import TokenRefundsPage from "@/pages/token-refunds";
+import TokenPurchasesPage from "@/pages/token-purchases";
 
 const queryClient = new QueryClient();
 
@@ -100,6 +103,9 @@ function Router() {
       <Route path="/avito-messages" component={AvitoMessagesPage} />
       <Route path="/ai-office" component={AiOfficePage} />
       <Route path="/master-control" component={MasterControlPage} />
+      <Route path="/token-settings" component={TokenSettingsPage} />
+      <Route path="/token-refunds" component={TokenRefundsPage} />
+      <Route path="/token-purchases" component={TokenPurchasesPage} />
       <Route path="/work-monitor">{() => <Redirect to="/leads?tab=work" />}</Route>
       <Route component={NotFound} />
     </Switch>
