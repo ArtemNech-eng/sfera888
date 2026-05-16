@@ -1,8 +1,5 @@
 [build]
-buildCommand = "pnpm run build"
-
-[build.environment]
-BASE_PATH = "/crm/"
+buildCommand = "BASE_PATH=/crm/ pnpm --filter @workspace/crm run build && pnpm --filter @workspace/master-pwa run build && pnpm --filter @workspace/client run build && pnpm --filter @workspace/master-landing run build && pnpm --filter master-landing-v1 run build && pnpm --filter master-landing-v2 run build && pnpm --filter @workspace/api-server run build"
 
 [deploy]
 preDeployCommand = "pnpm run db:migrate"
