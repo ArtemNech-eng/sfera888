@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import {
   Coins, Plus, ArrowDownCircle, ArrowUpCircle, RotateCcw,
   Gift, Wrench, ChevronLeft, Copy, CheckCircle2, Clock,
-  CreditCard, X, Loader2, AlertTriangle,
+  CreditCard, X, Loader2, AlertTriangle, Wallet, TrendingUp,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -44,6 +44,33 @@ interface PaymentDetails {
   cardNumber: string;
   holder: string;
   comment: string;
+}
+
+// ─── Commission Types ─────────────────────────────────────────────────────────
+
+interface CommissionTransaction {
+  id: number;
+  orderId: number;
+  orderServiceType: string | null;
+  orderCity: string | null;
+  orderAmount: number;
+  commission: number;
+  netPayable: number;
+  prepaymentDeducted: number;
+  totalPartialPaid: number;
+  partialPayments: { id: number; amount: number; note: string | null; paidAt: string }[];
+  paymentStatus: string;
+  createdAt: string;
+  paidAt: string | null;
+}
+
+interface CommissionData {
+  debt: number;
+  totalEarned: number;
+  totalPaidCommission: number;
+  pendingCommission: number;
+  pendingEarnings: number;
+  transactions: CommissionTransaction[];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -249,6 +276,10 @@ export default function WalletPage() {
   const [txHasMore, setTxHasMore] = useState(true);
   const [selectedPkg, setSelectedPkg] = useState<TokenPackage | null>(null);
   const [loading, setLoading] = useState(true);
+  
+  // Commission balance state
+  const [commissionBalance, setCommissionBalance] = useState<CommissionData | null>(null);
+  const [commissionLoading, setCommissionLoading] = useState(false);
 
   const loadWallet = useCallback(async () => {
     try {
@@ -259,7 +290,15 @@ export default function WalletPage() {
       setWallet(w);
       setPackages(Array.isArray(p) ? p : []);
     } catch {}
-    finally { setLoading(false); }
+  }, []);
+
+  const loadCommissionBalance = useCallback(async () => {
+    setCommissionLoading(true);
+    try {
+      const b = await fetch("/api/balance/my", { credentials: "include" }).then(r => r.json());
+      setCommissionBalance(b);
+    } catch {}
+    setCommissionLoading(false);
   }, []);
 
   const loadTx = useCallback(async (page: number, append = false) => {
@@ -273,7 +312,7 @@ export default function WalletPage() {
     finally { setTxLoading(false); }
   }, []);
 
-  useEffect(() => { loadWallet(); loadTx(1); }, [loadWallet, loadTx]);
+  useEffect(() => { loadWallet(); loadTx(1); loadCommissionBalance(); }, [loadWallet, loadTx, loadCommissionBalance]);
 
   if (loading) {
     return (
@@ -427,6 +466,66 @@ export default function WalletPage() {
           onSuccess={loadWallet}
         />
       )}
+
+      {/* Commission Balance Section */}
+      <div className="max-w-lg mx-auto px-4 py-5 space-y-6 border-t border-border mt-6">
+        <div className="flex items-center gap-3">
+          <Wallet size={24} className="text-amber-500" />
+          <div>
+            <h2 className="text-lg font-bold">Комиссии</h2>
+            <p className="text-sm text-muted-foreground">Заработок и выплаты</p>
+          </div>
+        </div>
+
+        {commissionLoading ? (
+          <div className="flex justify-center py-8">
+            <Loader2 className="animate-spin text-muted-foreground" />
+          </div>
+        ) : commissionBalance ? (
+          <>
+            {/* Stats */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-card border rounded-xl p-3">
+                <div className="text-sm text-muted-foreground mb-1">Долг</div>
+                <div className={`text-lg font-bold ${commissionBalance.debt > 0 ? "text-red-500" : "text-green-600"}`}>
+                  {commissionBalance.debt.toLocaleString()} ₽
+                </div>
+              </div>
+              <div className="bg-card border rounded-xl p-3">
+                <div className="text-sm text-muted-foreground mb-1">Заработано</div>
+                <div className="text-lg font-bold text-green-600">
+                  {commissionBalance.totalEarned.toLocaleString()} ₽
+                </div>
+              </div>
+            </div>
+
+            {/* Recent transactions */}
+            {commissionBalance.transactions && commissionBalance.transactions.length > 0 && (
+              <div className="space-y-3">
+                <h3 className="font-medium text-sm">Последние операции</h3>
+                {commissionBalance.transactions.slice(0, 5).map((tx: any) => (
+                  <div key={tx.id} className="bg-card border rounded-lg p-3 flex justify-between items-center">
+                    <div>
+                      <div className="font-medium">{tx.orderServiceType || "Услуга"}</div>
+                      <div className="text-xs text-muted-foreground">{tx.orderCity || "—"}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-medium">{tx.commission.toLocaleString()} ₽</div>
+                      <div className={`text-xs ${tx.paymentStatus === 'paid' ? 'text-green-600' : 'text-amber-600'}`}>
+                        {tx.paymentStatus === 'paid' ? 'Оплачено' : 'Ожидает'}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="text-center py-8 text-muted-foreground">
+            Нет данных о комиссиях
+          </div>
+        )}
+      </div>
     </>
   );
 }
