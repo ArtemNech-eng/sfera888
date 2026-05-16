@@ -43,7 +43,7 @@ const queries: string[] = [
   ); END IF; END $$;`,
 
   // ── master_tasks ───────────────────────────────────────────────────────────
-  `CREATE TABLE IF NOT EXISTS master_tasks (
+  `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'masters') THEN CREATE TABLE IF NOT EXISTS master_tasks (
     id SERIAL PRIMARY KEY,
     master_id INTEGER NOT NULL REFERENCES masters(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
@@ -51,7 +51,7 @@ const queries: string[] = [
     due_date TIMESTAMP,
     completed BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
-  )`,
+  ); END IF; END $$;`,
 
   // ── dispatcher_followups ───────────────────────────────────────────────────
   `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'orders') AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'masters') THEN CREATE TABLE IF NOT EXISTS dispatcher_followups (
@@ -86,17 +86,17 @@ const queries: string[] = [
   )`,
 
   // ── push_subscriptions ─────────────────────────────────────────────────────
-  `CREATE TABLE IF NOT EXISTS push_subscriptions (
+  `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'masters') THEN CREATE TABLE IF NOT EXISTS push_subscriptions (
     id SERIAL PRIMARY KEY,
     master_id INTEGER NOT NULL REFERENCES masters(id) ON DELETE CASCADE,
     endpoint TEXT NOT NULL UNIQUE,
     p256dh TEXT NOT NULL,
     auth TEXT NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
-  )`,
+  ); END IF; END $$;`,
 
   // ── masters: additional columns ────────────────────────────────────────────
-  `ALTER TABLE masters
+  `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'masters') THEN ALTER TABLE masters
     ADD COLUMN IF NOT EXISTS custom_avatar_url TEXT,
     ADD COLUMN IF NOT EXISTS voronka_column_id INTEGER,
     ADD COLUMN IF NOT EXISTS pwa_login TEXT,
@@ -108,10 +108,10 @@ const queries: string[] = [
     ADD COLUMN IF NOT EXISTS suspended_at TIMESTAMP,
     ADD COLUMN IF NOT EXISTS suspension_reason TEXT,
     ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP,
-    ADD COLUMN IF NOT EXISTS total_leads_received INTEGER NOT NULL DEFAULT 0`,
+    ADD COLUMN IF NOT EXISTS total_leads_received INTEGER NOT NULL DEFAULT 0; END IF; END $$;`,
 
   // ── orders: additional columns ─────────────────────────────────────────────
-  `ALTER TABLE orders
+  `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'orders') THEN ALTER TABLE orders
     ADD COLUMN IF NOT EXISTS avito_lead_id TEXT,
     ADD COLUMN IF NOT EXISTS avito_chat_id TEXT,
     ADD COLUMN IF NOT EXISTS client_name TEXT,
@@ -127,7 +127,7 @@ const queries: string[] = [
     ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP,
     ADD COLUMN IF NOT EXISTS master_comment TEXT,
     ADD COLUMN IF NOT EXISTS photos TEXT[],
-    ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'crm'`,
+    ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'crm'; END IF; END $$;`,
 
   // ── order_master_history ──────────────────────────────────────────────────
   `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'orders') AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'masters') THEN CREATE TABLE IF NOT EXISTS order_master_history (
@@ -145,13 +145,13 @@ const queries: string[] = [
   ); END IF; END $$;`,
   `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'order_master_history') THEN CREATE INDEX IF NOT EXISTS idx_order_master_history_master_id ON order_master_history(master_id); END IF; END $$;`,
   `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'order_master_history') THEN CREATE INDEX IF NOT EXISTS idx_order_master_history_order_id ON order_master_history(order_id); END IF; END $$;`,
-  `DELETE FROM master_messages WHERE master_id NOT IN (SELECT id FROM masters)`,
-  `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'master_messages_master_id_fkey') THEN ALTER TABLE master_messages ADD CONSTRAINT master_messages_master_id_fkey FOREIGN KEY (master_id) REFERENCES masters(id) ON DELETE CASCADE; END IF; END $$;`,
-  `CREATE INDEX IF NOT EXISTS master_messages_master_id_idx ON master_messages(master_id)`,
-  `CREATE INDEX IF NOT EXISTS master_messages_created_at_idx ON master_messages(created_at)`,
-  `CREATE INDEX IF NOT EXISTS master_messages_from_master_read_idx ON master_messages(from_master, is_read)`,
-  `CREATE INDEX IF NOT EXISTS master_messages_telegram_chat_id_idx ON master_messages(telegram_chat_id)`,
-  `ALTER TABLE master_messages ADD COLUMN IF NOT EXISTS updated_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL`,
+  `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'master_messages') THEN DELETE FROM master_messages WHERE master_id NOT IN (SELECT id FROM masters); END IF; END $$;`,
+  `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'master_messages') THEN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'master_messages_master_id_fkey') THEN ALTER TABLE master_messages ADD CONSTRAINT master_messages_master_id_fkey FOREIGN KEY (master_id) REFERENCES masters(id) ON DELETE CASCADE; END IF; END IF; END $$;`,
+  `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'master_messages') THEN CREATE INDEX IF NOT EXISTS master_messages_master_id_idx ON master_messages(master_id); END IF; END $$;`,
+  `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'master_messages') THEN CREATE INDEX IF NOT EXISTS master_messages_created_at_idx ON master_messages(created_at); END IF; END $$;`,
+  `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'master_messages') THEN CREATE INDEX IF NOT EXISTS master_messages_from_master_read_idx ON master_messages(from_master, is_read); END IF; END $$;`,
+  `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'master_messages') THEN CREATE INDEX IF NOT EXISTS master_messages_telegram_chat_id_idx ON master_messages(telegram_chat_id); END IF; END $$;`,
+  `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'master_messages') AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'users') THEN ALTER TABLE master_messages ADD COLUMN IF NOT EXISTS updated_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL; END IF; END $$;`,
   `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'lead_id') THEN ALTER TABLE orders ADD COLUMN IF NOT EXISTS lead_id INTEGER; END IF; END $$;`,
   `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'leads' AND column_name = 'id') THEN RAISE NOTICE 'Table leads not ready, skipping FK'; ELSE IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'orders_lead_id_fkey') THEN ALTER TABLE orders ADD CONSTRAINT orders_lead_id_fkey FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE; END IF; END IF; END $$;`,
   `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'leads') THEN CREATE INDEX IF NOT EXISTS idx_leads_status_updated_at ON leads(status_updated_at); END IF; END $$;`,
