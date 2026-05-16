@@ -61,6 +61,15 @@ const app: Express = express();
 // secure cookies work correctly behind Railway's proxy.
 app.set("trust proxy", 1);
 
+// Redirect non-www to www
+app.use((req, res, next) => {
+  const host = req.headers.host;
+  if (host === "sfera-master.ru") {
+    return res.redirect(301, "https://www.sfera-master.ru" + req.url);
+  }
+  next();
+});
+
 const allowedOrigins = getAllowedOrigins();
 console.log('[cors] Allowed origins:', allowedOrigins);
 
