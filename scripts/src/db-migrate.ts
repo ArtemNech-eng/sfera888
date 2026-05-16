@@ -7,6 +7,14 @@
 import { pool } from "@workspace/db";
 
 const queries: string[] = [
+  // ── sessions table (required for auth) ─────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS "sessions" (
+    "sid" varchar NOT NULL COLLATE "default",
+    "sess" json NOT NULL,
+    "expire" timestamp(6) NOT NULL,
+    CONSTRAINT "sessions_pkey" PRIMARY KEY ("sid")
+  )`,
+
   // ── Ensure orders and masters tables have PRIMARY KEY (required for FK references) ─────
   `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'orders') THEN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'orders'::regclass AND contype = 'p') THEN ALTER TABLE orders ADD PRIMARY KEY (id); END IF; END IF; END $$;`,
   `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'masters') THEN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'masters'::regclass AND contype = 'p') THEN ALTER TABLE masters ADD PRIMARY KEY (id); END IF; END IF; END $$;`,
