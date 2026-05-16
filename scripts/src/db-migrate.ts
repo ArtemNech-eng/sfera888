@@ -12,14 +12,14 @@ const queries: string[] = [
   `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'masters') THEN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'masters'::regclass AND contype = 'p') THEN ALTER TABLE masters ADD PRIMARY KEY (id); END IF; END IF; END $$;`,
 
   // ── transaction_payments ───────────────────────────────────────────────────
-  `CREATE TABLE IF NOT EXISTS transaction_payments (
+  `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'transactions') THEN CREATE TABLE IF NOT EXISTS transaction_payments (
     id SERIAL PRIMARY KEY,
     transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
     amount NUMERIC(12,2) NOT NULL,
     note TEXT,
     paid_at TIMESTAMP NOT NULL DEFAULT NOW(),
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
-  )`,
+  ); END IF; END $$;`,
 
   // ── max_bot_logs ───────────────────────────────────────────────────────────
   `CREATE TABLE IF NOT EXISTS max_bot_logs (
