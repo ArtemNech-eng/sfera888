@@ -11,7 +11,10 @@ router.post("/login", async (req, res) => {
   const login = rawLogin.trim();
   const password = rawPassword.trim();
 
+  console.log(`[auth] Login attempt: ${login}`);
+
   if (!login || !password) {
+    console.log("[auth] Missing login or password");
     return res.status(400).json({ error: "Login and password required" });
   }
 
@@ -19,10 +22,14 @@ router.post("/login", async (req, res) => {
   const user = users[0];
 
   if (!user) {
+    console.log(`[auth] User not found: ${login}`);
     return res.status(401).json({ error: "Неверный логин или пароль" });
   }
 
+  console.log(`[auth] User found: ${user.login}, checking password...`);
   const valid = await verifyPassword(password, user.passwordHash);
+  console.log(`[auth] Password valid: ${valid}`);
+  
   if (!valid) {
     return res.status(401).json({ error: "Неверный логин или пароль" });
   }

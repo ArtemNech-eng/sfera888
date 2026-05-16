@@ -75,6 +75,12 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+// Log all requests
+app.use((req, res, next) => {
+  console.log(`[request] ${req.method} ${req.path} - Origin: ${req.headers.origin || 'none'}`);
+  next();
+});
+
 async function getDatabaseStatus(): Promise<boolean> {
   try {
     await db.execute(sql`SELECT 1`);
