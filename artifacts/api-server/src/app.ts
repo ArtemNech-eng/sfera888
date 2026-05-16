@@ -871,7 +871,7 @@ app.use("/api/uploads", express.static(UPLOAD_BASE));
 app.use("/api/banners", express.static(path.join(__dirname, "../public/banners")));
 
 // ── Master landing page ──────────────────────────────────────────────────────
-app.use("/master-landing", express.static(path.join(__dirname, "../../master-landing-v5")));
+app.use("/master-landing", express.static(path.join(__dirname, "../../master-landing-v5/dist")));
 
 // ── Max Messenger Bot Webhook (Masters) ──────────────────────────────────────
 app.post("/api/max-webhook", express.json(), async (req, res) => {
