@@ -88,6 +88,25 @@ router.get("/", allOrderRoles, async (req, res) => {
   const masters = await db.select().from(mastersTable);
   const masterMap = new Map(masters.map(m => [m.id, m]));
 
+  // Recover names for masters missing from mastersTable (hard-deleted) via assignment logs
+  const ordersWithMissingMaster = orders.filter(o => o.masterId && !masterMap.has(o.masterId));
+  const recoveredNameMap = new Map<number, string>(); // orderId → recovered alias
+  if (ordersWithMissingMaster.length > 0) {
+    const missingOrderIds = ordersWithMissingMaster.map(o => o.id);
+    const assignLogs = await db.select({ orderId: orderStatusLogsTable.orderId, note: orderStatusLogsTable.note })
+      .from(orderStatusLogsTable)
+      .where(and(
+        inArray(orderStatusLogsTable.orderId, missingOrderIds),
+        eq(orderStatusLogsTable.newStatus, "master_assigned"),
+      ));
+    for (const log of assignLogs) {
+      if (log.note && !recoveredNameMap.has(log.orderId)) {
+        const m = log.note.match(/Назначен(?:\s+вручную)?:\s*(.+)/);
+        if (m?.[1]) recoveredNameMap.set(log.orderId, m[1].trim());
+      }
+    }
+  }
+
   const leads = await db.select().from(leadsTable);
   const leadMap = new Map(leads.map(l => [l.id, l]));
 
@@ -115,7 +134,7 @@ router.get("/", allOrderRoles, async (req, res) => {
     status: o.status,
     dispatchStatus: o.dispatchStatus,
     masterId: o.masterId ?? null,
-    masterName: o.masterId ? (masterMap.get(o.masterId)?.alias ?? null) : null,
+    masterName: o.masterId ? (masterMap.get(o.masterId)?.alias ?? recoveredNameMap.get(o.id) ?? null) : null,
     clientPhone: leadMap.get(o.leadId)?.clientPhone ?? null,
     clientName: leadMap.get(o.leadId)?.clientName ?? null,
     proposedAmount: o.proposedAmount ? Number(o.proposedAmount) : null,

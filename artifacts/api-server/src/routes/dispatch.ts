@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, ordersTable, mastersTable, orderDispatchesTable, leadsTable, masterMessagesTable, voronkaColumnsTable } from "@workspace/db";
+import { db, ordersTable, mastersTable, orderDispatchesTable, leadsTable, masterMessagesTable, voronkaColumnsTable, orderStatusLogsTable } from "@workspace/db";
 import { eq, and, ne, inArray } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
@@ -150,7 +150,7 @@ router.get("/pending", ops, async (req, res) => {
         const s = scoreMap?.get(d.masterId);
         return {
           masterId: d.masterId,
-          masterName: masterMap.get(d.masterId)?.alias ?? "?",
+          masterName: masterMap.get(d.masterId)?.alias ?? `Мастер #${d.masterId}`,
           respondedAt: d.respondedAt,
           responseNote: (d as any).responseNote ?? null,
           score: s?.total ?? null,
@@ -177,12 +177,32 @@ router.get("/:orderId", ops, async (req, res) => {
     : [];
   const masterMap = new Map(masters.map(m => [m.id, m]));
 
+  // Recover names for masters missing from mastersTable (e.g. hard-deleted records)
+  const missingIds = masterIds.filter(id => !masterMap.has(id));
+  const nameRecoveryMap = new Map<number, string>();
+  if (missingIds.length > 0) {
+    const logs = await db.select({ note: orderStatusLogsTable.note })
+      .from(orderStatusLogsTable)
+      .where(and(
+        eq(orderStatusLogsTable.orderId, orderId),
+        eq(orderStatusLogsTable.newStatus, "master_assigned"),
+      ));
+    for (const log of logs) {
+      if (log.note) {
+        const m = log.note.match(/Назначен(?:\s+вручную)?:\s*(.+)/);
+        if (m?.[1] && order.masterId && missingIds.includes(order.masterId)) {
+          nameRecoveryMap.set(order.masterId, m[1].trim());
+        }
+      }
+    }
+  }
+
   res.json({
     dispatchStatus: order.dispatchStatus,
     dispatches: dispatches.map(d => ({
       id: d.id,
       masterId: d.masterId,
-      masterName: masterMap.get(d.masterId)?.alias ?? "?",
+      masterName: masterMap.get(d.masterId)?.alias ?? nameRecoveryMap.get(d.masterId) ?? `Мастер #${d.masterId}`,
       masterCity: masterMap.get(d.masterId)?.city ?? null,
       status: d.status,
       respondedAt: d.respondedAt ?? null,
