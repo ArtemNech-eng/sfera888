@@ -1,2 +1,2 @@
 [deploy]
-preDeployCommand = "pnpm run db:migrate"
+preDeployCommand = "pnpm run db:migrate && pnpm --filter @workspace/db run push"
