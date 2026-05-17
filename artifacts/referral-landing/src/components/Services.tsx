@@ -1,13 +1,31 @@
-const services = [
-  { icon: '🖼️', label: 'Поклейка обоев' },
-  { icon: '🪣', label: 'Шпаклёвка стен' },
-  { icon: '🏗️', label: 'Штукатурка' },
-  { icon: '🖌️', label: 'Покраска' },
-  { icon: '⬜', label: 'Укладка плитки' },
-  { icon: '🚿', label: 'Санузел под ключ' },
-  { icon: '⚡', label: 'Электрика' },
-  { icon: '🔧', label: 'Сантехника' },
-  { icon: '🏠', label: 'Квартира под ключ' },
+import {
+  Wallpaper,
+  PaintbrushVertical,
+  BrickWall,
+  Paintbrush,
+  Grid3X3,
+  ShowerHead,
+  Zap,
+  Wrench,
+  Home,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+
+interface Service {
+  icon: LucideIcon;
+  label: string;
+}
+
+const services: Service[] = [
+  { icon: Wallpaper, label: 'Поклейка обоев' },
+  { icon: PaintbrushVertical, label: 'Шпаклёвка стен' },
+  { icon: BrickWall, label: 'Штукатурка' },
+  { icon: Paintbrush, label: 'Покраска' },
+  { icon: Grid3X3, label: 'Укладка плитки' },
+  { icon: ShowerHead, label: 'Санузел под ключ' },
+  { icon: Zap, label: 'Электрика' },
+  { icon: Wrench, label: 'Сантехника' },
+  { icon: Home, label: 'Квартира под ключ' },
 ];
 
 export default function Services() {
@@ -28,18 +46,23 @@ export default function Services() {
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-4">
-          {services.map((service) => (
-            <button
-              key={service.label}
-              onClick={scrollToForm}
-              className="group bg-white rounded-2xl p-5 flex flex-col items-center gap-3 border border-[#E5E7EB] hover:border-[#34C759] hover:shadow-md transition-all duration-200 cursor-pointer text-center"
-            >
-              <span className="text-3xl">{service.icon}</span>
-              <span className="text-[#111827] font-medium text-sm leading-snug group-hover:text-[#34C759] transition-colors">
-                {service.label}
-              </span>
-            </button>
-          ))}
+          {services.map((service) => {
+            const Icon = service.icon;
+            return (
+              <button
+                key={service.label}
+                onClick={scrollToForm}
+                className="group bg-white rounded-2xl p-5 flex flex-col items-center gap-3 border border-[#E5E7EB] hover:border-[#34C759] hover:shadow-md transition-all duration-200 cursor-pointer text-center"
+              >
+                <div className="w-10 h-10 flex items-center justify-center text-[#34C759]">
+                  <Icon className="w-8 h-8" strokeWidth={1.5} />
+                </div>
+                <span className="text-[#111827] font-medium text-sm leading-snug group-hover:text-[#34C759] transition-colors">
+                  {service.label}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         <p className="text-center text-[#94A3B8] text-sm mt-8">
