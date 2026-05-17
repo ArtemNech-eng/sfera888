@@ -234,9 +234,9 @@ function CreatePartnerModal({
                 <SelectValue placeholder="Выберите город" />
               </SelectTrigger>
               <SelectContent>
-                {cities.map((c) => (
-                  <SelectItem key={c} value={c}>
-                    {c}
+                {cities.map((c: any) => (
+                  <SelectItem key={c.id} value={c.name}>
+                    {c.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -541,9 +541,9 @@ export default function PartnersPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Все города</SelectItem>
-                    {cities.map((c) => (
-                      <SelectItem key={c} value={c}>
-                        {c}
+                    {cities.map((c: any) => (
+                      <SelectItem key={c.id} value={c.name}>
+                        {c.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
