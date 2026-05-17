@@ -1,5 +1,5 @@
 [build]
-buildCommand = "BASE_PATH=/crm/ pnpm --filter @workspace/crm run build && pnpm --filter @workspace/master-pwa run build && pnpm --filter @workspace/client run build && pnpm --filter @workspace/master-landing run build && pnpm --filter master-landing-v1 run build && pnpm --filter master-landing-v2 run build && BASE_PATH=/partner-pwa/ pnpm --filter @workspace/partner-pwa run build && pnpm --filter @workspace/api-server run build"
+buildCommand = "BASE_PATH=/crm/ pnpm --filter @workspace/crm run build && BASE_PATH=/r/ pnpm --filter @workspace/referral-landing run build && pnpm --filter @workspace/master-pwa run build && pnpm --filter @workspace/client run build && pnpm --filter @workspace/master-landing run build && pnpm --filter master-landing-v1 run build && pnpm --filter master-landing-v2 run build && BASE_PATH=/partner-pwa/ pnpm --filter @workspace/partner-pwa run build && pnpm --filter @workspace/api-server run build"
 
 [build.environment]
 BASE_PATH = "/crm/"

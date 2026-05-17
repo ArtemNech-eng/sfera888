@@ -26,6 +26,7 @@ import {
   MoreHorizontal,
   X,
   RotateCcw,
+  Filter,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect, useRef } from "react";
@@ -130,6 +131,9 @@ export function Layout({ children }: LayoutProps) {
     { href: "/token-refunds",  label: "Возвраты токенов",       icon: RotateCcw,       permKey: null as null },
     { href: "/token-purchases", label: "Пополнения токенов",    icon: Wallet,          permKey: null as null },
     { href: "/users",       label: "Пользователи",         icon: UserCog,         permKey: null as null },
+    { href: "/partners",          label: "Партнёры",          icon: Users,           permKey: "partners" },
+    { href: "/partner-leads-review", label: "Лиды партнёров", icon: Filter,          permKey: "partner-leads-review" },
+    { href: "/partner-analytics", label: "Аналитика партнёров", icon: BarChart3,    permKey: "partner-analytics" },
   ];
 
   const filteredNav = navItems.filter(item => {
