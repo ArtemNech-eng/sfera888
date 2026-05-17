@@ -5,6 +5,7 @@ interface AuthCtx {
   partner: Partner | null;
   loading: boolean;
   login: (phone: string, password: string) => Promise<void>;
+  register: (name: string, phone: string, city: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -26,13 +27,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setPartner(p);
   };
 
+  const register = async (name: string, phone: string, city: string, password: string) => {
+    const p = await authApi.register({ name, phone, city, password });
+    setPartner(p);
+  };
+
   const logout = async () => {
     await authApi.logout();
     setPartner(null);
   };
 
   return (
-    <AuthContext.Provider value={{ partner, loading, login, logout }}>
+    <AuthContext.Provider value={{ partner, loading, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

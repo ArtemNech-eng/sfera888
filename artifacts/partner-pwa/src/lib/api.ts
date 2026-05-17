@@ -60,6 +60,14 @@ export const authApi = {
     const me = await request<unknown>("/me");
     return mapPartner(me);
   },
+  register: async (data: { name: string; phone: string; city: string; password: string }): Promise<Partner> => {
+    await request<{ ok: boolean }>("/auth/register", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    const me = await request<unknown>("/me");
+    return mapPartner(me);
+  },
   logout: () => request<void>("/auth/logout", { method: "POST" }),
   me: async (): Promise<Partner> => {
     const me = await request<unknown>("/me");

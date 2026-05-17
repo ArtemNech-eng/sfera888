@@ -8,6 +8,7 @@ import CreateLeadPage from "@/pages/create-lead";
 import MyLeadsPage from "@/pages/my-leads";
 import PayoutsPage from "@/pages/payouts";
 import ProfilePage from "@/pages/profile";
+import { Clock } from "lucide-react";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -17,6 +18,20 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+function PendingScreen() {
+  return (
+    <div className="min-h-dvh flex flex-col items-center justify-center bg-[#F8F9FA] px-6 text-center">
+      <div className="w-20 h-20 rounded-full bg-[#FEF3C7] flex items-center justify-center mb-6">
+        <Clock className="w-10 h-10 text-[#D97706]" />
+      </div>
+      <h2 className="text-xl font-bold text-[#111827] mb-2">Заявка на рассмотрении</h2>
+      <p className="text-[#6B7280] text-sm max-w-xs">
+        Ваш аккаунт создан и ожидает подтверждения менеджера. Обычно это занимает до 24 часов.
+      </p>
+    </div>
+  );
+}
 
 function AppRoutes() {
   const { partner, loading } = useAuth();
@@ -31,6 +46,10 @@ function AppRoutes() {
 
   if (!partner) {
     return <AuthPage />;
+  }
+
+  if (partner.status === "pending") {
+    return <PendingScreen />;
   }
 
   return (

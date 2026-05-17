@@ -226,6 +226,71 @@ router.post("/auth/login", async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/partner/auth/register
+const registerSchema = z.object({
+  name: z.string().min(1, "Введите имя"),
+  phone: z.string().min(5, "Введите номер телефона"),
+  city: z.string().min(1, "Введите город"),
+  password: z.string().min(6, "Пароль минимум 6 символов"),
+});
+
+router.post("/auth/register", async (req: Request, res: Response) => {
+  try {
+    const parsed = registerSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "validation_error", details: parsed.error.flatten() });
+    }
+    const data = parsed.data;
+
+    // Check if phone/login exists
+    const [existing] = await db.select().from(usersTable).where(eq(usersTable.login, data.phone));
+    if (existing) {
+      return res.status(400).json({ error: "phone_exists", message: "Номер телефона уже зарегистрирован" });
+    }
+
+    // Create user
+    const passwordHash = await bcrypt.hash(data.password, 10);
+    const [user] = await db
+      .insert(usersTable)
+      .values({
+        login: data.phone,
+        passwordHash,
+        name: data.name,
+        role: "partner",
+      })
+      .returning();
+
+    // Create partner profile with pending status
+    const [partner] = await db
+      .insert(trafficPartnersTable)
+      .values({
+        userId: user.id,
+        name: data.name,
+        phone: data.phone,
+        city: data.city,
+        status: "pending",
+      })
+      .returning();
+
+    // Auto-login after registration
+    (req.session as any).userId = user.id;
+    (req.session as any).role = "partner";
+
+    return res.status(201).json({
+      ok: true,
+      partner: {
+        id: partner.id,
+        name: partner.name,
+        city: partner.city,
+        status: partner.status,
+      },
+    });
+  } catch (err) {
+    console.error("[partner auth/register]", err);
+    return res.status(500).json({ error: "server_error" });
+  }
+});
+
 // POST /api/partner/auth/logout
 router.post("/auth/logout", (req: Request, res: Response) => {
   req.session.destroy(() => {
