@@ -17,6 +17,8 @@ import {
   ClipboardList,
   CalendarCheck,
   Bot,
+  UserCheck,
+  Filter,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -43,6 +45,9 @@ export function Sidebar() {
     { href: "/ai-office",     label: "ИИ Офис",          icon: Bot,             permKey: "ai-office" },
     { href: "/settings",      label: "Настройки",       icon: Settings,        permKey: null as null },
     { href: "/users",         label: "Пользователи",    icon: UserCog,         permKey: null as null },
+    { href: "/partners",          label: "Партнёры",          icon: Users,           permKey: "partners" },
+    { href: "/partner-leads-review", label: "Лиды партнёров", icon: Filter,          permKey: "partner-leads-review" },
+    { href: "/partner-analytics", label: "Аналитика партнёров", icon: BarChart3,    permKey: "partner-analytics" },
   ];
 
   const visibleItems = navItems.filter(item => {

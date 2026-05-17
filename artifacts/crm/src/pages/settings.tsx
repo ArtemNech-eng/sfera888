@@ -3,7 +3,8 @@ import { Layout } from "@/components/layout";
 import { ProtectedRoute } from "@/hooks/use-auth";
 import { useGetCities, useCreateCity, useDeleteCity, useGetServices, useCreateService, useDeleteService } from "@workspace/api-client-react";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
-import { Trash2, Plus, MapPin, Wrench, Percent, Save, Loader2, Zap, UserCheck } from "lucide-react";
+import { Trash2, Plus, MapPin, Wrench, Percent, Save, Loader2, Zap, UserCheck, Users, ToggleLeft } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 interface CommissionSettings {
   tier1Threshold: number;
@@ -78,6 +79,57 @@ export default function Settings() {
   // Commission local state
   const [comm, setComm] = useState<CommissionSettings | null>(null);
   const [commSaved, setCommSaved] = useState(false);
+
+  // Partner settings
+  const { toast } = useToast();
+  interface PartnerSettings {
+    partner_fixed_salary_max: number;
+    partner_fixed_target_leads: number;
+    partner_bonus_per_accepted_lead: number;
+    partner_monthly_leads_plan: number;
+    manual_partner_lead_review: boolean;
+    partner_payout_day_start: number;
+    partner_payout_day_end: number;
+  }
+  const [partnerSettings, setPartnerSettings] = useState<PartnerSettings>({
+    partner_fixed_salary_max: 15000,
+    partner_fixed_target_leads: 30,
+    partner_bonus_per_accepted_lead: 250,
+    partner_monthly_leads_plan: 50,
+    manual_partner_lead_review: true,
+    partner_payout_day_start: 1,
+    partner_payout_day_end: 5,
+  });
+  const [partnerSettingsLoaded, setPartnerSettingsLoaded] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/crm/settings/partner", { credentials: "include" })
+      .then(r => r.json())
+      .then(data => {
+        setPartnerSettings(data);
+        setPartnerSettingsLoaded(true);
+      })
+      .catch(() => setPartnerSettingsLoaded(true));
+  }, []);
+
+  const savePartnerSettingsMutation = useMutation({
+    mutationFn: async (data: PartnerSettings) => {
+      const r = await fetch("/api/crm/settings/partner", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!r.ok) throw new Error("Ошибка сохранения");
+      return r.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Настройки сохранены" });
+    },
+    onError: () => {
+      toast({ title: "Ошибка сохранения", variant: "destructive" });
+    },
+  });
 
   useEffect(() => {
     if (commission && !comm) setComm(commission);
@@ -379,6 +431,161 @@ export default function Settings() {
                 {saveModeMutation.isError && (
                   <span className="text-destructive">{(saveModeMutation.error as Error).message}</span>
                 )}
+              </div>
+            </div>
+          </div>
+
+          {/* Partner Settings */}
+          <div className="bg-card rounded-2xl border border-border/50 shadow-sm overflow-hidden">
+            <div className="p-6 border-b border-border/50 flex items-center gap-3">
+              <div className="p-2 bg-indigo-500/10 rounded-xl">
+                <Users className="w-5 h-5 text-indigo-600" />
+              </div>
+              <div>
+                <h2 className="font-display font-bold text-lg">Партнёры</h2>
+                <p className="text-sm text-muted-foreground">Настройки расчёта вознаграждений и проверки лидов</p>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Max fixed salary */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Максимальный фикс</label>
+                  <p className="text-xs text-muted-foreground">Максимальная сумма фиксированной части</p>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min={0}
+                      value={partnerSettings.partner_fixed_salary_max}
+                      onChange={e => setPartnerSettings(s => ({ ...s, partner_fixed_salary_max: Number(e.target.value) }))}
+                      className="w-full pr-12 pl-4 py-2.5 rounded-xl border border-border focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-background text-sm"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">₽</span>
+                  </div>
+                </div>
+
+                {/* Target leads for full fixed */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Целевые лиды для полного фикса</label>
+                  <p className="text-xs text-muted-foreground">Сколько лидов нужно для 100% фикса</p>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min={1}
+                      value={partnerSettings.partner_fixed_target_leads}
+                      onChange={e => setPartnerSettings(s => ({ ...s, partner_fixed_target_leads: Number(e.target.value) }))}
+                      className="w-full pr-12 pl-4 py-2.5 rounded-xl border border-border focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-background text-sm"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">лидов</span>
+                  </div>
+                </div>
+
+                {/* Bonus per accepted lead */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Бонус за принятую заявку</label>
+                  <p className="text-xs text-muted-foreground">Сколько платим за каждый принятый мастером лид</p>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min={0}
+                      value={partnerSettings.partner_bonus_per_accepted_lead}
+                      onChange={e => setPartnerSettings(s => ({ ...s, partner_bonus_per_accepted_lead: Number(e.target.value) }))}
+                      className="w-full pr-12 pl-4 py-2.5 rounded-xl border border-border focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-background text-sm"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">₽</span>
+                  </div>
+                </div>
+
+                {/* Monthly leads plan */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">План лидов в месяц</label>
+                  <p className="text-xs text-muted-foreground">Целевое количество лидов для плана</p>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min={1}
+                      value={partnerSettings.partner_monthly_leads_plan}
+                      onChange={e => setPartnerSettings(s => ({ ...s, partner_monthly_leads_plan: Number(e.target.value) }))}
+                      className="w-full pr-12 pl-4 py-2.5 rounded-xl border border-border focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-background text-sm"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">лидов</span>
+                  </div>
+                </div>
+
+                {/* Payout day start */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Выплата с числа</label>
+                  <p className="text-xs text-muted-foreground">Начало периода выплаты</p>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min={1}
+                      max={31}
+                      value={partnerSettings.partner_payout_day_start}
+                      onChange={e => setPartnerSettings(s => ({ ...s, partner_payout_day_start: Number(e.target.value) }))}
+                      className="w-full pr-12 pl-4 py-2.5 rounded-xl border border-border focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-background text-sm"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">число</span>
+                  </div>
+                </div>
+
+                {/* Payout day end */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Выплата по число</label>
+                  <p className="text-xs text-muted-foreground">Конец периода выплаты</p>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min={1}
+                      max={31}
+                      value={partnerSettings.partner_payout_day_end}
+                      onChange={e => setPartnerSettings(s => ({ ...s, partner_payout_day_end: Number(e.target.value) }))}
+                      className="w-full pr-12 pl-4 py-2.5 rounded-xl border border-border focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-background text-sm"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">число</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Manual review toggle */}
+              <div className="flex items-center justify-between p-4 bg-muted/50 rounded-xl">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-indigo-100 rounded-lg">
+                    <ToggleLeft className="w-5 h-5 text-indigo-600" />
+                  </div>
+                  <div>
+                    <div className="font-medium text-sm">Ручная проверка лидов</div>
+                    <div className="text-xs text-muted-foreground">
+                      Включено → лиды ждут одобрения в «Лиды партнёров».
+                      Выключено → лиды сразу в ленту мастеров.
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setPartnerSettings(s => ({ ...s, manual_partner_lead_review: !s.manual_partner_lead_review }))}
+                  className={`relative w-12 h-6 rounded-full transition-colors ${
+                    partnerSettings.manual_partner_lead_review ? "bg-indigo-500" : "bg-muted-foreground/30"
+                  }`}
+                >
+                  <span
+                    className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                      partnerSettings.manual_partner_lead_review ? "translate-x-6" : ""
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Save button */}
+              <div className="flex items-center justify-end">
+                <button
+                  onClick={() => savePartnerSettingsMutation.mutate(partnerSettings)}
+                  disabled={savePartnerSettingsMutation.isPending || !partnerSettingsLoaded}
+                  className="flex items-center gap-2 px-6 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                >
+                  {savePartnerSettingsMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  Сохранить
+                </button>
               </div>
             </div>
           </div>

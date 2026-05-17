@@ -60,6 +60,9 @@ import NotFound from "@/pages/not-found";
 import TokenSettingsPage from "@/pages/token-settings";
 import TokenRefundsPage from "@/pages/token-refunds";
 import TokenPurchasesPage from "@/pages/token-purchases";
+import PartnersPage from "@/pages/partners";
+import PartnerLeadsReviewPage from "@/pages/partner-leads-review";
+import PartnerAnalyticsPage from "@/pages/partner-analytics";
 
 const queryClient = new QueryClient();
 
@@ -106,6 +109,9 @@ function Router() {
       <Route path="/token-settings" component={TokenSettingsPage} />
       <Route path="/token-refunds" component={TokenRefundsPage} />
       <Route path="/token-purchases" component={TokenPurchasesPage} />
+      <Route path="/partners" component={PartnersPage} />
+      <Route path="/partner-leads-review" component={PartnerLeadsReviewPage} />
+      <Route path="/partner-analytics" component={PartnerAnalyticsPage} />
       <Route path="/work-monitor">{() => <Redirect to="/leads?tab=work" />}</Route>
       <Route component={NotFound} />
     </Switch>

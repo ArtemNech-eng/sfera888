@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Inbox, Users, Activity, MoreHorizontal,
   Brain, Smartphone, MessagesSquare, ClipboardList, CalendarCheck,
   Wallet, BarChart3, Settings, UserCog, LogOut, Trash2, Bot,
-  MessageCircle, TrendingUp, Tag, X,
+  MessageCircle, TrendingUp, Tag, X, Filter,
 } from "lucide-react";
 
 const NAV_MAIN = [
@@ -48,6 +48,9 @@ export function MobileNav({
     { href: "/ai-office",     label: "ИИ Офис",             icon: Bot,             permKey: "ai-office" },
     { href: "/settings",      label: "Настройки",           icon: Settings,        permKey: null as null },
     { href: "/users",         label: "Пользователи",        icon: UserCog,         permKey: null as null },
+    { href: "/partners",          label: "Партнёры",          icon: Users,           permKey: "partners" },
+    { href: "/partner-leads-review", label: "Лиды партнёров", icon: Filter,          permKey: "partner-leads-review" },
+    { href: "/partner-analytics", label: "Аналитика партнёров", icon: BarChart3,    permKey: "partner-analytics" },
   ];
 
   const visibleMore = moreItems.filter(item => {
