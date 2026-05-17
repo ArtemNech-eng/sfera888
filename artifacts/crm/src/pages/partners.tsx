@@ -135,6 +135,7 @@ async function createPartner(data: {
   avito_account_name?: string;
   avito_account_link?: string;
   notes?: string;
+  ref_slug?: string;
 }) {
   console.log("[createPartner] POST /api/crm/partners", data);
   const r = await fetch("/api/crm/partners", {
@@ -184,6 +185,7 @@ function CreatePartnerModal({
     avito_account_name: "",
     avito_account_link: "",
     notes: "",
+    ref_slug: "",
   });
 
   const mutation = useMutation({
@@ -192,7 +194,7 @@ function CreatePartnerModal({
       toast({ title: "Партнёр создан", description: "Аккаунт для доступа в PWA создан" });
       queryClient.invalidateQueries({ queryKey: ["partners"] });
       onOpenChange(false);
-      setForm({ name: "", phone: "", city: "", login: "", password: "", avito_account_name: "", avito_account_link: "", notes: "" });
+      setForm({ name: "", phone: "", city: "", login: "", password: "", avito_account_name: "", avito_account_link: "", notes: "", ref_slug: "" });
     },
     onError: (e: any) => {
       toast({ title: "Ошибка", description: e.message, variant: "destructive" });
@@ -289,6 +291,14 @@ function CreatePartnerModal({
               placeholder="Дополнительная информация"
               value={form.notes}
               onChange={(e) => setForm({ ...form, notes: e.target.value })}
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Реферальный slug</label>
+            <Input
+              placeholder="например, ivan123 (для ссылки /r/ivan123)"
+              value={form.ref_slug}
+              onChange={(e) => setForm({ ...form, ref_slug: e.target.value })}
             />
           </div>
         </div>

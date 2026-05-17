@@ -18,6 +18,47 @@ import { z } from "zod";
 
 const router = Router();
 
+// Transliteration map for Russian → Latin
+const TRANSLIT: Record<string, string> = {
+  а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z",
+  и: "i", й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r",
+  с: "s", т: "t", у: "u", ф: "f", х: "h", ц: "ts", ч: "ch", ш: "sh",
+  щ: "sch", ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya",
+  А: "A", Б: "B", В: "V", Г: "G", Д: "D", Е: "E", Ё: "E", Ж: "Zh", З: "Z",
+  И: "I", Й: "Y", К: "K", Л: "L", М: "M", Н: "N", О: "O", П: "P", Р: "R",
+  С: "S", Т: "T", У: "U", Ф: "F", Х: "H", Ц: "Ts", Ч: "Ch", Ш: "Sh",
+  Щ: "Sch", Ъ: "", Ы: "Y", Ь: "", Э: "E", Ю: "Yu", Я: "Ya",
+};
+
+function transliterate(str: string): string {
+  return str.split("").map((c) => TRANSLIT[c] || c).join("");
+}
+
+function slugify(name: string): string {
+  return transliterate(name)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-+/g, "-");
+}
+
+async function generateUniqueSlug(name: string): Promise<string> {
+  let base = slugify(name);
+  if (!base) base = "partner";
+  let slug = base;
+  let counter = 2;
+  while (true) {
+    const [existing] = await db
+      .select({ id: trafficPartnersTable.id })
+      .from(trafficPartnersTable)
+      .where(eq(trafficPartnersTable.refSlug, slug))
+      .limit(1);
+    if (!existing) return slug;
+    slug = `${base}-${counter}`;
+    counter++;
+  }
+}
+
 // All routes require authentication
 router.use(requireAuth);
 
@@ -171,6 +212,7 @@ const createPartnerSchema = z.object({
   avito_account_name: z.string().optional(),
   avito_account_link: z.string().optional(),
   notes: z.string().optional(),
+  ref_slug: z.string().optional(),
 });
 
 router.post("/partners", async (req: Request, res: Response) => {
@@ -185,6 +227,12 @@ router.post("/partners", async (req: Request, res: Response) => {
     const [existing] = await db.select().from(usersTable).where(eq(usersTable.login, data.login));
     if (existing) {
       return res.status(400).json({ error: "login_exists", message: "Логин уже занят" });
+    }
+
+    // Auto-generate ref_slug if not provided
+    let refSlug = data.ref_slug || null;
+    if (!refSlug) {
+      refSlug = await generateUniqueSlug(data.name);
     }
 
     // Create user
@@ -211,6 +259,7 @@ router.post("/partners", async (req: Request, res: Response) => {
         avitoAccountName: data.avito_account_name || null,
         avitoAccountLink: data.avito_account_link || null,
         notes: data.notes || null,
+        refSlug: refSlug,
       })
       .returning();
 
