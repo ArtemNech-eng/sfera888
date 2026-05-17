@@ -112,8 +112,8 @@ const statusBadgeVariants: Record<string, "default" | "secondary" | "destructive
 // API functions
 async function fetchPartners(params: { status?: string; city?: string; search?: string }): Promise<Partner[]> {
   const qs = new URLSearchParams();
-  if (params.status) qs.set("status", params.status);
-  if (params.city) qs.set("city", params.city);
+  if (params.status && params.status !== "all") qs.set("status", params.status);
+  if (params.city && params.city !== "all") qs.set("city", params.city);
   if (params.search) qs.set("search", params.search);
   const r = await fetch(`/api/crm/partners?${qs}`, { credentials: "include" });
   if (!r.ok) throw new Error("Failed to fetch partners");
@@ -451,8 +451,8 @@ export default function PartnersPage() {
   const queryClient = useQueryClient();
   const { data: cities = [] } = useGetCities();
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("");
-  const [cityFilter, setCityFilter] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [cityFilter, setCityFilter] = useState<string>("all");
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [selectedPartnerId, setSelectedPartnerId] = useState<number | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -492,7 +492,7 @@ export default function PartnersPage() {
                 <Button
                   variant={statusFilter === "pending" ? "default" : "outline"}
                   size="sm"
-                  onClick={() => setStatusFilter(statusFilter === "pending" ? "" : "pending")}
+                  onClick={() => setStatusFilter(statusFilter === "pending" ? "all" : "pending")}
                   className="relative"
                 >
                   <AlertCircle className="w-4 h-4 mr-1.5" />
@@ -527,7 +527,7 @@ export default function PartnersPage() {
                     <SelectValue placeholder="Все статусы" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Все статусы</SelectItem>
+                    <SelectItem value="all">Все статусы</SelectItem>
                     {Object.entries(statusLabels).map(([key, label]) => (
                       <SelectItem key={key} value={key}>
                         {label}
@@ -540,7 +540,7 @@ export default function PartnersPage() {
                     <SelectValue placeholder="Все города" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Все города</SelectItem>
+                    <SelectItem value="all">Все города</SelectItem>
                     {cities.map((c) => (
                       <SelectItem key={c} value={c}>
                         {c}
