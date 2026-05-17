@@ -10,6 +10,7 @@ export const trafficPartnersTable = pgTable("traffic_partners", {
   status: varchar("status", { length: 50 }).notNull().default("active"),
   avitoAccountName: varchar("avito_account_name", { length: 255 }),
   avitoAccountLink: varchar("avito_account_link", { length: 500 }),
+  refSlug: varchar("ref_slug", { length: 100 }).unique(),
   notes: text("notes"),
   registeredAt: timestamp("registered_at").notNull().defaultNow(),
   firstLeadAt: timestamp("first_lead_at"),

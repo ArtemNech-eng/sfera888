@@ -970,6 +970,17 @@ if (fs.existsSync(landingV1DistPath)) {
   });
 }
 
+// ── Serve referral-landing (partner referral landing) ──────────────────────────
+const referralLandingDistPath = path.join(__dirname, "../../referral-landing/dist/public");
+
+if (fs.existsSync(referralLandingDistPath)) {
+  app.use("/r", express.static(referralLandingDistPath));
+  // SPA fallback: any /r/:slug serves index.html
+  app.get("/r/:slug", (_req, res) => {
+    res.sendFile(path.join(referralLandingDistPath, "index.html"));
+  });
+}
+
 // Root redirect: / → master-landing
 app.get("/", (_req, res) => {
   if (fs.existsSync(landingV1DistPath)) {

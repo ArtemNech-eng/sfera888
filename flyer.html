@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Укладка тротуарной плитки</title>
+    <style>
+        @page {
+            size: A4 landscape;
+            margin: 0;
+        }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            width: 297mm;
+            height: 210mm;
+            font-family: Arial, sans-serif;
+            font-weight: bold;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            padding: 10mm 0 0 0;
+            position: relative;
+            overflow: hidden;
+            margin: 0;
+        }
+        .title {
+            font-size: 36px;
+            text-align: center;
+            line-height: 1.4;
+            margin-top: 15mm;
+        }
+        .strips {
+            display: flex;
+            justify-content: space-between;
+            gap: 0;
+            width: 100%;
+            padding: 0;
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+        }
+        .strip {
+            flex: 1;
+            height: 80mm;
+            border-right: 1px solid black;
+            border-top: 1px solid black;
+            padding: 3mm 2mm;
+            font-size: 11px;
+            display: flex;
+            flex-direction: column;
+        }
+        .strip:first-child {
+            border-left: 1px solid black;
+        }
+        .strip span {
+            line-height: 1.5;
+        }
+        .contacts {
+            text-align: center;
+            font-size: 18px;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="title">
+        УКЛАДКА ТРОТУАРНОЙ ПЛИТКИ<br>
+        УСТАНОВКА БОРДЮРОВ<br>
+        ЛЮБОЙ СЛОЖНОСТИ
+    </div>
+    <div class="contacts" style="text-align: center; font-size: 20px; margin-top: 10mm;">
+        Александр 8 964 222 87-51<br>
+        Владимир 8 961 447 61-74
+    </div>
+    
+    <div class="strips">
+        <div class="strip"><span>8961</span><span>4476</span><span>174</span><span>Владимир</span></div>
+        <div class="strip"><span>8964</span><span>2228</span><span>751</span><span>Александр</span></div>
+        <div class="strip"><span>8961</span><span>4476</span><span>174</span><span>Владимир</span></div>
+        <div class="strip"><span>8964</span><span>2228</span><span>751</span><span>Александр</span></div>
+        <div class="strip"><span>8964</span><span>2228</span><span>751</span><span>Александр</span></div>
+        <div class="strip"><span>8961</span><span>4476</span><span>174</span><span>Владимир</span></div>
+        <div class="strip"><span>8964</span><span>2228</span><span>751</span><span>Александр</span></div>
+        <div class="strip"><span>8961</span><span>4476</span><span>174</span><span>Владимир</span></div>
+        <div class="strip"><span>8964</span><span>2228</span><span>751</span><span>Александр</span></div>
+        <div class="strip"><span>8961</span><span>4476</span><span>174</span><span>Владимир</span></div>
+        <div class="strip"><span>8964</span><span>2228</span><span>751</span><span>Александр</span></div>
+        <div class="strip"><span>8961</span><span>4476</span><span>174</span><span>Владимир</span></div>
+        <div class="strip"><span>8964</span><span>2228</span><span>751</span><span>Александр</span></div>
+        <div class="strip"><span>8961</span><span>4476</span><span>174</span><span>Владимир</span></div>
+        <div class="strip"><span>8964</span><span>2228</span><span>751</span><span>Александр</span></div>
+        <div class="strip"><span>8961</span><span>4476</span><span>174</span><span>Владимир</span></div>
+        <div class="strip"><span>8964</span><span>2228</span><span>751</span><span>Александр</span></div>
+        <div class="strip"><span>8961</span><span>4476</span><span>174</span><span>Владимир</span></div>
+        <div class="strip"><span>8964</span><span>2228</span><span>751</span><span>Александр</span></div>
+    </div>
+    
+    <script>
+        // Автоматически открываем диалог печати
+        window.onload = function() {
+            setTimeout(() => {
+                window.print();
+            }, 500);
+        };
+    </script>
+</body>
+</html>

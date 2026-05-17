@@ -514,6 +514,8 @@ router.get("/leads", requirePartner, async (req: Request, res: Response) => {
         partner_lead_status: l.partnerLeadStatus,
         is_possible_duplicate: l.isPossibleDuplicate,
         partner_rejection_reason: l.partnerRejectionReason,
+        lead_channel: l.leadChannel,
+        source: l.source,
         created_at: l.createdAt,
       })),
       total: Number(totalRow.total),
