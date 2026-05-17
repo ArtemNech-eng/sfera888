@@ -136,14 +136,17 @@ async function createPartner(data: {
   avito_account_link?: string;
   notes?: string;
 }) {
+  console.log("[createPartner] POST /api/crm/partners", data);
   const r = await fetch("/api/crm/partners", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
     body: JSON.stringify(data),
   });
+  console.log("[createPartner] response status:", r.status);
   if (!r.ok) {
     const e = await r.json();
+    console.error("[createPartner] error:", e);
     throw new Error(e.error || "Failed to create partner");
   }
   return r.json();
@@ -193,6 +196,7 @@ function CreatePartnerModal({
     },
     onError: (e: any) => {
       toast({ title: "Ошибка", description: e.message, variant: "destructive" });
+      console.error("[CreatePartner] error:", e);
     },
   });
 
@@ -289,11 +293,15 @@ function CreatePartnerModal({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Отмена
           </Button>
           <Button
-            onClick={() => mutation.mutate(form)}
+            type="button"
+            onClick={() => {
+              console.log("[CreatePartner] click", form);
+              mutation.mutate(form);
+            }}
             disabled={!form.name || !form.phone || !form.city || !form.login || form.password.length < 6 || mutation.isPending}
           >
             {mutation.isPending ? "Создание..." : "Создать партнёра"}
