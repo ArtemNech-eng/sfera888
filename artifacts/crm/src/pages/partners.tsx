@@ -24,6 +24,8 @@ import {
   Inbox,
   CheckSquare,
   BarChart3,
+  Clock,
+  AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -71,7 +73,7 @@ interface Partner {
   city: string;
   avitoAccountName: string | null;
   avitoAccountLink: string | null;
-  status: "active" | "paused" | "blocked" | "archived";
+  status: "active" | "paused" | "blocked" | "archived" | "pending";
   createdAt: string;
   notes: string | null;
   login?: string;
@@ -88,6 +90,7 @@ const statusLabels: Record<string, string> = {
   paused: "На паузе",
   blocked: "Заблокирован",
   archived: "В архиве",
+  pending: "На рассмотрении",
 };
 
 const statusIcons: Record<string, React.ReactNode> = {
@@ -95,6 +98,7 @@ const statusIcons: Record<string, React.ReactNode> = {
   paused: <PauseCircle className="w-4 h-4 text-yellow-500" />,
   blocked: <Ban className="w-4 h-4 text-red-500" />,
   archived: <Archive className="w-4 h-4 text-gray-500" />,
+  pending: <Clock className="w-4 h-4 text-amber-500" />,
 };
 
 const statusBadgeVariants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -102,6 +106,7 @@ const statusBadgeVariants: Record<string, "default" | "secondary" | "destructive
   paused: "secondary",
   blocked: "destructive",
   archived: "outline",
+  pending: "secondary",
 };
 
 // API functions
@@ -457,6 +462,11 @@ export default function PartnersPage() {
     queryFn: () => fetchPartners({ status: statusFilter, city: cityFilter, search }),
   });
 
+  const { data: pendingPartners = [] } = useQuery<Partner[]>({
+    queryKey: ["partners", { status: "pending" }],
+    queryFn: () => fetchPartners({ status: "pending" }),
+  });
+
   const handleRowClick = (partner: Partner) => {
     setSelectedPartnerId(partner.id);
     setDetailOpen(true);
@@ -477,10 +487,26 @@ export default function PartnersPage() {
                 Управление партнёрами и их аккаунтами
               </p>
             </div>
-            <Button onClick={() => setCreateModalOpen(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              Добавить партнёра
-            </Button>
+            <div className="flex items-center gap-3">
+              {pendingPartners.length > 0 && (
+                <Button
+                  variant={statusFilter === "pending" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setStatusFilter(statusFilter === "pending" ? "" : "pending")}
+                  className="relative"
+                >
+                  <AlertCircle className="w-4 h-4 mr-1.5" />
+                  На рассмотрении
+                  <Badge variant="destructive" className="ml-2 h-5 min-w-[20px] px-1.5 text-xs">
+                    {pendingPartners.length}
+                  </Badge>
+                </Button>
+              )}
+              <Button onClick={() => setCreateModalOpen(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                Добавить партнёра
+              </Button>
+            </div>
           </div>
 
           {/* Filters */}
