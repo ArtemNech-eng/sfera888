@@ -417,6 +417,19 @@ function PartnerDetailDrawer({
                     Логин: <span className="font-mono">{partner.login}</span>
                   </div>
                 )}
+                {partner.refSlug && (
+                  <div className="text-sm">
+                    <span className="text-muted-foreground">Ссылка:</span>{" "}
+                    <a
+                      href={`https://sfera-master.ru/r/${partner.refSlug}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-primary hover:underline font-mono"
+                    >
+                      /r/{partner.refSlug}
+                    </a>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-3">
