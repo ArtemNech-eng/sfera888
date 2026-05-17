@@ -98,7 +98,7 @@ export default function Hero({ refSlug }: HeroProps) {
               {/* Main photo */}
               <div className="rounded-2xl overflow-hidden shadow-xl">
                 <img
-                  src="/images/master-hero.jpg"
+                  src="images/master-hero.jpg"
                   alt="Проверенный частный мастер"
                   className="w-full h-[420px] object-cover"
                 />
