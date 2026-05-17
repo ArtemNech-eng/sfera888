@@ -932,6 +932,14 @@ if (fs.existsSync(pwaDistPath)) {
   });
 }
 
+const partnerPwaDistPath = path.join(__dirname, "../../partner-pwa/dist/public");
+if (fs.existsSync(partnerPwaDistPath)) {
+  app.use("/partner-pwa", express.static(partnerPwaDistPath));
+  app.use("/partner-pwa", (_req, res) => {
+    res.sendFile(path.join(partnerPwaDistPath, "index.html"));
+  });
+}
+
 // ── Serve master-landing-v2 (recruitment landing) ─────────────────────────────
 const landingV2DistPath = path.join(__dirname, "../../master-landing-v2/dist/public");
 

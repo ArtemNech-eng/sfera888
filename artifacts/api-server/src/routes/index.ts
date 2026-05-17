@@ -75,7 +75,6 @@ router.use("/work-board", workBoardRouter);
 router.use("/work-board/table", workBoardTableRouter);
 router.use("/dashboard", dashboardActionItemsRouter);
 router.use("/wallet", walletRouter);
-
 // Push subscription endpoint for operators (CRM)
 router.post("/push/operator-subscribe", ops, async (req: any, res: any) => {
   const { endpoint, p256dh, auth } = req.body ?? {};

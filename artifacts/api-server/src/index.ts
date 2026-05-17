@@ -361,6 +361,78 @@ async function runMigrations() {
     UPDATE orders SET payment_model = 'commission'
     WHERE payment_model = 'token' AND created_at < NOW()
   `);
+  // ── Partner PWA tables ─────────────────────────────────────────────────────
+  // Add 'partner' to user_role enum (idempotent)
+  await db.execute(sql`
+    DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_enum
+        WHERE enumlabel = 'partner'
+          AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'user_role')
+      ) THEN
+        ALTER TYPE user_role ADD VALUE 'partner';
+      END IF;
+    END $$
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS traffic_partners (
+      id            SERIAL PRIMARY KEY,
+      user_id       INTEGER REFERENCES users(id),
+      name          VARCHAR(255) NOT NULL,
+      phone         VARCHAR(50)  NOT NULL,
+      city          VARCHAR(100) NOT NULL,
+      status        VARCHAR(50)  NOT NULL DEFAULT 'active',
+      avito_account_name  VARCHAR(255),
+      avito_account_link  VARCHAR(500),
+      notes         TEXT,
+      registered_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      first_lead_at TIMESTAMP,
+      created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at    TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS partner_billing_periods (
+      id                  SERIAL PRIMARY KEY,
+      partner_id          INTEGER NOT NULL REFERENCES traffic_partners(id),
+      period_start        DATE NOT NULL,
+      period_end          DATE NOT NULL,
+      is_first_period     BOOLEAN NOT NULL DEFAULT FALSE,
+      days_in_period      INTEGER NOT NULL,
+      leads_count         INTEGER NOT NULL DEFAULT 0,
+      valid_leads_count   INTEGER NOT NULL DEFAULT 0,
+      token_spent_count   INTEGER NOT NULL DEFAULT 0,
+      fixed_pct           NUMERIC(5,4) NOT NULL DEFAULT 0,
+      fixed_salary_base   NUMERIC(10,2) NOT NULL DEFAULT 0,
+      fixed_salary_earned NUMERIC(10,2) NOT NULL DEFAULT 0,
+      bonus_per_lead      INTEGER NOT NULL DEFAULT 250,
+      bonus_earned        NUMERIC(10,2) NOT NULL DEFAULT 0,
+      total_earned        NUMERIC(10,2) NOT NULL DEFAULT 0,
+      status              VARCHAR(50) NOT NULL DEFAULT 'calculating',
+      created_at          TIMESTAMP NOT NULL DEFAULT NOW(),
+      paid_at             TIMESTAMP
+    )
+  `);
+  await db.execute(sql`
+    ALTER TABLE leads
+      ADD COLUMN IF NOT EXISTS traffic_partner_id      INTEGER,
+      ADD COLUMN IF NOT EXISTS lead_channel            VARCHAR(100) DEFAULT 'avito_partner',
+      ADD COLUMN IF NOT EXISTS is_possible_duplicate   BOOLEAN DEFAULT FALSE,
+      ADD COLUMN IF NOT EXISTS partner_lead_status     VARCHAR(50),
+      ADD COLUMN IF NOT EXISTS partner_rejection_reason VARCHAR(500)
+  `);
+  // Seed partner system settings (ON CONFLICT DO NOTHING = idempotent)
+  await db.execute(sql`
+    INSERT INTO system_settings (key, value, updated_at) VALUES
+      ('partner_fixed_salary_max',        '15000', NOW()),
+      ('partner_fixed_target_leads',      '30',    NOW()),
+      ('partner_bonus_per_accepted_lead', '250',   NOW()),
+      ('partner_monthly_leads_plan',      '50',    NOW()),
+      ('manual_partner_lead_review',      'true',  NOW()),
+      ('partner_payout_day_start',        '1',     NOW()),
+      ('partner_payout_day_end',          '5',     NOW())
+    ON CONFLICT (key) DO NOTHING
+  `);
   console.log("[startup] Migrations applied");
 }
 
