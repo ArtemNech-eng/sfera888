@@ -1,4 +1,5 @@
 import { useState, FormEvent } from 'react';
+import { User, Phone, MapPin, MessageSquare, CheckCircle, Loader2, Sparkles } from 'lucide-react';
 
 const serviceOptions = [
   'Обои',
@@ -117,9 +118,7 @@ export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
         <div className="max-w-xl mx-auto px-4 sm:px-6 text-center">
           <div className="bg-white rounded-2xl p-10 border border-[#E5E7EB] shadow-sm">
             <div className="w-16 h-16 rounded-full bg-[#E8F9EE] flex items-center justify-center mx-auto mb-5">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#34C759" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12"/>
-              </svg>
+              <CheckCircle size={32} className="text-[#34C759]" />
             </div>
             <h3 className="text-2xl font-extrabold text-[#111827] mb-3">Заявка принята</h3>
             <p className="text-[#6B7280] text-base mb-2">Подбираем мастера.</p>
@@ -129,9 +128,7 @@ export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
             </p>
             {refSlug && (
               <div className="mt-5 inline-flex items-center gap-2 bg-[#E8F9EE] text-[#1a8a3c] text-sm font-medium px-3 py-2 rounded-lg">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12"/>
-                </svg>
+                <CheckCircle size={14} className="text-[#34C759]" />
                 Заявка оформлена по рекомендации — приоритетная обработка
               </div>
             )}
@@ -156,12 +153,7 @@ export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
         <div className="bg-white rounded-2xl border border-[#E5E7EB] shadow-sm p-7 sm:p-9">
           {refSlug && (
             <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-sm font-medium px-4 py-2.5 rounded-xl mb-6">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                <circle cx="9" cy="7" r="4"/>
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-              </svg>
+              <User size={15} />
               Заявка оформляется по рекомендации
             </div>
           )}
@@ -170,51 +162,60 @@ export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
             {/* Name */}
             <div>
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Имя</label>
-              <input
-                type="text"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="Как вас зовут?"
-                className={`w-full border rounded-xl px-4 py-3 text-sm text-[#111827] placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 transition-colors ${
-                  errors.name
-                    ? 'border-[#EF4444] focus:ring-[#EF4444]/20'
-                    : 'border-[#E5E7EB] focus:ring-[#34C759]/20 focus:border-[#34C759]'
-                }`}
-              />
+              <div className="relative">
+                <User size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  placeholder="Как вас зовут?"
+                  className={`w-full border rounded-xl pl-10 pr-4 py-3 text-sm text-[#111827] placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 transition-colors ${
+                    errors.name
+                      ? 'border-[#EF4444] focus:ring-[#EF4444]/20'
+                      : 'border-[#E5E7EB] focus:ring-[#34C759]/20 focus:border-[#34C759]'
+                  }`}
+                />
+              </div>
               {errors.name && <p className="text-[#EF4444] text-xs mt-1.5">{errors.name}</p>}
             </div>
 
             {/* Phone */}
             <div>
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Телефон</label>
-              <input
-                type="tel"
-                value={form.phone}
-                onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                placeholder="+7 900 000-00-00"
-                className={`w-full border rounded-xl px-4 py-3 text-sm text-[#111827] placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 transition-colors ${
-                  errors.phone
-                    ? 'border-[#EF4444] focus:ring-[#EF4444]/20'
-                    : 'border-[#E5E7EB] focus:ring-[#34C759]/20 focus:border-[#34C759]'
-                }`}
-              />
+              <div className="relative">
+                <Phone size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
+                <input
+                  type="tel"
+                  value={form.phone}
+                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  placeholder="+7 900 000-00-00"
+                  className={`w-full border rounded-xl pl-10 pr-4 py-3 text-sm text-[#111827] placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 transition-colors ${
+                    errors.phone
+                      ? 'border-[#EF4444] focus:ring-[#EF4444]/20'
+                      : 'border-[#E5E7EB] focus:ring-[#34C759]/20 focus:border-[#34C759]'
+                  }`}
+                />
+              </div>
               {errors.phone && <p className="text-[#EF4444] text-xs mt-1.5">{errors.phone}</p>}
             </div>
 
             {/* City */}
             <div>
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Город</label>
-              <input
-                type="text"
-                value={form.city}
-                onChange={(e) => setForm({ ...form, city: e.target.value })}
-                placeholder="Ваш город"
-                className={`w-full border rounded-xl px-4 py-3 text-sm text-[#111827] placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 transition-colors ${
-                  errors.city
-                    ? 'border-[#EF4444] focus:ring-[#EF4444]/20'
-                    : 'border-[#E5E7EB] focus:ring-[#34C759]/20 focus:border-[#34C759]'
-                }`}
-              />
+              <div className="relative">
+                <MapPin size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
+                <input
+                  type="text"
+                  value={form.city}
+                  onChange={(e) => setForm({ ...form, city: e.target.value })}
+                  placeholder="Ваш город"
+                  className={`w-full border rounded-xl pl-10 pr-4 py-3 text-sm text-[#111827] placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 transition-colors ${
+                    errors.city
+                      ? 'border-[#EF4444] focus:ring-[#EF4444]/20'
+                      : 'border-[#E5E7EB] focus:ring-[#34C759]/20 focus:border-[#34C759]'
+                  }`}
+                />
+              </div>
               {errors.city && <p className="text-[#EF4444] text-xs mt-1.5">{errors.city}</p>}
             </div>
 
@@ -249,20 +250,23 @@ export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
                 Комментарий{' '}
                 <span className="text-[#94A3B8] font-normal">(необязательно)</span>
               </label>
-              <textarea
-                rows={3}
-                value={form.comment}
-                onChange={(e) => {
-                  setForm({ ...form, comment: e.target.value });
-                  if (errors.comment) setErrors({ ...errors, comment: undefined });
-                }}
-                placeholder="Например: 2 комнаты, стены подготовлены, нужен старт на этой неделе"
-                className={`w-full border rounded-xl px-4 py-3 text-sm text-[#111827] placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 resize-none transition-colors ${
-                  errors.comment
-                    ? 'border-[#EF4444] focus:ring-[#EF4444]/20'
-                    : 'border-[#E5E7EB] focus:ring-[#34C759]/20 focus:border-[#34C759]'
-                }`}
-              />
+              <div className="relative">
+                <MessageSquare size={16} className="absolute left-3 top-3 text-[#94A3B8]" />
+                <textarea
+                  rows={3}
+                  value={form.comment}
+                  onChange={(e) => {
+                    setForm({ ...form, comment: e.target.value });
+                    if (errors.comment) setErrors({ ...errors, comment: undefined });
+                  }}
+                  placeholder="Например: 2 комнаты, стены подготовлены, нужен старт на этой неделе"
+                  className={`w-full border rounded-xl pl-10 pr-4 py-3 text-sm text-[#111827] placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 resize-none transition-colors ${
+                    errors.comment
+                      ? 'border-[#EF4444] focus:ring-[#EF4444]/20'
+                      : 'border-[#E5E7EB] focus:ring-[#34C759]/20 focus:border-[#34C759]'
+                  }`}
+                />
+              </div>
               {errors.comment ? (
                 <p className="text-[#EF4444] text-xs mt-1.5">{errors.comment}</p>
               ) : (
@@ -280,14 +284,14 @@ export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
             >
               {loading ? (
                 <>
-                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="white" strokeWidth="4"/>
-                    <path className="opacity-75" fill="white" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                  </svg>
+                  <Loader2 size={16} className="animate-spin" />
                   Отправляем...
                 </>
               ) : (
-                'Оставить заявку'
+                <>
+                  <Sparkles size={16} />
+                  Оставить заявку
+                </>
               )}
             </button>
 

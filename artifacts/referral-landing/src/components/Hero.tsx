@@ -1,3 +1,5 @@
+import { Users, FileCheck, Zap, Star, ShieldCheck, TrendingUp } from 'lucide-react';
+
 interface HeroProps {
   refSlug: string | null;
 }
@@ -56,17 +58,20 @@ export default function Hero({ refSlug }: HeroProps) {
             {/* Mini advantages */}
             <ul className="space-y-3 mb-8">
               {[
-                { icon: '👤', text: 'Частные мастера без посредников' },
-                { icon: '⭐', text: 'Документы проверены, рейтинг от 4.5' },
-                { icon: '⚡', text: 'Подбор специалиста за 15–30 минут' },
-              ].map((item) => (
-                <li key={item.text} className="flex items-center gap-3 text-[#374151]">
-                  <span className="w-7 h-7 rounded-full bg-[#E8F9EE] flex items-center justify-center text-sm flex-shrink-0">
-                    {item.icon}
-                  </span>
-                  <span className="text-sm font-medium">{item.text}</span>
-                </li>
-              ))}
+                { icon: Users, text: 'Частные мастера без посредников' },
+                { icon: FileCheck, text: 'Документы проверены, рейтинг от 4.5' },
+                { icon: Zap, text: 'Подбор специалиста за 15–30 минут' },
+              ].map((item) => {
+                const Icon = item.icon;
+                return (
+                  <li key={item.text} className="flex items-center gap-3 text-[#374151]">
+                    <span className="w-7 h-7 rounded-full bg-[#E8F9EE] flex items-center justify-center text-sm flex-shrink-0">
+                      <Icon size={14} className="text-[#34C759]" />
+                    </span>
+                    <span className="text-sm font-medium">{item.text}</span>
+                  </li>
+                );
+              })}
             </ul>
 
             {/* Buttons */}
@@ -86,10 +91,13 @@ export default function Hero({ refSlug }: HeroProps) {
             </div>
 
             {/* Social proof */}
-            <p className="text-[#94A3B8] text-sm mt-5">
-              Сегодня уже подобрали мастеров для{' '}
-              <span className="font-semibold text-[#6B7280]">7 объектов</span>
-            </p>
+            <div className="flex items-center gap-2 text-[#94A3B8] text-sm mt-5">
+              <TrendingUp size={14} className="text-[#34C759]" />
+              <span>
+                Более <span className="font-semibold text-[#6B7280]">340 мастеров</span> и{' '}
+                <span className="font-semibold text-[#6B7280]">2 100+ заказов</span>
+              </span>
+            </div>
           </div>
 
           {/* Right column — photo + floating cards */}
@@ -106,7 +114,9 @@ export default function Hero({ refSlug }: HeroProps) {
 
               {/* Rating card */}
               <div className="absolute -left-4 top-8 bg-white rounded-xl shadow-lg px-4 py-3 flex items-center gap-3 border border-[#E5E7EB]">
-                <div className="w-10 h-10 rounded-full bg-[#E8F9EE] flex items-center justify-center text-lg">⭐</div>
+                <div className="w-10 h-10 rounded-full bg-[#E8F9EE] flex items-center justify-center">
+                  <Star size={18} className="text-[#34C759]" fill="#34C759" />
+                </div>
                 <div>
                   <p className="text-xs text-[#94A3B8] font-medium">Рейтинг мастеров</p>
                   <p className="text-[#111827] font-bold text-lg leading-none">4.8 / 5</p>
@@ -128,7 +138,9 @@ export default function Hero({ refSlug }: HeroProps) {
 
               {/* Guarantee card */}
               <div className="absolute -left-4 bottom-10 bg-white rounded-xl shadow-lg px-4 py-3 flex items-center gap-3 border border-[#E5E7EB]">
-                <div className="w-10 h-10 rounded-full bg-[#E8F9EE] flex items-center justify-center text-lg">🛡️</div>
+                <div className="w-10 h-10 rounded-full bg-[#E8F9EE] flex items-center justify-center">
+                  <ShieldCheck size={18} className="text-[#34C759]" />
+                </div>
                 <div>
                   <p className="text-xs text-[#94A3B8] font-medium">Гарантия работ</p>
                   <p className="text-[#111827] font-bold text-base">2 года</p>

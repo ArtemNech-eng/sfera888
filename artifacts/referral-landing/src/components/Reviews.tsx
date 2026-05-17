@@ -43,14 +43,28 @@ const reviews = [
   },
 ];
 
+import { Star, Quote } from 'lucide-react';
+
 function StarRating({ count }: { count: number }) {
   return (
     <div className="flex gap-0.5">
       {Array.from({ length: count }).map((_, i) => (
-        <svg key={i} width="14" height="14" viewBox="0 0 24 24" fill="#F59E0B" stroke="none">
-          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-        </svg>
+        <Star key={i} size={14} className="text-[#F59E0B]" fill="#F59E0B" />
       ))}
+    </div>
+  );
+}
+
+function Avatar({ name }: { name: string }) {
+  const initials = name
+    .split(' ')
+    .map((n) => n[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
+  return (
+    <div className="w-10 h-10 rounded-full bg-[#E8F9EE] flex items-center justify-center text-[#34C759] font-bold text-sm">
+      {initials}
     </div>
   );
 }
@@ -64,9 +78,7 @@ export default function Reviews() {
             Отзывы клиентов
           </h2>
           <div className="inline-flex items-center gap-2 bg-[#E8F9EE] text-[#1a8a3c] text-sm font-semibold px-4 py-2 rounded-full">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="#34C759" stroke="none">
-              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-            </svg>
+            <Star size={14} className="text-[#34C759]" fill="#34C759" />
             Средний рейтинг мастеров: 4.8 / 5
           </div>
         </div>
@@ -77,11 +89,17 @@ export default function Reviews() {
               key={review.name}
               className="bg-white rounded-2xl p-6 border border-[#E5E7EB] flex flex-col gap-3 hover:shadow-md transition-shadow"
             >
-              <StarRating count={review.rating} />
+              <div className="flex items-center justify-between">
+                <StarRating count={review.rating} />
+                <Quote size={16} className="text-[#E5E7EB]" />
+              </div>
               <p className="text-[#374151] text-sm leading-relaxed flex-1">«{review.text}»</p>
-              <div className="border-t border-[#F1F5F9] pt-3">
-                <p className="text-[#111827] font-semibold text-sm">{review.name}</p>
-                <p className="text-[#94A3B8] text-xs mt-0.5">{review.location} · {review.work}</p>
+              <div className="border-t border-[#F1F5F9] pt-3 flex items-center gap-3">
+                <Avatar name={review.name} />
+                <div>
+                  <p className="text-[#111827] font-semibold text-sm">{review.name}</p>
+                  <p className="text-[#94A3B8] text-xs mt-0.5">{review.location} · {review.work}</p>
+                </div>
               </div>
             </div>
           ))}
