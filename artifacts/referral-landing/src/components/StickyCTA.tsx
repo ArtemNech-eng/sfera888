@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Sparkles } from 'lucide-react';
 
 export default function StickyCTA() {
   const [visible, setVisible] = useState(false);
@@ -21,13 +22,21 @@ export default function StickyCTA() {
         visible ? 'translate-y-0' : 'translate-y-full'
       }`}
     >
-      <div className="bg-white border-t border-[#E5E7EB] px-4 py-3 safe-area-bottom">
+      <div className="bg-white/95 backdrop-blur-md border-t border-[#E5E7EB] px-4 py-3 pb-[max(12px,env(safe-area-inset-bottom))] shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
         <button
           onClick={scrollToForm}
-          className="w-full bg-[#34C759] text-white font-semibold py-3.5 rounded-xl text-base hover:bg-[#2db34e] transition-colors"
+          className="w-full text-white font-bold py-3.5 rounded-xl text-base flex items-center justify-center gap-2 animate-pulse-glow"
+          style={{
+            background: 'linear-gradient(135deg, #34C759 0%, #2db34e 50%, #34C759 100%)',
+            boxShadow: '0 4px 14px rgba(52,199,89,0.35)',
+          }}
         >
+          <Sparkles size={18} />
           Оставить заявку
         </button>
+        <p className="text-center text-[#94A3B8] text-xs mt-2">
+          Бесплатно · Ответ за 15 минут · Скидка до 15%
+        </p>
       </div>
     </div>
   );

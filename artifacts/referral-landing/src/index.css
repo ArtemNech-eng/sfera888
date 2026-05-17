@@ -22,3 +22,16 @@
     padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
   }
 }
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 4px 14px rgba(52, 199, 89, 0.35);
+  }
+  50% {
+    box-shadow: 0 4px 24px rgba(52, 199, 89, 0.55);
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2.5s ease-in-out infinite;
+}
