@@ -1,4 +1,4 @@
-import { Users, FileCheck, Zap, Star, ShieldCheck, TrendingUp } from 'lucide-react';
+import { Users, FileCheck, Zap, Star, ShieldCheck, TrendingUp, Heart, CheckCircle2 } from 'lucide-react';
 
 interface HeroProps {
   refSlug: string | null;
@@ -27,12 +27,7 @@ export default function Hero({ refSlug }: HeroProps) {
 
             {refSlug && (
               <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-sm font-medium px-3 py-2 rounded-lg mb-5">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                  <circle cx="9" cy="7" r="4"/>
-                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-                  <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                </svg>
+                <Heart size={16} />
                 Вам нас порекомендовал мастер
               </div>
             )}
@@ -49,9 +44,7 @@ export default function Hero({ refSlug }: HeroProps) {
 
             {/* Discount badge */}
             <div className="inline-flex items-center gap-2 bg-[#F59E0B]/10 border border-[#F59E0B]/30 text-[#92400e] text-sm font-semibold px-4 py-2 rounded-lg mb-8">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-              </svg>
+              <Heart size={16} className="fill-[#F59E0B] text-[#F59E0B]" />
               Скидка до 15% по рекомендации мастера
             </div>
 
@@ -101,17 +94,60 @@ export default function Hero({ refSlug }: HeroProps) {
           </div>
 
           {/* Right column — photo + floating cards */}
-          <div className="flex-1 w-full max-w-md lg:max-w-none relative">
-            <div className="relative">
-              {/* Main photo */}
-              <div className="rounded-2xl overflow-hidden shadow-xl">
-                <img
-                  src="images/master-hero.jpg"
-                  alt="Проверенный частный мастер"
-                  className="w-full h-[420px] object-cover"
-                />
-              </div>
+          <div className="flex-1 w-full max-w-md lg:max-w-none">
+            {/* Photo */}
+            <div className="rounded-2xl overflow-hidden shadow-xl">
+              <img
+                src="images/master-hero.jpg"
+                alt="Проверенный частный мастер"
+                className="w-full h-[280px] sm:h-[360px] lg:h-[420px] object-cover object-top"
+              />
+            </div>
 
+            {/* Mobile cards grid (shown only below lg) */}
+            <div className="lg:hidden grid grid-cols-2 gap-3 mt-4">
+              <div className="bg-white rounded-xl shadow-md px-3 py-3 flex items-center gap-2 border border-[#E5E7EB]">
+                <div className="w-8 h-8 rounded-full bg-[#E8F9EE] flex items-center justify-center flex-shrink-0">
+                  <Star size={16} className="text-[#34C759]" fill="#34C759" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-[#94A3B8] font-medium leading-none">Рейтинг</p>
+                  <p className="text-[#111827] font-bold text-sm leading-tight">4.8 / 5</p>
+                </div>
+              </div>
+              <div className="bg-white rounded-xl shadow-md px-3 py-3 flex items-center gap-2 border border-[#E5E7EB]">
+                <div className="w-8 h-8 rounded-full bg-[#E8F9EE] flex items-center justify-center flex-shrink-0">
+                  <CheckCircle2 size={16} className="text-[#34C759]" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-[#94A3B8] font-medium leading-none">Документы</p>
+                  <p className="text-[#111827] font-bold text-sm leading-tight">Проверены</p>
+                </div>
+              </div>
+              <div className="bg-white rounded-xl shadow-md px-3 py-3 flex items-center gap-2 border border-[#E5E7EB]">
+                <div className="w-8 h-8 rounded-full bg-[#E8F9EE] flex items-center justify-center flex-shrink-0">
+                  <ShieldCheck size={16} className="text-[#34C759]" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-[#94A3B8] font-medium leading-none">Гарантия</p>
+                  <p className="text-[#111827] font-bold text-sm leading-tight">2 года</p>
+                </div>
+              </div>
+              <div className="bg-white rounded-xl shadow-md px-3 py-3 border border-[#E5E7EB]">
+                <p className="text-[10px] text-[#94A3B8] font-medium mb-1">Смета</p>
+                <div className="flex justify-between text-[10px] text-[#374151]">
+                  <span>Обои</span>
+                  <span className="font-semibold">14 000 ₽</span>
+                </div>
+                <div className="border-t border-[#E5E7EB] pt-0.5 mt-0.5 flex justify-between text-[10px]">
+                  <span className="text-[#6B7280]">Итого</span>
+                  <span className="font-bold text-[#34C759]">22 000 ₽</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Desktop floating cards (shown only on lg+) */}
+            <div className="hidden lg:block relative">
               {/* Rating card */}
               <div className="absolute -left-4 top-8 bg-white rounded-xl shadow-lg px-4 py-3 flex items-center gap-3 border border-[#E5E7EB]">
                 <div className="w-10 h-10 rounded-full bg-[#E8F9EE] flex items-center justify-center">
@@ -126,9 +162,7 @@ export default function Hero({ refSlug }: HeroProps) {
               {/* Verified card */}
               <div className="absolute -right-4 top-16 bg-white rounded-xl shadow-lg px-4 py-3 flex items-center gap-2 border border-[#E5E7EB]">
                 <div className="w-8 h-8 rounded-full bg-[#E8F9EE] flex items-center justify-center">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#34C759" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="20 6 9 17 4 12"/>
-                  </svg>
+                  <CheckCircle2 size={16} className="text-[#34C759]" />
                 </div>
                 <div>
                   <p className="text-xs text-[#94A3B8] font-medium">Документы</p>

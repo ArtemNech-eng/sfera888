@@ -1,3 +1,5 @@
+import { CheckCircle2 } from 'lucide-react';
+
 export default function FinalCTA() {
   const scrollToForm = () => {
     document.getElementById('form')?.scrollIntoView({ behavior: 'smooth' });
@@ -21,38 +23,14 @@ export default function FinalCTA() {
         </button>
 
         <div className="flex flex-wrap justify-center gap-5 mt-10 text-sm text-[#94A3B8]">
-          <span className="flex items-center gap-2">
-            <span className="w-4 h-4 rounded-full bg-[#34C759]/20 flex items-center justify-center">
-              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#34C759" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12"/>
-              </svg>
+          {['Бесплатная заявка', 'Подбор за 15–30 минут', 'Гарантия 2 года', 'Без посредников'].map((badge) => (
+            <span key={badge} className="flex items-center gap-2">
+              <span className="w-4 h-4 rounded-full bg-[#34C759]/20 flex items-center justify-center">
+                <CheckCircle2 size={9} className="text-[#34C759]" />
+              </span>
+              {badge}
             </span>
-            Бесплатная заявка
-          </span>
-          <span className="flex items-center gap-2">
-            <span className="w-4 h-4 rounded-full bg-[#34C759]/20 flex items-center justify-center">
-              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#34C759" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12"/>
-              </svg>
-            </span>
-            Подбор за 15–30 минут
-          </span>
-          <span className="flex items-center gap-2">
-            <span className="w-4 h-4 rounded-full bg-[#34C759]/20 flex items-center justify-center">
-              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#34C759" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12"/>
-              </svg>
-            </span>
-            Гарантия 2 года
-          </span>
-          <span className="flex items-center gap-2">
-            <span className="w-4 h-4 rounded-full bg-[#34C759]/20 flex items-center justify-center">
-              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#34C759" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12"/>
-              </svg>
-            </span>
-            Без посредников
-          </span>
+          ))}
         </div>
       </div>
     </section>

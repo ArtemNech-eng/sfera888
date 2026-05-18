@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 
 const faqs = [
   {
@@ -48,9 +49,7 @@ function FAQItem({ question, answer }: { question: string; answer: string }) {
             open ? 'rotate-180' : ''
           }`}
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="6 9 12 15 18 9"/>
-          </svg>
+          <ChevronDown size={12} className="text-[#6B7280]" />
         </span>
       </button>
       {open && (
