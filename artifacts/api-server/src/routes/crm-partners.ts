@@ -12,7 +12,7 @@ import {
   ordersTable,
   systemSettingsTable,
 } from "@workspace/db";
-import { eq, and, desc, asc, like, gte, lte, isNull, inArray, sql, count, or } from "drizzle-orm";
+import { eq, and, desc, asc, like, gte, lte, isNull, isNotNull, inArray, sql, count, or } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth.js";
 import { z } from "zod";
 
@@ -473,49 +473,48 @@ router.get("/partner-analytics", async (req: Request, res: Response) => {
     const partners = await db.select().from(trafficPartnersTable);
     const activePartners = partners.filter((p) => p.status === "active");
 
-    // Leads this month
+    // Leads this month (only partner leads)
     const [{ leadsCount }] = await db
       .select({ leadsCount: count() })
-      .from(leadsTable)
-      .where(and(isNull(leadsTable.deletedAt), gte(leadsTable.createdAt, monthStart), lte(leadsTable.createdAt, monthEnd)));
-
-    // Orders (token spent) this month from partner leads
-    const monthPartnerLeads = await db
-      .select({ id: leadsTable.id, trafficPartnerId: leadsTable.trafficPartnerId })
       .from(leadsTable)
       .where(
         and(
           isNull(leadsTable.deletedAt),
-          isNull(leadsTable.trafficPartnerId),
+          isNotNull(leadsTable.trafficPartnerId),
           gte(leadsTable.createdAt, monthStart),
           lte(leadsTable.createdAt, monthEnd)
         )
       );
-    // Fix: use not null
 
-    const [{ acceptedCount }] = await db
-      .select({ acceptedCount: count() })
-      .from(ordersTable)
-      .where(
-        and(
-          inArray(
-            ordersTable.leadId,
-            (
-              await db
-                .select({ id: leadsTable.id })
-                .from(leadsTable)
-                .where(
-                  and(
-                    isNull(leadsTable.deletedAt),
-                    gte(leadsTable.createdAt, monthStart),
-                    lte(leadsTable.createdAt, monthEnd)
-                  )
-                )
-            ).map((l) => l.id)
-          ),
-          inArray(ordersTable.status, ["master_assigned", "in_progress", "completed"])
+    // Partner lead IDs this month (for accepted orders)
+    const monthPartnerLeadIds = (
+      await db
+        .select({ id: leadsTable.id })
+        .from(leadsTable)
+        .where(
+          and(
+            isNull(leadsTable.deletedAt),
+            isNotNull(leadsTable.trafficPartnerId),
+            gte(leadsTable.createdAt, monthStart),
+            lte(leadsTable.createdAt, monthEnd)
+          )
         )
-      );
+    ).map((l) => l.id);
+
+    // Accepted orders from partner leads this month
+    let acceptedCount = 0;
+    if (monthPartnerLeadIds.length > 0) {
+      const [{ acceptedCount: ac }] = await db
+        .select({ acceptedCount: count() })
+        .from(ordersTable)
+        .where(
+          and(
+            inArray(ordersTable.leadId, monthPartnerLeadIds),
+            inArray(ordersTable.status, ["master_assigned", "in_progress", "completed"])
+          )
+        );
+      acceptedCount = Number(ac);
+    }
 
     // Per-partner analytics
     const partnerStats = await Promise.all(
