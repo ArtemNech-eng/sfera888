@@ -215,6 +215,7 @@ export default function Leads() {
   // ── Leads (Tab 1) state ───────────────────────────────────────────────────
   const [leadStatusFilter, setLeadStatusFilter] = useState<string>("");
   const [leadSourceFilter, setLeadSourceFilter] = useState<string>("");
+  const [leadDateFilter, setLeadDateFilter] = useState<"all" | "today" | "yesterday" | "week" | "month">("all");
   const [leadSearchQuery, setLeadSearchQuery] = useState<string>("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingLead, setEditingLead] = useState<LeadRow | null>(null);
@@ -498,9 +499,20 @@ export default function Leads() {
 
   const filteredLeads = useMemo(() => {
     const q = leadSearchQuery.trim().toLowerCase();
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
+    const weekAgo = new Date(today); weekAgo.setDate(weekAgo.getDate() - 7);
+    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
     return allLeads.filter(l => {
       if (leadStatusFilter && l.status !== leadStatusFilter) return false;
       if (leadSourceFilter && l.source !== leadSourceFilter) return false;
+      if (leadDateFilter !== "all") {
+        const created = new Date(l.createdAt);
+        if (leadDateFilter === "today" && created < today) return false;
+        if (leadDateFilter === "yesterday" && (created < yesterday || created >= today)) return false;
+        if (leadDateFilter === "week" && created < weekAgo) return false;
+        if (leadDateFilter === "month" && created < monthStart) return false;
+      }
       if (q) {
         const orderIdMatch = l.orderId != null && String(l.orderId) === q.replace(/^#/, "");
         const matches = orderIdMatch || l.clientName?.toLowerCase().includes(q) || l.clientPhone?.toLowerCase().includes(q) || l.city?.toLowerCase().includes(q) || (l.district ?? "").toLowerCase().includes(q);
@@ -508,13 +520,13 @@ export default function Leads() {
       }
       return true;
     });
-  }, [allLeads, leadStatusFilter, leadSourceFilter, leadSearchQuery]);
+  }, [allLeads, leadStatusFilter, leadSourceFilter, leadDateFilter, leadSearchQuery]);
 
   // Only new/processing leads for Tab 1 display when no filter is set
   const tab1Leads = useMemo(() => {
-    if (leadStatusFilter || leadSourceFilter || leadSearchQuery) return filteredLeads;
+    if (leadStatusFilter || leadSourceFilter || leadDateFilter !== "all" || leadSearchQuery) return filteredLeads;
     return allLeads.filter(l => l.status === "new" || l.status === "processing");
-  }, [allLeads, filteredLeads, leadStatusFilter, leadSourceFilter, leadSearchQuery]);
+  }, [allLeads, filteredLeads, leadStatusFilter, leadSourceFilter, leadDateFilter, leadSearchQuery]);
 
   const activeOrders = useMemo(() => {
     if (!orders) return [];
@@ -1034,14 +1046,24 @@ export default function Leads() {
                     {SOURCE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 </div>
+                <div className="w-full sm:w-44 relative">
+                  <Calendar className="w-4 h-4 absolute left-3 top-3 text-muted-foreground pointer-events-none" />
+                  <select value={leadDateFilter} onChange={e => setLeadDateFilter(e.target.value as any)} className="w-full pl-9 pr-4 py-2 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 appearance-none text-sm">
+                    <option value="all">Все даты</option>
+                    <option value="today">Сегодня</option>
+                    <option value="yesterday">Вчера</option>
+                    <option value="week">Неделя</option>
+                    <option value="month">Месяц</option>
+                  </select>
+                </div>
                 <div className="flex items-center gap-3 self-center">
                   {!leadsLoading && (
                     <span className="text-xs text-muted-foreground whitespace-nowrap">
                       {tab1Leads.length} заявок
                     </span>
                   )}
-                  {(leadStatusFilter || leadSourceFilter || leadSearchQuery) && (
-                    <button onClick={() => { setLeadStatusFilter(""); setLeadSourceFilter(""); setLeadSearchQuery(""); }} className="text-xs text-primary hover:underline whitespace-nowrap">Сбросить</button>
+                  {(leadStatusFilter || leadSourceFilter || leadDateFilter !== "all" || leadSearchQuery) && (
+                    <button onClick={() => { setLeadStatusFilter(""); setLeadSourceFilter(""); setLeadDateFilter("all"); setLeadSearchQuery(""); }} className="text-xs text-primary hover:underline whitespace-nowrap">Сбросить</button>
                   )}
                 </div>
               </div>
@@ -1052,7 +1074,7 @@ export default function Leads() {
                   {leadsLoading ? (
                     <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
                   ) : tab1Leads.length === 0 ? (
-                    <div className="text-center py-12 text-muted-foreground">{leadSearchQuery || leadStatusFilter || leadSourceFilter ? "Ничего не найдено" : "Новых заявок нет"}</div>
+                    <div className="text-center py-12 text-muted-foreground">{leadSearchQuery || leadStatusFilter || leadSourceFilter || leadDateFilter !== "all" ? "Ничего не найдено" : "Новых заявок нет"}</div>
                   ) : tab1Leads.map(lead => {
                     const srvs = lead.services;
                     const estimate = srvs ? srvs.reduce((sum, s) => sum + s.area * (s.pricePerM2 || 0), 0) : 0;
@@ -1122,9 +1144,10 @@ export default function Leads() {
                           </button>
                           <button
                             onClick={() => deleteLeadMutation.mutate(lead.id)}
-                            className="flex items-center justify-center px-4 py-2.5 text-muted-foreground/50 hover:text-red-500 hover:bg-red-50 text-xs"
+                            disabled={deleteLeadMutation.isPending}
+                            className="flex items-center justify-center px-4 py-2.5 text-muted-foreground/50 hover:text-red-500 hover:bg-red-50 text-xs disabled:opacity-30"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            {deleteLeadMutation.isPending && deleteLeadMutation.variables === lead.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
                           </button>
                         </div>
                       </div>
@@ -1150,7 +1173,7 @@ export default function Leads() {
                         {leadsLoading ? (
                           <tr><td colSpan={7} className="px-4 py-12 text-center"><Loader2 className="w-6 h-6 animate-spin text-primary mx-auto" /></td></tr>
                         ) : tab1Leads.length === 0 ? (
-                          <tr><td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">{leadSearchQuery || leadStatusFilter || leadSourceFilter ? "Ничего не найдено" : "Новых заявок нет"}</td></tr>
+                          <tr><td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">{leadSearchQuery || leadStatusFilter || leadSourceFilter || leadDateFilter !== "all" ? "Ничего не найдено" : "Новых заявок нет"}</td></tr>
                         ) : tab1Leads.map(lead => {
                           const srvs = lead.services;
                           const estimate = srvs ? srvs.reduce((sum, s) => sum + s.area * (s.pricePerM2 || 0), 0) : 0;
@@ -1200,7 +1223,7 @@ export default function Leads() {
                                       <Play className="w-2.5 h-2.5" />Отправить
                                     </button>
                                   )}
-                                  <button onClick={e => { e.stopPropagation(); deleteLeadMutation.mutate(lead.id); }} title="В корзину" className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground/30 hover:text-red-500 hover:bg-red-50 transition-all"><Trash2 className="w-3.5 h-3.5" /></button>
+                                  <button onClick={e => { e.stopPropagation(); deleteLeadMutation.mutate(lead.id); }} disabled={deleteLeadMutation.isPending} title="В корзину" className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground/30 hover:text-red-500 hover:bg-red-50 transition-all disabled:opacity-30">{deleteLeadMutation.isPending && deleteLeadMutation.variables === lead.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}</button>
                                 </div>
                               </td>
                             </tr>
@@ -1481,7 +1504,7 @@ export default function Leads() {
                     )}
                     <div className="flex gap-2">
                       <button onClick={() => { openEditModal(selectedLead); setSelectedLead(null); }} className="flex-1 flex items-center justify-center gap-2 py-2 px-4 bg-white border border-border rounded-xl font-medium text-sm text-foreground hover:bg-slate-50 transition-colors"><Pencil className="w-3.5 h-3.5" />Редактировать</button>
-                      <button onClick={() => { if (confirm(`Удалить заявку #${selectedLead.id}?`)) { deleteLeadMutation.mutate(selectedLead.id); setSelectedLead(null); } }} className="flex items-center justify-center gap-2 py-2 px-4 bg-white border border-red-200 rounded-xl font-medium text-sm text-red-500 hover:bg-red-50 transition-colors"><Trash2 className="w-3.5 h-3.5" />В корзину</button>
+                      <button onClick={() => { if (confirm(`Удалить заявку #${selectedLead.id}?`)) { deleteLeadMutation.mutate(selectedLead.id); setSelectedLead(null); } }} disabled={deleteLeadMutation.isPending} className="flex items-center justify-center gap-2 py-2 px-4 bg-white border border-red-200 rounded-xl font-medium text-sm text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"><Trash2 className="w-3.5 h-3.5" />В корзину</button>
                     </div>
                     <button onClick={() => setSelectedLead(null)} className="w-full py-2 text-sm font-medium text-muted-foreground hover:bg-slate-50 rounded-xl transition-colors">Закрыть</button>
                   </div>

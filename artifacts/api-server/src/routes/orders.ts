@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { db, ordersTable, mastersTable, transactionsTable, voronkaColumnsTable, orderDispatchesTable, leadsTable, masterMessagesTable, orderStatusLogsTable, usersTable, receiptsTable, fomoEventsTable } from "@workspace/db";
-import { eq, inArray, and, ne, isNull, isNotNull, desc } from "drizzle-orm";
+import { eq, inArray, and, ne, isNull, isNotNull, desc, count } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { calculateCommission, getCommissionSettings } from "../lib/commission.js";
 import { getMasterEligibility, getOverdueMasterIds, countActiveMasterOrders, getColumnIdForActiveCount } from "../lib/orderEligibility.js";
@@ -75,7 +75,11 @@ async function getAwaitingPaymentColumn() {
 }
 
 router.get("/", allOrderRoles, async (req, res) => {
-  const { status, masterId } = req.query;
+  const { status, masterId, page, limit } = req.query;
+  const pageNum = Math.max(1, parseInt((page as string) || "1", 10));
+  const limitNum = Math.min(100, Math.max(1, parseInt((limit as string) || "50", 10)));
+  const offset = (pageNum - 1) * limitNum;
+
   const conditions: any[] = [];
   if (status) conditions.push(eq(ordersTable.status, status as any));
   if (masterId) {
@@ -83,7 +87,9 @@ router.get("/", allOrderRoles, async (req, res) => {
     if (!isNaN(masterIdNum)) conditions.push(eq(ordersTable.masterId, masterIdNum));
   }
   conditions.push(isNull(ordersTable.deletedAt));
-  const orders = await db.select().from(ordersTable).where(and(...conditions)).orderBy(desc(ordersTable.createdAt));
+
+  const [{ total }] = await db.select({ total: count() }).from(ordersTable).where(and(...conditions));
+  const orders = await db.select().from(ordersTable).where(and(...conditions)).orderBy(desc(ordersTable.createdAt)).limit(limitNum).offset(offset);
 
   const masters = await db.select().from(mastersTable);
   const masterMap = new Map(masters.map(m => [m.id, m]));
@@ -120,47 +126,51 @@ router.get("/", allOrderRoles, async (req, res) => {
     }
   }
 
-  res.json(orders.map(o => {
-    const tx = txMap.get(o.id);
-    return {
-    id: o.id,
-    leadId: o.leadId,
-    city: o.city,
-    district: o.district,
-    serviceType: o.serviceType,
-    area: Number(o.area),
-    scheduledAt: o.scheduledAt ?? null,
-    comment: o.comment ?? null,
-    status: o.status,
-    dispatchStatus: o.dispatchStatus,
-    masterId: o.masterId ?? null,
-    masterName: o.masterId ? (masterMap.get(o.masterId)?.alias ?? recoveredNameMap.get(o.id) ?? null) : null,
-    clientPhone: leadMap.get(o.leadId)?.clientPhone ?? null,
-    clientName: leadMap.get(o.leadId)?.clientName ?? null,
-    proposedAmount: o.proposedAmount ? Number(o.proposedAmount) : null,
-    orderAmount: o.orderAmount ? Number(o.orderAmount) : null,
-    commission: o.commission ? Number(o.commission) : null,
-    clientRating: o.clientRating ?? null,
-    cancelReason: o.cancelReason ?? null,
-    cancelType: (o as any).cancelType ?? null,
-    operatorNote: (o as any).operatorNote ?? null,
-    assignedAt: (o as any).assignedAt ?? null,
-    completedAt: (o as any).completedAt ?? null,
-    photosBefore: (o as any).photosBefore ?? [],
-    photosAfter: (o as any).photosAfter ?? [],
-    photoAct: (o as any).photoAct ?? null,
-    createdAt: o.createdAt,
-    updatedAt: o.updatedAt,
-    // Transaction info from finance (may exist even if order fields are empty)
-    transactionInfo: tx ? {
-      orderAmount: Number(tx.orderAmount),
-      commission: Number(tx.commission),
-      prepaymentDeducted: Number(tx.prepaymentDeducted ?? 0),
-      paymentStatus: tx.paymentStatus,
-      paidAt: tx.paidAt ?? null,
-    } : null,
-  };
-  }));
+  res.json({
+    rows: orders.map((o) => {
+      const tx = txMap.get(o.id);
+      return {
+        id: o.id,
+        leadId: o.leadId,
+        city: o.city,
+        district: o.district,
+        serviceType: o.serviceType,
+        area: Number(o.area),
+        scheduledAt: o.scheduledAt ?? null,
+        comment: o.comment ?? null,
+        status: o.status,
+        dispatchStatus: o.dispatchStatus,
+        masterId: o.masterId ?? null,
+        masterName: o.masterId ? (masterMap.get(o.masterId)?.alias ?? recoveredNameMap.get(o.id) ?? null) : null,
+        clientPhone: leadMap.get(o.leadId)?.clientPhone ?? null,
+        clientName: leadMap.get(o.leadId)?.clientName ?? null,
+        proposedAmount: o.proposedAmount ? Number(o.proposedAmount) : null,
+        orderAmount: o.orderAmount ? Number(o.orderAmount) : null,
+        commission: o.commission ? Number(o.commission) : null,
+        clientRating: o.clientRating ?? null,
+        cancelReason: o.cancelReason ?? null,
+        cancelType: (o as any).cancelType ?? null,
+        operatorNote: (o as any).operatorNote ?? null,
+        assignedAt: (o as any).assignedAt ?? null,
+        completedAt: (o as any).completedAt ?? null,
+        photosBefore: (o as any).photosBefore ?? [],
+        photosAfter: (o as any).photosAfter ?? [],
+        photoAct: (o as any).photoAct ?? null,
+        createdAt: o.createdAt,
+        updatedAt: o.updatedAt,
+        transactionInfo: tx ? {
+          orderAmount: Number(tx.orderAmount),
+          commission: Number(tx.commission),
+          prepaymentDeducted: Number(tx.prepaymentDeducted ?? 0),
+          paymentStatus: tx.paymentStatus,
+          paidAt: tx.paidAt ?? null,
+        } : null,
+      };
+    }),
+    total,
+    page: pageNum,
+    limit: limitNum,
+  });
 });
 
 router.get("/:id", allOrderRoles, async (req, res) => {

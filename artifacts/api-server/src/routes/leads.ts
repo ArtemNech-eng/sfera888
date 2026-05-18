@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { db, leadsTable, ordersTable, serviceTypesTable, citiesTable } from "@workspace/db";
-import { eq, and, isNull, desc, sql } from "drizzle-orm";
+import { eq, and, isNull, desc, sql, count } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { notifyManagerNewLead } from "../managerBot.js";
 import { performBroadcast } from "../lib/broadcastOrder.js";
@@ -67,13 +67,22 @@ async function logLeadEvent(leadId: number, eventType: string, description: stri
 }
 
 router.get("/", allLeadRoles, async (req, res) => {
-  const { status, source } = req.query;
+  const { status, source, page, limit } = req.query;
+  const pageNum = Math.max(1, parseInt((page as string) || "1", 10));
+  const limitNum = Math.min(100, Math.max(1, parseInt((limit as string) || "50", 10)));
+  const offset = (pageNum - 1) * limitNum;
+
   const conditions: any[] = [isNull(leadsTable.deletedAt)];
-if (status) conditions.push(eq(leadsTable.status, status as any));
-if (source) conditions.push(eq(leadsTable.source, String(source)));
+  if (status) conditions.push(eq(leadsTable.status, status as any));
+  if (source) conditions.push(eq(leadsTable.source, String(source)));
+
+  const [{ total }] = await db.select({ total: count() }).from(leadsTable).where(and(...conditions));
+
   const rows = await db.select().from(leadsTable)
     .where(and(...conditions))
-    .orderBy(desc(leadsTable.createdAt));
+    .orderBy(desc(leadsTable.createdAt))
+    .limit(limitNum)
+    .offset(offset);
 
   // Fetch linked orders to include orderId in response
   const leadIds = rows.map(l => l.id);
@@ -89,17 +98,22 @@ if (source) conditions.push(eq(leadsTable.source, String(source)));
     }
   }
 
-  res.json(rows.map(l => ({
-    ...l,
-    area: Number(l.area),
-    scheduledAt: l.scheduledAt ?? null,
-    comment: l.comment ?? null,
-    photos: l.photos ? JSON.parse(l.photos) : null,
-    source: l.source ?? null,
-    services: parseServices(l.services),
-    cancellationReason: (l as any).cancellation_reason ?? null,
-    orderId: ordersByLeadId[l.id] ?? null,
-  })));
+  res.json({
+    rows: rows.map(l => ({
+      ...l,
+      area: Number(l.area),
+      scheduledAt: l.scheduledAt ?? null,
+      comment: l.comment ?? null,
+      photos: l.photos ? JSON.parse(l.photos) : null,
+      source: l.source ?? null,
+      services: parseServices(l.services),
+      cancellationReason: (l as any).cancellation_reason ?? null,
+      orderId: ordersByLeadId[l.id] ?? null,
+    })),
+    total,
+    page: pageNum,
+    limit: limitNum,
+  });
 });
 
 // Duplicate phone check — must be BEFORE /:id route
@@ -118,6 +132,16 @@ router.post("/", checkRateLimit, allLeadRoles, async (req, res) => {
   const { clientName, clientPhone, city, district, services, serviceType: rawServiceType, area: rawArea, scheduledAt, comment, source, photos } = req.body;
   if (!clientName || !clientPhone || !city || !district) {
     return res.status(400).json({ error: "Required fields missing" });
+  }
+
+  // Check for duplicate phone (active leads only)
+  const phoneStr = String(clientPhone).trim();
+  const [duplicate] = await db.select({ id: leadsTable.id })
+    .from(leadsTable)
+    .where(and(eq(leadsTable.clientPhone, phoneStr), isNull(leadsTable.deletedAt)))
+    .limit(1);
+  if (duplicate) {
+    return res.status(409).json({ error: "duplicate_phone", message: "Лид с таким телефоном уже существует" });
   }
 
   let serviceType: string;
@@ -140,11 +164,11 @@ router.post("/", checkRateLimit, allLeadRoles, async (req, res) => {
 
   const result = await db.insert(leadsTable).values({
     clientName,
-    clientPhone,
+    clientPhone: phoneStr,
     city,
     district,
     serviceType,
-    area: String(area),
+    area,
     services: servicesJson,
     scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
     comment: comment ?? null,
@@ -249,10 +273,10 @@ router.patch("/:id", checkRateLimit, allLeadRoles, async (req, res) => {
     const summary = buildServiceSummary(services);
     updates.services = JSON.stringify(services);
     updates.serviceType = summary.serviceType;
-    updates.area = String(summary.area);
+    updates.area = summary.area;
   } else {
     if (serviceType !== undefined) updates.serviceType = serviceType;
-    if (area !== undefined) updates.area = String(area);
+    if (area !== undefined) updates.area = area;
   }
 
   const result = await db.update(leadsTable).set(updates).where(eq(leadsTable.id, id)).returning();
@@ -361,11 +385,13 @@ router.post("/:id/send-to-buffer", checkRateLimit, allLeadRoles, async (req, res
   });
 });
 
-// DELETE /api/leads/:id — soft delete (move to trash)
+// DELETE /api/leads/:id — soft delete (move to trash), also soft-delete linked active orders
 router.delete("/:id", checkRateLimit, allLeadRoles, async (req, res) => {
   const id = parseInt(req.params.id as string);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid lead ID" });
   await db.update(leadsTable).set({ deletedAt: new Date() }).where(eq(leadsTable.id, id));
+  // Soft-delete linked orders
+  await db.update(ordersTable).set({ deletedAt: new Date() }).where(eq(ordersTable.leadId, id));
   res.json({ success: true });
 });
 
