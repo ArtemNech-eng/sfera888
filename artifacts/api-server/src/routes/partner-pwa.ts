@@ -179,10 +179,26 @@ router.post("/auth/login", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "login и password обязательны" });
     }
 
-    const [user] = await db
+    // 1) Try by login
+    let [user] = await db
       .select()
       .from(usersTable)
       .where(and(eq(usersTable.login, login), eq(usersTable.role, "partner")));
+
+    // 2) Fallback: try by phone in trafficPartnersTable
+    if (!user) {
+      const [partnerByPhone] = await db
+        .select()
+        .from(trafficPartnersTable)
+        .where(eq(trafficPartnersTable.phone, login));
+      if (partnerByPhone) {
+        const [foundUser] = await db
+          .select()
+          .from(usersTable)
+          .where(and(eq(usersTable.id, partnerByPhone.userId), eq(usersTable.role, "partner")));
+        user = foundUser;
+      }
+    }
 
     if (!user) {
       return res.status(401).json({ error: "Неверный логин или пароль" });
