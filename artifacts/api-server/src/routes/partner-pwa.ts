@@ -185,17 +185,30 @@ router.post("/auth/login", async (req: Request, res: Response) => {
       .from(usersTable)
       .where(and(eq(usersTable.login, login), eq(usersTable.role, "partner")));
 
-    // 2) Fallback: try by phone in trafficPartnersTable
+    // 2) Fallback: try by phone in trafficPartnersTable (normalize +7 / 8 / spaces / dashes)
     if (!user) {
-      const [partnerByPhone] = await db
+      const digits = login.replace(/\D/g, "");
+      const phoneVariants = new Set<string>([login, digits, "+" + digits]);
+      if (digits.startsWith("7") && digits.length === 11) {
+        phoneVariants.add("8" + digits.slice(1));
+        phoneVariants.add(digits.slice(1));
+      }
+      if (digits.startsWith("8") && digits.length === 11) {
+        phoneVariants.add("7" + digits.slice(1));
+        phoneVariants.add("+7" + digits.slice(1));
+        phoneVariants.add(digits.slice(1));
+      }
+
+      const partnersByPhone = await db
         .select()
         .from(trafficPartnersTable)
-        .where(eq(trafficPartnersTable.phone, login));
-      if (partnerByPhone) {
+        .where(or(...Array.from(phoneVariants).map((v) => eq(trafficPartnersTable.phone, v))));
+
+      if (partnersByPhone.length > 0) {
         const [foundUser] = await db
           .select()
           .from(usersTable)
-          .where(and(eq(usersTable.id, partnerByPhone.userId), eq(usersTable.role, "partner")));
+          .where(and(eq(usersTable.id, partnersByPhone[0].userId), eq(usersTable.role, "partner")));
         user = foundUser;
       }
     }
