@@ -55,3 +55,10 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# Railway logs (contains tokens and runtime data)
+RAILWAY_LOGS.md
+railway-logs.txt
+
+# AI Log Agent secrets
+ai/.env

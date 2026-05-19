@@ -1,0 +1,24 @@
+
+> @workspace/ai-log-agent@1.0.0 start D:\Сфера мастер\sfera888\ai
+> ts-node agents/log-agent.ts
+
+D:\Сфера мастер\sfera888\node_modules\.pnpm\ts-node@10.9.2_@types+node@25.6.0_typescript@5.9.3\node_modules\ts-node\src\index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+agents/db.ts(6,34): error TS2307: Cannot find module 'pg' or its corresponding type declarations.
+
+    at createTSError (D:\Сфера мастер\sfera888\node_modules\.pnpm\ts-node@10.9.2_@types+node@25.6.0_typescript@5.9.3\node_modules\ts-node\src\index.ts:859:12)
+    at reportTSError (D:\Сфера мастер\sfera888\node_modules\.pnpm\ts-node@10.9.2_@types+node@25.6.0_typescript@5.9.3\node_modules\ts-node\src\index.ts:863:19)
+    at getOutput (D:\Сфера мастер\sfera888\node_modules\.pnpm\ts-node@10.9.2_@types+node@25.6.0_typescript@5.9.3\node_modules\ts-node\src\index.ts:1077:36)
+    at Object.compile (D:\Сфера мастер\sfera888\node_modules\.pnpm\ts-node@10.9.2_@types+node@25.6.0_typescript@5.9.3\node_modules\ts-node\src\index.ts:1433:41)
+    at Module.m._compile (D:\Сфера мастер\sfera888\node_modules\.pnpm\ts-node@10.9.2_@types+node@25.6.0_typescript@5.9.3\node_modules\ts-node\src\index.ts:1617:30)
+    at node:internal/modules/cjs/loader:1895:10
+    at Object.require.extensions.<computed> [as .ts] (D:\Сфера мастер\sfera888\node_modules\.pnpm\ts-node@10.9.2_@types+node@25.6.0_typescript@5.9.3\node_modules\ts-node\src\index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1465:32)
+    at Function._load (node:internal/modules/cjs/loader:1282:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:322:14) {
+  diagnosticCodes: [ 2307 ]
+}
+ ELIFECYCLE  Command failed with exit code 1.
+ WARN   Local package.json exists, but node_modules missing, did you mean to install?
