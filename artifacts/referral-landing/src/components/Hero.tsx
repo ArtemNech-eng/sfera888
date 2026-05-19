@@ -136,7 +136,7 @@ export default function Hero({ refSlug }: HeroProps) {
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.8, delay: 0.4 }}
-            className="flex-1 w-full max-w-md lg:max-w-none relative"
+            className="flex-1 w-full max-w-md lg:max-w-lg mx-auto relative"
           >
             {/* Photo with gradient blob frame */}
             <div className="relative">
@@ -146,8 +146,8 @@ export default function Hero({ refSlug }: HeroProps) {
                 <img
                   src="images/master-hero.jpg"
                   alt="Проверенный частный мастер"
-                  className="w-full h-[320px] sm:h-[400px] lg:h-[480px] object-cover"
-                  style={{ objectPosition: 'center 5%' }}
+                  className="w-full h-[320px] sm:h-[400px] lg:h-[420px] object-cover"
+                  style={{ objectPosition: 'top center' }}
                 />
               {/* Verified overlay */}
               <div className="absolute bottom-4 left-4 glass rounded-2xl px-4 py-2.5 flex items-center gap-2">
