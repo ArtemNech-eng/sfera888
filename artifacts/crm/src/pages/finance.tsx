@@ -204,7 +204,6 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function Finance() {
   const queryClient = useQueryClient();
-  const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
 
   const [pageTab, setPageTab] = useState<PageTab>(() => {
     const p = new URLSearchParams(window.location.search);
@@ -262,14 +261,14 @@ export default function Finance() {
   // ─── Data fetching ────────────────────────────────────────────────────────
 
   const { data: summary, refetch: refetchSummary } = useQuery<FinanceSummary>({
-    queryKey: [`${BASE}/api/finance/summary`],
-    queryFn: () => fetch(`${BASE}/api/finance/summary`, { credentials: "include" }).then(r => r.json()),
+    queryKey: [`/api/finance/summary`],
+    queryFn: () => fetch(`/api/finance/summary`, { credentials: "include" }).then(r => r.json()),
     staleTime: 30_000,
   });
 
   const { data: transactions, isLoading: txLoading, refetch: refetchTx } = useQuery<Transaction[]>({
-    queryKey: [`${BASE}/api/finance/transactions`],
-    queryFn: () => fetch(`${BASE}/api/finance/transactions`, { credentials: "include" }).then(r => r.json()),
+    queryKey: [`/api/finance/transactions`],
+    queryFn: () => fetch(`/api/finance/transactions`, { credentials: "include" }).then(r => r.json()),
     staleTime: 30_000,
   });
 
@@ -279,8 +278,8 @@ export default function Finance() {
   if (statsRange.to)   statsParams.set("to",   new Date(statsRange.to).toISOString());
 
   const { data: masterStats, isLoading: statsLoading } = useQuery<MasterStat[]>({
-    queryKey: [`${BASE}/api/finance/master-stats`, statsRange.from, statsRange.to],
-    queryFn: () => fetch(`${BASE}/api/finance/master-stats?${statsParams}`, { credentials: "include" }).then(r => r.json()),
+    queryKey: [`/api/finance/master-stats`, statsRange.from, statsRange.to],
+    queryFn: () => fetch(`/api/finance/master-stats?${statsParams}`, { credentials: "include" }).then(r => r.json()),
     enabled: pageTab === "by-master",
     staleTime: 30_000,
   });
@@ -294,15 +293,15 @@ export default function Finance() {
   // always shows all available cities regardless of current selection.
 
   const { data: estimates, isLoading: estLoading } = useQuery<Estimate[]>({
-    queryKey: [`${BASE}/api/finance/estimates`, estRange.from, estRange.to, estSearch],
-    queryFn: () => fetch(`${BASE}/api/finance/estimates?${estParams}`, { credentials: "include" }).then(r => r.json()),
+    queryKey: [`/api/finance/estimates`, estRange.from, estRange.to, estSearch],
+    queryFn: () => fetch(`/api/finance/estimates?${estParams}`, { credentials: "include" }).then(r => r.json()),
     enabled: pageTab === "estimates",
     staleTime: 30_000,
   });
 
   const { data: estStats } = useQuery<EstimateStats>({
-    queryKey: [`${BASE}/api/finance/estimates/stats`, estRange.from, estRange.to],
-    queryFn: () => fetch(`${BASE}/api/finance/estimates/stats?${estParams}`, { credentials: "include" }).then(r => r.json()),
+    queryKey: [`/api/finance/estimates/stats`, estRange.from, estRange.to],
+    queryFn: () => fetch(`/api/finance/estimates/stats?${estParams}`, { credentials: "include" }).then(r => r.json()),
     enabled: pageTab === "estimates",
     staleTime: 30_000,
   });
@@ -411,16 +410,16 @@ export default function Finance() {
   const doMarkPaid = async (tx: Transaction) => {
     setPayLoading(tx.id);
     try {
-      const r = await fetch(`${BASE}/api/finance/transactions/${tx.id}`, {
+      const r = await fetch(`/api/finance/transactions/${tx.id}`, {
         method: "PATCH", credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ paymentStatus: "paid" }),
       });
       if (!r.ok) throw new Error();
       toast.success(`Комиссия по заказу #${tx.orderId} отмечена оплаченной`);
-      queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/transactions`] });
-      queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/summary`] });
-      queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/master-stats`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/finance/transactions`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/finance/summary`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/finance/master-stats`] });
     } catch { toast.error("Ошибка при обновлении транзакции"); }
     finally { setPayLoading(null); setConfirmPay(null); }
   };
@@ -431,7 +430,7 @@ export default function Finance() {
     if (isNaN(amt) || amt <= 0) { toast.error("Введите корректную сумму"); return; }
     setPartialLoading(true);
     try {
-      const r = await fetch(`${BASE}/api/finance/transactions/${partialPayTx.id}/partial-payment`, {
+      const r = await fetch(`/api/finance/transactions/${partialPayTx.id}/partial-payment`, {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ amount: amt, note: partialNote.trim() || undefined }),
@@ -443,9 +442,9 @@ export default function Finance() {
       } else {
         toast.success(`Принято ${formatCurrency(amt)}. Остаток: ${formatCurrency(data.remaining)}`);
       }
-      queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/transactions`] });
-      queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/summary`] });
-      queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/master-stats`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/finance/transactions`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/finance/summary`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/finance/master-stats`] });
       setPartialPayTx(null); setPartialAmount(""); setPartialNote("");
     } catch (e: any) { toast.error(e?.message ?? "Ошибка при проведении платежа"); }
     finally { setPartialLoading(false); }
@@ -453,7 +452,7 @@ export default function Finance() {
 
   const doRemind = async (tx: Transaction) => {
     try {
-      const r = await fetch(`${BASE}/api/finance/transactions/${tx.id}/remind`, {
+      const r = await fetch(`/api/finance/transactions/${tx.id}/remind`, {
         method: "POST", credentials: "include",
       });
       if (r.status === 429) {
@@ -469,19 +468,19 @@ export default function Finance() {
 
   const doClearSnooze = async (txId: number) => {
     try {
-      const r = await fetch(`${BASE}/api/finance/transactions/${txId}/snooze`, {
+      const r = await fetch(`/api/finance/transactions/${txId}/snooze`, {
         method: "DELETE", credentials: "include",
       });
       if (!r.ok) throw new Error();
       toast.success("Отсрочка снята");
-      queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/transactions`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/finance/transactions`] });
     } catch { toast.error("Не удалось снять отсрочку"); }
   };
 
   const doRemindAll = async (m: MasterStat) => {
     setMasterActionLoading({ id: m.masterId, action: "remind" });
     try {
-      const r = await fetch(`${BASE}/api/finance/masters/${m.masterId}/remind-all`, { method: "POST", credentials: "include" });
+      const r = await fetch(`/api/finance/masters/${m.masterId}/remind-all`, { method: "POST", credentials: "include" });
       if (r.status === 429) {
         const body = await r.json().catch(() => ({}));
         toast.warning(body.error ?? "Сводка уже была отправлена недавно");
@@ -532,12 +531,12 @@ export default function Finance() {
   const doPayAll = async (m: MasterStat) => {
     setMasterActionLoading({ id: m.masterId, action: "pay" });
     try {
-      const r = await fetch(`${BASE}/api/finance/masters/${m.masterId}/pay-all`, { method: "POST", credentials: "include" });
+      const r = await fetch(`/api/finance/masters/${m.masterId}/pay-all`, { method: "POST", credentials: "include" });
       if (!r.ok) throw new Error();
       toast.success(`Все транзакции мастера ${m.alias} отмечены оплаченными`);
-      queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/transactions`] });
-      queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/summary`] });
-      queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/master-stats`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/finance/transactions`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/finance/summary`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/finance/master-stats`] });
     } catch { toast.error("Ошибка при оплате"); }
     finally { setMasterActionLoading(null); setConfirmPayAll(null); }
   };
@@ -545,19 +544,19 @@ export default function Finance() {
   const doConfirmPrepayment = async (e: Estimate) => {
     setEstConfirmLoading(e.id);
     try {
-      const r = await fetch(`${BASE}/api/receipts/${e.id}/confirm`, {
+      const r = await fetch(`/api/receipts/${e.id}/confirm`, {
         method: "PATCH", credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ operatorNote: "Подтверждено оператором из CRM" }),
       });
       if (!r.ok) throw new Error();
       toast.success(`Предоплата по смете #${e.id} подтверждена`);
-      queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/estimates`] });
-      queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/estimates/stats`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/finance/estimates`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/finance/estimates/stats`] });
       // Refresh transactions and master-stats — a new transaction was just created server-side
-      queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/transactions`] });
-      queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/summary`] });
-      queryClient.invalidateQueries({ queryKey: [`${BASE}/api/finance/master-stats`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/finance/transactions`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/finance/summary`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/finance/master-stats`] });
     } catch { toast.error("Ошибка при подтверждении сметы"); }
     finally { setEstConfirmLoading(null); setConfirmEst(null); }
   };
@@ -567,13 +566,13 @@ export default function Finance() {
   const fetchNoReceipt = useCallback(async () => {
     setNrLoading(true);
     try {
-      const r = await fetch(`${BASE}/api/ai-office/template-scenarios/orders-without-receipts/live`, { credentials: "include" });
+      const r = await fetch(`/api/ai-office/template-scenarios/orders-without-receipts/live`, { credentials: "include" });
       if (!r.ok) throw new Error();
       const data = await r.json();
       setNrData(data);
     } catch { toast.error("Не удалось загрузить заказы без сметы"); }
     finally { setNrLoading(false); }
-  }, [BASE]);
+  }, []);
 
   useEffect(() => {
     if (pageTab === "estimates") fetchNoReceipt();
@@ -582,7 +581,7 @@ export default function Finance() {
   const handleNrMessage = async (orderId: number) => {
     setNrActionLoading(p => ({ ...p, [orderId]: "message" }));
     try {
-      const r = await fetch(`${BASE}/api/ai-office/template-scenarios/orders-without-receipts/${orderId}/message-master`, {
+      const r = await fetch(`/api/ai-office/template-scenarios/orders-without-receipts/${orderId}/message-master`, {
         method: "POST", credentials: "include",
       });
       if (!r.ok) throw new Error();
@@ -595,7 +594,7 @@ export default function Finance() {
   const handleNrReassign = async (orderId: number) => {
     setNrActionLoading(p => ({ ...p, [orderId]: "reassign" }));
     try {
-      const r = await fetch(`${BASE}/api/ai-office/template-scenarios/orders-without-receipts/${orderId}/reassign`, {
+      const r = await fetch(`/api/ai-office/template-scenarios/orders-without-receipts/${orderId}/reassign`, {
         method: "POST", credentials: "include",
       });
       if (!r.ok) throw new Error();
@@ -608,7 +607,7 @@ export default function Finance() {
   const handleNrCancel = async (orderId: number) => {
     setNrActionLoading(p => ({ ...p, [orderId]: "cancel" }));
     try {
-      const r = await fetch(`${BASE}/api/ai-office/template-scenarios/orders-without-receipts/${orderId}/cancel`, {
+      const r = await fetch(`/api/ai-office/template-scenarios/orders-without-receipts/${orderId}/cancel`, {
         method: "POST", credentials: "include",
       });
       if (!r.ok) throw new Error();
