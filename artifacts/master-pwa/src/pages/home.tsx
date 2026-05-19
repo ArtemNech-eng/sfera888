@@ -1343,10 +1343,14 @@ export default function HomePage() {
         <div className="flex items-center gap-2">
           <AvailabilityToggle isAvailable={isAvailable} atLimit={atLimit} onChange={setIsAvailable} />
           {(data?.walletBalance ?? 0) >= 0 && (
-            <a href="/balance" className="flex items-center gap-1 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-2.5 py-1.5 rounded-xl">
-              <Coins size={13} />
-              <span className="font-semibold text-sm">{data?.walletBalance ?? 0} т.</span>
-            </a>
+            <button
+              type="button"
+              onClick={() => setLocation("/wallet")}
+              className="flex items-center gap-1 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-2.5 py-1.5 rounded-xl"
+            >
+              <Coins size={13} className="shrink-0" />
+              <span className="font-semibold text-sm leading-none">{data?.walletBalance ?? 0} т.</span>
+            </button>
           )}
           <div className="flex items-center gap-1 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-2.5 py-1.5 rounded-xl">
             <Star size={13} fill="currentColor" />
