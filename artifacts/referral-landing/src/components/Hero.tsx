@@ -41,7 +41,7 @@ export default function Hero({ refSlug }: HeroProps) {
       </div>
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 relative z-10">
-        <div className="flex flex-col lg:flex-row items-center gap-14 lg:gap-16">
+        <div className="flex flex-col lg:flex-row items-start gap-14 lg:gap-16">
 
           {/* Left column */}
           <motion.div
