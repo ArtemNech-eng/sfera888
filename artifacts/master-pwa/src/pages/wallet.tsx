@@ -296,8 +296,8 @@ export default function WalletPage() {
   const loadCommissionBalance = useCallback(async () => {
     setCommissionLoading(true);
     try {
-      const b = await fetch("/api/balance/my", { credentials: "include" }).then(r => r.json());
-      setCommissionBalance(b);
+      const r = await fetch("/api/master-pwa/balance", { credentials: "include" });
+      if (r.ok) setCommissionBalance(await r.json());
     } catch {}
     setCommissionLoading(false);
   }, []);
@@ -482,7 +482,7 @@ export default function WalletPage() {
           <div className="flex justify-center py-8">
             <Loader2 className="animate-spin text-muted-foreground" />
           </div>
-        ) : commissionBalance ? (
+        ) : commissionBalance && typeof commissionBalance.debt === "number" ? (
           <>
             {/* Stats */}
             <div className="grid grid-cols-2 gap-3">
@@ -495,7 +495,7 @@ export default function WalletPage() {
               <div className="bg-card border rounded-xl p-3">
                 <div className="text-sm text-muted-foreground mb-1">Заработано</div>
                 <div className="text-lg font-bold text-green-600">
-                  {commissionBalance.totalEarned.toLocaleString()} ₽
+                  {(commissionBalance.totalEarned ?? 0).toLocaleString()} ₽
                 </div>
               </div>
             </div>
@@ -511,7 +511,7 @@ export default function WalletPage() {
                       <div className="text-xs text-muted-foreground">{tx.orderCity || "—"}</div>
                     </div>
                     <div className="text-right">
-                      <div className="font-medium">{tx.commission.toLocaleString()} ₽</div>
+                      <div className="font-medium">{(tx.commission ?? 0).toLocaleString()} ₽</div>
                       <div className={`text-xs ${tx.paymentStatus === 'paid' ? 'text-green-600' : 'text-amber-600'}`}>
                         {tx.paymentStatus === 'paid' ? 'Оплачено' : 'Ожидает'}
                       </div>
