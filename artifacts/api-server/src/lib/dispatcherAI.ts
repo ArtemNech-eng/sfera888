@@ -17,6 +17,7 @@ import { sendMsg as sendManagerMsg, getManagerUserId, injectNotification } from 
 
 const openaiApiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
 const openaiBaseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
+const openaiModel = process.env.AI_INTEGRATIONS_OPENAI_MODEL || "claude-opus-4-7";
 
 const openai = openaiApiKey
   ? new OpenAI({
@@ -1104,7 +1105,7 @@ ${context}${pendingOrderSection}
     ];
 
     const response = await requireOpenAI().chat.completions.create({
-      model: "gpt-4o",
+      model: openaiModel,
       messages,
       tools: DISPATCHER_TOOLS,
       tool_choice: "auto",
@@ -1145,7 +1146,7 @@ ${context}${pendingOrderSection}
       }
 
       const followUp = await requireOpenAI().chat.completions.create({
-        model: "gpt-4o",
+        model: openaiModel,
         messages: [
           { role: "system", content: systemPrompt },
           ...getHistory(masterId),
@@ -1322,7 +1323,7 @@ ${situation}
     let result: { action: string; message?: string; reason?: string } = { action: "skip", reason: "default" };
     try {
       const response = await requireOpenAI().chat.completions.create({
-        model: "gpt-4o-mini",
+        model: openaiModel,
         messages: [{ role: "user", content: gptPrompt }],
         temperature: 0.3,
         max_tokens: 300,
@@ -2028,7 +2029,7 @@ export async function sendTaskToMaster(masterNameOrId: string, task: string): Pr
 Контекст мастера: ${context}`;
 
     const resp = await requireOpenAI().chat.completions.create({
-      model: "gpt-4o",
+      model: openaiModel,
       messages: [{ role: "user", content: prompt }],
       max_tokens: 300,
     });
