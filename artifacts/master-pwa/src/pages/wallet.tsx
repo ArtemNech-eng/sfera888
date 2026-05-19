@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import {
   Coins, Plus, ArrowDownCircle, ArrowUpCircle, RotateCcw,
   Gift, Wrench, ChevronLeft, Copy, CheckCircle2, Clock,
-  CreditCard, X, Loader2, AlertTriangle, Wallet, TrendingUp,
+  CreditCard, X, Loader2, AlertTriangle, Wallet, TrendingUp, Camera,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -115,7 +115,7 @@ function PurchaseSheet({
   onSuccess: () => void;
 }) {
   const [details, setDetails] = useState<PaymentDetails | null>(null);
-  const [step, setStep] = useState<"details" | "confirm" | "done">("details");
+  const [step, setStep] = useState<"details" | "done">("details");
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -152,113 +152,147 @@ function PurchaseSheet({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background">
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-border shrink-0">
-        <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-muted">
-          <ChevronLeft size={20} />
-        </button>
-        <span className="font-bold">Покупка: {pkg.name}</span>
-      </div>
+    <div className="fixed inset-0 z-50 flex flex-col justify-end" onClick={onClose}>
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/50 animate-in fade-in duration-200" />
 
-      <div className="flex-1 overflow-y-auto px-4 py-5 space-y-5">
-        {step === "done" ? (
-          <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-5">
-            <div className="w-20 h-20 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-              <CheckCircle2 size={44} className="text-green-500" />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold">Заявка принята!</h2>
-              <p className="text-sm text-muted-foreground mt-1">
-                Токены будут зачислены после подтверждения оплаты администратором.
-              </p>
-            </div>
-            <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
-              <Clock size={16} className="shrink-0" />
-              Обычно в течение нескольких часов
-            </div>
-            <button
-              onClick={() => { onSuccess(); onClose(); }}
-              className="w-full max-w-sm h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm"
-            >
-              Понятно
-            </button>
-          </div>
-        ) : (
-          <>
-            {/* Package summary */}
-            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-2xl p-4 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-lg">{pkg.tokens_count} токенов</span>
-                <span className="text-2xl font-bold text-amber-600">{pkg.price_rub.toLocaleString("ru-RU")} ₽</span>
+      {/* Sheet */}
+      <div
+        className="relative bg-background rounded-t-3xl shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[92vh] flex flex-col"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Drag handle */}
+        <div className="flex justify-center pt-3 pb-1 shrink-0">
+          <div className="w-10 h-1.5 bg-border rounded-full" />
+        </div>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 shrink-0">
+          <h2 className="text-lg font-bold">Пополнение токенов</h2>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-muted text-muted-foreground"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Scrollable content */}
+        <div className="overflow-y-auto flex-1 px-5 pb-8 space-y-5">
+          {step === "done" ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center space-y-5">
+              <div className="w-20 h-20 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                <CheckCircle2 size={44} className="text-green-500" />
               </div>
-              <p className="text-xs text-muted-foreground">{pkg.price_per_token} ₽ за токен</p>
+              <div>
+                <h2 className="text-xl font-bold">Заявка принята!</h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Токены будут зачислены после подтверждения оплаты администратором.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
+                <Clock size={16} className="shrink-0" />
+                Обычно в течение нескольких часов
+              </div>
+              <button
+                onClick={() => { onSuccess(); onClose(); }}
+                className="w-full h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm"
+              >
+                Понятно
+              </button>
             </div>
+          ) : (
+            <>
+              {/* Package summary */}
+              <div className="bg-gradient-to-br from-amber-400 to-amber-500 rounded-2xl p-4 text-white">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium opacity-80">{pkg.name}</p>
+                    <p className="text-3xl font-bold mt-0.5">{pkg.tokens_count} <span className="text-lg font-medium opacity-80">токенов</span></p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-2xl font-bold">{(pkg.price_rub ?? 0).toLocaleString("ru-RU")} ₽</p>
+                    <p className="text-xs opacity-70">{pkg.price_per_token} ₽ за токен</p>
+                  </div>
+                </div>
+              </div>
 
-            {/* Instructions */}
-            <div className="space-y-2">
-              <p className="text-sm font-semibold">Инструкция:</p>
+              {/* Instructions */}
               <p className="text-sm text-muted-foreground leading-relaxed">
-                Переведите <strong>{pkg.price_rub.toLocaleString("ru-RU")} ₽</strong> на реквизиты ниже.
-                После подтверждения оплаты токены будут зачислены на баланс.
+                Переведите <strong className="text-foreground">{(pkg.price_rub ?? 0).toLocaleString("ru-RU")} ₽</strong> по реквизитам ниже и нажмите «Я оплатил». Токены зачислятся после проверки администратором.
               </p>
-            </div>
 
-            {/* Payment details */}
-            {details ? (
-              <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
-                {details.bankName && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">Банк</span>
-                    <span className="text-sm font-medium">{details.bankName}</span>
-                  </div>
-                )}
-                {details.cardNumber && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">Номер карты</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-mono font-bold tracking-widest">{details.cardNumber}</span>
-                      <button onClick={() => handleCopy(details.cardNumber)}
-                        className="text-primary hover:text-primary/80">
-                        {copied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
-                      </button>
+              {/* Payment details */}
+              {details ? (
+                <div className="bg-card border border-border rounded-2xl overflow-hidden">
+                  {details.bankName && (
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+                      <span className="text-xs text-muted-foreground">Банк</span>
+                      <span className="text-sm font-semibold">{details.bankName}</span>
                     </div>
-                  </div>
-                )}
-                {details.holder && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">Получатель</span>
-                    <span className="text-sm font-medium">{details.holder}</span>
-                  </div>
-                )}
-                {details.comment && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">Комментарий</span>
-                    <span className="text-sm text-muted-foreground">{details.comment}</span>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-                <AlertTriangle size={16} className="text-amber-500 shrink-0" />
-                <p className="text-sm text-amber-700">Реквизиты пока не настроены. Обратитесь к администратору.</p>
-              </div>
-            )}
+                  )}
+                  {details.cardNumber && (
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+                      <span className="text-xs text-muted-foreground">Номер / СБП</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-mono font-bold">{details.cardNumber}</span>
+                        <button
+                          onClick={() => handleCopy(details.cardNumber)}
+                          className="w-7 h-7 flex items-center justify-center rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                        >
+                          {copied ? <CheckCircle2 size={13} /> : <Copy size={13} />}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {details.holder && (
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+                      <span className="text-xs text-muted-foreground">Получатель</span>
+                      <span className="text-sm font-semibold">{details.holder}</span>
+                    </div>
+                  )}
+                  {details.comment && (
+                    <div className="flex items-center justify-between px-4 py-3">
+                      <span className="text-xs text-muted-foreground">Назначение</span>
+                      <span className="text-sm text-muted-foreground">{details.comment}</span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                  <AlertTriangle size={16} className="text-amber-500 shrink-0" />
+                  <p className="text-sm text-amber-700">Реквизиты не настроены. Обратитесь к администратору.</p>
+                </div>
+              )}
 
-            <button
-              onClick={handlePaid}
-              disabled={loading || !details?.cardNumber}
-              className="w-full h-14 rounded-2xl bg-green-500 text-white font-bold text-base flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              {loading
-                ? <Loader2 size={20} className="animate-spin" />
-                : <CheckCircle2 size={20} />}
-              Я оплатил
-            </button>
-            <p className="text-center text-xs text-muted-foreground">
-              Нажимая «Я оплатил», вы подтверждаете, что перевели деньги
-            </p>
-          </>
-        )}
+              {/* Screenshot placeholder */}
+              <button
+                type="button"
+                onClick={() => toast.info("Скоро: прикрепление скриншота оплаты будет доступно")}
+                className="w-full border-2 border-dashed border-border rounded-2xl p-4 flex flex-col items-center gap-1.5 text-muted-foreground hover:bg-muted/50 transition-colors"
+              >
+                <Camera size={22} />
+                <span className="text-sm font-medium">Прикрепить скриншот оплаты</span>
+                <span className="text-xs">Доступно в следующем обновлении</span>
+              </button>
+
+              {/* Pay button */}
+              <button
+                onClick={handlePaid}
+                disabled={loading || !details?.cardNumber}
+                className="w-full h-14 rounded-2xl bg-green-500 text-white font-bold text-base flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-transform"
+              >
+                {loading
+                  ? <Loader2 size={20} className="animate-spin" />
+                  : <CheckCircle2 size={20} />}
+                Я оплатил
+              </button>
+              <p className="text-center text-xs text-muted-foreground pb-2">
+                Нажимая «Я оплатил», вы подтверждаете перевод средств
+              </p>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -366,32 +400,44 @@ export default function WalletPage() {
           <h2 className="text-base font-bold">Пакеты токенов</h2>
           {packages.length === 0 ? (
             <p className="text-sm text-muted-foreground">Пакеты пока не настроены</p>
-          ) : (
-            <div className="space-y-3">
-              {packages.map(pkg => (
-                <div key={pkg.id}
-                  className="bg-card border border-border rounded-2xl p-4 flex items-center justify-between gap-3">
-                  <div className="space-y-0.5">
-                    <p className="font-semibold text-sm">{pkg.name}</p>
-                    <div className="flex items-center gap-2">
-                      <span className="flex items-center gap-1 text-amber-600 font-bold text-base">
-                        <Coins size={15} /> {pkg.tokens_count} т.
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        · {pkg.price_per_token} ₽/т.
-                      </span>
+          ) : (() => {
+            const minPpt = Math.min(...packages.map(p => Number(p.price_per_token)));
+            return (
+              <div className="space-y-4">
+                {packages.map(pkg => {
+                  const approxOrders = Math.round(Number(pkg.tokens_count) / 3);
+                  const isBest = packages.length > 1 && Number(pkg.price_per_token) === minPpt;
+                  return (
+                    <div key={pkg.id} className="relative">
+                      {isBest && (
+                        <span className="absolute -top-2.5 left-4 z-10 bg-amber-500 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full shadow-sm">
+                          Выгодно
+                        </span>
+                      )}
+                      <button
+                        onClick={() => setSelectedPkg(pkg)}
+                        className={`w-full bg-card border rounded-2xl p-4 flex items-center justify-between gap-3 text-left transition-all active:scale-[0.98] ${isBest ? "border-amber-400 shadow-sm shadow-amber-100" : "border-border"}`}
+                      >
+                        <div className="space-y-0.5">
+                          <p className="font-semibold text-sm">{pkg.name}</p>
+                          <div className="flex items-center gap-2">
+                            <span className="flex items-center gap-1 text-amber-600 font-bold text-base">
+                              <Coins size={15} /> {pkg.tokens_count} т.
+                            </span>
+                            <span className="text-xs text-muted-foreground">· {pkg.price_per_token} ₽/т.</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground">≈ {approxOrders} откликов на заказы</p>
+                        </div>
+                        <div className="flex-shrink-0 h-11 px-4 rounded-xl bg-green-500 text-white font-semibold text-sm flex items-center">
+                          {(pkg.price_rub ?? 0).toLocaleString("ru-RU")} ₽
+                        </div>
+                      </button>
                     </div>
-                  </div>
-                  <button
-                    onClick={() => setSelectedPkg(pkg)}
-                    className="flex-shrink-0 h-10 px-4 rounded-xl bg-green-500 text-white font-semibold text-sm hover:bg-green-600 transition-colors"
-                  >
-                    {pkg.price_rub.toLocaleString("ru-RU")} ₽
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+                  );
+                })}
+              </div>
+            );
+          })()}
         </section>
 
         {/* Transactions */}
