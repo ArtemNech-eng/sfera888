@@ -18,23 +18,19 @@ export default function StickyCTA() {
 
   return (
     <div
-      className={`fixed bottom-0 left-0 right-0 z-50 md:hidden transition-transform duration-300 ${
+      className={`fixed bottom-0 left-0 right-0 z-50 md:hidden transition-transform duration-500 ${
         visible ? 'translate-y-0' : 'translate-y-full'
       }`}
     >
-      <div className="bg-white/95 backdrop-blur-md border-t border-[#E5E7EB] px-4 py-3 pb-[max(12px,env(safe-area-inset-bottom))] shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
+      <div className="bg-white/90 backdrop-blur-xl border-t border-gray-100 px-4 py-3 pb-[max(12px,env(safe-area-inset-bottom))] shadow-[0_-8px_30px_rgba(0,0,0,0.08)]">
         <button
           onClick={scrollToForm}
-          className="w-full text-white font-bold py-3.5 rounded-xl text-base flex items-center justify-center gap-2 animate-pulse-glow"
-          style={{
-            background: 'linear-gradient(135deg, #34C759 0%, #2db34e 50%, #34C759 100%)',
-            boxShadow: '0 4px 14px rgba(52,199,89,0.35)',
-          }}
+          className="w-full text-white font-bold py-3.5 rounded-2xl text-base flex items-center justify-center gap-2 animate-pulse-glow gradient-bg hover:scale-[1.02] active:scale-[0.98] transition-transform duration-200"
         >
           <Sparkles size={18} />
           Оставить заявку
         </button>
-        <p className="text-center text-[#94A3B8] text-xs mt-2">
+        <p className="text-center text-gray-400 text-xs mt-2 font-medium">
           Бесплатно · Ответ за 15 минут · Скидка до 15%
         </p>
       </div>

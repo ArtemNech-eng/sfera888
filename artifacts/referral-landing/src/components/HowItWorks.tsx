@@ -1,4 +1,7 @@
+import { motion } from "framer-motion";
 import { FileEdit, Search, Phone, CheckCircle2 } from 'lucide-react';
+import SectionHeader from "./SectionHeader";
+import GradientButton from "./GradientButton";
 
 const steps = [
   {
@@ -10,19 +13,19 @@ const steps = [
   {
     number: '02',
     title: 'Система подбирает мастера',
-    text: 'Подбор занимает 15–30 минут. Учитываем ваш город, тип работ и рейтинг специалиста.',
+    text: 'Подбор занимает 15–30 минут. Учитываем ваш город, тип работ и рейтинг.',
     icon: Search,
   },
   {
     number: '03',
     title: 'Мастер связывается с вами',
-    text: 'Уточняет детали, выезжает на замер и готовит понятную смету до начала работ.',
+    text: 'Уточняет детали, выезжает на замер и готовит понятную смету.',
     icon: Phone,
   },
   {
     number: '04',
     title: 'Вы согласуете старт',
-    text: 'Договариваетесь о времени, мастер приступает. Никакого хаоса и поиска вслепую.',
+    text: 'Договариваетесь о времени, мастер приступает. Без хаоса.',
     icon: CheckCircle2,
   },
 ];
@@ -33,47 +36,55 @@ export default function HowItWorks() {
   };
 
   return (
-    <section id="how" className="bg-[#F1F5F9] py-20">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl sm:text-4xl font-extrabold text-[#111827] mb-3">
-            Как всё происходит
-          </h2>
-          <p className="text-[#6B7280] text-base">
-            Без хаоса, бесконечных звонков и поиска вслепую.
-          </p>
-        </div>
+    <section id="how" className="py-24 bg-emerald-50/30 relative overflow-hidden">
+      <div className="absolute top-20 right-0 w-[400px] h-[400px] bg-emerald-100/40 rounded-full blur-[100px] pointer-events-none" />
+
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 relative z-10">
+        <SectionHeader
+          title="Как всё происходит"
+          subtitle="Без хаоса, бесконечных звонков и поиска вслепую."
+        />
 
         {/* Steps */}
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
           {steps.map((step, i) => (
-            <div key={step.number} className="relative">
+            <motion.div
+              key={step.number}
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: i * 0.12, duration: 0.6 }}
+              className="relative"
+            >
               {/* Connector line (desktop) */}
               {i < steps.length - 1 && (
-                <div className="hidden lg:block absolute top-6 left-[calc(100%-8px)] w-full h-px bg-[#E5E7EB] z-0" />
+                <div className="hidden lg:block absolute top-10 left-[calc(100%+12px)] w-[calc(100%-24px)] h-0.5 bg-gradient-to-r from-emerald-200 to-emerald-100 z-0" />
               )}
-              <div className="bg-white rounded-2xl p-6 border border-[#E5E7EB] relative z-10">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-11 h-11 rounded-xl bg-[#34C759] flex items-center justify-center flex-shrink-0">
-                    {(() => { const Icon = step.icon; return <Icon size={22} className="text-white" strokeWidth={2} />; })()}
+              <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-soft hover:shadow-float transition-shadow duration-300 relative z-10 h-full">
+                <div className="flex items-center justify-between mb-5">
+                  <div className="w-14 h-14 rounded-2xl gradient-bg flex items-center justify-center flex-shrink-0 shadow-lg shadow-emerald-500/20">
+                    {(() => { const Icon = step.icon; return <Icon size={26} className="text-white" strokeWidth={2} />; })()}
                   </div>
-                  <span className="text-[#94A3B8] font-bold text-sm">{step.number}</span>
+                  <span className="text-4xl font-extrabold text-emerald-100">{step.number}</span>
                 </div>
-                <h3 className="text-[#111827] font-semibold text-base mb-2 leading-snug">{step.title}</h3>
-                <p className="text-[#6B7280] text-sm leading-relaxed">{step.text}</p>
+                <h3 className="text-[#111827] font-bold text-lg mb-2 leading-snug">{step.title}</h3>
+                <p className="text-gray-500 text-sm leading-relaxed">{step.text}</p>
               </div>
-            </div>
+            </motion.div>
           ))}
         </div>
 
-        <div className="text-center">
-          <button
-            onClick={scrollToForm}
-            className="bg-[#34C759] text-white font-semibold px-7 py-3.5 rounded-xl hover:bg-[#2db34e] transition-colors shadow-sm"
-          >
+        <motion.div
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.5 }}
+          className="text-center"
+        >
+          <GradientButton onClick={scrollToForm} size="lg">
             Оставить заявку
-          </button>
-        </div>
+          </GradientButton>
+        </motion.div>
       </div>
     </section>
   );

@@ -1,3 +1,7 @@
+import { motion } from "framer-motion";
+import { Star, Quote } from 'lucide-react';
+import SectionHeader from "./SectionHeader";
+
 const reviews = [
   {
     name: 'Наталья К.',
@@ -43,13 +47,11 @@ const reviews = [
   },
 ];
 
-import { Star, Quote } from 'lucide-react';
-
 function StarRating({ count }: { count: number }) {
   return (
     <div className="flex gap-0.5">
       {Array.from({ length: count }).map((_, i) => (
-        <Star key={i} size={14} className="text-[#F59E0B]" fill="#F59E0B" />
+        <Star key={i} size={14} className="text-amber-400" fill="#fbbf24" />
       ))}
     </div>
   );
@@ -63,7 +65,7 @@ function Avatar({ name }: { name: string }) {
     .toUpperCase()
     .slice(0, 2);
   return (
-    <div className="w-10 h-10 rounded-full bg-[#E8F9EE] flex items-center justify-center text-[#34C759] font-bold text-sm">
+    <div className="w-10 h-10 rounded-full gradient-bg flex items-center justify-center text-white font-bold text-sm shadow-sm">
       {initials}
     </div>
   );
@@ -71,37 +73,51 @@ function Avatar({ name }: { name: string }) {
 
 export default function Reviews() {
   return (
-    <section id="reviews" className="bg-[#F8FAFC] py-20">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl sm:text-4xl font-extrabold text-[#111827] mb-3">
-            Отзывы клиентов
-          </h2>
-          <div className="inline-flex items-center gap-2 bg-[#E8F9EE] text-[#1a8a3c] text-sm font-semibold px-4 py-2 rounded-full">
-            <Star size={14} className="text-[#34C759]" fill="#34C759" />
+    <section id="reviews" className="py-24 bg-white relative overflow-hidden">
+      <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-emerald-50/40 rounded-full blur-[100px] pointer-events-none" />
+
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 relative z-10">
+        <SectionHeader
+          title="Отзывы клиентов"
+          subtitle=""
+        />
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.5 }}
+          className="flex justify-center mb-12"
+        >
+          <div className="inline-flex items-center gap-2 gradient-bg text-white text-sm font-semibold px-5 py-2.5 rounded-full shadow-lg shadow-emerald-500/20">
+            <Star size={16} fill="white" />
             Средний рейтинг мастеров: 4.8 / 5
           </div>
-        </div>
+        </motion.div>
 
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {reviews.map((review) => (
-            <div
+          {reviews.map((review, i) => (
+            <motion.div
               key={review.name}
-              className="bg-white rounded-2xl p-6 border border-[#E5E7EB] flex flex-col gap-3 hover:shadow-md transition-shadow"
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: i * 0.08, duration: 0.5 }}
+              whileHover={{ y: -4 }}
+              className="glass rounded-3xl p-6 flex flex-col gap-4 hover:shadow-premium transition-shadow duration-300"
             >
               <div className="flex items-center justify-between">
                 <StarRating count={review.rating} />
-                <Quote size={16} className="text-[#E5E7EB]" />
+                <Quote size={20} className="text-emerald-200" />
               </div>
-              <p className="text-[#374151] text-sm leading-relaxed flex-1">«{review.text}»</p>
-              <div className="border-t border-[#F1F5F9] pt-3 flex items-center gap-3">
+              <p className="text-gray-600 text-sm leading-relaxed flex-1">«{review.text}»</p>
+              <div className="border-t border-gray-100 pt-4 flex items-center gap-3">
                 <Avatar name={review.name} />
                 <div>
-                  <p className="text-[#111827] font-semibold text-sm">{review.name}</p>
-                  <p className="text-[#94A3B8] text-xs mt-0.5">{review.location} · {review.work}</p>
+                  <p className="text-[#111827] font-bold text-sm">{review.name}</p>
+                  <p className="text-gray-400 text-xs mt-0.5">{review.location} · {review.work}</p>
                 </div>
               </div>
-            </div>
+            </motion.div>
           ))}
         </div>
       </div>
