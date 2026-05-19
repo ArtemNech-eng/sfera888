@@ -27,6 +27,7 @@ import {
   X,
   RotateCcw,
   Filter,
+  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect, useRef } from "react";
@@ -118,6 +119,7 @@ export function Layout({ children }: LayoutProps) {
     { href: "/work-monitor",   label: "В работе",             icon: Activity,         permKey: "orders" },
     { href: "/finance",     label: "Финансы",              icon: Wallet,          permKey: "finance" },
     { href: "/masters",         label: "Мастера",              icon: Users,           permKey: "masters" },
+    { href: "/token-masters",   label: "Token Masters",        icon: Zap,             permKey: "masters" },
     { href: "/master-control",  label: "Контроль мастеров",    icon: Brain,           permKey: "masters" },
     { href: "/checkins",        label: "Готовность",           icon: CalendarCheck,   permKey: "masters" },
     { href: "/tasks",       label: "Задачи",               icon: ClipboardList,   permKey: "tasks",       badge: openTasksCount > 0 ? openTasksCount : null },
