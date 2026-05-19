@@ -146,7 +146,8 @@ export default function Hero({ refSlug }: HeroProps) {
                 <img
                   src="images/master-hero.jpg"
                   alt="Проверенный частный мастер"
-                  className="w-full h-[320px] sm:h-[400px] lg:h-[480px] object-cover object-[center_15%]"
+                  className="w-full h-[320px] sm:h-[400px] lg:h-[480px] object-cover"
+                  style={{ objectPosition: 'center 5%' }}
                 />
               {/* Verified overlay */}
               <div className="absolute bottom-4 left-4 glass rounded-2xl px-4 py-2.5 flex items-center gap-2">
