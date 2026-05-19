@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -208,11 +208,19 @@ export function Avatar({ name, id, avatarUrl, size = 36 }: { name: string; id: n
   const initials = name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase() || "?";
   const bg = AVATAR_COLORS[id % AVATAR_COLORS.length];
 
-  if (avatarUrl && !imgFailed) {
+  const resolvedUrl = useMemo(() => {
+    if (!avatarUrl) return null;
+    if (avatarUrl.startsWith("http")) return avatarUrl;
+    const base = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
+    return `${base}${avatarUrl}`;
+  }, [avatarUrl]);
+
+  if (resolvedUrl && !imgFailed) {
     return (
-      <img src={avatarUrl} alt={name}
+      <img src={resolvedUrl} alt={name}
         className="rounded-full object-cover flex-shrink-0 border border-gray-100"
         style={{ width: size, height: size }}
+        loading="lazy"
         onError={() => setImgFailed(true)} />
     );
   }
