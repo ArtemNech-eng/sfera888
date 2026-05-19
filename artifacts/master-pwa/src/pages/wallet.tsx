@@ -290,6 +290,7 @@ export default function WalletPage() {
       setWallet(w);
       setPackages(Array.isArray(p) ? p : []);
     } catch {}
+    finally { setLoading(false); }
   }, []);
 
   const loadCommissionBalance = useCallback(async () => {
