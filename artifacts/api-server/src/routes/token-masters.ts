@@ -130,8 +130,8 @@ router.get("/", ops, async (req: any, res: any) => {
         ilike(mastersTable.phone, `%${search}%`),
       ));
     }
-    if (city) conditions.push(eq(mastersTable.city, city));
-    if (specialization) conditions.push(eq(mastersTable.specialization, specialization));
+    if (city) conditions.push(ilike(mastersTable.city, `%${city}%`));
+    if (specialization) conditions.push(ilike(mastersTable.specialization, `%${specialization}%`));
     if (status) conditions.push(eq(mastersTable.status, status as any));
 
     const whereClause = and(...conditions);
