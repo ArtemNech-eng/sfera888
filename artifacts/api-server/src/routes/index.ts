@@ -35,6 +35,7 @@ import workBoardTableRouter from "./work-board-table.js";
 import dashboardActionItemsRouter from "./dashboard-action-items.js";
 import walletRouter from "./wallet.js";
 import tokenMastersRouter from "./token-masters.js";
+import contractRouter from "./contract.js";
 import { processCases, scheduleDigest } from "../lib/casesEngine.js";
 import { sendPushToAllOperators } from "../lib/operatorPush.js";
 import { buildItems } from "./dashboard-action-items.js";
@@ -79,6 +80,7 @@ router.use("/work-board/table", workBoardTableRouter);
 router.use("/dashboard", dashboardActionItemsRouter);
 router.use("/wallet", walletRouter);
 router.use("/token-masters", tokenMastersRouter);
+router.use("/contract", contractRouter);
 // Push subscription endpoint for operators (CRM)
 router.post("/push/operator-subscribe", ops, async (req: any, res: any) => {
   const { endpoint, p256dh, auth } = req.body ?? {};
