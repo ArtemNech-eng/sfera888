@@ -34,9 +34,9 @@ interface TokenMaster {
   phone: string | null;
   status: string;
   rating: number;
-  totalOrders: number;
-  acceptedOrders: number;
-  totalLeadsReceived: number;
+  tokenOrdersTotal: number;
+  tokenOrdersCompleted: number;
+  tokenOrdersCancelled: number;
   avgResponseTime: number | null;
   lastSeenAt: string | null;
   avatarUrl: string | null;
@@ -356,7 +356,7 @@ function TokenMastersContent() {
                 >
                   <span className="flex items-center justify-end gap-1">
                     <SortIcon active={sort === "orders"} sort="orders" />
-                    Заказы
+                    Взял (токен)
                   </span>
                 </th>
                 <th
@@ -485,9 +485,9 @@ function TokenMastersContent() {
                       </span>
                     </td>
 
-                    {/* Orders */}
+                    {/* Orders (token only) */}
                     <td className="px-3 py-3 text-right text-muted-foreground tabular-nums hidden sm:table-cell">
-                      {fmt(m.acceptedOrders)}
+                      {fmt(m.tokenOrdersTotal)}
                     </td>
 
                     {/* Conversion */}

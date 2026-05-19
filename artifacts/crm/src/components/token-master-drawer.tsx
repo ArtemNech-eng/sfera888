@@ -26,9 +26,6 @@ interface TokenMasterDetail {
   phone: string | null;
   status: string;
   rating: number;
-  totalOrders: number;
-  acceptedOrders: number;
-  totalLeadsReceived: number;
   avgResponseTime: number | null;
   lastSeenAt: string | null;
   avatarUrl: string | null;
@@ -48,8 +45,9 @@ interface TokenMasterDetail {
   stats: {
     totalRevenue: number;
     avgRevenue: number;
-    completedCount: number;
-    cancelledCount: number;
+    tokenOrdersTotal: number;
+    tokenOrdersCompleted: number;
+    tokenOrdersCancelled: number;
     conversion: number | null;
     roi: number | null;
   };
@@ -222,13 +220,13 @@ function EfficiencyTab({ m }: { m: TokenMasterDetail }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
-        <StatCard icon={CheckCircle2} label="Завершено заказов" value={fmt(stats.completedCount)} color="green" />
-        <StatCard icon={XCircle} label="Отменено" value={fmt(stats.cancelledCount)} color="red" />
+        <StatCard icon={CheckCircle2} label="Завершено (токен)" value={fmt(stats.tokenOrdersCompleted)} color="green" />
+        <StatCard icon={XCircle} label="Отменено" value={fmt(stats.tokenOrdersCancelled)} color="red" />
         <StatCard
           icon={TrendingUp}
           label="Конверсия"
           value={stats.conversion != null ? `${stats.conversion}%` : "—"}
-          sub={`из ${fmt(m.totalLeadsReceived)} заявок`}
+          sub={`из ${fmt(stats.tokenOrdersTotal)} токен-заказов`}
           color="blue"
         />
         <StatCard
@@ -415,8 +413,8 @@ function ActivityTab({ m }: { m: TokenMasterDetail }) {
 
       {/* Activity stats */}
       <div className="grid grid-cols-2 gap-3">
-        <StatCard icon={CheckCircle2} label="Принято заказов" value={fmt(m.acceptedOrders)} color="green" />
-        <StatCard icon={BarChart3} label="Всего заявок" value={fmt(m.totalLeadsReceived)} color="default" />
+        <StatCard icon={CheckCircle2} label="Взял (токен)" value={fmt(m.stats.tokenOrdersTotal)} color="green" />
+        <StatCard icon={BarChart3} label="Завершено" value={fmt(m.stats.tokenOrdersCompleted)} color="default" />
         <StatCard
           icon={TrendingUp}
           label="Конверсия"

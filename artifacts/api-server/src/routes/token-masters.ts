@@ -58,25 +58,16 @@ router.get("/stats", ops, async (_req: any, res: any) => {
           eq(masterWalletTable.masterId, mastersTable.id),
           isNull(mastersTable.deletedAt),
         )),
-      // Avg conversion (acceptedOrders / totalLeadsReceived)
+      // Avg conversion — only token orders (tokensCharged > 0)
       db
         .select({
-          avgConversion: sql<number>`
-            ROUND(
-              COALESCE(
-                AVG(
-                  CASE WHEN ${mastersTable.totalLeadsReceived} > 0
-                  THEN CAST(${mastersTable.acceptedOrders} AS FLOAT) / ${mastersTable.totalLeadsReceived} * 100
-                  ELSE NULL END
-                ), 0
-              )::numeric, 1
-            )
-          `,
+          totalToken: sql<number>`COUNT(*) FILTER (WHERE ${ordersTable.tokensCharged}::numeric > 0)`,
+          completedToken: sql<number>`COUNT(*) FILTER (WHERE ${ordersTable.tokensCharged}::numeric > 0 AND ${ordersTable.status} = 'completed')`,
         })
-        .from(mastersTable)
+        .from(ordersTable)
         .where(and(
-          isNull(mastersTable.deletedAt),
-          sql`${mastersTable.totalLeadsReceived} > 0`,
+          isNull(ordersTable.deletedAt),
+          sql`${ordersTable.masterId} IS NOT NULL`,
         )),
       // Avg response time
       db
@@ -108,7 +99,9 @@ router.get("/stats", ops, async (_req: any, res: any) => {
       onlineNow: Number(onlineNowRows[0]?.cnt ?? 0),
       mastersWithBalance: Number(mastersWithBalanceRows[0]?.cnt ?? 0),
       totalTokensSold: Number(totalTokensSoldRows[0]?.total ?? 0),
-      avgConversion: Number(avgConversionRows[0]?.avgConversion ?? 0),
+      avgConversion: avgConversionRows[0]?.totalToken > 0
+        ? Math.round((Number(avgConversionRows[0].completedToken) / Number(avgConversionRows[0].totalToken)) * 1000) / 10
+        : 0,
       avgResponseTime: Number(avgResponseTimeRows[0]?.avgResponseTime ?? 0),
       churnRisk: Number(churnRiskRows[0]?.cnt ?? 0),
     });
@@ -143,7 +136,7 @@ router.get("/", ops, async (req: any, res: any) => {
 
     const whereClause = and(...conditions);
 
-    // Subquery: total declared revenue per master from completed orders
+    // Subquery: declared revenue — only from token orders
     const revenueSubquery = db
       .select({
         masterId: ordersTable.masterId,
@@ -153,18 +146,35 @@ router.get("/", ops, async (req: any, res: any) => {
       .where(and(
         eq(ordersTable.status, "completed"),
         isNull(ordersTable.deletedAt),
+        sql`${ordersTable.tokensCharged}::numeric > 0`,
       ))
       .groupBy(ordersTable.masterId)
       .as("revenue_sub");
+
+    // Subquery: token order counts per master
+    const tokenOrdersSub = db
+      .select({
+        masterId: ordersTable.masterId,
+        tokenOrdersTotal: sql<number>`COUNT(*)`.as("token_orders_total"),
+        tokenOrdersCompleted: sql<number>`COUNT(*) FILTER (WHERE ${ordersTable.status} = 'completed')`.as("token_orders_completed"),
+        tokenOrdersCancelled: sql<number>`COUNT(*) FILTER (WHERE ${ordersTable.status} = 'cancelled')`.as("token_orders_cancelled"),
+      })
+      .from(ordersTable)
+      .where(and(
+        isNull(ordersTable.deletedAt),
+        sql`${ordersTable.tokensCharged}::numeric > 0`,
+      ))
+      .groupBy(ordersTable.masterId)
+      .as("token_orders_sub");
 
     // Determine sort order
     const getSortExpr = () => {
       switch (sort) {
         case "balance": return desc(sql`COALESCE(${masterWalletTable.tokensBalance}, 0)`);
-        case "orders": return desc(mastersTable.acceptedOrders);
+        case "orders": return desc(sql`COALESCE(${tokenOrdersSub.tokenOrdersTotal}, 0)`);
         case "conversion": return desc(sql`
-          CASE WHEN ${mastersTable.totalLeadsReceived} > 0
-          THEN CAST(${mastersTable.acceptedOrders} AS FLOAT) / ${mastersTable.totalLeadsReceived}
+          CASE WHEN COALESCE(${tokenOrdersSub.tokenOrdersTotal}, 0) > 0
+          THEN CAST(COALESCE(${tokenOrdersSub.tokenOrdersCompleted}, 0) AS FLOAT) / ${tokenOrdersSub.tokenOrdersTotal}
           ELSE 0 END
         `);
         case "rating": return desc(mastersTable.rating);
@@ -190,9 +200,6 @@ router.get("/", ops, async (req: any, res: any) => {
           phone: mastersTable.phone,
           status: mastersTable.status,
           rating: mastersTable.rating,
-          totalOrders: mastersTable.totalOrders,
-          acceptedOrders: mastersTable.acceptedOrders,
-          totalLeadsReceived: mastersTable.totalLeadsReceived,
           avgResponseTime: mastersTable.avgResponseTime,
           lastSeenAt: mastersTable.lastSeenAt,
           avatarUrl: mastersTable.customAvatarUrl,
@@ -202,10 +209,14 @@ router.get("/", ops, async (req: any, res: any) => {
           totalTokensSpent: masterWalletTable.totalTokensSpent,
           totalRubSpent: masterWalletTable.totalRubSpent,
           totalRevenue: revenueSubquery.totalRevenue,
+          tokenOrdersTotal: tokenOrdersSub.tokenOrdersTotal,
+          tokenOrdersCompleted: tokenOrdersSub.tokenOrdersCompleted,
+          tokenOrdersCancelled: tokenOrdersSub.tokenOrdersCancelled,
         })
         .from(mastersTable)
         .leftJoin(masterWalletTable, eq(masterWalletTable.masterId, mastersTable.id))
         .leftJoin(revenueSubquery, eq(revenueSubquery.masterId, mastersTable.id))
+        .leftJoin(tokenOrdersSub, eq(tokenOrdersSub.masterId, mastersTable.id))
         .where(whereClause)
         .orderBy(getSortExpr())
         .limit(limit)
@@ -220,10 +231,11 @@ router.get("/", ops, async (req: any, res: any) => {
       const tokensBalance = Number(r.tokensBalance ?? 0);
       const totalRubSpent = Number(r.totalRubSpent ?? 0);
       const totalRevenue = Number(r.totalRevenue ?? 0);
-      const totalLeadsReceived = Number(r.totalLeadsReceived ?? 0);
-      const acceptedOrders = Number(r.acceptedOrders ?? 0);
-      const conversion = totalLeadsReceived > 0
-        ? Math.round((acceptedOrders / totalLeadsReceived) * 100)
+      const tokenOrdersTotal = Number(r.tokenOrdersTotal ?? 0);
+      const tokenOrdersCompleted = Number(r.tokenOrdersCompleted ?? 0);
+      const tokenOrdersCancelled = Number(r.tokenOrdersCancelled ?? 0);
+      const conversion = tokenOrdersTotal > 0
+        ? Math.round((tokenOrdersCompleted / tokenOrdersTotal) * 100)
         : null;
       const roi = totalRubSpent > 0 ? Math.round((totalRevenue / totalRubSpent) * 10) / 10 : null;
 
@@ -236,9 +248,6 @@ router.get("/", ops, async (req: any, res: any) => {
         phone: r.phone,
         status: r.status,
         rating: Number(r.rating),
-        totalOrders: Number(r.totalOrders),
-        acceptedOrders,
-        totalLeadsReceived,
         avgResponseTime: r.avgResponseTime ? Number(r.avgResponseTime) : null,
         lastSeenAt: r.lastSeenAt,
         avatarUrl: r.avatarUrl,
@@ -248,6 +257,9 @@ router.get("/", ops, async (req: any, res: any) => {
         totalTokensSpent: Number(r.totalTokensSpent ?? 0),
         totalRubSpent,
         totalRevenue,
+        tokenOrdersTotal,
+        tokenOrdersCompleted,
+        tokenOrdersCancelled,
         conversion,
         roi,
       };
@@ -297,15 +309,17 @@ router.get("/:id", ops, async (req: any, res: any) => {
         .limit(50),
       db
         .select({
-          completedCount: sql<number>`COUNT(*)`,
-          totalRevenue: sql<number>`COALESCE(SUM(${ordersTable.proposedAmount}), 0)`,
-          avgRevenue: sql<number>`COALESCE(AVG(${ordersTable.proposedAmount}), 0)`,
-          cancelledCount: sql<number>`COUNT(*) FILTER (WHERE ${ordersTable.status} = 'cancelled')`,
+          tokenOrdersTotal: sql<number>`COUNT(*)`,
+          tokenOrdersCompleted: sql<number>`COUNT(*) FILTER (WHERE ${ordersTable.status} = 'completed')`,
+          tokenOrdersCancelled: sql<number>`COUNT(*) FILTER (WHERE ${ordersTable.status} = 'cancelled')`,
+          totalRevenue: sql<number>`COALESCE(SUM(${ordersTable.proposedAmount}) FILTER (WHERE ${ordersTable.status} = 'completed'), 0)`,
+          avgRevenue: sql<number>`COALESCE(AVG(${ordersTable.proposedAmount}) FILTER (WHERE ${ordersTable.status} = 'completed'), 0)`,
         })
         .from(ordersTable)
         .where(and(
           eq(ordersTable.masterId, masterId),
           isNull(ordersTable.deletedAt),
+          sql`${ordersTable.tokensCharged}::numeric > 0`,
         )),
     ]);
 
@@ -317,10 +331,11 @@ router.get("/:id", ops, async (req: any, res: any) => {
     const tokensBalance = wallet ? Number(wallet.tokensBalance) : 0;
     const totalRubSpent = wallet ? Number(wallet.totalRubSpent) : 0;
     const totalRevenue = Number(stats?.totalRevenue ?? 0);
-    const totalLeadsReceived = Number(master.totalLeadsReceived ?? 0);
-    const acceptedOrders = Number(master.acceptedOrders ?? 0);
-    const conversion = totalLeadsReceived > 0
-      ? Math.round((acceptedOrders / totalLeadsReceived) * 100)
+    const tokenOrdersTotal = Number(stats?.tokenOrdersTotal ?? 0);
+    const tokenOrdersCompleted = Number(stats?.tokenOrdersCompleted ?? 0);
+    const tokenOrdersCancelled = Number(stats?.tokenOrdersCancelled ?? 0);
+    const conversion = tokenOrdersTotal > 0
+      ? Math.round((tokenOrdersCompleted / tokenOrdersTotal) * 100)
       : null;
     const roi = totalRubSpent > 0 ? Math.round((totalRevenue / totalRubSpent) * 10) / 10 : null;
 
@@ -333,9 +348,6 @@ router.get("/:id", ops, async (req: any, res: any) => {
       phone: master.phone,
       status: master.status,
       rating: Number(master.rating),
-      totalOrders: Number(master.totalOrders),
-      acceptedOrders,
-      totalLeadsReceived,
       avgResponseTime: master.avgResponseTime ? Number(master.avgResponseTime) : null,
       lastSeenAt: master.lastSeenAt,
       avatarUrl: master.customAvatarUrl,
@@ -355,8 +367,9 @@ router.get("/:id", ops, async (req: any, res: any) => {
       stats: {
         totalRevenue,
         avgRevenue: Math.round(Number(stats?.avgRevenue ?? 0)),
-        completedCount: Number(stats?.completedCount ?? 0),
-        cancelledCount: Number(stats?.cancelledCount ?? 0),
+        tokenOrdersTotal,
+        tokenOrdersCompleted,
+        tokenOrdersCancelled,
         conversion,
         roi,
       },
