@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { useAuth } from "@/hooks/use-auth";
 import { format, formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
 import {
@@ -11,7 +13,7 @@ import {
   User, MapPin, Phone, Zap, TrendingUp, Wallet, History,
   Activity, Star, Clock, CheckCircle2, XCircle, BarChart3,
   ArrowUpRight, Coins, ShoppingCart, ReceiptText, Calendar,
-  Loader2, AlertTriangle, RefreshCw,
+  Loader2, AlertTriangle, RefreshCw, Gift, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -271,10 +273,110 @@ function EfficiencyTab({ m }: { m: TokenMasterDetail }) {
   );
 }
 
-function FinanceTab({ m }: { m: TokenMasterDetail }) {
+function FinanceTab({ m, masterId }: { m: TokenMasterDetail; masterId: number }) {
   const { wallet, stats } = m;
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const [showCreditForm, setShowCreditForm] = useState(false);
+  const [creditTokens, setCreditTokens] = useState("1");
+  const [creditReason, setCreditReason] = useState("Тестовый заказ");
+  const [creditLoading, setCreditLoading] = useState(false);
+
+  const handleCredit = async () => {
+    const n = Number(creditTokens);
+    if (!n || n < 1 || n > 10) { toast.error("От 1 до 10 токенов"); return; }
+    if (!creditReason.trim()) { toast.error("Укажите причину"); return; }
+    setCreditLoading(true);
+    try {
+      const r = await fetch(`/api/wallet/${masterId}/credit`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tokens: n, reason: creditReason }),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        toast.error(data.error ?? "Ошибка выдачи токенов");
+      } else {
+        toast.success(`Выдано ${n} ток. Баланс: ${data.new_balance}`);
+        queryClient.invalidateQueries({ queryKey: ["/api/token-masters", masterId] });
+        setShowCreditForm(false);
+      }
+    } catch {
+      toast.error("Ошибка сети");
+    } finally {
+      setCreditLoading(false);
+    }
+  };
   return (
     <div className="space-y-4">
+      {/* Credit token button — admin only */}
+      {user?.role === "admin" && (
+        <div className="rounded-xl border border-blue-200 dark:border-blue-800/40 bg-blue-50 dark:bg-blue-900/20 p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <Gift className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              <span className="text-sm font-medium text-blue-700 dark:text-blue-300">Выдать токен в долг</span>
+            </div>
+            {!m.contractSignedAt && (
+              <span className="text-xs text-red-500 flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" /> Договор не подписан
+              </span>
+            )}
+            {m.contractSignedAt && (
+              <span className="text-xs text-green-600 flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3" /> Договор есть
+              </span>
+            )}
+          </div>
+          {!showCreditForm ? (
+            <button
+              onClick={() => setShowCreditForm(true)}
+              className="w-full h-8 text-xs font-semibold rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors flex items-center justify-center gap-1.5"
+            >
+              <Gift className="w-3.5 h-3.5" /> Выдать токен в долг
+            </button>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="text-xs text-muted-foreground">Токены (1–10)</label>
+                  <input
+                    type="number" min={1} max={10} step={1}
+                    className="mt-0.5 w-full h-8 border rounded-lg px-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-blue-300"
+                    value={creditTokens}
+                    onChange={e => setCreditTokens(e.target.value)}
+                  />
+                </div>
+                <div className="flex-[2]">
+                  <label className="text-xs text-muted-foreground">Причина</label>
+                  <input
+                    className="mt-0.5 w-full h-8 border rounded-lg px-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-blue-300"
+                    value={creditReason}
+                    onChange={e => setCreditReason(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleCredit}
+                  disabled={creditLoading}
+                  className="flex-1 h-8 text-xs font-semibold rounded-lg bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 transition-colors"
+                >
+                  {creditLoading ? "Выдаю…" : "Подтвердить"}
+                </button>
+                <button
+                  onClick={() => setShowCreditForm(false)}
+                  className="h-8 w-8 rounded-lg border flex items-center justify-center hover:bg-muted transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Token balance */}
       <div className={cn(
         "rounded-xl p-4 border",
@@ -521,7 +623,7 @@ export function TokenMasterDrawer({ masterId, onClose }: TokenMasterDrawerProps)
                 <EfficiencyTab m={data} />
               </TabsContent>
               <TabsContent value="finance" className="mt-0">
-                <FinanceTab m={data} />
+                <FinanceTab m={data} masterId={masterId!} />
               </TabsContent>
               <TabsContent value="history" className="mt-0">
                 <TokenHistoryTab m={data} />
