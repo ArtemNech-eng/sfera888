@@ -119,3 +119,10 @@
   animation-delay: 2s;
 }
 
+@media (max-width: 768px) {
+  .glass,
+  .glass-dark {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}

@@ -190,7 +190,7 @@ export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
                         value={form.name}
                         onChange={(e) => setForm({ ...form, name: e.target.value })}
                         placeholder="Как вас зовут?"
-                        className={`w-full border rounded-2xl pl-12 pr-4 py-3.5 text-sm text-[#111827] placeholder:text-gray-400 focus:outline-none focus:ring-2 transition-all ${
+                        className={`w-full border rounded-2xl pl-12 pr-4 py-3.5 text-base text-[#111827] placeholder:text-gray-400 focus:outline-none focus:ring-2 transition-all ${
                           errors.name
                             ? 'border-red-300 focus:ring-red-100 focus:border-red-400'
                             : 'border-gray-200 focus:ring-emerald-100 focus:border-emerald-400'
@@ -210,7 +210,7 @@ export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
                         value={form.phone}
                         onChange={(e) => setForm({ ...form, phone: e.target.value })}
                         placeholder="+7 900 000-00-00"
-                        className={`w-full border rounded-2xl pl-12 pr-4 py-3.5 text-sm text-[#111827] placeholder:text-gray-400 focus:outline-none focus:ring-2 transition-all ${
+                        className={`w-full border rounded-2xl pl-12 pr-4 py-3.5 text-base text-[#111827] placeholder:text-gray-400 focus:outline-none focus:ring-2 transition-all ${
                           errors.phone
                             ? 'border-red-300 focus:ring-red-100 focus:border-red-400'
                             : 'border-gray-200 focus:ring-emerald-100 focus:border-emerald-400'
@@ -231,7 +231,7 @@ export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
                       value={form.city}
                       onChange={(e) => setForm({ ...form, city: e.target.value })}
                       placeholder="Ваш город"
-                      className={`w-full border rounded-2xl pl-12 pr-4 py-3.5 text-sm text-[#111827] placeholder:text-gray-400 focus:outline-none focus:ring-2 transition-all ${
+                      className={`w-full border rounded-2xl pl-12 pr-4 py-3.5 text-base text-[#111827] placeholder:text-gray-400 focus:outline-none focus:ring-2 transition-all ${
                         errors.city
                           ? 'border-red-300 focus:ring-red-100 focus:border-red-400'
                           : 'border-gray-200 focus:ring-emerald-100 focus:border-emerald-400'
@@ -278,7 +278,7 @@ export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
                       value={form.comment}
                       onChange={(e) => { setForm({ ...form, comment: e.target.value }); if (errors.comment) setErrors({ ...errors, comment: undefined }); }}
                       placeholder="Например: 2 комнаты, стены подготовлены, нужен старт на этой неделе"
-                      className={`w-full border rounded-2xl pl-12 pr-4 py-3.5 text-sm text-[#111827] placeholder:text-gray-400 focus:outline-none focus:ring-2 resize-none transition-all ${
+                      className={`w-full border rounded-2xl pl-12 pr-4 py-3.5 text-base text-[#111827] placeholder:text-gray-400 focus:outline-none focus:ring-2 resize-none transition-all ${
                         errors.comment
                           ? 'border-red-300 focus:ring-red-100 focus:border-red-400'
                           : 'border-gray-200 focus:ring-emerald-100 focus:border-emerald-400'
