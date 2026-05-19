@@ -203,14 +203,14 @@ export default function PartnerLeadsReviewPage() {
   const { data: cities = [] } = useGetCities();
   const [page, setPage] = useState(1);
   const limit = 20;
-  const [partnerFilter, setPartnerFilter] = useState<string>("");
-  const [cityFilter, setCityFilter] = useState<string>("");
+  const [partnerFilter, setPartnerFilter] = useState<string>("all");
+  const [cityFilter, setCityFilter] = useState<string>("all");
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [selectedLead, setSelectedLead] = useState<PartnerLead | null>(null);
 
   const { data, isLoading, refetch } = useQuery<LeadsResponse>({
     queryKey: ["partner-leads", { partner_id: partnerFilter, city: cityFilter, page, limit }],
-    queryFn: () => fetchPartnerLeads({ partner_id: partnerFilter ? parseInt(partnerFilter) : undefined, city: cityFilter, page, limit }),
+    queryFn: () => fetchPartnerLeads({ partner_id: partnerFilter !== "all" ? parseInt(partnerFilter) : undefined, city: cityFilter !== "all" ? cityFilter : undefined, page, limit }),
   });
 
   const approveMutation = useMutation({
@@ -284,7 +284,7 @@ export default function PartnerLeadsReviewPage() {
                     <SelectValue placeholder="Все партнёры" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Все партнёры</SelectItem>
+                    <SelectItem value="all">Все партнёры</SelectItem>
                     {/* TODO: fetch partners list for filter */}
                   </SelectContent>
                 </Select>
@@ -293,7 +293,7 @@ export default function PartnerLeadsReviewPage() {
                     <SelectValue placeholder="Все города" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Все города</SelectItem>
+                    <SelectItem value="all">Все города</SelectItem>
                     {cities.map((c) => (
                       <SelectItem key={c.name} value={c.name}>
                         {c.name}
@@ -301,7 +301,7 @@ export default function PartnerLeadsReviewPage() {
                     ))}
                   </SelectContent>
                 </Select>
-                <Button variant="outline" onClick={() => { setPartnerFilter(""); setCityFilter(""); setPage(1); }}>
+                <Button variant="outline" onClick={() => { setPartnerFilter("all"); setCityFilter("all"); setPage(1); }}>
                   Сбросить
                 </Button>
               </div>
