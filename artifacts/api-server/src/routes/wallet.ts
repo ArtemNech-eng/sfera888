@@ -343,11 +343,14 @@ router.post("/:masterId/credit", adminOnly, async (req: any, res: any) => {
   }
   const finalReason = (reason as string)?.trim() || "Тестовый заказ";
 
-  const masterRows = await db.select({ contractSignedAt: mastersTable.contractSignedAt, alias: mastersTable.alias })
+  const masterRows = await db.select({ contractSignedAt: mastersTable.contractSignedAt, passportVerified: mastersTable.passportVerified, alias: mastersTable.alias })
     .from(mastersTable).where(eq(mastersTable.id, masterId)).limit(1);
   if (!masterRows.length) return res.status(404).json({ error: "Мастер не найден" });
   if (!masterRows[0].contractSignedAt) {
     return res.status(403).json({ error: `У мастера ${masterRows[0].alias} не подписан договор — токен в долг выдать нельзя` });
+  }
+  if (!masterRows[0].passportVerified) {
+    return res.status(403).json({ error: `У мастера ${masterRows[0].alias} договор не подтверждён администратором — сначала проверьте паспорт` });
   }
 
   const wallet = await ensureWallet(masterId);

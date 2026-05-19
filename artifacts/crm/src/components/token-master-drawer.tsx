@@ -14,6 +14,7 @@ import {
   Activity, Star, Clock, CheckCircle2, XCircle, BarChart3,
   ArrowUpRight, Coins, ShoppingCart, ReceiptText, Calendar,
   Loader2, AlertTriangle, RefreshCw, Gift, X,
+  FileSignature, ShieldCheck, ShieldAlert, ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -130,8 +131,53 @@ function StatCard({ icon: Icon, label, value, sub, color = "default" }: {
 
 // ─── Tabs ─────────────────────────────────────────────────────────────────────
 
-function OverviewTab({ m }: { m: TokenMasterDetail }) {
+function OverviewTab({ m, masterId }: { m: TokenMasterDetail; masterId: number }) {
   const statusInfo = STATUS_LABELS[m.status] ?? { label: m.status, cls: "bg-gray-100 text-gray-600" };
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const [verifyingPassport, setVerifyingPassport] = useState(false);
+  const [markingExternal, setMarkingExternal] = useState(false);
+
+  const handleVerifyPassport = async () => {
+    setVerifyingPassport(true);
+    try {
+      const r = await fetch(`/api/masters/${masterId}/verify-passport`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ verified: true }),
+      });
+      if (r.ok) {
+        toast.success("Паспорт подтверждён — токены в долг теперь доступны");
+        queryClient.invalidateQueries({ queryKey: ["/api/token-masters", masterId] });
+      } else {
+        const d = await r.json();
+        toast.error(d.error ?? "Ошибка подтверждения");
+      }
+    } catch { toast.error("Ошибка сети"); }
+    finally { setVerifyingPassport(false); }
+  };
+
+  const handleMarkExternal = async (source: "okidoki" | "paper") => {
+    setMarkingExternal(true);
+    try {
+      const r = await fetch(`/api/masters/${masterId}/mark-contract-external`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source }),
+      });
+      if (r.ok) {
+        toast.success("Договор отмечён — мастер активирован");
+        queryClient.invalidateQueries({ queryKey: ["/api/token-masters", masterId] });
+      } else {
+        const d = await r.json();
+        toast.error(d.error ?? "Ошибка");
+      }
+    } catch { toast.error("Ошибка сети"); }
+    finally { setMarkingExternal(false); }
+  };
+
   return (
     <div className="space-y-4">
       {/* Identity */}
@@ -188,23 +234,82 @@ function OverviewTab({ m }: { m: TokenMasterDetail }) {
         </div>
       )}
 
+      {/* Contract block */}
+      <div className={`rounded-xl border p-3 space-y-2 ${
+        m.contractSignedAt && m.passportVerified
+          ? "border-green-200 bg-green-50 dark:border-green-800/30 dark:bg-green-900/10"
+          : m.contractSignedAt
+          ? "border-amber-200 bg-amber-50 dark:border-amber-800/30 dark:bg-amber-900/10"
+          : "border-gray-200 bg-gray-50 dark:border-gray-700/40 dark:bg-gray-800/20"
+      }`}>
+        <div className="flex items-center gap-2">
+          <FileSignature className="w-4 h-4 text-muted-foreground shrink-0" />
+          <span className="text-sm font-medium">Договор</span>
+          {m.contractSignedAt && m.passportVerified ? (
+            <span className="ml-auto text-xs text-green-700 dark:text-green-400 flex items-center gap-1 font-semibold">
+              <ShieldCheck className="w-3.5 h-3.5" /> Подтверждён
+            </span>
+          ) : m.contractSignedAt ? (
+            <span className="ml-auto text-xs text-amber-700 dark:text-amber-400 flex items-center gap-1 font-semibold">
+              <ShieldAlert className="w-3.5 h-3.5" /> Ожидает проверки
+            </span>
+          ) : (
+            <span className="ml-auto text-xs text-muted-foreground">Не подписан</span>
+          )}
+        </div>
+        {m.contractSignedAt && (
+          <p className="text-xs text-muted-foreground">Подписан: {fmtDate(m.contractSignedAt)}</p>
+        )}
+        {user?.role === "admin" && (
+          <div className="flex flex-wrap gap-1.5 pt-0.5">
+            {m.contractSignedAt && (
+              <a
+                href={`/api/contract/view/${m.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-xs bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400 hover:bg-violet-200 font-semibold px-2.5 py-1 rounded-lg transition-colors"
+              >
+                <ExternalLink className="w-3 h-3" /> Открыть договор
+              </a>
+            )}
+            {m.contractSignedAt && !m.passportVerified && (
+              <button
+                onClick={handleVerifyPassport}
+                disabled={verifyingPassport}
+                className="inline-flex items-center gap-1 text-xs bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-200 font-semibold px-2.5 py-1 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {verifyingPassport ? <Loader2 className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3" />}
+                Подтвердить
+              </button>
+            )}
+            {!m.contractSignedAt && (
+              <>
+                <button
+                  onClick={() => handleMarkExternal("okidoki")}
+                  disabled={markingExternal}
+                  className="inline-flex items-center gap-1 text-xs bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400 hover:bg-violet-200 font-semibold px-2.5 py-1 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {markingExternal ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                  ОкиДоки
+                </button>
+                <button
+                  onClick={() => handleMarkExternal("paper")}
+                  disabled={markingExternal}
+                  className="inline-flex items-center gap-1 text-xs bg-gray-100 dark:bg-gray-700/40 text-gray-600 dark:text-gray-400 hover:bg-gray-200 font-semibold px-2.5 py-1 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  Бумажный
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Dates */}
       <div className="space-y-1 text-sm text-muted-foreground border-t pt-3">
         <div className="flex justify-between">
           <span>Зарегистрирован</span>
           <span className="text-foreground">{fmtDate(m.createdAt)}</span>
-        </div>
-        {m.contractSignedAt && (
-          <div className="flex justify-between">
-            <span>Договор подписан</span>
-            <span className="text-foreground">{fmtDate(m.contractSignedAt)}</span>
-          </div>
-        )}
-        <div className="flex justify-between">
-          <span>Верификация паспорта</span>
-          <span className={m.passportVerified ? "text-green-600 font-medium" : "text-muted-foreground"}>
-            {m.passportVerified ? "Подтверждён" : "Не проверен"}
-          </span>
         </div>
         {m.lastSeenAt && (
           <div className="flex justify-between">
@@ -323,9 +428,14 @@ function FinanceTab({ m, masterId }: { m: TokenMasterDetail; masterId: number })
                 <AlertTriangle className="w-3 h-3" /> Договор не подписан
               </span>
             )}
-            {m.contractSignedAt && (
+            {m.contractSignedAt && !m.passportVerified && (
+              <span className="text-xs text-amber-600 flex items-center gap-1">
+                <ShieldAlert className="w-3 h-3" /> Не подтверждён
+              </span>
+            )}
+            {m.contractSignedAt && m.passportVerified && (
               <span className="text-xs text-green-600 flex items-center gap-1">
-                <CheckCircle2 className="w-3 h-3" /> Договор есть
+                <ShieldCheck className="w-3 h-3" /> Подтверждён
               </span>
             )}
           </div>
@@ -617,7 +727,7 @@ export function TokenMasterDrawer({ masterId, onClose }: TokenMasterDrawerProps)
 
             <div className="flex-1 overflow-y-auto px-6 py-4">
               <TabsContent value="overview" className="mt-0">
-                <OverviewTab m={data} />
+                <OverviewTab m={data} masterId={masterId!} />
               </TabsContent>
               <TabsContent value="efficiency" className="mt-0">
                 <EfficiencyTab m={data} />
