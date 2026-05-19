@@ -2,6 +2,7 @@ import { Switch, Route, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import BottomNav from "@/components/BottomNav";
+import InstallBanner from "@/components/InstallBanner";
 import AuthPage from "@/pages/auth";
 import DashboardPage from "@/pages/dashboard";
 import CreateLeadPage from "@/pages/create-lead";
@@ -74,6 +75,7 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <AppRoutes />
+        <InstallBanner />
       </AuthProvider>
     </QueryClientProvider>
   );
