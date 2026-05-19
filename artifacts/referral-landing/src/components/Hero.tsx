@@ -138,13 +138,16 @@ export default function Hero({ refSlug }: HeroProps) {
             transition={{ duration: 0.8, delay: 0.4 }}
             className="flex-1 w-full max-w-md lg:max-w-none relative"
           >
-            {/* Photo */}
-            <div className="rounded-[2rem] overflow-hidden shadow-premium relative">
-              <img
-                src="images/master-hero.jpg"
-                alt="Проверенный частный мастер"
-                className="w-full h-[320px] sm:h-[400px] lg:h-[480px] object-cover object-top"
-              />
+            {/* Photo with gradient blob frame */}
+            <div className="relative">
+              {/* Gradient blob behind photo */}
+              <div className="absolute -inset-4 bg-gradient-to-br from-emerald-200/50 to-emerald-400/25 rounded-[2.5rem] blur-2xl -z-10" />
+              <div className="rounded-[2rem] overflow-hidden border-[3px] border-white/60 shadow-[0_25px_60px_rgba(5,150,105,0.18)] relative">
+                <img
+                  src="images/master-hero.jpg"
+                  alt="Проверенный частный мастер"
+                  className="w-full h-[320px] sm:h-[400px] lg:h-[520px] object-cover object-top"
+                />
               {/* Verified overlay */}
               <div className="absolute bottom-4 left-4 glass rounded-2xl px-4 py-2.5 flex items-center gap-2">
                 <div className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center">
@@ -152,6 +155,7 @@ export default function Hero({ refSlug }: HeroProps) {
                 </div>
                 <span className="text-sm font-semibold text-gray-800">Мастер проверен</span>
               </div>
+            </div>
             </div>
 
             {/* Mobile cards grid */}
@@ -186,7 +190,7 @@ export default function Hero({ refSlug }: HeroProps) {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.8 + card.delay, duration: 0.5 }}
-                    className={`absolute ${card.top || ''} ${card.left || ''} ${card.right || ''} ${card.bottom || ''} glass rounded-2xl px-4 py-3 flex items-center gap-3 shadow-float hover:shadow-premium transition-shadow duration-300 animate-float${i === 1 ? '-delay' : i === 2 ? '-delay-2' : ''}`}
+                    className={`absolute ${card.top || ''} ${card.left ? card.left.replace('-left-4', '-left-2') : ''} ${card.right ? card.right.replace('-right-4', '-right-2') : ''} ${card.bottom ? card.bottom.replace('bottom-12', 'bottom-8') : ''} glass rounded-2xl px-4 py-3 flex items-center gap-3 shadow-float hover:shadow-premium transition-shadow duration-300 animate-float${i === 1 ? '-delay' : i === 2 ? '-delay-2' : ''} z-10`}
                   >
                     <div className="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center">
                       <Icon size={20} className="text-[#059669]" />
@@ -204,7 +208,7 @@ export default function Hero({ refSlug }: HeroProps) {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 1.4, duration: 0.5 }}
-                className="absolute right-4 bottom-8 glass rounded-2xl px-5 py-4 shadow-float hover:shadow-premium transition-shadow duration-300 animate-float-delay min-w-[180px]"
+                className="absolute right-2 bottom-4 glass rounded-2xl px-5 py-4 shadow-float hover:shadow-premium transition-shadow duration-300 animate-float-delay min-w-[180px] z-10"
               >
                 <p className="text-xs text-gray-400 font-medium mb-2">Смета примерная</p>
                 <div className="space-y-1.5">
