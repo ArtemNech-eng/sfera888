@@ -8,6 +8,12 @@ const router = Router();
 const adminOnly = requireRole("admin");
 const ops = requireRole("admin", "master_operator", "lead_operator");
 
+function requireMasterAuth(req: any, res: any, next: any) {
+  const masterId = (req.session as any).masterId as number | undefined;
+  if (!masterId) return res.status(401).json({ error: "Не авторизован" });
+  next();
+}
+
 // Ensure wallet row exists for a master (upsert)
 async function ensureWallet(masterId: number) {
   const existing = await db
@@ -27,7 +33,7 @@ async function ensureWallet(masterId: number) {
 }
 
 // GET /api/wallet/my — баланс для самого мастера (PWA)
-router.get("/my", requireAuth, async (req: any, res: any) => {
+router.get("/my", requireMasterAuth, async (req: any, res: any) => {
   const masterId: number | undefined = (req.session as any).masterId;
   if (!masterId) return res.status(401).json({ error: "Не авторизован" });
   const wallet = await ensureWallet(masterId);
@@ -43,7 +49,7 @@ router.get("/my", requireAuth, async (req: any, res: any) => {
 });
 
 // GET /api/wallet/my/transactions — история для PWA мастера
-router.get("/my/transactions", requireAuth, async (req: any, res: any) => {
+router.get("/my/transactions", requireMasterAuth, async (req: any, res: any) => {
   const masterId: number | undefined = (req.session as any).masterId;
   if (!masterId) return res.status(401).json({ error: "Не авторизован" });
 
@@ -84,7 +90,7 @@ router.get("/my/transactions", requireAuth, async (req: any, res: any) => {
 });
 
 // POST /api/wallet/my/purchase-request — «Я оплатил» (создаёт pending-транзакцию)
-router.post("/my/purchase-request", requireAuth, async (req: any, res: any) => {
+router.post("/my/purchase-request", requireMasterAuth, async (req: any, res: any) => {
   const masterId: number | undefined = (req.session as any).masterId;
   if (!masterId) return res.status(401).json({ error: "Не авторизован" });
 
@@ -336,6 +342,13 @@ router.post("/:masterId/credit", adminOnly, async (req: any, res: any) => {
     return res.status(400).json({ error: "tokens должен быть от 1 до 10" });
   }
   const finalReason = (reason as string)?.trim() || "Тестовый заказ";
+
+  const masterRows = await db.select({ contractSignedAt: mastersTable.contractSignedAt, alias: mastersTable.alias })
+    .from(mastersTable).where(eq(mastersTable.id, masterId)).limit(1);
+  if (!masterRows.length) return res.status(404).json({ error: "Мастер не найден" });
+  if (!masterRows[0].contractSignedAt) {
+    return res.status(403).json({ error: `У мастера ${masterRows[0].alias} не подписан договор — токен в долг выдать нельзя` });
+  }
 
   const wallet = await ensureWallet(masterId);
   const adminAlias = (req as any).user?.name ?? "admin";

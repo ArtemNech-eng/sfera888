@@ -306,7 +306,8 @@ export default function WalletPage() {
     setTxLoading(true);
     try {
       const r = await fetch(`/api/wallet/my/transactions?page=${page}&limit=20`, { credentials: "include" });
-      const data: Transaction[] = await r.json();
+      const raw = await r.json();
+      const data: Transaction[] = Array.isArray(raw) ? raw : [];
       setTransactions(prev => append ? [...prev, ...data] : data);
       setTxHasMore(data.length === 20);
     } catch {}
