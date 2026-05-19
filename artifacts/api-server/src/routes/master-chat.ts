@@ -196,78 +196,83 @@ router.get("/:masterId", requireRole("admin", "master_operator", "lead_operator"
 
 // POST /api/master-chat/:masterId/reply — send text or photo reply
 router.post("/:masterId/reply", requireRole("admin", "master_operator"), checkRateLimit, upload.single("photo"), async (req, res) => {
-  const masterId = parseInt(req.params.masterId as string);
-  const { text, operatorName } = req.body;
-  const photoFile = req.file;
+  try {
+    const masterId = parseInt(req.params.masterId as string);
+    const { text, operatorName } = req.body;
+    const photoFile = req.file;
 
-  if (!text && !photoFile) return res.status(400).json({ error: "text or photo required" });
-if (text && text.length > 5000) return res.status(400).json({ error: "Текст сообщения слишком длинный (макс. 5000 символов)" });
+    if (!text && !photoFile) return res.status(400).json({ error: "text or photo required" });
+    if (text && text.length > 5000) return res.status(400).json({ error: "Текст сообщения слишком длинный (макс. 5000 символов)" });
 
-  const masterRows = await db.select().from(mastersTable).where(and(eq(mastersTable.id, masterId), isNull(mastersTable.deletedAt)));
-  const master = masterRows[0];
-  if (!master) return res.status(404).json({ error: "Master not found or deleted" });
+    const masterRows = await db.select().from(mastersTable).where(and(eq(mastersTable.id, masterId), isNull(mastersTable.deletedAt)));
+    const master = masterRows[0];
+    if (!master) return res.status(404).json({ error: "Master not found or deleted" });
 
-  const senderLabel = operatorName ?? "Оператор";
-  let savedPhotoUrl: string | null = null;
-  const chatId = `pwa_${master.id}`;
+    const senderLabel = operatorName ?? "Оператор";
+    let savedPhotoUrl: string | null = null;
+    const chatId = `pwa_${master.id}`;
 
-  if (photoFile) {
-    try {
-      const { randomUUID } = await import("crypto");
-      const privateDir = process.env.PRIVATE_OBJECT_DIR || "";
-      if (!privateDir) throw new Error("PRIVATE_OBJECT_DIR not configured");
-      const objectId = randomUUID();
-      const ext = (photoFile.originalname?.split(".").pop() ?? "jpg").toLowerCase().slice(0, 5);
-      const fullPath = `${privateDir}/master-chat/${masterId}/${objectId}.${ext}`;
-      const parts = fullPath.replace(/^\//, "").split("/");
-      const bucketName = parts[0];
-      const objectName = parts.slice(1).join("/");
-      const bucket = objectStorageClient.bucket(bucketName);
-      const file = bucket.file(objectName);
-      await file.save(photoFile.buffer, {
-        contentType: photoFile.mimetype || "image/jpeg",
-        resumable: false,
-      });
-      // Path served by GET /storage/objects/:entityId (see routes/storage.ts).
-      // entityId = path under PRIVATE_OBJECT_DIR.
-      const privateParts = privateDir.replace(/^\//, "").split("/");
-      const entityId = parts.slice(privateParts.length).join("/");
-      savedPhotoUrl = `/objects/${entityId}`;
-    } catch (e) {
-      console.error("[master-chat] photo upload failed:", e);
-      return res.status(500).json({ error: "Не удалось сохранить фото" });
+    if (photoFile) {
+      try {
+        const { randomUUID } = await import("crypto");
+        const privateDir = process.env.PRIVATE_OBJECT_DIR || "";
+        if (!privateDir) throw new Error("PRIVATE_OBJECT_DIR not configured");
+        const objectId = randomUUID();
+        const ext = (photoFile.originalname?.split(".").pop() ?? "jpg").toLowerCase().slice(0, 5);
+        const fullPath = `${privateDir}/master-chat/${masterId}/${objectId}.${ext}`;
+        const parts = fullPath.replace(/^\//, "").split("/");
+        const bucketName = parts[0];
+        const objectName = parts.slice(1).join("/");
+        const bucket = objectStorageClient.bucket(bucketName);
+        const file = bucket.file(objectName);
+        await file.save(photoFile.buffer, {
+          contentType: photoFile.mimetype || "image/jpeg",
+          resumable: false,
+        });
+        // Path served by GET /storage/objects/:entityId (see routes/storage.ts).
+        // entityId = path under PRIVATE_OBJECT_DIR.
+        const privateParts = privateDir.replace(/^\//, "").split("/");
+        const entityId = parts.slice(privateParts.length).join("/");
+        savedPhotoUrl = `/objects/${entityId}`;
+      } catch (e) {
+        console.error("[master-chat] photo upload failed:", e);
+        return res.status(500).json({ error: "Не удалось сохранить фото" });
+      }
     }
+
+    const [saved] = await db.insert(masterMessagesTable).values({
+      masterId,
+      telegramChatId: chatId,
+      text: text ?? "",
+      fromMaster: false,
+      senderName: senderLabel,
+      isRead: true,
+      photoUrl: savedPhotoUrl,
+      telegramMessageId: null,
+    }).returning();
+
+    // Push notification to master's PWA
+    const pushBody = text
+      ? (text.length > 80 ? text.slice(0, 77) + "…" : text)
+      : "Новое фото от оператора";
+    sendPushToMaster(masterId, {
+      title: `💬 ${senderLabel}`,
+      body: pushBody,
+      url: "/chat",
+    }).catch((err) => console.error("[master-chat] push notification failed:", err));
+
+    if (master.maxChatId && (text || savedPhotoUrl)) {
+      const maxText = text
+        ? `💬 **${senderLabel}:** ${text}`
+        : `💬 Фото от **${senderLabel}**`;
+      sendMaxMessage(master.maxChatId, maxText).catch((err) => console.error("[master-chat] max message failed:", err));
+    }
+
+    res.json(saved);
+  } catch (err: any) {
+    console.error("[master-chat] reply handler error:", err);
+    res.status(500).json({ error: err?.message ?? "Internal server error" });
   }
-
-  const [saved] = await db.insert(masterMessagesTable).values({
-    masterId,
-    telegramChatId: chatId,
-    text: text ?? "",
-    fromMaster: false,
-    senderName: senderLabel,
-    isRead: true,
-    photoUrl: savedPhotoUrl,
-    telegramMessageId: null,
-  }).returning();
-
-  // Push notification to master's PWA
-  const pushBody = text
-    ? (text.length > 80 ? text.slice(0, 77) + "…" : text)
-    : "Новое фото от оператора";
-  sendPushToMaster(masterId, {
-    title: `💬 ${senderLabel}`,
-    body: pushBody,
-    url: "/chat",
-  }).catch((err) => console.error("[master-chat] push notification failed:", err));
-
-  if (master.maxChatId && (text || savedPhotoUrl)) {
-    const maxText = text
-      ? `💬 **${senderLabel}:** ${text}`
-      : `💬 Фото от **${senderLabel}**`;
-    sendMaxMessage(master.maxChatId, maxText).catch((err) => console.error("[master-chat] max message failed:", err));
-  }
-
-  res.json(saved);
 });
 
 // PATCH /api/master-chat/messages/:messageId — edit operator message text
