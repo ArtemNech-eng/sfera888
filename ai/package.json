@@ -4,6 +4,7 @@
   "description": "AI Log Agent — reads Railway logs, filters errors, persists them for manual analysis",
   "main": "agents/log-agent.ts",
   "scripts": {
+    "build": "npm install",
     "start": "ts-node agents/log-agent.ts",
     "check": "ts-node agents/check-errors.ts",
     "check-db": "ts-node agents/check-db-errors.ts",
