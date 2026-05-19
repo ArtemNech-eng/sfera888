@@ -405,7 +405,6 @@ export default function WalletPage() {
             return (
               <div className="space-y-4">
                 {packages.map(pkg => {
-                  const approxOrders = Math.round(Number(pkg.tokens_count) / 3);
                   const isBest = packages.length > 1 && Number(pkg.price_per_token) === minPpt;
                   return (
                     <div key={pkg.id} className="relative">
@@ -426,7 +425,6 @@ export default function WalletPage() {
                             </span>
                             <span className="text-xs text-muted-foreground">· {pkg.price_per_token} ₽/т.</span>
                           </div>
-                          <p className="text-xs text-muted-foreground">≈ {approxOrders} откликов на заказы</p>
                         </div>
                         <div className="flex-shrink-0 h-11 px-4 rounded-xl bg-green-500 text-white font-semibold text-sm flex items-center">
                           {(pkg.price_rub ?? 0).toLocaleString("ru-RU")} ₽
