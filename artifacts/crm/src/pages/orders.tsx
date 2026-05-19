@@ -234,7 +234,7 @@ export default function Orders() {
 
   const openMasterChat = (masterId: number) => setLocation(`/master-chat?masterId=${masterId}`);
 
-  const { data: orders, isLoading } = useGetOrders({}, { query: { refetchInterval: 8000 } });
+  const { data: orders, isLoading } = useGetOrders({}, { query: { queryKey: ["/api/orders"], refetchInterval: 8000 } });
 
   useEffect(() => {
     if (highlightRowRef.current) {
@@ -628,7 +628,7 @@ export default function Orders() {
           (o as any).district?.toLowerCase().includes(q) ||
           o.serviceType?.toLowerCase().includes(q) ||
           o.masterName?.toLowerCase().includes(q) ||
-          o.clientPhone?.toLowerCase().includes(q);
+          (o as any).clientPhone?.toLowerCase().includes(q);
         if (!matches) return false;
       }
 

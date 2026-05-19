@@ -698,7 +698,9 @@ export function AvitoAnalyticsTab({ items, itemsLoading, connected, onGoToSettin
                           <td className="px-3 py-2.5 max-w-[180px]">
                             <p className="font-medium text-xs leading-tight line-clamp-2 flex items-start gap-1">
                               {scheduledIds.has(String(item.id)) && (
-                                <Clock className="w-3 h-3 mt-0.5 shrink-0 text-blue-500" title="По расписанию (08:00–20:00)" />
+                                <span title="По расписанию (08:00–20:00)">
+                                  <Clock className="w-3 h-3 mt-0.5 shrink-0 text-blue-500" />
+                                </span>
                               )}
                               {item.title}
                             </p>

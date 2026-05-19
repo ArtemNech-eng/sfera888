@@ -264,6 +264,7 @@ export default function MasterChat() {
       const t = setInterval(() => fetchConversation(selectedId), 10000);
       return () => clearInterval(t);
     }
+    return undefined;
   }, [selectedId, fetchConversation]);
 
   useEffect(() => {
@@ -337,6 +338,7 @@ export default function MasterChat() {
       setPendingOrders([]);
       setRespondedOrders([]);
     }
+    return undefined;
   }, [selectedId, fetchPendingOrders, fetchRespondedOrders]);
 
   // Open master card overlay

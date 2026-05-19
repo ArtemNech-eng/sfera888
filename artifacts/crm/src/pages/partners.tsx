@@ -77,6 +77,7 @@ interface Partner {
   createdAt: string;
   notes: string | null;
   login?: string;
+  refSlug?: string;
   leads_this_month: number;
   accepted_this_month: number;
 }
@@ -661,7 +662,7 @@ export default function PartnersPage() {
           </Card>
         </div>
 
-        <CreatePartnerModal open={createModalOpen} onOpenChange={setCreateModalOpen} cities={cities} />
+        <CreatePartnerModal open={createModalOpen} onOpenChange={setCreateModalOpen} cities={cities.map(c => c.name)} />
         <PartnerDetailDrawer partnerId={selectedPartnerId} open={detailOpen} onOpenChange={setDetailOpen} />
       </Layout>
     </ProtectedRoute>

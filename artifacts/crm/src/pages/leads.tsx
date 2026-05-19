@@ -639,9 +639,9 @@ export default function Leads() {
               search={archiveSearch}
               onSearchChange={setArchiveSearch}
               statusFilter={archiveStatusFilter}
-              onStatusChange={setArchiveStatusFilter}
+              onStatusChange={(v) => setArchiveStatusFilter(v as typeof archiveStatusFilter)}
               cityFilter={archiveCityFilter}
-              onCityChange={setArchiveCityFilter}
+              onCityChange={(v) => setArchiveCityFilter(v)}
               dateFilter={archiveDateFilter}
               onDateChange={(v) => setArchiveDateFilter(v as typeof archiveDateFilter)}
               page={archivePage}
@@ -690,7 +690,7 @@ export default function Leads() {
         <CreateLeadModal
           open={isCreateOpen}
           onClose={() => setIsCreateOpen(false)}
-          createLead={(input) => createMutation.mutate(input)}
+          createLead={(input) => createMutation.mutate(input as any)}
           createPending={createMutation.isPending}
           cities={cities}
           services={services}

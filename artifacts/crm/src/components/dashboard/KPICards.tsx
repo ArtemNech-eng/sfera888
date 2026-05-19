@@ -56,6 +56,7 @@ function KPICard({
       return () => clearTimeout(t);
     }
     prevRef.current = value;
+    return undefined;
   }, [value]);
 
   // Не показываем изменение если текущее значение 0 — "-100%" вводит в заблуждение

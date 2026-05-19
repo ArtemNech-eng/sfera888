@@ -466,7 +466,11 @@ function KanbanColumn({ col, masters, columns, onMove, onOpenDrawer, draggingId,
            style={{ background: isActiveDrop ? `${accent}15` : c.headerBg, borderBottom: "1px solid rgba(0,0,0,0.04)", transition: "background 0.15s" }}>
         <div className="flex items-center gap-2 min-w-0">
           <span className="font-semibold text-[13px] text-gray-700 truncate">{name}</span>
-          {col?.receivesOrders && <Zap className="w-3 h-3 text-emerald-500 flex-shrink-0" title="Принимает заказы" />}
+          {col?.receivesOrders && (
+            <span title="Принимает заказы">
+              <Zap className="w-3 h-3 text-emerald-500 flex-shrink-0" />
+            </span>
+          )}
         </div>
         <span className="text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 flex-shrink-0 ml-1"
               style={{ background: c.badgeBg, color: c.badgeText }}>{masters.length}</span>

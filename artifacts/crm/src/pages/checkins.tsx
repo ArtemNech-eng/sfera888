@@ -305,7 +305,7 @@ function CheckinsContent() {
       if (!res.ok) throw new Error();
       return res.json();
     },
-    onSuccess: (d) => {
+    onSuccess: (d: { broadcastTime: string; reminderTime: string; reminderEnabled: boolean }) => {
       if (editTime === null) setEditTime(d.broadcastTime);
       if (editReminderTime === null) setEditReminderTime(d.reminderTime);
       if (localReminderEnabled === null) setLocalReminderEnabled(d.reminderEnabled);

@@ -170,7 +170,7 @@ export interface DrawerMaster {
   rating: number; totalOrders: number; acceptedOrders: number; totalLeadsReceived?: number; paidOrdersCount?: number; debt: number;
   voronkaColumnId: number | null; isTestMaster: boolean;
   avatarUrl: string | null; activeOrders: any[]; createdAt: string;
-  pwaLogin: string | null; contractLink: string | null;
+  pwaLogin?: string | null; contractLink?: string | null;
   maxChatId?: string | null;
   workingHours?: WorkingHours | null;
   preferredDistricts?: string[];
@@ -2097,22 +2097,22 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
               )}
 
               {/* Credit / transition period block */}
-              {((walletQuery.data?.credit_tokens_issued ?? 0) > 0 || true) && (
+              {(((walletQuery.data as any)?.credit_tokens_issued ?? 0) > 0 || true) && (
                 <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-2xl p-4 space-y-3">
                   <p className="text-[11px] font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wide">Переходный период</p>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="bg-white dark:bg-blue-900/30 rounded-xl p-2.5 border border-blue-100 dark:border-blue-700">
                       <p className="text-[10px] text-gray-400">Выдано в долг</p>
-                      <p className="text-lg font-bold text-blue-600">{walletQuery.data?.credit_tokens_issued ?? 0} т.</p>
+                      <p className="text-lg font-bold text-blue-600">{(walletQuery.data as any)?.credit_tokens_issued ?? 0} т.</p>
                     </div>
                     <div className="bg-white dark:bg-blue-900/30 rounded-xl p-2.5 border border-blue-100 dark:border-blue-700">
                       <p className="text-[10px] text-gray-400">Использовано</p>
-                      <p className="text-lg font-bold text-blue-600">{walletQuery.data?.credit_tokens_spent ?? 0} т.</p>
+                      <p className="text-lg font-bold text-blue-600">{(walletQuery.data as any)?.credit_tokens_spent ?? 0} т.</p>
                     </div>
                   </div>
                   {(() => {
-                    const issued = walletQuery.data?.credit_tokens_issued ?? 0;
-                    const spent = walletQuery.data?.credit_tokens_spent ?? 0;
+                    const issued = (walletQuery.data as any)?.credit_tokens_issued ?? 0;
+                    const spent = (walletQuery.data as any)?.credit_tokens_spent ?? 0;
                     const remaining = issued - spent;
                     if (remaining > 0) {
                       return <p className="text-[11px] text-blue-600 dark:text-blue-400">Остаток тестового лимита: <strong>{remaining} т.</strong></p>;

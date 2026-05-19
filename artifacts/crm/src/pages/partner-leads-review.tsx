@@ -295,8 +295,8 @@ export default function PartnerLeadsReviewPage() {
                   <SelectContent>
                     <SelectItem value="">Все города</SelectItem>
                     {cities.map((c) => (
-                      <SelectItem key={c} value={c}>
-                        {c}
+                      <SelectItem key={c.name} value={c.name}>
+                        {c.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
