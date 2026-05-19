@@ -7,6 +7,7 @@ import cookieParser from "cookie-parser";
 import router from "./routes/index.js";
 import partnerPwaRouter from "./routes/partner-pwa.js";
 import crmPartnersRouter from "./routes/crm-partners.js";
+import masterPwaRouter from "./routes/master-pwa.js";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
@@ -903,6 +904,7 @@ app.post("/api/manager-webhook", express.json(), async (req, res) => {
 app.use("/api", router);
 app.use("/api/partner", partnerPwaRouter);
 app.use("/api/crm", crmPartnersRouter);
+app.use("/api/master-pwa", masterPwaRouter);
 
 // ── Serve CRM and master-pwa as static files (production deployment) ─────────
 // In development these are served by their own Vite dev servers via path routing.
