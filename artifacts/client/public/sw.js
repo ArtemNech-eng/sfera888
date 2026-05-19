@@ -20,6 +20,40 @@ self.addEventListener("activate", (e) => {
   );
 });
 
+self.addEventListener("push", (e) => {
+  const payload = e.data ? e.data.json() : {};
+  const title = payload.title || "Честный мастер";
+  const body = payload.body || "Новое уведомление";
+  const icon = payload.icon || "/client/icon-192.png";
+  const tag = payload.tag || String(Date.now());
+  const url = payload.url || "/client/";
+
+  e.waitUntil(
+    self.registration.showNotification(title, {
+      body,
+      icon,
+      tag,
+      data: { url },
+      requireInteraction: false,
+    })
+  );
+});
+
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const url = e.notification.data?.url || "/client/";
+  e.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      const client = clients.find((c) => c.url && c.url.includes("/client/"));
+      if (client) {
+        client.focus();
+        return client.navigate(url);
+      }
+      return self.clients.openWindow(url);
+    })
+  );
+});
+
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
   const url = new URL(e.request.url);

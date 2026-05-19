@@ -1,9 +1,10 @@
 import { Router } from "express";
-import { db, receiptsTable, clientSupportMessagesTable, generalSupportMessagesTable, leadsTable, ordersTable, mastersTable } from "@workspace/db";
+import { db, receiptsTable, clientSupportMessagesTable, generalSupportMessagesTable, leadsTable, ordersTable, mastersTable, clientPushSubscriptionsTable } from "@workspace/db";
 import { eq, desc, and, isNull, isNotNull, inArray, like, gte, sql } from "drizzle-orm";
 import multer from "multer";
 import { objectStorageClient } from "../lib/objectStorage.js";
 import { performBroadcast } from "../lib/broadcastOrder.js";
+import { sendPushToClient } from "../lib/clientPush.js";
 import { requireRole } from "../middlewares/requireAuth.js";
 import OpenAI from "openai";
 
@@ -699,6 +700,198 @@ router.post("/support-reply/:phone", requireRole("admin", "master_operator"), as
   }).returning();
 
   res.json({ ok: true, message: msg });
+});
+
+// ─── Client Push Subscriptions ─────────────────────────────────────────────────
+
+function normalizePhoneForPush(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length === 10) return "7" + digits;
+  if (digits.length === 11 && digits[0] === "8") return "7" + digits.slice(1);
+  if (digits.length === 11 && digits[0] === "7") return digits;
+  return digits;
+}
+
+// POST /api/client/push-subscribe
+router.post("/push-subscribe", async (req, res) => {
+  const { phone, endpoint, p256dh, auth } = req.body;
+  if (!phone || !endpoint || !p256dh || !auth) {
+    return res.status(400).json({ error: "phone, endpoint, p256dh, auth обязательны" });
+  }
+  const normalizedPhone = normalizePhoneForPush(phone);
+  if (normalizedPhone.length < 10) {
+    return res.status(400).json({ error: "Некорректный номер телефона" });
+  }
+
+  // Upsert: delete existing subscription for same endpoint, then insert
+  await db.delete(clientPushSubscriptionsTable)
+    .where(eq(clientPushSubscriptionsTable.endpoint, endpoint))
+    .catch(() => {});
+
+  await db.insert(clientPushSubscriptionsTable).values({
+    phone: normalizedPhone,
+    endpoint,
+    p256dh,
+    auth,
+  });
+
+  res.json({ ok: true });
+});
+
+// POST /api/client/push-unsubscribe
+router.post("/push-unsubscribe", async (req, res) => {
+  const { endpoint } = req.body;
+  if (!endpoint) return res.status(400).json({ error: "endpoint обязателен" });
+
+  await db.delete(clientPushSubscriptionsTable)
+    .where(eq(clientPushSubscriptionsTable.endpoint, endpoint))
+    .catch(() => {});
+
+  res.json({ ok: true });
+});
+
+// ─── Auto-create order from client site ────────────────────────────────────────
+
+// Rate limiter for client orders: max 3 per phone per 24 hours
+const CLIENT_ORDER_LIMIT = 3;
+const CLIENT_ORDER_WINDOW_MS = 24 * 60 * 60 * 1000;
+const clientOrderRateMap = new Map<string, { count: number; resetAt: number }>();
+
+function checkClientOrderLimit(phone: string): { allowed: boolean; remaining: number; resetAt: Date } {
+  const key = phone.replace(/\D/g, "").slice(-10);
+  const now = Date.now();
+  let entry = clientOrderRateMap.get(key);
+  if (!entry || entry.resetAt < now) {
+    entry = { count: 0, resetAt: now + CLIENT_ORDER_WINDOW_MS };
+    clientOrderRateMap.set(key, entry);
+  }
+  const remaining = Math.max(0, CLIENT_ORDER_LIMIT - entry.count);
+  if (entry.count >= CLIENT_ORDER_LIMIT) {
+    return { allowed: false, remaining: 0, resetAt: new Date(entry.resetAt) };
+  }
+  entry.count++;
+  return { allowed: true, remaining: CLIENT_ORDER_LIMIT - entry.count, resetAt: new Date(entry.resetAt) };
+}
+
+// POST /api/client/orders
+router.post("/orders", async (req, res) => {
+  const { clientName, clientPhone, city, district, serviceType, area, scheduledAt, comment } = req.body;
+
+  if (!clientName?.trim() || !clientPhone?.trim() || !city?.trim() || !district?.trim() || !serviceType?.trim() || !area) {
+    return res.status(400).json({ error: "Заполните все обязательные поля" });
+  }
+
+  const normalizedPhone = normalizePhoneForPush(clientPhone);
+  if (normalizedPhone.length < 10) {
+    return res.status(400).json({ error: "Некорректный номер телефона" });
+  }
+
+  const rateCheck = checkClientOrderLimit(normalizedPhone);
+  if (!rateCheck.allowed) {
+    return res.status(429).json({
+      error: `Превышен лимит заказов. Попробуйте позже.`,
+      limitExceeded: true,
+      resetAt: rateCheck.resetAt.toISOString(),
+    });
+  }
+
+  const areaNum = Number(area);
+  if (isNaN(areaNum) || areaNum <= 0) {
+    return res.status(400).json({ error: "Некорректная площадь" });
+  }
+
+  try {
+    // 1. Create lead
+    const [lead] = await db.insert(leadsTable).values({
+      clientName: clientName.trim(),
+      clientPhone: normalizedPhone,
+      city: city.trim(),
+      district: district.trim(),
+      serviceType: serviceType.trim(),
+      area: String(areaNum),
+      scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
+      comment: comment?.trim() || null,
+      source: "client_site",
+      status: "new",
+    }).returning();
+
+    // 2. Create order
+    const [order] = await db.insert(ordersTable).values({
+      leadId: lead.id,
+      city: city.trim(),
+      district: district.trim(),
+      serviceType: serviceType.trim(),
+      area: String(areaNum),
+      scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
+      comment: comment?.trim() || null,
+      status: "waiting_master",
+      dispatchStatus: "none",
+      clientName: clientName.trim(),
+      clientPhone: normalizedPhone,
+      source: "client_site",
+      paymentModel: "token",
+    }).returning();
+
+    // 3. Broadcast to masters
+    const broadcastResult = await performBroadcast(order.id);
+
+    // 4. Generate access token for client
+    const orderToken = `${order.id}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+    res.json({
+      ok: true,
+      orderId: order.id,
+      token: orderToken,
+      broadcast: broadcastResult,
+    });
+  } catch (err: any) {
+    console.error("Client order creation error:", err);
+    res.status(500).json({ error: "Ошибка при создании заказа" });
+  }
+});
+
+// GET /api/client/orders/:token — get order status for client
+router.get("/orders/:token", async (req, res) => {
+  const { token } = req.params;
+  // Parse orderId from token (format: orderId-timestamp-random)
+  const orderIdStr = token.split("-")[0];
+  const orderId = parseInt(orderIdStr);
+  if (isNaN(orderId)) return res.status(400).json({ error: "Некорректный токен" });
+
+  const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
+  if (!order || order.source !== "client_site") {
+    return res.status(404).json({ error: "Заказ не найден" });
+  }
+
+  let masterName: string | null = null;
+  let masterRating: number | null = null;
+  let masterAvatar: string | null = null;
+  if (order.masterId) {
+    const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, order.masterId));
+    if (master) {
+      masterName = master.alias;
+      masterRating = Number(master.rating);
+      masterAvatar = master.customAvatarUrl || null;
+    }
+  }
+
+  res.json({
+    id: order.id,
+    status: order.status,
+    dispatchStatus: order.dispatchStatus,
+    serviceType: order.serviceType,
+    city: order.city,
+    district: order.district,
+    area: Number(order.area),
+    scheduledAt: order.scheduledAt,
+    comment: order.comment,
+    clientName: order.clientName,
+    clientPhone: order.clientPhone,
+    masterName,
+    masterRating,
+    masterAvatar,
+    createdAt: order.createdAt,
+  });
 });
 
 export default router;

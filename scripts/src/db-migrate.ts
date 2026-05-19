@@ -164,6 +164,17 @@ const queries: string[] = [
   `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'leads' AND column_name = 'id') THEN RAISE NOTICE 'Table leads not ready, skipping FK'; ELSE IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'orders_lead_id_fkey') THEN ALTER TABLE orders ADD CONSTRAINT orders_lead_id_fkey FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE; END IF; END IF; END $$;`,
   `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'leads') THEN CREATE INDEX IF NOT EXISTS idx_leads_status_updated_at ON leads(status_updated_at); END IF; END $$;`,
   `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'orders') AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'assigned_at') THEN CREATE INDEX IF NOT EXISTS idx_orders_assigned_at ON orders(assigned_at); END IF; END $$;`,
+
+  // ── client_push_subscriptions ──────────────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS client_push_subscriptions (
+    id SERIAL PRIMARY KEY,
+    phone TEXT NOT NULL,
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS client_push_phone_idx ON client_push_subscriptions(phone);`,
 ];
 
 async function run() {

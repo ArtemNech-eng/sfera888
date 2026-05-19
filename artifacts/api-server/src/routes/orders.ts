@@ -7,6 +7,7 @@ import { getMasterEligibility, getOverdueMasterIds, countActiveMasterOrders, get
 import { recalcMasterColumn } from "../lib/masterColumn.js";
 import { performBroadcast } from "../lib/broadcastOrder.js";
 import { sendPushToMaster } from "../lib/push.js";
+import { sendPushToClient } from "../lib/clientPush.js";
 import { sendMaxMessage } from "../maxBot.js";
 import { analyseOrderCancellation, sendFeedbackRequest } from "../lib/dispatcherAI.js";
 import { recordOrderCancelled, recordOrderCompleted, revertOrderCancellation } from "../lib/masterReputation.js";
@@ -744,6 +745,19 @@ router.post("/:id/assign-master", allOrderRoles, async (req, res) => {
     ).catch(() => {});
   }
 
+  // Push notification to client if this is a client_site order
+  if (o.source === "client_site" && o.clientPhone) {
+    const ratingStr = Number(master.rating).toFixed(1);
+    sendPushToClient(o.clientPhone, {
+      type: "master_assigned",
+      title: "Мастер найден",
+      body: `Вам позвонит мастер ${master.alias}, рейтинг ${ratingStr}★`,
+      orderId: id,
+      masterName: master.alias,
+      rating: ratingStr,
+    }).catch(() => {});
+  }
+
   res.json({
     id: o.id,
     leadId: o.leadId,
@@ -947,6 +961,19 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
     body: `Заявка #${orderId}${order.serviceType ? ` · ${order.serviceType}` : ""}${lead?.clientName ? ` · ${lead.clientName}` : ""}`,
     url: `/master-pwa/orders`,
   }).catch(() => {});
+
+  // Push notification to client if this is a client_site order
+  if (order.source === "client_site" && order.clientPhone) {
+    const ratingStr = Number(master.rating).toFixed(1);
+    sendPushToClient(order.clientPhone, {
+      type: "master_assigned",
+      title: "Мастер найден",
+      body: `Вам позвонит мастер ${master.alias}, рейтинг ${ratingStr}★`,
+      orderId: orderId,
+      masterName: master.alias,
+      rating: ratingStr,
+    }).catch(() => {});
+  }
 
   if (master.maxChatId) {
     const maDate = order.scheduledAt

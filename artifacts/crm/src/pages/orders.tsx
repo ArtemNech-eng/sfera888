@@ -1029,6 +1029,8 @@ export default function Orders() {
                             : order.id === highlightId ? "bg-primary/5 ring-2 ring-inset ring-primary/40 hover:bg-slate-50"
                             : proposed && !confirmed ? "bg-amber-50/40 hover:bg-slate-50"
                             : pendingResp ? "bg-blue-50/40 hover:bg-slate-50"
+                            : (order as any).source === "client_site" && order.status === "waiting_master" && waitH > 0.5
+                              ? "bg-red-50/60 hover:bg-red-50"
                             : "hover:bg-slate-50"
                         }`}
                       >
@@ -1046,7 +1048,14 @@ export default function Orders() {
 
                         {/* ID + date */}
                         <td className="px-3 py-2.5 whitespace-nowrap">
-                          <span className="font-semibold text-foreground">#{order.id}</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-semibold text-foreground">#{order.id}</span>
+                            {(order as any).source === "client_site" && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-100 text-emerald-700 border border-emerald-200">
+                                С сайта
+                              </span>
+                            )}
+                          </div>
                           <div className="text-[10px] text-muted-foreground mt-0.5">{formatDate(order.createdAt)}</div>
                         </td>
 

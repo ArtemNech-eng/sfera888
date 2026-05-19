@@ -9,6 +9,7 @@ import SupportChat from "@/pages/SupportChat";
 import InstallPrompt from "@/components/InstallPrompt";
 import BottomNav from "@/components/BottomNav";
 import { getStoredPhone, setStoredPhone, clearStoredPhone, formatPhone } from "@/utils/phone";
+import { useClientPushNotifications } from "@/hooks/usePushNotifications";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -137,6 +138,8 @@ function Home() {
     setShowPhoneSheet(false);
     if (phone) setStoredPhoneState(phone);
   };
+
+  useClientPushNotifications(storedPhone);
 
   useEffect(() => {
     if (!storedPhone) return;

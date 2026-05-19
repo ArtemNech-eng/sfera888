@@ -11,6 +11,8 @@ import { notifyManagerMasterResponse, notifyManagerNewMaster } from "../managerB
 import { getFomoBlock, logFomoEvent, checkFomoTransition } from "../lib/fomoBlock.js";
 import { getOrderTokenCost, deductTokens, ensureWallet, checkTokenBalance } from "../lib/tokenWallet.js";
 import { sendPushToMaster } from "../lib/push.js";
+import { sendPushToClient } from "../lib/clientPush.js";
+import { performBroadcast } from "../lib/broadcastOrder.js";
 
 const avatarUpload = multer({
   storage: multer.memoryStorage(),
@@ -739,13 +741,27 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
     const leadRow = await db.select().from(leadsTable).where(eq(leadsTable.id, order.leadId)).limit(1);
     const lead = leadRow[0];
 
-    // Push notification
+    // Push notification to master
     if (master.pwaLogin) {
       sendPushToMaster(master.id, {
         type: "order_assigned",
         title: "✅ Заявка ваша!",
         body: `${order.serviceType} · ${order.city}${order.district ? ", " + order.district : ""}` +
           (lead ? ` · ${lead.clientPhone}` : ""),
+      }).catch(() => {});
+    }
+
+    // Push notification to client: "Вам позвонит мастер Иван, рейтинг 4.8★"
+    const clientPhone = lead?.clientPhone ?? order.clientPhone;
+    if (clientPhone) {
+      const ratingStr = Number(master.rating).toFixed(1);
+      sendPushToClient(clientPhone, {
+        type: "master_assigned",
+        title: "Мастер найден",
+        body: `Вам позвонит мастер ${master.alias}, рейтинг ${ratingStr}★`,
+        orderId: order.id,
+        masterName: master.alias,
+        rating: ratingStr,
       }).catch(() => {});
     }
 
@@ -1132,6 +1148,43 @@ router.post("/orders/:id/cancel", requireMasterPwa, async (req, res) => {
     return res.status(400).json({ error: "Нельзя отменить заказ в текущем статусе" });
   }
 
+  // ── Полуавто: client_site + token → сразу в эфир, токены не возвращаются ──
+  if (order.source === "client_site" && (order as any).paymentModel === "token") {
+    // Reset order for re-broadcast
+    await db.update(ordersTable).set({
+      status: "waiting_master",
+      masterId: null,
+      dispatchStatus: "none",
+      cancelType: null,
+      cancelReason: null,
+      updatedAt: new Date(),
+    }).where(eq(ordersTable.id, orderId));
+
+    // Delete old sent dispatches so other masters can see it again
+    await db.delete(orderDispatchesTable)
+      .where(and(
+        eq(orderDispatchesTable.orderId, orderId),
+        eq(orderDispatchesTable.status, "sent"),
+      ));
+
+    // Re-broadcast (force=true to clear previous state)
+    const broadcastResult = await performBroadcast(orderId, true);
+
+    // Notify client
+    const clientPhone = order.clientPhone;
+    if (clientPhone) {
+      sendPushToClient(clientPhone, {
+        type: "searching_new_master",
+        title: "Ищем другого мастера",
+        body: "Мастер отказался от заказа. Ищем замену...",
+        orderId,
+      }).catch(() => {});
+    }
+
+    return res.json({ success: true, rebroadcast: broadcastResult });
+  }
+
+  // ── Обычный flow: запрос на отмену → оператор решает ──────────────────────
   const typeLabels: Record<string, string> = {
     client_refused: "Клиент отказался",
     price_disagreement: "Не договорились по цене",

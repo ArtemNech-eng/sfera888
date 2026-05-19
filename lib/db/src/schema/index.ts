@@ -13,6 +13,7 @@ export * from "./master-tasks";
 export * from "./master-reviews";
 export * from "./tasks";
 export * from "./push-subscriptions";
+export * from "./client-push-subscriptions";
 export * from "./order-status-logs";
 export * from "./receipts";
 export * from "./client-support-messages";
