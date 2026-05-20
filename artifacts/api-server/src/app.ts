@@ -17,6 +17,7 @@ import { ObjectStorageService } from "./lib/objectStorage.js";
 
 import { handleMaxUpdate, registerWebhook, sendMaxMessage } from "./maxBot.js";
 import { handleManagerUpdate, registerManagerWebhook, notifyManagerReceiptPaid } from "./managerBot.js";
+import { errorLoggerMiddleware } from "./middlewares/errorLogger.js";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 
@@ -991,6 +992,9 @@ app.get("/", (_req, res) => {
     res.redirect(301, "/crm/");
   }
 });
+
+// ── Error Logging Middleware ────────────────────────────────────────────────
+app.use(errorLoggerMiddleware());
 
 // ── Register Max Bot Webhooks on startup ──────────────────────────────────────
 const PROD_HOST = "https://sfera-master.ru";

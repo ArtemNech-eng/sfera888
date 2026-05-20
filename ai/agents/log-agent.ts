@@ -128,103 +128,37 @@ function detectLevel(line: string): string {
 
 // ─── Log Reading ─────────────────────────────────────
 
-async function fetchLogsViaAPI(): Promise<string[]> {
+async function fetchLogsFromDB(): Promise<string[]> {
   try {
-    console.log("[LogAgent] Fetching logs via Railway API...");
+    console.log("[LogAgent] Fetching logs from PostgreSQL...");
     
-    const token = process.env.RAILWAY_TOKEN;
-    const projectId = process.env.RAILWAY_PROJECT_ID;
+    const errors = await db.getActiveErrors();
+    console.log(`[LogAgent] Found ${errors.length} active errors in DB`);
     
-    if (!token || !projectId) {
-      console.warn("[LogAgent] RAILWAY_TOKEN or RAILWAY_PROJECT_ID not set");
-      return [];
-    }
-    
-    // Step 1: Get all services in project
-    const servicesResponse = await fetch("https://backboard.railway.app/graphql", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        query: `
-          query GetProject($id: String!) {
-            project(id: $id) {
-              services {
-                edges {
-                  node {
-                    id
-                    name
-                  }
-                }
-              }
-            }
-          }
-        `,
-        variables: { id: projectId }
-      })
+    // Convert DB records to log lines for processing
+    return errors.map((err: any) => {
+      const severity = err.severity || "ERROR";
+      const message = err.message || "";
+      const source = err.source || "unknown";
+      const count = err.count || 1;
+      return `[${severity}] [${source}] ${message} (count: ${count})`;
     });
-    
-    const servicesData = await servicesResponse.json() as any;
-    console.log("[LogAgent] Services found:", servicesData?.data?.project?.services?.edges?.length || 0);
-    
-    // Find sfera888 service
-    const services = servicesData?.data?.project?.services?.edges || [];
-    const sferaService = services.find((s: any) => s.node.name === "sfera888");
-    
-    if (!sferaService) {
-      console.warn("[LogAgent] sfera888 service not found in project");
-      // Log available services for debugging
-      const names = services.map((s: any) => s.node.name).join(", ");
-      console.log("[LogAgent] Available services:", names);
-      return [];
-    }
-    
-    console.log("[LogAgent] Found sfera888 service ID:", sferaService.node.id);
-    
-    // Step 2: Get logs for sfera888
-    const logsResponse = await fetch("https://backboard.railway.app/graphql", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        query: `
-          query GetLogs($serviceId: String!) {
-            serviceLogs(serviceId: $serviceId, limit: 1500) {
-              message
-              timestamp
-              severity
-            }
-          }
-        `,
-        variables: { serviceId: sferaService.node.id }
-      })
-    });
-    
-    const logsData = await logsResponse.json() as any;
-    const logs = logsData?.data?.serviceLogs || [];
-    
-    console.log(`[LogAgent] Fetched ${logs.length} log lines`);
-    return logs.map((log: any) => log.message);
   } catch (e: any) {
-    console.error("[LogAgent] API fetch failed:", e.message);
+    console.error("[LogAgent] DB fetch failed:", e.message);
     return [];
   }
 }
 
 async function readLogs(): Promise<string[]> {
-  // Prefer local file (development), fallback to Railway API (production/Railway deploy)
+  // Prefer local file (development), fallback to DB (production/Railway deploy)
   if (fs.existsSync(LOG_FILE)) {
     const content = fs.readFileSync(LOG_FILE, "utf-8");
     const allLines = content.split("\n");
     return allLines.slice(-LAST_N_LINES);
   }
 
-  console.warn(`[LogAgent] Log file not found locally, trying Railway API...`);
-  return fetchLogsViaAPI();
+  console.warn(`[LogAgent] Log file not found locally, trying PostgreSQL DB...`);
+  return fetchLogsFromDB();
 }
 
 // ─── Error Filtering ──────────────────────────────────
