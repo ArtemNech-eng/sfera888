@@ -132,21 +132,7 @@ function fetchLogsViaCLI(): string[] {
   try {
     console.log("[LogAgent] Fetching logs via Railway CLI...");
     
-    // Authorize CLI using RAILWAY_TOKEN if available
-    const token = process.env.RAILWAY_TOKEN;
-    if (token) {
-      try {
-        execSync(`railway login --token ${token}`, { 
-          encoding: "utf-8", 
-          timeout: 15000,
-          env: { ...process.env }
-        });
-        console.log("[LogAgent] Railway CLI authenticated.");
-      } catch (authErr: any) {
-        console.warn("[LogAgent] CLI auth warning:", authErr.message);
-      }
-    }
-    
+    // Railway CLI automatically uses RAILWAY_TOKEN from env
     const output = execSync(
       "railway logs --lines 1500 --service sfera888",
       { encoding: "utf-8", timeout: 30000, env: { ...process.env } }
