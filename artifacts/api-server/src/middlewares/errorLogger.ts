@@ -29,6 +29,7 @@ export function errorLoggerMiddleware() {
       console.log(`[ErrorLogger] Successfully saved error ${errorId}`);
     } catch (dbErr: any) {
       console.error("[ErrorLogger] Failed to save error:", dbErr.message || dbErr);
+      console.error("[ErrorLogger] Full error object:", JSON.stringify(dbErr, Object.getOwnPropertyNames(dbErr), 2));
       console.error("[ErrorLogger] DB Error code:", dbErr.code);
       console.error("[ErrorLogger] DB Error detail:", dbErr.detail);
       console.error("[ErrorLogger] DB Error table:", dbErr.table);
