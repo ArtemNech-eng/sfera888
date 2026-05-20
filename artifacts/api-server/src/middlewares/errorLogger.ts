@@ -12,8 +12,11 @@ export function errorLoggerMiddleware() {
       
       console.error(`[ErrorLogger] ${method} ${path}: ${message}`);
       
+      const errorId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      console.log(`[ErrorLogger] Inserting error ${errorId}...`);
+      
       await db.insert(aiErrorLogs).values({
-        errorId: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        errorId,
         message: `[${method} ${path}] ${message}`,
         severity: "ERROR",
         source: "api-server",
@@ -29,8 +32,11 @@ export function errorLoggerMiddleware() {
           isActive: true,
         },
       });
-    } catch (dbErr) {
-      console.error("[ErrorLogger] Failed to save error:", dbErr);
+      
+      console.log(`[ErrorLogger] Successfully saved error ${errorId}`);
+    } catch (dbErr: any) {
+      console.error("[ErrorLogger] Failed to save error:", dbErr.message || dbErr);
+      console.error("[ErrorLogger] DB Error stack:", dbErr.stack || 'no stack');
     }
     
     next(err);
