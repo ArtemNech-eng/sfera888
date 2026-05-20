@@ -777,6 +777,16 @@ router.post("/return-to-pool/:orderId", operatorRoles, async (req, res) => {
           updatedAt: new Date(),
         } as any)
         .where(eq(ordersTable.id, orderId));
+
+      // Decrement master order counters
+      if (order.masterId) {
+        await tx.update(mastersTable)
+          .set({
+            totalOrders: sql`${mastersTable.totalOrders} - 1`,
+            acceptedOrders: sql`${mastersTable.acceptedOrders} - 1`,
+          })
+          .where(eq(mastersTable.id, order.masterId));
+      }
     });
 
     // Record cancellation for reputation + history + notify master
@@ -848,11 +858,7 @@ router.post("/orders/:orderId/partial-payment", operatorRoles, async (req, res) 
       return res.status(400).json({ error: `Сумма превышает оставшийся долг комиссии (${remainingBefore.toLocaleString("ru-RU")} ₽)` });
     }
 
-    let payment: typeof transactionPaymentsTable.$inferSelect;
-    let remaining = 0;
-    let totalPartialPaid = 0;
-
-    await db.transaction(async (txDb) => {
+    const { payment, remaining, totalPartialPaid } = await db.transaction(async (txDb) => {
       // Insert the partial payment
       const [insertedPayment] = await txDb.insert(transactionPaymentsTable).values({
         transactionId: tx.id,
@@ -860,13 +866,12 @@ router.post("/orders/:orderId/partial-payment", operatorRoles, async (req, res) 
         note: note ?? null,
         paidAt: new Date(),
       }).returning();
-      payment = insertedPayment;
 
       // Recalculate after insertion
       const allPartials = await txDb.select().from(transactionPaymentsTable)
         .where(eq(transactionPaymentsTable.transactionId, tx.id));
-      totalPartialPaid = allPartials.reduce((s, p) => s + safeNumber(p.amount), 0);
-      remaining = Math.max(0, commission - prepaymentDeducted - totalPartialPaid);
+      const totalPartialPaid = allPartials.reduce((s, p) => s + safeNumber(p.amount), 0);
+      const remaining = Math.max(0, commission - prepaymentDeducted - totalPartialPaid);
 
       // If fully paid, mark as paid
       if (remaining === 0) {
@@ -883,6 +888,8 @@ router.post("/orders/:orderId/partial-payment", operatorRoles, async (req, res) 
           await txDb.update(mastersTable).set({ debt: String(newDebt) }).where(eq(mastersTable.id, tx.masterId));
         }
       }
+
+      return { payment: insertedPayment, remaining, totalPartialPaid };
     });
 
     // Notify master about payment

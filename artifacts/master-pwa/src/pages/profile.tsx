@@ -39,6 +39,9 @@ interface ProfileData {
     conversionRate: number;
     paymentRate: number;
   };
+  activeCount: number;
+  completedCount: number;
+  cancelledCount: number;
   createdAt: string;
   maxChatId: string | null;
   maxBotLink: string | null;
@@ -327,8 +330,9 @@ function AnalyticsSection() {
             <>
               <div className="grid grid-cols-2 gap-2">
                 <div className="bg-muted/50 rounded-xl p-3 space-y-0.5">
-                  <p className="text-xs text-muted-foreground">Получено заявок</p>
+                  <p className="text-xs text-muted-foreground">Всего заявок</p>
                   <p className="text-xl font-bold">{data.totalDispatched}</p>
+                  <p className="text-[10px] text-muted-foreground/60">за всё время</p>
                 </div>
                 <div className="bg-muted/50 rounded-xl p-3 space-y-0.5">
                   <p className="text-xs text-muted-foreground">Откликнулся</p>
@@ -840,9 +844,9 @@ export default function ProfilePage() {
 
       <div className="grid grid-cols-2 gap-3">
         <StatCard label="Всего заказов" value={data.totalOrders} icon={<Briefcase size={13} />} />
-        <StatCard label="Принято" value={data.acceptedOrders} icon={<BadgeCheck size={13} />} />
-        <StatCard label="Конверсия" value={`${data.stats.conversionRate}%`} icon={<TrendingUp size={13} />} />
-        <StatCard label="Оплат в срок" value={`${data.stats.paymentRate}%`} icon={<ShieldCheck size={13} />} />
+        <StatCard label="В работе" value={data.activeCount} icon={<Clock size={13} />} />
+        <StatCard label="Завершено" value={data.completedCount} icon={<BadgeCheck size={13} />} />
+        <StatCard label="Отменено" value={data.cancelledCount} icon={<X size={13} />} />
       </div>
 
       {/* Analytics */}

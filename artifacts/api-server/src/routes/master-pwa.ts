@@ -1269,6 +1269,14 @@ router.post("/orders/:id/cancel", requireMasterPwa, async (req, res) => {
       updatedAt: new Date(),
     }).where(eq(ordersTable.id, orderId));
 
+    // Decrement master order counters
+    await db.update(mastersTable)
+      .set({
+        totalOrders: sql`${mastersTable.totalOrders} - 1`,
+        acceptedOrders: sql`${mastersTable.acceptedOrders} - 1`,
+      })
+      .where(eq(mastersTable.id, masterId));
+
     // Delete old sent dispatches so other masters can see it again
     await db.delete(orderDispatchesTable)
       .where(and(
@@ -1381,6 +1389,31 @@ router.get("/profile", requireMasterPwa, async (req, res) => {
   const paidOnTime = realTxs.filter(t => t.paymentStatus === "paid").length;
   const paymentRate = realTxs.length > 0 ? Math.round((paidOnTime / realTxs.length) * 100) : 100;
 
+  // Dynamic order counts from actual orders table
+  const activeCount = await db.select({ count: sql<number>`count(*)` })
+    .from(ordersTable)
+    .where(and(
+      eq(ordersTable.masterId, masterId),
+      inArray(ordersTable.status, ["master_assigned", "in_progress", "cancellation_requested"]),
+      isNull(ordersTable.deletedAt),
+    ));
+
+  const completedCount = await db.select({ count: sql<number>`count(*)` })
+    .from(ordersTable)
+    .where(and(
+      eq(ordersTable.masterId, masterId),
+      eq(ordersTable.status, "completed"),
+      isNull(ordersTable.deletedAt),
+    ));
+
+  const cancelledCount = await db.select({ count: sql<number>`count(*)` })
+    .from(ordersTable)
+    .where(and(
+      eq(ordersTable.masterId, masterId),
+      eq(ordersTable.status, "cancelled"),
+      isNull(ordersTable.deletedAt),
+    ));
+
   res.json({
     id: master.id,
     alias: master.alias,
@@ -1404,6 +1437,9 @@ router.get("/profile", requireMasterPwa, async (req, res) => {
       conversionRate,
       paymentRate,
     },
+    activeCount: Number(activeCount[0]?.count ?? 0),
+    completedCount: Number(completedCount[0]?.count ?? 0),
+    cancelledCount: Number(cancelledCount[0]?.count ?? 0),
     createdAt: master.createdAt,
   });
 });

@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { db, ordersTable, mastersTable, transactionsTable, voronkaColumnsTable, orderDispatchesTable, leadsTable, masterMessagesTable, orderStatusLogsTable, usersTable, receiptsTable, fomoEventsTable } from "@workspace/db";
-import { eq, inArray, and, ne, isNull, isNotNull, desc, count } from "drizzle-orm";
+import { eq, inArray, and, ne, isNull, isNotNull, desc, count, sql } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { calculateCommission, getCommissionSettings } from "../lib/commission.js";
 import { getMasterEligibility, getOverdueMasterIds, countActiveMasterOrders, getColumnIdForActiveCount } from "../lib/orderEligibility.js";
@@ -495,6 +495,16 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
       // Placeholder — safe to delete, no debt was added
       await db.delete(transactionsTable).where(eq(transactionsTable.id, tx.id));
     }
+  }
+
+  // ── Decrement master order counters on cancellation (not on reject) ─────────
+  if ((approveCancellation || updates.status === "cancelled") && current.masterId && !rejectCancellation) {
+    await db.update(mastersTable)
+      .set({
+        totalOrders: sql`${mastersTable.totalOrders} - 1`,
+        acceptedOrders: sql`${mastersTable.acceptedOrders} - 1`,
+      })
+      .where(eq(mastersTable.id, current.masterId));
   }
 
   // ── Close dispatch records when operator directly cancels ────────────────────
