@@ -24,13 +24,6 @@ export function errorLoggerMiddleware() {
         count: 1,
         firstSeen: new Date(),
         lastSeen: new Date(),
-      }).onConflictDoUpdate({
-        target: aiErrorLogs.errorId,
-        set: {
-          lastSeen: new Date(),
-          count: sql`${aiErrorLogs.count} + 1`,
-          isActive: true,
-        },
       });
       
       console.log(`[ErrorLogger] Successfully saved error ${errorId}`);
