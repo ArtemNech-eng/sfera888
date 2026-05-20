@@ -1414,6 +1414,8 @@ router.get("/profile", requireMasterPwa, async (req, res) => {
       isNull(ordersTable.deletedAt),
     ));
 
+  const maxBotLink = await getBotLink();
+
   res.json({
     id: master.id,
     alias: master.alias,
@@ -1440,6 +1442,8 @@ router.get("/profile", requireMasterPwa, async (req, res) => {
     activeCount: Number(activeCount[0]?.count ?? 0),
     completedCount: Number(completedCount[0]?.count ?? 0),
     cancelledCount: Number(cancelledCount[0]?.count ?? 0),
+    maxChatId: master.maxChatId ?? null,
+    maxBotLink: maxBotLink ?? null,
     createdAt: master.createdAt,
   });
 });
