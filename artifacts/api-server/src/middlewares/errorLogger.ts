@@ -12,7 +12,7 @@ export function errorLoggerMiddleware() {
       
       console.error(`[ErrorLogger] ${method} ${path}: ${message}`);
       
-      const errorId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const errorId = Math.random().toString(36).substring(2, 10) + Date.now().toString(36).substring(-8);
       console.log(`[ErrorLogger] Inserting error ${errorId}...`);
       
       await db.insert(aiErrorLogs).values({
