@@ -140,6 +140,8 @@ function fetchLogsViaCLI(): string[] {
     return output.split("\n");
   } catch (e: any) {
     console.error("[LogAgent] CLI fetch failed:", e.message);
+    if (e.stderr) console.error("[LogAgent] CLI stderr:", e.stderr.toString());
+    if (e.stdout) console.error("[LogAgent] CLI stdout:", e.stdout.toString());
     return [];
   }
 }
