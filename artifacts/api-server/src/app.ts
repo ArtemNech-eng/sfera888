@@ -993,9 +993,6 @@ app.get("/", (_req, res) => {
   }
 });
 
-// ── Error Logging Middleware ────────────────────────────────────────────────
-app.use(errorLoggerMiddleware());
-
 // ── Test endpoint for error logging ───────────────────────────────────────
 app.get("/api/throw-error", (_req, _res) => {
   throw new Error("Test error from ai-log-agent monitoring");
@@ -1005,5 +1002,8 @@ app.get("/api/throw-error", (_req, _res) => {
 const PROD_HOST = "https://sfera-master.ru";
 registerWebhook(`${PROD_HOST}/api/max-webhook`);
 registerManagerWebhook();
+
+// ── Error Logging Middleware (MUST be last) ─────────────────────────────────
+app.use(errorLoggerMiddleware());
 
 export default app;
