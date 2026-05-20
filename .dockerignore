@@ -1,0 +1,3 @@
+# attached_assets contains large image files (PNG, JPG, WebP) tracked in git
+# but not needed for building or running the CRM / API server.
+attached_assets/
