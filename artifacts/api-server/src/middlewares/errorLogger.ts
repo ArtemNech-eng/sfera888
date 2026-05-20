@@ -29,6 +29,10 @@ export function errorLoggerMiddleware() {
       console.log(`[ErrorLogger] Successfully saved error ${errorId}`);
     } catch (dbErr: any) {
       console.error("[ErrorLogger] Failed to save error:", dbErr.message || dbErr);
+      console.error("[ErrorLogger] DB Error code:", dbErr.code);
+      console.error("[ErrorLogger] DB Error detail:", dbErr.detail);
+      console.error("[ErrorLogger] DB Error table:", dbErr.table);
+      console.error("[ErrorLogger] DB Error constraint:", dbErr.constraint);
       console.error("[ErrorLogger] DB Error stack:", dbErr.stack || 'no stack');
     }
     
