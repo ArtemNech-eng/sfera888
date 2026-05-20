@@ -190,6 +190,7 @@ function EditProfileModal({
                   value={city}
                   onChange={e => setCity(e.target.value)}
                   className="flex-1 bg-transparent text-sm text-right focus:outline-none appearance-none py-3 cursor-pointer"
+                  dir="rtl"
                 >
                   {city && !availableCities.includes(city) && <option value={city}>{city}</option>}
                   <option value="">{availableCities.length === 0 ? "Загрузка..." : "Выберите город"}</option>
