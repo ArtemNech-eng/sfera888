@@ -996,6 +996,11 @@ app.get("/", (_req, res) => {
 // ── Error Logging Middleware ────────────────────────────────────────────────
 app.use(errorLoggerMiddleware());
 
+// ── Test endpoint for error logging ───────────────────────────────────────
+app.get("/api/throw-error", (_req, _res) => {
+  throw new Error("Test error from ai-log-agent monitoring");
+});
+
 // ── Register Max Bot Webhooks on startup ──────────────────────────────────────
 const PROD_HOST = "https://sfera-master.ru";
 registerWebhook(`${PROD_HOST}/api/max-webhook`);
