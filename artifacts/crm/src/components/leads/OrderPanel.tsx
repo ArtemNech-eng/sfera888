@@ -389,7 +389,7 @@ export default function OrderPanel({
                     )}
                     <div><p className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Город</p><p className="font-medium text-foreground">{openOrder.city}</p></div>
                     {openOrder.district && (
-                      <div><p className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Район / Адрес</p><p className="font-medium text-foreground">{openOrder.district}</p></div>
+                      <div><p className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Адрес объекта</p><p className="font-medium text-foreground">{openOrder.district}</p></div>
                     )}
                   </div>
                   <button onClick={() => {

@@ -9,7 +9,7 @@ import {
   MapPin, Calendar, MessageSquare, Clock,
   ChevronRight, X, Images, Wrench, Zap, PauseCircle,
   PlayCircle, Navigation, Users, Heart, ChevronDown, Briefcase,
-  Eye, EyeOff, Lock, FileText, Bot, Coins, Phone,
+  Eye, EyeOff, Lock, FileText, Bot, Coins, Phone, Maximize,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -63,8 +63,10 @@ interface FomoBlock {
 interface LandingLead {
   id: number;
   city: string;
+  district: string;
   serviceType: string;
   services: string[];
+  area: number;
   comment: string | null;
   createdAt: string;
   tokensCost: number;
@@ -609,7 +611,10 @@ function LandingLeadSheet({ lead, walletBalance, onClose, onSuccess }: {
             <div className="border border-border rounded-2xl p-4 space-y-2">
               <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Детали заявки</p>
               <div className="flex items-center gap-2 text-sm"><Wrench size={13} className="text-primary shrink-0" />{lead.serviceType}</div>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground"><MapPin size={12} className="shrink-0" />{lead.city}</div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground"><MapPin size={12} className="shrink-0" />{lead.city}{lead.district ? `, ${lead.district}` : ""}</div>
+              {lead.area > 0 && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground"><Maximize size={12} className="shrink-0" />{lead.area} м²</div>
+              )}
               {lead.comment && (
                 <div className="flex items-start gap-2 text-xs text-muted-foreground">
                   <MessageSquare size={12} className="shrink-0 mt-0.5" />{lead.comment}
@@ -638,8 +643,13 @@ function LandingLeadSheet({ lead, walletBalance, onClose, onSuccess }: {
                 </div>
               )}
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <MapPin size={14} className="shrink-0" />{lead.city}
+                <MapPin size={14} className="shrink-0" />{lead.city}{lead.district ? `, ${lead.district}` : ""}
               </div>
+              {lead.area > 0 && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Maximize size={14} className="shrink-0" />{lead.area} м²
+                </div>
+              )}
               {lead.comment && (
                 <div className="bg-muted/50 rounded-xl p-3">
                   <p className="text-xs text-muted-foreground mb-1">Комментарий клиента</p>
@@ -1706,8 +1716,13 @@ export default function HomePage() {
                 </span>
               </div>
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <MapPin size={12} className="shrink-0" />{lead.city}
+                <MapPin size={12} className="shrink-0" />{lead.city}{lead.district ? `, ${lead.district}` : ""}
               </div>
+              {lead.area > 0 && (
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Maximize size={12} className="shrink-0" />{lead.area} м²
+                </div>
+              )}
               {lead.comment && (
                 <p className="text-xs text-muted-foreground line-clamp-2">{lead.comment}</p>
               )}

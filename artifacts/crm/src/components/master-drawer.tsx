@@ -1245,7 +1245,7 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
 
                   {master.preferredDistricts && master.preferredDistricts.length > 0 && (
                     <div>
-                      <p className="text-[10px] font-semibold text-gray-400 uppercase mb-1.5">Предпочтительные районы</p>
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase mb-1.5">Предпочтительные адреса / районы</p>
                       <div className="flex flex-wrap gap-1">
                         {master.preferredDistricts.map(d => (
                           <span key={d} className="text-[10px] bg-emerald-50 text-emerald-700 rounded-md px-2 py-0.5 font-medium">{d}</span>
@@ -2401,14 +2401,14 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
               />
             </div>
 
-            {/* District */}
+            {/* Address */}
             <div className="space-y-1.5">
-              <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Район</label>
+              <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Адрес объекта</label>
               <input
                 type="text"
                 value={testOrderForm.district}
                 onChange={e => setTestOrderForm(f => ({ ...f, district: e.target.value }))}
-                placeholder="Центральный"
+                placeholder="ул. Ленина, 10"
                 className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-amber-200 bg-gray-50"
               />
             </div>

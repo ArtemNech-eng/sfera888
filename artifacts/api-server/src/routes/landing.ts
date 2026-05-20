@@ -33,8 +33,10 @@ const landingLeadSchema = z.object({
   name: z.string().min(1, "Введите имя"),
   phone: z.string().min(5, "Введите номер телефона"),
   city: z.string().min(1, "Введите город"),
+  district: z.string().min(1, "Введите адрес объекта"),
+  area: z.coerce.number().min(1, "Укажите площадь работ"),
   services: z.array(z.string()).min(1, "Выберите хотя бы один вид работ"),
-  comment: z.string().max(2000).optional(),
+  comment: z.string().min(1, "Опишите задачу").max(2000),
   ref_slug: z.string().optional(),
 });
 
@@ -99,9 +101,9 @@ router.post("/leads", async (req: Request, res: Response) => {
         clientName: body.name,
         clientPhone: body.phone,
         city: body.city,
-        district: "", // Landing doesn't collect district
+        district: body.district,
         serviceType,
-        area: "0",
+        area: String(body.area),
         services: servicesJson,
         comment: body.comment ?? null,
         source: "avito_partner",

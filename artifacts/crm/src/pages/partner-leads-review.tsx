@@ -318,7 +318,7 @@ export default function PartnerLeadsReviewPage() {
                       <th className="text-left px-4 py-3 text-sm font-medium">Дата</th>
                       <th className="text-left px-4 py-3 text-sm font-medium">Партнёр</th>
                       <th className="text-left px-4 py-3 text-sm font-medium">Клиент</th>
-                      <th className="text-left px-4 py-3 text-sm font-medium">Город / Район</th>
+                      <th className="text-left px-4 py-3 text-sm font-medium">Город / Адрес</th>
                       <th className="text-left px-4 py-3 text-sm font-medium">Вид работ</th>
                       <th className="text-left px-4 py-3 text-sm font-medium">Дубль</th>
                       <th className="text-left px-4 py-3 text-sm font-medium">Комментарий</th>

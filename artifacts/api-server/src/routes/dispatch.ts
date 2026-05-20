@@ -89,7 +89,7 @@ function buildOrderCard(order: any, orderId: number): string {
   return (
     `📋 <b>Новая заявка #${orderId}</b>\n` +
     servicesBlock +
-    `📍 Район: <b>${order.city}${order.district ? ", " + order.district : ""}</b>\n` +
+    `📍 Адрес: <b>${order.city}${order.district ? ", " + order.district : ""}</b>\n` +
     `📅 Дата: <b>${formatDate(order.scheduledAt)}</b>` +
     (order.comment ? `\n💬 Комментарий: ${order.comment}` : "") +
     `\n\n<i>Нажмите кнопку, чтобы откликнуться. Телефон клиента будет передан после подтверждения оператором.</i>`
@@ -124,7 +124,7 @@ router.get("/pending", ops, async (req, res) => {
   const masterMap = new Map(masters.map(m => [m.id, m]));
 
   // Скоринг: считаем для всех откликнувшихся мастеров одним батчем,
-  // район — для каждой заявки свой, поэтому считаем отдельно по orderId.
+  // адрес/район — для каждой заявки свой, поэтому считаем отдельно по orderId.
   const { scoreMasters } = await import("../lib/masterScoring.js");
   const scoresByOrder = new Map<number, Map<number, { total: number; segment: string; isCold: boolean }>>();
   for (const o of pendingOrders) {
@@ -397,7 +397,7 @@ router.post("/:orderId/assign/:masterId", ops, async (req, res) => {
   const assignedMsg =
     `✅ <b>Заявка #${orderId} назначена вам!</b>\n\n` +
     `🔧 Услуга: <b>${order.serviceType}</b>\n` +
-    `📍 Район: <b>${order.city}${order.district ? ", " + order.district : ""}</b>\n` +
+    `📍 Адрес: <b>${order.city}${order.district ? ", " + order.district : ""}</b>\n` +
     `📐 Объём: <b>${order.area} м²</b>\n` +
     `📅 Дата: <b>${formatDate(order.scheduledAt)}</b>` +
     (order.comment ? `\n💬 Комментарий: ${order.comment}` : "") +

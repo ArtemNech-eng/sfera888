@@ -424,7 +424,7 @@ function OrderFiltersSection({ data, onSave }: { data: ProfileData; onSave: (u: 
           <Filter size={15} className="text-primary" /> Фильтры заявок
           {(districts.length > 0 || parseInt(minArea) > 0) && (
             <span className="text-xs text-primary font-normal">
-              ({[districts.length > 0 ? `${districts.length} район` : "", parseInt(minArea) > 0 ? `от ${minArea} м²` : ""].filter(Boolean).join(", ")})
+              ({[districts.length > 0 ? `${districts.length} адрес` : "", parseInt(minArea) > 0 ? `от ${minArea} м²` : ""].filter(Boolean).join(", ")})
             </span>
           )}
         </div>
@@ -449,7 +449,7 @@ function OrderFiltersSection({ data, onSave }: { data: ProfileData; onSave: (u: 
           </div>
 
           <div className="space-y-2">
-            <label className="text-xs font-semibold text-foreground">Предпочтительные районы</label>
+            <label className="text-xs font-semibold text-foreground">Предпочтительные адреса / районы</label>
             {districts.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {districts.map(d => (
@@ -465,7 +465,7 @@ function OrderFiltersSection({ data, onSave }: { data: ProfileData; onSave: (u: 
                 value={newDistrict}
                 onChange={e => setNewDistrict(e.target.value)}
                 onKeyDown={e => e.key === "Enter" && addDistrict()}
-                placeholder="Название района..."
+                placeholder="Адрес или район..."
                 className="flex-1 h-10 px-3 rounded-xl border border-border bg-muted/40 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
               <button onClick={addDistrict}
@@ -473,7 +473,7 @@ function OrderFiltersSection({ data, onSave }: { data: ProfileData; onSave: (u: 
                 <Plus size={16} />
               </button>
             </div>
-            <p className="text-xs text-muted-foreground">Оставьте пустым чтобы получать заявки из всех районов</p>
+            <p className="text-xs text-muted-foreground">Оставьте пустым чтобы получать заявки из всех адресов и районов</p>
           </div>
 
           <button onClick={save} disabled={saving}

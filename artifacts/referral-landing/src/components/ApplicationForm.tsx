@@ -1,6 +1,6 @@
 import { useState, FormEvent } from 'react';
 import { motion } from "framer-motion";
-import { User, Phone, MapPin, MessageSquare, CheckCircle, Loader2, Sparkles, Clock, ShieldCheck, BadgeCheck } from 'lucide-react';
+import { User, Phone, MapPin, MessageSquare, CheckCircle, Loader2, Sparkles, Clock, ShieldCheck, BadgeCheck, Maximize } from 'lucide-react';
 import SectionHeader from "./SectionHeader";
 
 const serviceOptions = [
@@ -14,6 +14,8 @@ interface FormState {
   name: string;
   phone: string;
   city: string;
+  district: string;
+  area: string;
   services: string[];
   comment: string;
 }
@@ -24,7 +26,7 @@ interface ApplicationFormProps {
 
 export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
   const [form, setForm] = useState<FormState>({
-    name: '', phone: '', city: '', services: [], comment: '',
+    name: '', phone: '', city: '', district: '', area: '', services: [], comment: '',
   });
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [submitted, setSubmitted] = useState(false);
@@ -41,15 +43,35 @@ export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
 
   const validate = (): boolean => {
     const newErrors: Partial<Record<keyof FormState, string>> = {};
-    if (!form.name.trim()) newErrors.name = 'Пожалуйста, укажите ваше имя';
+    if (!form.name.trim()) {
+      newErrors.name = 'Пожалуйста, укажите ваше имя';
+    } else if (PHONE_REGEX.test(form.name)) {
+      newErrors.name = 'Пожалуйста, укажите номер только в поле «Телефон»';
+    }
     if (!form.phone.trim()) {
       newErrors.phone = 'Пожалуйста, укажите номер телефона';
-    } else if (!/^[\d\s\+\-\(\)]{7,}$/.test(form.phone.trim())) {
+    } else if (!/[\d\s\+\-\(\)]{7,}/.test(form.phone.trim())) {
       newErrors.phone = 'Проверьте формат номера телефона';
     }
-    if (!form.city.trim()) newErrors.city = 'Пожалуйста, укажите город';
+    if (!form.city.trim()) {
+      newErrors.city = 'Пожалуйста, укажите город';
+    } else if (PHONE_REGEX.test(form.city)) {
+      newErrors.city = 'Пожалуйста, укажите номер только в поле «Телефон»';
+    }
+    if (!form.district.trim()) {
+      newErrors.district = 'Пожалуйста, укажите адрес объекта';
+    } else if (PHONE_REGEX.test(form.district)) {
+      newErrors.district = 'Пожалуйста, укажите номер только в поле «Телефон»';
+    }
+    if (!form.area.trim()) {
+      newErrors.area = 'Укажите общую площадь работ';
+    } else if (isNaN(parseFloat(form.area)) || parseFloat(form.area) <= 0) {
+      newErrors.area = 'Введите число больше 0';
+    }
     if (form.services.length === 0) newErrors.services = 'Выберите хотя бы один вид работ';
-    if (form.comment && PHONE_REGEX.test(form.comment)) {
+    if (!form.comment.trim()) {
+      newErrors.comment = 'Опишите задачу — это поможет подобрать мастера';
+    } else if (PHONE_REGEX.test(form.comment)) {
       newErrors.comment = 'Пожалуйста, укажите номер только в поле «Телефон»';
     }
     setErrors(newErrors);
@@ -60,7 +82,7 @@ export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
     e.preventDefault();
     if (!validate()) return;
     setLoading(true);
-    const payload = { name: form.name, phone: form.phone, city: form.city, services: form.services, comment: form.comment, ref_slug: refSlug || undefined };
+    const payload = { name: form.name, phone: form.phone, city: form.city, district: form.district, area: form.area, services: form.services, comment: form.comment, ref_slug: refSlug || undefined };
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 12_000);
     try {
@@ -230,24 +252,68 @@ export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
                   </div>
                 </div>
 
-                {/* City */}
+                <div className="grid sm:grid-cols-2 gap-5">
+                  {/* City */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Город</label>
+                    <div className="relative">
+                      <MapPin size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input
+                        type="text"
+                        value={form.city}
+                        onChange={(e) => setForm({ ...form, city: e.target.value })}
+                        placeholder="Ваш город"
+                        className={`w-full border rounded-2xl pl-12 pr-4 py-3.5 text-base text-[#111827] placeholder:text-gray-400 focus:outline-none focus:ring-2 transition-all ${
+                          errors.city
+                            ? 'border-red-300 focus:ring-red-100 focus:border-red-400'
+                            : 'border-gray-200 focus:ring-emerald-100 focus:border-emerald-400'
+                        }`}
+                      />
+                    </div>
+                    {errors.city && <p className="text-red-500 text-xs mt-1.5">{errors.city}</p>}
+                  </div>
+
+                  {/* Address */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Адрес объекта</label>
+                    <div className="relative">
+                      <MapPin size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input
+                        type="text"
+                        value={form.district}
+                        onChange={(e) => setForm({ ...form, district: e.target.value })}
+                        placeholder="Например: ул. Ленина, 10"
+                        className={`w-full border rounded-2xl pl-12 pr-4 py-3.5 text-base text-[#111827] placeholder:text-gray-400 focus:outline-none focus:ring-2 transition-all ${
+                          errors.district
+                            ? 'border-red-300 focus:ring-red-100 focus:border-red-400'
+                            : 'border-gray-200 focus:ring-emerald-100 focus:border-emerald-400'
+                        }`}
+                      />
+                    </div>
+                    {errors.district && <p className="text-red-500 text-xs mt-1.5">{errors.district}</p>}
+                  </div>
+                </div>
+
+                {/* Area */}
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Город</label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Общая площадь работ, м²</label>
                   <div className="relative">
-                    <MapPin size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <Maximize size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
                     <input
-                      type="text"
-                      value={form.city}
-                      onChange={(e) => setForm({ ...form, city: e.target.value })}
-                      placeholder="Ваш город"
-                      className={`w-full border rounded-2xl pl-12 pr-4 py-3.5 text-base text-[#111827] placeholder:text-gray-400 focus:outline-none focus:ring-2 transition-all ${
-                        errors.city
+                      type="number"
+                      min="1"
+                      step="0.1"
+                      value={form.area}
+                      onChange={(e) => setForm({ ...form, area: e.target.value })}
+                      placeholder="Например: 45"
+                      className={`w-full sm:w-48 border rounded-2xl pl-12 pr-4 py-3.5 text-base text-[#111827] placeholder:text-gray-400 focus:outline-none focus:ring-2 transition-all ${
+                        errors.area
                           ? 'border-red-300 focus:ring-red-100 focus:border-red-400'
                           : 'border-gray-200 focus:ring-emerald-100 focus:border-emerald-400'
                       }`}
                     />
                   </div>
-                  {errors.city && <p className="text-red-500 text-xs mt-1.5">{errors.city}</p>}
+                  {errors.area && <p className="text-red-500 text-xs mt-1.5">{errors.area}</p>}
                 </div>
 
                 {/* Services */}
@@ -278,7 +344,7 @@ export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
                 {/* Comment */}
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Комментарий <span className="text-gray-400 font-normal">(необязательно)</span>
+                    Комментарий
                   </label>
                   <div className="relative">
                     <MessageSquare size={18} className="absolute left-4 top-3.5 text-gray-400" />
@@ -286,7 +352,7 @@ export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
                       rows={3}
                       value={form.comment}
                       onChange={(e) => { setForm({ ...form, comment: e.target.value }); if (errors.comment) setErrors({ ...errors, comment: undefined }); }}
-                      placeholder="Например: 2 комнаты, стены подготовлены, нужен старт на этой неделе"
+                      placeholder="Опишите задачу подробнее: что нужно сделать, состояние помещения, сроки…"
                       className={`w-full border rounded-2xl pl-12 pr-4 py-3.5 text-base text-[#111827] placeholder:text-gray-400 focus:outline-none focus:ring-2 resize-none transition-all ${
                         errors.comment
                           ? 'border-red-300 focus:ring-red-100 focus:border-red-400'
@@ -297,7 +363,7 @@ export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
                   {errors.comment ? (
                     <p className="text-red-500 text-xs mt-1.5">{errors.comment}</p>
                   ) : (
-                    <p className="text-gray-400 text-xs mt-1.5">Номер телефона указывайте только в поле выше</p>
+                    <p className="text-gray-400 text-xs mt-1.5">Чем подробнее описание — тем точнее оценка от мастера</p>
                   )}
                 </div>
 

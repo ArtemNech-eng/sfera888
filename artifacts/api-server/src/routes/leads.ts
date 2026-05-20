@@ -428,7 +428,7 @@ router.post("/ai-parse", allLeadRoles, async (req, res) => {
   "clientName": "имя или null",
   "clientPhone": "телефон в формате +7XXXXXXXXXX или null",
   "city": "название города из списка или null",
-  "district": "район/адрес или null",
+  "district": "адрес объекта или null",
   "scheduledAt": "дата и время в формате YYYY-MM-DDTHH:MM или null",
   "source": "один из допустимых source или null",
   "comment": "дополнительный комментарий который не вошёл в другие поля или null",

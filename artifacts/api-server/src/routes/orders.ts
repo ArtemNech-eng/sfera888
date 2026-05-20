@@ -22,7 +22,7 @@ function buildOrderCard(order: any, orderId: number): string {
   return (
     `📋 <b>Новая заявка #${orderId}</b>\n\n` +
     `🔧 Услуга: <b>${order.serviceType}</b>\n` +
-    `📍 Район: <b>${order.city}${order.district ? ", " + order.district : ""}</b>\n` +
+    `📍 Адрес: <b>${order.city}${order.district ? ", " + order.district : ""}</b>\n` +
     `📐 Объём: <b>${order.area} м²</b>\n` +
     `📅 Дата: <b>${formatDate(order.scheduledAt)}</b>` +
     (order.comment ? `\n💬 Комментарий: ${order.comment}` : "") +

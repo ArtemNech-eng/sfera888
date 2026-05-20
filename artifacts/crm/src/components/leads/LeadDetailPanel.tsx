@@ -105,7 +105,7 @@ export default function LeadDetailPanel({
               <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                 <div><p className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Имя</p><p className="font-medium text-foreground">{lead.clientName}</p></div>
                 <div><p className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Телефон</p><a href={`tel:${lead.clientPhone}`} className="font-medium text-blue-600 hover:underline">{lead.clientPhone}</a></div>
-                <div><p className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Город · Район</p><p className="font-medium text-foreground">{lead.city}{lead.district ? `, ${lead.district}` : ""}</p></div>
+                <div><p className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Город · Адрес</p><p className="font-medium text-foreground">{lead.city}{lead.district ? `, ${lead.district}` : ""}</p></div>
                 {lead.source && <div><p className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Источник</p><p className="font-medium text-foreground">{SOURCE_OPTIONS.find(o => o.value === lead.source)?.label ?? lead.source}</p></div>}
                 {lead.scheduledAt && <div><p className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Дата выезда</p><p className="font-medium text-blue-600">{new Date(lead.scheduledAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p></div>}
                 <div><p className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Создана</p><p className="font-medium text-foreground">{formatDate(lead.createdAt)}</p></div>

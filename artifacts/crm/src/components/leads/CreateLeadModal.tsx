@@ -503,7 +503,7 @@ export default function CreateLeadModal({
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium text-gray-700">
-                    Район
+                    Адрес объекта
                   </label>
                   <input
                     required
@@ -512,7 +512,7 @@ export default function CreateLeadModal({
                       setFormData({ ...formData, district: e.target.value })
                     }
                     className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-white focus:border-primary focus:ring-2 focus:ring-primary/15 outline-none text-sm transition-all"
-                    placeholder="Центральный"
+                    placeholder="ул. Ленина, 10"
                   />
                 </div>
               </div>

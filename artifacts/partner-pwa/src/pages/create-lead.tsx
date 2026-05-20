@@ -179,13 +179,13 @@ export default function CreateLeadPage() {
           {errors.city && <p className="text-xs text-red-500">{errors.city}</p>}
         </div>
 
-        {/* District */}
+        {/* Address */}
         <div className="space-y-1.5">
-          <label className="text-sm font-medium text-[#374151]">Район</label>
+          <label className="text-sm font-medium text-[#374151]">Адрес объекта</label>
           <input
             value={form.district}
             onChange={set("district")}
-            placeholder="Центральный"
+            placeholder="ул. Ленина, 10"
             className="w-full px-4 py-3.5 rounded-xl border border-[#E5E7EB] bg-white text-[#111827] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#34C759] focus:border-transparent text-base"
           />
         </div>

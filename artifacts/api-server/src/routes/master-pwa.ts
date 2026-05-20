@@ -458,8 +458,10 @@ router.get("/home", requireMasterPwa, async (req, res) => {
     return {
       id: l.id,
       city: l.city,
+      district: l.district,
       serviceType: l.serviceType,
       services,
+      area: Number(l.area),
       comment: l.comment ?? null,
       createdAt: l.createdAt,
       tokensCost: tokenCostMap.get(l.serviceType) ?? 1,

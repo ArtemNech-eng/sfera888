@@ -299,8 +299,8 @@ export default function Estimate() {
                   style={{ width: "100%", height: 44, border: "1.5px solid #e5e7eb", borderRadius: 10, padding: "0 12px", fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box" as const, color: "#111827" }} />
               </div>
               <div>
-                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#374151", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>Район</label>
-                <input value={district} onChange={e => setDistrict(e.target.value)} placeholder="Промышленный"
+                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#374151", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>Адрес</label>
+                <input value={district} onChange={e => setDistrict(e.target.value)} placeholder="ул. Ленина, 10"
                   style={{ width: "100%", height: 44, border: "1.5px solid #e5e7eb", borderRadius: 10, padding: "0 12px", fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box" as const, color: "#111827" }} />
               </div>
             </div>

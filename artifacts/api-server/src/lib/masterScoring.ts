@@ -29,7 +29,7 @@ export interface ScoreComponents {
   responseSpeedSec: number | null;
   /** Доля самоотмен от всех назначений за 30 дней */
   selfCancelRate: number;     // 0..1
-  /** Совпадение района заявки с предпочтениями мастера */
+  /** Совпадение адреса/района заявки с предпочтениями мастера */
   districtMatch: 0 | 1;
   /** Текущая загрузка: активные заказы / лимит */
   loadRatio: number;          // 0..1+

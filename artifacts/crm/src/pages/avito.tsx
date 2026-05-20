@@ -140,11 +140,11 @@ function conversionIcon(views: number, contacts: number) {
 const REPLY_TEMPLATES = [
   {
     label: "Цены",
-    text: "Здравствуйте!\nОбои от 300₽/м²\nШпаклёвка от 350₽/м²\nПокраска от 200₽/м²\nПлитка от 1200₽/м²\n\nПодскажите:\n1. Какой район?\n2. Примерная площадь?\n3. Когда хотите начать?",
+    text: "Здравствуйте!\nОбои от 300₽/м²\nШпаклёвка от 350₽/м²\nПокраска от 200₽/м²\nПлитка от 1200₽/м²\n\nПодскажите:\n1. Какой адрес?\n2. Примерная площадь?\n3. Когда хотите начать?",
   },
   {
     label: "Мастер приедет",
-    text: "Отлично! Сейчас подберу мастера из вашего района. Он свяжется с вами в течение часа и договоритесь по времени.\nСкиньте номер для связи 👍",
+    text: "Отлично! Сейчас подберу мастера для вашего адреса. Он свяжется с вами в течение часа и договоритесь по времени.\nСкиньте номер для связи 👍",
   },
   {
     label: "Гарантия",
@@ -1334,9 +1334,9 @@ export default function AvitoPage() {
               {/* District + Area */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground">Район</label>
+                  <label className="text-xs font-medium text-muted-foreground">Адрес</label>
                   <Input
-                    placeholder="Район клиента"
+                    placeholder="Адрес объекта"
                     value={leadForm.district}
                     onChange={e => setLeadForm(f => ({ ...f, district: e.target.value }))}
                     className="h-9 text-sm focus-visible:ring-orange-400/50"

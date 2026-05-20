@@ -203,7 +203,7 @@ function LeadModal({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs text-muted-foreground font-medium">Район</label>
+              <label className="text-xs text-muted-foreground font-medium">Адрес</label>
               <Input placeholder="Центральный" value={district} onChange={e => setDistrict(e.target.value)} className="mt-1 text-sm" />
             </div>
             <div>

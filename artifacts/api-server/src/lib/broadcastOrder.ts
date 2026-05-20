@@ -31,7 +31,7 @@ export function buildOrderCard(order: any, orderId: number): string {
   return (
     `📋 <b>Новая заявка #${orderId}</b>\n` +
     servicesBlock +
-    `📍 Район: <b>${order.city}${order.district ? ", " + order.district : ""}</b>\n` +
+    `📍 Адрес: <b>${order.city}${order.district ? ", " + order.district : ""}</b>\n` +
     `📅 Дата: <b>${formatDate(order.scheduledAt)}</b>` +
     (order.comment ? `\n💬 Комментарий: ${order.comment}` : "") +
     `\n\n<i>Нажмите кнопку, чтобы откликнуться. Телефон клиента будет передан после подтверждения оператором.</i>`
