@@ -433,6 +433,23 @@ async function runMigrations() {
       ('partner_payout_day_end',          '5',     NOW())
     ON CONFLICT (key) DO NOTHING
   `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS ai_error_logs (
+      id          SERIAL PRIMARY KEY,
+      error_id    VARCHAR(16)  NOT NULL UNIQUE,
+      first_seen  TIMESTAMPTZ  NOT NULL,
+      last_seen   TIMESTAMPTZ  NOT NULL,
+      level       VARCHAR(20)  NOT NULL,
+      source      VARCHAR(100) NOT NULL,
+      message     TEXT         NOT NULL,
+      count       INTEGER      NOT NULL DEFAULT 1,
+      severity    VARCHAR(20)  NOT NULL,
+      sample_line INTEGER,
+      is_active   BOOLEAN      NOT NULL DEFAULT TRUE,
+      created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+      updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+    )
+  `);
   console.log("[startup] Migrations applied");
 }
 
