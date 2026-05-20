@@ -128,34 +128,103 @@ function detectLevel(line: string): string {
 
 // ─── Log Reading ─────────────────────────────────────
 
-function fetchLogsViaCLI(): string[] {
+async function fetchLogsViaAPI(): Promise<string[]> {
   try {
-    console.log("[LogAgent] Fetching logs via Railway CLI...");
+    console.log("[LogAgent] Fetching logs via Railway API...");
     
-    // Railway CLI automatically uses RAILWAY_TOKEN from env
-    const output = execSync(
-      "railway logs --lines 1500 --service sfera888",
-      { encoding: "utf-8", timeout: 30000, env: { ...process.env } }
-    );
-    return output.split("\n");
+    const token = process.env.RAILWAY_TOKEN;
+    const projectId = process.env.RAILWAY_PROJECT_ID;
+    
+    if (!token || !projectId) {
+      console.warn("[LogAgent] RAILWAY_TOKEN or RAILWAY_PROJECT_ID not set");
+      return [];
+    }
+    
+    // Step 1: Get all services in project
+    const servicesResponse = await fetch("https://backboard.railway.app/graphql", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        query: `
+          query GetProject($id: String!) {
+            project(id: $id) {
+              services {
+                edges {
+                  node {
+                    id
+                    name
+                  }
+                }
+              }
+            }
+          }
+        `,
+        variables: { id: projectId }
+      })
+    });
+    
+    const servicesData = await servicesResponse.json() as any;
+    console.log("[LogAgent] Services found:", servicesData?.data?.project?.services?.edges?.length || 0);
+    
+    // Find sfera888 service
+    const services = servicesData?.data?.project?.services?.edges || [];
+    const sferaService = services.find((s: any) => s.node.name === "sfera888");
+    
+    if (!sferaService) {
+      console.warn("[LogAgent] sfera888 service not found in project");
+      // Log available services for debugging
+      const names = services.map((s: any) => s.node.name).join(", ");
+      console.log("[LogAgent] Available services:", names);
+      return [];
+    }
+    
+    console.log("[LogAgent] Found sfera888 service ID:", sferaService.node.id);
+    
+    // Step 2: Get logs for sfera888
+    const logsResponse = await fetch("https://backboard.railway.app/graphql", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        query: `
+          query GetLogs($serviceId: String!) {
+            serviceLogs(serviceId: $serviceId, limit: 1500) {
+              message
+              timestamp
+              severity
+            }
+          }
+        `,
+        variables: { serviceId: sferaService.node.id }
+      })
+    });
+    
+    const logsData = await logsResponse.json() as any;
+    const logs = logsData?.data?.serviceLogs || [];
+    
+    console.log(`[LogAgent] Fetched ${logs.length} log lines`);
+    return logs.map((log: any) => log.message);
   } catch (e: any) {
-    console.error("[LogAgent] CLI fetch failed:", e.message);
-    if (e.stderr) console.error("[LogAgent] CLI stderr:", e.stderr.toString());
-    if (e.stdout) console.error("[LogAgent] CLI stdout:", e.stdout.toString());
+    console.error("[LogAgent] API fetch failed:", e.message);
     return [];
   }
 }
 
-function readLogs(): string[] {
-  // Prefer local file (development), fallback to Railway CLI (production/Railway deploy)
+async function readLogs(): Promise<string[]> {
+  // Prefer local file (development), fallback to Railway API (production/Railway deploy)
   if (fs.existsSync(LOG_FILE)) {
     const content = fs.readFileSync(LOG_FILE, "utf-8");
     const allLines = content.split("\n");
     return allLines.slice(-LAST_N_LINES);
   }
 
-  console.warn(`[LogAgent] Log file not found locally, trying Railway CLI...`);
-  return fetchLogsViaCLI();
+  console.warn(`[LogAgent] Log file not found locally, trying Railway API...`);
+  return fetchLogsViaAPI();
 }
 
 // ─── Error Filtering ──────────────────────────────────
@@ -346,7 +415,7 @@ function printSummary(newlyAdded: LogError[], totalErrors: number): void {
 async function runCycle(): Promise<void> {
   try {
     console.log("[LogAgent] Reading logs...");
-    const lines = readLogs();
+    const lines = await readLogs();
     if (lines.length === 0) {
       console.log("[LogAgent] No log lines to process.");
       return;
