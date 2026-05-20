@@ -137,7 +137,7 @@ function EditProfileModal({
     <div className="fixed inset-0 z-50 bg-black/60 flex items-end justify-center" onClick={onClose}>
       <div
         className="w-full max-w-[480px] bg-card rounded-t-2xl flex flex-col"
-        style={{ height: "92dvh" }}
+        style={{ height: "92dvh", maxHeight: "92dvh" }}
         onClick={e => e.stopPropagation()}
       >
         {/* Drag handle */}
@@ -165,7 +165,7 @@ function EditProfileModal({
         </div>
 
         {/* Scrollable body */}
-        <div className="overflow-y-auto overscroll-contain flex-1 min-h-0 px-4 pb-4 space-y-6">
+        <div className="overflow-y-auto overscroll-contain flex-1 min-h-0 basis-0 px-4 pb-4 space-y-6">
 
           {/* Basic info — iOS grouped list */}
           <div>
