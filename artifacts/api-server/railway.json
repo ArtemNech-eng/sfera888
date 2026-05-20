@@ -1,10 +1,11 @@
 {
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
-    "builder": "NIXPACKS"
+    "builder": "NIXPACKS",
+    "buildCommand": "pnpm --filter @workspace/master-pwa run build && pnpm --filter @workspace/api-server run build"
   },
   "deploy": {
-    "startCommand": "pnpm --filter @workspace/api-server dev",
+    "startCommand": "node artifacts/api-server/dist/index.cjs",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10
   }
