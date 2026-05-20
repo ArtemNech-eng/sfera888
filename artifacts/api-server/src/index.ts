@@ -450,6 +450,28 @@ async function runMigrations() {
       updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
     )
   `);
+  // Landing lead responses — exclusive model (first master to pay gets the lead, lead_id UNIQUE)
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS lead_responses (
+      id            SERIAL PRIMARY KEY,
+      lead_id       INTEGER NOT NULL UNIQUE REFERENCES leads(id),
+      master_id     INTEGER NOT NULL REFERENCES masters(id),
+      tokens_spent  NUMERIC(10,2) NOT NULL DEFAULT 1,
+      created_at    TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS lead_responses_lead_idx ON lead_responses(lead_id)
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS lead_responses_master_idx ON lead_responses(master_id)
+  `);
+  // Hold mechanism: status column for 96-hour bonus hold
+  await db.execute(sql`
+    ALTER TABLE lead_responses
+      ADD COLUMN IF NOT EXISTS status VARCHAR(50) NOT NULL DEFAULT 'pending',
+      ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMP
+  `);
   console.log("[startup] Migrations applied");
 }
 
@@ -723,6 +745,19 @@ setInterval(() => checkOverdueTransactions().catch(console.error), 6 * 60 * 60 *
 setInterval(() => autoExpireDispatches().catch(console.error), 60 * 60 * 1000);
 // Auto-close orders with no master found after 48h — every hour
 setInterval(() => autoCloseNoMasterOrders().catch(console.error), 60 * 60 * 1000);
+// Auto-confirm landing lead responses after 96h hold — every hour
+setInterval(async () => {
+  try {
+    await db.execute(sql`
+      UPDATE lead_responses
+      SET status = 'confirmed', confirmed_at = NOW()
+      WHERE status = 'pending'
+        AND created_at < NOW() - INTERVAL '96 hours'
+    `);
+  } catch (e) {
+    console.error("[lead-hold] auto-confirm job failed:", e);
+  }
+}, 60 * 60 * 1000);
 // Auto-broadcast scheduled orders 2–4h before scheduledAt
 setInterval(() => autoScheduledOrderBroadcast().catch(console.error), 15 * 60 * 1000);
 // autoReBroadcastNoResponse removed — per user request

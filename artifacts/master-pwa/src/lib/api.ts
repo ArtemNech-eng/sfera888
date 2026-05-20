@@ -9,7 +9,10 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.message ?? err.error ?? "Ошибка запроса");
+    const e: any = new Error(err.message ?? err.error ?? "Ошибка запроса");
+    e.data = err;
+    e.status = res.status;
+    throw e;
   }
   return res.json();
 }
@@ -37,6 +40,9 @@ export const api = {
       req<any>("PATCH", `/orders/${id}/photos`, { type, url }),
     complete: (id: number, proposedAmount: number) =>
       req<any>("POST", `/orders/${id}/complete`, { proposedAmount }),
+  },
+  leads: {
+    respond: (id: number) => req<any>("POST", `/leads/${id}/respond`),
   },
   setAvailability: (available: boolean) => req<any>("PATCH", "/availability", { available }),
   fomoBlockPress: (orderId: number | null, reason?: string | null) =>

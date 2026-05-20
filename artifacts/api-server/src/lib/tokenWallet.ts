@@ -138,6 +138,62 @@ export async function deductTokens(params: {
   return { success: true, newBalance: Number(updated.tokensBalance) };
 }
 
+// ─── Deduct tokens for a landing lead (no orderId) ───────────────────────────
+
+export async function deductTokensForLead(params: {
+  masterId: number;
+  leadId: number;
+  tokensCost: number;
+  serviceType: string;
+}): Promise<{ success: boolean; newBalance: number; error?: string }> {
+  const { masterId, leadId, tokensCost, serviceType } = params;
+
+  const wallet = await ensureWallet(masterId);
+  const currentBalance = Number(wallet.tokensBalance);
+
+  if (currentBalance < tokensCost) {
+    return {
+      success: false,
+      newBalance: currentBalance,
+      error: `Недостаточно токенов. Баланс: ${currentBalance} т., требуется: ${tokensCost} т.`,
+    };
+  }
+
+  const newBalance = currentBalance - tokensCost;
+
+  const creditTokensIssued = Number((wallet as any).creditTokensIssued ?? 0);
+  const creditTokensSpent = Number((wallet as any).creditTokensSpent ?? 0);
+  const creditSpent = Math.min(tokensCost, creditTokensIssued - creditTokensSpent);
+
+  const updateFields: any = {
+    tokensBalance: String(newBalance),
+    totalTokensSpent: String(Number(wallet.totalTokensSpent) + tokensCost),
+    updatedAt: new Date(),
+  };
+
+  if (creditSpent > 0) {
+    updateFields.creditTokensSpent = String(creditTokensSpent + creditSpent);
+  }
+
+  const [updated] = await db
+    .update(masterWalletTable)
+    .set(updateFields)
+    .where(eq(masterWalletTable.masterId, masterId))
+    .returning();
+
+  await db.insert(walletTransactionsTable).values({
+    masterId,
+    type: "spend",
+    tokensAmount: String(-tokensCost),
+    orderId: null,
+    reason: `Открытие контакта по заявке #${leadId} (${serviceType})`,
+    createdBy: "system",
+    status: "completed",
+  });
+
+  return { success: true, newBalance: Number(updated.tokensBalance) };
+}
+
 // ─── Refund tokens ────────────────────────────────────────────────────────────
 
 export async function refundTokens(params: {

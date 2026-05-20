@@ -61,12 +61,16 @@ export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
     if (!validate()) return;
     setLoading(true);
     const payload = { name: form.name, phone: form.phone, city: form.city, services: form.services, comment: form.comment, ref_slug: refSlug || undefined };
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12_000);
     try {
       const res = await fetch('/api/landing/leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         setErrors({
@@ -80,8 +84,13 @@ export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
         return;
       }
       setSubmitted(true);
-    } catch {
-      setErrors({ name: 'Ошибка соединения. Проверьте интернет и попробуйте снова.' });
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      if (err?.name === 'AbortError') {
+        setErrors({ name: 'Сервер не отвечает. Попробуйте позже.' });
+      } else {
+        setErrors({ name: 'Ошибка соединения. Проверьте интернет и попробуйте снова.' });
+      }
     }
     setLoading(false);
   };

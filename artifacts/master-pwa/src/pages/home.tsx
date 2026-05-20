@@ -9,7 +9,7 @@ import {
   MapPin, Calendar, MessageSquare, Clock,
   ChevronRight, X, Images, Wrench, Zap, PauseCircle,
   PlayCircle, Navigation, Users, Heart, ChevronDown, Briefcase,
-  Eye, EyeOff, Lock, FileText, Bot, Coins,
+  Eye, EyeOff, Lock, FileText, Bot, Coins, Phone,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -58,6 +58,16 @@ interface FomoBlock {
   reason: string | null;
   orderId: number | null;
   hoursElapsed: number | null;
+}
+
+interface LandingLead {
+  id: number;
+  city: string;
+  serviceType: string;
+  services: string[];
+  comment: string | null;
+  createdAt: string;
+  tokensCost: number;
 }
 
 // ─── FOMO modal ───────────────────────────────────────────────────────────────
@@ -496,6 +506,186 @@ function InsufficientTokensScreen({
           Закрыть
         </button>
       </div>
+    </div>
+  );
+}
+
+// ─── Landing Lead Sheet ───────────────────────────────────────────────────────
+
+function LandingLeadSheet({ lead, walletBalance, onClose, onSuccess }: {
+  lead: LandingLead;
+  walletBalance: number;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [, setLocation] = useLocation();
+  const [state, setState] = useState<"idle" | "loading" | "revealed" | "taken" | "no_tokens">("idle");
+  const [contact, setContact] = useState<{ name: string; phone: string } | null>(null);
+
+  const handleReveal = async () => {
+    if (lead.tokensCost > walletBalance) { setState("no_tokens"); return; }
+    setState("loading");
+    try {
+      const result = await api.leads.respond(lead.id);
+      if (result?.ok) {
+        setContact({ name: result.clientName ?? "Клиент", phone: result.clientPhone });
+        setState("revealed");
+        onSuccess();
+      }
+    } catch (e: any) {
+      if (e.data?.insufficientTokens) setState("no_tokens");
+      else if (e.data?.alreadyTaken) setState("taken");
+      else { toast.error(e.message ?? "Ошибка"); setState("idle"); }
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-background">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card shrink-0">
+        <span className="font-bold">Прямая заявка #{lead.id}</span>
+        <button onClick={onClose} className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+          <X size={16} />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {state === "no_tokens" ? (
+          <div className="flex flex-col items-center justify-center min-h-[70vh] px-6 text-center space-y-5">
+            <div className="text-6xl">🪙</div>
+            <div>
+              <h2 className="text-xl font-bold mb-2">Недостаточно токенов</h2>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Пополните баланс, чтобы открыть контакт клиента.
+              </p>
+            </div>
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-2xl px-4 py-4 w-full max-w-sm space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Нужно токенов</span>
+                <span className="font-bold text-amber-600 flex items-center gap-1"><Coins size={13} /> {lead.tokensCost} т.</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Ваш баланс</span>
+                <span className="font-bold">{walletBalance} т.</span>
+              </div>
+            </div>
+            <div className="w-full max-w-sm space-y-3">
+              <button onClick={() => { onClose(); setLocation("/wallet"); }}
+                className="w-full h-12 rounded-xl bg-amber-500 text-white font-semibold text-sm flex items-center justify-center gap-2">
+                <Coins size={16} /> Перейти в Кошелёк
+              </button>
+              <button onClick={() => setState("idle")} className="w-full h-10 text-sm text-muted-foreground font-medium">Назад</button>
+            </div>
+          </div>
+        ) : state === "taken" ? (
+          <div className="flex flex-col items-center justify-center min-h-[70vh] px-6 text-center space-y-5">
+            <div className="text-6xl">⚡</div>
+            <div>
+              <h2 className="text-xl font-bold mb-2">Заявка занята</h2>
+              <p className="text-sm text-muted-foreground">Другой мастер только что открыл этот контакт. Смотрите другие заявки.</p>
+            </div>
+            <button onClick={onClose}
+              className="w-full max-w-sm h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm">
+              Закрыть
+            </button>
+          </div>
+        ) : state === "revealed" && contact ? (
+          <div className="px-4 py-6 space-y-5">
+            <div className="flex items-center justify-center">
+              <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+                <CheckCircle2 size={32} className="text-emerald-600" />
+              </div>
+            </div>
+            <div className="text-center">
+              <h2 className="text-lg font-bold">{contact.name}</h2>
+              <p className="text-sm text-muted-foreground mt-1">Позвоните клиенту как можно скорее</p>
+            </div>
+            <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700 rounded-2xl p-5 text-center">
+              <p className="text-2xl font-bold tracking-wide">{contact.phone}</p>
+            </div>
+            <a href={`tel:${contact.phone}`}
+              className="flex w-full items-center justify-center gap-2 h-14 rounded-2xl bg-emerald-500 text-white font-bold text-base">
+              <Phone size={20} /> Позвонить
+            </a>
+            <div className="border border-border rounded-2xl p-4 space-y-2">
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Детали заявки</p>
+              <div className="flex items-center gap-2 text-sm"><Wrench size={13} className="text-primary shrink-0" />{lead.serviceType}</div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground"><MapPin size={12} className="shrink-0" />{lead.city}</div>
+              {lead.comment && (
+                <div className="flex items-start gap-2 text-xs text-muted-foreground">
+                  <MessageSquare size={12} className="shrink-0 mt-0.5" />{lead.comment}
+                </div>
+              )}
+            </div>
+            <button onClick={onClose} className="w-full h-10 text-sm text-muted-foreground font-medium">Закрыть</button>
+          </div>
+        ) : (
+          <div className="px-4 py-5 space-y-5">
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="bg-primary/10 text-primary text-xs font-semibold px-3 py-1 rounded-full">Прямая заявка</span>
+                <span className="text-xs text-muted-foreground">
+                  {formatDistanceToNow(new Date(lead.createdAt), { addSuffix: true, locale: ru })}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-base font-semibold">
+                <Wrench size={16} className="text-primary shrink-0" />{lead.serviceType}
+              </div>
+              {lead.services.length > 1 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {lead.services.map((s) => (
+                    <span key={s} className="text-xs bg-muted px-2.5 py-1 rounded-full">{s}</span>
+                  ))}
+                </div>
+              )}
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <MapPin size={14} className="shrink-0" />{lead.city}
+              </div>
+              {lead.comment && (
+                <div className="bg-muted/50 rounded-xl p-3">
+                  <p className="text-xs text-muted-foreground mb-1">Комментарий клиента</p>
+                  <p className="text-sm">{lead.comment}</p>
+                </div>
+              )}
+            </div>
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl px-4 py-3 flex items-start gap-3">
+              <Lock size={16} className="text-blue-500 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-xs font-semibold text-blue-700 dark:text-blue-400">Контакт скрыт</p>
+                <p className="text-xs text-blue-600 dark:text-blue-500 mt-0.5">
+                  Имя и телефон откроются после оплаты токена. Первый откликнувшийся забирает заявку.
+                </p>
+              </div>
+            </div>
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-2xl px-4 py-4 space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Стоимость отклика</span>
+                <span className="font-bold text-amber-600 flex items-center gap-1"><Coins size={13} /> {lead.tokensCost} т.</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Ваш баланс</span>
+                <span className={`font-bold ${walletBalance < lead.tokensCost ? "text-red-500" : "text-emerald-600 dark:text-emerald-400"}`}>
+                  {walletBalance} т.
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {(state === "idle" || state === "loading") && (
+        <div className="px-4 py-4 border-t border-border bg-card shrink-0 space-y-2">
+          <button
+            disabled={state === "loading"}
+            onClick={handleReveal}
+            className="w-full h-14 rounded-2xl bg-emerald-500 text-white font-bold text-base disabled:opacity-60 flex items-center justify-center gap-2"
+          >
+            {state === "loading"
+              ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              : <><Phone size={18} /> Открыть контакт · {lead.tokensCost} т.</>}
+          </button>
+          <button onClick={onClose} className="w-full h-10 text-sm text-muted-foreground font-medium">Отмена</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1236,6 +1426,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [selectedAvail, setSelectedAvail] = useState<OrderCard | null>(null);
   const [selectedPending, setSelectedPending] = useState<PendingCard | null>(null);
+  const [selectedLanding, setSelectedLanding] = useState<LandingLead | null>(null);
   const [isAvailable, setIsAvailable] = useState(true);
   const [showSwipeHint, setShowSwipeHint] = useState(() => !localStorage.getItem(SWIPE_HINT_KEY));
   const [showMaxPrompt, setShowMaxPrompt] = useState(() => {
@@ -1307,6 +1498,7 @@ export default function HomePage() {
   }
 
   const available: OrderCard[] = data?.availableOrders ?? [];
+  const landingLeads: LandingLead[] = data?.landingLeads ?? [];
   const pending: PendingCard[] = data?.pendingOrders ?? [];
   const active: ActiveOrder[] = data?.activeOrders ?? [];
   const missed: MissedOrder[] = data?.missedOrders ?? [];
@@ -1494,6 +1686,44 @@ export default function HomePage() {
         </section>
       )}
 
+      {/* Landing leads — direct from landing page */}
+      {landingLeads.length > 0 && (
+        <section className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Phone size={15} className="text-emerald-600" />
+            <h2 className="font-semibold text-sm">Прямые заявки ({landingLeads.length})</h2>
+            <span className="text-xs text-muted-foreground">· 1 токен = контакт</span>
+          </div>
+          {landingLeads.map(lead => (
+            <button key={lead.id} onClick={() => setSelectedLanding(lead)}
+              className="w-full bg-emerald-50 dark:bg-emerald-900/15 border border-emerald-200 dark:border-emerald-800/40 rounded-2xl p-4 text-left space-y-2 active:opacity-80">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-sm text-emerald-800 dark:text-emerald-300">
+                  {lead.serviceType}
+                </span>
+                <span className="flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full">
+                  <Coins size={11} /> {lead.tokensCost} т.
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <MapPin size={12} className="shrink-0" />{lead.city}
+              </div>
+              {lead.comment && (
+                <p className="text-xs text-muted-foreground line-clamp-2">{lead.comment}</p>
+              )}
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">
+                  {formatDistanceToNow(new Date(lead.createdAt), { addSuffix: true, locale: ru })}
+                </span>
+                <span className="flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-400 font-medium">
+                  <Phone size={11} /> Открыть контакт
+                </span>
+              </div>
+            </button>
+          ))}
+        </section>
+      )}
+
       {/* Pending */}
       {pending.length > 0 && (
         <section className="space-y-2">
@@ -1572,6 +1802,14 @@ export default function HomePage() {
       )}
       {selectedPending && (
         <RespondedSheet order={selectedPending} onClose={() => setSelectedPending(null)} />
+      )}
+      {selectedLanding && (
+        <LandingLeadSheet
+          lead={selectedLanding}
+          walletBalance={walletBalance}
+          onClose={() => setSelectedLanding(null)}
+          onSuccess={() => { setSelectedLanding(null); load(); }}
+        />
       )}
     </div>
   );

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db, mastersTable, ordersTable, orderDispatchesTable, transactionsTable, leadsTable, voronkaColumnsTable, masterMessagesTable, pushSubscriptionsTable, masterCheckinsTable, transactionPaymentsTable, walletTransactionsTable } from "@workspace/db";
 import { maybeEarlyAssign } from "../lib/priorityAssign.js";
-import { eq, and, inArray, isNull, ne, asc, desc, gte } from "drizzle-orm";
+import { eq, and, inArray, isNull, ne, asc, desc, gte, sql } from "drizzle-orm";
 import { verifyPassword, hashPassword } from "../lib/auth.js";
 import { getMasterEligibility, getOverdueMasterIds, countActiveMasterOrders, getColumnIdForActiveCount } from "../lib/orderEligibility.js";
 import multer from "multer";
@@ -9,7 +9,7 @@ import { objectStorageClient } from "../lib/objectStorage.js";
 import { getBotLink, sendOnboardingMemo, sendMaxMessage } from "../maxBot.js";
 import { notifyManagerMasterResponse, notifyManagerNewMaster } from "../managerBot.js";
 import { getFomoBlock, logFomoEvent, checkFomoTransition } from "../lib/fomoBlock.js";
-import { getOrderTokenCost, deductTokens, ensureWallet, checkTokenBalance } from "../lib/tokenWallet.js";
+import { getOrderTokenCost, deductTokens, ensureWallet, checkTokenBalance, deductTokensForLead } from "../lib/tokenWallet.js";
 import { sendPushToMaster } from "../lib/push.js";
 import { sendPushToClient } from "../lib/clientPush.js";
 import { performBroadcast } from "../lib/broadcastOrder.js";
@@ -430,6 +430,42 @@ router.get("/home", requireMasterPwa, async (req, res) => {
     o.paymentModel = "token";
   }
 
+  // ─── Landing leads (direct from landing page, exclusive model) ──────────────
+  const since14d = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+  const rawLandingLeads = await db.select().from(leadsTable)
+    .where(and(
+      eq(leadsTable.status, "new"),
+      eq(leadsTable.leadChannel, "partner_landing"),
+      isNull(leadsTable.deletedAt),
+      gte(leadsTable.createdAt, since14d),
+      sql`lower(${leadsTable.city}) = lower(${master.city})`,
+      sql`NOT EXISTS (SELECT 1 FROM lead_responses lr WHERE lr.lead_id = ${leadsTable.id})`,
+    ))
+    .orderBy(desc(leadsTable.createdAt))
+    .limit(20);
+
+  const landingServiceTypes = [...new Set(rawLandingLeads.map(l => l.serviceType))];
+  for (const st of landingServiceTypes) {
+    if (!tokenCostMap.has(st)) tokenCostMap.set(st, await getOrderTokenCost(st));
+  }
+
+  const landingLeads = rawLandingLeads.map(l => {
+    let services: string[] = [];
+    if (l.services) {
+      try { const p = JSON.parse(l.services); services = Array.isArray(p) ? p : [l.serviceType]; }
+      catch { services = [l.serviceType]; }
+    } else { services = [l.serviceType]; }
+    return {
+      id: l.id,
+      city: l.city,
+      serviceType: l.serviceType,
+      services,
+      comment: l.comment ?? null,
+      createdAt: l.createdAt,
+      tokensCost: tokenCostMap.get(l.serviceType) ?? 1,
+    };
+  });
+
   res.json({
     master: {
       id: master.id,
@@ -445,6 +481,7 @@ router.get("/home", requireMasterPwa, async (req, res) => {
     },
     fomoBlock,
     availableOrders,
+    landingLeads,
     pendingOrders,
     missedOrders,
     todayActivity,
@@ -935,6 +972,76 @@ router.post("/orders/:id/refund-request", requireMasterPwa, async (req: any, res
     .where(eq(ordersTable.id, orderId));
 
   res.json({ success: true, transactionId: tx.id, tokensRequested: tokensCost });
+});
+
+// ─── Landing leads: respond (exclusive — first master takes the lead) ─────────
+router.post("/leads/:id/respond", requireMasterPwa, async (req: any, res: any) => {
+  const masterId = (req.session as any).masterId;
+  const leadId = parseInt(req.params.id);
+  if (isNaN(leadId)) return res.status(400).json({ error: "Неверный leadId" });
+
+  // Load lead — must be a landing lead in 'new' status
+  const leadRows = await db.select().from(leadsTable)
+    .where(and(
+      eq(leadsTable.id, leadId),
+      eq(leadsTable.status, "new"),
+      eq(leadsTable.leadChannel, "partner_landing"),
+      isNull(leadsTable.deletedAt),
+    ))
+    .limit(1);
+  if (!leadRows[0]) return res.status(404).json({ error: "Заявка не найдена или недоступна" });
+  const lead = leadRows[0];
+
+  // Check if already taken by any master
+  const takenCheck = await db.execute(
+    sql`SELECT 1 FROM lead_responses WHERE lead_id = ${leadId} LIMIT 1`
+  );
+  if ((takenCheck as any).rows?.length > 0 || (takenCheck as any).rowCount > 0) {
+    return res.status(409).json({ error: "Заявка уже занята другим мастером", alreadyTaken: true });
+  }
+
+  // Token cost
+  const tokensCost = await getOrderTokenCost(lead.serviceType);
+  const { ok, balance } = await checkTokenBalance(masterId, tokensCost);
+  if (!ok) {
+    return res.status(402).json({
+      insufficientTokens: true,
+      balance,
+      required: tokensCost,
+      error: `Недостаточно токенов. Баланс: ${balance} т., требуется: ${tokensCost} т.`,
+    });
+  }
+
+  // Deduct tokens
+  const deduction = await deductTokensForLead({ masterId, leadId, tokensCost, serviceType: lead.serviceType });
+  if (!deduction.success) {
+    return res.status(402).json({ insufficientTokens: true, error: deduction.error });
+  }
+
+  // Insert lead_responses — UNIQUE(lead_id) enforces exclusivity
+  try {
+    await db.execute(
+      sql`INSERT INTO lead_responses (lead_id, master_id, tokens_spent) VALUES (${leadId}, ${masterId}, ${tokensCost})`
+    );
+  } catch (e: any) {
+    // Race condition: another master got there first — refund tokens
+    if (e?.code === "23505" || e?.constraint?.includes("lead_responses")) {
+      // Refund: re-add balance
+      await db.execute(
+        sql`UPDATE master_wallet SET tokens_balance = tokens_balance + ${tokensCost}, updated_at = NOW() WHERE master_id = ${masterId}`
+      );
+      return res.status(409).json({ error: "Заявка только что занята другим мастером", alreadyTaken: true });
+    }
+    throw e;
+  }
+
+  return res.json({
+    ok: true,
+    clientName: lead.clientName,
+    clientPhone: lead.clientPhone,
+    tokensCost,
+    newBalance: deduction.newBalance,
+  });
 });
 
 // Log FOMO button press

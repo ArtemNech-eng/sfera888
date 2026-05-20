@@ -6,7 +6,7 @@
 import { Router, Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import { db, usersTable, trafficPartnersTable, partnerBillingPeriodsTable, leadsTable, systemSettingsTable, ordersTable } from "@workspace/db";
-import { eq, and, gte, lt, lte, desc, ilike, or, isNull, inArray, count } from "drizzle-orm";
+import { eq, and, gte, lt, lte, desc, ilike, or, isNull, inArray, count, sql } from "drizzle-orm";
 import { requirePartner } from "../middlewares/requirePartner.js";
 import { z } from "zod";
 
@@ -130,13 +130,20 @@ async function calcCurrentBillingPeriod(
         )
       );
     tokenSpentCount = acceptedOrders.length;
+    // + подтверждённые (96ч прошло) директные отклики мастеров на лендинговые лиды (холд 96ч)
+    const confirmedResponses = await db.execute(
+      sql`SELECT COUNT(*)::int AS cnt FROM lead_responses
+          WHERE lead_id = ANY(${leadIds}) AND status = 'confirmed'`
+    );
+    const confirmedCount = Number((confirmedResponses as any).rows?.[0]?.cnt ?? 0);
+    tokenSpentCount += confirmedCount;
   }
 
-  // Расчёт фикса
+  // Расчёт фикса — только по одобренным лидам (защита от фейков)
   const fixedSalaryBase = isFirstPeriod
     ? Math.round((salaryMax * daysInPeriod) / 30)
     : salaryMax;
-  const fixedPct = Math.min(leadsCount / targetLeads, 1.0);
+  const fixedPct = Math.min(validLeadsCount / targetLeads, 1.0);
   const fixedSalaryEarned = Math.round(fixedSalaryBase * fixedPct);
 
   // Бонус
