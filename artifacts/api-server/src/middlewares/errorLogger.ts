@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import { db, aiErrorLogsTable } from "@workspace/db";
+import { db, aiErrorLogs } from "@workspace/db";
 import { sql } from "drizzle-orm";
 
 export function errorLoggerMiddleware() {
@@ -12,20 +12,20 @@ export function errorLoggerMiddleware() {
       
       console.error(`[ErrorLogger] ${method} ${path}: ${message}`);
       
-      await db.insert(aiErrorLogsTable).values({
-        errorMessage: `[${method} ${path}] ${message}`,
+      await db.insert(aiErrorLogs).values({
+        errorId: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        message: `[${method} ${path}] ${message}`,
         severity: "ERROR",
         source: "api-server",
-        stackTrace: stack.substring(0, 2000),
-        isActive: true,
-        firstSeenAt: new Date(),
-        lastSeenAt: new Date(),
+        level: "ERROR",
         count: 1,
+        firstSeen: new Date(),
+        lastSeen: new Date(),
       }).onConflictDoUpdate({
-        target: aiErrorLogsTable.errorMessage,
+        target: aiErrorLogs.errorId,
         set: {
-          lastSeenAt: new Date(),
-          count: sql`${aiErrorLogsTable.count} + 1`,
+          lastSeen: new Date(),
+          count: sql`${aiErrorLogs.count} + 1`,
           isActive: true,
         },
       });
