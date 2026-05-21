@@ -34,7 +34,7 @@ async function uploadPwaAvatarToGCS(masterId: number, buffer: Buffer, mimetype: 
   const key = `avatars/${filename}`;
   const bucket = objectStorageClient.bucket(bucketId);
   await bucket.file(key).save(buffer, { contentType: mimetype, resumable: false });
-  return `${publicUrl}/${bucketId}/${key}`;
+  return `${publicUrl}/${key}`;
 }
 
 const router = Router();

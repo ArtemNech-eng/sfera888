@@ -66,7 +66,7 @@ async function uploadImageToStorage(buffer: Buffer, mimetype: string): Promise<s
     const key = `public/estimate-photos/${filename}`;
     const bucket = objectStorageClient.bucket(bucketId);
     await bucket.file(key).save(buffer, { contentType: mimetype, resumable: false });
-    return `${publicUrl}/${bucketId}/${key}`;
+    return `${publicUrl}/${key}`;
   } catch {
     return null;
   }

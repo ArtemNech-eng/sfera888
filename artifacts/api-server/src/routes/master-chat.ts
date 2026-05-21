@@ -230,7 +230,7 @@ router.post("/:masterId/reply", requireRole("admin", "master_operator"), checkRa
           contentType: photoFile.mimetype || "image/jpeg",
           resumable: false,
         });
-        savedPhotoUrl = `${publicUrl}/${bucketName}/${objectName}`;
+        savedPhotoUrl = `${publicUrl}/${objectName}`;
       } catch (e) {
         console.error("[master-chat] photo upload failed:", e);
         return res.status(500).json({ error: "Не удалось сохранить фото" });

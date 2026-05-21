@@ -59,7 +59,7 @@ async function uploadAvatarToGCS(masterId: number, buffer: Buffer, mimetype: str
   const gcsName = `${GCS_AVATAR_PREFIX}${filename}`;
   const bucket = objectStorageClient.bucket(bucketId);
   await bucket.file(gcsName).save(buffer, { contentType: mimetype, resumable: false });
-  return `${publicUrl}/${bucketId}/${gcsName}`;
+  return `${publicUrl}/${gcsName}`;
 }
 
 async function deleteAvatarFromGCS(avatarUrl: string) {
@@ -69,7 +69,7 @@ async function deleteAvatarFromGCS(avatarUrl: string) {
     const publicUrl = process.env.R2_PUBLIC_URL;
     let filename: string | undefined;
     if (publicUrl && avatarUrl.startsWith(publicUrl)) {
-      const prefix = `${publicUrl}/${bucketId}/${GCS_AVATAR_PREFIX}`;
+      const prefix = `${publicUrl}/${GCS_AVATAR_PREFIX}`;
       if (avatarUrl.startsWith(prefix)) {
         filename = avatarUrl.slice(prefix.length);
       }

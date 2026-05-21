@@ -1313,8 +1313,14 @@ function DailyCheckinCard() {
       });
       if (res.ok) {
         setCheckin({ isAvailable, respondedAt: new Date().toISOString() });
+        toast.success(isAvailable ? "Вы готовы — заявки будут поступать" : "Вы не готовы — заявки сегодня не поступают");
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error ?? "Ошибка отправки ответа");
       }
-    } catch {} finally { setSubmitting(false); }
+    } catch {
+      toast.error("Ошибка сети. Попробуйте ещё раз.");
+    } finally { setSubmitting(false); }
   };
 
   // Don't show until loaded
