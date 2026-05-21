@@ -23,7 +23,7 @@ export default function FinalCTA() {
             Оставьте заявку и узнайте стоимость работ
           </h2>
           <p className="text-gray-400 text-lg mb-10 leading-relaxed max-w-xl mx-auto">
-            Подберём проверенного частного мастера, которого вам не придётся искать вслепую.
+            Проверенные частные мастера получат вашу заявку и свяжутся с вами сами.
           </p>
           <GradientButton onClick={scrollToForm} size="lg" className="animate-pulse-glow">
             <Sparkles size={20} />
@@ -38,7 +38,7 @@ export default function FinalCTA() {
           transition={{ duration: 0.6, delay: 0.2 }}
           className="flex flex-wrap justify-center gap-6 mt-12 text-sm text-gray-400"
         >
-          {['Бесплатная заявка', 'Подбор за 15–30 минут', 'Гарантия 2 года', 'Без посредников'].map((badge) => (
+          {['Бесплатная заявка', 'Ответ за 15–30 минут', 'Гарантия 2 года', 'Без посредников'].map((badge) => (
             <span key={badge} className="flex items-center gap-2">
               <span className="w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center">
                 <CheckCircle2 size={12} className="text-emerald-400" />

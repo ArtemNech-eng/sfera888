@@ -70,7 +70,7 @@ export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
     }
     if (form.services.length === 0) newErrors.services = 'Выберите хотя бы один вид работ';
     if (!form.comment.trim()) {
-      newErrors.comment = 'Опишите задачу — это поможет подобрать мастера';
+      newErrors.comment = 'Опишите задачу — это поможет связать вас с мастером';
     } else if (PHONE_REGEX.test(form.comment)) {
       newErrors.comment = 'Пожалуйста, укажите номер только в поле «Телефон»';
     }
@@ -106,6 +106,7 @@ export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
         return;
       }
       setSubmitted(true);
+      window.scrollTo(0, 0);
     } catch (err: any) {
       clearTimeout(timeoutId);
       if (err?.name === 'AbortError') {
@@ -132,7 +133,7 @@ export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
               <CheckCircle size={40} className="text-white" />
             </div>
             <h3 className="text-3xl font-extrabold text-[#111827] mb-3">Заявка принята</h3>
-            <p className="text-gray-500 text-base mb-2">Подбираем мастера.</p>
+            <p className="text-gray-500 text-base mb-2">Проверенные мастера увидят вашу заявку.</p>
             <p className="text-gray-500 text-base">
               Обычно это занимает{' '}
               <span className="font-bold text-[#111827]">15–30 минут</span>.

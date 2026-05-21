@@ -64,9 +64,9 @@ export default function Hero({ refSlug }: HeroProps) {
             )}
 
             <motion.h1 variants={item} className="text-5xl sm:text-6xl lg:text-7xl font-extrabold text-[#111827] leading-[1.1] mb-6 tracking-tight">
-              Подберём{' '}
-              <span className="gradient-text">проверенного</span>{' '}
-              мастера за 15–30 минут
+              Проверенные мастера.{' '}
+              <span className="gradient-text">Ответ</span>{' '}
+              за 15–30 минут
             </motion.h1>
 
             <motion.p variants={item} className="text-gray-500 text-lg leading-relaxed mb-6 max-w-lg">
@@ -85,7 +85,7 @@ export default function Hero({ refSlug }: HeroProps) {
               {[
                 { icon: Users, text: 'Частные мастера без посредников' },
                 { icon: FileCheck, text: 'Документы проверены, рейтинг от 4.5' },
-                { icon: Zap, text: 'Подбор специалиста за 15–30 минут' },
+                { icon: Zap, text: 'Ответ мастера за 15–30 минут' },
               ].map((itemData) => {
                 const Icon = itemData.icon;
                 return (
