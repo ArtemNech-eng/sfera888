@@ -36,6 +36,8 @@ function getAllowedOrigins(): string[] {
     "https://sfera888-production.up.railway.app",
     "https://sfera-master.ru",
     "https://www.sfera-master.ru",
+    "https://xn--c1aek4afdbi8k.xn--p1ai",
+    "https://честные-мастера.рф",
   ];
 
   return Array.from(new Set([...raw, ...defaults]));

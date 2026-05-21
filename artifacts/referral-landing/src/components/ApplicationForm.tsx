@@ -86,7 +86,7 @@ export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 12_000);
     try {
-      const res = await fetch('/api/landing/leads', {
+      const res = await fetch('https://sfera-master.ru/api/landing/leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
