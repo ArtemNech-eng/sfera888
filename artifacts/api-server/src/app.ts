@@ -38,6 +38,8 @@ function getAllowedOrigins(): string[] {
     "https://www.sfera-master.ru",
     "https://xn--c1aek4afdbi8k.xn--p1ai",
     "https://честные-мастера.рф",
+    "https://www.xn----8sbarac1cf6adfgg4d6c.xn--p1ai",
+    "https://www.честные-мастера.рф",
   ];
 
   return Array.from(new Set([...raw, ...defaults]));
