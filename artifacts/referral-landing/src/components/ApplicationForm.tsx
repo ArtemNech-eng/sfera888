@@ -239,7 +239,7 @@ export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
                       <input
                         type="tel"
                         value={form.phone}
-                        onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                        onInput={(e) => setForm({ ...form, phone: (e.target as HTMLInputElement).value })}
                         placeholder="+7 900 000-00-00"
                         className={`w-full border rounded-2xl pl-12 pr-4 py-3.5 text-base text-[#111827] placeholder:text-gray-400 focus:outline-none focus:ring-2 transition-all ${
                           errors.phone

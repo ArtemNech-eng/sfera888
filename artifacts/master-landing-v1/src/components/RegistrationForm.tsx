@@ -231,6 +231,7 @@ const RegistrationForm = forwardRef<HTMLElement>((_, ref) => {
                   placeholder="+7 (___) ___-__-__"
                   value={formData.phone}
                   onChange={handleChange}
+                  onInput={handleChange}
                   autoComplete="tel"
                 />
                 {errors.phone && (
