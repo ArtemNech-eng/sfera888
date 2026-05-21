@@ -5,7 +5,9 @@ import { eq, and, inArray, isNull, ne, asc, desc, gte, sql } from "drizzle-orm";
 import { verifyPassword, hashPassword } from "../lib/auth.js";
 import { getMasterEligibility, getOverdueMasterIds, countActiveMasterOrders, getColumnIdForActiveCount } from "../lib/orderEligibility.js";
 import multer from "multer";
-import { objectStorageClient } from "../lib/objectStorage.js";
+import { Readable } from "stream";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
+import { objectStorageClient, s3Client } from "../lib/objectStorage.js";
 import { getBotLink, sendOnboardingMemo, sendMaxMessage } from "../maxBot.js";
 import { notifyManagerMasterResponse, notifyManagerNewMaster } from "../managerBot.js";
 import { getFomoBlock, logFomoEvent, checkFomoTransition } from "../lib/fomoBlock.js";
@@ -25,12 +27,14 @@ const avatarUpload = multer({
 
 async function uploadPwaAvatarToGCS(masterId: number, buffer: Buffer, mimetype: string): Promise<string> {
   const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
-  if (!bucketId) throw new Error("Object storage not configured");
+  const publicUrl = process.env.R2_PUBLIC_URL;
+  if (!bucketId || !publicUrl) throw new Error("Object storage not configured");
   const ts = Date.now();
   const filename = `pwa-master-${masterId}-${ts}.jpg`;
+  const key = `avatars/${filename}`;
   const bucket = objectStorageClient.bucket(bucketId);
-  await bucket.file(`avatars/${filename}`).save(buffer, { contentType: mimetype, resumable: false });
-  return `/api/masters/avatar/${filename}`;
+  await bucket.file(key).save(buffer, { contentType: mimetype, resumable: false });
+  return `${publicUrl}/${bucketId}/${key}`;
 }
 
 const router = Router();
@@ -1414,6 +1418,13 @@ router.get("/profile", requireMasterPwa, async (req, res) => {
       isNull(ordersTable.deletedAt),
     ));
 
+  const totalCount = await db.select({ count: sql<number>`count(*)` })
+    .from(ordersTable)
+    .where(and(
+      eq(ordersTable.masterId, masterId),
+      isNull(ordersTable.deletedAt),
+    ));
+
   const maxBotLink = await getBotLink();
 
   res.json({
@@ -1425,7 +1436,7 @@ router.get("/profile", requireMasterPwa, async (req, res) => {
     phone: master.phone ?? null,
     rating: Number(master.rating),
     debt: Number(master.debt),
-    totalOrders: master.totalOrders,
+    totalOrders: Number(totalCount[0]?.count ?? 0),
     acceptedOrders: master.acceptedOrders,
     isTestMaster: master.isTestMaster,
     customAvatarUrl: master.customAvatarUrl ?? null,

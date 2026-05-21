@@ -3,8 +3,10 @@ import { db, mastersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import multer from "multer";
 import { Readable } from "stream";
+import { ObjectStorageService } from "../lib/objectStorage.js";
 
 const router = Router();
+const objectStorageService = new ObjectStorageService();
 
 const passportUpload = multer({
   storage: multer.memoryStorage(),

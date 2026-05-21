@@ -5,7 +5,9 @@ import { requireRole } from "../middlewares/requireAuth.js";
 import { logMaxEvent } from "../maxBot.js";
 import { hashPassword } from "../lib/auth.js";
 import multer from "multer";
-import { objectStorageClient, ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage.js";
+import { Readable } from "stream";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
+import { objectStorageClient, s3Client, ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage.js";
 
 const objectStorage = new ObjectStorageService();
 
@@ -50,21 +52,31 @@ async function autoSetPwaCredentials(masterId: number, phone: string | null) {
 
 async function uploadAvatarToGCS(masterId: number, buffer: Buffer, mimetype: string): Promise<string> {
   const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
-  if (!bucketId) throw new Error("Object storage not configured");
+  const publicUrl = process.env.R2_PUBLIC_URL;
+  if (!bucketId || !publicUrl) throw new Error("Object storage not configured");
   const ts = Date.now();
   const filename = `master-${masterId}-${ts}.jpg`;
   const gcsName = `${GCS_AVATAR_PREFIX}${filename}`;
   const bucket = objectStorageClient.bucket(bucketId);
   await bucket.file(gcsName).save(buffer, { contentType: mimetype, resumable: false });
-  return `/api/masters/avatar/${filename}`;
+  return `${publicUrl}/${bucketId}/${gcsName}`;
 }
 
 async function deleteAvatarFromGCS(avatarUrl: string) {
   try {
     const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
     if (!bucketId) return;
-    if (!avatarUrl.includes("/api/masters/avatar/")) return;
-    const filename = avatarUrl.split("/api/masters/avatar/")[1];
+    const publicUrl = process.env.R2_PUBLIC_URL;
+    let filename: string | undefined;
+    if (publicUrl && avatarUrl.startsWith(publicUrl)) {
+      const prefix = `${publicUrl}/${bucketId}/${GCS_AVATAR_PREFIX}`;
+      if (avatarUrl.startsWith(prefix)) {
+        filename = avatarUrl.slice(prefix.length);
+      }
+    } else if (avatarUrl.includes("/api/masters/avatar/")) {
+      filename = avatarUrl.split("/api/masters/avatar/")[1];
+    }
+    if (!filename) return;
     const bucket = objectStorageClient.bucket(bucketId);
     await bucket.file(`${GCS_AVATAR_PREFIX}${filename}`).delete({ ignoreNotFound: true });
   } catch {}
@@ -674,21 +686,26 @@ router.delete("/:id/tasks/:taskId", allMasterRoles, async (req, res) => {
   res.json({ success: true });
 });
 
-// GET /api/masters/avatar/:filename — serve avatar from GCS
+// GET /api/masters/avatar/:filename — serve avatar from R2
 router.get("/avatar/:filename", async (req, res) => {
   try {
     const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
     if (!bucketId) return res.status(500).json({ error: "Storage not configured" });
-    const bucket = objectStorageClient.bucket(bucketId);
-    const file = bucket.file(`${GCS_AVATAR_PREFIX}${req.params.filename}`);
-    const [exists] = await file.exists();
-    if (!exists) return res.status(404).json({ error: "Not found" });
-    const [metadata] = await file.getMetadata();
-    res.setHeader("Content-Type", (metadata.contentType as string) || "image/jpeg");
+    const key = `${GCS_AVATAR_PREFIX}${req.params.filename}`;
+    const response = await s3Client.send(
+      new GetObjectCommand({ Bucket: bucketId, Key: key })
+    );
+    res.setHeader("Content-Type", response.ContentType || "image/jpeg");
     res.setHeader("Cache-Control", "public, max-age=86400");
-    file.createReadStream().pipe(res);
+    if (response.Body) {
+      const stream = response.Body as ReadableStream;
+      const nodeStream = Readable.fromWeb(stream);
+      nodeStream.pipe(res);
+    } else {
+      res.end();
+    }
   } catch (err) {
-    res.status(500).json({ error: "Storage error" });
+    res.status(404).json({ error: "Not found" });
   }
 });
 

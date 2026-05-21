@@ -4,6 +4,9 @@ import { eq, desc, and, isNull, isNotNull, inArray, like, gte, sql } from "drizz
 import multer from "multer";
 import { objectStorageClient } from "../lib/objectStorage.js";
 import { performBroadcast } from "../lib/broadcastOrder.js";
+import { Readable } from "stream";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
+import { s3Client } from "../lib/objectStorage.js";
 import { sendPushToClient } from "../lib/clientPush.js";
 import { requireRole } from "../middlewares/requireAuth.js";
 import OpenAI from "openai";
@@ -56,12 +59,14 @@ function checkEstimateLimit(phone: string): { allowed: boolean; remaining: numbe
 async function uploadImageToStorage(buffer: Buffer, mimetype: string): Promise<string | null> {
   try {
     const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
-    if (!bucketId) return null;
+    const publicUrl = process.env.R2_PUBLIC_URL;
+    if (!bucketId || !publicUrl) return null;
     const ext = mimetype === "image/png" ? "png" : "jpg";
     const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+    const key = `public/estimate-photos/${filename}`;
     const bucket = objectStorageClient.bucket(bucketId);
-    await bucket.file(`public/estimate-photos/${filename}`).save(buffer, { contentType: mimetype, resumable: false });
-    return `/api/storage/public-objects/estimate-photos/${filename}`;
+    await bucket.file(key).save(buffer, { contentType: mimetype, resumable: false });
+    return `${publicUrl}/${bucketId}/${key}`;
   } catch {
     return null;
   }

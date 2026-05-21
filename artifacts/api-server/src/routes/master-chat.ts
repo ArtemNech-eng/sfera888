@@ -216,7 +216,8 @@ router.post("/:masterId/reply", requireRole("admin", "master_operator"), checkRa
       try {
         const { randomUUID } = await import("crypto");
         const privateDir = process.env.PRIVATE_OBJECT_DIR || "";
-        if (!privateDir) throw new Error("PRIVATE_OBJECT_DIR not configured");
+        const publicUrl = process.env.R2_PUBLIC_URL;
+        if (!privateDir || !publicUrl) throw new Error("Object storage not configured");
         const objectId = randomUUID();
         const ext = (photoFile.originalname?.split(".").pop() ?? "jpg").toLowerCase().slice(0, 5);
         const fullPath = `${privateDir}/master-chat/${masterId}/${objectId}.${ext}`;
@@ -229,11 +230,7 @@ router.post("/:masterId/reply", requireRole("admin", "master_operator"), checkRa
           contentType: photoFile.mimetype || "image/jpeg",
           resumable: false,
         });
-        // Path served by GET /storage/objects/:entityId (see routes/storage.ts).
-        // entityId = path under PRIVATE_OBJECT_DIR.
-        const privateParts = privateDir.replace(/^\//, "").split("/");
-        const entityId = parts.slice(privateParts.length).join("/");
-        savedPhotoUrl = `/objects/${entityId}`;
+        savedPhotoUrl = `${publicUrl}/${bucketName}/${objectName}`;
       } catch (e) {
         console.error("[master-chat] photo upload failed:", e);
         return res.status(500).json({ error: "Не удалось сохранить фото" });
