@@ -59,7 +59,7 @@ async function uploadAvatarToGCS(masterId: number, buffer: Buffer, mimetype: str
   const gcsName = `${GCS_AVATAR_PREFIX}${filename}`;
   const bucket = objectStorageClient.bucket(bucketId);
   await bucket.file(gcsName).save(buffer, { contentType: mimetype, resumable: false });
-  return `${publicUrl}/${gcsName}`;
+  return `/api/masters/avatar/${filename}`;
 }
 
 async function deleteAvatarFromGCS(avatarUrl: string) {
