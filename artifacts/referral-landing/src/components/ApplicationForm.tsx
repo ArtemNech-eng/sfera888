@@ -352,6 +352,7 @@ export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
                       rows={3}
                       value={form.comment}
                       onChange={(e) => { setForm({ ...form, comment: e.target.value }); if (errors.comment) setErrors({ ...errors, comment: undefined }); }}
+                      onInput={(e) => { setForm({ ...form, comment: e.target.value }); if (errors.comment) setErrors({ ...errors, comment: undefined }); }}
                       placeholder="Опишите задачу подробнее: что нужно сделать, состояние помещения, сроки…"
                       className={`w-full border rounded-2xl pl-12 pr-4 py-3.5 text-base text-[#111827] placeholder:text-gray-400 focus:outline-none focus:ring-2 resize-none transition-all ${
                         errors.comment
