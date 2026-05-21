@@ -1162,10 +1162,12 @@ function AvailabilityToggle({
   isAvailable,
   atLimit,
   onChange,
+  className = "",
 }: {
   isAvailable: boolean;
   atLimit: boolean;
   onChange: (v: boolean) => void;
+  className?: string;
 }) {
   const [loading, setLoading] = useState(false);
   const toggle = async () => {
@@ -1182,7 +1184,7 @@ function AvailabilityToggle({
 
   if (atLimit) {
     return (
-      <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+      <span className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 ${className}`}>
         <Briefcase size={13} />
         Лимит заказов
       </span>
@@ -1195,7 +1197,7 @@ function AvailabilityToggle({
         isAvailable
           ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
           : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-      }`}>
+      } ${className}`}>
       {loading
         ? <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
         : isAvailable ? <PlayCircle size={14} /> : <PauseCircle size={14} />}
@@ -1564,28 +1566,48 @@ export default function HomePage() {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight">{master?.alias}</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">{master?.city}</p>
+      <div className="space-y-2.5">
+        {/* Row 1: Name + Test badge | Rating */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <h1 className="text-lg font-bold truncate">{master?.alias}</h1>
+            {master?.isTestMaster && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium shrink-0">
+                Тест
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1 bg-card border border-border px-2.5 py-1.5 rounded-xl shadow-xs shrink-0">
+            <Star size={13} className="text-warning" fill="currentColor" />
+            <span className="font-semibold text-sm">{master?.rating?.toFixed(1)}</span>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <AvailabilityToggle isAvailable={isAvailable} atLimit={atLimit} onChange={setIsAvailable} />
+
+        {/* Row 2: City | Tokens */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <MapPin size={14} />
+            <span>{master?.city}</span>
+          </div>
           {(data?.walletBalance ?? 0) >= 0 && (
             <button
               type="button"
               onClick={() => setLocation("/wallet")}
-              className="flex items-center gap-1 bg-card border border-border px-2.5 py-1.5 rounded-xl shadow-xs hover:shadow-sm transition-shadow"
+              className="flex items-center gap-1 bg-card border border-border px-2.5 py-1.5 rounded-xl shadow-xs hover:shadow-sm transition-shadow shrink-0"
             >
               <Coins size={13} className="shrink-0 text-primary" />
               <span className="font-semibold text-sm leading-none">{data?.walletBalance ?? 0}</span>
             </button>
           )}
-          <div className="flex items-center gap-1 bg-card border border-border px-2.5 py-1.5 rounded-xl shadow-xs">
-            <Star size={13} className="text-warning" fill="currentColor" />
-            <span className="font-semibold text-sm">{master?.rating?.toFixed(1)}</span>
-          </div>
         </div>
+
+        {/* Row 3: Availability toggle full width */}
+        <AvailabilityToggle
+          isAvailable={isAvailable}
+          atLimit={atLimit}
+          onChange={setIsAvailable}
+          className="w-full justify-center"
+        />
       </div>
 
       {/* Active orders info */}
