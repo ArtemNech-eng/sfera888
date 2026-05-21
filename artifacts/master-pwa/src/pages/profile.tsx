@@ -719,6 +719,7 @@ export default function ProfilePage() {
       });
       if (!res.ok) throw new Error("Ошибка загрузки");
       const { customAvatarUrl } = await res.json();
+      console.log("[avatar upload] customAvatarUrl:", customAvatarUrl);
       setData(d => d ? { ...d, customAvatarUrl } : d);
       toast.success("Фото обновлено");
     } catch {
@@ -740,6 +741,7 @@ export default function ProfilePage() {
   if (!data) return null;
 
   const initials = data.alias?.slice(0, 2)?.toUpperCase() ?? "МС";
+  console.log("[render] customAvatarUrl:", data.customAvatarUrl);
 
   return (
     <div className="px-4 pt-5 pb-4 space-y-5">
@@ -750,6 +752,10 @@ export default function ProfilePage() {
               src={data.customAvatarUrl}
               alt={data.alias}
               className="w-16 h-16 rounded-full object-cover"
+              onError={(e) => {
+                console.error("[avatar] failed to load:", data.customAvatarUrl, e);
+                toast.error("Не удалось загрузить фото");
+              }}
             />
           ) : (
             <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center text-white text-xl font-bold">

@@ -70,6 +70,8 @@ interface LandingLead {
   comment: string | null;
   createdAt: string;
   tokensCost: number;
+  photos: string[];
+  scheduledAt: string | null;
 }
 
 // ─── FOMO modal ───────────────────────────────────────────────────────────────
@@ -522,7 +524,7 @@ function LandingLeadSheet({ lead, walletBalance, onClose, onSuccess }: {
 }) {
   const [, setLocation] = useLocation();
   const [state, setState] = useState<"idle" | "loading" | "revealed" | "taken" | "no_tokens">("idle");
-  const [contact, setContact] = useState<{ name: string; phone: string } | null>(null);
+  const [contact, setContact] = useState<{ name: string; phone: string; orderId?: number } | null>(null);
 
   const handleReveal = async () => {
     if (lead.tokensCost > walletBalance) { setState("no_tokens"); return; }
@@ -530,7 +532,7 @@ function LandingLeadSheet({ lead, walletBalance, onClose, onSuccess }: {
     try {
       const result = await api.leads.respond(lead.id);
       if (result?.ok) {
-        setContact({ name: result.clientName ?? "Клиент", phone: result.clientPhone });
+        setContact({ name: result.clientName ?? "Клиент", phone: result.clientPhone, orderId: result.orderId });
         setState("revealed");
         onSuccess();
       }
@@ -608,6 +610,13 @@ function LandingLeadSheet({ lead, walletBalance, onClose, onSuccess }: {
               className="flex w-full items-center justify-center gap-2 h-14 rounded-2xl bg-emerald-500 text-white font-bold text-base">
               <Phone size={20} /> Позвонить
             </a>
+            {contact.orderId && (
+              <button onClick={() => { onClose(); setLocation(`/orders?expand=${contact.orderId}`); }}
+                className="w-full h-12 rounded-2xl bg-primary text-primary-foreground font-bold text-sm flex items-center justify-center gap-2">
+                <Briefcase size={16} /> Перейти к заказу #{contact.orderId}
+              </button>
+            )}
+            {lead.photos.length > 0 && <PhotoGallery photos={lead.photos} />}
             <div className="border border-border rounded-2xl p-4 space-y-2">
               <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Детали заявки</p>
               <div className="flex items-center gap-2 text-sm"><Wrench size={13} className="text-primary shrink-0" />{lead.serviceType}</div>
@@ -615,12 +624,17 @@ function LandingLeadSheet({ lead, walletBalance, onClose, onSuccess }: {
               {lead.area > 0 && (
                 <div className="flex items-center gap-2 text-xs text-muted-foreground"><Maximize size={12} className="shrink-0" />{lead.area} м²</div>
               )}
+              {lead.scheduledAt && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground"><Calendar size={12} className="shrink-0" />{formatDate(lead.scheduledAt)}</div>
+              )}
               {lead.comment && (
                 <div className="flex items-start gap-2 text-xs text-muted-foreground">
                   <MessageSquare size={12} className="shrink-0 mt-0.5" />{lead.comment}
                 </div>
               )}
             </div>
+            <YandexMapEmbed city={lead.city} district={lead.district} />
+            <NavigationButtons city={lead.city} district={lead.district} />
             <button onClick={onClose} className="w-full h-10 text-sm text-muted-foreground font-medium">Закрыть</button>
           </div>
         ) : (
@@ -1708,37 +1722,46 @@ export default function HomePage() {
           <div className="flex items-center gap-2">
             <Phone size={15} className="text-emerald-600" />
             <h2 className="font-semibold text-sm">Прямые заявки ({landingLeads.length})</h2>
-            <span className="text-xs text-muted-foreground">· 1 токен = контакт</span>
           </div>
           {landingLeads.map(lead => (
             <button key={lead.id} onClick={() => setSelectedLanding(lead)}
-              className="w-full bg-emerald-50 dark:bg-emerald-900/15 border border-emerald-200 dark:border-emerald-800/40 rounded-2xl p-4 text-left space-y-2 active:opacity-80">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-sm text-emerald-800 dark:text-emerald-300">
-                  {lead.serviceType}
-                </span>
-                <span className="flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full">
-                  <Coins size={11} /> {lead.tokensCost} т.
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <MapPin size={12} className="shrink-0" />{lead.city}{lead.district ? `, ${lead.district}` : ""}
-              </div>
-              {lead.area > 0 && (
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Maximize size={12} className="shrink-0" />{lead.area} м²
+              className="w-full bg-card border border-border rounded-2xl overflow-hidden text-left active:opacity-80">
+              {lead.photos.length > 0 && (
+                <img src={resolvePhotoUrl(lead.photos[0])} alt="фото" className="w-full object-cover" style={{ height: 130 }} />
+              )}
+              <div className="p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-sm text-primary">Прямая заявка #{lead.id}</span>
+                    <span className="bg-primary/10 text-primary text-xs font-semibold px-2 py-0.5 rounded-full">Прямая</span>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {formatDistanceToNow(new Date(lead.createdAt), { addSuffix: true, locale: ru })}
+                  </span>
                 </div>
-              )}
-              {lead.comment && (
-                <p className="text-xs text-muted-foreground line-clamp-2">{lead.comment}</p>
-              )}
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">
-                  {formatDistanceToNow(new Date(lead.createdAt), { addSuffix: true, locale: ru })}
-                </span>
-                <span className="flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-400 font-medium">
-                  <Phone size={11} /> Открыть контакт
-                </span>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5 text-sm font-medium">
+                    <Wrench size={13} className="text-primary shrink-0" />
+                    {lead.serviceType} · {lead.area} м²
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <MapPin size={12} className="shrink-0" />
+                    {lead.city}{lead.district ? `, ${lead.district}` : ""}
+                  </div>
+                  {lead.comment && (
+                    <p className="text-xs text-muted-foreground line-clamp-2">{lead.comment}</p>
+                  )}
+                </div>
+                <div className="flex items-center justify-between pt-1">
+                  <span className="flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full">
+                    <Coins size={11} /> {lead.tokensCost} токен(а)
+                  </span>
+                  {(lead.tokensCost ?? 1) > walletBalance ? (
+                    <span className="text-xs text-slate-400 font-medium">Недостаточно токенов</span>
+                  ) : (
+                    <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Баланс: {walletBalance} т.</span>
+                  )}
+                </div>
               </div>
             </button>
           ))}

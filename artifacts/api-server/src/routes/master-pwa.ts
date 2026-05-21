@@ -459,6 +459,11 @@ router.get("/home", requireMasterPwa, async (req, res) => {
       try { const p = JSON.parse(l.services); services = Array.isArray(p) ? p : [l.serviceType]; }
       catch { services = [l.serviceType]; }
     } else { services = [l.serviceType]; }
+    let photos: string[] = [];
+    if (l.photos) {
+      try { const p = JSON.parse(l.photos); photos = Array.isArray(p) ? p : []; }
+      catch { photos = []; }
+    }
     return {
       id: l.id,
       city: l.city,
@@ -469,6 +474,8 @@ router.get("/home", requireMasterPwa, async (req, res) => {
       comment: l.comment ?? null,
       createdAt: l.createdAt,
       tokensCost: tokenCostMap.get(l.serviceType) ?? 1,
+      photos,
+      scheduledAt: l.scheduledAt,
     };
   });
 
@@ -1041,12 +1048,37 @@ router.post("/leads/:id/respond", requireMasterPwa, async (req: any, res: any) =
     throw e;
   }
 
+  // Create a proper order from this landing lead so it appears as an active order
+  const insertedOrder = await db.insert(ordersTable).values({
+    leadId: lead.id,
+    city: lead.city,
+    district: lead.district ?? "",
+    serviceType: lead.serviceType,
+    area: String(lead.area),
+    services: lead.services,
+    comment: lead.comment,
+    status: "master_assigned",
+    masterId,
+    dispatchStatus: "assigned",
+    masterWorkStatus: "accepted",
+    assignedAt: new Date(),
+    clientName: lead.clientName,
+    clientPhone: lead.clientPhone,
+    source: "landing",
+    paymentModel: "token",
+    tokensCharged: String(tokensCost),
+  }).returning({ id: ordersTable.id });
+
+  // Update lead status so it no longer appears as new in CRM
+  await db.update(leadsTable).set({ status: "sent_to_work" }).where(eq(leadsTable.id, leadId));
+
   return res.json({
     ok: true,
     clientName: lead.clientName,
     clientPhone: lead.clientPhone,
     tokensCost,
     newBalance: deduction.newBalance,
+    orderId: insertedOrder[0].id,
   });
 });
 
