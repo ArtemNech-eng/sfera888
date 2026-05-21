@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import {
   Coins, Plus, ArrowDownCircle, ArrowUpCircle, RotateCcw,
   Gift, Wrench, ChevronLeft, Copy, CheckCircle2, Clock,
-  CreditCard, X, Loader2, AlertTriangle, Wallet, TrendingUp, Camera,
+  CreditCard, X, Loader2, AlertTriangle, Wallet, TrendingUp, Camera, History as HistoryIcon,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -373,25 +373,28 @@ export default function WalletPage() {
         </div>
 
         {/* Balance block */}
-        <div className="bg-gradient-to-br from-amber-400 to-amber-500 rounded-3xl p-6 text-white shadow-lg">
-          <p className="text-sm font-medium opacity-80 mb-1">Баланс токенов</p>
-          <div className="flex items-end gap-2 mb-4">
-            <span className="text-5xl font-bold">{balance}</span>
-            <span className="text-xl font-medium opacity-80 mb-1">т.</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              {creditIssued > 0 && (
-                <p className="text-xs opacity-70">Тест. токены: {creditIssued}</p>
-              )}
-              <p className="text-xs opacity-70">Потрачено: {wallet?.total_spent ?? 0} т.</p>
+        <div className="bg-slate-900 dark:bg-slate-800 rounded-3xl p-6 text-white shadow-lg relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-48 h-48 bg-primary/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/4" />
+          <div className="relative">
+            <p className="text-sm font-medium text-slate-300 mb-1">Баланс токенов</p>
+            <div className="flex items-end gap-2 mb-5">
+              <span className="text-5xl font-bold tracking-tight">{balance}</span>
+              <span className="text-xl font-medium text-slate-400 mb-1">т.</span>
             </div>
-            <button
-              onClick={() => document.getElementById("packages-section")?.scrollIntoView({ behavior: "smooth" })}
-              className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 transition-colors px-4 py-2 rounded-xl text-sm font-semibold"
-            >
-              <Plus size={16} /> Пополнить
-            </button>
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                {creditIssued > 0 && (
+                  <p className="text-xs text-slate-400">Тест. токены: {creditIssued}</p>
+                )}
+                <p className="text-xs text-slate-400">Потрачено: {wallet?.total_spent ?? 0} т.</p>
+              </div>
+              <button
+                onClick={() => document.getElementById("packages-section")?.scrollIntoView({ behavior: "smooth" })}
+                className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 transition-colors px-4 py-2.5 rounded-xl text-sm font-semibold border border-white/20"
+              >
+                <Plus size={16} /> Пополнить
+              </button>
+            </div>
           </div>
         </div>
 
@@ -415,18 +418,18 @@ export default function WalletPage() {
                       )}
                       <button
                         onClick={() => setSelectedPkg(pkg)}
-                        className={`w-full bg-card border rounded-2xl p-4 flex items-center justify-between gap-3 text-left transition-all active:scale-[0.98] ${isBest ? "border-amber-400 shadow-sm shadow-amber-100" : "border-border"}`}
+                        className={`w-full bg-card rounded-2xl p-4 flex items-center justify-between gap-3 text-left transition-all shadow-sm hover:shadow active:scale-[0.98] ${isBest ? "ring-1 ring-primary/30" : ""}`}
                       >
-                        <div className="space-y-0.5">
+                        <div className="space-y-1">
                           <p className="font-semibold text-sm">{pkg.name}</p>
                           <div className="flex items-center gap-2">
-                            <span className="flex items-center gap-1 text-amber-600 font-bold text-base">
+                            <span className="flex items-center gap-1 text-primary font-bold text-base">
                               <Coins size={15} /> {pkg.tokens_count} т.
                             </span>
-                            <span className="text-xs text-muted-foreground">· {pkg.price_per_token} ₽/т.</span>
+                            <span className="text-xs text-muted-foreground">{pkg.price_per_token} ₽/т.</span>
                           </div>
                         </div>
-                        <div className="flex-shrink-0 h-11 px-4 rounded-xl bg-green-500 text-white font-semibold text-sm flex items-center">
+                        <div className="flex-shrink-0 h-11 px-4 rounded-xl bg-primary text-primary-foreground font-semibold text-sm flex items-center shadow-sm">
                           {(pkg.price_rub ?? 0).toLocaleString("ru-RU")} ₽
                         </div>
                       </button>
@@ -442,8 +445,10 @@ export default function WalletPage() {
         <section className="space-y-3">
           <h2 className="text-base font-bold">История операций</h2>
           {transactions.length === 0 && !txLoading ? (
-            <div className="bg-muted/40 rounded-2xl px-4 py-8 text-center text-sm text-muted-foreground">
-              Операций ещё нет
+            <div className="bg-card rounded-2xl p-8 text-center">
+              <HistoryIcon size={32} className="text-muted-foreground/30 mx-auto mb-3" />
+              <p className="text-sm font-medium text-foreground">Операций ещё нет</p>
+              <p className="text-xs text-muted-foreground mt-1">Здесь будет история всех операций</p>
             </div>
           ) : (
             <div className="space-y-2">
@@ -451,23 +456,15 @@ export default function WalletPage() {
                 const meta = TX_META[tx.type] ?? { label: tx.type, color: "text-foreground", icon: null, sign: "" };
                 const positive = ["purchase", "credit", "refund", "bonus"].includes(tx.type) ||
                   (tx.type === "adjustment" && tx.tokens_amount > 0);
+                const accentColor = tx.type === "credit" ? "border-l-info" : positive ? "border-l-success" : "border-l-destructive";
                 return (
                   <div key={tx.id}
-                    className="bg-card border border-border rounded-xl px-4 py-3 flex items-center gap-3">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                      tx.type === "credit"
-                        ? "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
-                        : positive
-                          ? "bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400"
-                          : "bg-red-100 dark:bg-red-900/30 text-red-500 dark:text-red-400"
-                    }`}>
-                      {meta.icon}
-                    </div>
+                    className={`bg-card rounded-xl px-4 py-3 flex items-center gap-3 shadow-sm border-l-4 ${accentColor}`}>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-sm font-medium">{meta.label}</span>
                         {tx.type === "credit" && (
-                          <span className="text-[10px] font-semibold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 px-1.5 py-0.5 rounded-full">
+                          <span className="text-[10px] font-semibold bg-info/10 text-info px-1.5 py-0.5 rounded-full">
                             Тестовый токен
                           </span>
                         )}
@@ -478,7 +475,7 @@ export default function WalletPage() {
                       </p>
                       <p className="text-[11px] text-muted-foreground">{fmtDate(tx.created_at)}</p>
                     </div>
-                    <div className={`text-sm font-bold tabular-nums ${meta.color}`}>
+                    <div className={`text-sm font-bold tabular-nums ${positive ? "text-success" : "text-destructive"}`}>
                       {positive ? "+" : "−"}{Math.abs(tx.tokens_amount)} т.
                     </div>
                   </div>

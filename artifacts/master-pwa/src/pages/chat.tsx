@@ -166,7 +166,7 @@ export default function ChatPage() {
                   <div
                     className={`max-w-[78%] rounded-2xl px-3.5 py-2.5 ${
                       msg.fromMaster
-                        ? "bg-primary text-white rounded-br-sm"
+                        ? "bg-primary text-primary-foreground rounded-br-sm"
                         : "bg-card border border-border text-foreground rounded-bl-sm"
                     }`}
                   >
@@ -190,7 +190,7 @@ export default function ChatPage() {
                       </p>
                     )}
                     <div className={`flex items-center gap-1 mt-1 justify-end text-[10px] ${
-                      msg.fromMaster ? "text-white/70" : "text-muted-foreground"
+                      msg.fromMaster ? "text-primary-foreground/70" : "text-muted-foreground"
                     }`}>
                       <span>{formatTime(msg.createdAt)}</span>
                       {msg.editedAt && <span className="italic">ред.</span>}
@@ -256,7 +256,7 @@ export default function ChatPage() {
           <button
             onClick={sendMessage}
             disabled={!canSend}
-            className="shrink-0 w-11 h-11 rounded-xl bg-primary text-white flex items-center justify-center active:opacity-80 disabled:opacity-50"
+            className="shrink-0 w-11 h-11 rounded-xl bg-primary text-primary-foreground flex items-center justify-center active:opacity-80 disabled:opacity-50"
           >
             {sending
               ? <Loader2 size={18} className="animate-spin" />

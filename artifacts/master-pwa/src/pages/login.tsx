@@ -47,7 +47,7 @@ const SpecChip = memo(function SpecChip({
       onClick={() => onToggle(spec)}
       className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-all ${
         active
-          ? "bg-primary text-white border-primary shadow-sm"
+          ? "bg-primary text-primary-foreground border-primary shadow-sm"
           : "bg-card text-muted-foreground border-input hover:border-primary/50 hover:text-foreground"
       }`}
     >
@@ -145,7 +145,7 @@ function PricesStep({
         onClick={onSubmit}
         disabled={loading}
         style={{ minHeight: 52 }}
-        className="w-full bg-primary text-white font-semibold text-base rounded-xl disabled:opacity-50 transition-opacity active:opacity-80 flex items-center justify-center gap-2"
+        className="w-full bg-primary text-primary-foreground font-semibold text-base rounded-xl disabled:opacity-50 transition-opacity active:opacity-80 flex items-center justify-center gap-2"
       >
         {loading
           ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -445,7 +445,7 @@ export default function LoginPage() {
                 type="submit"
                 disabled={forgotLoading || (forgotNewPass.length > 0 && forgotNewPass !== forgotNewPassConfirm)}
                 style={{ minHeight: 52 }}
-                className="w-full bg-primary text-white font-semibold text-base rounded-xl disabled:opacity-50 transition-opacity active:opacity-80 flex items-center justify-center gap-2"
+                className="w-full bg-primary text-primary-foreground font-semibold text-base rounded-xl disabled:opacity-50 transition-opacity active:opacity-80 flex items-center justify-center gap-2"
               >
                 {forgotLoading
                   ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -540,7 +540,7 @@ export default function LoginPage() {
               type="submit"
               disabled={loading}
               style={{ minHeight: 52 }}
-              className="w-full bg-primary text-white font-semibold text-base rounded-xl disabled:opacity-50 transition-opacity active:opacity-80 flex items-center justify-center gap-2"
+              className="w-full bg-primary text-primary-foreground font-semibold text-base rounded-xl disabled:opacity-50 transition-opacity active:opacity-80 flex items-center justify-center gap-2"
             >
               {loading
                 ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -666,7 +666,7 @@ export default function LoginPage() {
               type="submit"
               disabled={loading}
               style={{ minHeight: 52 }}
-              className="w-full bg-primary text-white font-semibold text-base rounded-xl disabled:opacity-50 transition-opacity active:opacity-80 flex items-center justify-center gap-2"
+              className="w-full bg-primary text-primary-foreground font-semibold text-base rounded-xl disabled:opacity-50 transition-opacity active:opacity-80 flex items-center justify-center gap-2"
             >
               Далее — указать цены →
             </button>

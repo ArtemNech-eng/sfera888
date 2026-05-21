@@ -391,12 +391,12 @@ export default function PendingContractPage() {
           <div className="relative">
             {avatarUrl
               ? <img src={avatarUrl} alt={master?.alias} className="w-16 h-16 rounded-full object-cover shadow-md" />
-              : <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center text-white text-xl font-bold shadow-md">{initials}</div>}
+              : <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-xl font-bold shadow-md">{initials}</div>}
             <button onClick={() => avatarInputRef.current?.click()} disabled={uploading}
               className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-primary border-2 border-background flex items-center justify-center shadow active:opacity-80 disabled:opacity-50">
               {uploading
-                ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                : <Camera size={12} className="text-white" />}
+                ? <div className="w-3 h-3 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
+                : <Camera size={12} className="text-primary-foreground" />}
             </button>
             <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
           </div>
@@ -415,7 +415,7 @@ export default function PendingContractPage() {
               <div key={s} className="flex items-center flex-1">
                 <div className="flex flex-col items-center gap-1 flex-1">
                   <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
-                    isDone ? "bg-emerald-500 text-white" : isActive ? "bg-primary text-white" : "bg-muted border border-border text-muted-foreground"
+                    isDone ? "bg-emerald-500 text-white" : isActive ? "bg-primary text-primary-foreground" : "bg-muted border border-border text-muted-foreground"
                   }`}>
                     {isDone ? <CheckCircle size={14} /> : i + 1}
                   </div>
@@ -498,7 +498,7 @@ export default function PendingContractPage() {
 
             <button
               onClick={() => { if (validateData()) setStep("passport"); }}
-              className="w-full h-12 bg-primary text-white font-semibold rounded-xl active:opacity-80"
+              className="w-full h-12 bg-primary text-primary-foreground font-semibold rounded-xl active:opacity-80"
             >
               Далее — загрузить паспорт
             </button>
@@ -538,7 +538,7 @@ export default function PendingContractPage() {
 
             <button
               onClick={() => setStep("data")}
-              className="w-full h-12 bg-primary text-white font-semibold rounded-xl active:opacity-80"
+              className="w-full h-12 bg-primary text-primary-foreground font-semibold rounded-xl active:opacity-80"
             >
               Ознакомлен, продолжить
             </button>
@@ -623,7 +623,7 @@ export default function PendingContractPage() {
             <button
               onClick={() => (passportFile && passportRegFile) ? setStep("confirm") : toast.error("Загрузите оба фото паспорта")}
               disabled={!passportFile || !passportRegFile}
-              className="w-full h-12 bg-primary text-white font-semibold rounded-xl active:opacity-80 disabled:opacity-40">
+              className="w-full h-12 bg-primary text-primary-foreground font-semibold rounded-xl active:opacity-80 disabled:opacity-40">
               Далее
             </button>
             <button onClick={() => setStep("data")} className="w-full text-center text-xs text-muted-foreground py-1">
@@ -672,7 +672,7 @@ export default function PendingContractPage() {
             <label className="flex items-start gap-3 cursor-pointer select-none rounded-xl border border-border bg-card p-3">
               <div onClick={() => setAgreed(v => !v)}
                 className={`mt-0.5 w-5 h-5 rounded flex items-center justify-center border-2 shrink-0 transition-colors ${agreed ? "bg-primary border-primary" : "border-border"}`}>
-                {agreed && <CheckCircle size={12} className="text-white" />}
+                {agreed && <CheckCircle size={12} className="text-primary-foreground" />}
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed">
                 Я ознакомился с условиями договора-оферты, принимаю их в полном объёме и подтверждаю, что прикреплённый документ является моим паспортом гражданина РФ, а указанные данные верны.
@@ -680,7 +680,7 @@ export default function PendingContractPage() {
             </label>
 
             <button onClick={handleSign} disabled={!agreed || signing}
-              className="w-full h-12 bg-primary text-white font-bold rounded-xl active:opacity-80 disabled:opacity-40 flex items-center justify-center gap-2">
+              className="w-full h-12 bg-primary text-primary-foreground font-bold rounded-xl active:opacity-80 disabled:opacity-40 flex items-center justify-center gap-2">
               {signing ? (
                 <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Проверяем паспорт...</>
               ) : (
@@ -706,7 +706,7 @@ export default function PendingContractPage() {
                 После подтверждения вы автоматически получите доступ к заявкам — страница обновится сама.
               </p>
             </div>
-            <button onClick={refresh} className="w-full h-12 bg-primary text-white font-semibold rounded-xl active:opacity-80">
+            <button onClick={refresh} className="w-full h-12 bg-primary text-primary-foreground font-semibold rounded-xl active:opacity-80">
               Ожидать подтверждения
             </button>
           </div>

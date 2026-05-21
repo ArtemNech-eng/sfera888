@@ -4,6 +4,7 @@ import { useAuth } from "@/lib/auth";
 import { api, resolvePhotoUrl } from "@/lib/api";
 import { toast } from "sonner";
 import { usePushNotifications } from "@/lib/usePushNotifications";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Bell, CheckCircle2, XCircle, AlertTriangle, Star,
   MapPin, Calendar, MessageSquare, Clock,
@@ -1521,8 +1522,14 @@ export default function HomePage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      <div className="px-4 pt-5 pb-4 space-y-5">
+        <Skeleton className="h-8 w-40" />
+        <Skeleton className="h-24 w-full rounded-2xl" />
+        <div className="space-y-3">
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-72 w-full rounded-2xl" />
+          <Skeleton className="h-72 w-full rounded-2xl" />
+        </div>
       </div>
     );
   }
@@ -1559,7 +1566,7 @@ export default function HomePage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold">{master?.alias}</h1>
+          <h1 className="text-xl font-bold tracking-tight">{master?.alias}</h1>
           <p className="text-sm text-muted-foreground mt-0.5">{master?.city}</p>
         </div>
         <div className="flex items-center gap-2">
@@ -1568,14 +1575,14 @@ export default function HomePage() {
             <button
               type="button"
               onClick={() => setLocation("/wallet")}
-              className="flex items-center gap-1 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-2.5 py-1.5 rounded-xl"
+              className="flex items-center gap-1 bg-card border border-border px-2.5 py-1.5 rounded-xl shadow-xs hover:shadow-sm transition-shadow"
             >
-              <Coins size={13} className="shrink-0" />
-              <span className="font-semibold text-sm leading-none">{data?.walletBalance ?? 0} т.</span>
+              <Coins size={13} className="shrink-0 text-primary" />
+              <span className="font-semibold text-sm leading-none">{data?.walletBalance ?? 0}</span>
             </button>
           )}
-          <div className="flex items-center gap-1 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-2.5 py-1.5 rounded-xl">
-            <Star size={13} fill="currentColor" />
+          <div className="flex items-center gap-1 bg-card border border-border px-2.5 py-1.5 rounded-xl shadow-xs">
+            <Star size={13} className="text-warning" fill="currentColor" />
             <span className="font-semibold text-sm">{master?.rating?.toFixed(1)}</span>
           </div>
         </div>
@@ -1583,20 +1590,18 @@ export default function HomePage() {
 
       {/* Active orders info */}
       {hasActiveOrders && (
-        <div className={`flex items-center gap-3 border rounded-xl p-3 ${
-          atLimit
-            ? "bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800"
-            : "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800"
+        <div className={`flex items-center gap-3 bg-card rounded-2xl p-4 shadow-sm ${
+          atLimit ? "border-l-4 border-l-warning" : "border-l-4 border-l-primary"
         }`}>
-          <Briefcase size={18} className={`shrink-0 ${atLimit ? "text-orange-500" : "text-blue-500"}`} />
-          <div>
-            <p className={`text-sm font-semibold ${atLimit ? "text-orange-700 dark:text-orange-400" : "text-blue-700 dark:text-blue-400"}`}>
+          <Briefcase size={20} className={`shrink-0 ${atLimit ? "text-warning" : "text-primary"}`} />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-foreground">
               {atLimit ? `Лимит заказов (${active.length}/${orderLimit})` : `В работе (${active.length}/${orderLimit})`}
             </p>
-            <p className={`text-xs ${atLimit ? "text-orange-600 dark:text-orange-500" : "text-blue-600 dark:text-blue-500"}`}>
+            <p className="text-xs text-muted-foreground mt-0.5">
               {atLimit
-                ? "Закройте текущие заказы, чтобы принимать новые."
-                : "Вы можете принять ещё один заказ."}
+                ? "Закройте текущие заказы, чтобы принимать новые"
+                : "Вы можете принять ещё один заказ"}
             </p>
           </div>
         </div>
@@ -1604,11 +1609,11 @@ export default function HomePage() {
 
       {/* Unavailable warning */}
       {!hasActiveOrders && !isAvailable && (
-        <div className="flex items-center gap-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3">
-          <PauseCircle size={18} className="text-red-500 shrink-0" />
-          <div>
-            <p className="text-sm font-semibold text-red-700 dark:text-red-400">Вы недоступны</p>
-            <p className="text-xs text-red-600 dark:text-red-500">Новые заявки не поступают. Включите приём выше.</p>
+        <div className="flex items-center gap-3 bg-card rounded-2xl p-4 shadow-sm border-l-4 border-l-destructive">
+          <PauseCircle size={20} className="text-destructive shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-foreground">Вы недоступны</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Новые заявки не поступают</p>
           </div>
         </div>
       )}
@@ -1618,22 +1623,22 @@ export default function HomePage() {
 
       {/* Debt warning */}
       {master && (master.debt ?? 0) > 0 && (
-        <div className="flex items-center gap-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3">
-          <AlertTriangle size={18} className="text-red-500 shrink-0" />
-          <div>
-            <p className="text-sm font-semibold text-red-700 dark:text-red-400">Задолженность</p>
-            <p className="text-xs text-red-600 dark:text-red-500">{(master.debt ?? 0).toLocaleString("ru-RU")} ₽ — свяжитесь с менеджером</p>
+        <div className="flex items-center gap-3 bg-card rounded-2xl p-4 shadow-sm border-l-4 border-l-destructive">
+          <AlertTriangle size={20} className="text-destructive shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-foreground">Задолженность</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{(master.debt ?? 0).toLocaleString("ru-RU")} ₽ — свяжитесь с менеджером</p>
           </div>
         </div>
       )}
 
       {/* FOMO block banner */}
       {fomoBlock?.isBlocked && available.length > 0 && (
-        <div className="flex items-start gap-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-300 dark:border-orange-700 rounded-xl p-3">
-          <Lock size={18} className="text-orange-500 shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-semibold text-orange-700 dark:text-orange-400">Отклики заблокированы</p>
-            <p className="text-xs text-orange-600 dark:text-orange-500 mt-0.5">{fomoBlock.reason}</p>
+        <div className="flex items-start gap-3 bg-card rounded-2xl p-4 shadow-sm border-l-4 border-l-warning">
+          <Lock size={20} className="text-warning shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-foreground">Отклики заблокированы</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{fomoBlock.reason}</p>
           </div>
         </div>
       )}
@@ -1651,64 +1656,72 @@ export default function HomePage() {
               onSwipeRight={() => handleSwipeRespond(order)}
               onSwipeLeft={() => handleSwipeReject(order)}>
               <button onClick={() => setSelectedAvail(order)}
-                className="w-full bg-primary/10 dark:bg-primary/15 border border-primary/30 rounded-2xl overflow-hidden text-left">
+                className="w-full bg-card rounded-2xl overflow-hidden text-left shadow-sm hover:shadow transition-shadow active:scale-[0.99]">
                 {order.photos.length > 0 && (
-                  <img src={resolvePhotoUrl(order.photos[0])} alt="фото" className="w-full object-cover" style={{ height: 130 }} />
+                  <img src={resolvePhotoUrl(order.photos[0])} alt="фото" className="w-full object-cover" style={{ height: 160 }} />
                 )}
-                <div className="p-4 space-y-2">
+                <div className="p-4 space-y-3">
+                  {/* Top row: ID + timer */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="font-bold text-sm text-primary">Заявка #{order.leadId ?? order.id}</span>
+                      <span className="text-xs font-medium text-muted-foreground">#{order.leadId ?? order.id}</span>
                       {order.isRepeatClient && (
-                        <span className="flex items-center gap-0.5 text-xs text-pink-500 font-semibold">
+                        <span className="flex items-center gap-0.5 text-[11px] font-semibold text-pink-500">
                           <Heart size={10} fill="currentColor" /> Ваш клиент
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1">
                       <DispatchTimer dispatchedAt={order.dispatchedAt} />
-                      <ChevronRight size={14} className="text-primary opacity-60" />
+                      <ChevronRight size={14} className="text-muted-foreground/40" />
                     </div>
                   </div>
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-1.5 text-sm font-medium">
-                      <Wrench size={13} className="text-primary shrink-0" />
-                      {order.serviceType} · {order.area} м²
-                    </div>
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+
+                  {/* Service + area */}
+                  <div>
+                    <h3 className="text-[17px] font-semibold leading-tight text-foreground">
+                      {order.serviceType}
+                    </h3>
+                    <p className="text-sm text-muted-foreground mt-0.5">{order.area} м²</p>
+                  </div>
+
+                  {/* Meta row */}
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1">
                       <MapPin size={12} className="shrink-0" />
                       {order.city}{order.district ? `, ${order.district}` : ""}
-                    </div>
+                    </span>
                     {order.scheduledAt && (
-                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">
                         <Calendar size={12} className="shrink-0" />
                         {formatDate(order.scheduledAt)}
-                      </div>
-                    )}
-                    {/* Competitor badge */}
-                    {order.competitorCount > 0 ? (
-                      <div className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 font-medium">
-                        <Users size={11} /> {order.competitorCount} {order.competitorCount === 1 ? "мастер откликнулся" : "мастера откликнулись"}
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
-                        <CheckCircle2 size={11} /> Первый отклик
-                      </div>
+                      </span>
                     )}
                   </div>
-                  {/* Token cost row */}
-                  {order.paymentModel === "token" && order.tokensCost != null && (
-                    <div className="flex items-center justify-between pt-1">
-                      <span className="flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full">
-                        <Coins size={11} /> {order.tokensCost} токен(а)
+
+                  {/* Bottom row: token cost + competition */}
+                  <div className="flex items-center justify-between pt-1">
+                    {order.paymentModel === "token" && order.tokensCost != null ? (
+                      <span className={`flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full ${
+                        (order.tokensCost ?? 1) > walletBalance
+                          ? "bg-muted text-muted-foreground"
+                          : "bg-primary/8 text-primary dark:bg-primary/15"
+                      }`}>
+                        <Coins size={12} /> {order.tokensCost} т.
                       </span>
-                      {(order.tokensCost ?? 1) > walletBalance ? (
-                        <span className="text-xs text-slate-400 font-medium">Недостаточно токенов</span>
+                    ) : (
+                      <span />
+                    )}
+                    <span className={`flex items-center gap-1 text-xs font-medium ${
+                      order.competitorCount > 0 ? "text-warning" : "text-success"
+                    }`}>
+                      {order.competitorCount > 0 ? (
+                        <><Users size={12} /> {order.competitorCount} мастеров</>
                       ) : (
-                        <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Баланс: {walletBalance} т.</span>
+                        <><CheckCircle2 size={12} /> Быстрый отклик</>
                       )}
-                    </div>
-                  )}
+                    </span>
+                  </div>
                 </div>
               </button>
             </SwipeableCard>
@@ -1718,49 +1731,50 @@ export default function HomePage() {
 
       {/* Landing leads — direct from landing page */}
       {landingLeads.length > 0 && (
-        <section className="space-y-2">
+        <section className="space-y-3">
           <div className="flex items-center gap-2">
-            <Phone size={15} className="text-emerald-600" />
+            <Phone size={15} className="text-primary" />
             <h2 className="font-semibold text-sm">Прямые заявки ({landingLeads.length})</h2>
           </div>
           {landingLeads.map(lead => (
             <button key={lead.id} onClick={() => setSelectedLanding(lead)}
-              className="w-full bg-card border border-border rounded-2xl overflow-hidden text-left active:opacity-80">
+              className="w-full bg-card rounded-2xl overflow-hidden text-left shadow-sm hover:shadow transition-shadow active:scale-[0.99]">
               {lead.photos.length > 0 && (
-                <img src={resolvePhotoUrl(lead.photos[0])} alt="фото" className="w-full object-cover" style={{ height: 130 }} />
+                <img src={resolvePhotoUrl(lead.photos[0])} alt="фото" className="w-full object-cover" style={{ height: 160 }} />
               )}
-              <div className="p-4 space-y-2">
+              <div className="p-4 space-y-3">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-sm text-primary">Прямая заявка #{lead.id}</span>
-                    <span className="bg-primary/10 text-primary text-xs font-semibold px-2 py-0.5 rounded-full">Прямая</span>
-                  </div>
+                  <span className="text-xs font-medium text-muted-foreground">Прямая #{lead.id}</span>
                   <span className="text-xs text-muted-foreground">
                     {formatDistanceToNow(new Date(lead.createdAt), { addSuffix: true, locale: ru })}
                   </span>
                 </div>
-                <div className="space-y-1">
-                  <div className="flex items-center gap-1.5 text-sm font-medium">
-                    <Wrench size={13} className="text-primary shrink-0" />
-                    {lead.serviceType} · {lead.area} м²
-                  </div>
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <div>
+                  <h3 className="text-[17px] font-semibold leading-tight">{lead.serviceType}</h3>
+                  <p className="text-sm text-muted-foreground mt-0.5">{lead.area} м²</p>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">
                     <MapPin size={12} className="shrink-0" />
                     {lead.city}{lead.district ? `, ${lead.district}` : ""}
-                  </div>
-                  {lead.comment && (
-                    <p className="text-xs text-muted-foreground line-clamp-2">{lead.comment}</p>
-                  )}
-                </div>
-                <div className="flex items-center justify-between pt-1">
-                  <span className="flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full">
-                    <Coins size={11} /> {lead.tokensCost} токен(а)
                   </span>
-                  {(lead.tokensCost ?? 1) > walletBalance ? (
-                    <span className="text-xs text-slate-400 font-medium">Недостаточно токенов</span>
-                  ) : (
-                    <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Баланс: {walletBalance} т.</span>
-                  )}
+                </div>
+                {lead.comment && (
+                  <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">{lead.comment}</p>
+                )}
+                <div className="flex items-center justify-between pt-1">
+                  <span className={`flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full ${
+                    (lead.tokensCost ?? 1) > walletBalance
+                      ? "bg-muted text-muted-foreground"
+                      : "bg-primary/8 text-primary dark:bg-primary/15"
+                  }`}>
+                    <Coins size={12} /> {lead.tokensCost} т.
+                  </span>
+                  <span className={`text-xs font-medium ${
+                    (lead.tokensCost ?? 1) > walletBalance ? "text-muted-foreground" : "text-success"
+                  }`}>
+                    {(lead.tokensCost ?? 1) > walletBalance ? "Недостаточно токенов" : "Можно открыть"}
+                  </span>
                 </div>
               </div>
             </button>
@@ -1770,31 +1784,32 @@ export default function HomePage() {
 
       {/* Pending */}
       {pending.length > 0 && (
-        <section className="space-y-2">
+        <section className="space-y-3">
           <div className="flex items-center gap-2">
-            <Clock size={15} className="text-amber-500" />
+            <Clock size={15} className="text-warning" />
             <h2 className="font-semibold text-sm">Ожидаю решения ({pending.length})</h2>
           </div>
           {pending.map(order => (
             <button key={order.id} onClick={() => setSelectedPending(order)}
-              className="w-full bg-amber-50 dark:bg-amber-900/15 border border-amber-200 dark:border-amber-800/40 rounded-2xl overflow-hidden text-left">
+              className="w-full bg-card rounded-2xl overflow-hidden text-left shadow-sm hover:shadow transition-shadow active:scale-[0.99]">
               {order.photos.length > 0 && (
-                <img src={resolvePhotoUrl(order.photos[0])} alt="фото" className="w-full object-cover" style={{ height: 90 }} />
+                <img src={resolvePhotoUrl(order.photos[0])} alt="фото" className="w-full object-cover" style={{ height: 120 }} />
               )}
-              <div className="p-4 space-y-1.5">
+              <div className="p-4 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-sm text-amber-800 dark:text-amber-300">Заявка #{order.leadId ?? order.id}</span>
-                  <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
+                  <span className="text-xs font-medium text-muted-foreground">#{order.leadId ?? order.id}</span>
+                  <span className="flex items-center gap-1 text-xs font-semibold text-success">
                     <CheckCircle2 size={12} /> Отклик отправлен
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5 text-sm font-medium">
-                  <Wrench size={13} className="text-amber-500 shrink-0" />
-                  {order.serviceType} · {order.area} м²
-                </div>
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <MapPin size={12} className="shrink-0" />
-                  {order.city}{order.district ? `, ${order.district}` : ""}
+                <h3 className="text-[15px] font-semibold text-foreground">{order.serviceType}</h3>
+                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <MapPin size={12} className="shrink-0" />
+                    {order.city}{order.district ? `, ${order.district}` : ""}
+                  </span>
+                  <span>·</span>
+                  <span>{order.area} м²</span>
                 </div>
               </div>
             </button>
@@ -1803,27 +1818,32 @@ export default function HomePage() {
       )}
 
       {/* Active orders */}
-      <section className="space-y-2">
+      <section className="space-y-3">
         <h2 className="font-semibold text-sm">Активные заказы</h2>
         {active.length === 0 ? (
-          <div className="text-center py-10 text-muted-foreground text-sm">Нет активных заказов</div>
+          <div className="bg-card rounded-2xl p-8 text-center">
+            <Briefcase size={32} className="text-muted-foreground/30 mx-auto mb-3" />
+            <p className="text-sm font-medium text-foreground">Нет активных заказов</p>
+            <p className="text-xs text-muted-foreground mt-1">Новые заявки появятся здесь</p>
+          </div>
         ) : (
           active.map(order => (
             <button key={order.id} onClick={() => setLocation(`/orders?expand=${order.id}`)}
-              className="w-full bg-card border border-border rounded-2xl p-4 text-left space-y-2 active:opacity-80">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-sm">{order.city}{order.district ? `, ${order.district}` : ""}</span>
-                <span className="text-xs text-muted-foreground">#{order.leadId ?? order.id}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  {order.serviceType} · {order.area} м²
-                </div>
-                <span className="text-xs font-semibold text-primary">
+              className="w-full bg-card rounded-2xl p-4 text-left shadow-sm hover:shadow transition-shadow active:scale-[0.99]">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-muted-foreground">#{order.leadId ?? order.id}</span>
+                <span className="flex items-center gap-1.5 text-xs font-semibold text-primary">
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
                   {order.masterWorkStatus
                     ? workStatusLabels[order.masterWorkStatus] ?? order.masterWorkStatus
                     : orderStatusLabels[order.status] ?? order.status}
                 </span>
+              </div>
+              <h3 className="text-[15px] font-semibold text-foreground">{order.serviceType}</h3>
+              <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
+                <span>{order.city}{order.district ? `, ${order.district}` : ""}</span>
+                <span>·</span>
+                <span>{order.area} м²</span>
               </div>
             </button>
           ))

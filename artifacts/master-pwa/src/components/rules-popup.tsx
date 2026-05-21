@@ -101,7 +101,7 @@ export default function RulesPopup() {
           <div className="space-y-3">
             <button
               onClick={openRules}
-              className="w-full flex items-center justify-between px-4 py-3.5 rounded-2xl bg-primary text-white font-semibold text-sm transition-opacity active:opacity-80"
+              className="w-full flex items-center justify-between px-4 py-3.5 rounded-2xl bg-primary text-primary-foreground font-semibold text-sm transition-opacity active:opacity-80"
               style={{ minHeight: 52 }}
             >
               <span>Читать правила работы</span>

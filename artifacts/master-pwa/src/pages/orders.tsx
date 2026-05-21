@@ -3,10 +3,12 @@ import { createPortal } from "react-dom";
 import { api, uploadPhoto, resolvePhotoUrl } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   ChevronDown, ChevronUp, MapPin, Phone, Ruler, Calendar,
   Camera, CheckCircle2, Image, FileText, Loader2, X, XCircle,
   ReceiptText, Copy, Check, Plus, Trash2, Printer, Coins, RotateCcw,
+  ClipboardList, AlertTriangle,
 } from "lucide-react";
 
 function printEstimate(
@@ -668,7 +670,7 @@ function ReceiptModal({
             <>
               <button
                 onClick={() => handleCopy(result.publicUrl)}
-                className="w-full h-12 bg-primary text-white font-semibold rounded-xl flex items-center justify-center gap-2"
+                className="w-full h-12 bg-primary text-primary-foreground font-semibold rounded-xl flex items-center justify-center gap-2"
               >
                 {copied ? <Check size={16} /> : <Copy size={16} />}
                 {copied ? "Скопировано!" : "Скопировать ссылку"}
@@ -696,7 +698,7 @@ function ReceiptModal({
               <button
                 onClick={handleSubmit}
                 disabled={loading}
-                className="w-full h-12 bg-primary text-white font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-60"
+                className="w-full h-12 bg-primary text-primary-foreground font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-60"
               >
                 {loading ? <Loader2 size={16} className="animate-spin" /> : <ReceiptText size={16} />}
                 {isEdit ? "Сохранить изменения" : "Создать смету"}
@@ -847,25 +849,25 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
 
   return (
     <>
-      <div className="bg-card border border-border rounded-xl overflow-hidden">
+      <div className="bg-card rounded-2xl overflow-hidden shadow-sm">
         <button
-          className="w-full p-3.5 text-left flex items-center justify-between gap-2 active:opacity-80"
+          className="w-full p-4 text-left flex items-center justify-between gap-2 active:opacity-80"
           onClick={() => setExpanded(v => !v)}
         >
-          <div className="space-y-0.5 flex-1 min-w-0">
+          <div className="space-y-1 flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-semibold text-sm">
+              <span className="font-semibold text-[15px]">
                 {order.city}{order.district ? `, ${order.district}` : ""}
               </span>
               <span className="text-xs text-muted-foreground">#{order.leadId ?? order.id}</span>
               <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
                 order.status === "completed"
-                  ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
+                  ? "bg-success/10 text-success"
                   : order.status === "cancelled"
-                  ? "bg-gray-100 dark:bg-gray-800 text-gray-500"
+                  ? "bg-muted text-muted-foreground"
                   : isCancelRequested
-                  ? "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"
-                  : "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400"
+                  ? "bg-warning/10 text-warning"
+                  : "bg-primary/8 text-primary"
               }`}>
                 {statusLabel[order.status] ?? order.status}
               </span>
@@ -890,18 +892,18 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
         {expanded && (
           <div className="border-t border-border p-3.5 space-y-4">
 
-            {/* ── Красный алерт: смета не создана ─────────────────────── */}
+            {/* ── Alert: смета не создана ─────────────────────── */}
             {isActive && receiptsFetched && orderReceipts.length === 0 && (
-              <div className="flex items-start gap-3 bg-red-50 dark:bg-red-900/20 border-2 border-red-400 dark:border-red-600 rounded-xl p-3">
-                <div className="text-xl leading-none mt-0.5">🚨</div>
+              <div className="flex items-start gap-3 bg-card rounded-xl p-3 border-l-4 border-l-destructive shadow-sm">
+                <AlertTriangle size={18} className="text-destructive shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-red-700 dark:text-red-400 mb-1">Смета не создана</p>
-                  <p className="text-xs text-red-600 dark:text-red-500 leading-snug mb-2">Клиент не может внести предоплату. Создайте смету прямо сейчас.</p>
+                  <p className="text-sm font-bold text-foreground mb-1">Смета не создана</p>
+                  <p className="text-xs text-muted-foreground leading-snug mb-2">Клиент не может внести предоплату. Создайте смету прямо сейчас.</p>
                   <button
                     onClick={() => setShowNewReceipt(true)}
-                    className="inline-flex items-center gap-1.5 bg-red-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg"
+                    className="inline-flex items-center gap-1.5 bg-primary text-primary-foreground text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm"
                   >
-                    + Создать смету
+                    <Plus size={14} /> Создать смету
                   </button>
                 </div>
               </div>
@@ -934,9 +936,9 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
             </div>
 
             {isCancelRequested && order.cancelReason && (
-              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3 text-sm">
-                <p className="font-medium text-amber-700 dark:text-amber-400 mb-0.5">Причина отмены</p>
-                <p className="text-amber-600 dark:text-amber-500 text-xs">{order.cancelReason}</p>
+              <div className="bg-card rounded-xl p-3 text-sm border-l-4 border-l-warning shadow-sm">
+                <p className="font-medium text-foreground mb-0.5">Причина отмены</p>
+                <p className="text-muted-foreground text-xs">{order.cancelReason}</p>
               </div>
             )}
 
@@ -1007,7 +1009,7 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
                     <button
                       disabled={!!loadingStatus}
                       onClick={() => handleStatusStep(workStatusSteps[currentStepIdx + 1].key)}
-                      className="w-full h-11 bg-primary text-white font-semibold rounded-xl flex items-center justify-center gap-2 active:opacity-80 disabled:opacity-60 text-sm"
+                      className="w-full h-11 bg-primary text-primary-foreground font-semibold rounded-xl flex items-center justify-center gap-2 active:opacity-80 disabled:opacity-60 text-sm"
                     >
                       {loadingStatus ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
                       {workStatusSteps[currentStepIdx + 1].label}
@@ -1156,9 +1158,9 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
                   </div>
                 )}
                 {isRefundRequested && (
-                  <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl px-3 py-2.5">
-                    <Coins size={15} className="text-amber-500 shrink-0" />
-                    <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">Заявка на возврат токена ожидает решения администратора</p>
+                  <div className="flex items-center gap-2 bg-card rounded-xl px-3 py-2.5 border-l-4 border-l-warning shadow-sm">
+                    <Coins size={15} className="text-warning shrink-0" />
+                    <p className="text-xs text-foreground font-medium">Заявка на возврат токена ожидает решения администратора</p>
                   </div>
                 )}
 
@@ -1326,21 +1328,21 @@ function DispatchHistoryList() {
         const statusCfg = dispatchStatusConfig[d.status] ?? { label: d.status, color: "text-muted-foreground" };
         const finalStatus = orderStatusConfig[d.orderStatus] ?? d.orderStatus;
         return (
-          <div key={d.dispatchId} className="bg-card border border-border rounded-2xl p-4 space-y-2">
+          <div key={d.dispatchId} className="bg-card rounded-2xl p-4 shadow-sm space-y-2">
             <div className="flex items-center justify-between">
-              <span className="font-semibold text-sm">Заявка #{d.orderId}</span>
+              <span className="text-xs font-medium text-muted-foreground">#{d.orderId}</span>
               <span className={`text-xs font-semibold ${statusCfg.color}`}>{statusCfg.label}</span>
             </div>
-            <div className="flex items-center gap-1.5 text-sm text-foreground">
-              <span>{d.serviceType}</span>
-              <span className="text-muted-foreground">·</span>
-              <span className="text-muted-foreground">{d.area} м²</span>
+            <h3 className="text-[15px] font-semibold text-foreground">{d.serviceType}</h3>
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <MapPin size={11} className="shrink-0" />
+                {d.city}{d.district ? `, ${d.district}` : ""}
+              </span>
+              <span>·</span>
+              <span>{d.area} м²</span>
             </div>
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <MapPin size={11} className="shrink-0" />
-              {d.city}{d.district ? `, ${d.district}` : ""}
-            </div>
-            <div className="flex items-center justify-between text-xs text-muted-foreground pt-1 border-t border-border">
+            <div className="flex items-center justify-between text-xs text-muted-foreground pt-2 border-t border-border">
               <span>Итог: {finalStatus}</span>
               {d.dispatchedAt && (
                 <span>{new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short" }).format(new Date(d.dispatchedAt))}</span>
@@ -1402,12 +1404,20 @@ export default function OrdersPage() {
       {filter === "history" ? (
         <DispatchHistoryList />
       ) : loading ? (
-        <div className="flex items-center justify-center h-48">
-          <div className="w-7 h-7 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        <div className="space-y-3">
+          <Skeleton className="h-16 w-full rounded-xl" />
+          <Skeleton className="h-16 w-full rounded-xl" />
+          <Skeleton className="h-16 w-full rounded-xl" />
         </div>
       ) : orders.length === 0 ? (
-        <div className="text-center py-16 text-muted-foreground text-sm">
-          {filter === "active" ? "Нет активных заказов" : "Нет завершённых заказов"}
+        <div className="bg-card rounded-2xl p-8 text-center">
+          <ClipboardList size={32} className="text-muted-foreground/30 mx-auto mb-3" />
+          <p className="text-sm font-medium text-foreground">
+            {filter === "active" ? "Нет активных заказов" : "Нет завершённых заказов"}
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {filter === "active" ? "Новые заявки появятся здесь" : "Завершённые заказы будут здесь"}
+          </p>
         </div>
       ) : (
         <div className="space-y-3">

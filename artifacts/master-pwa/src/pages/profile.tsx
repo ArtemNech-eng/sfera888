@@ -50,9 +50,9 @@ interface ProfileData {
 
 function StatCard({ label, value, icon }: { label: string; value: string | number; icon: React.ReactNode }) {
   return (
-    <div className="bg-card border border-border rounded-xl p-3.5 space-y-1">
+    <div className="bg-card rounded-2xl p-4 shadow-sm space-y-1.5">
       <div className="flex items-center gap-1.5 text-muted-foreground text-xs">{icon}{label}</div>
-      <p className="text-xl font-bold">{value}</p>
+      <p className="text-2xl font-bold tracking-tight">{value}</p>
     </div>
   );
 }
@@ -157,7 +157,7 @@ function EditProfileModal({
           <button
             onClick={handleSave}
             disabled={loading}
-            className="h-9 px-4 bg-primary text-white font-semibold rounded-xl text-sm active:opacity-80 disabled:opacity-50 flex items-center gap-1.5"
+            className="h-9 px-4 bg-primary text-primary-foreground font-semibold rounded-xl text-sm active:opacity-80 disabled:opacity-50 flex items-center gap-1.5"
           >
             {loading ? <Loader2 size={15} className="animate-spin" /> : null}
             Готово
@@ -246,7 +246,7 @@ function EditProfileModal({
                             ? "bg-primary border-primary"
                             : "border-border bg-background"
                         }`}>
-                          {selected && <Check size={13} className="text-white" strokeWidth={2.5} />}
+                          {selected && <Check size={13} className="text-primary-foreground" strokeWidth={2.5} />}
                         </span>
                         <span className={`text-sm leading-snug ${selected ? "text-foreground font-medium" : "text-muted-foreground"}`}>
                           {s}
@@ -281,7 +281,7 @@ function EditProfileModal({
           <button
             onClick={handleSave}
             disabled={loading}
-            className="w-full h-12 bg-primary text-white font-bold rounded-2xl text-base active:opacity-80 disabled:opacity-50 flex items-center justify-center gap-2"
+            className="w-full h-12 bg-primary text-primary-foreground font-bold rounded-2xl text-base active:opacity-80 disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {loading
               ? <Loader2 size={18} className="animate-spin" />
@@ -758,7 +758,7 @@ export default function ProfilePage() {
               }}
             />
           ) : (
-            <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center text-white text-xl font-bold">
+            <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-xl font-bold">
               {initials}
             </div>
           )}
@@ -769,8 +769,8 @@ export default function ProfilePage() {
             className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-primary border-2 border-background flex items-center justify-center shadow-md active:opacity-80 disabled:opacity-50 transition-opacity"
           >
             {uploading
-              ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              : <Camera size={13} className="text-white" />}
+              ? <div className="w-3 h-3 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
+              : <Camera size={13} className="text-primary-foreground" />}
           </button>
 
           <input
@@ -819,10 +819,10 @@ export default function ProfilePage() {
       {data.phone && (
         <a
           href={`tel:${data.phone}`}
-          className="flex items-center gap-3 bg-card border border-border rounded-xl px-4 py-3"
+          className="flex items-center gap-3 bg-card rounded-xl px-4 py-3 shadow-sm"
         >
-          <Phone size={16} className="text-muted-foreground" />
-          <span className="text-sm">{data.phone}</span>
+          <Phone size={16} className="text-primary" />
+          <span className="text-sm font-medium">{data.phone}</span>
         </a>
       )}
 
@@ -837,11 +837,11 @@ export default function ProfilePage() {
       )}
 
       {data.tags && data.tags.length > 0 && (
-        <div className="bg-card border border-border rounded-xl p-3.5 space-y-2">
+        <div className="bg-card rounded-2xl p-4 shadow-sm space-y-2">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Метки</p>
           <div className="flex flex-wrap gap-2">
             {data.tags.map(tag => (
-              <span key={tag} className="text-xs px-2.5 py-1 rounded-full bg-muted text-muted-foreground font-medium border border-border">
+              <span key={tag} className="text-xs px-2.5 py-1 rounded-full bg-muted text-muted-foreground font-medium">
                 {tag}
               </span>
             ))}
@@ -963,7 +963,7 @@ export default function ProfilePage() {
       >
         <div className="flex items-center gap-2.5">
           <span className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
-            <BookOpen size={14} className="text-white" />
+            <BookOpen size={14} className="text-primary-foreground" />
           </span>
           Правила работы
         </div>

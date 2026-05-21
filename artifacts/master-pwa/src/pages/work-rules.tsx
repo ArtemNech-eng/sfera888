@@ -94,15 +94,15 @@ function SectionIcon({ children }: { children: React.ReactNode }) {
 }
 
 const ICONS = {
-  orders:   <SectionIcon><ClipboardList size={18} className="text-white" /></SectionIcon>,
-  estimate: <SectionIcon><FileText      size={18} className="text-white" /></SectionIcon>,
-  prepay:   <SectionIcon><CreditCard    size={18} className="text-white" /></SectionIcon>,
-  unpaid:   <SectionIcon><Clock         size={18} className="text-white" /></SectionIcon>,
-  earn:     <SectionIcon><TrendingUp    size={18} className="text-white" /></SectionIcon>,
-  site:     <SectionIcon><HardHat       size={18} className="text-white" /></SectionIcon>,
-  photo:    <SectionIcon><Camera        size={18} className="text-white" /></SectionIcon>,
-  warranty: <SectionIcon><ShieldCheck   size={18} className="text-white" /></SectionIcon>,
-  bonus:    <SectionIcon><Star          size={18} className="text-white" /></SectionIcon>,
+  orders:   <SectionIcon><ClipboardList size={18} className="text-primary-foreground" /></SectionIcon>,
+  estimate: <SectionIcon><FileText      size={18} className="text-primary-foreground" /></SectionIcon>,
+  prepay:   <SectionIcon><CreditCard    size={18} className="text-primary-foreground" /></SectionIcon>,
+  unpaid:   <SectionIcon><Clock         size={18} className="text-primary-foreground" /></SectionIcon>,
+  earn:     <SectionIcon><TrendingUp    size={18} className="text-primary-foreground" /></SectionIcon>,
+  site:     <SectionIcon><HardHat       size={18} className="text-primary-foreground" /></SectionIcon>,
+  photo:    <SectionIcon><Camera        size={18} className="text-primary-foreground" /></SectionIcon>,
+  warranty: <SectionIcon><ShieldCheck   size={18} className="text-primary-foreground" /></SectionIcon>,
+  bonus:    <SectionIcon><Star          size={18} className="text-primary-foreground" /></SectionIcon>,
 };
 
 interface Section {

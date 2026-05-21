@@ -23,35 +23,45 @@ export default function BottomNav() {
   }, []);
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border h-20 flex items-center justify-around px-1 max-w-[480px] mx-auto">
-      {tabs.map(({ path, icon: Icon, label }) => {
-        const active = location === path;
-        const isChatWithBadge = path === "/chat" && unread > 0;
-        return (
-          <button
-            key={path}
-            onClick={() => {
-              if (path === "/chat") setUnread(0);
-              setLocation(path);
-            }}
-            className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl transition-colors min-w-[52px] relative ${
-              active ? "text-primary" : "text-muted-foreground"
-            }`}
-          >
-            <div className="relative">
-              <Icon size={22} strokeWidth={active ? 2.5 : 1.8} />
-              {isChatWithBadge && (
-                <span className="absolute -top-1 -right-1.5 min-w-[16px] h-4 px-1 bg-destructive text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
-                  {unread > 9 ? "9+" : unread}
-                </span>
+    <div className="fixed bottom-0 left-0 right-0 z-50 flex justify-center pb-5 pointer-events-none">
+      <nav
+        className="pointer-events-auto flex items-center gap-1 px-2 py-2 rounded-full shadow-md mx-4"
+        style={{
+          background: "rgba(255,255,255,0.92)",
+          backdropFilter: "blur(20px) saturate(180%)",
+          WebkitBackdropFilter: "blur(20px) saturate(180%)",
+          border: "1px solid rgba(0,0,0,0.06)",
+        }}
+      >
+        {tabs.map(({ path, icon: Icon, label }) => {
+          const active = location === path;
+          const isChatWithBadge = path === "/chat" && unread > 0;
+          return (
+            <button
+              key={path}
+              onClick={() => {
+                if (path === "/chat") setUnread(0);
+                setLocation(path);
+              }}
+              className={`relative flex items-center gap-1.5 px-3 py-2 rounded-full transition-all duration-200 ${
+                active
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <div className="relative">
+                <Icon size={20} strokeWidth={active ? 2.2 : 1.7} />
+                {isChatWithBadge && (
+                  <span className="absolute -top-0.5 -right-1.5 w-2.5 h-2.5 bg-destructive rounded-full border-2 border-white dark:border-gray-900" />
+                )}
+              </div>
+              {active && (
+                <span className="text-xs font-semibold pr-0.5">{label}</span>
               )}
-            </div>
-            <span className={`text-[10px] font-medium leading-none ${active ? "text-primary" : ""}`}>
-              {label}
-            </span>
-          </button>
-        );
-      })}
-    </nav>
+            </button>
+          );
+        })}
+      </nav>
+    </div>
   );
 }

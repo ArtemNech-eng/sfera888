@@ -21,7 +21,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
           <p className="text-sm text-muted-foreground max-w-xs">Перезагрузите страницу или обратитесь к менеджеру.</p>
           <button
             onClick={() => window.location.reload()}
-            className="mt-2 px-5 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold"
+            className="mt-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold"
           >
             Перезагрузить
           </button>
@@ -112,7 +112,7 @@ function AppRoutes() {
     <div className="flex flex-col min-h-dvh">
       {showChrome && <MaxBotBanner />}
       {showChrome && <RulesPopup />}
-      <main className={`flex-1 overflow-auto ${showChrome ? "pb-20" : ""}`}>
+      <main className={`flex-1 overflow-auto ${showChrome ? "pb-24" : ""}`}>
         <AuthGuard>
           <Switch>
             <Route path="/login" component={LoginPage} />
