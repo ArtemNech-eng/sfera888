@@ -64,9 +64,9 @@ export default function Hero({ refSlug }: HeroProps) {
             )}
 
             <motion.h1 variants={item} className="text-5xl sm:text-6xl lg:text-7xl font-extrabold text-[#111827] leading-[1.1] mb-6 tracking-tight">
-              Проверенные мастера.{' '}
-              <span className="gradient-text">Ответ</span>{' '}
-              за 15–30 минут
+              Честный ремонт{' '}
+              <span className="gradient-text">начинается</span>{' '}
+              с проверенного мастера
             </motion.h1>
 
             <motion.p variants={item} className="text-gray-500 text-lg leading-relaxed mb-6 max-w-lg">
