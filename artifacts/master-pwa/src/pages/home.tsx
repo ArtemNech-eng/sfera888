@@ -1507,7 +1507,7 @@ export default function HomePage() {
       {/* Header with gradient */}
       <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-violet-500 via-purple-500 to-indigo-600 shadow-lg">
         <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4wNSI+PGNpcmNsZSBjeD0iMzAiIGN5PSIzMCIgcj0iMiIvPjwvZz48L2c+PC9zdmc+')] opacity-30" />
-        <div className="relative p-5 space-y-4">
+        <div className="relative p-4 space-y-3">
           {/* Row 1: Name + Test badge | Rating */}
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
@@ -1552,8 +1552,6 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* Daily checkin status chip */}
-      <DailyCheckinStatus />
 
       {/* Active orders info */}
       {hasActiveOrders && (
@@ -1698,8 +1696,8 @@ export default function HomePage() {
       {landingLeads.length > 0 && (
         <section className="space-y-3">
           <div className="flex items-center gap-2">
-            <Phone size={15} className="text-primary" />
-            <h2 className="font-semibold text-sm">Прямые заявки ({landingLeads.length})</h2>
+            <Phone size={15} className="text-amber-500" />
+            <h2 className="font-semibold text-sm text-amber-700 dark:text-amber-400">Прямые заявки ({landingLeads.length})</h2>
           </div>
           {landingLeads.map(lead => (
             <button key={lead.id} onClick={() => setSelectedLanding(lead)}
@@ -1784,10 +1782,13 @@ export default function HomePage() {
 
       {/* Active orders */}
       <section className="space-y-3">
-        <h2 className="font-semibold text-sm">Активные заказы</h2>
+        <div className="flex items-center gap-2">
+          <Briefcase size={15} className="text-emerald-500" />
+          <h2 className="font-semibold text-sm text-emerald-700 dark:text-emerald-400">Активные заказы</h2>
+        </div>
         {active.length === 0 ? (
           <div className="bg-card rounded-2xl p-8 text-center">
-            <Briefcase size={32} className="text-muted-foreground/30 mx-auto mb-3" />
+            <Briefcase size={32} className="text-emerald-500/40 mx-auto mb-3" />
             <p className="text-sm font-medium text-foreground">Нет активных заказов</p>
             <p className="text-xs text-muted-foreground mt-1">Новые заявки появятся здесь</p>
           </div>
