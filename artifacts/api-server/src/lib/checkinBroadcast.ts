@@ -1,6 +1,7 @@
 import { db, mastersTable, masterCheckinsTable, systemSettingsTable } from "@workspace/db";
 import { eq, isNotNull, and, isNull } from "drizzle-orm";
 import { sendMaxWithButtons, sendMaxMessage } from "../maxBot.js";
+import { sendPushToMaster } from "./push.js";
 
 // ─── Morning broadcast ────────────────────────────────────────────────────────
 
@@ -40,6 +41,17 @@ export async function broadcastCheckin(): Promise<void> {
         { text: "❌ Не готов", payload: "checkin:no" },
       ]]
     );
+
+    // Push notification to PWA
+    await sendPushToMaster(master.id, {
+      type: "checkin",
+      title: "☀️ Доброе утро!",
+      body: `${name}, вы сегодня готовы принимать заказы?`,
+      actions: [
+        { action: "checkin_yes", title: "✅ Готов" },
+        { action: "checkin_no", title: "❌ Не готов" },
+      ],
+    }).catch(() => {});
 
     await db.insert(masterCheckinsTable).values({
       masterId: master.id,

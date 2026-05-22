@@ -171,29 +171,8 @@ export async function performBroadcast(
     }
   }
 
-  // Filter out masters who said "not ready" in today's morning checkin
-  const todayStr = new Date().toISOString().split("T")[0];
-  const notReadyRows = await db
-    .select({ masterId: masterCheckinsTable.masterId })
-    .from(masterCheckinsTable)
-    .where(and(
-      eq(masterCheckinsTable.date, todayStr),
-      eq(masterCheckinsTable.isAvailable, false),
-    ));
-  const notReadyIds = new Set(notReadyRows.map(r => r.masterId));
-  const availableEligible = specialtyEligible.filter(m => {
-    if (!notReadyIds.has(m.id)) return true;
-    skipStats.notReady++;
-    return false;
-  });
-
-  if (availableEligible.length === 0) {
-    return {
-      ok: false, sent: 0, skipped: reachable.length,
-      error: "Все подходящие мастера отметились как «не готов» сегодня",
-      skipStats,
-    };
-  }
+  // NOTE: Checkin no longer filters order broadcast. All active masters receive orders.
+  const availableEligible = specialtyEligible;
 
   const cardText = buildOrderCard(order, orderId);
   const replyMarkup = {

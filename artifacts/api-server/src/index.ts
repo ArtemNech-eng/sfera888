@@ -1,5 +1,5 @@
 import app from "./app";
-import { db, usersTable, voronkaColumnsTable, mastersTable, ordersTable, orderDispatchesTable, tokenPackagesTable, serviceTokenPricesTable } from "@workspace/db";
+import { db, usersTable, voronkaColumnsTable, mastersTable, ordersTable, orderDispatchesTable, tokenPackagesTable, serviceTokenPricesTable, masterCheckinsTable } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { eq, inArray, and, lte, isNull } from "drizzle-orm";
 import { hashPassword } from "./lib/auth.js";
@@ -831,6 +831,32 @@ async function initCheckinScheduler() {
   }
 }
 
+// Auto-mark non-responders as "not ready" at midnight MSK
+let midnightAutoCheckinDate: string | null = null;
+
+async function autoCheckinMidnight() {
+  try {
+    const { today } = getMskTime();
+    if (midnightAutoCheckinDate === today) return;
+
+    const yesterday = new Date(Date.now() + 3 * 60 * 60 * 1000);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split("T")[0];
+
+    // Mark all null responses for yesterday as "not ready"
+    const result = await db.execute(sql`
+      UPDATE master_checkins
+      SET is_available = false, responded_at = NOW()
+      WHERE date = ${yesterdayStr} AND responded_at IS NULL
+    `);
+
+    midnightAutoCheckinDate = today;
+    console.log(`[checkin] Midnight auto-reset: ${result.rowCount ?? 0} master(s) marked as not ready for ${yesterdayStr}`);
+  } catch (e) {
+    console.error("[checkin] Midnight auto-reset error:", e);
+  }
+}
+
 let morningBriefingFiredDate: string | null = null;
 let eveningReportFiredDate: string | null = null;
 let fridayWeeklySummaryFiredDate: string | null = null;
@@ -841,6 +867,11 @@ setInterval(async () => {
   try {
     const { hhmm, today } = getMskTime();
     const cfg = await getCheckinSettings();
+
+    // Midnight: auto-mark non-responders as "not ready"
+    if (hhmm === "00:00") {
+      autoCheckinMidnight().catch(console.error);
+    }
 
     if (hhmm === cfg.broadcastTime && checkinFiredDate !== today) {
       checkinFiredDate = today;

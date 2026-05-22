@@ -11,7 +11,6 @@ import {
   ChevronRight, X, Images, Wrench, Zap, PauseCircle,
   PlayCircle, Navigation, Users, Heart, ChevronDown, Briefcase,
   Eye, EyeOff, Lock, FileText, Bot, Coins, Phone, Maximize,
-  AlertCircle,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -1302,84 +1301,6 @@ function MissedOrdersSection({ orders, city }: { orders: MissedOrder[]; city: st
   );
 }
 
-// ─── Daily Checkin Card ───────────────────────────────────────────────────────
-
-const BASE_PWA = "/api/master-pwa";
-
-function DailyCheckinCard() {
-  const [checkin, setCheckin] = useState<{
-    isAvailable: boolean | null; respondedAt: string | null;
-  } | null | undefined>(undefined);
-  const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    fetch(`${BASE_PWA}/checkin/today`, { credentials: "include" })
-      .then(r => r.ok ? r.json() : null)
-      .then(setCheckin)
-      .catch(() => setCheckin(null));
-  }, []);
-
-  const submit = async (isAvailable: boolean) => {
-    if (submitting) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch(`${BASE_PWA}/checkin/today`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ isAvailable }),
-      });
-      if (res.ok) {
-        setCheckin({ isAvailable, respondedAt: new Date().toISOString() });
-        toast.success(isAvailable ? "Вы готовы — заявки будут поступать" : "Вы не готовы — заявки сегодня не поступают");
-      } else {
-        const data = await res.json().catch(() => ({}));
-        toast.error(data.error ?? "Ошибка отправки ответа");
-      }
-    } catch {
-      toast.error("Ошибка сети. Попробуйте ещё раз.");
-    } finally { setSubmitting(false); }
-  };
-
-  // Don't show until loaded
-  if (checkin === undefined) return null;
-
-  const isReady = checkin?.respondedAt && checkin.isAvailable !== null;
-  const isAvailable = checkin?.isAvailable ?? null;
-
-  return (
-    <button
-      onClick={() => {
-        if (isReady) submit(!isAvailable);
-        else submit(true);
-      }}
-      disabled={submitting}
-      className={`w-full flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-semibold transition-all disabled:opacity-50 ${
-        !isReady
-          ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-          : isAvailable
-            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-            : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-      }`}
-    >
-      {submitting
-        ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-        : !isReady
-          ? <AlertCircle size={16} />
-          : isAvailable
-            ? <CheckCircle2 size={16} />
-            : <XCircle size={16} />
-      }
-      {!isReady
-        ? "Ответить на чек-ин"
-        : isAvailable
-          ? "Готов сегодня"
-          : "Не готов сегодня"
-      }
-    </button>
-  );
-}
-
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 function MaxBindPostRegPrompt({ botUrl, onClose }: { botUrl: string; onClose: () => void }) {
@@ -1619,8 +1540,6 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Daily checkin */}
-      <DailyCheckinCard />
 
       {/* Debt warning */}
       {master && (master.debt ?? 0) > 0 && (
