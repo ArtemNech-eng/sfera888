@@ -1882,7 +1882,7 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         <a
-                          href={`/orders?openOrder=${o.id}`}
+                          href={`/leads?tab=work&highlight=${o.id}`}
                           onClick={e => e.stopPropagation()}
                           className="text-xs font-semibold text-blue-600 hover:underline"
                           title={`Заказ #${o.id}${o.leadId ? ` / Заявка #${o.leadId}` : ""}`}

@@ -150,6 +150,17 @@ export default function Leads() {
     }
   }, [highlightId]);
 
+  // Open OrderPanel from highlight param when orders load
+  useEffect(() => {
+    if (highlightId && orders) {
+      const found = orders.find(o => o.id === highlightId);
+      if (found) {
+        setActiveTab("work");
+        setOpenDispatchId(highlightId);
+      }
+    }
+  }, [highlightId, orders]);
+
   // ── Data queries ──────────────────────────────────────────────────────────
   const { data: leadsData, isLoading: leadsLoading } = useQuery<{ rows: LeadRow[]; total: number; page: number; limit: number }>({
     queryKey: ["/api/leads", leadsPage, leadsLimit, leadStatusFilter, leadSourceFilter],
