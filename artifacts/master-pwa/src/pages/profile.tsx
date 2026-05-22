@@ -48,11 +48,11 @@ interface ProfileData {
 }
 
 
-function StatCard({ label, value, icon }: { label: string; value: string | number; icon: React.ReactNode }) {
+function StatCard({ label, value, icon, colorClass }: { label: string; value: string | number; icon: React.ReactNode; colorClass: string }) {
   return (
-    <div className="bg-card rounded-2xl p-4 shadow-sm space-y-1.5">
-      <div className="flex items-center gap-1.5 text-muted-foreground text-xs">{icon}{label}</div>
-      <p className="text-2xl font-bold tracking-tight">{value}</p>
+    <div className={`rounded-2xl p-4 shadow-sm space-y-2 ${colorClass}`}>
+      <div className="flex items-center gap-1.5 text-white/80 text-xs">{icon}{label}</div>
+      <p className="text-2xl font-bold tracking-tight text-white">{value}</p>
     </div>
   );
 }
@@ -745,20 +745,20 @@ export default function ProfilePage() {
 
   return (
     <div className="px-4 pt-5 pb-4 space-y-5">
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
         <div className="relative shrink-0">
           {data.customAvatarUrl ? (
             <img
               src={data.customAvatarUrl}
               alt={data.alias}
-              className="w-16 h-16 rounded-full object-cover"
+              className="w-14 h-14 rounded-full object-cover"
               onError={(e) => {
                 console.error("[avatar] failed to load:", data.customAvatarUrl, e);
                 toast.error("Не удалось загрузить фото");
               }}
             />
           ) : (
-            <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-xl font-bold">
+            <div className="w-14 h-14 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-lg font-bold">
               {initials}
             </div>
           )}
@@ -766,11 +766,11 @@ export default function ProfilePage() {
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
-            className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-primary border-2 border-background flex items-center justify-center shadow-md active:opacity-80 disabled:opacity-50 transition-opacity"
+            className="absolute -bottom-0.5 -right-0.5 w-6 h-6 rounded-full bg-primary border-2 border-background flex items-center justify-center shadow-md active:opacity-80 disabled:opacity-50 transition-opacity"
           >
             {uploading
-              ? <div className="w-3 h-3 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
-              : <Camera size={13} className="text-primary-foreground" />}
+              ? <div className="w-2.5 h-2.5 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
+              : <Camera size={11} className="text-primary-foreground" />}
           </button>
 
           <input
@@ -850,10 +850,10 @@ export default function ProfilePage() {
       )}
 
       <div className="grid grid-cols-2 gap-3">
-        <StatCard label="Всего заказов" value={data.totalOrders} icon={<Briefcase size={13} />} />
-        <StatCard label="В работе" value={data.activeCount} icon={<Clock size={13} />} />
-        <StatCard label="Завершено" value={data.completedCount} icon={<BadgeCheck size={13} />} />
-        <StatCard label="Отменено" value={data.cancelledCount} icon={<X size={13} />} />
+        <StatCard label="Всего заказов" value={data.totalOrders} icon={<Briefcase size={14} />} colorClass="bg-gradient-to-br from-blue-500 to-blue-600" />
+        <StatCard label="В работе" value={data.activeCount} icon={<Clock size={14} />} colorClass="bg-gradient-to-br from-amber-500 to-orange-500" />
+        <StatCard label="Завершено" value={data.completedCount} icon={<BadgeCheck size={14} />} colorClass="bg-gradient-to-br from-emerald-500 to-teal-600" />
+        <StatCard label="Отменено" value={data.cancelledCount} icon={<X size={14} />} colorClass="bg-gradient-to-br from-rose-500 to-pink-600" />
       </div>
 
       {/* Analytics */}
@@ -867,8 +867,8 @@ export default function ProfilePage() {
 
       {/* Service prices — read-only, edit via profile modal */}
       {(data.servicePrices ?? []).length > 0 && (
-        <div className="bg-card border border-border rounded-2xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 font-semibold text-sm">
               <DollarSign size={15} className="text-primary" />
               Мои цены на услуги
@@ -880,11 +880,11 @@ export default function ProfilePage() {
               Изменить
             </button>
           </div>
-          <div className="divide-y divide-border">
+          <div className="grid grid-cols-2 gap-2.5">
             {(data.servicePrices ?? []).map((p, i) => (
-              <div key={i} className="px-4 py-2.5 flex items-center justify-between">
-                <span className="text-sm text-foreground">{p.service}</span>
-                <span className="text-sm font-semibold text-primary">от {p.priceFrom.toLocaleString("ru-RU")} ₽</span>
+              <div key={i} className="bg-card rounded-xl p-3 shadow-sm border-l-4 border-l-primary space-y-1">
+                <p className="text-xs text-muted-foreground leading-tight">{p.service}</p>
+                <p className="text-sm font-bold text-primary">от {p.priceFrom.toLocaleString("ru-RU")} ₽</p>
               </div>
             ))}
           </div>

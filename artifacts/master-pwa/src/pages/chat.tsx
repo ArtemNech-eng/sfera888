@@ -128,9 +128,9 @@ export default function ChatPage() {
 
   return (
     <div className="flex flex-col h-[calc(100dvh-5rem)]">
-      <div className="px-4 py-3 border-b border-border bg-card">
-        <h1 className="font-bold text-base">Чат с менеджером</h1>
-        <p className="text-xs text-muted-foreground">Обычно отвечаем в течение часа</p>
+      <div className="px-4 pt-[max(12px,env(safe-area-inset-top))] pb-3 border-b border-border bg-gradient-to-r from-violet-500 via-purple-500 to-indigo-600">
+        <h1 className="font-bold text-base text-white">Чат с менеджером</h1>
+        <p className="text-xs text-white/70">Обычно отвечаем в течение часа</p>
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
@@ -204,7 +204,7 @@ export default function ChatPage() {
         <div ref={bottomRef} />
       </div>
 
-      <div className="px-3 py-3 border-t border-border bg-card space-y-2">
+      <div className="px-3 py-3 border-t border-border bg-background space-y-2">
         {pendingPhoto && (
           <div className="relative w-20 h-20">
             <img
@@ -237,10 +237,10 @@ export default function ChatPage() {
           <button
             onClick={() => photoInputRef.current?.click()}
             disabled={sending}
-            className="shrink-0 w-11 h-11 rounded-xl border border-border bg-background text-muted-foreground flex items-center justify-center active:opacity-70 disabled:opacity-40"
+            className="shrink-0 w-10 h-10 rounded-full border border-border bg-card text-muted-foreground flex items-center justify-center active:opacity-70 disabled:opacity-40 shadow-sm"
             title="Прикрепить фото"
           >
-            <ImagePlus size={20} />
+            <ImagePlus size={18} />
           </button>
 
           <textarea
@@ -250,17 +250,17 @@ export default function ChatPage() {
             onKeyDown={handleKeyDown}
             placeholder="Написать менеджеру..."
             rows={1}
-            className="flex-1 resize-none px-3.5 py-2.5 rounded-xl border border-input bg-background text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring max-h-28 overflow-y-auto leading-relaxed"
-            style={{ minHeight: 44 }}
+            className="flex-1 resize-none px-4 py-2.5 rounded-full border border-input bg-card text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring max-h-28 overflow-y-auto leading-relaxed shadow-sm"
+            style={{ minHeight: 40 }}
           />
           <button
             onClick={sendMessage}
             disabled={!canSend}
-            className="shrink-0 w-11 h-11 rounded-xl bg-primary text-primary-foreground flex items-center justify-center active:opacity-80 disabled:opacity-50"
+            className="shrink-0 w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center active:opacity-80 disabled:opacity-50 shadow-sm"
           >
             {sending
-              ? <Loader2 size={18} className="animate-spin" />
-              : <Send size={18} />}
+              ? <Loader2 size={16} className="animate-spin" />
+              : <Send size={16} />}
           </button>
         </div>
       </div>

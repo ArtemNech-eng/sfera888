@@ -1461,15 +1461,6 @@ export default function HomePage() {
     catch (e: any) { toast.error(e.message ?? "Ошибка"); }
   };
 
-  const handleLandingSkip = async (lead: LandingLead) => {
-    try {
-      await api.leads.reject(lead.id);
-      toast.success("Пропущено");
-      load();
-    } catch (e: any) {
-      toast.error(e.message ?? "Ошибка");
-    }
-  };
 
   if (loading) {
     return (
@@ -1706,7 +1697,7 @@ export default function HomePage() {
           {landingLeads.map(lead => (
             <SwipeableCard key={lead.id}
               onSwipeRight={() => setSelectedLanding(lead)}
-              onSwipeLeft={() => handleLandingSkip(lead)}>
+              onSwipeLeft={() => setSelectedLanding(lead)}>
               <div className="w-full bg-card rounded-2xl overflow-hidden text-left shadow-sm hover:shadow-md transition-shadow active:scale-[0.99] border-l-4 border-l-amber-500">
                 <button onClick={() => setSelectedLanding(lead)} className="w-full text-left">
                   {lead.photos.length > 0 && (
@@ -1734,19 +1725,13 @@ export default function HomePage() {
                     )}
                   </div>
                 </button>
-                {/* Quick action buttons */}
-                <div className="flex gap-2 px-4 pb-4">
+                {/* Quick action button */}
+                <div className="px-4 pb-4">
                   <button
                     onClick={(e) => { e.stopPropagation(); setSelectedLanding(lead); }}
-                    className="flex-1 flex items-center justify-center gap-1.5 h-10 rounded-xl bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white text-sm font-semibold transition-colors"
+                    className="w-full flex items-center justify-center gap-1.5 h-10 rounded-xl bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white text-sm font-semibold transition-colors"
                   >
                     <Eye size={16} /> Открыть
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleLandingSkip(lead); }}
-                    className="flex-1 flex items-center justify-center gap-1.5 h-10 rounded-xl bg-muted hover:bg-muted/80 text-muted-foreground text-sm font-semibold transition-colors"
-                  >
-                    <XCircle size={16} /> Пропустить
                   </button>
                 </div>
               </div>
