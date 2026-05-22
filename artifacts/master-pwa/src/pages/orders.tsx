@@ -1363,7 +1363,7 @@ export default function OrdersPage() {
   const expandId = (() => {
     try {
       const p = new URLSearchParams(window.location.search);
-      const v = p.get("expand");
+      const v = p.get("expand") ?? p.get("openOrder");
       return v ? parseInt(v) : null;
     } catch { return null; }
   })();
