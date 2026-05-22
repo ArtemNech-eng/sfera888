@@ -1461,6 +1461,16 @@ export default function HomePage() {
     catch (e: any) { toast.error(e.message ?? "Ошибка"); }
   };
 
+  const handleLandingSkip = async (lead: LandingLead) => {
+    try {
+      await api.leads.reject(lead.id);
+      toast.success("Пропущено");
+      load();
+    } catch (e: any) {
+      toast.error(e.message ?? "Ошибка");
+    }
+  };
+
   if (loading) {
     return (
       <div className="px-4 pt-5 pb-4 space-y-5">
@@ -1618,12 +1628,12 @@ export default function HomePage() {
             <SwipeableCard key={order.id}
               onSwipeRight={() => handleSwipeRespond(order)}
               onSwipeLeft={() => handleSwipeReject(order)}>
-              <button onClick={() => setSelectedAvail(order)}
-                className="w-full bg-card rounded-2xl overflow-hidden text-left shadow-sm hover:shadow-md transition-shadow active:scale-[0.99] border-l-4 border-l-primary">
-                {order.photos.length > 0 && (
-                  <img src={resolvePhotoUrl(order.photos[0])} alt="фото" className="w-full object-cover" style={{ height: 160 }} />
-                )}
-                <div className="p-4 space-y-3">
+              <div className="w-full bg-card rounded-2xl overflow-hidden text-left shadow-sm hover:shadow-md transition-shadow active:scale-[0.99] border-l-4 border-l-primary">
+                <button onClick={() => setSelectedAvail(order)} className="w-full text-left">
+                  {order.photos.length > 0 && (
+                    <img src={resolvePhotoUrl(order.photos[0])} alt="фото" className="w-full object-cover" style={{ height: 160 }} />
+                  )}
+                  <div className="p-4 space-y-3">
                   {/* Top row: ID + timer */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -1663,30 +1673,24 @@ export default function HomePage() {
                   </div>
 
                   {/* Bottom row: token cost + competition */}
-                  <div className="flex items-center justify-between pt-1">
-                    {order.paymentModel === "token" && order.tokensCost != null ? (
-                      <span className={`flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full ${
-                        (order.tokensCost ?? 1) > walletBalance
-                          ? "bg-muted text-muted-foreground"
-                          : "bg-primary/8 text-primary dark:bg-primary/15"
-                      }`}>
-                        <Coins size={12} /> {order.tokensCost} т.
-                      </span>
-                    ) : (
-                      <span />
-                    )}
-                    <span className={`flex items-center gap-1 text-xs font-medium ${
-                      order.competitorCount > 0 ? "text-warning" : "text-success"
-                    }`}>
-                      {order.competitorCount > 0 ? (
-                        <><Users size={12} /> {order.competitorCount} мастеров</>
-                      ) : (
-                        <><CheckCircle2 size={12} /> Быстрый отклик</>
-                      )}
-                    </span>
                   </div>
+                </button>
+                {/* Quick action buttons */}
+                <div className="flex gap-2 px-4 pb-4">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleSwipeRespond(order); }}
+                    className="flex-1 flex items-center justify-center gap-1.5 h-10 rounded-xl bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white text-sm font-semibold transition-colors"
+                  >
+                    <CheckCircle2 size={16} /> Принять
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleSwipeReject(order); }}
+                    className="flex-1 flex items-center justify-center gap-1.5 h-10 rounded-xl bg-red-500 hover:bg-red-600 active:bg-red-700 text-white text-sm font-semibold transition-colors"
+                  >
+                    <XCircle size={16} /> Отклонить
+                  </button>
                 </div>
-              </button>
+              </div>
             </SwipeableCard>
           ))}
         </section>
@@ -1700,47 +1704,53 @@ export default function HomePage() {
             <h2 className="font-semibold text-sm text-amber-700 dark:text-amber-400">Прямые заявки ({landingLeads.length})</h2>
           </div>
           {landingLeads.map(lead => (
-            <button key={lead.id} onClick={() => setSelectedLanding(lead)}
-              className="w-full bg-card rounded-2xl overflow-hidden text-left shadow-sm hover:shadow-md transition-shadow active:scale-[0.99] border-l-4 border-l-amber-500">
-              {lead.photos.length > 0 && (
-                <img src={resolvePhotoUrl(lead.photos[0])} alt="фото" className="w-full object-cover" style={{ height: 160 }} />
-              )}
-              <div className="p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-muted-foreground">Прямая #{lead.id}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {formatDistanceToNow(new Date(lead.createdAt), { addSuffix: true, locale: ru })}
-                  </span>
-                </div>
-                <div>
-                  <h3 className="text-[17px] font-semibold leading-tight">{lead.serviceType}</h3>
-                  <p className="text-sm text-muted-foreground mt-0.5">{lead.area} м²</p>
-                </div>
-                <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <MapPin size={12} className="shrink-0" />
-                    {lead.city}{lead.district ? `, ${lead.district}` : ""}
-                  </span>
-                </div>
-                {lead.comment && (
-                  <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">{lead.comment}</p>
-                )}
-                <div className="flex items-center justify-between pt-1">
-                  <span className={`flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full ${
-                    (lead.tokensCost ?? 1) > walletBalance
-                      ? "bg-muted text-muted-foreground"
-                      : "bg-primary/8 text-primary dark:bg-primary/15"
-                  }`}>
-                    <Coins size={12} /> {lead.tokensCost} т.
-                  </span>
-                  <span className={`text-xs font-medium ${
-                    (lead.tokensCost ?? 1) > walletBalance ? "text-muted-foreground" : "text-success"
-                  }`}>
-                    {(lead.tokensCost ?? 1) > walletBalance ? "Недостаточно токенов" : "Можно открыть"}
-                  </span>
+            <SwipeableCard key={lead.id}
+              onSwipeRight={() => setSelectedLanding(lead)}
+              onSwipeLeft={() => handleLandingSkip(lead)}>
+              <div className="w-full bg-card rounded-2xl overflow-hidden text-left shadow-sm hover:shadow-md transition-shadow active:scale-[0.99] border-l-4 border-l-amber-500">
+                <button onClick={() => setSelectedLanding(lead)} className="w-full text-left">
+                  {lead.photos.length > 0 && (
+                    <img src={resolvePhotoUrl(lead.photos[0])} alt="фото" className="w-full object-cover" style={{ height: 160 }} />
+                  )}
+                  <div className="p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-muted-foreground">Прямая #{lead.id}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {formatDistanceToNow(new Date(lead.createdAt), { addSuffix: true, locale: ru })}
+                      </span>
+                    </div>
+                    <div>
+                      <h3 className="text-[17px] font-semibold leading-tight">{lead.serviceType}</h3>
+                      <p className="text-sm text-muted-foreground mt-0.5">{lead.area} м²</p>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <MapPin size={12} className="shrink-0" />
+                        {lead.city}{lead.district ? `, ${lead.district}` : ""}
+                      </span>
+                    </div>
+                    {lead.comment && (
+                      <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">{lead.comment}</p>
+                    )}
+                  </div>
+                </button>
+                {/* Quick action buttons */}
+                <div className="flex gap-2 px-4 pb-4">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setSelectedLanding(lead); }}
+                    className="flex-1 flex items-center justify-center gap-1.5 h-10 rounded-xl bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white text-sm font-semibold transition-colors"
+                  >
+                    <Eye size={16} /> Открыть
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleLandingSkip(lead); }}
+                    className="flex-1 flex items-center justify-center gap-1.5 h-10 rounded-xl bg-muted hover:bg-muted/80 text-muted-foreground text-sm font-semibold transition-colors"
+                  >
+                    <XCircle size={16} /> Пропустить
+                  </button>
                 </div>
               </div>
-            </button>
+            </SwipeableCard>
           ))}
         </section>
       )}
