@@ -1301,6 +1301,45 @@ function MissedOrdersSection({ orders, city }: { orders: MissedOrder[]; city: st
   );
 }
 
+// ─── Daily Checkin Status Chip (read-only) ────────────────────────────────────
+
+function DailyCheckinStatus() {
+  const [status, setStatus] = useState<"ready" | "not_ready" | "pending" | null>(null);
+
+  useEffect(() => {
+    fetch("/api/master-pwa/checkin/today", { credentials: "include" })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data) { setStatus(null); return; }
+        if (data.respondedAt == null) setStatus("pending");
+        else if (data.isAvailable === true) setStatus("ready");
+        else if (data.isAvailable === false) setStatus("not_ready");
+        else setStatus(null);
+      })
+      .catch(() => setStatus(null));
+  }, []);
+
+  if (!status) return null;
+
+  const styles = {
+    ready: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
+    not_ready: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+    pending: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+  };
+
+  const labels = {
+    ready: "✓ Готов сегодня",
+    not_ready: "✗ Не готов сегодня",
+    pending: "⚡ Нужен ответ на чекин",
+  };
+
+  return (
+    <div className={`flex items-center justify-center gap-2 h-9 rounded-xl text-xs font-semibold ${styles[status]}`}>
+      {labels[status]}
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 function MaxBindPostRegPrompt({ botUrl, onClose }: { botUrl: string; onClose: () => void }) {
@@ -1465,50 +1504,56 @@ export default function HomePage() {
         />
       )}
 
-      {/* Header */}
-      <div className="space-y-2.5">
-        {/* Row 1: Name + Test badge | Rating */}
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <h1 className="text-lg font-bold truncate">{master?.alias}</h1>
-            {master?.isTestMaster && (
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium shrink-0">
-                Тест
-              </span>
+      {/* Header with gradient */}
+      <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-violet-500 via-purple-500 to-indigo-600 shadow-lg">
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4wNSI+PGNpcmNsZSBjeD0iMzAiIGN5PSIzMCIgcj0iMiIvPjwvZz48L2c+PC9zdmc+')] opacity-30" />
+        <div className="relative p-5 space-y-4">
+          {/* Row 1: Name + Test badge | Rating */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <h1 className="text-lg font-bold truncate text-white">{master?.alias}</h1>
+              {master?.isTestMaster && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-white font-medium shrink-0 backdrop-blur-sm">
+                  Тест
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1 bg-white/15 backdrop-blur-md border border-white/20 px-2.5 py-1.5 rounded-xl shrink-0">
+              <Star size={13} className="text-amber-300" fill="currentColor" />
+              <span className="font-semibold text-sm text-white">{master?.rating?.toFixed(1)}</span>
+            </div>
+          </div>
+
+          {/* Row 2: City | Tokens */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-sm text-white/80">
+              <MapPin size={14} />
+              <span>{master?.city}</span>
+            </div>
+            {(data?.walletBalance ?? 0) >= 0 && (
+              <button
+                type="button"
+                onClick={() => setLocation("/wallet")}
+                className="flex items-center gap-1 bg-white/15 backdrop-blur-md border border-white/20 px-2.5 py-1.5 rounded-xl hover:bg-white/25 transition-colors shrink-0"
+              >
+                <Coins size={13} className="shrink-0 text-amber-300" />
+                <span className="font-semibold text-sm leading-none text-white">{data?.walletBalance ?? 0}</span>
+              </button>
             )}
           </div>
-          <div className="flex items-center gap-1 bg-card border border-border px-2.5 py-1.5 rounded-xl shadow-xs shrink-0">
-            <Star size={13} className="text-warning" fill="currentColor" />
-            <span className="font-semibold text-sm">{master?.rating?.toFixed(1)}</span>
-          </div>
-        </div>
 
-        {/* Row 2: City | Tokens */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            <MapPin size={14} />
-            <span>{master?.city}</span>
-          </div>
-          {(data?.walletBalance ?? 0) >= 0 && (
-            <button
-              type="button"
-              onClick={() => setLocation("/wallet")}
-              className="flex items-center gap-1 bg-card border border-border px-2.5 py-1.5 rounded-xl shadow-xs hover:shadow-sm transition-shadow shrink-0"
-            >
-              <Coins size={13} className="shrink-0 text-primary" />
-              <span className="font-semibold text-sm leading-none">{data?.walletBalance ?? 0}</span>
-            </button>
-          )}
+          {/* Row 3: Availability toggle full width */}
+          <AvailabilityToggle
+            isAvailable={isAvailable}
+            atLimit={atLimit}
+            onChange={setIsAvailable}
+            className="w-full justify-center"
+          />
         </div>
-
-        {/* Row 3: Availability toggle full width */}
-        <AvailabilityToggle
-          isAvailable={isAvailable}
-          atLimit={atLimit}
-          onChange={setIsAvailable}
-          className="w-full justify-center"
-        />
       </div>
+
+      {/* Daily checkin status chip */}
+      <DailyCheckinStatus />
 
       {/* Active orders info */}
       {hasActiveOrders && (
@@ -1576,7 +1621,7 @@ export default function HomePage() {
               onSwipeRight={() => handleSwipeRespond(order)}
               onSwipeLeft={() => handleSwipeReject(order)}>
               <button onClick={() => setSelectedAvail(order)}
-                className="w-full bg-card rounded-2xl overflow-hidden text-left shadow-sm hover:shadow transition-shadow active:scale-[0.99]">
+                className="w-full bg-card rounded-2xl overflow-hidden text-left shadow-sm hover:shadow-md transition-shadow active:scale-[0.99] border-l-4 border-l-primary">
                 {order.photos.length > 0 && (
                   <img src={resolvePhotoUrl(order.photos[0])} alt="фото" className="w-full object-cover" style={{ height: 160 }} />
                 )}
@@ -1658,7 +1703,7 @@ export default function HomePage() {
           </div>
           {landingLeads.map(lead => (
             <button key={lead.id} onClick={() => setSelectedLanding(lead)}
-              className="w-full bg-card rounded-2xl overflow-hidden text-left shadow-sm hover:shadow transition-shadow active:scale-[0.99]">
+              className="w-full bg-card rounded-2xl overflow-hidden text-left shadow-sm hover:shadow-md transition-shadow active:scale-[0.99] border-l-4 border-l-amber-500">
               {lead.photos.length > 0 && (
                 <img src={resolvePhotoUrl(lead.photos[0])} alt="фото" className="w-full object-cover" style={{ height: 160 }} />
               )}
@@ -1711,7 +1756,7 @@ export default function HomePage() {
           </div>
           {pending.map(order => (
             <button key={order.id} onClick={() => setSelectedPending(order)}
-              className="w-full bg-card rounded-2xl overflow-hidden text-left shadow-sm hover:shadow transition-shadow active:scale-[0.99]">
+              className="w-full bg-card rounded-2xl overflow-hidden text-left shadow-sm hover:shadow-md transition-shadow active:scale-[0.99] border-l-4 border-l-warning">
               {order.photos.length > 0 && (
                 <img src={resolvePhotoUrl(order.photos[0])} alt="фото" className="w-full object-cover" style={{ height: 120 }} />
               )}
@@ -1749,7 +1794,7 @@ export default function HomePage() {
         ) : (
           active.map(order => (
             <button key={order.id} onClick={() => setLocation(`/orders?expand=${order.id}`)}
-              className="w-full bg-card rounded-2xl p-4 text-left shadow-sm hover:shadow transition-shadow active:scale-[0.99]">
+              className="w-full bg-card rounded-2xl p-4 text-left shadow-sm hover:shadow-md transition-shadow active:scale-[0.99] border-l-4 border-l-emerald-500">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium text-muted-foreground">#{order.leadId ?? order.id}</span>
                 <span className="flex items-center gap-1.5 text-xs font-semibold text-primary">
