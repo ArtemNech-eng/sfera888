@@ -702,6 +702,46 @@ export default function ProfilePage() {
     }
   };
 
+  // Convert any image (HEIC/JPEG/PNG) to JPEG via canvas before upload
+  async function convertToJpeg(file: File, maxSize = 1200): Promise<Blob> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          let { width, height } = img;
+          if (width > maxSize || height > maxSize) {
+            if (width > height) {
+              height = Math.round((height * maxSize) / width);
+              width = maxSize;
+            } else {
+              width = Math.round((width * maxSize) / height);
+              height = maxSize;
+            }
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return reject(new Error("Canvas not available"));
+          ctx.drawImage(img, 0, 0, width, height);
+          canvas.toBlob(
+            (blob) => {
+              if (blob) resolve(blob);
+              else reject(new Error("Canvas toBlob failed"));
+            },
+            "image/jpeg",
+            0.9
+          );
+        };
+        img.onerror = () => reject(new Error("Failed to load image"));
+        img.src = reader.result as string;
+      };
+      reader.onerror = () => reject(new Error("Failed to read file"));
+      reader.readAsDataURL(file);
+    });
+  }
+
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -710,8 +750,10 @@ export default function ProfilePage() {
 
     setUploading(true);
     try {
+      const jpegBlob = await convertToJpeg(file);
+      const jpegFile = new File([jpegBlob], "avatar.jpg", { type: "image/jpeg" });
       const fd = new FormData();
-      fd.append("avatar", file);
+      fd.append("avatar", jpegFile);
       const res = await fetch("/api/master-pwa/profile/avatar", {
         method: "POST",
         credentials: "include",
