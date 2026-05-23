@@ -5,6 +5,7 @@ import { eq, and, inArray, isNull, ne, asc, desc, gte, sql } from "drizzle-orm";
 import { verifyPassword, hashPassword } from "../lib/auth.js";
 import { getMasterEligibility, getOverdueMasterIds, countActiveMasterOrders, getColumnIdForActiveCount } from "../lib/orderEligibility.js";
 import multer from "multer";
+import sharp from "sharp";
 import { Readable } from "stream";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { objectStorageClient, s3Client } from "../lib/objectStorage.js";
@@ -32,8 +33,16 @@ async function uploadPwaAvatarToGCS(masterId: number, buffer: Buffer, mimetype: 
   const ts = Date.now();
   const filename = `pwa-master-${masterId}-${ts}.jpg`;
   const key = `avatars/${filename}`;
+
+  // Convert any input format (HEIC/JPEG/PNG) to JPEG 400×400 for browser compatibility
+  const jpegBuffer = await sharp(buffer)
+    .rotate() // auto-rotate based on EXIF
+    .resize(400, 400, { fit: "cover", position: "center" })
+    .jpeg({ quality: 85, progressive: true })
+    .toBuffer();
+
   const bucket = objectStorageClient.bucket(bucketId);
-  await bucket.file(key).save(buffer, { contentType: mimetype, resumable: false });
+  await bucket.file(key).save(jpegBuffer, { contentType: "image/jpeg", resumable: false });
   return `${publicUrl}/${key}`;
 }
 
@@ -1496,8 +1505,10 @@ router.get("/profile", requireMasterPwa, async (req, res) => {
 router.post("/profile/avatar", requireMasterPwa, avatarUpload.single("avatar"), async (req, res) => {
   const masterId = (req.session as any).masterId;
   if (!req.file) return res.status(400).json({ error: "Файл не получен" });
+  console.log("[avatar upload] received file:", req.file.originalname, "size:", req.file.size, "mimetype:", req.file.mimetype);
   try {
     const avatarUrl = await uploadPwaAvatarToGCS(masterId, req.file.buffer, req.file.mimetype);
+    console.log("[avatar upload] saved to:", avatarUrl);
     const [updated] = await db.update(mastersTable)
       .set({ customAvatarUrl: avatarUrl })
       .where(eq(mastersTable.id, masterId))
@@ -1505,6 +1516,7 @@ router.post("/profile/avatar", requireMasterPwa, avatarUpload.single("avatar"), 
     if (!updated) return res.status(404).json({ error: "Мастер не найден" });
     res.json({ customAvatarUrl: avatarUrl });
   } catch (err: any) {
+    console.error("[avatar upload] failed:", err);
     res.status(500).json({ error: err.message ?? "Upload failed" });
   }
 });
