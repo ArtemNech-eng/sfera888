@@ -101,7 +101,7 @@ router.get("/stats", ops, async (_req: any, res: any) => {
           eq(masterWalletTable.masterId, mastersTable.id),
           isNull(mastersTable.deletedAt),
         ))
-        .where(sql`${masterWalletTable.creditTokensIssued} > ${masterWalletTable.creditTokensSpent}`),
+        .where(sql`${masterWalletTable.creditTokensIssued} > 0`),
     ]);
 
     return res.json({
@@ -298,7 +298,7 @@ router.get("/debt", ops, async (req: any, res: any) => {
 
     const conditions: any[] = [
       isNull(mastersTable.deletedAt),
-      sql`${masterWalletTable.creditTokensIssued} > ${masterWalletTable.creditTokensSpent}`,
+      sql`${masterWalletTable.creditTokensIssued} > 0`,
     ];
     if (search) {
       conditions.push(or(
