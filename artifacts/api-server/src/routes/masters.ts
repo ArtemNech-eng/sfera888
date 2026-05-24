@@ -1100,4 +1100,40 @@ router.post("/:id/recalculate-debt", requireRole("admin", "master_operator"), as
   });
 });
 
+// GET /api/masters/:id/debug-transactions — inspect all transactions for this master (diagnostic)
+router.get("/:id/debug-transactions", requireRole("admin", "master_operator"), async (req, res) => {
+  const masterId = parseInt(req.params.id);
+  if (isNaN(masterId)) return res.status(400).json({ error: "Invalid id" });
+
+  const txRows = await db.select().from(transactionsTable)
+    .where(eq(transactionsTable.masterId, masterId));
+
+  const txIds = txRows.map(t => t.id);
+  const partialRows = txIds.length
+    ? await db.select().from(transactionPaymentsTable).where(inArray(transactionPaymentsTable.transactionId, txIds))
+    : [];
+
+  const result = txRows.map(tx => {
+    const txPartials = partialRows.filter(p => p.transactionId === tx.id);
+    return {
+      id: tx.id,
+      orderId: tx.orderId,
+      orderAmount: Number(tx.orderAmount),
+      commission: Number(tx.commission),
+      prepaymentDeducted: Number(tx.prepaymentDeducted ?? 0),
+      paymentStatus: tx.paymentStatus,
+      sourceType: tx.sourceType ?? null,
+      createdAt: tx.createdAt,
+      paidAt: tx.paidAt ?? null,
+      partialPayments: txPartials.map(p => ({
+        id: p.id,
+        amount: Number(p.amount),
+        paidAt: p.paidAt,
+      })),
+    };
+  });
+
+  res.json(result);
+});
+
 export default router;
