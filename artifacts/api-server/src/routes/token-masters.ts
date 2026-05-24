@@ -101,7 +101,7 @@ router.get("/stats", ops, async (_req: any, res: any) => {
           eq(masterWalletTable.masterId, mastersTable.id),
           isNull(mastersTable.deletedAt),
         ))
-        .where(sql`${masterWalletTable.creditTokensIssued}::numeric > ${masterWalletTable.creditTokensSpent}::numeric`),
+        .where(sql`${masterWalletTable.creditTokensIssued} > ${masterWalletTable.creditTokensSpent}`),
     ]);
 
     return res.json({
@@ -413,7 +413,7 @@ router.get("/debt", ops, async (req: any, res: any) => {
 
     const conditions: any[] = [
       isNull(mastersTable.deletedAt),
-      sql`${masterWalletTable.creditTokensIssued}::numeric > ${masterWalletTable.creditTokensSpent}::numeric`,
+      sql`${masterWalletTable.creditTokensIssued} > ${masterWalletTable.creditTokensSpent}`,
     ];
     if (search) {
       conditions.push(or(
@@ -445,7 +445,7 @@ router.get("/debt", ops, async (req: any, res: any) => {
         .from(mastersTable)
         .innerJoin(masterWalletTable, eq(masterWalletTable.masterId, mastersTable.id))
         .where(whereClause)
-        .orderBy(desc(sql`${masterWalletTable.creditTokensIssued}::numeric - ${masterWalletTable.creditTokensSpent}::numeric`))
+        .orderBy(desc(sql`${masterWalletTable.creditTokensIssued} - ${masterWalletTable.creditTokensSpent}`))
         .limit(limit)
         .offset(offset),
       db
