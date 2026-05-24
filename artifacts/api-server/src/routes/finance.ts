@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db, transactionsTable, mastersTable, ordersTable, receiptsTable, transactionPaymentsTable } from "@workspace/db";
 import { eq, and, gte, lte, sql, inArray } from "drizzle-orm";
-import { requirePermission } from "../middlewares/requireAuth.js";
+import { requirePermission, requireRole } from "../middlewares/requireAuth.js";
 import { sendPushToMaster } from "../lib/push.js";
 import { checkOverdueTransactions, countActiveMasterOrders, getColumnIdForActiveCount } from "../lib/orderEligibility.js";
 import { sendMaxMessage, sendMaxWithButtons } from "../maxBot.js";
@@ -56,6 +56,24 @@ function computeDaysOverdue(createdAt: Date, now = new Date()): number {
   const due = computeDueDate(createdAt);
   const ms = now.getTime() - due.getTime();
   return ms > 0 ? Math.floor(ms / 86400_000) : 0;
+}
+
+function safeNumber(n: any, fallback = 0): number {
+  const val = Number(n);
+  return isNaN(val) ? fallback : val;
+}
+
+const COMMISSION_FIXED = 5000;
+const COMMISSION_PERCENT = 0.15;
+const COMMISSION_THRESHOLD = 50000;
+
+function commissionTier(amount: number): "fixed" | "percent" {
+  return amount <= COMMISSION_THRESHOLD ? "fixed" : "percent";
+}
+
+function calcCommission(amount: number): number {
+  const tier = commissionTier(amount);
+  return tier === "fixed" ? COMMISSION_FIXED : Math.round(amount * COMMISSION_PERCENT);
 }
 
 const REMIND_DEDUP_HOURS  = 24;
@@ -205,7 +223,7 @@ router.get("/transactions", opsAndAdmin, async (req, res) => {
 // ─── PATCH /api/finance/transactions/:id ─────────────────────────────────────
 
 router.patch("/transactions/:id", opsAndAdmin, async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   const { paymentStatus, commission } = req.body;
   const updates: any = {};
   if (paymentStatus !== undefined) {
@@ -269,7 +287,7 @@ router.patch("/transactions/:id", opsAndAdmin, async (req, res) => {
 // ─── POST /api/finance/transactions/:id/partial-payment ──────────────────────
 
 router.post("/transactions/:id/partial-payment", opsAndAdmin, async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   const { amount, note } = req.body;
 
   if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
@@ -931,6 +949,63 @@ router.get("/estimates/stats", opsAndAdmin, async (req, res) => {
       .sort((a, b) => b.avgAmount - a.avgAmount),
     daily: Array.from(daily.entries()).map(([date, v]) => ({ date, ...v })),
   });
+});
+
+// POST /api/finance/orders/:orderId/recalc-commission
+// Recalculates transaction commission from receipt totalAmount (fixes stale commission when smeta was updated)
+router.post("/orders/:orderId/recalc-commission", requireRole("admin", "master_operator"), async (req, res) => {
+  const orderId = parseInt(req.params.orderId);
+  if (isNaN(orderId)) return res.status(400).json({ error: "Invalid orderId" });
+
+  const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
+  if (!order) return res.status(404).json({ error: "Order not found" });
+
+  const receipts = await db.select().from(receiptsTable).where(eq(receiptsTable.orderId, orderId));
+  const bestReceipt = receipts.sort((a, b) => safeNumber(b.totalAmount) - safeNumber(a.totalAmount))[0];
+  const receiptTotal = bestReceipt ? safeNumber(bestReceipt.totalAmount) : 0;
+
+  const txs = await db.select().from(transactionsTable).where(eq(transactionsTable.orderId, orderId));
+  if (txs.length === 0) return res.status(404).json({ error: "No transaction found for this order" });
+
+  const results = [];
+  for (const tx of txs) {
+    const oldCommission = Number(tx.commission);
+    const oldOrderAmount = Number(tx.orderAmount ?? 0);
+    const newOrderAmount = receiptTotal > 0 ? receiptTotal : oldOrderAmount;
+    const newCommission = newOrderAmount > 0 ? calcCommission(newOrderAmount) : oldCommission;
+
+    if (newCommission !== oldCommission || newOrderAmount !== oldOrderAmount) {
+      await db.update(transactionsTable)
+        .set({ orderAmount: String(newOrderAmount), commission: String(newCommission) })
+        .where(eq(transactionsTable.id, tx.id));
+
+      // Recalc master debt for this transaction's master
+      const masterId = tx.masterId;
+      if (masterId) {
+        const txRows = await db.select().from(transactionsTable)
+          .where(and(eq(transactionsTable.masterId, masterId), inArray(transactionsTable.paymentStatus, ["pending", "overdue"])));
+        const txIds = txRows.map(t => t.id);
+        const partials = txIds.length
+          ? await db.select().from(transactionPaymentsTable).where(inArray(transactionPaymentsTable.transactionId, txIds))
+          : [];
+        const partialsByTx = new Map<number, typeof partials>(
+          txIds.map(id => [id, partials.filter(p => p.transactionId === id)])
+        );
+        let totalDebt = 0;
+        for (const t of txRows) {
+          const tPartials = partialsByTx.get(t.id) ?? [];
+          const totalPartialPaid = tPartials.reduce((s, p) => s + Number(p.amount), 0);
+          const prepaymentDeducted = Number(t.prepaymentDeducted ?? 0);
+          totalDebt += Math.max(0, Number(t.commission) - prepaymentDeducted - totalPartialPaid);
+        }
+        await db.update(mastersTable).set({ debt: String(totalDebt) }).where(eq(mastersTable.id, masterId));
+      }
+
+      results.push({ transactionId: tx.id, oldCommission, newCommission, oldOrderAmount, newOrderAmount });
+    }
+  }
+
+  res.json({ orderId, receiptTotal, updated: results.length, changes: results });
 });
 
 export default router;

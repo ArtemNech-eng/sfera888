@@ -193,7 +193,7 @@ export interface DrawerMaster {
 }
 
 interface MasterTask { id: number; masterId: number; text: string; dueAt: string | null; isCompleted: boolean; createdBy: string | null; createdAt: string; }
-interface HistoryOrder { id: number; status: string; serviceType: string; district: string; city: string; leadId: number | null; clientName: string | null; clientPhone: string | null; scheduledAt: string | null; completedAt: string | null; createdAt: string; orderAmount: number | null; commission: number | null; paymentStatus: string | null; }
+interface HistoryOrder { id: number; status: string; serviceType: string; district: string; city: string; leadId: number | null; clientName: string | null; clientPhone: string | null; scheduledAt: string | null; completedAt: string | null; createdAt: string; orderAmount: number | null; commission: number | null; paymentStatus: string | null; remainingCommission: number | null; }
 interface ChatMessage { id: number; text: string; photoUrl: string | null; fromMaster: boolean; senderName: string | null; isRead: boolean; createdAt: string; }
 interface PendingTx { id: number; orderId: number; orderAmount: number; commission: number; prepaymentDeducted?: number; netPayable?: number; }
 interface MasterReview { id: number; masterId: number; orderId: number | null; sentiment: string; text: string; createdBy: string | null; createdAt: string; }
@@ -1951,6 +1951,29 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                                 </span>
                               </div>
                             </>
+                          )}
+                          {user?.role === "admin" && o.commission != null && (
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                const r = await fetch(`/api/finance/orders/${o.id}/recalc-commission`, { method: "POST", credentials: "include" });
+                                if (r.ok) {
+                                  const data = await r.json();
+                                  if (data.updated > 0) {
+                                    alert(`Комиссия обновлена для заказа #${o.id}\nСтарая: ${data.changes[0].oldCommission} ₽\nНовая: ${data.changes[0].newCommission} ₽`);
+                                    window.location.reload();
+                                  } else {
+                                    alert(`Комиссия заказа #${o.id} уже актуальна`);
+                                  }
+                                } else {
+                                  alert("Ошибка обновления комиссии");
+                                }
+                              }}
+                              className="ml-auto text-[9px] text-blue-500 hover:text-blue-700 underline"
+                              title="Пересчитать комиссию от суммы сметы"
+                            >
+                              Исправить
+                            </button>
                           )}
                         </>
                       )}

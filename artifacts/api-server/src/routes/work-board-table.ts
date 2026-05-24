@@ -256,6 +256,7 @@ async function buildTableData(params: QueryParams): Promise<{
       .select({
         id: transactionsTable.id,
         orderId: transactionsTable.orderId,
+        orderAmount: transactionsTable.orderAmount,
         masterId: transactionsTable.masterId,
         commission: transactionsTable.commission,
         paymentStatus: transactionsTable.paymentStatus,
