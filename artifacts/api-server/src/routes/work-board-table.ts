@@ -366,9 +366,10 @@ async function buildTableData(params: QueryParams): Promise<{
     const title = (o as any).serviceType ?? "Заявка";
     const masterAlias = master?.alias ?? (o.masterId ? recoveredMasterNames.get(o.masterId) ?? null : null);
 
-    // Pre-calculate commission totals (needed for problem detection)
+    // Pre-calculate commission totals (needed for problem detection and progress bars)
     const manualCommission = safeNumber((o as any).commission);
-    const commTotal = total > 0 ? calcCommission(total) : orderAmount > 0 ? calcCommission(orderAmount) : manualCommission > 0 ? manualCommission : 0;
+    const txCommissionTotal = realTxs.reduce((s, t) => s + safeNumber(t.commission), 0);
+    const commTotal = txCommissionTotal > 0 ? txCommissionTotal : total > 0 ? calcCommission(total) : orderAmount > 0 ? calcCommission(orderAmount) : manualCommission > 0 ? manualCommission : 0;
     const commPaid = orderPrepDeduct + orderTotalPartialPaid;
     const commLeft = Math.max(0, commTotal - commPaid);
 
@@ -418,12 +419,15 @@ async function buildTableData(params: QueryParams): Promise<{
         paidAt: p.paidAt.toISOString(),
       }));
 
+      const txOrderAmount = realTxs.length > 0 ? Math.max(...realTxs.map(t => safeNumber(t.orderAmount))) : 0;
+      const effectiveOrderTotal = txOrderAmount > 0 ? txOrderAmount : total > 0 ? total : orderAmount;
+
       commissionObj = {
-        orderTotal: total > 0 ? total : orderAmount,
+        orderTotal: effectiveOrderTotal,
         total: commTotal,
         paid: commPaid,
         left: commLeft,
-        tier: commissionTier(total > 0 ? total : orderAmount),
+        tier: commissionTier(effectiveOrderTotal),
         ...(orderPrepDeduct > 0 ? { prepaymentDeducted: orderPrepDeduct } : {}),
         ...(orderTotalPartialPaid > 0 ? { totalPartialPaid: orderTotalPartialPaid } : {}),
         ...(partialPaymentsList.length > 0 ? { partialPayments: partialPaymentsList } : {}),
