@@ -589,11 +589,41 @@ router.get("/:id/orders", allMasterRoles, async (req, res) => {
   const txRows = orderIds.length
     ? await db.select().from(transactionsTable).where(inArray(transactionsTable.orderId, orderIds))
     : [];
-  const txMap = new Map(txRows.map(t => [t.orderId, t]));
+  // Pick the "best" transaction per order: highest commission wins (avoids overwriting with stale/empty tx)
+  const txMap = new Map<number, typeof txRows[0]>();
+  for (const t of txRows) {
+    const existing = txMap.get(t.orderId);
+    if (!existing) {
+      txMap.set(t.orderId, t);
+    } else {
+      const tComm = Number(t.commission ?? 0);
+      const eComm = Number(existing.commission ?? 0);
+      if (tComm > eComm) {
+        txMap.set(t.orderId, t);
+      }
+    }
+  }
+
+  // Fetch partial payments for accurate remaining commission
+  const txIds = txRows.map(t => t.id);
+  const partialRows = txIds.length
+    ? await db.select().from(transactionPaymentsTable).where(inArray(transactionPaymentsTable.transactionId, txIds))
+    : [];
+  const partialsByTx = new Map<number, typeof partialRows>();
+  for (const p of partialRows) {
+    const arr = partialsByTx.get(p.transactionId) ?? [];
+    arr.push(p);
+    partialsByTx.set(p.transactionId, arr);
+  }
 
   res.json(orders.map(o => {
     const lead = leadMap.get(o.leadId ?? 0);
     const tx = txMap.get(o.id);
+    const txPartials = tx ? partialsByTx.get(tx.id) ?? [] : [];
+    const totalPartialPaid = txPartials.reduce((s, p) => s + Number(p.amount), 0);
+    const prepaymentDeducted = tx ? Number(tx.prepaymentDeducted ?? 0) : 0;
+    const commission = tx ? Number(tx.commission) : 0;
+    const remainingCommission = Math.max(0, commission - prepaymentDeducted - totalPartialPaid);
     return {
       id: o.id,
       status: o.status,
@@ -608,6 +638,7 @@ router.get("/:id/orders", allMasterRoles, async (req, res) => {
       createdAt: o.createdAt,
       orderAmount: tx ? Number(tx.orderAmount) : null,
       commission: tx ? Number(tx.commission) : null,
+      remainingCommission: remainingCommission > 0 ? remainingCommission : null,
       paymentStatus: tx?.paymentStatus ?? null,
     };
   }));

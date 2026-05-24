@@ -1958,6 +1958,17 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                           {o.paymentStatus === "pending" && (
                             <span className="text-[9px] bg-amber-50 text-amber-600 rounded-md px-1.5 py-0.5 font-semibold">Ожидает</span>
                           )}
+                          {o.remainingCommission != null && (
+                            <>
+                              <div className="w-px h-3 bg-gray-200" />
+                              <div className="text-[11px]">
+                                <span className="text-gray-400">Остаток: </span>
+                                <span className="font-semibold text-red-600">
+                                  {o.remainingCommission.toLocaleString("ru-RU")} ₽
+                                </span>
+                              </div>
+                            </>
+                          )}
                         </>
                       )}
                     </div>

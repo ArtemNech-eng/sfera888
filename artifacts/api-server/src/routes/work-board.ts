@@ -190,6 +190,7 @@ async function buildBoard() {
       .select({
         id: transactionsTable.id,
         orderId: transactionsTable.orderId,
+        orderAmount: transactionsTable.orderAmount,
         commission: transactionsTable.commission,
         paymentStatus: transactionsTable.paymentStatus,
         prepaymentDeducted: transactionsTable.prepaymentDeducted,
@@ -390,10 +391,13 @@ async function buildBoard() {
     // commission_left: order amount confirmed but commission not fully paid (still active)
     const manualCommission = safeNumber((o as any).commission);
     const effectiveOrderAmount = orderAmount > 0 ? orderAmount : 0;
-    if ((effectiveOrderAmount > 0 || manualCommission > 0) && commissionUnpaidAmount > 0 && (o.status === "in_progress" || o.status === "master_assigned")) {
-      const tier = commissionTier(effectiveOrderAmount);
+    const txCommission = realTxs.length > 0 ? Math.max(...realTxs.map(t => safeNumber(t.commission))) : 0;
+    const txOrderAmount = realTxs.length > 0 ? Math.max(...realTxs.map(t => safeNumber(t.orderAmount))) : 0;
+    if ((effectiveOrderAmount > 0 || manualCommission > 0 || txCommission > 0) && commissionUnpaidAmount > 0 && (o.status === "in_progress" || o.status === "master_assigned")) {
+      const tierBase = effectiveOrderAmount > 0 ? effectiveOrderAmount : txOrderAmount > 0 ? txOrderAmount : manualCommission > COMMISSION_FIXED ? manualCommission / COMMISSION_PERCENT : COMMISSION_THRESHOLD;
+      const tier = commissionTier(tierBase);
       if (tier === "fixed") commLeftFixed++; else commLeftPercent++;
-      const commTotal = effectiveOrderAmount > 0 ? calcCommission(effectiveOrderAmount) : manualCommission;
+      const commTotal = effectiveOrderAmount > 0 ? calcCommission(effectiveOrderAmount) : txCommission > 0 ? txCommission : manualCommission;
       const commPaid = orderPrepDeduct + orderTotalPartialPaid;
       const partialPaymentsList = orderPartials.map((p) => ({
         id: p.id,
