@@ -185,6 +185,14 @@ router.get("/:id", allOrderRoles, async (req, res) => {
     const m = await db.select().from(mastersTable).where(eq(mastersTable.id, o.masterId));
     masterName = m[0]?.alias ?? null;
   }
+  // Fetch lead info for clientName/clientPhone
+  let clientName: string | null = null;
+  let clientPhone: string | null = null;
+  if (o.leadId) {
+    const [lead] = await db.select().from(leadsTable).where(eq(leadsTable.id, o.leadId));
+    clientName = lead?.clientName ?? null;
+    clientPhone = lead?.clientPhone ?? null;
+  }
   // Fetch transaction info for this order
   const txRows = await db.select().from(transactionsTable).where(eq(transactionsTable.orderId, id));
   const tx = txRows[0] ?? null;
@@ -198,8 +206,11 @@ router.get("/:id", allOrderRoles, async (req, res) => {
     scheduledAt: o.scheduledAt ?? null,
     comment: o.comment ?? null,
     status: o.status,
+    dispatchStatus: o.dispatchStatus,
     masterId: o.masterId ?? null,
     masterName,
+    clientName,
+    clientPhone,
     proposedAmount: o.proposedAmount ? Number(o.proposedAmount) : null,
     orderAmount: o.orderAmount ? Number(o.orderAmount) : null,
     commission: o.commission ? Number(o.commission) : null,
@@ -209,6 +220,9 @@ router.get("/:id", allOrderRoles, async (req, res) => {
     operatorNote: (o as any).operatorNote ?? null,
     assignedAt: (o as any).assignedAt ?? null,
     completedAt: (o as any).completedAt ?? null,
+    photosBefore: (o as any).photosBefore ?? [],
+    photosAfter: (o as any).photosAfter ?? [],
+    photoAct: (o as any).photoAct ?? null,
     createdAt: o.createdAt,
     updatedAt: o.updatedAt,
     // Transaction info from finance (may exist even if order fields are empty)

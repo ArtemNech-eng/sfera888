@@ -107,6 +107,9 @@ interface Order {
   cancelReason?: string | null;
   assignedAt?: string | null;
   completedAt?: string | null;
+  photosBefore?: string[];
+  photosAfter?: string[];
+  photoAct?: string | null;
 }
 
 interface OrderPanelProps {
