@@ -23,6 +23,7 @@ interface TokenMasterStats {
   avgConversion: number;
   avgResponseTime: number;
   churnRisk: number;
+  debtorsCount: number;
 }
 
 interface TokenMaster {
@@ -52,6 +53,31 @@ interface TokenMaster {
 
 interface TokenMastersResponse {
   data: TokenMaster[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+interface TokenMasterDebt {
+  id: number;
+  alias: string;
+  city: string;
+  specialization: string;
+  specializations: string[];
+  phone: string | null;
+  status: string;
+  rating: number;
+  avgResponseTime: number | null;
+  lastSeenAt: string | null;
+  avatarUrl: string | null;
+  createdAt: string;
+  creditTokensIssued: number;
+  creditTokensSpent: number;
+  creditDebt: number;
+}
+
+interface TokenMastersDebtResponse {
+  data: TokenMasterDebt[];
   total: number;
   page: number;
   limit: number;
@@ -152,7 +178,10 @@ export default function TokenMastersPage() {
   );
 }
 
+type TabKey = "all" | "debt";
+
 function TokenMastersContent() {
+  const [activeTab, setActiveTab] = useState<TabKey>("all");
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [city, setCity] = useState("");
@@ -174,6 +203,14 @@ function TokenMastersContent() {
     return p.toString();
   }, [page, search, city, specialization, status, sort]);
 
+  const debtParams = useMemo(() => {
+    const p = new URLSearchParams();
+    p.set("page", String(page));
+    p.set("limit", String(LIMIT));
+    if (search) p.set("search", search);
+    return p.toString();
+  }, [page, search]);
+
   const { data: stats, isLoading: statsLoading } = useQuery<TokenMasterStats>({
     queryKey: ["/api/token-masters/stats"],
     queryFn: () => fetch("/api/token-masters/stats", { credentials: "include" }).then(r => r.json()),
@@ -184,9 +221,21 @@ function TokenMastersContent() {
     queryKey: ["/api/token-masters", params],
     queryFn: () => fetch(`/api/token-masters?${params}`, { credentials: "include" }).then(r => r.json()),
     refetchInterval: 30_000,
+    enabled: activeTab === "all",
   });
 
-  const totalPages = mastersData ? Math.ceil(mastersData.total / LIMIT) : 1;
+  const { data: debtData, isLoading: debtLoading } = useQuery<TokenMastersDebtResponse>({
+    queryKey: ["/api/token-masters/debt", debtParams],
+    queryFn: () => fetch(`/api/token-masters/debt?${debtParams}`, { credentials: "include" }).then(r => r.json()),
+    refetchInterval: 30_000,
+    enabled: activeTab === "debt",
+  });
+
+  const totalPages = activeTab === "all"
+    ? (mastersData ? Math.ceil(mastersData.total / LIMIT) : 1)
+    : (debtData ? Math.ceil(debtData.total / LIMIT) : 1);
+
+  const isLoading = activeTab === "all" ? mastersLoading : debtLoading;
 
   const handleSort = (key: SortKey) => {
     setSort(key);
@@ -210,8 +259,34 @@ function TokenMastersContent() {
         </div>
       </div>
 
+      {/* Tabs */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => { setActiveTab("all"); setPage(1); }}
+          className={cn(
+            "px-4 py-2 rounded-xl text-sm font-medium transition-colors",
+            activeTab === "all"
+              ? "bg-primary text-white"
+              : "bg-muted/40 text-muted-foreground hover:bg-muted/60"
+          )}
+        >
+          Все мастера
+        </button>
+        <button
+          onClick={() => { setActiveTab("debt"); setPage(1); }}
+          className={cn(
+            "px-4 py-2 rounded-xl text-sm font-medium transition-colors",
+            activeTab === "debt"
+              ? "bg-red-500 text-white"
+              : "bg-muted/40 text-muted-foreground hover:bg-muted/60"
+          )}
+        >
+          Должники по токенам
+        </button>
+      </div>
+
       {/* KPI Dashboard */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
         <KpiCard
           icon={Users}
           label="Активны сегодня"
@@ -261,6 +336,13 @@ function TokenMastersContent() {
           sub="нет токенов 7д+"
           color="red"
         />
+        <KpiCard
+          icon={AlertTriangle}
+          label="Должники"
+          value={statsLoading ? "…" : fmt(stats?.debtorsCount ?? 0)}
+          sub="токены в долг"
+          color="red"
+        />
       </div>
 
       {/* Filters */}
@@ -281,53 +363,62 @@ function TokenMastersContent() {
           )}
         </div>
 
-        {/* City */}
-        <input
-          className="h-9 px-3 text-sm rounded-xl border bg-background w-36 focus:outline-none focus:ring-2 focus:ring-primary/20"
-          placeholder="Город…"
-          value={city}
-          onChange={e => { setCity(e.target.value); handleFilter(); }}
-        />
+        {activeTab === "all" && (
+          <>
+            {/* City */}
+            <input
+              className="h-9 px-3 text-sm rounded-xl border bg-background w-36 focus:outline-none focus:ring-2 focus:ring-primary/20"
+              placeholder="Город…"
+              value={city}
+              onChange={e => { setCity(e.target.value); handleFilter(); }}
+            />
 
-        {/* Specialization */}
-        <input
-          className="h-9 px-3 text-sm rounded-xl border bg-background w-40 focus:outline-none focus:ring-2 focus:ring-primary/20"
-          placeholder="Специализация…"
-          value={specialization}
-          onChange={e => { setSpecialization(e.target.value); handleFilter(); }}
-        />
+            {/* Specialization */}
+            <input
+              className="h-9 px-3 text-sm rounded-xl border bg-background w-40 focus:outline-none focus:ring-2 focus:ring-primary/20"
+              placeholder="Специализация…"
+              value={specialization}
+              onChange={e => { setSpecialization(e.target.value); handleFilter(); }}
+            />
 
-        {/* Status */}
-        <select
-          className="h-9 px-3 text-sm rounded-xl border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20"
-          value={status}
-          onChange={e => { setStatus(e.target.value); handleFilter(); }}
-        >
-          <option value="">Все статусы</option>
-          <option value="active">Активен</option>
-          <option value="suspended">Приостановлен</option>
-          <option value="inactive">Неактивен</option>
-          <option value="pending_contract">Ожидает договора</option>
-        </select>
+            {/* Status */}
+            <select
+              className="h-9 px-3 text-sm rounded-xl border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20"
+              value={status}
+              onChange={e => { setStatus(e.target.value); handleFilter(); }}
+            >
+              <option value="">Все статусы</option>
+              <option value="active">Активен</option>
+              <option value="suspended">Приостановлен</option>
+              <option value="inactive">Неактивен</option>
+              <option value="pending_contract">Ожидает договора</option>
+            </select>
 
-        {/* Sort */}
-        <div className="flex items-center gap-1.5 ml-auto">
-          <SlidersHorizontal className="w-4 h-4 text-muted-foreground" />
-          <select
-            className="h-9 px-3 text-sm rounded-xl border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20"
-            value={sort}
-            onChange={e => handleSort(e.target.value as SortKey)}
-          >
-            {SORT_OPTIONS.map(o => (
-              <option key={o.key} value={o.key}>{o.label}</option>
-            ))}
-          </select>
-        </div>
+            {/* Sort */}
+            <div className="flex items-center gap-1.5 ml-auto">
+              <SlidersHorizontal className="w-4 h-4 text-muted-foreground" />
+              <select
+                className="h-9 px-3 text-sm rounded-xl border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20"
+                value={sort}
+                onChange={e => handleSort(e.target.value as SortKey)}
+              >
+                {SORT_OPTIONS.map(o => (
+                  <option key={o.key} value={o.key}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+          </>
+        )}
 
         {/* Count */}
-        {mastersData && (
+        {activeTab === "all" && mastersData && (
           <span className="text-sm text-muted-foreground whitespace-nowrap">
             {fmt(mastersData.total)} мастеров
+          </span>
+        )}
+        {activeTab === "debt" && debtData && (
+          <span className="text-sm text-muted-foreground whitespace-nowrap">
+            {fmt(debtData.total)} должников
           </span>
         )}
       </div>
@@ -339,85 +430,52 @@ function TokenMastersContent() {
             <thead>
               <tr className="border-b bg-muted/40 text-muted-foreground">
                 <th className="text-left px-4 py-3 font-medium">Мастер</th>
-                <th className="text-left px-3 py-3 font-medium hidden md:table-cell">Город</th>
-                <th className="text-left px-3 py-3 font-medium hidden lg:table-cell">Специализация</th>
-                <th
-                  className="text-right px-3 py-3 font-medium cursor-pointer hover:text-foreground select-none"
-                  onClick={() => handleSort("balance")}
-                >
-                  <span className="flex items-center justify-end gap-1">
-                    <SortIcon active={sort === "balance"} sort="balance" />
-                    Баланс
-                  </span>
-                </th>
-                <th
-                  className="text-right px-3 py-3 font-medium cursor-pointer hover:text-foreground select-none hidden sm:table-cell"
-                  onClick={() => handleSort("orders")}
-                >
-                  <span className="flex items-center justify-end gap-1">
-                    <SortIcon active={sort === "orders"} sort="orders" />
-                    Взял (токен)
-                  </span>
-                </th>
-                <th
-                  className="text-right px-3 py-3 font-medium cursor-pointer hover:text-foreground select-none hidden md:table-cell"
-                  onClick={() => handleSort("conversion")}
-                >
-                  <span className="flex items-center justify-end gap-1">
-                    <SortIcon active={sort === "conversion"} sort="conversion" />
-                    Конверсия
-                  </span>
-                </th>
-                <th
-                  className="text-right px-3 py-3 font-medium cursor-pointer hover:text-foreground select-none hidden lg:table-cell"
-                  onClick={() => handleSort("revenue")}
-                >
-                  <span className="flex items-center justify-end gap-1">
-                    <SortIcon active={sort === "revenue"} sort="revenue" />
-                    Заявил ₽
-                  </span>
-                </th>
-                <th
-                  className="text-right px-3 py-3 font-medium cursor-pointer hover:text-foreground select-none hidden lg:table-cell"
-                  onClick={() => handleSort("roi")}
-                >
-                  <span className="flex items-center justify-end gap-1">
-                    <SortIcon active={sort === "roi"} sort="roi" />
-                    ROI
-                  </span>
-                </th>
-                <th
-                  className="text-right px-3 py-3 font-medium cursor-pointer hover:text-foreground select-none hidden sm:table-cell"
-                  onClick={() => handleSort("rating")}
-                >
-                  <span className="flex items-center justify-end gap-1">
-                    <SortIcon active={sort === "rating"} sort="rating" />
-                    Рейтинг
-                  </span>
-                </th>
-                <th
-                  className="text-right px-3 py-3 font-medium cursor-pointer hover:text-foreground select-none hidden xl:table-cell"
-                  onClick={() => handleSort("response")}
-                >
-                  <span className="flex items-center justify-end gap-1">
-                    <SortIcon active={sort === "response"} sort="response" />
-                    Ответ
-                  </span>
-                </th>
-                <th className="text-center px-3 py-3 font-medium hidden sm:table-cell">Статус</th>
-                <th
-                  className="text-right px-3 py-3 font-medium cursor-pointer hover:text-foreground select-none"
-                  onClick={() => handleSort("activity")}
-                >
-                  <span className="flex items-center justify-end gap-1">
-                    <SortIcon active={sort === "activity"} sort="activity" />
-                    Активность
-                  </span>
-                </th>
+                {activeTab === "all" && (
+                  <>
+                    <th className="text-left px-3 py-3 font-medium hidden md:table-cell">Город</th>
+                    <th className="text-left px-3 py-3 font-medium hidden lg:table-cell">Специализация</th>
+                    <th className="text-right px-3 py-3 font-medium cursor-pointer hover:text-foreground select-none" onClick={() => handleSort("balance")}>
+                      <span className="flex items-center justify-end gap-1"><SortIcon active={sort === "balance"} sort="balance" />Баланс</span>
+                    </th>
+                    <th className="text-right px-3 py-3 font-medium cursor-pointer hover:text-foreground select-none hidden sm:table-cell" onClick={() => handleSort("orders")}>
+                      <span className="flex items-center justify-end gap-1"><SortIcon active={sort === "orders"} sort="orders" />Взял (токен)</span>
+                    </th>
+                    <th className="text-right px-3 py-3 font-medium cursor-pointer hover:text-foreground select-none hidden md:table-cell" onClick={() => handleSort("conversion")}>
+                      <span className="flex items-center justify-end gap-1"><SortIcon active={sort === "conversion"} sort="conversion" />Конверсия</span>
+                    </th>
+                    <th className="text-right px-3 py-3 font-medium cursor-pointer hover:text-foreground select-none hidden lg:table-cell" onClick={() => handleSort("revenue")}>
+                      <span className="flex items-center justify-end gap-1"><SortIcon active={sort === "revenue"} sort="revenue" />Заявил ₽</span>
+                    </th>
+                    <th className="text-right px-3 py-3 font-medium cursor-pointer hover:text-foreground select-none hidden lg:table-cell" onClick={() => handleSort("roi")}>
+                      <span className="flex items-center justify-end gap-1"><SortIcon active={sort === "roi"} sort="roi" />ROI</span>
+                    </th>
+                    <th className="text-right px-3 py-3 font-medium cursor-pointer hover:text-foreground select-none hidden sm:table-cell" onClick={() => handleSort("rating")}>
+                      <span className="flex items-center justify-end gap-1"><SortIcon active={sort === "rating"} sort="rating" />Рейтинг</span>
+                    </th>
+                    <th className="text-right px-3 py-3 font-medium cursor-pointer hover:text-foreground select-none hidden xl:table-cell" onClick={() => handleSort("response")}>
+                      <span className="flex items-center justify-end gap-1"><SortIcon active={sort === "response"} sort="response" />Ответ</span>
+                    </th>
+                    <th className="text-center px-3 py-3 font-medium hidden sm:table-cell">Статус</th>
+                    <th className="text-right px-3 py-3 font-medium cursor-pointer hover:text-foreground select-none" onClick={() => handleSort("activity")}>
+                      <span className="flex items-center justify-end gap-1"><SortIcon active={sort === "activity"} sort="activity" />Активность</span>
+                    </th>
+                  </>
+                )}
+                {activeTab === "debt" && (
+                  <>
+                    <th className="text-left px-3 py-3 font-medium hidden md:table-cell">Город</th>
+                    <th className="text-left px-3 py-3 font-medium hidden lg:table-cell">Специализация</th>
+                    <th className="text-right px-3 py-3 font-medium">Выдано в долг</th>
+                    <th className="text-right px-3 py-3 font-medium">Потрачено</th>
+                    <th className="text-right px-3 py-3 font-medium text-red-600">Остаток долга</th>
+                    <th className="text-center px-3 py-3 font-medium hidden sm:table-cell">Статус</th>
+                    <th className="text-right px-3 py-3 font-medium">Активность</th>
+                  </>
+                )}
               </tr>
             </thead>
             <tbody>
-              {mastersLoading && (
+              {isLoading && (
                 <tr>
                   <td colSpan={12} className="text-center py-16 text-muted-foreground">
                     <div className="flex items-center justify-center gap-2">
@@ -427,7 +485,7 @@ function TokenMastersContent() {
                   </td>
                 </tr>
               )}
-              {!mastersLoading && (!mastersData?.data.length) && (
+              {!isLoading && activeTab === "all" && (!mastersData?.data.length) && (
                 <tr>
                   <td colSpan={12} className="text-center py-16 text-muted-foreground">
                     <Zap className="w-10 h-10 mx-auto mb-3 opacity-20" />
@@ -435,123 +493,112 @@ function TokenMastersContent() {
                   </td>
                 </tr>
               )}
-              {mastersData?.data.map((m, idx) => {
+              {!isLoading && activeTab === "debt" && (!debtData?.data.length) && (
+                <tr>
+                  <td colSpan={12} className="text-center py-16 text-muted-foreground">
+                    <Zap className="w-10 h-10 mx-auto mb-3 opacity-20" />
+                    <p>Должники не найдены</p>
+                  </td>
+                </tr>
+              )}
+
+              {/* All masters rows */}
+              {activeTab === "all" && mastersData?.data.map((m, idx) => {
                 const statusInfo = STATUS_LABELS[m.status] ?? { label: m.status, cls: "bg-gray-100 text-gray-500" };
                 const now = new Date();
                 const lastSeen = m.lastSeenAt ? new Date(m.lastSeenAt) : null;
                 const isOnline = lastSeen && (now.getTime() - lastSeen.getTime()) < 5 * 60 * 1000;
-
                 return (
                   <tr
                     key={m.id}
-                    className={cn(
-                      "border-b last:border-0 cursor-pointer transition-colors",
-                      idx % 2 === 0 ? "bg-background" : "bg-muted/20",
-                      "hover:bg-primary/5",
-                    )}
+                    className={cn("border-b last:border-0 cursor-pointer transition-colors", idx % 2 === 0 ? "bg-background" : "bg-muted/20", "hover:bg-primary/5")}
                     onClick={() => setSelectedMasterId(m.id)}
                   >
-                    {/* Name */}
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2.5">
                         <div className="relative shrink-0">
                           <MasterAvatar url={m.avatarUrl} alias={m.alias} size={34} />
-                          {isOnline && (
-                            <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-background rounded-full" />
-                          )}
+                          {isOnline && <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-background rounded-full" />}
                         </div>
                         <span className="font-medium truncate max-w-[120px]">{m.alias}</span>
                       </div>
                     </td>
-
-                    {/* City */}
-                    <td className="px-3 py-3 text-muted-foreground hidden md:table-cell">
-                      <span className="truncate max-w-[80px] block">{m.city}</span>
-                    </td>
-
-                    {/* Specialization */}
-                    <td className="px-3 py-3 text-muted-foreground hidden lg:table-cell">
-                      <span className="truncate max-w-[100px] block text-xs">{m.specialization}</span>
-                    </td>
-
-                    {/* Token balance */}
+                    <td className="px-3 py-3 text-muted-foreground hidden md:table-cell"><span className="truncate max-w-[80px] block">{m.city}</span></td>
+                    <td className="px-3 py-3 text-muted-foreground hidden lg:table-cell"><span className="truncate max-w-[100px] block text-xs">{m.specialization}</span></td>
                     <td className="px-3 py-3 text-right">
-                      <span className={cn(
-                        "inline-flex items-center gap-1 font-semibold tabular-nums text-sm",
-                        m.tokensBalance > 0 ? "text-violet-600 dark:text-violet-400" : "text-red-500 dark:text-red-400"
-                      )}>
-                        <Zap className="w-3 h-3" />
-                        {fmt(m.tokensBalance)}
+                      <span className={cn("inline-flex items-center gap-1 font-semibold tabular-nums text-sm", m.tokensBalance > 0 ? "text-violet-600 dark:text-violet-400" : "text-red-500 dark:text-red-400")}>
+                        <Zap className="w-3 h-3" />{fmt(m.tokensBalance)}
                       </span>
                     </td>
-
-                    {/* Orders (token only) */}
-                    <td className="px-3 py-3 text-right text-muted-foreground tabular-nums hidden sm:table-cell">
-                      {fmt(m.tokenOrdersTotal)}
-                    </td>
-
-                    {/* Conversion */}
+                    <td className="px-3 py-3 text-right text-muted-foreground tabular-nums hidden sm:table-cell">{fmt(m.tokenOrdersTotal)}</td>
                     <td className="px-3 py-3 text-right hidden md:table-cell">
                       {m.conversion != null ? (
-                        <span className={cn(
-                          "font-medium tabular-nums text-sm",
-                          m.conversion >= 60 ? "text-green-600 dark:text-green-400" :
-                          m.conversion >= 30 ? "text-amber-600 dark:text-amber-400" :
-                          "text-red-500 dark:text-red-400"
-                        )}>
+                        <span className={cn("font-medium tabular-nums text-sm", m.conversion >= 60 ? "text-green-600 dark:text-green-400" : m.conversion >= 30 ? "text-amber-600 dark:text-amber-400" : "text-red-500 dark:text-red-400")}>
                           {m.conversion}%
                         </span>
                       ) : <span className="text-muted-foreground/40">—</span>}
                     </td>
-
-                    {/* Revenue */}
                     <td className="px-3 py-3 text-right tabular-nums hidden lg:table-cell">
-                      {m.totalRevenue > 0
-                        ? <span className="text-sm font-medium">{fmt(m.totalRevenue)} ₽</span>
-                        : <span className="text-muted-foreground/40">—</span>
-                      }
+                      {m.totalRevenue > 0 ? <span className="text-sm font-medium">{fmt(m.totalRevenue)} ₽</span> : <span className="text-muted-foreground/40">—</span>}
                     </td>
-
-                    {/* ROI */}
                     <td className="px-3 py-3 text-right hidden lg:table-cell">
                       {m.roi != null ? (
-                        <span className={cn(
-                          "font-semibold text-sm tabular-nums",
-                          m.roi >= 5 ? "text-green-600 dark:text-green-400" :
-                          m.roi >= 2 ? "text-blue-600 dark:text-blue-400" :
-                          "text-muted-foreground"
-                        )}>
+                        <span className={cn("font-semibold text-sm tabular-nums", m.roi >= 5 ? "text-green-600 dark:text-green-400" : m.roi >= 2 ? "text-blue-600 dark:text-blue-400" : "text-muted-foreground")}>
                           {m.roi}x
                         </span>
                       ) : <span className="text-muted-foreground/40">—</span>}
                     </td>
-
-                    {/* Rating */}
                     <td className="px-3 py-3 text-right hidden sm:table-cell">
-                      <span className="inline-flex items-center gap-1 text-sm">
-                        <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
-                        <span className="tabular-nums font-medium">{m.rating.toFixed(1)}</span>
-                      </span>
+                      <span className="inline-flex items-center gap-1 text-sm"><Star className="w-3 h-3 text-amber-400 fill-amber-400" /><span className="tabular-nums font-medium">{m.rating.toFixed(1)}</span></span>
                     </td>
-
-                    {/* Response time */}
                     <td className="px-3 py-3 text-right text-muted-foreground text-xs tabular-nums hidden xl:table-cell">
                       {m.avgResponseTime != null ? `${Math.round(m.avgResponseTime)} мин` : <span className="text-muted-foreground/40">—</span>}
                     </td>
-
-                    {/* Status */}
                     <td className="px-3 py-3 text-center hidden sm:table-cell">
-                      <span className={cn("text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap", statusInfo.cls)}>
-                        {statusInfo.label}
+                      <span className={cn("text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap", statusInfo.cls)}>{statusInfo.label}</span>
+                    </td>
+                    <td className="px-3 py-3 text-right text-xs text-muted-foreground whitespace-nowrap">
+                      {m.lastSeenAt ? fmtRelative(m.lastSeenAt) : <span className="text-muted-foreground/40">—</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+
+              {/* Debt rows */}
+              {activeTab === "debt" && debtData?.data.map((m, idx) => {
+                const statusInfo = STATUS_LABELS[m.status] ?? { label: m.status, cls: "bg-gray-100 text-gray-500" };
+                const now = new Date();
+                const lastSeen = m.lastSeenAt ? new Date(m.lastSeenAt) : null;
+                const isOnline = lastSeen && (now.getTime() - lastSeen.getTime()) < 5 * 60 * 1000;
+                return (
+                  <tr
+                    key={m.id}
+                    className={cn("border-b last:border-0 cursor-pointer transition-colors", idx % 2 === 0 ? "bg-background" : "bg-muted/20", "hover:bg-primary/5")}
+                    onClick={() => setSelectedMasterId(m.id)}
+                  >
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="relative shrink-0">
+                          <MasterAvatar url={m.avatarUrl} alias={m.alias} size={34} />
+                          {isOnline && <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-background rounded-full" />}
+                        </div>
+                        <span className="font-medium truncate max-w-[120px]">{m.alias}</span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-muted-foreground hidden md:table-cell"><span className="truncate max-w-[80px] block">{m.city}</span></td>
+                    <td className="px-3 py-3 text-muted-foreground hidden lg:table-cell"><span className="truncate max-w-[100px] block text-xs">{m.specialization}</span></td>
+                    <td className="px-3 py-3 text-right tabular-nums text-muted-foreground">{fmt(m.creditTokensIssued)}</td>
+                    <td className="px-3 py-3 text-right tabular-nums text-muted-foreground">{fmt(m.creditTokensSpent)}</td>
+                    <td className="px-3 py-3 text-right">
+                      <span className="inline-flex items-center gap-1 font-semibold tabular-nums text-sm text-red-600 dark:text-red-400">
+                        <Zap className="w-3 h-3" />{fmt(m.creditDebt)}
                       </span>
                     </td>
-
-                    {/* Last activity */}
+                    <td className="px-3 py-3 text-center hidden sm:table-cell">
+                      <span className={cn("text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap", statusInfo.cls)}>{statusInfo.label}</span>
+                    </td>
                     <td className="px-3 py-3 text-right text-xs text-muted-foreground whitespace-nowrap">
-                      {m.lastSeenAt
-                        ? fmtRelative(m.lastSeenAt)
-                        : <span className="text-muted-foreground/40">—</span>
-                      }
+                      {m.lastSeenAt ? fmtRelative(m.lastSeenAt) : <span className="text-muted-foreground/40">—</span>}
                     </td>
                   </tr>
                 );

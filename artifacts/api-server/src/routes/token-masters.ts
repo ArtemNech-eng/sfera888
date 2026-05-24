@@ -24,6 +24,7 @@ router.get("/stats", ops, async (_req: any, res: any) => {
       avgConversionRows,
       avgResponseTimeRows,
       churnRiskRows,
+      debtorsRows,
     ] = await Promise.all([
       // Active today
       db
@@ -92,6 +93,15 @@ router.get("/stats", ops, async (_req: any, res: any) => {
           sql`${masterWalletTable.tokensBalance} = 0`,
           lte(mastersTable.lastSeenAt, sevenDaysAgo),
         )),
+      // Debtors: creditTokensIssued > creditTokensSpent
+      db
+        .select({ cnt: count() })
+        .from(masterWalletTable)
+        .innerJoin(mastersTable, and(
+          eq(masterWalletTable.masterId, mastersTable.id),
+          isNull(mastersTable.deletedAt),
+        ))
+        .where(sql`${masterWalletTable.creditTokensIssued}::numeric > ${masterWalletTable.creditTokensSpent}::numeric`),
     ]);
 
     return res.json({
@@ -104,6 +114,7 @@ router.get("/stats", ops, async (_req: any, res: any) => {
         : 0,
       avgResponseTime: Number(avgResponseTimeRows[0]?.avgResponseTime ?? 0),
       churnRisk: Number(churnRiskRows[0]?.cnt ?? 0),
+      debtorsCount: Number(debtorsRows[0]?.cnt ?? 0),
     });
   } catch (err: any) {
     console.error("[token-masters/stats]", err);
@@ -388,6 +399,88 @@ router.get("/:id", ops, async (req: any, res: any) => {
     });
   } catch (err: any) {
     console.error("[token-masters/:id]", err);
+    return res.status(500).json({ error: "Ошибка сервера" });
+  }
+});
+
+// ─── GET /api/token-masters/debt ──────────────────────────────────────────────
+router.get("/debt", ops, async (req: any, res: any) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
+    const offset = (page - 1) * limit;
+    const search = (req.query.search as string) ?? "";
+
+    const conditions: any[] = [
+      isNull(mastersTable.deletedAt),
+      sql`${masterWalletTable.creditTokensIssued}::numeric > ${masterWalletTable.creditTokensSpent}::numeric`,
+    ];
+    if (search) {
+      conditions.push(or(
+        ilike(mastersTable.alias, `%${search}%`),
+        ilike(mastersTable.phone, `%${search}%`),
+      ));
+    }
+
+    const whereClause = and(...conditions);
+
+    const [rows, totalRows] = await Promise.all([
+      db
+        .select({
+          id: mastersTable.id,
+          alias: mastersTable.alias,
+          city: mastersTable.city,
+          specialization: mastersTable.specialization,
+          specializations: mastersTable.specializations,
+          phone: mastersTable.phone,
+          status: mastersTable.status,
+          rating: mastersTable.rating,
+          avgResponseTime: mastersTable.avgResponseTime,
+          lastSeenAt: mastersTable.lastSeenAt,
+          avatarUrl: mastersTable.customAvatarUrl,
+          createdAt: mastersTable.createdAt,
+          creditTokensIssued: masterWalletTable.creditTokensIssued,
+          creditTokensSpent: masterWalletTable.creditTokensSpent,
+        })
+        .from(mastersTable)
+        .innerJoin(masterWalletTable, eq(masterWalletTable.masterId, mastersTable.id))
+        .where(whereClause)
+        .orderBy(desc(sql`${masterWalletTable.creditTokensIssued}::numeric - ${masterWalletTable.creditTokensSpent}::numeric`))
+        .limit(limit)
+        .offset(offset),
+      db
+        .select({ cnt: count() })
+        .from(mastersTable)
+        .innerJoin(masterWalletTable, eq(masterWalletTable.masterId, mastersTable.id))
+        .where(whereClause),
+    ]);
+
+    const data = rows.map(r => ({
+      id: r.id,
+      alias: r.alias,
+      city: r.city,
+      specialization: r.specialization,
+      specializations: r.specializations,
+      phone: r.phone,
+      status: r.status,
+      rating: Number(r.rating),
+      avgResponseTime: r.avgResponseTime ? Number(r.avgResponseTime) : null,
+      lastSeenAt: r.lastSeenAt,
+      avatarUrl: r.avatarUrl,
+      createdAt: r.createdAt,
+      creditTokensIssued: Number(r.creditTokensIssued ?? 0),
+      creditTokensSpent: Number(r.creditTokensSpent ?? 0),
+      creditDebt: Number(r.creditTokensIssued ?? 0) - Number(r.creditTokensSpent ?? 0),
+    }));
+
+    return res.json({
+      data,
+      total: Number(totalRows[0]?.cnt ?? 0),
+      page,
+      limit,
+    });
+  } catch (err: any) {
+    console.error("[token-masters/debt]", err);
     return res.status(500).json({ error: "Ошибка сервера" });
   }
 });
