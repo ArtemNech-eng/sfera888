@@ -682,17 +682,22 @@ router.get("/stream", requireAuth, (req, res) => {
   res.set({
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache, no-transform",
-    Connection: "keep-alive",
     "X-Accel-Buffering": "no",
   });
   res.flushHeaders?.();
   res.write(`event: ready\ndata: {"ok":true}\n\n`);
 
   const tick = () => {
-    res.write(`event: tick\ndata: ${JSON.stringify({ at: new Date().toISOString() })}\n\n`);
+    if (res.writableEnded) return;
+    try {
+      res.write(`event: tick\ndata: ${JSON.stringify({ at: new Date().toISOString() })}\n\n`);
+    } catch {}
   };
   const onChange = (info: { reason: string; at: string }) => {
-    res.write(`event: changed\ndata: ${JSON.stringify(info)}\n\n`);
+    if (res.writableEnded) return;
+    try {
+      res.write(`event: changed\ndata: ${JSON.stringify(info)}\n\n`);
+    } catch {}
   };
 
   const interval = setInterval(tick, 5000);

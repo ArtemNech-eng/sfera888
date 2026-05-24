@@ -169,6 +169,16 @@ export default function OrderPanel({
     },
   });
 
+  const { data: fetchedOrder, isLoading: orderLoading } = useQuery<Order>({
+    queryKey: ["/api/orders", orderId],
+    queryFn: async () => {
+      const r = await fetch(`/api/orders/${orderId}`, { credentials: "include" });
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+    enabled: !order,
+  });
+
   // ── Computed ───────────────────────────────────────────────────────────────
   const respondents = useMemo(() => dispatchData?.dispatches.filter(d => d.status === "responded") ?? [], [dispatchData]);
   const rejectedDispatches = useMemo(() => dispatchData?.dispatches.filter(d => d.status === "rejected") ?? [], [dispatchData]);
@@ -341,15 +351,28 @@ export default function OrderPanel({
   });
 
   // ── Derived order data ─────────────────────────────────────────────────────
-  const openOrder = order;
+  const openOrder = order ?? fetchedOrder;
 
-  if (!openOrder) {
+  if (!openOrder && orderLoading) {
     return (
       <div className="fixed inset-0 z-50 flex">
         <div className="flex-1 bg-black/30 backdrop-blur-sm" onClick={onClose} />
         <div className="bg-card w-full max-w-md h-full overflow-hidden flex flex-col shadow-2xl border-l border-border animate-in slide-in-from-right duration-200">
           <div className="flex-1 flex items-center justify-center">
             <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!openOrder) {
+    return (
+      <div className="fixed inset-0 z-50 flex">
+        <div className="flex-1 bg-black/30 backdrop-blur-sm" onClick={onClose} />
+        <div className="bg-card w-full max-w-md h-full overflow-hidden flex flex-col shadow-2xl border-l border-border animate-in slide-in-from-right duration-200">
+          <div className="flex-1 flex items-center justify-center text-muted-foreground">
+            Заказ не найден
           </div>
         </div>
       </div>
