@@ -33,6 +33,7 @@ interface LeadRow {
 const SOURCE_OPTIONS = [
   { value: "call", label: "Входящий звонок" },
   { value: "website", label: "Сайт" },
+  { value: "landing", label: "Лендинг" },
   { value: "ads", label: "Реклама" },
   { value: "avito", label: "Авито" },
   { value: "referral", label: "Рекомендация" },

@@ -2,7 +2,7 @@
 // No auth required. Creates a lead linked to a traffic partner via ref_slug.
 
 import { Router, Request, Response } from "express";
-import { db, leadsTable, trafficPartnersTable, systemSettingsTable } from "@workspace/db";
+import { db, leadsTable, trafficPartnersTable } from "@workspace/db";
 import { eq, and, isNull, gte } from "drizzle-orm";
 import { z } from "zod";
 import { notifyManagerNewLead } from "../managerBot.js";
@@ -19,14 +19,6 @@ function checkLandingRateLimit(ip: string): boolean {
   if (last && now - last < RATE_LIMIT_MS) return false;
   rateLimitStore.set(ip, now);
   return true;
-}
-
-async function getSetting(key: string, fallback: string): Promise<string> {
-  const [row] = await db
-    .select()
-    .from(systemSettingsTable)
-    .where(eq(systemSettingsTable.key, key));
-  return row?.value ?? fallback;
 }
 
 const landingLeadSchema = z.object({
@@ -86,11 +78,7 @@ router.post("/leads", async (req: Request, res: Response) => {
 
     const isPossibleDuplicate = !!duplicate;
 
-    // 3. Determine partner lead status from setting
-    const manualReview = await getSetting("manual_partner_lead_review", "true");
-    const partnerLeadStatus = manualReview === "false" ? "waiting_master" : "partner_review";
-
-    // 4. Build service summary
+    // 3. Build service summary
     const serviceType = body.services.join(", ");
     const servicesJson = JSON.stringify(body.services);
 
@@ -106,11 +94,10 @@ router.post("/leads", async (req: Request, res: Response) => {
         area: String(body.area),
         services: servicesJson,
         comment: body.comment ?? null,
-        source: "avito_partner",
+        source: "landing",
+        status: "new",
         trafficPartnerId: partnerId,
-        leadChannel: "partner_landing",
         isPossibleDuplicate,
-        partnerLeadStatus,
       })
       .returning();
 
@@ -143,7 +130,7 @@ router.post("/leads", async (req: Request, res: Response) => {
       ok: true,
       lead: {
         id: newLead.id,
-        partner_lead_status: newLead.partnerLeadStatus,
+        source: newLead.source,
         is_possible_duplicate: newLead.isPossibleDuplicate,
         created_at: newLead.createdAt,
       },
