@@ -349,7 +349,32 @@ router.get("/:id", allMasterRoles, async (req, res) => {
     .where(and(eq(transactionsTable.masterId, id), eq(transactionsTable.paymentStatus, "paid")));
   const paidOrdersCount = Number(paidRows[0]?.cnt ?? 0);
 
-  res.json({ ...formatMaster(rows[0]), paidOrdersCount });
+  // Auto-recalculate debt from pending/overdue transactions (fixes stale debt bug)
+  const txRows = await db.select().from(transactionsTable)
+    .where(and(eq(transactionsTable.masterId, id), inArray(transactionsTable.paymentStatus, ["pending", "overdue"])));
+  const txIds = txRows.map(t => t.id);
+  const partials = txIds.length
+    ? await db.select().from(transactionPaymentsTable).where(inArray(transactionPaymentsTable.transactionId, txIds))
+    : [];
+  const partialsByTx = new Map<number, typeof partials>(
+    txIds.map(txId => [txId, partials.filter(p => p.transactionId === txId)])
+  );
+  let totalDebt = 0;
+  for (const tx of txRows) {
+    const txPartials = partialsByTx.get(tx.id) ?? [];
+    const totalPartialPaid = txPartials.reduce((s, p) => s + Number(p.amount), 0);
+    const prepaymentDeducted = Number(tx.prepaymentDeducted ?? 0);
+    const commission = Number(tx.commission);
+    totalDebt += Math.max(0, commission - prepaymentDeducted - totalPartialPaid);
+  }
+  const master = rows[0];
+  const oldDebt = Number(master.debt ?? 0);
+  if (oldDebt !== totalDebt) {
+    await db.update(mastersTable).set({ debt: String(totalDebt) }).where(eq(mastersTable.id, id));
+    master.debt = String(totalDebt);
+  }
+
+  res.json({ ...formatMaster(master), paidOrdersCount, debtRecalculated: oldDebt !== totalDebt });
 });
 
 // PATCH /api/masters/:id

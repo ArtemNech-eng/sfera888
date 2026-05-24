@@ -1076,40 +1076,6 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                 {master.debt > 0 && (
                   <Row icon={<AlertTriangle className="w-4 h-4 text-red-400" />} label="Долг">
                     <span className="text-red-600 font-semibold text-sm">{master.debt.toLocaleString("ru")} ₽</span>
-                    {user?.role === "admin" && (
-                      <>
-                        <button
-                          onClick={async () => {
-                            const r = await fetch(`/api/masters/${master.id}/recalculate-debt`, { method: "POST", credentials: "include" });
-                            if (r.ok) {
-                              const data = await r.json();
-                              alert(`Долг пересчитан: ${data.oldDebt.toLocaleString("ru-RU")} ₽ → ${data.newDebt.toLocaleString("ru-RU")} ₽`);
-                              window.location.reload();
-                            } else {
-                              alert("Ошибка пересчёта долга");
-                            }
-                          }}
-                          className="ml-2 text-[10px] text-blue-600 hover:text-blue-800 underline"
-                        >
-                          Пересчитать
-                        </button>
-                        <button
-                          onClick={async () => {
-                            const r = await fetch(`/api/masters/${master.id}/debug-transactions`, { credentials: "include" });
-                            if (r.ok) {
-                              const data = await r.json();
-                              console.log("[debug-transactions]", data);
-                              alert(JSON.stringify(data, null, 2).slice(0, 1500));
-                            } else {
-                              alert("Ошибка загрузки транзакций");
-                            }
-                          }}
-                          className="ml-2 text-[10px] text-gray-500 hover:text-gray-700 underline"
-                        >
-                          Debug
-                        </button>
-                      </>
-                    )}
                   </Row>
                 )}
               </div>
