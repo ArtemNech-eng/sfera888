@@ -456,9 +456,16 @@ export default function OrderPanel({
                         <span className="font-semibold text-amber-700">{fmtMoney(proposed)}</span>
                         <button onClick={() => { setEditAmountId(orderId); setEditAmountValue(String(proposed)); }} className="text-amber-400 hover:text-amber-700"><Pencil className="w-3 h-3" /></button>
                       </div>
+                      {openOrder.transactionInfo?.paymentStatus === "paid" ? <p className="text-[10px] text-green-600 font-medium">✅ комиссия оплачена</p> : openOrder.transactionInfo?.paymentStatus && Number(openOrder.transactionInfo.commission) > 0 ? <p className="text-[10px] text-amber-600">⏳ комиссия не оплачена</p> : null}
                     </div>
                   );
-                  return <div><p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide">Сумма</p><button onClick={() => { setEditAmountId(orderId); setEditAmountValue(""); }} className="text-xs text-primary hover:underline flex items-center gap-1"><Pencil className="w-3 h-3" />Указать сумму</button></div>;
+                  return (
+                    <div>
+                      <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide">Сумма</p>
+                      <button onClick={() => { setEditAmountId(orderId); setEditAmountValue(""); }} className="text-xs text-primary hover:underline flex items-center gap-1"><Pencil className="w-3 h-3" />Указать сумму</button>
+                      {openOrder.transactionInfo?.paymentStatus === "paid" ? <p className="text-[10px] text-green-600 font-medium">✅ комиссия оплачена</p> : openOrder.transactionInfo?.paymentStatus && Number(openOrder.transactionInfo.commission) > 0 ? <p className="text-[10px] text-amber-600">⏳ комиссия не оплачена</p> : null}
+                    </div>
+                  );
                 })()}
               </div>
               {openOrder.comment && <div className="pt-1.5 border-t border-border/40"><p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide mb-1">Комментарий</p><p className="text-sm text-foreground">{openOrder.comment}</p></div>}

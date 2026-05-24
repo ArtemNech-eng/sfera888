@@ -367,7 +367,8 @@ async function buildTableData(params: QueryParams): Promise<{
     const masterAlias = master?.alias ?? (o.masterId ? recoveredMasterNames.get(o.masterId) ?? null : null);
 
     // Pre-calculate commission totals (needed for problem detection)
-    const commTotal = total > 0 ? calcCommission(total) : orderAmount > 0 ? calcCommission(orderAmount) : 0;
+    const manualCommission = safeNumber((o as any).commission);
+    const commTotal = total > 0 ? calcCommission(total) : orderAmount > 0 ? calcCommission(orderAmount) : manualCommission > 0 ? manualCommission : 0;
     const commPaid = orderPrepDeduct + orderTotalPartialPaid;
     const commLeft = Math.max(0, commTotal - commPaid);
 

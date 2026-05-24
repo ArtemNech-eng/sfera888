@@ -333,7 +333,8 @@ async function buildBoard() {
     if (problem) {
       // For problem cards with receipt + prepaymentSeenAt, show commission block
       // instead of misleading "оплачено {total}" badge
-      const commTotal = receipt && total > 0 ? calcCommission(total) : 0;
+      const manualCommission = safeNumber((o as any).commission);
+      const commTotal = receipt && total > 0 ? calcCommission(total) : manualCommission > 0 ? manualCommission : 0;
       const commPaid = commTotal > 0 ? orderPrepDeduct + orderTotalPartialPaid : 0;
       const commLeft = commTotal > 0 ? Math.max(0, commTotal - commPaid) : 0;
       const tier = commTotal > 0 ? commissionTier(total) : null;
@@ -387,10 +388,12 @@ async function buildBoard() {
     }
 
     // commission_left: order amount confirmed but commission not fully paid (still active)
-    if (orderAmount > 0 && commissionUnpaidAmount > 0 && (o.status === "in_progress" || o.status === "master_assigned")) {
-      const tier = commissionTier(orderAmount);
+    const manualCommission = safeNumber((o as any).commission);
+    const effectiveOrderAmount = orderAmount > 0 ? orderAmount : 0;
+    if ((effectiveOrderAmount > 0 || manualCommission > 0) && commissionUnpaidAmount > 0 && (o.status === "in_progress" || o.status === "master_assigned")) {
+      const tier = commissionTier(effectiveOrderAmount);
       if (tier === "fixed") commLeftFixed++; else commLeftPercent++;
-      const commTotal = calcCommission(orderAmount);
+      const commTotal = effectiveOrderAmount > 0 ? calcCommission(effectiveOrderAmount) : manualCommission;
       const commPaid = orderPrepDeduct + orderTotalPartialPaid;
       const partialPaymentsList = orderPartials.map((p) => ({
         id: p.id,
@@ -424,7 +427,8 @@ async function buildBoard() {
     if (receipt && (receipt as any).prepaymentSeenAt) {
       const tier = commissionTier(total);
       const realPaid = prepayment > 0 ? prepayment : total;
-      const commTotal = calcCommission(total);
+      const manualCommission = safeNumber((o as any).commission);
+      const commTotal = total > 0 ? calcCommission(total) : manualCommission > 0 ? manualCommission : 0;
       // Use transaction data for accurate commission tracking:
       // prepaymentDeducted = бронь зачтённая в комиссию, totalPartialPaid = частичные оплаты мастера
       const commPaid = orderPrepDeduct + orderTotalPartialPaid;
@@ -844,12 +848,54 @@ router.post("/orders/:orderId/partial-payment", operatorRoles, async (req, res) 
   }
 
   try {
-    // Find the transaction for this order
-    const txRows = await db.select().from(transactionsTable)
+    // Find any transaction for this order (paid or pending)
+    let txRows = await db.select().from(transactionsTable)
       .where(eq(transactionsTable.orderId, orderId));
-    const tx = txRows.find(t => safeNumber(t.commission) > 0 && t.paymentStatus !== "paid");
+    let tx = txRows.find(t => safeNumber(t.commission) > 0 && t.paymentStatus !== "paid");
+
+    // If no active commission transaction exists, try to find any transaction or create one
     if (!tx) {
-      return res.status(404).json({ error: "Не найдена активная транзакция с комиссией по этому заказу" });
+      const anyTx = txRows[0];
+      if (anyTx) {
+        // Transaction exists but is already paid or has 0 commission — create a new one for additional payment tracking
+        const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
+        if (!order || !order.masterId) {
+          return res.status(404).json({ error: "Заказ или мастер не найдены" });
+        }
+        const orderAmount = safeNumber(order.orderAmount);
+        const commission = safeNumber(order.commission) || (orderAmount > 0 ? calcCommission(orderAmount) : 0);
+        if (commission <= 0) {
+          return res.status(400).json({ error: "Комиссия по заказу равна 0, нечего оплачивать" });
+        }
+        const [newTx] = await db.insert(transactionsTable).values({
+          orderId,
+          masterId: order.masterId,
+          orderAmount: orderAmount > 0 ? String(orderAmount) : "0",
+          commission: String(commission),
+          prepaymentDeducted: "0",
+          paymentStatus: "pending",
+        }).returning();
+        tx = newTx;
+      } else {
+        // No transaction at all — fetch order and create one
+        const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
+        if (!order) return res.status(404).json({ error: "Заказ не найден" });
+        if (!order.masterId) return res.status(400).json({ error: "Нет назначенного мастера" });
+        const orderAmount = safeNumber(order.orderAmount);
+        const commission = safeNumber(order.commission) || (orderAmount > 0 ? calcCommission(orderAmount) : 0);
+        if (commission <= 0) {
+          return res.status(400).json({ error: "Комиссия по заказу равна 0, нечего оплачивать" });
+        }
+        const [newTx] = await db.insert(transactionsTable).values({
+          orderId,
+          masterId: order.masterId,
+          orderAmount: orderAmount > 0 ? String(orderAmount) : "0",
+          commission: String(commission),
+          prepaymentDeducted: "0",
+          paymentStatus: "pending",
+        }).returning();
+        tx = newTx;
+      }
     }
 
     // Get existing partial payments to validate amount
