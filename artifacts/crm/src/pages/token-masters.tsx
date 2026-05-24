@@ -222,14 +222,22 @@ function TokenMastersContent() {
 
   const { data: mastersData, isLoading: mastersLoading } = useQuery<TokenMastersResponse>({
     queryKey: ["/api/token-masters", params],
-    queryFn: () => fetch(`/api/token-masters?${params}`, { credentials: "include" }).then(r => r.json()),
+    queryFn: async () => {
+      const r = await fetch(`/api/token-masters?${params}`, { credentials: "include" });
+      if (!r.ok) throw new Error("Ошибка загрузки мастеров");
+      return r.json();
+    },
     refetchInterval: 30_000,
     enabled: activeTab === "all",
   });
 
   const { data: debtData, isLoading: debtLoading } = useQuery<TokenMastersDebtResponse>({
     queryKey: ["/api/token-masters/debt", debtParams],
-    queryFn: () => fetch(`/api/token-masters/debt?${debtParams}`, { credentials: "include" }).then(r => r.json()),
+    queryFn: async () => {
+      const r = await fetch(`/api/token-masters/debt?${debtParams}`, { credentials: "include" });
+      if (!r.ok) throw new Error("Ошибка загрузки должников");
+      return r.json();
+    },
     refetchInterval: 30_000,
     enabled: activeTab === "debt",
   });
@@ -488,7 +496,7 @@ function TokenMastersContent() {
                   </td>
                 </tr>
               )}
-              {!isLoading && activeTab === "all" && (!mastersData?.data.length) && (
+              {!isLoading && activeTab === "all" && (!mastersData?.data?.length) && (
                 <tr>
                   <td colSpan={12} className="text-center py-16 text-muted-foreground">
                     <Zap className="w-10 h-10 mx-auto mb-3 opacity-20" />
@@ -496,7 +504,7 @@ function TokenMastersContent() {
                   </td>
                 </tr>
               )}
-              {!isLoading && activeTab === "debt" && (!debtData?.data.length) && (
+              {!isLoading && activeTab === "debt" && (!debtData?.data?.length) && (
                 <tr>
                   <td colSpan={12} className="text-center py-16 text-muted-foreground">
                     <Zap className="w-10 h-10 mx-auto mb-3 opacity-20" />
