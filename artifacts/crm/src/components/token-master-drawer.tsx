@@ -85,7 +85,10 @@ const TX_TYPE_LABELS: Record<string, { label: string; sign: string; cls: string 
   debit:    { label: "Списание",  sign: "−", cls: "text-orange-600 dark:text-orange-400" },
 };
 
-function fmt(n: number) { return n.toLocaleString("ru-RU"); }
+function fmt(n: number | null | undefined) {
+  if (n == null || Number.isNaN(n)) return "—";
+  return n.toLocaleString("ru-RU");
+}
 function fmtDate(s: string) { return format(new Date(s), "d MMM yyyy", { locale: ru }); }
 function fmtRelative(s: string) { return formatDistanceToNow(new Date(s), { addSuffix: true, locale: ru }); }
 

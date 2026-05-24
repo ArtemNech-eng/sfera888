@@ -85,7 +85,10 @@ interface TokenMastersDebtResponse {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function fmt(n: number) { return n.toLocaleString("ru-RU"); }
+function fmt(n: number | null | undefined) {
+  if (n == null || Number.isNaN(n)) return "—";
+  return n.toLocaleString("ru-RU");
+}
 function fmtRelative(s: string) {
   return formatDistanceToNow(new Date(s), { addSuffix: true, locale: ru });
 }
