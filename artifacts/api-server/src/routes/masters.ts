@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, mastersTable, masterTasksTable, ordersTable, leadsTable, telegramChatsTable, voronkaColumnsTable, transactionsTable, maxBotLogsTable, masterCheckinsTable, systemSettingsTable, usersTable } from "@workspace/db";
+import { db, mastersTable, masterTasksTable, ordersTable, leadsTable, telegramChatsTable, voronkaColumnsTable, transactionsTable, transactionPaymentsTable, maxBotLogsTable, masterCheckinsTable, systemSettingsTable, usersTable } from "@workspace/db";
 import { eq, desc, inArray, isNull, isNotNull, ne, count, gte, avg, sql, and } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { logMaxEvent } from "../maxBot.js";
@@ -274,7 +274,7 @@ router.get("/checkins", allMasterRoles, async (req, res) => {
 
 // POST /api/masters/checkins/nudge/:masterId — send reminder to specific non-responding master
 router.post("/checkins/nudge/:masterId", requireRole("admin", "master_operator"), async (req, res) => {
-  const masterId = parseInt(req.params.masterId);
+  const masterId = parseInt(String(req.params.masterId));
   if (isNaN(masterId)) return res.status(400).json({ error: "Invalid id" });
   const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
   if (!master) return res.status(404).json({ error: "Мастер не найден" });
@@ -1018,6 +1018,55 @@ router.delete("/:id/avatar", allMasterRoles, async (req, res) => {
 
   await db.update(mastersTable).set({ customAvatarUrl: null }).where(eq(mastersTable.id, masterId));
   res.json({ success: true });
+});
+
+// POST /api/masters/:id/recalculate-debt — recalculate master debt from all transactions
+router.post("/:id/recalculate-debt", requireRole("admin", "master_operator"), async (req, res) => {
+  const masterId = parseInt(req.params.id);
+  if (isNaN(masterId)) return res.status(400).json({ error: "Invalid id" });
+
+  const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
+  if (!master) return res.status(404).json({ error: "Master not found" });
+
+  // Fetch all pending/overdue transactions for this master
+  const txRows = await db.select().from(transactionsTable)
+    .where(and(eq(transactionsTable.masterId, masterId), inArray(transactionsTable.paymentStatus, ["pending", "overdue"])));
+
+  const txIds = txRows.map(t => t.id);
+  const partials = txIds.length
+    ? await db.select().from(transactionPaymentsTable).where(inArray(transactionPaymentsTable.transactionId, txIds))
+    : [];
+  const partialsByTx = new Map<number, typeof partials[0][]>(
+    txIds.map(id => [id, partials.filter(p => p.transactionId === id)])
+  );
+
+  let totalDebt = 0;
+  const breakdown = txRows.map(tx => {
+    const txPartials = partialsByTx.get(tx.id) ?? [];
+    const totalPartialPaid = txPartials.reduce((s, p) => s + Number(p.amount), 0);
+    const prepaymentDeducted = Number(tx.prepaymentDeducted ?? 0);
+    const commission = Number(tx.commission);
+    const remaining = Math.max(0, commission - prepaymentDeducted - totalPartialPaid);
+    totalDebt += remaining;
+    return {
+      orderId: tx.orderId,
+      commission,
+      prepaymentDeducted,
+      totalPartialPaid,
+      remaining,
+    };
+  });
+
+  const oldDebt = Number(master.debt ?? 0);
+  await db.update(mastersTable).set({ debt: String(totalDebt) }).where(eq(mastersTable.id, masterId));
+
+  res.json({
+    masterId,
+    oldDebt,
+    newDebt: totalDebt,
+    delta: totalDebt - oldDebt,
+    breakdown,
+  });
 });
 
 export default router;

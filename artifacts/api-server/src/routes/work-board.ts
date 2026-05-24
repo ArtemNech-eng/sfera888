@@ -929,15 +929,15 @@ router.post("/orders/:orderId/partial-payment", operatorRoles, async (req, res) 
         await txDb.update(transactionsTable)
           .set({ paymentStatus: "paid", paidAt: new Date() })
           .where(eq(transactionsTable.id, tx.id));
+      }
 
-        // Update master debt
-        const masterRows = await txDb.select({ debt: mastersTable.debt, maxChatId: mastersTable.maxChatId })
-          .from(mastersTable).where(eq(mastersTable.id, tx.masterId));
-        const master = masterRows[0];
-        if (master) {
-          const newDebt = Math.max(0, safeNumber(master.debt) - paymentAmount);
-          await txDb.update(mastersTable).set({ debt: String(newDebt) }).where(eq(mastersTable.id, tx.masterId));
-        }
+      // Always update master debt (was previously only on full payment, causing stale debt)
+      const masterRows = await txDb.select({ debt: mastersTable.debt, maxChatId: mastersTable.maxChatId })
+        .from(mastersTable).where(eq(mastersTable.id, tx.masterId));
+      const master = masterRows[0];
+      if (master) {
+        const newDebt = Math.max(0, safeNumber(master.debt) - paymentAmount);
+        await txDb.update(mastersTable).set({ debt: String(newDebt) }).where(eq(mastersTable.id, tx.masterId));
       }
 
       return { payment: insertedPayment, remaining, totalPartialPaid };
