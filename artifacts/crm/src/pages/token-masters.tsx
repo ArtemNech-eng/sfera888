@@ -71,6 +71,7 @@ interface TokenMasterDebt {
   lastSeenAt: string | null;
   avatarUrl: string | null;
   createdAt: string;
+  tokensBalance: number;
   creditTokensIssued: number;
   creditTokensSpent: number;
   creditDebt: number;
@@ -476,9 +477,9 @@ function TokenMastersContent() {
                   <>
                     <th className="text-left px-3 py-3 font-medium hidden md:table-cell">Город</th>
                     <th className="text-left px-3 py-3 font-medium hidden lg:table-cell">Специализация</th>
-                    <th className="text-right px-3 py-3 font-medium">Выдано в долг</th>
-                    <th className="text-right px-3 py-3 font-medium">Потрачено</th>
-                    <th className="text-right px-3 py-3 font-medium text-red-600">Остаток долга</th>
+                    <th className="text-right px-3 py-3 font-medium">Баланс</th>
+                    <th className="text-right px-3 py-3 font-medium">Кредитный лимит</th>
+                    <th className="text-right px-3 py-3 font-medium">Использовано кредита</th>
                     <th className="text-center px-3 py-3 font-medium hidden sm:table-cell">Статус</th>
                     <th className="text-right px-3 py-3 font-medium">Активность</th>
                   </>
@@ -598,13 +599,13 @@ function TokenMastersContent() {
                     </td>
                     <td className="px-3 py-3 text-muted-foreground hidden md:table-cell"><span className="truncate max-w-[80px] block">{m.city}</span></td>
                     <td className="px-3 py-3 text-muted-foreground hidden lg:table-cell"><span className="truncate max-w-[100px] block text-xs">{m.specialization}</span></td>
-                    <td className="px-3 py-3 text-right tabular-nums text-muted-foreground">{fmt(m.creditTokensIssued)}</td>
-                    <td className="px-3 py-3 text-right tabular-nums text-muted-foreground">{fmt(m.creditTokensSpent)}</td>
                     <td className="px-3 py-3 text-right">
-                      <span className="inline-flex items-center gap-1 font-semibold tabular-nums text-sm text-red-600 dark:text-red-400">
-                        <Zap className="w-3 h-3" />{fmt(m.creditDebt)}
+                      <span className={cn("inline-flex items-center gap-1 font-semibold tabular-nums text-sm", m.tokensBalance < 0 ? "text-red-600 dark:text-red-400" : "text-violet-600 dark:text-violet-400")}>
+                        <Zap className="w-3 h-3" />{fmt(m.tokensBalance)}
                       </span>
                     </td>
+                    <td className="px-3 py-3 text-right tabular-nums text-muted-foreground">{fmt(m.creditTokensIssued)}</td>
+                    <td className="px-3 py-3 text-right tabular-nums text-muted-foreground">{fmt(m.creditTokensSpent)}</td>
                     <td className="px-3 py-3 text-center hidden sm:table-cell">
                       <span className={cn("text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap", statusInfo.cls)}>{statusInfo.label}</span>
                     </td>

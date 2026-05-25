@@ -360,6 +360,7 @@ export default function WalletPage() {
 
   const balance = wallet?.tokens_balance ?? 0;
   const creditIssued = wallet?.credit_tokens_issued ?? 0;
+  const creditSpent = wallet?.credit_tokens_spent ?? 0;
 
   return (
     <>
@@ -377,14 +378,20 @@ export default function WalletPage() {
           <div className="absolute top-0 right-0 w-48 h-48 bg-primary/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/4" />
           <div className="relative">
             <p className="text-sm font-medium text-slate-300 mb-1">Баланс токенов</p>
-            <div className="flex items-end gap-2 mb-5">
-              <span className="text-5xl font-bold tracking-tight">{balance}</span>
+            <div className="flex items-end gap-2 mb-2">
+              <span className={`text-5xl font-bold tracking-tight ${balance < 0 ? "text-red-400" : ""}`}>{balance}</span>
               <span className="text-xl font-medium text-slate-400 mb-1">т.</span>
             </div>
+            {balance < 0 && (
+              <p className="text-sm text-red-400 mb-3">Кредитный долг: {Math.abs(balance)} ток.</p>
+            )}
             <div className="flex items-center justify-between">
               <div className="space-y-1">
                 {creditIssued > 0 && (
-                  <p className="text-xs text-slate-400">Тест. токены: {creditIssued}</p>
+                  <p className="text-xs text-slate-400">Кредитный лимит: {creditIssued}</p>
+                )}
+                {creditSpent > 0 && (
+                  <p className="text-xs text-slate-400">Использовано кредита: {creditSpent}</p>
                 )}
                 <p className="text-xs text-slate-400">Потрачено: {wallet?.total_spent ?? 0} т.</p>
               </div>

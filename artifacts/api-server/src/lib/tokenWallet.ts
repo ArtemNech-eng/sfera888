@@ -77,8 +77,11 @@ export async function checkTokenBalance(masterId: number, required: number): Pro
 }> {
   const wallet = await ensureWallet(masterId);
   const balance = Number(wallet.tokensBalance);
-  const ok = balance >= required;
-  return { ok, balance, shortfall: ok ? 0 : required - balance };
+  const creditTokensIssued = Number((wallet as any).creditTokensIssued ?? 0);
+  const creditTokensSpent = Number((wallet as any).creditTokensSpent ?? 0);
+  const available = balance + creditTokensIssued - creditTokensSpent;
+  const ok = available >= required;
+  return { ok, balance, shortfall: ok ? 0 : required - available };
 }
 
 // ─── Deduct tokens atomically ─────────────────────────────────────────────────
@@ -93,31 +96,28 @@ export async function deductTokens(params: {
 
   const wallet = await ensureWallet(masterId);
   const currentBalance = Number(wallet.tokensBalance);
-
-  if (currentBalance < tokensCost) {
-    return {
-      success: false,
-      newBalance: currentBalance,
-      error: `Недостаточно токенов. Баланс: ${currentBalance} т., требуется: ${tokensCost} т.`,
-    };
-  }
+  const creditTokensIssued = Number((wallet as any).creditTokensIssued ?? 0);
 
   const newBalance = currentBalance - tokensCost;
 
-  // Calculate how many credit tokens are being spent
-  const creditTokensIssued = Number((wallet as any).creditTokensIssued ?? 0);
-  const creditTokensSpent = Number((wallet as any).creditTokensSpent ?? 0);
-  const creditSpent = Math.min(tokensCost, creditTokensIssued - creditTokensSpent);
+  // Check if balance would go below negative credit limit
+  if (newBalance < -creditTokensIssued) {
+    return {
+      success: false,
+      newBalance: currentBalance,
+      error: `Недостаточно токенов и кредитный лимит исчерпан. Баланс: ${currentBalance} т., кредитный лимит: ${creditTokensIssued} т., требуется: ${tokensCost} т.`,
+    };
+  }
+
+  // creditTokensSpent tracks how much of the balance is currently negative (debt)
+  const creditTokensSpent = newBalance < 0 ? Math.min(creditTokensIssued, -newBalance) : 0;
 
   const updateFields: any = {
     tokensBalance: String(newBalance),
     totalTokensSpent: String(Number(wallet.totalTokensSpent) + tokensCost),
+    creditTokensSpent: String(creditTokensSpent),
     updatedAt: new Date(),
   };
-
-  if (creditSpent > 0) {
-    updateFields.creditTokensSpent = String(creditTokensSpent + creditSpent);
-  }
 
   const [updated] = await db
     .update(masterWalletTable)
@@ -150,30 +150,28 @@ export async function deductTokensForLead(params: {
 
   const wallet = await ensureWallet(masterId);
   const currentBalance = Number(wallet.tokensBalance);
-
-  if (currentBalance < tokensCost) {
-    return {
-      success: false,
-      newBalance: currentBalance,
-      error: `Недостаточно токенов. Баланс: ${currentBalance} т., требуется: ${tokensCost} т.`,
-    };
-  }
+  const creditTokensIssued = Number((wallet as any).creditTokensIssued ?? 0);
 
   const newBalance = currentBalance - tokensCost;
 
-  const creditTokensIssued = Number((wallet as any).creditTokensIssued ?? 0);
-  const creditTokensSpent = Number((wallet as any).creditTokensSpent ?? 0);
-  const creditSpent = Math.min(tokensCost, creditTokensIssued - creditTokensSpent);
+  // Check if balance would go below negative credit limit
+  if (newBalance < -creditTokensIssued) {
+    return {
+      success: false,
+      newBalance: currentBalance,
+      error: `Недостаточно токенов и кредитный лимит исчерпан. Баланс: ${currentBalance} т., кредитный лимит: ${creditTokensIssued} т., требуется: ${tokensCost} т.`,
+    };
+  }
+
+  // creditTokensSpent tracks how much of the balance is currently negative (debt)
+  const creditTokensSpent = newBalance < 0 ? Math.min(creditTokensIssued, -newBalance) : 0;
 
   const updateFields: any = {
     tokensBalance: String(newBalance),
     totalTokensSpent: String(Number(wallet.totalTokensSpent) + tokensCost),
+    creditTokensSpent: String(creditTokensSpent),
     updatedAt: new Date(),
   };
-
-  if (creditSpent > 0) {
-    updateFields.creditTokensSpent = String(creditTokensSpent + creditSpent);
-  }
 
   const [updated] = await db
     .update(masterWalletTable)
@@ -206,12 +204,16 @@ export async function refundTokens(params: {
   const { masterId, orderId, tokensCost, reason, transactionId } = params;
 
   const wallet = await ensureWallet(masterId);
+  const newBalance = Number(wallet.tokensBalance) + tokensCost;
+  const creditTokensIssued = Number((wallet as any).creditTokensIssued ?? 0);
+  const creditTokensSpent = newBalance < 0 ? Math.min(creditTokensIssued, -newBalance) : 0;
 
   await db
     .update(masterWalletTable)
     .set({
-      tokensBalance: String(Number(wallet.tokensBalance) + tokensCost),
+      tokensBalance: String(newBalance),
       totalTokensRefunded: String(Number(wallet.totalTokensRefunded) + tokensCost),
+      creditTokensSpent: String(creditTokensSpent),
       updatedAt: new Date(),
     })
     .where(eq(masterWalletTable.masterId, masterId));

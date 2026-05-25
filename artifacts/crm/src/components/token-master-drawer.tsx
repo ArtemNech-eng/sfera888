@@ -406,7 +406,7 @@ function FinanceTab({ m, masterId }: { m: TokenMasterDetail; masterId: number })
       if (!r.ok) {
         toast.error(data.error ?? "Ошибка выдачи токенов");
       } else {
-        toast.success(`Выдано ${n} ток. Баланс: ${data.new_balance}`);
+        toast.success(`Выдан кредитный лимит ${n} ток.`);
         queryClient.invalidateQueries({ queryKey: ["/api/token-masters", masterId] });
         setShowCreditForm(false);
       }
@@ -424,7 +424,7 @@ function FinanceTab({ m, masterId }: { m: TokenMasterDetail; masterId: number })
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
               <Gift className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-              <span className="text-sm font-medium text-blue-700 dark:text-blue-300">Выдать токен в долг</span>
+              <span className="text-sm font-medium text-blue-700 dark:text-blue-300">Выдать кредитный лимит</span>
             </div>
             {!m.contractSignedAt && (
               <span className="text-xs text-red-500 flex items-center gap-1">
@@ -447,7 +447,7 @@ function FinanceTab({ m, masterId }: { m: TokenMasterDetail; masterId: number })
               onClick={() => setShowCreditForm(true)}
               className="w-full h-8 text-xs font-semibold rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors flex items-center justify-center gap-1.5"
             >
-              <Gift className="w-3.5 h-3.5" /> Выдать токен в долг
+              <Gift className="w-3.5 h-3.5" /> Выдать кредитный лимит
             </button>
           ) : (
             <div className="space-y-2">
@@ -504,9 +504,14 @@ function FinanceTab({ m, masterId }: { m: TokenMasterDetail; masterId: number })
         <p className={cn("text-4xl font-bold", wallet && wallet.tokensBalance > 0 ? "text-emerald-700 dark:text-emerald-300" : "text-red-600 dark:text-red-400")}>
           {wallet ? fmt(wallet.tokensBalance) : "0"}
         </p>
-        {wallet && wallet.tokensBalance === 0 && (
+        {wallet && wallet.tokensBalance < 0 && (
           <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
-            <AlertTriangle className="w-3 h-3" /> Токены закончились — риск оттока
+            <AlertTriangle className="w-3 h-3" /> Кредитный долг: {Math.abs(wallet.tokensBalance)} ток.
+          </p>
+        )}
+        {wallet && wallet.tokensBalance === 0 && (
+          <p className="text-xs text-amber-500 mt-1 flex items-center gap-1">
+            <AlertTriangle className="w-3 h-3" /> Токены закончились
           </p>
         )}
       </div>

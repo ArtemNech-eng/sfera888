@@ -219,13 +219,17 @@ router.post("/:masterId/purchase", ops, async (req: any, res: any) => {
   const rubAmount = pack.priceRub;
 
   const wallet = await ensureWallet(masterId);
+  const newBalance = Number(wallet.tokensBalance) + tokensToAdd;
+  const creditTokensIssued = Number((wallet as any).creditTokensIssued ?? 0);
+  const creditTokensSpent = newBalance < 0 ? Math.min(creditTokensIssued, -newBalance) : 0;
 
   const [updated] = await db
     .update(masterWalletTable)
     .set({
-      tokensBalance: String(Number(wallet.tokensBalance) + tokensToAdd),
+      tokensBalance: String(newBalance),
       totalTokensPurchased: String(Number(wallet.totalTokensPurchased) + tokensToAdd),
       totalRubSpent: wallet.totalRubSpent + rubAmount,
+      creditTokensSpent: String(creditTokensSpent),
       updatedAt: new Date(),
     })
     .where(eq(masterWalletTable.masterId, masterId))
@@ -259,11 +263,16 @@ router.post("/:masterId/bonus", adminOnly, async (req: any, res: any) => {
   const tokensNum = Number(tokens);
   const wallet = await ensureWallet(masterId);
 
+  const newBalance = Number(wallet.tokensBalance) + tokensNum;
+  const creditTokensIssued = Number((wallet as any).creditTokensIssued ?? 0);
+  const creditTokensSpent = newBalance < 0 ? Math.min(creditTokensIssued, -newBalance) : 0;
+
   const [updated] = await db
     .update(masterWalletTable)
     .set({
-      tokensBalance: String(Number(wallet.tokensBalance) + tokensNum),
+      tokensBalance: String(newBalance),
       totalTokensPurchased: String(Number(wallet.totalTokensPurchased) + tokensNum),
+      creditTokensSpent: String(creditTokensSpent),
       updatedAt: new Date(),
     })
     .where(eq(masterWalletTable.masterId, masterId))
@@ -296,13 +305,18 @@ router.post("/:masterId/adjustment", adminOnly, async (req: any, res: any) => {
   const tokensNum = Number(tokens);
   const wallet = await ensureWallet(masterId);
   const newBalance = Number(wallet.tokensBalance) + tokensNum;
+  const creditTokensIssued = Number((wallet as any).creditTokensIssued ?? 0);
 
-  if (newBalance < 0) {
-    return res.status(400).json({ error: "Баланс не может быть отрицательным" });
+  // For negative adjustments, check credit limit
+  if (newBalance < -creditTokensIssued) {
+    return res.status(400).json({ error: "Баланс не может быть ниже кредитного лимита" });
   }
+
+  const creditTokensSpent = newBalance < 0 ? Math.min(creditTokensIssued, -newBalance) : 0;
 
   const updateFields: any = {
     tokensBalance: String(newBalance),
+    creditTokensSpent: String(creditTokensSpent),
     updatedAt: new Date(),
   };
 
@@ -359,7 +373,6 @@ router.post("/:masterId/credit", adminOnly, async (req: any, res: any) => {
   const [updated] = await db
     .update(masterWalletTable)
     .set({
-      tokensBalance: String(Number(wallet.tokensBalance) + tokensNum),
       creditTokensIssued: String(Number((wallet as any).creditTokensIssued ?? 0) + tokensNum),
       updatedAt: new Date(),
     } as any)
@@ -638,13 +651,17 @@ router.post("/:masterId/confirm-purchase", adminOnly, async (req: any, res: any)
   const rubAmount = tx.rubAmount ?? 0;
 
   const wallet = await ensureWallet(masterId);
+  const newBalance = Number(wallet.tokensBalance) + tokensToAdd;
+  const creditTokensIssued = Number((wallet as any).creditTokensIssued ?? 0);
+  const creditTokensSpent = newBalance < 0 ? Math.min(creditTokensIssued, -newBalance) : 0;
 
   const [updated] = await db
     .update(masterWalletTable)
     .set({
-      tokensBalance: String(Number(wallet.tokensBalance) + tokensToAdd),
+      tokensBalance: String(newBalance),
       totalTokensPurchased: String(Number(wallet.totalTokensPurchased) + tokensToAdd),
       totalRubSpent: wallet.totalRubSpent + rubAmount,
+      creditTokensSpent: String(creditTokensSpent),
       updatedAt: new Date(),
     })
     .where(eq(masterWalletTable.masterId, masterId))

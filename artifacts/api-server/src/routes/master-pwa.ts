@@ -428,9 +428,12 @@ router.get("/home", requireMasterPwa, async (req, res) => {
   // Background: check if status changed (for unblock notifications)
   checkFomoTransition(masterId, master.isTestMaster).catch(() => {});
 
-  // Wallet balance for token model
+  // Wallet balance for token model (includes credit limit)
   const wallet = await ensureWallet(masterId);
-  const walletBalance = Number(wallet.tokensBalance);
+  const tokensBalance = Number(wallet.tokensBalance);
+  const creditTokensIssued = Number((wallet as any).creditTokensIssued ?? 0);
+  const creditTokensSpent = Number((wallet as any).creditTokensSpent ?? 0);
+  const walletBalance = tokensBalance + creditTokensIssued;
 
   // Enrich availableOrders with tokensCost
   const allServiceTypes = [...new Set(availableOrders.map((o: any) => o.serviceType))];

@@ -324,6 +324,7 @@ router.get("/debt", ops, async (req: any, res: any) => {
           lastSeenAt: mastersTable.lastSeenAt,
           avatarUrl: mastersTable.customAvatarUrl,
           createdAt: mastersTable.createdAt,
+          tokensBalance: masterWalletTable.tokensBalance,
           creditTokensIssued: masterWalletTable.creditTokensIssued,
           creditTokensSpent: masterWalletTable.creditTokensSpent,
         })
@@ -353,6 +354,7 @@ router.get("/debt", ops, async (req: any, res: any) => {
       lastSeenAt: r.lastSeenAt,
       avatarUrl: r.avatarUrl,
       createdAt: r.createdAt,
+      tokensBalance: Number(r.tokensBalance ?? 0),
       creditTokensIssued: Number(r.creditTokensIssued ?? 0),
       creditTokensSpent: Number(r.creditTokensSpent ?? 0),
       creditDebt: Number(r.creditTokensIssued ?? 0) - Number(r.creditTokensSpent ?? 0),
