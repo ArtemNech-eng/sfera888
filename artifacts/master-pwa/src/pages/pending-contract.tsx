@@ -241,6 +241,7 @@ export default function PendingContractPage() {
   const [signing, setSigning] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(master?.customAvatarUrl ?? null);
+  const [avatarError, setAvatarError] = useState(false);
   const [data, setData] = useState<PassportData>(saved?.data ?? {
     fullName: "", passportNumber: "", passportDate: "",
     passportIssuer: "", address: "",
@@ -367,6 +368,7 @@ export default function PendingContractPage() {
       if (!res.ok) throw new Error();
       const { customAvatarUrl } = await res.json();
       setAvatarUrl(customAvatarUrl);
+      setAvatarError(false);
       toast.success("Фото добавлено");
     } catch {
       toast.error("Не удалось загрузить фото");
@@ -389,12 +391,12 @@ export default function PendingContractPage() {
         {/* Avatar + name */}
         <div className="flex flex-col items-center gap-2.5 pt-2">
           <div className="relative">
-            {avatarUrl
+            {avatarUrl && !avatarError
               ? <img
                   src={avatarUrl}
                   alt={master?.alias}
                   className="w-16 h-16 rounded-full object-cover shadow-md"
-                  onError={(e) => { e.currentTarget.style.display = "none"; }}
+                  onError={() => { setAvatarError(true); }}
                 />
               : <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-xl font-bold shadow-md">{initials}</div>}
             <button onClick={() => avatarInputRef.current?.click()} disabled={uploading}

@@ -682,6 +682,7 @@ export default function ProfilePage() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [unlinkingMax, setUnlinkingMax] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [avatarError, setAvatarError] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { canInstall, isInstalled, install } = useInstallPrompt();
@@ -763,6 +764,7 @@ export default function ProfilePage() {
       const { customAvatarUrl } = await res.json();
       console.log("[avatar upload] customAvatarUrl:", customAvatarUrl);
       setData(d => d ? { ...d, customAvatarUrl } : d);
+      setAvatarError(false);
       toast.success("Фото обновлено");
     } catch {
       toast.error("Не удалось загрузить фото");
@@ -789,14 +791,14 @@ export default function ProfilePage() {
     <div className="px-4 pt-5 pb-4 space-y-5">
       <div className="flex items-center gap-3">
         <div className="relative shrink-0">
-          {data.customAvatarUrl ? (
+          {data.customAvatarUrl && !avatarError ? (
             <img
               src={data.customAvatarUrl}
               alt={data.alias}
               className="w-14 h-14 rounded-full object-cover"
-              onError={(e) => {
-                console.error("[avatar] failed to load:", data.customAvatarUrl, e);
-                e.currentTarget.style.display = "none";
+              onError={() => {
+                console.error("[avatar] failed to load:", data.customAvatarUrl);
+                setAvatarError(true);
               }}
             />
           ) : (
