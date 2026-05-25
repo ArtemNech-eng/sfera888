@@ -158,7 +158,7 @@ function PurchaseSheet({
 
       {/* Sheet */}
       <div
-        className="relative bg-background rounded-t-3xl shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[92vh] flex flex-col"
+        className="relative bg-background rounded-t-3xl shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[85vh] mb-8 flex flex-col"
         onClick={e => e.stopPropagation()}
       >
         {/* Drag handle */}
