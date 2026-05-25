@@ -754,13 +754,14 @@ router.get("/avatar/:filename", async (req, res) => {
     res.setHeader("Content-Type", response.ContentType || "image/jpeg");
     res.setHeader("Cache-Control", "public, max-age=86400");
     if (response.Body) {
-      const stream = response.Body as ReadableStream;
-      const nodeStream = Readable.fromWeb(stream);
-      nodeStream.pipe(res);
+      // AWS SDK v3 returns a Node.js Readable stream in Node environments
+      const stream = response.Body as unknown as NodeJS.ReadableStream;
+      stream.pipe(res);
     } else {
       res.end();
     }
   } catch (err) {
+    console.error("[avatar proxy] error:", err);
     res.status(404).json({ error: "Not found" });
   }
 });
