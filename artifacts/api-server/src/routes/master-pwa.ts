@@ -511,6 +511,7 @@ router.get("/home", requireMasterPwa, async (req, res) => {
     missedOrders,
     todayActivity,
     walletBalance,
+    tokensBalance,
     activeOrders: activeOrders.map(o => ({
       id: o.id,
       leadId: o.leadId ?? null,

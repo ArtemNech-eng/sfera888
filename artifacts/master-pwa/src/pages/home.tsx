@@ -1536,8 +1536,8 @@ export default function HomePage() {
               onClick={() => setLocation("/wallet")}
               className="flex items-center gap-1 bg-white/15 backdrop-blur-md border border-white/20 px-2.5 py-1.5 rounded-xl hover:bg-white/25 transition-colors shrink-0"
             >
-              <Coins size={13} className={`shrink-0 ${(data?.walletBalance ?? 0) < 0 ? "text-red-300" : "text-amber-300"}`} />
-              <span className={`font-semibold text-sm leading-none ${(data?.walletBalance ?? 0) < 0 ? "text-red-300" : "text-white"}`}>{data?.walletBalance ?? 0}</span>
+              <Coins size={13} className={`shrink-0 ${(data?.tokensBalance ?? 0) < 0 ? "text-red-300" : "text-amber-300"}`} />
+              <span className={`font-semibold text-sm leading-none ${(data?.tokensBalance ?? 0) < 0 ? "text-red-300" : "text-white"}`}>{data?.tokensBalance ?? 0}</span>
             </button>
           </div>
 
