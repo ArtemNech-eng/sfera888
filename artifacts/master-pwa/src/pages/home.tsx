@@ -1531,16 +1531,14 @@ export default function HomePage() {
               <MapPin size={14} />
               <span>{master?.city}</span>
             </div>
-            {(data?.walletBalance ?? 0) >= 0 && (
-              <button
-                type="button"
-                onClick={() => setLocation("/wallet")}
-                className="flex items-center gap-1 bg-white/15 backdrop-blur-md border border-white/20 px-2.5 py-1.5 rounded-xl hover:bg-white/25 transition-colors shrink-0"
-              >
-                <Coins size={13} className="shrink-0 text-amber-300" />
-                <span className="font-semibold text-sm leading-none text-white">{data?.walletBalance ?? 0}</span>
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => setLocation("/wallet")}
+              className="flex items-center gap-1 bg-white/15 backdrop-blur-md border border-white/20 px-2.5 py-1.5 rounded-xl hover:bg-white/25 transition-colors shrink-0"
+            >
+              <Coins size={13} className={`shrink-0 ${(data?.walletBalance ?? 0) < 0 ? "text-red-300" : "text-amber-300"}`} />
+              <span className={`font-semibold text-sm leading-none ${(data?.walletBalance ?? 0) < 0 ? "text-red-300" : "text-white"}`}>{data?.walletBalance ?? 0}</span>
+            </button>
           </div>
 
           {/* Row 3: Availability toggle full width */}
