@@ -774,11 +774,11 @@ router.post("/:masterId/cancel-purchase", adminOnly, async (req: any, res: any) 
 });
 
 // ─── Payment screenshot proxy ─────────────────────────────────────────────────
-router.get("/payment-screenshot/:path(*)", async (req, res) => {
+router.get("/payment-screenshot/:path+", async (req, res) => {
   try {
     const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
     if (!bucketId) return res.status(500).json({ error: "Storage not configured" });
-    const key = `${GCS_PAYMENT_PREFIX}${String(req.params["path(*)"] ?? "")}`;
+    const key = `${GCS_PAYMENT_PREFIX}${String(req.params.path ?? "")}`;
     const response = await s3Client.send(new GetObjectCommand({ Bucket: bucketId, Key: key }));
     res.setHeader("Content-Type", response.ContentType || "image/jpeg");
     res.setHeader("Cache-Control", "public, max-age=86400");
