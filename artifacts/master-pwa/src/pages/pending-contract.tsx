@@ -390,7 +390,12 @@ export default function PendingContractPage() {
         <div className="flex flex-col items-center gap-2.5 pt-2">
           <div className="relative">
             {avatarUrl
-              ? <img src={avatarUrl} alt={master?.alias} className="w-16 h-16 rounded-full object-cover shadow-md" />
+              ? <img
+                  src={avatarUrl}
+                  alt={master?.alias}
+                  className="w-16 h-16 rounded-full object-cover shadow-md"
+                  onError={(e) => { e.currentTarget.style.display = "none"; }}
+                />
               : <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-xl font-bold shadow-md">{initials}</div>}
             <button onClick={() => avatarInputRef.current?.click()} disabled={uploading}
               className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-primary border-2 border-background flex items-center justify-center shadow active:opacity-80 disabled:opacity-50">

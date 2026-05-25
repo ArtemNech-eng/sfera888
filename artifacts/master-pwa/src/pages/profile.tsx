@@ -796,7 +796,7 @@ export default function ProfilePage() {
               className="w-14 h-14 rounded-full object-cover"
               onError={(e) => {
                 console.error("[avatar] failed to load:", data.customAvatarUrl, e);
-                toast.error("Не удалось загрузить фото");
+                e.currentTarget.style.display = "none";
               }}
             />
           ) : (

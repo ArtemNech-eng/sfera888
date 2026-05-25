@@ -28,8 +28,7 @@ const avatarUpload = multer({
 
 async function uploadPwaAvatarToGCS(masterId: number, buffer: Buffer, mimetype: string): Promise<string> {
   const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
-  const publicUrl = process.env.R2_PUBLIC_URL;
-  if (!bucketId || !publicUrl) throw new Error("Object storage not configured");
+  if (!bucketId) throw new Error("Object storage not configured");
   const ts = Date.now();
   const filename = `pwa-master-${masterId}-${ts}.jpg`;
   const key = `avatars/${filename}`;
@@ -43,7 +42,8 @@ async function uploadPwaAvatarToGCS(masterId: number, buffer: Buffer, mimetype: 
 
   const bucket = objectStorageClient.bucket(bucketId);
   await bucket.file(key).save(jpegBuffer, { contentType: "image/jpeg", resumable: false });
-  return `${publicUrl}/${key}`;
+  // Return server proxy URL (same pattern as CRM) for reliable loading
+  return `/api/masters/avatar/${filename}`;
 }
 
 const router = Router();

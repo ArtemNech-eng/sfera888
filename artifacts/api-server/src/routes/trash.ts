@@ -18,15 +18,24 @@ function daysLeft(deletedAt: Date): number {
 
 async function deleteAvatarFile(customAvatarUrl: string | null) {
   if (!customAvatarUrl) return;
-  if (customAvatarUrl.includes("/api/masters/avatar/")) {
-    try {
-      const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
-      if (!bucketId) return;
-      const filename = customAvatarUrl.split("/api/masters/avatar/")[1];
-      if (!filename) return;
-      await objectStorageClient.bucket(bucketId).file(`avatars/${filename}`).delete({ ignoreNotFound: true });
-    } catch {}
-  }
+  try {
+    const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+    if (!bucketId) return;
+    let filename: string | undefined;
+    if (customAvatarUrl.includes("/api/masters/avatar/")) {
+      filename = customAvatarUrl.split("/api/masters/avatar/")[1];
+    } else {
+      const publicUrl = process.env.R2_PUBLIC_URL;
+      if (publicUrl && customAvatarUrl.startsWith(publicUrl)) {
+        const prefix = `${publicUrl}/avatars/`;
+        if (customAvatarUrl.startsWith(prefix)) {
+          filename = customAvatarUrl.slice(prefix.length);
+        }
+      }
+    }
+    if (!filename) return;
+    await objectStorageClient.bucket(bucketId).file(`avatars/${filename}`).delete({ ignoreNotFound: true });
+  } catch {}
 }
 
 // Permanently delete an order and all its FK-referenced rows
@@ -161,7 +170,7 @@ router.get("/", adminOnly, async (_req, res) => {
 
 router.patch("/restore/:type/:id", adminOnly, async (req, res) => {
   const { type, id } = req.params;
-  const numId = parseInt(id);
+  const numId = parseInt(id as string);
 
   if (type === "master") {
     await db.update(mastersTable).set({ deletedAt: null }).where(eq(mastersTable.id, numId));
@@ -180,7 +189,7 @@ router.patch("/restore/:type/:id", adminOnly, async (req, res) => {
 
 router.delete("/:type/:id", adminOnly, async (req, res) => {
   const { type, id } = req.params;
-  const numId = parseInt(id);
+  const numId = parseInt(id as string);
 
   try {
     if (type === "master") {
