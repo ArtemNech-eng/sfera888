@@ -15,6 +15,7 @@ interface PurchaseRequest {
   tokens_amount: number;
   rub_amount: number | null;
   reason: string | null;
+  screenshot_url: string | null;
   status: string;
   created_at: string;
 }
@@ -75,6 +76,7 @@ export default function TokenPurchasesPage() {
   const [rejectingId, setRejectingId] = useState<number | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [rejectingMasterId, setRejectingMasterId] = useState<number | null>(null);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ["token-purchases", statusFilter, masterFilter, page],
@@ -165,6 +167,7 @@ export default function TokenPurchasesPage() {
               <th className="px-4 py-3">Пакет</th>
               <th className="px-4 py-3 text-right">Токенов</th>
               <th className="px-4 py-3 text-right">Сумма</th>
+              <th className="px-4 py-3">Скриншот</th>
               <th className="px-4 py-3">Статус</th>
               <th className="px-4 py-3 text-right">Действия</th>
             </tr>
@@ -172,14 +175,14 @@ export default function TokenPurchasesPage() {
           <tbody className="divide-y">
             {isLoading && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center">
+                <td colSpan={8} className="px-4 py-8 text-center">
                   <Loader2 className="w-5 h-5 animate-spin mx-auto text-muted-foreground" />
                 </td>
               </tr>
             )}
             {!isLoading && rows.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
+                <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
                   Нет заявок на пополнение
                 </td>
               </tr>
@@ -206,6 +209,19 @@ export default function TokenPurchasesPage() {
                   </td>
                   <td className="px-4 py-3 text-right font-semibold">{r.tokens_amount} т.</td>
                   <td className="px-4 py-3 text-right">{r.rub_amount?.toLocaleString("ru-RU") ?? "—"} ₽</td>
+                  <td className="px-4 py-3">
+                    {r.screenshot_url ? (
+                      <button
+                        onClick={() => setLightboxUrl(r.screenshot_url!)}
+                        className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline"
+                      >
+                        <ExternalLink size={12} />
+                        Открыть
+                      </button>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${cfg.className}`}>
                       {cfg.label}
@@ -294,6 +310,21 @@ export default function TokenPurchasesPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Screenshot Lightbox */}
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setLightboxUrl(null)}
+        >
+          <img
+            src={lightboxUrl}
+            alt="Скриншот оплаты"
+            className="max-w-full max-h-[85vh] rounded-lg shadow-xl object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
         </div>
       )}
     </div>

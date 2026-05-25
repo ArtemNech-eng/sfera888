@@ -3,6 +3,11 @@ import { db, masterWalletTable, walletTransactionsTable, tokenPackagesTable, ord
 import { eq, desc, and, inArray } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
 import { refundTokens } from "../lib/tokenWallet.js";
+import multer from "multer";
+import sharp from "sharp";
+import { objectStorageClient, s3Client } from "../lib/objectStorage.js";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
+import { randomUUID } from "crypto";
 
 const router = Router();
 const adminOnly = requireRole("admin");
@@ -12,6 +17,34 @@ function requireMasterAuth(req: any, res: any, next: any) {
   const masterId = (req.session as any).masterId as number | undefined;
   if (!masterId) return res.status(401).json({ error: "Не авторизован" });
   next();
+}
+
+const screenshotUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith("image/")) cb(null, true);
+    else cb(new Error("Только изображения"));
+  },
+});
+
+const GCS_PAYMENT_PREFIX = "payment-screenshots/";
+
+async function uploadPaymentScreenshot(masterId: number, buffer: Buffer, mimetype: string): Promise<string> {
+  const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+  if (!bucketId) throw new Error("Object storage not configured");
+  const filename = `${masterId}/${randomUUID()}.jpg`;
+  const key = `${GCS_PAYMENT_PREFIX}${filename}`;
+
+  const jpegBuffer = await sharp(buffer)
+    .rotate()
+    .resize({ width: 1200, height: 1200, fit: "inside" })
+    .jpeg({ quality: 85, progressive: true })
+    .toBuffer();
+
+  const bucket = objectStorageClient.bucket(bucketId);
+  await bucket.file(key).save(jpegBuffer, { contentType: "image/jpeg", resumable: false });
+  return `/api/wallet/payment-screenshot/${filename}`;
 }
 
 // Ensure wallet row exists for a master (upsert)
@@ -90,12 +123,16 @@ router.get("/my/transactions", requireMasterAuth, async (req: any, res: any) => 
 });
 
 // POST /api/wallet/my/purchase-request — «Я оплатил» (создаёт pending-транзакцию)
-router.post("/my/purchase-request", requireMasterAuth, async (req: any, res: any) => {
+router.post("/my/purchase-request", requireMasterAuth, screenshotUpload.single("screenshot"), async (req: any, res: any) => {
   const masterId: number | undefined = (req.session as any).masterId;
   if (!masterId) return res.status(401).json({ error: "Не авторизован" });
 
-  const { package_id } = req.body;
+  const package_id = req.body?.package_id;
   if (!package_id) return res.status(400).json({ error: "package_id обязателен" });
+
+  if (!req.file) {
+    return res.status(400).json({ error: "Прикрепите скриншот оплаты" });
+  }
 
   const pkg = await db.select().from(tokenPackagesTable)
     .where(eq(tokenPackagesTable.id, Number(package_id))).limit(1);
@@ -115,6 +152,14 @@ router.post("/my/purchase-request", requireMasterAuth, async (req: any, res: any
     return res.status(409).json({ error: "Заявка на пополнение уже создана — ожидайте подтверждения" });
   }
 
+  let screenshotUrl: string | null = null;
+  try {
+    screenshotUrl = await uploadPaymentScreenshot(masterId, req.file.buffer, req.file.mimetype);
+  } catch (err: any) {
+    console.error("[purchase-request] screenshot upload failed:", err);
+    return res.status(500).json({ error: "Ошибка загрузки скриншота" });
+  }
+
   await db.insert(walletTransactionsTable).values({
     masterId,
     type: "purchase",
@@ -122,6 +167,7 @@ router.post("/my/purchase-request", requireMasterAuth, async (req: any, res: any
     rubAmount: pack.priceRub,
     packageId: pack.id,
     reason: `Запрос на покупку пакета «${pack.name}»`,
+    screenshotUrl,
     createdBy: "master",
     status: "pending",
   });
@@ -599,6 +645,7 @@ router.get("/purchases", ops, async (req: any, res: any) => {
       packageId: walletTransactionsTable.packageId,
       packageName: tokenPackagesTable.name,
       reason: walletTransactionsTable.reason,
+      screenshotUrl: walletTransactionsTable.screenshotUrl,
       status: walletTransactionsTable.status,
       createdAt: walletTransactionsTable.createdAt,
     })
@@ -620,6 +667,7 @@ router.get("/purchases", ops, async (req: any, res: any) => {
     tokens_amount: Number(r.tokensAmount),
     rub_amount: r.rubAmount,
     reason: r.reason,
+    screenshot_url: r.screenshotUrl,
     status: r.status,
     created_at: r.createdAt,
   })));
@@ -723,6 +771,27 @@ router.post("/:masterId/cancel-purchase", adminOnly, async (req: any, res: any) 
   }
 
   return res.json({ success: true });
+});
+
+// ─── Payment screenshot proxy ─────────────────────────────────────────────────
+router.get("/payment-screenshot/*", async (req, res) => {
+  try {
+    const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+    if (!bucketId) return res.status(500).json({ error: "Storage not configured" });
+    const key = `${GCS_PAYMENT_PREFIX}${String(req.params[0] ?? "")}`;
+    const response = await s3Client.send(new GetObjectCommand({ Bucket: bucketId, Key: key }));
+    res.setHeader("Content-Type", response.ContentType || "image/jpeg");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    if (response.Body) {
+      const stream = response.Body as unknown as NodeJS.ReadableStream;
+      stream.pipe(res);
+    } else {
+      res.end();
+    }
+  } catch (err) {
+    console.error("[payment-screenshot proxy] error:", err);
+    res.status(404).json({ error: "Not found" });
+  }
 });
 
 export default router;

@@ -118,6 +118,8 @@ function PurchaseSheet({
   const [step, setStep] = useState<"details" | "done">("details");
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
+  const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/settings/payment-details", { credentials: "include" })
@@ -133,13 +135,19 @@ function PurchaseSheet({
   };
 
   const handlePaid = async () => {
+    if (!screenshotFile) {
+      toast.error("Прикрепите скриншот оплаты");
+      return;
+    }
     setLoading(true);
     try {
+      const formData = new FormData();
+      formData.append("package_id", String(pkg.id));
+      formData.append("screenshot", screenshotFile);
       const r = await fetch("/api/wallet/my/purchase-request", {
         method: "POST",
         credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ package_id: pkg.id }),
+        body: formData,
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error ?? "Ошибка");
@@ -265,21 +273,42 @@ function PurchaseSheet({
                 </div>
               )}
 
-              {/* Screenshot placeholder */}
-              <button
-                type="button"
-                onClick={() => toast.info("Скоро: прикрепление скриншота оплаты будет доступно")}
-                className="w-full border-2 border-dashed border-border rounded-2xl p-4 flex flex-col items-center gap-1.5 text-muted-foreground hover:bg-muted/50 transition-colors"
-              >
-                <Camera size={22} />
-                <span className="text-sm font-medium">Прикрепить скриншот оплаты</span>
-                <span className="text-xs">Доступно в следующем обновлении</span>
-              </button>
+              {/* Screenshot upload */}
+              <label className="w-full block cursor-pointer">
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] ?? null;
+                    if (file) {
+                      setScreenshotFile(file);
+                      const reader = new FileReader();
+                      reader.onload = (ev) => setScreenshotPreview(ev.target?.result as string);
+                      reader.readAsDataURL(file);
+                    }
+                  }}
+                />
+                {screenshotPreview ? (
+                  <div className="w-full border rounded-2xl overflow-hidden relative group">
+                    <img src={screenshotPreview} alt="Скриншот" className="w-full h-40 object-cover" />
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <span className="text-white text-sm font-medium">Изменить скриншот</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="w-full border-2 border-dashed border-border rounded-2xl p-4 flex flex-col items-center gap-1.5 text-muted-foreground hover:bg-muted/50 transition-colors">
+                    <Camera size={22} />
+                    <span className="text-sm font-medium">Прикрепить скриншот оплаты</span>
+                    <span className="text-xs">Обязательно для подтверждения</span>
+                  </div>
+                )}
+              </label>
 
               {/* Pay button */}
               <button
                 onClick={handlePaid}
-                disabled={loading || !details?.cardNumber}
+                disabled={loading || !details?.cardNumber || !screenshotFile}
                 className="w-full h-14 rounded-2xl bg-green-500 text-white font-bold text-base flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-transform"
               >
                 {loading

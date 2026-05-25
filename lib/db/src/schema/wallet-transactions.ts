@@ -14,6 +14,7 @@ export const walletTransactionsTable = pgTable("wallet_transactions", {
   packageId: integer("package_id").references(() => tokenPackagesTable.id),
   orderId: integer("order_id").references(() => ordersTable.id),
   reason: text("reason"),
+  screenshotUrl: text("screenshot_url"),
   createdBy: varchar("created_by", { length: 100 }).notNull().default("system"),
   status: varchar("status", { length: 50 }).notNull().default("completed"),
   createdAt: timestamp("created_at").notNull().defaultNow(),

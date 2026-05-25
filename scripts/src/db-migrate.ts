@@ -165,6 +165,9 @@ const queries: string[] = [
   `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'leads') THEN CREATE INDEX IF NOT EXISTS idx_leads_status_updated_at ON leads(status_updated_at); END IF; END $$;`,
   `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'orders') AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'assigned_at') THEN CREATE INDEX IF NOT EXISTS idx_orders_assigned_at ON orders(assigned_at); END IF; END $$;`,
 
+  // ── wallet_transactions: screenshot_url for payment proofs ──────────────────
+  `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'wallet_transactions') THEN ALTER TABLE wallet_transactions ADD COLUMN IF NOT EXISTS screenshot_url TEXT; END IF; END $$;`,
+
   // ── client_push_subscriptions ──────────────────────────────────────────────
   `CREATE TABLE IF NOT EXISTS client_push_subscriptions (
     id SERIAL PRIMARY KEY,
