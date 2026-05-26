@@ -329,6 +329,9 @@ async function runMigrations() {
     )
   `);
   await db.execute(sql`
+    ALTER TABLE wallet_transactions ADD COLUMN IF NOT EXISTS screenshot_url TEXT
+  `);
+  await db.execute(sql`
     CREATE INDEX IF NOT EXISTS wallet_transactions_master_idx ON wallet_transactions(master_id, created_at DESC)
   `);
   await db.execute(sql`
