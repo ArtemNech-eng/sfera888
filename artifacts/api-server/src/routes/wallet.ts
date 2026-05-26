@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, masterWalletTable, walletTransactionsTable, tokenPackagesTable, ordersTable, mastersTable } from "@workspace/db";
-import { eq, desc, and, inArray } from "drizzle-orm";
+import { eq, desc, and, inArray, sql, count } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
 import { refundTokens } from "../lib/tokenWallet.js";
 import multer from "multer";
@@ -904,6 +904,125 @@ router.post("/:masterId/cancel-purchase", adminOnly, async (req: any, res: any) 
   }
 
   return res.json({ success: true });
+});
+
+// ─── Token analytics (admin/ops) ────────────────────────────────────────────────
+router.get("/analytics", ops, async (req: any, res: any) => {
+  try {
+    const from = req.query.from as string | undefined;
+    const to = req.query.to as string | undefined;
+
+    const dateConditions: any[] = [eq(walletTransactionsTable.type, "purchase")];
+    if (from) dateConditions.push(sql`${walletTransactionsTable.createdAt} >= ${from}`);
+    if (to) dateConditions.push(sql`${walletTransactionsTable.createdAt} <= ${to}`);
+
+    const completedConditions = [...dateConditions, eq(walletTransactionsTable.status, "completed")];
+    const pendingConditions = [...dateConditions, eq(walletTransactionsTable.status, "pending")];
+
+    // Total revenue & count (completed)
+    const revenueRows = await db
+      .select({
+        total: sql<number>`COALESCE(SUM(${walletTransactionsTable.rubAmount}), 0)`,
+        cnt: sql<number>`COUNT(*)`,
+      })
+      .from(walletTransactionsTable)
+      .where(and(...completedConditions));
+
+    // Pending revenue
+    const pendingRows = await db
+      .select({
+        total: sql<number>`COALESCE(SUM(${walletTransactionsTable.rubAmount}), 0)`,
+      })
+      .from(walletTransactionsTable)
+      .where(and(...pendingConditions));
+
+    // Daily chart data
+    const chartRows = await db
+      .select({
+        date: sql<string>`DATE(${walletTransactionsTable.createdAt})`,
+        revenue: sql<number>`COALESCE(SUM(${walletTransactionsTable.rubAmount}), 0)`,
+        count: sql<number>`COUNT(*)`,
+      })
+      .from(walletTransactionsTable)
+      .where(and(...completedConditions))
+      .groupBy(sql`DATE(${walletTransactionsTable.createdAt})`)
+      .orderBy(sql`DATE(${walletTransactionsTable.createdAt})`);
+
+    // By package
+    const packageRows = await db
+      .select({
+        packageName: tokenPackagesTable.name,
+        revenue: sql<number>`COALESCE(SUM(${walletTransactionsTable.rubAmount}), 0)`,
+        count: sql<number>`COUNT(*)`,
+      })
+      .from(walletTransactionsTable)
+      .leftJoin(tokenPackagesTable, eq(walletTransactionsTable.packageId, tokenPackagesTable.id))
+      .where(and(...completedConditions))
+      .groupBy(tokenPackagesTable.name);
+
+    // Top masters
+    const topMasterRows = await db
+      .select({
+        alias: mastersTable.alias,
+        city: mastersTable.city,
+        revenue: sql<number>`COALESCE(SUM(${walletTransactionsTable.rubAmount}), 0)`,
+        count: sql<number>`COUNT(*)`,
+      })
+      .from(walletTransactionsTable)
+      .leftJoin(mastersTable, eq(walletTransactionsTable.masterId, mastersTable.id))
+      .where(and(...completedConditions))
+      .groupBy(mastersTable.alias, mastersTable.city)
+      .orderBy(sql`SUM(${walletTransactionsTable.rubAmount}) DESC`)
+      .limit(20);
+
+    // By city
+    const cityRows = await db
+      .select({
+        city: mastersTable.city,
+        revenue: sql<number>`COALESCE(SUM(${walletTransactionsTable.rubAmount}), 0)`,
+        count: sql<number>`COUNT(*)`,
+      })
+      .from(walletTransactionsTable)
+      .leftJoin(mastersTable, eq(walletTransactionsTable.masterId, mastersTable.id))
+      .where(and(...completedConditions))
+      .groupBy(mastersTable.city)
+      .orderBy(sql`SUM(${walletTransactionsTable.rubAmount}) DESC`);
+
+    const totalRevenue = Number(revenueRows[0]?.total ?? 0);
+    const totalPurchases = Number(revenueRows[0]?.cnt ?? 0);
+    const pendingRevenue = Number(pendingRows[0]?.total ?? 0);
+
+    return res.json({
+      totalRevenue,
+      totalPurchases,
+      avgOrderValue: totalPurchases > 0 ? Math.round(totalRevenue / totalPurchases) : 0,
+      pendingRevenue,
+      chartData: chartRows.map(r => ({
+        date: r.date,
+        revenue: Number(r.revenue),
+        count: Number(r.count),
+      })),
+      byPackage: packageRows.map(r => ({
+        package_name: r.packageName ?? "—",
+        revenue: Number(r.revenue),
+        count: Number(r.count),
+      })),
+      topMasters: topMasterRows.map(r => ({
+        alias: r.alias ?? "—",
+        city: r.city ?? "—",
+        revenue: Number(r.revenue),
+        count: Number(r.count),
+      })),
+      byCity: cityRows.map(r => ({
+        city: r.city ?? "—",
+        revenue: Number(r.revenue),
+        count: Number(r.count),
+      })),
+    });
+  } catch (err: any) {
+    console.error("[wallet/analytics]", err);
+    return res.status(500).json({ error: "Ошибка сервера" });
+  }
 });
 
 // ─── Payment screenshot proxy ─────────────────────────────────────────────────

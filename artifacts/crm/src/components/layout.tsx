@@ -132,6 +132,7 @@ export function Layout({ children }: LayoutProps) {
     { href: "/token-settings", label: "Токены и тарифы",       icon: Coins,           permKey: null as null },
     { href: "/token-refunds",  label: "Возвраты токенов",       icon: RotateCcw,       permKey: null as null },
     { href: "/token-purchases", label: "Пополнения токенов",    icon: Wallet,          permKey: null as null },
+    { href: "/token-analytics", label: "Аналитика токенов",    icon: BarChart3,       permKey: "analytics" },
     { href: "/users",       label: "Пользователи",         icon: UserCog,         permKey: null as null },
     { href: "/partners",          label: "Партнёры",          icon: Users,           permKey: "partners" },
     { href: "/partner-leads-review", label: "Лиды партнёров", icon: Filter,          permKey: "partner-leads-review" },
