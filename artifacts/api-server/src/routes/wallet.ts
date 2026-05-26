@@ -175,6 +175,62 @@ router.post("/my/purchase-request", requireMasterAuth, screenshotUpload.single("
   return res.json({ success: true, message: "Заявка создана. После подтверждения оплаты токены будут зачислены." });
 });
 
+// ─── Purchase approval / rejection (admin/ops) ────────────────────────────────
+// GET /api/wallet/purchases — list purchase requests with filters
+router.get("/purchases", ops, async (req: any, res: any) => {
+  const page = Math.max(1, parseInt(req.query.page as string) || 1);
+  const limit = Math.min(100, parseInt(req.query.limit as string) || 30);
+  const offset = (page - 1) * limit;
+  const statusFilter = req.query.status as string | undefined;
+  const masterFilter = req.query.master_id ? Number(req.query.master_id) : undefined;
+
+  const conditions = [eq(walletTransactionsTable.type, "purchase")];
+  if (statusFilter) {
+    conditions.push(eq(walletTransactionsTable.status, statusFilter));
+  }
+  if (masterFilter !== undefined && !isNaN(masterFilter)) {
+    conditions.push(eq(walletTransactionsTable.masterId, masterFilter));
+  }
+
+  const rows = await db
+    .select({
+      id: walletTransactionsTable.id,
+      masterId: walletTransactionsTable.masterId,
+      masterAlias: mastersTable.alias,
+      masterCity: mastersTable.city,
+      packageId: walletTransactionsTable.packageId,
+      packageName: tokenPackagesTable.name,
+      tokensAmount: walletTransactionsTable.tokensAmount,
+      rubAmount: walletTransactionsTable.rubAmount,
+      reason: walletTransactionsTable.reason,
+      screenshotUrl: walletTransactionsTable.screenshotUrl,
+      status: walletTransactionsTable.status,
+      createdAt: walletTransactionsTable.createdAt,
+    })
+    .from(walletTransactionsTable)
+    .leftJoin(tokenPackagesTable, eq(walletTransactionsTable.packageId, tokenPackagesTable.id))
+    .leftJoin(mastersTable, eq(walletTransactionsTable.masterId, mastersTable.id))
+    .where(and(...conditions))
+    .orderBy(desc(walletTransactionsTable.createdAt))
+    .limit(limit)
+    .offset(offset);
+
+  return res.json(rows.map(r => ({
+    id: r.id,
+    master_id: r.masterId,
+    master_alias: r.masterAlias ?? "—",
+    master_city: r.masterCity ?? "—",
+    package_id: r.packageId,
+    package_name: r.packageName ?? "—",
+    tokens_amount: Number(r.tokensAmount),
+    rub_amount: r.rubAmount,
+    reason: r.reason,
+    screenshot_url: r.screenshotUrl,
+    status: r.status,
+    created_at: r.createdAt,
+  })));
+});
+
 // GET /api/wallet/:masterId — баланс и статистика (CRM/admin)
 router.get("/:masterId", ops, async (req: any, res: any) => {
   const masterId = parseInt(req.params.masterId);
@@ -439,62 +495,6 @@ router.post("/:masterId/credit", adminOnly, async (req: any, res: any) => {
     new_balance: Number(updated.tokensBalance),
     credit_tokens_issued: Number((updated as any).creditTokensIssued ?? tokensNum),
   });
-});
-
-// ─── Purchase approval / rejection (admin/ops) ────────────────────────────────
-// GET /api/wallet/purchases — list purchase requests with filters
-router.get("/purchases", ops, async (req: any, res: any) => {
-  const page = Math.max(1, parseInt(req.query.page as string) || 1);
-  const limit = Math.min(100, parseInt(req.query.limit as string) || 30);
-  const offset = (page - 1) * limit;
-  const statusFilter = req.query.status as string | undefined;
-  const masterFilter = req.query.master_id ? Number(req.query.master_id) : undefined;
-
-  const conditions = [eq(walletTransactionsTable.type, "purchase")];
-  if (statusFilter) {
-    conditions.push(eq(walletTransactionsTable.status, statusFilter));
-  }
-  if (masterFilter !== undefined && !isNaN(masterFilter)) {
-    conditions.push(eq(walletTransactionsTable.masterId, masterFilter));
-  }
-
-  const rows = await db
-    .select({
-      id: walletTransactionsTable.id,
-      masterId: walletTransactionsTable.masterId,
-      masterAlias: mastersTable.alias,
-      masterCity: mastersTable.city,
-      packageId: walletTransactionsTable.packageId,
-      packageName: tokenPackagesTable.name,
-      tokensAmount: walletTransactionsTable.tokensAmount,
-      rubAmount: walletTransactionsTable.rubAmount,
-      reason: walletTransactionsTable.reason,
-      screenshotUrl: walletTransactionsTable.screenshotUrl,
-      status: walletTransactionsTable.status,
-      createdAt: walletTransactionsTable.createdAt,
-    })
-    .from(walletTransactionsTable)
-    .leftJoin(tokenPackagesTable, eq(walletTransactionsTable.packageId, tokenPackagesTable.id))
-    .leftJoin(mastersTable, eq(walletTransactionsTable.masterId, mastersTable.id))
-    .where(and(...conditions))
-    .orderBy(desc(walletTransactionsTable.createdAt))
-    .limit(limit)
-    .offset(offset);
-
-  return res.json(rows.map(r => ({
-    id: r.id,
-    master_id: r.masterId,
-    master_alias: r.masterAlias ?? "—",
-    master_city: r.masterCity ?? "—",
-    package_id: r.packageId,
-    package_name: r.packageName ?? "—",
-    tokens_amount: Number(r.tokensAmount),
-    rub_amount: r.rubAmount,
-    reason: r.reason,
-    screenshot_url: r.screenshotUrl,
-    status: r.status,
-    created_at: r.createdAt,
-  })));
 });
 
 // POST /api/wallet/:masterId/confirm-purchase — approve a pending purchase
