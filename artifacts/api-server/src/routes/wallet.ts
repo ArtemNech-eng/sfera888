@@ -441,6 +441,139 @@ router.post("/:masterId/credit", adminOnly, async (req: any, res: any) => {
   });
 });
 
+// ─── Purchase approval / rejection (admin/ops) ────────────────────────────────
+// GET /api/wallet/purchases — list purchase requests with filters
+router.get("/purchases", ops, async (req: any, res: any) => {
+  const page = Math.max(1, parseInt(req.query.page as string) || 1);
+  const limit = Math.min(100, parseInt(req.query.limit as string) || 30);
+  const offset = (page - 1) * limit;
+  const statusFilter = req.query.status as string | undefined;
+  const masterFilter = req.query.master_id ? Number(req.query.master_id) : undefined;
+
+  const conditions = [eq(walletTransactionsTable.type, "purchase")];
+  if (statusFilter) {
+    conditions.push(eq(walletTransactionsTable.status, statusFilter));
+  }
+  if (masterFilter !== undefined && !isNaN(masterFilter)) {
+    conditions.push(eq(walletTransactionsTable.masterId, masterFilter));
+  }
+
+  const rows = await db
+    .select({
+      id: walletTransactionsTable.id,
+      masterId: walletTransactionsTable.masterId,
+      masterAlias: mastersTable.alias,
+      masterCity: mastersTable.city,
+      packageId: walletTransactionsTable.packageId,
+      packageName: tokenPackagesTable.name,
+      tokensAmount: walletTransactionsTable.tokensAmount,
+      rubAmount: walletTransactionsTable.rubAmount,
+      reason: walletTransactionsTable.reason,
+      screenshotUrl: walletTransactionsTable.screenshotUrl,
+      status: walletTransactionsTable.status,
+      createdAt: walletTransactionsTable.createdAt,
+    })
+    .from(walletTransactionsTable)
+    .leftJoin(tokenPackagesTable, eq(walletTransactionsTable.packageId, tokenPackagesTable.id))
+    .leftJoin(mastersTable, eq(walletTransactionsTable.masterId, mastersTable.id))
+    .where(and(...conditions))
+    .orderBy(desc(walletTransactionsTable.createdAt))
+    .limit(limit)
+    .offset(offset);
+
+  return res.json(rows.map(r => ({
+    id: r.id,
+    master_id: r.masterId,
+    master_alias: r.masterAlias ?? "—",
+    master_city: r.masterCity ?? "—",
+    package_id: r.packageId,
+    package_name: r.packageName ?? "—",
+    tokens_amount: Number(r.tokensAmount),
+    rub_amount: r.rubAmount,
+    reason: r.reason,
+    screenshot_url: r.screenshotUrl,
+    status: r.status,
+    created_at: r.createdAt,
+  })));
+});
+
+// POST /api/wallet/:masterId/confirm-purchase — approve a pending purchase
+router.post("/:masterId/confirm-purchase", ops, async (req: any, res: any) => {
+  const masterId = parseInt(req.params.masterId);
+  if (isNaN(masterId)) return res.status(400).json({ error: "Неверный masterId" });
+
+  const { transaction_id } = req.body;
+  if (!transaction_id) return res.status(400).json({ error: "transaction_id обязателен" });
+
+  const txRows = await db.select().from(walletTransactionsTable)
+    .where(and(
+      eq(walletTransactionsTable.id, Number(transaction_id)),
+      eq(walletTransactionsTable.masterId, masterId),
+      eq(walletTransactionsTable.type, "purchase"),
+      eq(walletTransactionsTable.status, "pending"),
+    ))
+    .limit(1);
+  if (!txRows.length) return res.status(404).json({ error: "Заявка не найдена или уже обработана" });
+
+  const tx = txRows[0];
+  const tokensToAdd = Number(tx.tokensAmount);
+  const rubAmount = tx.rubAmount ?? 0;
+
+  // Update wallet balance
+  const wallet = await ensureWallet(masterId);
+  const newBalance = Number(wallet.tokensBalance) + tokensToAdd;
+  const creditTokensIssued = Number((wallet as any).creditTokensIssued ?? 0);
+  const creditTokensSpent = newBalance < 0 ? Math.min(creditTokensIssued, -newBalance) : 0;
+
+  await db.update(masterWalletTable)
+    .set({
+      tokensBalance: String(newBalance),
+      totalTokensPurchased: String(Number(wallet.totalTokensPurchased) + tokensToAdd),
+      totalRubSpent: (wallet.totalRubSpent ?? 0) + rubAmount,
+      creditTokensSpent: String(creditTokensSpent),
+      updatedAt: new Date(),
+    })
+    .where(eq(masterWalletTable.masterId, masterId));
+
+  // Mark transaction completed
+  await db.update(walletTransactionsTable)
+    .set({ status: "completed", reason: `${tx.reason ?? ""} | Подтверждено администратором` })
+    .where(eq(walletTransactionsTable.id, tx.id));
+
+  return res.json({ success: true, tokens_added: tokensToAdd, new_balance: newBalance });
+});
+
+// POST /api/wallet/:masterId/cancel-purchase — reject a pending purchase
+router.post("/:masterId/cancel-purchase", ops, async (req: any, res: any) => {
+  const masterId = parseInt(req.params.masterId);
+  if (isNaN(masterId)) return res.status(400).json({ error: "Неверный masterId" });
+
+  const { transaction_id, reason } = req.body;
+  if (!transaction_id) return res.status(400).json({ error: "transaction_id обязателен" });
+  if (!reason || !reason.trim()) return res.status(400).json({ error: "reason обязателен" });
+
+  const txRows = await db.select().from(walletTransactionsTable)
+    .where(and(
+      eq(walletTransactionsTable.id, Number(transaction_id)),
+      eq(walletTransactionsTable.masterId, masterId),
+      eq(walletTransactionsTable.type, "purchase"),
+      eq(walletTransactionsTable.status, "pending"),
+    ))
+    .limit(1);
+  if (!txRows.length) return res.status(404).json({ error: "Заявка не найдена или уже обработана" });
+
+  const tx = txRows[0];
+
+  await db.update(walletTransactionsTable)
+    .set({
+      status: "cancelled",
+      reason: `${tx.reason ?? ""} | Отклонено: ${reason.trim()}`,
+    })
+    .where(eq(walletTransactionsTable.id, tx.id));
+
+  return res.json({ success: true });
+});
+
 // ─── Arbitrage: request refund ───────────────────────────────────────────────
 // Called from master PWA when master wants a token back
 router.post("/refund-request", requireAuth, async (req: any, res: any) => {
