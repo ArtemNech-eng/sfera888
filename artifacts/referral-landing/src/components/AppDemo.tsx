@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import SectionHeader from "./SectionHeader";
-import { Smartphone, Bell, MessageCircle, CreditCard } from "lucide-react";
+import { Smartphone, Bell, MessageCircle, CreditCard, Home, ClipboardList, User, Image } from "lucide-react";
 
 const features = [
   {
@@ -100,7 +100,7 @@ export default function AppDemo() {
                       <div className="text-[9px] text-emerald-500">онлайн</div>
                     </div>
                   </div>
-                  <div className="space-y-2 flex-1">
+                  <div className="space-y-2">
                     <div className="bg-gray-100 rounded-xl p-3 text-[10px] text-gray-600">
                       <div className="font-semibold text-gray-800 mb-1">AI Смета готова</div>
                       <div>Обои + шпаклёвка: 22 000 ₽</div>
@@ -118,6 +118,21 @@ export default function AppDemo() {
                       <div className="font-semibold text-emerald-900 mb-1">Оплата по факту</div>
                       <div>22 000 ₽ — после приёмки работ</div>
                     </div>
+                    {/* Photo placeholder */}
+                    <div className="bg-gray-100 rounded-xl p-2 mt-1">
+                      <div className="bg-gray-200 rounded-lg h-20 flex items-center justify-center">
+                        <Image size={20} className="text-gray-400" />
+                      </div>
+                      <div className="text-[9px] text-gray-400 mt-1">Фото ремонта</div>
+                    </div>
+                  </div>
+
+                  {/* Bottom navigation */}
+                  <div className="mt-auto pt-3 border-t border-gray-100 flex justify-around items-center">
+                    <Home size={16} className="text-emerald-500" />
+                    <ClipboardList size={16} className="text-gray-400" />
+                    <MessageCircle size={16} className="text-gray-400" />
+                    <User size={16} className="text-gray-400" />
                   </div>
                 </div>
               </div>
