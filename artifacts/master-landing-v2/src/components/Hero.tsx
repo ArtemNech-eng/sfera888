@@ -16,87 +16,123 @@ function MasterIllustration() {
         className="w-full h-auto"
         aria-hidden="true"
       >
-        {/* Background circle */}
-        <circle cx="240" cy="270" r="210" fill="#F0FDF4" />
-        <circle cx="240" cy="270" r="170" fill="#DCFCE7" opacity="0.5" />
+        {/* Background circles */}
+        <circle cx="240" cy="275" r="210" fill="#F0FDF4" />
+        <circle cx="240" cy="275" r="165" fill="#DCFCE7" opacity="0.55" />
+
+        {/* Decorative dots */}
+        <circle cx="100" cy="155" r="6" fill="#10B981" opacity="0.35" />
+        <circle cx="375" cy="150" r="8" fill="#3B82F6" opacity="0.25" />
+        <circle cx="392" cy="390" r="5" fill="#F97316" opacity="0.4" />
+        <circle cx="78" cy="370" r="4" fill="#10B981" opacity="0.3" />
+        {/* Star accent */}
+        <path d="M355 118 L357 125 L364 125 L358 129 L361 136 L355 132 L349 136 L352 129 L346 125 L353 125 Z" fill="#F97316" opacity="0.65" />
+        <path d="M110 432 L112 437 L117 437 L113 440 L115 445 L110 442 L105 445 L107 440 L103 437 L108 437 Z" fill="#10B981" opacity="0.45" />
 
         {/* Floor */}
-        <rect x="60" y="400" width="360" height="12" rx="6" fill="#D1FAE5" />
+        <rect x="70" y="408" width="340" height="10" rx="5" fill="#A7F3D0" />
 
-        {/* Wall panel being painted */}
-        <rect x="80" y="140" width="280" height="260" rx="16" fill="#F8FAFC" stroke="#E2E8F0" strokeWidth="2" />
-        {/* Painted portion (left ~60%) */}
-        <rect x="80" y="140" width="168" height="260" rx="16" fill="#10B981" opacity="0.15" />
-        {/* Paint edge — soft vertical line */}
-        <rect x="244" y="148" width="4" height="244" rx="2" fill="#10B981" opacity="0.5" />
+        {/* Wall — clean panel */}
+        <rect x="90" y="135" width="280" height="275" rx="18" fill="white" stroke="#E2E8F0" strokeWidth="2" />
+        {/* Painted section ~55% */}
+        <clipPath id="wallClip">
+          <rect x="90" y="135" width="280" height="275" rx="18" />
+        </clipPath>
+        <rect x="90" y="135" width="160" height="275" fill="#10B981" opacity="0.12" clipPath="url(#wallClip)" />
+        {/* Paint boundary line */}
+        <rect x="247" y="143" width="3" height="258" rx="2" fill="#10B981" opacity="0.45" />
+        {/* Horizontal wall lines (unpainted side) */}
+        {[0,1,2,3,4].map(i => (
+          <line key={i} x1="255" y1={158 + i * 48} x2="355" y2={158 + i * 48} stroke="#F1F5F9" strokeWidth="1.5" />
+        ))}
+        {/* Vertical wall lines (unpainted side) */}
+        {[0,1,2].map(i => (
+          <line key={i} x1={270 + i * 40} y1="143" x2={270 + i * 40} y2="408" stroke="#F1F5F9" strokeWidth="1.5" />
+        ))}
 
-        {/* Wall tiles pattern (right unpainted area) */}
-        {[0,1,2,3].map(row =>
-          [0,1].map(col => (
-            <rect
-              key={`${row}-${col}`}
-              x={258 + col * 46}
-              y={158 + row * 56}
-              width={38}
-              height={46}
-              rx="3"
-              fill="none"
-              stroke="#E2E8F0"
-              strokeWidth="1.5"
-            />
-          ))
-        )}
+        {/* === CHARACTER === */}
 
-        {/* Master body — torso */}
-        <rect x="185" y="270" width="64" height="90" rx="20" fill="#0F172A" />
-        {/* Overalls pocket */}
-        <rect x="200" y="290" width="20" height="14" rx="4" fill="#10B981" opacity="0.8" />
-
-        {/* Master head */}
-        <circle cx="217" cy="248" r="28" fill="#FBBF24" />
-        {/* Hard hat */}
-        <path d="M189 248 Q189 218 217 215 Q245 218 245 248 Z" fill="#10B981" />
-        <rect x="183" y="246" width="68" height="8" rx="4" fill="#059669" />
-
-        {/* Face */}
-        <circle cx="209" cy="250" r="3" fill="#92400E" />
-        <circle cx="225" cy="250" r="3" fill="#92400E" />
-        <path d="M210 260 Q217 266 224 260" stroke="#92400E" strokeWidth="2" strokeLinecap="round" fill="none" />
-
-        {/* Left arm — holding roller pole */}
-        <rect x="158" y="280" width="30" height="12" rx="6" fill="#0F172A" />
-        <rect x="152" y="289" width="12" height="62" rx="6" fill="#64748B" />
-        {/* Roller head */}
-        <rect x="133" y="268" width="34" height="26" rx="8" fill="#3B82F6" />
-        <rect x="137" y="268" width="26" height="26" rx="6" fill="#60A5FA" />
-        {/* Paint drip from roller */}
-        <path d="M148 294 Q146 308 148 318" stroke="#10B981" strokeWidth="3" strokeLinecap="round" opacity="0.6" />
-
-        {/* Right arm — resting on hip */}
-        <path d="M249 285 Q270 300 268 320" stroke="#0F172A" strokeWidth="14" strokeLinecap="round" fill="none" />
-
-        {/* Legs */}
-        <rect x="188" y="352" width="26" height="52" rx="10" fill="#1E293B" />
-        <rect x="220" y="352" width="26" height="52" rx="10" fill="#1E293B" />
+        {/* Legs — navy work trousers */}
+        <rect x="196" y="348" width="28" height="62" rx="12" fill="#1E3A5F" />
+        <rect x="230" y="348" width="28" height="62" rx="12" fill="#1E3A5F" />
         {/* Boots */}
-        <rect x="183" y="396" width="36" height="16" rx="8" fill="#0F172A" />
-        <rect x="215" y="396" width="36" height="16" rx="8" fill="#0F172A" />
+        <rect x="189" y="400" width="42" height="14" rx="7" fill="#0F172A" />
+        <rect x="222" y="400" width="42" height="14" rx="7" fill="#0F172A" />
 
-        {/* Paint bucket on floor */}
-        <rect x="290" y="375" width="36" height="28" rx="6" fill="#10B981" />
-        <path d="M293 375 Q308 365 323 375" stroke="#059669" strokeWidth="2.5" strokeLinecap="round" fill="none" />
-        {/* Paint level inside bucket */}
-        <rect x="292" y="385" width="32" height="16" rx="4" fill="#34D399" />
+        {/* Torso — light blue work jacket */}
+        <rect x="183" y="262" width="88" height="94" rx="22" fill="#DBEAFE" />
+        {/* Jacket collar / zip detail */}
+        <rect x="217" y="262" width="20" height="30" rx="6" fill="#BFDBFE" />
+        {/* Jacket sleeve left */}
+        <path d="M183 278 Q155 285 148 310 Q148 322 158 324 Q168 326 172 314 Q178 296 183 290 Z" fill="#DBEAFE" />
+        {/* Jacket sleeve right */}
+        <path d="M271 278 Q299 285 306 310 Q306 322 296 324 Q286 326 282 314 Q276 296 271 290 Z" fill="#DBEAFE" />
+        {/* Sleeve cuffs */}
+        <rect x="148" y="316" width="26" height="10" rx="5" fill="#93C5FD" />
+        <rect x="280" y="316" width="26" height="10" rx="5" fill="#93C5FD" />
+        {/* Jacket outline / collar seam */}
+        <path d="M207 262 L207 280 Q227 292 247 280 L247 262" stroke="#93C5FD" strokeWidth="1.5" fill="none" />
 
-        {/* Decorative sparkles */}
-        <circle cx="96" cy="170" r="5" fill="#10B981" opacity="0.4" />
-        <circle cx="370" cy="160" r="7" fill="#3B82F6" opacity="0.3" />
-        <circle cx="390" cy="380" r="5" fill="#F59E0B" opacity="0.4" />
-        <circle cx="75" cy="360" r="4" fill="#10B981" opacity="0.3" />
+        {/* CHEST BADGE — Честный Мастер */}
+        <rect x="193" y="295" width="68" height="34" rx="6" fill="white" stroke="#10B981" strokeWidth="1.5" />
+        {/* Badge lightning bolt */}
+        <path d="M200 305 L204 299 L204 305 L208 305 L204 313 L204 307 L200 307 Z" fill="#10B981" />
+        {/* Badge text lines */}
+        <text x="213" y="307" fontSize="6.5" fontWeight="bold" fill="#0F172A" fontFamily="sans-serif">Честный</text>
+        <text x="213" y="316" fontSize="6.5" fontWeight="bold" fill="#10B981" fontFamily="sans-serif">Мастер</text>
 
-        {/* Stars */}
-        <path d="M350 120 L352 126 L358 126 L353 130 L355 136 L350 132 L345 136 L347 130 L342 126 L348 126 Z" fill="#F59E0B" opacity="0.7" />
-        <path d="M108 420 L110 424 L114 424 L111 427 L112 431 L108 428 L104 431 L105 427 L102 424 L106 424 Z" fill="#10B981" opacity="0.5" />
+        {/* Jacket bottom seam */}
+        <rect x="183" y="348" width="88" height="6" rx="3" fill="#BFDBFE" />
+
+        {/* HEAD */}
+        <circle cx="227" cy="238" r="34" fill="#FDE68A" />
+
+        {/* HARD HAT — orange, proper shape */}
+        {/* Hat dome */}
+        <path d="M193 240 Q193 202 227 198 Q261 202 261 240 Z" fill="#F97316" />
+        {/* Hat brim */}
+        <rect x="185" y="238" width="84" height="9" rx="4.5" fill="#EA580C" />
+        {/* Hat highlight */}
+        <path d="M205 210 Q216 204 230 207" stroke="#FED7AA" strokeWidth="2.5" strokeLinecap="round" opacity="0.8" />
+
+        {/* FACE — friendly expression */}
+        {/* Eyes */}
+        <circle cx="216" cy="242" r="4.5" fill="white" />
+        <circle cx="238" cy="242" r="4.5" fill="white" />
+        <circle cx="217" cy="243" r="2.5" fill="#1E293B" />
+        <circle cx="239" cy="243" r="2.5" fill="#1E293B" />
+        {/* Eye shine */}
+        <circle cx="218" cy="242" r="1" fill="white" />
+        <circle cx="240" cy="242" r="1" fill="white" />
+        {/* Eyebrows — raised friendly */}
+        <path d="M212 236 Q217 233 222 236" stroke="#92400E" strokeWidth="1.8" strokeLinecap="round" fill="none" />
+        <path d="M232 236 Q237 233 242 236" stroke="#92400E" strokeWidth="1.8" strokeLinecap="round" fill="none" />
+        {/* Big smile */}
+        <path d="M213 252 Q227 263 241 252" stroke="#92400E" strokeWidth="2.5" strokeLinecap="round" fill="none" />
+        {/* Cheeks blush */}
+        <circle cx="210" cy="254" r="5" fill="#FCA5A5" opacity="0.45" />
+        <circle cx="244" cy="254" r="5" fill="#FCA5A5" opacity="0.45" />
+
+        {/* PAINT ROLLER — left hand */}
+        {/* Roller pole */}
+        <rect x="148" y="316" width="10" height="68" rx="5" fill="#94A3B8" />
+        {/* Roller frame */}
+        <rect x="128" y="296" width="12" height="30" rx="4" fill="#64748B" />
+        <path d="M133 296 L138 310 L133 326" stroke="#64748B" strokeWidth="2" fill="none" strokeLinecap="round" />
+        <line x1="140" y1="310" x2="153" y2="318" stroke="#94A3B8" strokeWidth="3" strokeLinecap="round" />
+        {/* Roller cylinder */}
+        <rect x="110" y="290" width="22" height="40" rx="11" fill="#10B981" />
+        <rect x="112" y="293" width="18" height="34" rx="9" fill="#34D399" />
+        {/* Paint mark on wall */}
+        <path d="M120 290 Q118 272 122 255" stroke="#10B981" strokeWidth="3" strokeLinecap="round" opacity="0.4" />
+
+        {/* PAINT BUCKET — right side on floor */}
+        <rect x="298" y="372" width="40" height="36" rx="8" fill="#10B981" />
+        <rect x="300" y="382" width="36" height="24" rx="6" fill="#34D399" />
+        {/* Bucket handle */}
+        <path d="M302 372 Q318 360 334 372" stroke="#059669" strokeWidth="3" strokeLinecap="round" fill="none" />
+        {/* Paint splash */}
+        <ellipse cx="318" cy="408" rx="22" ry="4" fill="#10B981" opacity="0.2" />
       </svg>
 
       {/* Floating card: Объект взят */}
