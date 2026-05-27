@@ -121,7 +121,7 @@ export default function AppDemo() {
                     {/* Repair photo */}
                     <div className="bg-gray-100 rounded-xl p-2 mt-1">
                       <img
-                        src="https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=400&q=80"
+                        src="/images/ф2.jpg"
                         alt="Фото ремонта"
                         className="rounded-lg w-full h-20 object-cover"
                         loading="lazy"
