@@ -982,9 +982,11 @@ if (fs.existsSync(referralLandingDistPath)) {
   });
 }
 
-// Root redirect: / → master-landing
+// Root: serve master-landing-v2 directly at sfera-master.ru/
 app.get("/", (_req, res) => {
-  if (fs.existsSync(landingV1DistPath)) {
+  if (fs.existsSync(landingV2DistPath)) {
+    res.sendFile(path.join(landingV2DistPath, "index.html"));
+  } else if (fs.existsSync(landingV1DistPath)) {
     res.redirect(301, "/master-landing/");
   } else {
     res.redirect(301, "/crm/");
