@@ -114,6 +114,10 @@ export default function AppDemo() {
                         <div className="bg-emerald-500 h-1.5 rounded-full w-2/3" />
                       </div>
                     </div>
+                    <div className="bg-emerald-50 rounded-xl p-3 text-[10px] text-emerald-800 ml-auto max-w-[80%]">
+                      <div className="font-semibold text-emerald-900 mb-1">Оплата по факту</div>
+                      <div>22 000 ₽ — после приёмки работ</div>
+                    </div>
                   </div>
                 </div>
               </div>
