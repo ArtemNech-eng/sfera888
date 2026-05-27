@@ -703,6 +703,17 @@ router.get("/partner-analytics/:id/daily", async (req: Request, res: Response) =
 // SETTINGS
 // ─────────────────────────────────────────────────────────────────────────────
 
+// GET /api/crm/settings/domain
+router.get("/settings/domain", async (req: Request, res: Response) => {
+  try {
+    const landingDomain = process.env.LANDING_DOMAIN || "https://честные-мастера.рф";
+    return res.json({ landing_domain: landingDomain });
+  } catch (err) {
+    console.error("[settings/domain GET]", err);
+    return res.status(500).json({ error: "server_error" });
+  }
+});
+
 // GET /api/settings/partner
 router.get("/settings/partner", async (req: Request, res: Response) => {
   try {

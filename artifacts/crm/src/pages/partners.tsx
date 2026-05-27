@@ -154,6 +154,13 @@ async function createPartner(data: {
   return r.json();
 }
 
+async function fetchDomain(): Promise<string> {
+  const r = await fetch("/api/crm/settings/domain", { credentials: "include" });
+  if (!r.ok) throw new Error("Failed to fetch domain");
+  const data = await r.json();
+  return data.landing_domain || "https://честные-мастера.рф";
+}
+
 async function updatePartnerStatus(id: number, status: string) {
   const r = await fetch(`/api/crm/partners/${id}/status`, {
     method: "PATCH",
@@ -328,10 +335,12 @@ function PartnerDetailDrawer({
   partnerId,
   open,
   onOpenChange,
+  domain,
 }: {
   partnerId: number | null;
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  domain: string;
 }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -422,12 +431,12 @@ function PartnerDetailDrawer({
                   <div className="text-sm">
                     <span className="text-muted-foreground">Ссылка:</span>{" "}
                     <a
-                      href={`https://sfera-master.ru/r/${partner.refSlug}`}
+                      href={`${domain}/r/${partner.refSlug}`}
                       target="_blank"
                       rel="noreferrer"
                       className="text-primary hover:underline font-mono"
                     >
-                      /r/{partner.refSlug}
+                      {domain}/r/{partner.refSlug}
                     </a>
                   </div>
                 )}
@@ -497,6 +506,11 @@ export default function PartnersPage() {
   const { data: pendingPartners = [] } = useQuery<Partner[]>({
     queryKey: ["partners", { status: "pending" }],
     queryFn: () => fetchPartners({ status: "pending" }),
+  });
+
+  const { data: domain = "https://честные-мастера.рф" } = useQuery<string>({
+    queryKey: ["domain"],
+    queryFn: fetchDomain,
   });
 
   const handleRowClick = (partner: Partner) => {
@@ -663,7 +677,7 @@ export default function PartnersPage() {
         </div>
 
         <CreatePartnerModal open={createModalOpen} onOpenChange={setCreateModalOpen} cities={cities.map(c => c.name)} />
-        <PartnerDetailDrawer partnerId={selectedPartnerId} open={detailOpen} onOpenChange={setDetailOpen} />
+        <PartnerDetailDrawer partnerId={selectedPartnerId} open={detailOpen} onOpenChange={setDetailOpen} domain={domain} />
       </Layout>
     </ProtectedRoute>
   );
