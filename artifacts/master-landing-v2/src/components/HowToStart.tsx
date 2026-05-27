@@ -1,5 +1,5 @@
 import React from 'react';
-import { MousePointerClick, Bot, Phone, Layers, ShieldCheck, ArrowRight } from 'lucide-react';
+import { MousePointerClick, UserPlus, Clock, Layers, ShieldCheck, ArrowRight } from 'lucide-react';
 import AnimatedSection from './AnimatedSection';
 import NeonButton from './NeonButton';
 
@@ -13,21 +13,21 @@ const HowToStart: React.FC<HowToStartProps> = ({ botUrl }) => {
       number: '1',
       icon: <MousePointerClick size={22} className="text-[#10B981]" />,
       title: 'Нажимаете кнопку ниже',
-      desc: 'Переходите на страницу регистрации — это займёт меньше минуты.',
+      desc: 'Открывается приложение — регистрация займёт 2 минуты.',
       color: '#10B981',
     },
     {
       number: '2',
-      icon: <Bot size={22} className="text-[#3B82F6]" />,
-      title: 'Переходите в Telegram-бота (Max)',
-      desc: 'Бот Max встретит вас, объяснит условия и поможет зарегистрироваться.',
+      icon: <UserPlus size={22} className="text-[#3B82F6]" />,
+      title: 'Заполняете анкету в приложении',
+      desc: 'Имя, номер телефона, специализация — всё в удобной форме. Никаких лишних шагов.',
       color: '#3B82F6',
     },
     {
       number: '3',
-      icon: <Phone size={22} className="text-[#F59E0B]" />,
-      title: 'Авторизуетесь по номеру телефона',
-      desc: 'Быстрая и безопасная авторизация — никаких лишних форм и паролей.',
+      icon: <Clock size={22} className="text-[#F59E0B]" />,
+      title: 'Менеджер рассматривает заявку',
+      desc: 'Обычно до 24 часов. Вы получите уведомление, как только аккаунт одобрят.',
       color: '#F59E0B',
     },
     {
