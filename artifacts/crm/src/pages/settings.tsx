@@ -39,18 +39,35 @@ function useAssignmentMode() {
   });
 }
 
+function useAiDispatcher() {
+  return useQuery<{ enabled: boolean }>({
+    queryKey: ["/api/settings/ai-dispatcher"],
+    queryFn: async () => {
+      const r = await fetch("/api/settings/ai-dispatcher", { credentials: "include" });
+      return r.json();
+    },
+  });
+}
+
 export default function Settings() {
   const queryClient = useQueryClient();
   const { data: cities } = useGetCities();
   const { data: services } = useGetServices();
   const { data: commission } = useCommission();
   const { data: assignmentModeData } = useAssignmentMode();
+  const { data: aiDispatcherData } = useAiDispatcher();
   const [assignMode, setAssignMode] = useState<"auto" | "manual">("auto");
   const [modeSaved, setModeSaved] = useState(false);
+  const [aiDispatcherEnabled, setAiDispatcherEnabled] = useState(true);
+  const [aiDispatcherSaved, setAiDispatcherSaved] = useState(false);
 
   useEffect(() => {
     if (assignmentModeData?.mode) setAssignMode(assignmentModeData.mode);
   }, [assignmentModeData]);
+
+  useEffect(() => {
+    if (aiDispatcherData?.enabled !== undefined) setAiDispatcherEnabled(aiDispatcherData.enabled);
+  }, [aiDispatcherData]);
 
   const saveModeMutation = useMutation({
     mutationFn: async (mode: "auto" | "manual") => {
@@ -68,6 +85,25 @@ export default function Settings() {
       queryClient.invalidateQueries({ queryKey: ["/api/masters/assignment-mode"] });
       setModeSaved(true);
       setTimeout(() => setModeSaved(false), 2500);
+    },
+  });
+
+  const saveAiDispatcherMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const r = await fetch("/api/settings/ai-dispatcher", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ enabled }),
+      });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Ошибка"); }
+      return r.json();
+    },
+    onSuccess: (_, enabled) => {
+      setAiDispatcherEnabled(enabled);
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/ai-dispatcher"] });
+      setAiDispatcherSaved(true);
+      setTimeout(() => setAiDispatcherSaved(false), 2500);
     },
   });
 
@@ -430,6 +466,58 @@ export default function Settings() {
                 )}
                 {saveModeMutation.isError && (
                   <span className="text-destructive">{(saveModeMutation.error as Error).message}</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* AI Dispatcher Toggle */}
+          <div className="bg-card rounded-2xl border border-border/50 shadow-sm overflow-hidden">
+            <div className="p-6 border-b border-border/50 flex items-center gap-3">
+              <div className="p-2 bg-emerald-500/10 rounded-xl">
+                <Zap className="w-5 h-5 text-emerald-600" />
+              </div>
+              <h2 className="font-display font-bold text-lg">ИИ-диспетчер</h2>
+            </div>
+            <div className="p-6">
+              <div className="flex items-center justify-between p-4 bg-muted/50 rounded-xl">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-emerald-100 rounded-lg">
+                    <ToggleLeft className="w-5 h-5 text-emerald-600" />
+                  </div>
+                  <div>
+                    <div className="font-medium text-sm">ИИ-диспетчер включён</div>
+                    <div className="text-xs text-muted-foreground">
+                      Включено → ИИ автоматически отвечает мастерам и шлёт proactive-напоминания.
+                      Выключено → сообщения мастеров идут только операторам.
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => saveAiDispatcherMutation.mutate(!aiDispatcherEnabled)}
+                  disabled={saveAiDispatcherMutation.isPending}
+                  className={`relative w-12 h-6 rounded-full transition-colors ${
+                    aiDispatcherEnabled ? "bg-emerald-500" : "bg-muted-foreground/30"
+                  }`}
+                >
+                  <span
+                    className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                      aiDispatcherEnabled ? "translate-x-6" : ""
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Status line */}
+              <div className="mt-4 flex items-center gap-2 text-sm">
+                {saveAiDispatcherMutation.isPending && (
+                  <><Loader2 className="w-4 h-4 animate-spin text-muted-foreground" /><span className="text-muted-foreground">Сохранение…</span></>
+                )}
+                {aiDispatcherSaved && (
+                  <span className="text-green-600">✅ ИИ-диспетчер {aiDispatcherEnabled ? "включён" : "выключен"}</span>
+                )}
+                {saveAiDispatcherMutation.isError && (
+                  <span className="text-destructive">{(saveAiDispatcherMutation.error as Error).message}</span>
                 )}
               </div>
             </div>

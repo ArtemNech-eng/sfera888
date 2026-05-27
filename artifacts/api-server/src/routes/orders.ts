@@ -9,7 +9,7 @@ import { performBroadcast } from "../lib/broadcastOrder.js";
 import { sendPushToMaster } from "../lib/push.js";
 import { sendPushToClient } from "../lib/clientPush.js";
 import { sendMaxMessage } from "../maxBot.js";
-import { analyseOrderCancellation, sendFeedbackRequest } from "../lib/dispatcherAI.js";
+import { analyseOrderCancellation } from "../lib/dispatcherAI.js";
 import { recordOrderCancelled, recordOrderCompleted, revertOrderCancellation } from "../lib/masterReputation.js";
 
 // Telegram-бот удалён.
@@ -559,12 +559,7 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
           }
         }
 
-        // Send feedback request to master via Max if linked
-        if (master.maxChatId) {
-          sendFeedbackRequest(master.id, master.alias, master.maxChatId, id).catch(e =>
-            console.error(`[orders] Failed to send feedback request for order #${id}:`, e),
-          );
-        }
+        // Feedback request removed — proactive messaging now focused on balance/debt only
       } else if (status === "cancelled" || approveCancellation) {
         // Count REMAINING active orders (excluding this order)
         const remainingCount = await countActiveMasterOrders(masterId, id);

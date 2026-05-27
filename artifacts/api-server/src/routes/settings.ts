@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, citiesTable, serviceTypesTable, tokenPackagesTable, serviceTokenPricesTable, tokenPriceHistoryTable } from "@workspace/db";
+import { db, citiesTable, serviceTypesTable, tokenPackagesTable, serviceTokenPricesTable, tokenPriceHistoryTable, systemSettingsTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { requireAuth } from "../middlewares/requireAuth.js";
@@ -306,6 +306,27 @@ router.put("/payment-details", adminOnly, async (req: any, res: any) => {
   }
   paymentDetailsCache = { bankName, cardNumber, holder, comment: comment ?? "" };
   res.json({ success: true });
+});
+
+// ─── AI Dispatcher toggle ────────────────────────────────────────────────────
+
+// GET /api/settings/ai-dispatcher — read current state (default true)
+router.get("/ai-dispatcher", requireAuth, async (_req, res) => {
+  const rows = await db.select().from(systemSettingsTable).where(eq(systemSettingsTable.key, "ai_dispatcher_enabled"));
+  const enabled = rows[0] ? rows[0].value === "true" : true;
+  res.json({ enabled });
+});
+
+// PUT /api/settings/ai-dispatcher — toggle (admin only)
+router.put("/ai-dispatcher", adminOnly, async (req, res) => {
+  const { enabled } = req.body;
+  if (typeof enabled !== "boolean") {
+    return res.status(400).json({ error: "enabled must be boolean" });
+  }
+  await db.insert(systemSettingsTable)
+    .values({ key: "ai_dispatcher_enabled", value: String(enabled), updatedAt: new Date() })
+    .onConflictDoUpdate({ target: systemSettingsTable.key, set: { value: String(enabled), updatedAt: new Date() } });
+  res.json({ enabled });
 });
 
 export default router;

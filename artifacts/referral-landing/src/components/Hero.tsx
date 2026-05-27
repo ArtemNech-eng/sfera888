@@ -58,11 +58,11 @@ export default function Hero({ refSlug }: HeroProps) {
             )}
 
             <motion.h1 variants={item} className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-[#111827] leading-[1.1] mb-3 tracking-tight">
-              Честный Мастер — городской сервис, который объединяет проверенных частных мастеров.
+              Узнайте стоимость ремонта <span className="text-[#059669]">онлайн</span> — без визита мастера
             </motion.h1>
 
             <motion.p variants={item} className="text-gray-500 text-lg leading-relaxed mb-6 max-w-lg">
-              Без посредников, с понятной сметой и гарантией 2 года.
+              Опишите задачу → мастер позвонит и составит смету онлайн → при необходимости договоритесь о замере.
             </motion.p>
 
             {/* Discount badge */}
@@ -96,7 +96,7 @@ export default function Hero({ refSlug }: HeroProps) {
                 onClick={scrollToForm}
                 className="gradient-bg text-white font-semibold px-7 py-4 rounded-2xl hover:scale-[1.03] hover:shadow-lg hover:shadow-emerald-500/30 transition-all duration-300 text-base glow-green"
               >
-                Оставить заявку
+                Рассчитать стоимость
               </button>
               <button
                 onClick={scrollToReviews}

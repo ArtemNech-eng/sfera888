@@ -132,8 +132,8 @@ export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
             <div className="w-20 h-20 rounded-full gradient-bg flex items-center justify-center mx-auto mb-6 shadow-lg shadow-emerald-500/20">
               <CheckCircle size={40} className="text-white" />
             </div>
-            <h3 className="text-3xl font-extrabold text-[#111827] mb-3">Заявка принята</h3>
-            <p className="text-gray-500 text-base mb-2">Проверенные мастера увидят вашу заявку.</p>
+            <h3 className="text-3xl font-extrabold text-[#111827] mb-3">Расчёт принят!</h3>
+            <p className="text-gray-500 text-base mb-2">Мастер позвонит вам и составит смету онлайн.</p>
             <p className="text-gray-500 text-base">
               Обычно это занимает{' '}
               <span className="font-bold text-[#111827]">15–30 минут</span>.
@@ -155,8 +155,8 @@ export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[400px] bg-emerald-100/40 rounded-full blur-[100px] pointer-events-none" />
       <div className="max-w-5xl mx-auto px-4 sm:px-6 relative z-10">
         <SectionHeader
-          title="Оставьте заявку"
-          subtitle="Это бесплатно. Мастер свяжется с вами и уточнит детали."
+          title="Рассчитайте стоимость онлайн"
+          subtitle="Бесплатно. Мастер позвонит и составит смету — никаких обязательств."
         />
 
         <div className="grid lg:grid-cols-5 gap-10 items-start">
@@ -172,9 +172,9 @@ export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
               <h3 className="text-lg font-bold text-[#111827] mb-4">Что будет дальше?</h3>
               <div className="space-y-4">
                 {[
-                  { icon: Clock, text: 'Ответ в течение 15–30 минут' },
-                  { icon: ShieldCheck, text: 'Проверенный мастер с документами' },
-                  { icon: BadgeCheck, text: 'Чёткая смета до начала работ' },
+                  { icon: Clock, text: 'Мастер позвонит в течение 15–30 минут' },
+                  { icon: BadgeCheck, text: 'Составит смету онлайн по вашему описанию' },
+                  { icon: ShieldCheck, text: 'При необходимости договоритесь о выезде на замер' },
                 ].map((item) => {
                   const Icon = item.icon;
                   return (
@@ -383,7 +383,7 @@ export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
                   ) : (
                     <>
                       <Sparkles size={18} />
-                      Оставить заявку
+                      Получить расчёт бесплатно
                     </>
                   )}
                 </button>

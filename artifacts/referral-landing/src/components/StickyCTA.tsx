@@ -28,10 +28,10 @@ export default function StickyCTA() {
           className="w-full text-white font-bold py-3.5 rounded-2xl text-base flex items-center justify-center gap-2 animate-pulse-glow gradient-bg hover:scale-[1.02] active:scale-[0.98] transition-transform duration-200"
         >
           <Sparkles size={18} />
-          Оставить заявку
+          Рассчитать стоимость
         </button>
         <p className="text-center text-gray-400 text-xs mt-2 font-medium">
-          Бесплатно · Ответ за 15 минут · Скидка до 15%
+          Бесплатно · Мастер позвонит за 15–30 минут
         </p>
       </div>
     </div>

@@ -10,7 +10,7 @@
  */
 
 import OpenAI from "openai";
-import { db, ordersTable, mastersTable, leadsTable, receiptsTable, masterMessagesTable, dispatcherFollowupsTable, botMemoryTable, orderDispatchesTable } from "@workspace/db";
+import { db, ordersTable, mastersTable, leadsTable, receiptsTable, masterMessagesTable, dispatcherFollowupsTable, botMemoryTable, orderDispatchesTable, systemSettingsTable, walletTransactionsTable } from "@workspace/db";
 import { eq, and, isNull, inArray, lte, desc, gte, ilike, sql } from "drizzle-orm";
 import { sendMaxMessage } from "../maxBot.js";
 import { sendMsg as sendManagerMsg, getManagerUserId, injectNotification } from "../managerBot.js";
@@ -117,6 +117,17 @@ function addToHistory(masterId: number, msg: ChatMessage) {
   h.push(msg);
   if (h.length > MAX_HISTORY) {
     masterSessions.set(masterId, sanitizeHistory(h.slice(-MAX_HISTORY)));
+  }
+}
+
+/** Check if AI dispatcher is globally enabled. Defaults to true when not set. */
+export async function isAiDispatcherEnabled(): Promise<boolean> {
+  try {
+    const rows = await db.select().from(systemSettingsTable).where(eq(systemSettingsTable.key, "ai_dispatcher_enabled"));
+    return rows[0] ? rows[0].value === "true" : true;
+  } catch (e) {
+    console.error("[dispatcherAI] isAiDispatcherEnabled error:", e);
+    return true; // fail-open
   }
 }
 
@@ -419,16 +430,6 @@ async function toolAddOrderNote(orderId: number, note: string): Promise<string> 
   return `Заметка к заказу #${orderId} сохранена.`;
 }
 
-async function toolSetOrderInProgress(orderId: number): Promise<string> {
-  const rows = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
-  if (!rows[0]) return `Заказ #${orderId} не найден.`;
-  if (rows[0].status === "in_progress") return `Заказ #${orderId} уже в работе.`;
-  await db.update(ordersTable)
-    .set({ status: "in_progress", updatedAt: new Date() })
-    .where(eq(ordersTable.id, orderId));
-  return `Заказ #${orderId} переведён в статус «в работе».`;
-}
-
 async function toolEscalateToManager(message: string, masterId: number, orderId?: number): Promise<string> {
   const managerId = getManagerUserId();
   if (!managerId) {
@@ -451,38 +452,6 @@ async function toolEscalateToManager(message: string, masterId: number, orderId?
     description: message,
   });
   return "Эскалация отправлена руководителю.";
-}
-
-async function toolGetEstimateStatus(orderId: number): Promise<string> {
-  const receipts = await db.select().from(receiptsTable)
-    .where(eq(receiptsTable.orderId, orderId));
-  if (receipts.length === 0) return `Смета по заказу #${orderId} ещё не создана.`;
-  const r = receipts[0];
-  const total = Number(r.totalAmount ?? 0);
-  return `Смета создана. Итого: ${total.toLocaleString("ru-RU")} ₽${r.notes ? ". Заметки: " + r.notes : ""}.`;
-}
-
-async function toolScheduleFollowup(
-  masterId: number,
-  orderId: number,
-  hoursFromNow: number,
-  question: string,
-  context?: string,
-): Promise<string> {
-  const followupAt = new Date(Date.now() + hoursFromNow * 3600000);
-  await db.insert(dispatcherFollowupsTable).values({
-    masterId,
-    orderId,
-    followupAt,
-    question,
-    context: context ?? null,
-    sent: false,
-  });
-  const fmt = new Intl.DateTimeFormat("ru-RU", {
-    day: "numeric", month: "long", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Moscow",
-  });
-  console.log(`[dispatcherAI] Scheduled follow-up for master ${masterId} at ${fmt.format(followupAt)}: "${question}"`);
-  return `Запланировано: ${fmt.format(followupAt)} напишу мастеру: "${question}"`;
 }
 
 /** Calculate trust score for a master: ratio of clean completions vs suspicious cancellations */
@@ -625,21 +594,6 @@ export async function analyseOrderCancellation(
   }
 }
 
-async function toolSaveMemory(masterId: number, category: string, content: string): Promise<string> {
-  // Avoid exact duplicates
-  const existing = await db.select().from(botMemoryTable)
-    .where(and(eq(botMemoryTable.masterId, masterId), ilike(botMemoryTable.content, content)));
-  if (existing.length > 0) return "Этот факт уже сохранён в памяти.";
-
-  await db.insert(botMemoryTable).values({
-    masterId,
-    category,
-    content,
-  });
-  console.log(`[dispatcherAI] Memory saved for master ${masterId} [${category}]: ${content}`);
-  return `Запомнено [${category}]: ${content}`;
-}
-
 // ─── Build context summary for system prompt ─────────────────────────────────
 
 async function buildMasterContext(masterId: number): Promise<string> {
@@ -761,7 +715,7 @@ const DISPATCHER_TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "add_order_note",
-      description: "Сохранить важную информацию от мастера в CRM (проблема, срок, уточнение)",
+      description: "Сохранить важную информацию от мастера в CRM (жалоба, срок, уточнение, статус)",
       parameters: {
         type: "object",
         properties: {
@@ -775,36 +729,8 @@ const DISPATCHER_TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
-      name: "set_order_in_progress",
-      description: "Поставить заказ в статус 'в работе' когда мастер сообщает о начале работ",
-      parameters: {
-        type: "object",
-        properties: {
-          orderId: { type: "number" },
-        },
-        required: ["orderId"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "get_estimate_status",
-      description: "Проверить, отправлена ли смета по заказу",
-      parameters: {
-        type: "object",
-        properties: {
-          orderId: { type: "number" },
-        },
-        required: ["orderId"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
       name: "escalate_to_manager",
-      description: "Немедленно уведомить руководителя о серьёзной проблеме (конфликт, повреждение, несчастный случай, мастер не выходит на связь)",
+      description: "Немедленно уведомить руководителя о прямом запросе на возврат токена или техническом сбое",
       parameters: {
         type: "object",
         properties: {
@@ -812,23 +738,6 @@ const DISPATCHER_TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
           orderId: { type: "number", description: "ID заказа (если применимо)" },
         },
         required: ["message"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "schedule_followup",
-      description: "Запланировать уточняющий вопрос мастеру на конкретное время. Используй когда мастер называет срок ('закончу через 3 дня', 'сдам в пятницу', 'приеду завтра'). Бот автоматически напишет в нужный момент и уточнит, выполнено ли обещание.",
-      parameters: {
-        type: "object",
-        properties: {
-          orderId: { type: "number", description: "ID заказа" },
-          hoursFromNow: { type: "number", description: "Через сколько часов написать мастеру (например: 'через 3 дня' = 72, 'завтра' = 24)" },
-          question: { type: "string", description: "Что спросить мастера в нужный момент (конкретно, по-русски). Например: 'Вы говорили закончить через 3 дня — готово? Клиент ждёт подтверждения.'"},
-          context: { type: "string", description: "Краткий контекст — что именно обещал мастер" },
-        },
-        required: ["orderId", "hoursFromNow", "question"],
       },
     },
   },
@@ -849,28 +758,6 @@ const DISPATCHER_TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
       },
     },
   },
-  {
-    type: "function",
-    function: {
-      name: "save_memory",
-      description: "Запомнить важный факт о мастере для использования в будущих разговорах. Используй когда узнаёшь что-то устойчивое о его характере, привычках, предпочтениях, специализации или паттернах поведения. Не дублируй уже известное.",
-      parameters: {
-        type: "object",
-        properties: {
-          category: {
-            type: "string",
-            description: "Категория факта",
-            enum: ["характер", "предпочтения", "специализация", "паттерн_поведения", "подозрительное_поведение", "контакт", "прочее"],
-          },
-          content: {
-            type: "string",
-            description: "Сам факт — одно чёткое предложение. Например: 'Предпочитает созваниваться утром до 10:00', 'Всегда берёт предоплату за материалы вперёд', 'Работает только в Прикубанском районе/адресе'.",
-          },
-        },
-        required: ["category", "content"],
-      },
-    },
-  },
 ];
 
 // ─── Main AI response function ────────────────────────────────────────────────
@@ -883,6 +770,12 @@ export async function handleMasterMessage(
 ): Promise<void> {
   // Track that master replied — used by follow-up logic
   lastMasterReplyAt.set(masterId, Date.now());
+
+  // Skip if AI dispatcher is globally disabled
+  if (!(await isAiDispatcherEnabled())) {
+    console.log(`[dispatcherAI] AI dispatcher is globally disabled — skipping message from ${masterAlias}`);
+    return;
+  }
 
   // Restore conversation history from DB on first contact after server restart
   await ensureSessionFromDb(masterId);
@@ -972,128 +865,90 @@ export async function handleMasterMessage(
     hour: "2-digit", minute: "2-digit", timeZone: "Europe/Moscow",
   }).format(new Date());
 
-  const systemPrompt = `Ты — ИИ-диспетчер ремонтного сервиса «Честный мастер». Ты пишешь мастеру ${masterAlias} в мессенджере от лица компании.
+  const systemPrompt = `Ты — ИИ-ассистент поддержки сервисной платформы «Честный Мастер».
+Ты пишешь мастеру ${masterAlias} в мессенджере от лица платформы.
 Сейчас: ${nowStr} (московское время).
 
 ═══ ДАННЫЕ МАСТЕРА ═══
 ${context}${pendingOrderSection}
 
-═══ ГЛАВНОЕ ПРАВИЛО ═══
-НЕ пиши мастеру каждый день одно и то же.
-Если мастер уже назвал срок — запомни дату через schedule_followup и напиши ТОЛЬКО в этот день.
-Не беспокой раньше запланированной даты.
+═══ ГЛАВНЫЙ ПРИНЦИП ═══
+Платформа работает по токеновой модели. Мастер самостоятельно покупает доступ к заявкам.
+Мы — НЕ контролирующий орган. Мы — техническая поддержка.
+Твоя задача: отвечать на вопросы, фиксировать информацию от мастера в заметки к заказу и направлять в приложение по всем финансовым вопросам.
 
-═══ КАК ТЫ РАБОТАЕШЬ (ОБЯЗАТЕЛЬНО ВЫПОЛНЯЙ ПЕРЕД КАЖДЫМ ОТВЕТОМ) ═══
+═══ КРИТИЧЕСКИЕ ПРАВИЛА (НЕПРИКОСНОВЕННЫ) ═══
+1. НИКОГДА не предлагай возврат токена первым.
+2. НИКОГДА не упоминай слова «арбитраж», «возврат», «вернуть деньги», «компенсация», пока мастер сам ПРЯМО не спросит: «Как мне вернуть токен?» или «Верните мне деньги».
+3. Если мастер жалуется на клиента, просто принимай информацию: «Понял тебя», «Информацию зафиксировал».
+4. Общайся на «ты», коротко, по делу.
 
-Перед тем как ответить — мысленно пройди 4 шага:
+════════════════════════════════════
+СЦЕНАРИИ ПОДДЕРЖКИ
+════════════════════════════════════
 
-ШАГ 1 — Что написал мастер?
-Сформулируй одним предложением суть его сообщения.
+[СЦ-1] Мастер ЖАЛУЕТСЯ на клиента (не берет трубку, неадекватен, отменился)
+Признаки: «не отвечает», «не дозвонился», «клиент передумал», «ложный вызов».
+Действия:
+→ add_order_note(orderId, "Жалоба мастера: [текст жалобы]")
+→ Ответ:
+«Понял тебя. Информацию в систему внес. Попробуй набрать клиента еще раз позже. На связи �»
 
-ШАГ 2 — Мастер уже отвечал на этот вопрос?
-Посмотри «Переписка за последние 48ч» выше. Если мастер уже писал об этом — НЕ спрашивай снова, подтверди что услышал.
+[СЦ-2] Мастер ПРЯМО спрашивает: «Как мне вернуть токен?» или требует возврат
+Признаки: «верните токен», «как сделать возврат», «сделайте отмену со списанием».
+Действия:
+→ escalate_to_manager("Прямой запрос на возврат токена по заказу #...", orderId)
+→ Ответ:
+«Принял запрос. Передал на проверку администратору. О результатах сообщу здесь же или увидишь обновление в приложении.»
 
-ШАГ 3 — Есть ли в памяти запланированный следующий контакт?
-Посмотри «Уже запланированные напоминания». Если есть — не создавай новое (не дублируй).
+[СЦ-3] Мастер не договорился на замере (дорого/не сошлись)
+Признаки: «съездил, клиенту дорого», «не договорились по цене», «не мой объем».
+Действия:
+→ add_order_note(orderId, "Замер без сделки: [причина]")
+→ Ответ:
+«Понял. Бывает и такое. Удачи со следующими заявками в ленте!»
 
-ШАГ 4 — Какой сценарий? Нужен tool?
-Если да — вызови tool ПЕРВЫМ. Ответ пиши только после.
+[СЦ-4] Вопросы по балансу / Не может взять заказ / Минус
+Признаки: «почему кнопка не жмется», «как пополнить», «какой пакет взять».
+Ответ:
+«Все управление балансом, покупка пакетов и лимиты находятся в приложении, в разделе 'Кошелёк'. Там всё настраивается в пару кликов.»
 
-ЗАПРЕЩЕНО:
-❌ «Уточните, о чём вы?» — контекст есть в данных выше, используй его.
-❌ Длинные тексты — мастер работает руками, не за компьютером. 1–3 предложения.
-❌ «Возможно ошибка в адресе» — сначала search_order_by_query, потом вывод.
-❌ Повторять вопрос если мастер уже ответил — проверь переписку за 48ч.
-❌ НАЗЫВАТЬ ЛЮБЫЕ СУММЫ долга / задолженности / просрочки / штрафов — у тебя НЕТ доступа к финансовым данным мастера. Направляй на раздел «Баланс» в приложении.
+[СЦ-5] Напоминание об отрицательном балансе (Системное)
+Действие:
+→ Ответ:
+«Привет! Твой баланс токенов сейчас отрицательный. Чтобы иметь приоритет в ленте и не потерять доступ к новым заказам, пополни кошелёк в приложении. Удачной работы!»
 
-═══ ИНТЕРПРЕТАЦИЯ СРОКОВ — ПЕРЕВОДИ В ДАТУ ═══
-Когда мастер называет срок — ВСЕГДА переводи в конкретную дату и указывай в schedule_followup:
+[СЦ-6] Вопросы по старым долгам (Комиссия %)
+Ответ:
+«По старым заказам вся информация в приложении. Там висят суммы и реквизиты для оплаты. Закрой хвосты, чтобы полностью перейти на новую систему.»
 
-«сегодня»              → текущая дата
-«завтра»               → текущая дата + 1 день
-«послезавтра»          → текущая дата + 2 дня
-«в пятницу»            → ближайшая пятница
-«на следующей неделе»  → следующий понедельник
-«через пару дней»      → текущая дата + 2 дня
-«вечером»              → сегодня 19:00
-«утром»                → завтра 10:00
-«в обед»               → сегодня 13:00
-«через неделю»         → текущая дата + 7 дней
+[СЦ-7] Технические сбои
+Действия:
+→ escalate_to_manager("Техническая ошибка у мастера", null)
+→ Ответ:
+«Принял. Передал технарям, уже разбираемся. Если горит — напиши номер заказа сюда текстом.»
 
-ПОСЛЕ СОХРАНЕНИЯ ДАТЫ всегда подтверждай одной фразой:
-«Понял, записал — напишу [дата/время] если статус не изменится. Удачи на объекте!»
+[СЦ-8] Мастер просто информирует («Ок», «Взял», «Работаю», «Сдал»)
+Действия:
+→ Если есть инфа по заказу: add_order_note(orderId, "Мастер сообщил: [текст]")
+→ Ответ: «Принято 👍» или «Хорошо, работаем.»
 
-═══ СЦЕНАРИИ ═══
+════════════════════════════════════
+ПРАВИЛА ПОИСКА
+════════════════════════════════════
+Если мастер называет адрес или имя, которых нет в текущей переписке:
+→ Сначала search_order_by_query(query).
+→ Если не нашел: «В твоих активных заказах этот объект не вижу. Уточни номер заказа, посмотрю подробнее.»
 
-**[СЦ-1] Созвон / договорённость с клиентом:**
-Признаки: "созвонились", "договорились", "встреча в ...", "приеду в ...", "клиент ждёт в ..."
-→ add_order_note(orderId, "Созвон: [суть]")
-→ schedule_followup(orderId, hoursFromNow, "Как прошёл замер? Клиент подтвердил?", "[что обещал]")
-→ Ответ: "Понял, записал — напишу [дата]. Как пройдёт замер — отпишись. Смету не забудь 📋"
+════════════════════════════════════
+ТЕХНИЧЕСКИЕ ПРАВИЛА
+════════════════════════════════════
+- Сначала инструмент → потом текстовый ответ.
+- orderId: если заказ один — используй его. Если несколько — уточни ОДИН вопрос: «По какому заказу?»
+- Пиши на ты, коротко, по-деловому, без лишних слов.
+- hoursFromNow считай от текущего времени (${nowStr}).`;
 
-**[СЦ-2] Клиент не отвечает:**
-Признаки: "не берёт", "недоступен", "не дозвонился", "занято", "сбросил"
-→ add_order_note(orderId, "Клиент не ответил на звонок")
-→ schedule_followup(orderId, 1, "Удалось дозвониться клиенту по заказу #${/* orderId */0}?", "клиент не брал трубку")
-→ Ответ: "Понял. Попробуй ещё раз через час, напиши как дозвонишься 📞"
-
-**[СЦ-3] Замер прошёл, договорились о работах:**
-Признаки: "замер прошёл", "замерил", "договорились", "клиент согласен", "беремся"
-→ add_order_note(orderId, "Замер: [детали договорённостей]")
-→ schedule_followup(orderId, hoursFromNow, "Смета по заказу отправлена?", "[когда планирует выслать смету]")
-→ Ответ: "Отлично! Оформи смету в приложении и попроси предоплату — это фиксирует заказ 💰"
-
-**[СЦ-4] Начало работ:**
-Признаки: "начали", "приступили", "работаем", "начинаю"
-→ set_order_in_progress(orderId)
-→ schedule_followup(orderId, hoursFromNow, "Заказ #${/* orderId */0} — работы завершены? Клиент доволен?", "[когда планирует закончить]")
-→ Ответ: "Понял, записал — напишу [дата]. Зафиксировал начало работ ✅"
-
-**[СЦ-5] Мастер отправил смету:**
-Признаки: "отправил смету", "смету скинул", "счёт отправил"
-→ add_order_note(orderId, "Смета отправлена клиенту")
-→ Ответ: "Хорошо! Ждём оплаты от клиента 💳"
-
-**[СЦ-6] Серьёзная проблема (конфликт / повреждение / травма / проблемный клиент):**
-→ escalate_to_manager("СРОЧНО: [суть проблемы]", orderId)
-→ Ответ: "Передал руководству, с вами свяжутся."
-
-**[СЦ-7] Короткое подтверждение («Да», «Ок», «Понял», «Хорошо», «Принял»):**
-→ Это ответ на ТВОЁ последнее сообщение. Посмотри историю переписки выше.
-→ Если ты спрашивал о замере → ответь: "Хорошо, ждём новостей 👍"
-→ Если ты просил смету → ответь: "Отлично! Напомним если затянется 📋"
-→ Если контекст неясен → ответь: "Хорошо, будем на связи 👍"
-→ НЕ переспрашивай что мастер имел в виду.
-
-**[СЦ-8] Мастер спрашивает когда придут деньги / о выплате за заказ:**
-Признаки: "когда деньги", "когда выплата", "когда перечислят"
-→ Ответ: "Выплата приходит в течение 3 рабочих дней после закрытия заказа. Есть вопросы — напишите, разберёмся 💬"
-
-**[СЦ-9] Мастер спрашивает о долге / задолженности / просрочке / штрафах / комиссии:**
-Признаки: "долг", "задолженность", "просрочка", "что я должен", "штраф", "сколько должен", "комиссия", "сколько с меня"
-→ НИКОГДА не называй конкретные суммы — у тебя нет доступа к финансовым данным.
-→ Ответ: "Точные данные по долгам и комиссии есть в приложении в разделе «Баланс». Там всё актуально. Если что-то непонятно — напишу менеджеру."
-→ Если мастер настаивает на цифрах — escalate_to_manager("Мастер ${masterAlias} спрашивает о задолженности/просрочке — нужна сверка")
-
-**[СЦ-10] Перенос срока:**
-Признаки: мастер называет НОВУЮ дату/срок после того как уже давал другую
-→ add_order_note(orderId, "Срок перенесён: [новая дата]")
-→ schedule_followup(orderId, hoursFromNow, "Заказ #${/* orderId */0} — статус?", "[новый срок от мастера]")
-→ Ответ: "Понял, записал — напишу [новая дата] если статус не изменится. Удачи на объекте!"
-
-═══ ПРАВИЛА ПОИСКА ═══
-Если мастер упоминает адрес / имя клиента / улицу которых НЕТ в активных заказах:
-→ СНАЧАЛА search_order_by_query(query) → потом отвечай
-→ Никогда не говори "у вас ошибка в адресе" без проверки
-→ Если поиск вернул "ничего не найдено" — НИКОГДА не говори мастеру "такого заказа нет" или "заказа с таким адресом не существует". Заказ может быть в системе но назначен другому мастеру. Правильный ответ: "В твоих заказах не нашёл — уточни номер заказа или напиши оператору, разберёмся."
-→ Если мастер спрашивает "наш заказ?" / "это наш клиент?" — ищи по адресу/имени через search_order_by_query, и если не найдено — отвечай как выше.
-
-═══ ТЕХНИЧЕСКИЕ ПРАВИЛА ═══
-- Сначала инструмент → потом текстовый ответ
-- Если мастер называет конкретную дату/время → ОБЯЗАТЕЛЬНО schedule_followup (это ключевое действие)
-- orderId: если заказ один — используй его. Если несколько — уточни ОДИН вопрос: "По какому заказу?"
-- Пиши на ты, коротко, по-деловому, без лишних слов
-- hoursFromNow считай от текущего времени (${nowStr})`;
+  await ensureSessionFromDb(masterId);
 
   await ensureSessionFromDb(masterId);
   addToHistory(masterId, { role: "user", content: text });
@@ -1128,16 +983,8 @@ ${context}${pendingOrderSection}
         let toolResult = "";
         if (fnName === "add_order_note") {
           toolResult = await toolAddOrderNote(args.orderId, args.note);
-        } else if (fnName === "set_order_in_progress") {
-          toolResult = await toolSetOrderInProgress(args.orderId);
-        } else if (fnName === "get_estimate_status") {
-          toolResult = await toolGetEstimateStatus(args.orderId);
         } else if (fnName === "escalate_to_manager") {
           toolResult = await toolEscalateToManager(args.message, masterId, args.orderId);
-        } else if (fnName === "schedule_followup") {
-          toolResult = await toolScheduleFollowup(masterId, args.orderId, args.hoursFromNow, args.question, args.context);
-        } else if (fnName === "save_memory") {
-          toolResult = await toolSaveMemory(masterId, args.category, args.content);
         } else if (fnName === "search_order_by_query") {
           toolResult = await toolSearchOrdersByQuery(masterId, args.query);
         }
@@ -1243,293 +1090,6 @@ async function markProactiveSent(masterId: number, type: string, orderId: number
   }
 }
 
-interface SmartProactiveOpts {
-  masterId: number;
-  masterAlias: string;
-  maxChatId: string;
-  orderId: number;
-  type: string;           // e.g. "completion", "callcheckin", "estimate", "preday"
-  withinHours: number;    // dedup window in hours
-  masterKeywords?: { words: string[]; withinHours: number }; // skip if master already mentioned
-  situation: string;      // plain-language description of WHY we're checking
-  orderStatus?: string;   // current DB status of the order — helps GPT make smarter decisions
-}
-
-/**
- * The smart proactive engine:
- *  1. Checks dedup (bot_memory-based, survives restarts)
- *  2. Checks if master already addressed this topic
- *  3. Asks GPT-4o to read conversation and decide what (if anything) to say
- *  4. Sends + records dedup marker
- */
-async function sendSmartProactive(opts: SmartProactiveOpts): Promise<void> {
-  const { masterId, masterAlias, maxChatId, orderId, type, withinHours, masterKeywords, situation, orderStatus } = opts;
-
-  return withSendLock(`${type}:${masterId}:${orderId}`, async () => {
-    // 1. Dedup: already sent this type for this order within window?
-    if (await proactiveAlreadySent(masterId, type, orderId, withinHours)) {
-      console.log(`[dispatcherAI] Proactive SKIP (already sent) ${type} for ${masterAlias} order #${orderId}`);
-      return;
-    }
-
-    // 2. Global cooldown: did the bot send ANY message to this master in the last 2 minutes?
-    if (await botSentRecently(masterId, PROACTIVE_COOLDOWN_MS)) {
-      console.log(`[dispatcherAI] Proactive SKIP (cooldown ${Math.round(PROACTIVE_COOLDOWN_MS/60000)}min) ${type} for ${masterAlias} order #${orderId}`);
-      return;
-    }
-
-    // 3. Has master already addressed this topic on their own?
-    if (masterKeywords) {
-      if (await masterAlreadyMentioned(masterId, masterKeywords.words, masterKeywords.withinHours)) {
-        console.log(`[dispatcherAI] Proactive SKIP (master mentioned it) ${type} for ${masterAlias} order #${orderId}`);
-        return;
-      }
-    }
-
-    // 3. Build context + ask GPT
-    const context = await buildMasterContext(masterId);
-    const nowStr = new Intl.DateTimeFormat("ru-RU", {
-      weekday: "long", day: "numeric", month: "long",
-      hour: "2-digit", minute: "2-digit", timeZone: "Europe/Moscow",
-    }).format(new Date());
-
-    const statusLine = orderStatus
-      ? `СТАТУС ЗАКАЗА В БД: ${orderStatus} (master_assigned=назначен/ждёт визита; in_progress=работы идут; completed=завершён)\n\n`
-      : "";
-
-    const gptPrompt = `Ты — ИИ-диспетчер ремонтного сервиса «Честный мастер». Сейчас: ${nowStr}.
-
-КОНТЕКСТ МАСТЕРА (${masterAlias}):
-${context}
-
-${statusLine}СИТУАЦИЯ:
-${situation}
-
-ЗАДАЧА:
-Прочитай переписку выше. Реши — нужно ли написать мастеру прямо сейчас?
-
-Правила принятия решения:
-• Если мастер уже ответил на этот вопрос в переписке → action: "skip"
-• Если статус заказа in_progress — работы идут, звонок клиенту уже был, вопросы про «звонил ли» неуместны → action: "skip"
-• Если ситуация требует уточнения и мастер молчит → action: "send"
-• Пишешь коротко, по-деловому, на ТЫ. Максимум 2 предложения.
-• Упоминай номер заказа. Без лишних слов.
-
-Ответ СТРОГО в JSON (только JSON, без markdown):
-{"action":"send","message":"...текст для мастера..."} 
-или
-{"action":"skip","reason":"...причина..."}`;
-
-    let result: { action: string; message?: string; reason?: string } = { action: "skip", reason: "default" };
-    try {
-      const response = await requireOpenAI().chat.completions.create({
-        model: openaiModel,
-        messages: [{ role: "user", content: gptPrompt }],
-        temperature: 0.3,
-        max_tokens: 300,
-      });
-      const raw = (response.choices[0].message.content ?? "{}").replace(/```json\n?|\n?```/g, "").trim();
-      result = JSON.parse(raw);
-    } catch (e) {
-      console.error(`[dispatcherAI] Smart proactive GPT error (${type}, master ${masterAlias}):`, e);
-      return;
-    }
-
-    if (result.action !== "send" || !result.message) {
-      console.log(`[dispatcherAI] Proactive SKIP (GPT decided) ${type} for ${masterAlias} order #${orderId}: ${result.reason ?? "no message"}`);
-      // Mark as considered using same key — prevents re-checking for withinHours window
-      await markProactiveSent(masterId, type, orderId);
-      return;
-    }
-
-    const msg = result.message.trim();
-    try {
-      await sendMaxMessage(maxChatId, msg);
-      await saveBotReply(masterId, maxChatId, msg);
-      await markProactiveSent(masterId, type, orderId);
-      console.log(`[dispatcherAI] Smart proactive SENT ${type} to ${masterAlias} order #${orderId}: "${msg.slice(0, 80)}"`);
-    } catch (e) {
-      console.error(`[dispatcherAI] Smart proactive send error (${type}, order #${orderId}):`, e);
-    }
-  });
-}
-
-// ─── Proactive messages ──────────────────────────────────────────────────────
-
-/** Send greeting after master is assigned to an order */
-export async function sendAssignmentGreeting(
-  masterId: number,
-  masterAlias: string,
-  maxChatId: string,
-  orderId: number,
-) {
-  return withSendLock(`greeting:${masterId}:${orderId}`, async () => {
-    if (await alreadySentBotMessage(masterId, `назначены на заказ #${orderId}`)) return;
-
-    const data = await getOrderWithLead(orderId);
-    if (!data) return;
-    const { order, lead } = data;
-
-    const scheduledStr = order.scheduledAt
-      ? new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(order.scheduledAt))
-      : "уточните с клиентом";
-
-    const greeting = getTimeGreeting(order.city);
-    let msg = `${greeting}, ${masterAlias}! Вы назначены на заказ #${orderId} 📋\n\n`;
-    msg += `🔧 ${order.serviceType}\n`;
-    msg += `📍 ${order.city}${order.district ? ", " + order.district : ""}\n`;
-    msg += `📐 ${order.area} м²\n`;
-    msg += `📅 Дата: ${scheduledStr}`;
-    if (lead) msg += `\n📞 Клиент: ${lead.clientName} · ${lead.clientPhone}`;
-    msg += `\n\nВсё понятно? Подтверди получение или задай вопрос.`;
-
-    try {
-      await sendMaxMessage(maxChatId, msg);
-      await saveBotReply(masterId, maxChatId, msg);
-      console.log(`[dispatcherAI] Sent assignment greeting to ${masterAlias} for order #${orderId}`);
-    } catch (e) {
-      console.error(`[dispatcherAI] Failed to send/save assignment greeting for order #${orderId}:`, e);
-    }
-  });
-}
-
-/** 24h check-in after assignment */
-export async function sendDailyCheckin(
-  masterId: number,
-  masterAlias: string,
-  maxChatId: string,
-  orderId: number,
-) {
-  return sendSmartProactive({
-    masterId, masterAlias, maxChatId, orderId,
-    type: "checkin",
-    withinHours: 72, // ask at most once every 3 days — not daily on long projects
-    masterKeywords: {
-      words: ["всё хорошо", "всё норм", "работаем", "работаю", "делаем", "идёт", "нормально", "ок", "план",
-              "завершено", "закончил", "всё готово", "сдали", "готово"],
-      withinHours: 72,
-    },
-    situation: `Мастер назначен на заказ #${orderId} уже более 24 часов. Проверь как идут дела — узнай, всё ли по плану и нет ли проблем. Если мастер недавно сообщал о ходе работ или завершении — не беспокой снова.`,
-  });
-}
-
-/** Estimate reminder */
-export async function sendEstimateReminder(
-  masterId: number,
-  masterAlias: string,
-  maxChatId: string,
-  orderId: number,
-) {
-  return sendSmartProactive({
-    masterId, masterAlias, maxChatId, orderId,
-    type: "estimate",
-    withinHours: 720, // once per order — don't nag every 2 days on long projects
-    masterKeywords: {
-      words: ["смета", "отправил смет", "скинул смет", "счёт отправил", "смету скинул"],
-      withinHours: 72,
-    },
-    situation: `По заказу #${orderId} смета до сих пор не отправлена клиенту. Напомни мастеру оформить её в приложении — без сметы клиент не может согласовать стоимость.`,
-  });
-}
-
-/** 15-min post-assignment: did you call the client? */
-export async function sendClientCallCheckin(
-  masterId: number,
-  masterAlias: string,
-  maxChatId: string,
-  orderId: number,
-  orderStatus?: string,
-) {
-  // Load order + lead for client name and address context
-  const data = await getOrderWithLead(orderId);
-  const clientInfo = data?.lead ? `клиент: ${data.lead.clientName || "—"}` : "";
-  const addrInfo = data ? [data.order.city, data.order.district].filter(Boolean).join(", ") : "";
-  const orderCtx = [clientInfo, addrInfo].filter(Boolean).join(", адрес: ");
-
-  return sendSmartProactive({
-    masterId, masterAlias, maxChatId, orderId,
-    type: "callcheckin",
-    withinHours: 720, // once per order — never repeat this question
-    orderStatus,
-    masterKeywords: {
-      words: [
-        "созвонился", "созвонились", "договорился", "договорились",
-        "не берёт", "не отвечает", "недоступен", "дозвонился", "звонил", "перезвоню",
-        "приехал", "приезжаю", "выезжаю", "на объекте", "у клиента",
-        "работаю", "работаем", "начал", "начали", "приступил", "в работе",
-        "делаем", "делаю", "завершено", "не завершено", "завершил", "закончил",
-        "встреча", "завтра в", "сегодня в", "приду в",
-      ],
-      withinHours: 48,
-    },
-    situation: `Мастеру назначен заказ #${orderId}${orderCtx ? ` (${orderCtx})` : ""}. Нужно уточнить: позвонил ли он уже клиенту и на какое время договорились о визите. Обязательно упомяни в сообщении имя клиента и адрес. Если в переписке уже есть информация о звонке, договорённости, приезде или о том что работы идут / завершены — не спрашивай снова, это лишнее.`,
-  });
-}
-
-/** Ask if work is completed — sent 6h after scheduledAt if still in_progress */
-export async function sendCompletionCheck(
-  masterId: number,
-  masterAlias: string,
-  maxChatId: string,
-  orderId: number,
-) {
-  return sendSmartProactive({
-    masterId, masterAlias, maxChatId, orderId,
-    type: "completion",
-    // 168h (7 days) — prevents re-asking every 3 days on long projects.
-    // If master says "not done yet", the dedup window ensures we wait a full week
-    // before asking again, rather than resuming every 30-min scheduler cycle.
-    withinHours: 168,
-    masterKeywords: {
-      words: ["завершил", "завершили", "закончил", "закончили", "сделали", "всё готово", "готово",
-              "работы выполнены", "выполнил", "закончено", "завершено",
-              "не закончен", "не завершен", "ещё не", "еще не", "продолжаем", "продолжается"],
-      withinHours: 168,
-    },
-    situation: `Запланированное время работ по заказу #${orderId} прошло 6+ часов назад, но заказ всё ещё не отмечен как выполненный. Уточни у мастера — работы завершены? Если да — пусть закроет заказ в приложении и попросит клиента оставить отзыв. Если мастер уже отвечал что работы ещё не завершены — не спрашивай снова раньше чем через неделю.`,
-  });
-}
-
-/** Ask master to collect client feedback after order is marked completed */
-export async function sendFeedbackRequest(
-  masterId: number,
-  masterAlias: string,
-  maxChatId: string,
-  orderId: number,
-) {
-  return withSendLock(`feedback:${masterId}:${orderId}`, async () => {
-    if (await alreadySentBotMessage(masterId, `Заказ #${orderId} завершён`)) return;
-
-    const msg = `Отлично, ${masterAlias}! Заказ #${orderId} завершён. 🎉\n\nПожалуйста, попросите клиента оставить короткий отзыв — это помогает вам получать больше заказов. Можно просто сфотографировать результат и попросить написать пару слов.\n\nСпасибо за работу! 👏`;
-    try {
-      await sendMaxMessage(maxChatId, msg);
-      await saveBotReply(masterId, maxChatId, msg);
-      console.log(`[dispatcherAI] Sent feedback request to ${masterAlias} for order #${orderId}`);
-    } catch (e) {
-      console.error(`[dispatcherAI] Failed to send/save feedback request for order #${orderId}:`, e);
-    }
-  });
-}
-
-/** Reminder the day before scheduledAt */
-export async function sendPreDayReminder(
-  masterId: number,
-  masterAlias: string,
-  maxChatId: string,
-  orderId: number,
-) {
-  return sendSmartProactive({
-    masterId, masterAlias, maxChatId, orderId,
-    type: "preday",
-    withinHours: 24,
-    masterKeywords: {
-      words: ["готов", "буду", "подтверждаю", "всё готово", "приеду", "едем", "выезжаем", "подтвердил"],
-      withinHours: 12,
-    },
-    situation: `Завтра у мастера запланированы работы по заказу #${orderId}. Нужно убедиться что он готов — знает адрес, время, не забыл. Если мастер уже недавно подтвердил что всё готово — не беспокой лишний раз.`,
-  });
-}
-
 // ─── Escalation helpers ───────────────────────────────────────────────────────
 
 /** Escalate to manager when master hasn't replied to any bot message in 24h */
@@ -1617,6 +1177,10 @@ export async function runProactiveChecks(): Promise<void> {
     console.log("[dispatcherAI] Proactive checks already running — skipping this cycle to prevent duplicates");
     return;
   }
+  if (!(await isAiDispatcherEnabled())) {
+    console.log("[dispatcherAI] AI dispatcher is globally disabled — skipping proactive checks");
+    return;
+  }
   proactiveChecksRunning = true;
   try {
     // ── Scheduled follow-ups (master commitments) ─────────────────────────
@@ -1699,83 +1263,92 @@ export async function runProactiveChecks(): Promise<void> {
       }
     }
 
+    // ── Balance / debt proactive notifications ────────────────────────────
+    const allMaxMasters = await db.select()
+      .from(mastersTable)
+      .where(and(isNull(mastersTable.deletedAt), gte(mastersTable.maxChatId, "")));
+
+    const masterIds = allMaxMasters.map(m => m.id);
+
+    // Token balance check (negative balances)
+    let negativeBalanceMap = new Map<number, number>();
+    if (masterIds.length > 0) {
+      try {
+        const rows = await db.select({
+          masterId: walletTransactionsTable.masterId,
+          balance: sql<number>`SUM(${walletTransactionsTable.tokensAmount})`.as("balance"),
+        })
+          .from(walletTransactionsTable)
+          .where(inArray(walletTransactionsTable.masterId, masterIds))
+          .groupBy(walletTransactionsTable.masterId)
+          .having(sql`SUM(${walletTransactionsTable.tokensAmount}) < 0`);
+        for (const r of rows) negativeBalanceMap.set(r.masterId, r.balance);
+      } catch (e) {
+        console.error("[dispatcherAI] Token balance query error:", e);
+      }
+    }
+
+    for (const master of allMaxMasters) {
+      if (!master.maxChatId) continue;
+      if (isQuietHours(master.city)) continue;
+
+      // 1. Negative token balance
+      if (negativeBalanceMap.has(master.id)) {
+        const key = `balance_negative:${master.id}`;
+        if (!(await proactiveAlreadySent(master.id, "balance_negative", master.id, 72))) {
+          const msg = "Привет! Твой баланс токенов сейчас отрицательный. Чтобы иметь приоритет в ленте и не потерять доступ к новым заказам, пополни кошелёк в приложении. Удачной работы!";
+          try {
+            await sendMaxMessage(master.maxChatId, msg);
+            await saveBotReply(master.id, master.maxChatId, msg);
+            await markProactiveSent(master.id, "balance_negative", master.id);
+            console.log(`[dispatcherAI] Sent negative balance reminder to ${master.alias}`);
+          } catch (e) {
+            console.error(`[dispatcherAI] Failed to send balance reminder to ${master.alias}:`, e);
+          }
+        }
+      }
+
+      // 2. Commission debt (old orders)
+      const debtAmount = Number(master.debt ?? 0);
+      if (debtAmount > 0) {
+        if (!(await proactiveAlreadySent(master.id, "commission_debt", master.id, 72))) {
+          const msg = "Напоминаю: у тебя есть незакрытые старые заказы с комиссией. Закрой хвосты в приложении, чтобы полностью перейти на новую систему.";
+          try {
+            await sendMaxMessage(master.maxChatId, msg);
+            await saveBotReply(master.id, master.maxChatId, msg);
+            await markProactiveSent(master.id, "commission_debt", master.id);
+            console.log(`[dispatcherAI] Sent commission debt reminder to ${master.alias}`);
+          } catch (e) {
+            console.error(`[dispatcherAI] Failed to send debt reminder to ${master.alias}:`, e);
+          }
+        }
+      }
+    }
+
+    // ── Active order escalations ──────────────────────────────────────────
     const activeOrders = await db.select().from(ordersTable)
       .where(and(
         inArray(ordersTable.status, ["master_assigned", "in_progress"]),
         isNull(ordersTable.deletedAt),
       ));
 
-    const masterIds = [...new Set(activeOrders.map(o => o.masterId).filter(Boolean))] as number[];
-
-    const masters = masterIds.length > 0
-      ? await db.select().from(mastersTable).where(inArray(mastersTable.id, masterIds))
+    const activeMasterIds = [...new Set(activeOrders.map(o => o.masterId).filter(Boolean))] as number[];
+    const activeMasters = activeMasterIds.length > 0
+      ? await db.select().from(mastersTable).where(inArray(mastersTable.id, activeMasterIds))
       : [];
-
-    const masterMap = new Map(masters.map(m => [m.id, m]));
+    const activeMasterMap = new Map(activeMasters.map(m => [m.id, m]));
 
     const now = Date.now();
 
     for (const order of activeOrders) {
       if (!order.masterId) continue;
-      const master = masterMap.get(order.masterId);
-      if (!master?.maxChatId) continue; // Only Max-linked masters
+      const master = activeMasterMap.get(order.masterId);
+      if (!master?.maxChatId) continue;
 
       const assignedAt = order.assignedAt ? new Date(order.assignedAt).getTime() : new Date(order.createdAt).getTime();
       const hoursAssigned = (now - assignedAt) / 3600000;
 
-      const quiet = isQuietHours(master.city);
-
-      // 1. Assignment greeting — always allowed (critical info, sent once via dedup)
-      if (hoursAssigned < 0.25) {
-        await sendAssignmentGreeting(master.id, master.alias, master.maxChatId, order.id);
-        continue; // Too fresh — wait before next message
-      }
-
-      // Always ensure greeting was sent (in case scheduler missed the first window)
-      await sendAssignmentGreeting(master.id, master.alias, master.maxChatId, order.id);
-
-      // ── All subsequent proactive checks respect quiet hours ─────────────────
-      if (quiet) {
-        console.log(`[dispatcherAI] Quiet hours for ${master.alias} (${master.city ?? "?"}) — skipping proactive checks for order #${order.id}`);
-        continue;
-      }
-
-      // 1b. Client call check-in — send 30+ min after assignment
-      // Skip entirely if order is already in_progress (master is working, call already happened)
-      // GPT + keywords also decide whether to skip based on conversation context
-      if (hoursAssigned >= 0.5 && order.status !== "in_progress") {
-        await sendClientCallCheckin(master.id, master.alias, master.maxChatId, order.id, order.status);
-      }
-
-      // 2. Estimate reminder — 6h+ after assignment, no estimate submitted yet
-      if (hoursAssigned >= 6) {
-        const receipts = await db.select({ id: receiptsTable.id })
-          .from(receiptsTable)
-          .where(eq(receiptsTable.orderId, order.id));
-        if (receipts.length === 0) {
-          await sendEstimateReminder(master.id, master.alias, master.maxChatId, order.id);
-        }
-      }
-
-      // 3. Pre-day reminder — 12–24h before scheduled visit
-      if (order.scheduledAt) {
-        const scheduledMs = new Date(order.scheduledAt).getTime();
-        const hoursUntil = (scheduledMs - now) / 3600000;
-        if (hoursUntil >= 12 && hoursUntil <= 24) {
-          await sendPreDayReminder(master.id, master.alias, master.maxChatId, order.id);
-        }
-      }
-
-      // 4. Completion check — 6h+ after scheduledAt and order still in_progress
-      if (order.scheduledAt && order.status === "in_progress") {
-        const scheduledMs = new Date(order.scheduledAt).getTime();
-        const hoursAfterScheduled = (now - scheduledMs) / 3600000;
-        if (hoursAfterScheduled >= 6) {
-          await sendCompletionCheck(master.id, master.alias, master.maxChatId, order.id);
-        }
-      }
-
-      // 5. Ghost master check — 12h+ after assignment, no reply at all
+      // 1. Ghost master check — 12h+ after assignment, no reply at all
       if (hoursAssigned >= 12) {
         await detectGhostMaster(
           { id: master.id, alias: master.alias, maxChatId: master.maxChatId },
@@ -1784,7 +1357,7 @@ export async function runProactiveChecks(): Promise<void> {
         );
       }
 
-      // 6. 24h no-response escalation — master didn't reply to any bot message
+      // 2. 24h no-response escalation
       if (hoursAssigned >= 24) {
         await escalate24hNoResponse(
           { ...master, maxChatId: master.maxChatId! },
@@ -1793,8 +1366,8 @@ export async function runProactiveChecks(): Promise<void> {
         );
       }
 
-      // 7. 14-day stale order escalation — order hanging too long
-      if (hoursAssigned >= 336) { // 14 days = 336h
+      // 3. 14-day stale order escalation
+      if (hoursAssigned >= 336) {
         await escalateStaleLongOrder(
           { ...master, maxChatId: master.maxChatId! },
           order.id,

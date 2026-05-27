@@ -7,7 +7,6 @@ import { sendPushToMaster } from "../lib/push.js";
 import { getOverdueMasterIds, getMasterEligibility } from "../lib/orderEligibility.js";
 import { performBroadcast } from "../lib/broadcastOrder.js";
 import { sendMaxMessage, sendOnboardingMemo } from "../maxBot.js";
-import { sendAssignmentGreeting } from "../lib/dispatcherAI.js";
 
 const router = Router();
 // Telegram-бот удалён — рассылка только через PWA push и Max.
@@ -417,8 +416,6 @@ router.post("/:orderId/assign/:masterId", ops, async (req, res) => {
     }).catch(() => {});
   }
   if (master.maxChatId) {
-    // AI dispatcher sends a smart greeting with context and confirmation request
-    sendAssignmentGreeting(master.id, master.alias, master.maxChatId, orderId).catch(() => {});
     // First order ever → send onboarding memo after a short delay
     if (master.acceptedOrders === 0) {
       setTimeout(() => sendOnboardingMemo(master.maxChatId!).catch(() => {}), 10_000);
