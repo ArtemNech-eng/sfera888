@@ -9,27 +9,27 @@ interface WorkModelProps {
 
 const WorkModel: React.FC<WorkModelProps> = ({ botUrl }) => {
   return (
-    <section id="work-model" className="relative py-24 bg-[#0B0F14] overflow-hidden">
+    <section id="work-model" className="relative py-24 bg-white overflow-hidden">
       <div
         className="absolute right-0 top-0 w-96 h-96 opacity-10 pointer-events-none"
         style={{
-          background: 'radial-gradient(circle, rgba(56,189,248,0.5) 0%, transparent 70%)',
+          background: 'radial-gradient(circle, rgba(59,130,246,0.08) 0%, transparent 70%)',
         }}
       />
 
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <AnimatedSection className="text-center mb-6">
-          <p className="text-[#38BDF8] text-sm font-semibold uppercase tracking-widest mb-3">
+          <p className="text-[#3B82F6] text-sm font-semibold uppercase tracking-widest mb-3">
             Варианты входа
           </p>
-          <h2 className="text-4xl sm:text-5xl font-black text-[#F8FAFC] mb-4">
+          <h2 className="text-4xl sm:text-5xl font-black text-[#0F172A] mb-4">
             Как начать работу:{' '}
-            <span className="text-[#38BDF8]">2 варианта старта</span>
+            <span className="text-[#3B82F6]">2 варианта старта</span>
           </h2>
         </AnimatedSection>
 
         <AnimatedSection delay={100} className="text-center mb-12">
-          <p className="text-[#94A3B8] text-lg max-w-2xl mx-auto">
+          <p className="text-[#64748B] text-lg max-w-2xl mx-auto">
             Мы не берём проценты с вашей работы. Вы покупаете доступ к готовым заказам
             (токенам). Выберите удобный для вас путь.
           </p>
@@ -38,27 +38,22 @@ const WorkModel: React.FC<WorkModelProps> = ({ botUrl }) => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Card 1: Test start */}
           <AnimatedSection delay={150} direction="left">
-            <div className="relative h-full glass rounded-3xl p-8 border border-[#34F5A3]/20 hover:border-[#34F5A3]/40 transition-all duration-300 group overflow-hidden">
+            <div className="relative h-full glass rounded-3xl p-8 hover:shadow-lg transition-all duration-300 group overflow-hidden">
               {/* Top glow */}
-              <div
-                className="absolute inset-x-0 top-0 h-1 opacity-80"
-                style={{
-                  background: 'linear-gradient(90deg, transparent, #34F5A3, transparent)',
-                }}
-              />
+              <div className="absolute inset-x-0 top-0 h-1 bg-[#10B981] opacity-70 rounded-t-3xl" />
 
               {/* Badge */}
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#34F5A3]/10 border border-[#34F5A3]/30 text-[#34F5A3] text-xs font-semibold mb-6">
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#10B981]/8 border border-[#10B981]/25 text-[#10B981] text-xs font-semibold mb-6">
                 <Shield size={13} />
                 С верификацией
               </div>
 
-              <h3 className="text-3xl font-black text-[#F8FAFC] mb-2">
+              <h3 className="text-3xl font-black text-[#0F172A] mb-2">
                 Тестовый старт
               </h3>
-              <p className="text-[#34F5A3] text-lg font-semibold mb-6">Постоплата</p>
+              <p className="text-[#10B981] text-lg font-semibold mb-6">Постоплата</p>
 
-              <p className="text-[#94A3B8] mb-6 leading-relaxed">
+              <p className="text-[#64748B] mb-6 leading-relaxed">
                 Нам важно посмотреть на вас в деле, а вам — проверить качество наших заказов.
                 Мы даём 1 тестовый заказ без предоплаты.
               </p>
@@ -70,18 +65,18 @@ const WorkModel: React.FC<WorkModelProps> = ({ botUrl }) => {
                   'Условие: обязательная верификация по паспорту в приложении',
                 ].map((item, i) => (
                   <li key={i} className="flex items-start gap-3">
-                    <CheckCircle2 size={18} className="text-[#34F5A3] flex-shrink-0 mt-0.5" />
-                    <span className="text-[#F8FAFC] text-sm">{item}</span>
+                    <CheckCircle2 size={18} className="text-[#10B981] flex-shrink-0 mt-0.5" />
+                    <span className="text-[#0F172A] text-sm">{item}</span>
                   </li>
                 ))}
               </ul>
 
               {/* Price highlight */}
-              <div className="rounded-2xl bg-[#34F5A3]/5 border border-[#34F5A3]/15 p-4 mb-6">
-                <p className="text-[#94A3B8] text-xs mb-1">Стоимость первого токена</p>
-                <p className="text-[#34F5A3] text-3xl font-black">
+              <div className="rounded-2xl bg-[#10B981]/5 border border-[#10B981]/15 p-4 mb-6">
+                <p className="text-[#64748B] text-xs mb-1">Стоимость первого токена</p>
+                <p className="text-[#10B981] text-3xl font-black">
                   5 000 ₽{' '}
-                  <span className="text-[#94A3B8] text-base font-normal">после замера</span>
+                  <span className="text-[#64748B] text-base font-normal">после замера</span>
                 </p>
               </div>
 
@@ -94,27 +89,22 @@ const WorkModel: React.FC<WorkModelProps> = ({ botUrl }) => {
 
           {/* Card 2: Fast start */}
           <AnimatedSection delay={250} direction="right">
-            <div className="relative h-full glass rounded-3xl p-8 border border-[#38BDF8]/20 hover:border-[#38BDF8]/40 transition-all duration-300 group overflow-hidden">
+            <div className="relative h-full glass rounded-3xl p-8 hover:shadow-lg transition-all duration-300 group overflow-hidden">
               {/* Top glow */}
-              <div
-                className="absolute inset-x-0 top-0 h-1 opacity-80"
-                style={{
-                  background: 'linear-gradient(90deg, transparent, #38BDF8, transparent)',
-                }}
-              />
+              <div className="absolute inset-x-0 top-0 h-1 bg-[#3B82F6] opacity-70 rounded-t-3xl" />
 
               {/* Badge */}
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#38BDF8]/10 border border-[#38BDF8]/30 text-[#38BDF8] text-xs font-semibold mb-6">
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#3B82F6]/8 border border-[#3B82F6]/25 text-[#3B82F6] text-xs font-semibold mb-6">
                 <Zap size={13} />
                 Без верификации документов
               </div>
 
-              <h3 className="text-3xl font-black text-[#F8FAFC] mb-2">
+              <h3 className="text-3xl font-black text-[#0F172A] mb-2">
                 Быстрый старт
               </h3>
-              <p className="text-[#38BDF8] text-lg font-semibold mb-6">Пакеты заказов</p>
+              <p className="text-[#3B82F6] text-lg font-semibold mb-6">Пакеты заказов</p>
 
-              <p className="text-[#94A3B8] mb-6 leading-relaxed">
+              <p className="text-[#64748B] mb-6 leading-relaxed">
                 Не хотите проходить верификацию по документам? Без проблем. Сразу покупайте
                 пакет заказов и приступайте к работе.
               </p>
@@ -127,17 +117,17 @@ const WorkModel: React.FC<WorkModelProps> = ({ botUrl }) => {
                   'Если клиент не договорился не по вашей вине — токен возвращается на баланс',
                 ].map((item, i) => (
                   <li key={i} className="flex items-start gap-3">
-                    <CheckCircle2 size={18} className="text-[#38BDF8] flex-shrink-0 mt-0.5" />
-                    <span className="text-[#F8FAFC] text-sm">{item}</span>
+                    <CheckCircle2 size={18} className="text-[#3B82F6] flex-shrink-0 mt-0.5" />
+                    <span className="text-[#0F172A] text-sm">{item}</span>
                   </li>
                 ))}
               </ul>
 
               {/* Return note */}
-              <div className="rounded-2xl bg-[#38BDF8]/5 border border-[#38BDF8]/15 p-4 mb-6 flex items-start gap-3">
-                <RefreshCw size={18} className="text-[#38BDF8] flex-shrink-0 mt-0.5" />
-                <p className="text-[#94A3B8] text-xs">
-                  <span className="text-[#38BDF8] font-semibold">Защита токена:</span>{' '}
+              <div className="rounded-2xl bg-[#3B82F6]/5 border border-[#3B82F6]/15 p-4 mb-6 flex items-start gap-3">
+                <RefreshCw size={18} className="text-[#3B82F6] flex-shrink-0 mt-0.5" />
+                <p className="text-[#64748B] text-xs">
+                  <span className="text-[#3B82F6] font-semibold">Защита токена:</span>{' '}
                   нажмите «Возврат» в приложении, если клиент сорвался не по вашей вине —
                   токен вернётся на баланс после проверки.
                 </p>

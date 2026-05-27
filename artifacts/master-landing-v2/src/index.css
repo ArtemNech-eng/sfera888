@@ -2,14 +2,13 @@
 
 @layer base {
   :root {
-    --color-bg: #0B0F14;
-    --color-card: #111827;
-    --color-bg2: #0F172A;
-    --color-neon-green: #34F5A3;
-    --color-neon-blue: #38BDF8;
-    --color-neon-yellow: #FACC15;
-    --color-text: #F8FAFC;
-    --color-text-secondary: #94A3B8;
+    --color-accent: #10B981;
+    --color-accent-hover: #059669;
+    --color-accent-blue: #3B82F6;
+    --color-accent-amber: #F59E0B;
+    --color-text: #0F172A;
+    --color-text-secondary: #64748B;
+    --color-border: #E2E8F0;
   }
 
   * {
@@ -21,72 +20,28 @@
   }
 
   body {
-    background-color: #0B0F14;
-    color: #F8FAFC;
+    background-color: #FFFFFF;
+    color: #0F172A;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     overflow-x: hidden;
   }
 }
 
 @layer utilities {
-  .glow-green {
-    box-shadow: 0 0 20px rgba(52, 245, 163, 0.4), 0 0 40px rgba(52, 245, 163, 0.15);
-  }
-
-  .glow-green-hover:hover {
-    box-shadow: 0 0 30px rgba(52, 245, 163, 0.6), 0 0 60px rgba(52, 245, 163, 0.25);
-  }
-
-  .glow-blue {
-    box-shadow: 0 0 20px rgba(56, 189, 248, 0.35), 0 0 40px rgba(56, 189, 248, 0.12);
-  }
-
-  .glow-yellow {
-    box-shadow: 0 0 20px rgba(250, 204, 21, 0.35), 0 0 40px rgba(250, 204, 21, 0.12);
-  }
-
   .glass {
-    background: rgba(17, 24, 39, 0.7);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
   }
 
   .neon-line {
     height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(52, 245, 163, 0.5), transparent);
+    background: #E2E8F0;
   }
 
   .neon-line-blue {
     height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.5), transparent);
-  }
-
-  .text-neon-green {
-    color: #34F5A3;
-  }
-
-  .text-neon-blue {
-    color: #38BDF8;
-  }
-
-  .text-neon-yellow {
-    color: #FACC15;
-  }
-
-  .bg-card {
-    background-color: #111827;
-  }
-
-  .bg-bg2 {
-    background-color: #0F172A;
-  }
-
-  .grid-pattern {
-    background-image: 
-      linear-gradient(rgba(52, 245, 163, 0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(52, 245, 163, 0.03) 1px, transparent 1px);
-    background-size: 50px 50px;
+    background: #E2E8F0;
   }
 }
 
@@ -95,12 +50,12 @@
   width: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #0B0F14;
+  background: #F1F5F9;
 }
 ::-webkit-scrollbar-thumb {
-  background: #1e293b;
+  background: #CBD5E1;
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #34F5A3;
+  background: #10B981;
 }

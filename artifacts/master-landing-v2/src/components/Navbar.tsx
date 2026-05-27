@@ -35,8 +35,8 @@ const Navbar: React.FC<NavbarProps> = ({ botUrl }) => {
       <nav
         className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
           isScrolled
-            ? 'bg-[#0B0F14]/95 backdrop-blur-xl border-b border-white/5'
-            : 'bg-transparent'
+            ? 'bg-white/95 backdrop-blur-xl border-b border-[#E2E8F0]'
+            : 'bg-white/80 backdrop-blur-sm border-b border-[#E2E8F0]'
         }`}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -46,14 +46,14 @@ const Navbar: React.FC<NavbarProps> = ({ botUrl }) => {
               <div
                 className="w-8 h-8 rounded-lg flex items-center justify-center"
                 style={{
-                  background: 'rgba(52,245,163,0.15)',
-                  border: '1px solid rgba(52,245,163,0.4)',
+                  background: 'rgba(16,185,129,0.1)',
+                  border: '1px solid rgba(16,185,129,0.3)',
                 }}
               >
-                <Zap size={16} className="text-[#34F5A3]" />
+                <Zap size={16} className="text-[#10B981]" />
               </div>
-              <span className="text-[#F8FAFC] font-black text-base tracking-tight">
-                Честный<span className="text-[#34F5A3]">Мастер</span>
+              <span className="text-[#0F172A] font-black text-base tracking-tight">
+                Честный<span className="text-[#10B981]">Мастер</span>
               </span>
             </div>
 
@@ -63,7 +63,7 @@ const Navbar: React.FC<NavbarProps> = ({ botUrl }) => {
                 <button
                   key={link.label}
                   onClick={() => handleNavClick(link.href)}
-                  className="px-4 py-2 text-sm text-[#94A3B8] hover:text-[#F8FAFC] transition-colors rounded-lg hover:bg-white/5 cursor-pointer"
+                  className="px-4 py-2 text-sm text-[#64748B] hover:text-[#0F172A] transition-colors rounded-lg hover:bg-[#F8FAFC] cursor-pointer"
                 >
                   {link.label}
                 </button>
@@ -79,7 +79,7 @@ const Navbar: React.FC<NavbarProps> = ({ botUrl }) => {
 
             {/* Mobile menu button */}
             <button
-              className="md:hidden w-9 h-9 rounded-lg flex items-center justify-center text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-white/5 transition-colors cursor-pointer"
+              className="md:hidden w-9 h-9 rounded-lg flex items-center justify-center text-[#64748B] hover:text-[#0F172A] hover:bg-[#F8FAFC] transition-colors cursor-pointer"
               onClick={() => setMobileOpen(!mobileOpen)}
             >
               {mobileOpen ? <X size={20} /> : <Menu size={20} />}
@@ -96,13 +96,13 @@ const Navbar: React.FC<NavbarProps> = ({ botUrl }) => {
       >
         {/* Backdrop */}
         <div
-          className="absolute inset-0 bg-[#0B0F14]/80 backdrop-blur-sm"
+          className="absolute inset-0 bg-[#0F172A]/40 backdrop-blur-sm"
           onClick={() => setMobileOpen(false)}
         />
 
         {/* Drawer */}
         <div
-          className={`absolute top-0 right-0 h-full w-72 bg-[#0F172A] border-l border-white/5 transition-transform duration-300 ${
+          className={`absolute top-0 right-0 h-full w-72 bg-white border-l border-[#E2E8F0] transition-transform duration-300 ${
             mobileOpen ? 'translate-x-0' : 'translate-x-full'
           }`}
         >
@@ -111,7 +111,7 @@ const Navbar: React.FC<NavbarProps> = ({ botUrl }) => {
               <button
                 key={link.label}
                 onClick={() => handleNavClick(link.href)}
-                className="px-4 py-3.5 text-left text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-white/5 rounded-xl transition-colors text-base font-medium cursor-pointer"
+                className="px-4 py-3.5 text-left text-[#64748B] hover:text-[#0F172A] hover:bg-[#F8FAFC] rounded-xl transition-colors text-base font-medium cursor-pointer"
                 style={{ animationDelay: `${i * 50}ms` }}
               >
                 {link.label}

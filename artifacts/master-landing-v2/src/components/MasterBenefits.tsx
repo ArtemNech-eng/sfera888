@@ -11,63 +11,63 @@ import AnimatedSection from './AnimatedSection';
 
 const benefits = [
   {
-    icon: <Smartphone size={26} className="text-[#34F5A3]" />,
+    icon: <Smartphone size={26} className="text-[#10B981]" />,
     title: 'Мобильное приложение',
     desc: 'Лента объектов, управление заказами, история и статистика — всё в одном месте. Доступно на iOS и Android.',
-    color: '#34F5A3',
+    color: '#10B981',
   },
   {
-    icon: <FileText size={26} className="text-[#38BDF8]" />,
+    icon: <FileText size={26} className="text-[#3B82F6]" />,
     title: 'Встроенный сметчик',
     desc: 'Считайте сметы прямо в приложении. Красивые, профессиональные сметы, которые впечатляют клиентов.',
-    color: '#38BDF8',
+    color: '#3B82F6',
   },
   {
-    icon: <Shield size={26} className="text-[#FACC15]" />,
+    icon: <Shield size={26} className="text-[#F59E0B]" />,
     title: 'Защита токенов',
     desc: 'Если клиент сорвался не по вашей вине — токен возвращается на баланс после проверки. Вы платите только за результат.',
-    color: '#FACC15',
+    color: '#F59E0B',
   },
   {
-    icon: <BarChart3 size={26} className="text-[#34F5A3]" />,
+    icon: <BarChart3 size={26} className="text-[#10B981]" />,
     title: 'Аналитика и рейтинг',
     desc: 'Следите за своей конверсией, количеством закрытых объектов и рейтингом. Растите в системе.',
-    color: '#34F5A3',
+    color: '#10B981',
   },
   {
-    icon: <RefreshCw size={26} className="text-[#38BDF8]" />,
+    icon: <RefreshCw size={26} className="text-[#3B82F6]" />,
     title: 'Стабильный поток',
     desc: 'Новые объекты появляются каждый день. Сильные мастера никогда не сидят без работы.',
-    color: '#38BDF8',
+    color: '#3B82F6',
   },
   {
-    icon: <Headphones size={26} className="text-[#FACC15]" />,
+    icon: <Headphones size={26} className="text-[#F59E0B]" />,
     title: 'Поддержка 24/7',
     desc: 'Бот Max и поддержка платформы всегда на связи. Любой вопрос — решаем быстро.',
-    color: '#FACC15',
+    color: '#F59E0B',
   },
 ];
 
 const MasterBenefits: React.FC = () => {
   return (
-    <section id="benefits" className="relative py-24 bg-[#0F172A] overflow-hidden">
+    <section id="benefits" className="relative py-24 bg-[#F8FAFC] overflow-hidden">
       <div
         className="absolute left-0 top-0 w-80 h-80 opacity-8 pointer-events-none"
         style={{
-          background: 'radial-gradient(circle, rgba(56,189,248,0.3) 0%, transparent 70%)',
+          background: 'radial-gradient(circle, rgba(59,130,246,0.08) 0%, transparent 70%)',
         }}
       />
 
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <AnimatedSection className="text-center mb-16">
-          <p className="text-[#FACC15] text-sm font-semibold uppercase tracking-widest mb-3">
+          <p className="text-[#F59E0B] text-sm font-semibold uppercase tracking-widest mb-3">
             Инструменты
           </p>
-          <h2 className="text-4xl sm:text-5xl font-black text-[#F8FAFC] mb-4">
+          <h2 className="text-4xl sm:text-5xl font-black text-[#0F172A] mb-4">
             Что получает мастер{' '}
-            <span className="text-[#FACC15]">внутри системы</span>
+            <span className="text-[#F59E0B]">внутри системы</span>
           </h2>
-          <p className="text-[#94A3B8] text-lg max-w-2xl mx-auto">
+          <p className="text-[#64748B] text-lg max-w-2xl mx-auto">
             Всё необходимое для работы без хаоса — в одном месте. Никаких сторонних сервисов,
             никаких лишних программ.
           </p>
@@ -87,8 +87,8 @@ const MasterBenefits: React.FC = () => {
                   {benefit.icon}
                 </div>
 
-                <h3 className="text-[#F8FAFC] font-bold text-lg mb-2">{benefit.title}</h3>
-                <p className="text-[#94A3B8] text-sm leading-relaxed">{benefit.desc}</p>
+                <h3 className="text-[#0F172A] font-bold text-lg mb-2">{benefit.title}</h3>
+                <p className="text-[#64748B] text-sm leading-relaxed">{benefit.desc}</p>
 
                 {/* Bottom accent */}
                 <div

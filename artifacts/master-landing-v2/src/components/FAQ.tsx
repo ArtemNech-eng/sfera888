@@ -44,8 +44,8 @@ const FAQItem: React.FC<{
     <div
       className={`rounded-2xl border transition-all duration-300 overflow-hidden ${
         isOpen
-          ? 'border-[#34F5A3]/30 bg-[#34F5A3]/5'
-          : 'border-white/5 bg-[#111827] hover:border-white/10'
+          ? 'border-[#10B981]/30 bg-[#10B981]/5'
+          : 'border-[#E2E8F0] bg-white hover:border-[#CBD5E1]'
       }`}
     >
       <button
@@ -55,20 +55,20 @@ const FAQItem: React.FC<{
         <div className="flex items-center gap-4">
           <span
             className={`text-sm font-black w-6 flex-shrink-0 transition-colors ${
-              isOpen ? 'text-[#34F5A3]' : 'text-[#94A3B8]'
+              isOpen ? 'text-[#10B981]' : 'text-[#94A3B8]'
             }`}
           >
             {String(index + 1).padStart(2, '0')}
           </span>
-          <span className={`font-semibold text-base transition-colors ${isOpen ? 'text-[#F8FAFC]' : 'text-[#F8FAFC]/80'}`}>
+          <span className={`font-semibold text-base transition-colors ${isOpen ? 'text-[#0F172A]' : 'text-[#374151]'}`}>
             {q}
           </span>
         </div>
         <div
           className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-all duration-300 ${
             isOpen
-              ? 'bg-[#34F5A3] text-[#0B0F14]'
-              : 'bg-white/5 text-[#94A3B8] group-hover:bg-white/10'
+              ? 'bg-[#10B981] text-white'
+              : 'bg-[#F8FAFC] text-[#64748B] group-hover:bg-[#E2E8F0]'
           }`}
         >
           {isOpen ? <Minus size={16} /> : <Plus size={16} />}
@@ -81,7 +81,7 @@ const FAQItem: React.FC<{
         }`}
       >
         <div className="px-6 pb-5 pl-16">
-          <p className="text-[#94A3B8] leading-relaxed">{a}</p>
+          <p className="text-[#64748B] leading-relaxed">{a}</p>
         </div>
       </div>
     </div>
@@ -92,24 +92,24 @@ const FAQ: React.FC = () => {
   const [openIndex, setOpenIndex] = useState<number | null>(0);
 
   return (
-    <section id="faq" className="relative py-24 bg-[#0B0F14] overflow-hidden">
+    <section id="faq" className="relative py-24 bg-white overflow-hidden">
       <div
         className="absolute right-0 top-1/2 -translate-y-1/2 w-80 h-80 opacity-8 pointer-events-none"
         style={{
-          background: 'radial-gradient(circle, rgba(56,189,248,0.3) 0%, transparent 70%)',
+          background: 'radial-gradient(circle, rgba(59,130,246,0.06) 0%, transparent 70%)',
         }}
       />
 
       <div className="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <AnimatedSection className="text-center mb-14">
-          <p className="text-[#38BDF8] text-sm font-semibold uppercase tracking-widest mb-3">
+          <p className="text-[#3B82F6] text-sm font-semibold uppercase tracking-widest mb-3">
             Вопросы и ответы
           </p>
-          <h2 className="text-4xl sm:text-5xl font-black text-[#F8FAFC] mb-4">
+          <h2 className="text-4xl sm:text-5xl font-black text-[#0F172A] mb-4">
             Частые{' '}
-            <span className="text-[#38BDF8]">вопросы</span>
+            <span className="text-[#3B82F6]">вопросы</span>
           </h2>
-          <p className="text-[#94A3B8] text-lg">
+          <p className="text-[#64748B] text-lg">
             Отвечаем честно на всё, что волнует мастеров перед входом в систему.
           </p>
         </AnimatedSection>

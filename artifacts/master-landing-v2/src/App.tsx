@@ -13,12 +13,11 @@ import FAQ from './components/FAQ';
 import FinalCTA from './components/FinalCTA';
 import Footer from './components/Footer';
 
-// ✅ Ссылка на Telegram-бота — замените на вашу
-const BOT_URL = 'https://t.me/ChestnyMasterBot';
+const BOT_URL = '/master-pwa/';
 
 function App() {
   return (
-    <div className="min-h-screen bg-[#0B0F14] text-[#F8FAFC] overflow-x-hidden">
+    <div className="min-h-screen bg-white text-[#0F172A] overflow-x-hidden">
       <Navbar botUrl={BOT_URL} />
 
       <main>

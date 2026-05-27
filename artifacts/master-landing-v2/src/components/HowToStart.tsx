@@ -11,60 +11,60 @@ const HowToStart: React.FC<HowToStartProps> = ({ botUrl }) => {
   const steps = [
     {
       number: '1',
-      icon: <MousePointerClick size={22} className="text-[#34F5A3]" />,
+      icon: <MousePointerClick size={22} className="text-[#10B981]" />,
       title: 'Нажимаете кнопку ниже',
       desc: 'Переходите на страницу регистрации — это займёт меньше минуты.',
-      color: '#34F5A3',
+      color: '#10B981',
     },
     {
       number: '2',
-      icon: <Bot size={22} className="text-[#38BDF8]" />,
+      icon: <Bot size={22} className="text-[#3B82F6]" />,
       title: 'Переходите в Telegram-бота (Max)',
       desc: 'Бот Max встретит вас, объяснит условия и поможет зарегистрироваться.',
-      color: '#38BDF8',
+      color: '#3B82F6',
     },
     {
       number: '3',
-      icon: <Phone size={22} className="text-[#FACC15]" />,
+      icon: <Phone size={22} className="text-[#F59E0B]" />,
       title: 'Авторизуетесь по номеру телефона',
       desc: 'Быстрая и безопасная авторизация — никаких лишних форм и паролей.',
-      color: '#FACC15',
+      color: '#F59E0B',
     },
     {
       number: '4',
-      icon: <Layers size={22} className="text-[#34F5A3]" />,
+      icon: <Layers size={22} className="text-[#10B981]" />,
       title: 'Получаете доступ в приложение',
       desc: 'После регистрации вам открывается лента объектов с полным функционалом.',
-      color: '#34F5A3',
+      color: '#10B981',
     },
     {
       number: '5',
-      icon: <ShieldCheck size={22} className="text-[#38BDF8]" />,
+      icon: <ShieldCheck size={22} className="text-[#3B82F6]" />,
       title: 'Выбираете путь старта',
       desc: 'Проходите верификацию для тестового заказа ИЛИ сразу покупаете пакет токенов и берёте объекты.',
-      color: '#38BDF8',
+      color: '#3B82F6',
     },
   ];
 
   return (
-    <section id="how-to-start" className="relative py-24 bg-[#0F172A] overflow-hidden">
+    <section id="how-to-start" className="relative py-24 bg-white overflow-hidden">
       <div
         className="absolute left-1/2 -translate-x-1/2 top-0 w-[600px] h-[200px] opacity-15 pointer-events-none"
         style={{
-          background: 'radial-gradient(ellipse, rgba(52,245,163,0.5) 0%, transparent 70%)',
+          background: 'radial-gradient(ellipse, rgba(16,185,129,0.1) 0%, transparent 70%)',
         }}
       />
 
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <AnimatedSection className="text-center mb-16">
-          <p className="text-[#34F5A3] text-sm font-semibold uppercase tracking-widest mb-3">
+          <p className="text-[#10B981] text-sm font-semibold uppercase tracking-widest mb-3">
             Просто и быстро
           </p>
-          <h2 className="text-4xl sm:text-5xl font-black text-[#F8FAFC] mb-4">
+          <h2 className="text-4xl sm:text-5xl font-black text-[#0F172A] mb-4">
             Как{' '}
-            <span className="text-[#34F5A3]">начать работу</span>
+            <span className="text-[#10B981]">начать работу</span>
           </h2>
-          <p className="text-[#94A3B8] text-lg max-w-xl mx-auto">
+          <p className="text-[#64748B] text-lg max-w-xl mx-auto">
             5 простых шагов — и вы уже в системе с доступом к реальным объектам.
           </p>
         </AnimatedSection>
@@ -76,7 +76,7 @@ const HowToStart: React.FC<HowToStartProps> = ({ botUrl }) => {
               className="absolute left-6 top-0 bottom-0 w-0.5 hidden sm:block"
               style={{
                 background:
-                  'linear-gradient(180deg, #34F5A3, #38BDF8, #FACC15, #34F5A3, #38BDF8)',
+                  'linear-gradient(180deg, #10B981, #3B82F6, #F59E0B, #10B981, #3B82F6)',
                 opacity: 0.3,
               }}
             />
@@ -105,14 +105,14 @@ const HowToStart: React.FC<HowToStartProps> = ({ botUrl }) => {
                           ШАГ {step.number}
                         </span>
                       </div>
-                      <h3 className="text-[#F8FAFC] font-bold text-lg mb-1">{step.title}</h3>
-                      <p className="text-[#94A3B8] text-sm leading-relaxed">{step.desc}</p>
+                      <h3 className="text-[#0F172A] font-bold text-lg mb-1">{step.title}</h3>
+                      <p className="text-[#64748B] text-sm leading-relaxed">{step.desc}</p>
                     </div>
 
                     {/* Arrow */}
                     <ArrowRight
                       size={18}
-                      className="text-[#94A3B8]/40 flex-shrink-0 mt-1 group-hover:text-[#34F5A3]/60 transition-colors"
+                      className="text-[#CBD5E1] flex-shrink-0 mt-1 group-hover:text-[#10B981]/60 transition-colors"
                     />
                   </div>
                 </AnimatedSection>
@@ -127,7 +127,7 @@ const HowToStart: React.FC<HowToStartProps> = ({ botUrl }) => {
             Начать работу прямо сейчас
             <ArrowRight size={22} />
           </NeonButton>
-          <p className="text-[#94A3B8] text-sm mt-4">
+          <p className="text-[#64748B] text-sm mt-4">
             Регистрация занимает 2 минуты. Первый объект — уже сегодня.
           </p>
         </AnimatedSection>

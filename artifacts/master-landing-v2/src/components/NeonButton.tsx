@@ -11,7 +11,7 @@ interface NeonButtonProps {
 
 const NeonButton: React.FC<NeonButtonProps> = ({
   children,
-  href = 'https://t.me/ChestnyMasterBot',
+  href = '/master-pwa/',
   variant = 'primary',
   size = 'md',
   className = '',
@@ -26,25 +26,21 @@ const NeonButton: React.FC<NeonButtonProps> = ({
 
   const variantClasses = {
     primary: `
-      bg-[#34F5A3] text-[#0B0F14] font-bold rounded-xl
-      transition-all duration-300 ease-out
-      hover:bg-[#28e892] hover:scale-105
-      shadow-[0_0_20px_rgba(52,245,163,0.4),0_0_40px_rgba(52,245,163,0.15)]
-      hover:shadow-[0_0_30px_rgba(52,245,163,0.7),0_0_60px_rgba(52,245,163,0.3)]
-      active:scale-95
+      bg-[#10B981] text-white font-semibold rounded-xl
+      transition-all duration-200
+      hover:bg-[#059669] hover:shadow-md
+      active:scale-95 shadow-sm
     `,
     ghost: `
-      border border-[#34F5A3]/50 text-[#34F5A3] font-semibold rounded-xl
-      transition-all duration-300 ease-out
-      hover:bg-[#34F5A3]/10 hover:border-[#34F5A3] hover:scale-105
+      border border-[#E2E8F0] text-[#0F172A] font-semibold rounded-xl
+      transition-all duration-200
+      hover:bg-[#F8FAFC] hover:border-[#CBD5E1]
       active:scale-95
     `,
     secondary: `
-      bg-[#111827] border border-[#38BDF8]/40 text-[#38BDF8] font-semibold rounded-xl
-      transition-all duration-300 ease-out
-      hover:bg-[#38BDF8]/10 hover:border-[#38BDF8] hover:scale-105
-      shadow-[0_0_15px_rgba(56,189,248,0.2)]
-      hover:shadow-[0_0_25px_rgba(56,189,248,0.4)]
+      border border-[#3B82F6]/40 text-[#3B82F6] font-semibold rounded-xl
+      transition-all duration-200
+      hover:bg-[#3B82F6]/5 hover:border-[#3B82F6]
       active:scale-95
     `,
   };
@@ -65,7 +61,7 @@ const NeonButton: React.FC<NeonButtonProps> = ({
   }
 
   return (
-    <a href={href} target="_blank" rel="noopener noreferrer" className={classes}>
+    <a href={href} className={classes}>
       {children}
     </a>
   );
