@@ -1,4 +1,4 @@
-import { Users, FileCheck, Zap, Star, ShieldCheck, TrendingUp, Heart, CheckCircle2 } from 'lucide-react';
+import { Users, FileCheck, Zap, Star, ShieldCheck, TrendingUp, Heart, CheckCircle2, FileText } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 interface HeroProps {
@@ -156,6 +156,29 @@ export default function Hero({ refSlug }: HeroProps) {
                 <span className="text-sm font-semibold text-gray-800">Мастер проверен</span>
               </div>
             </div>
+            </div>
+
+            {/* Desktop advantage cards grid */}
+            <div className="hidden lg:grid grid-cols-2 gap-3 mt-5">
+              {[
+                { icon: ShieldCheck, label: 'Гарантия работ', value: '2 года' },
+                { icon: CheckCircle2, label: 'Документы', value: 'Проверены' },
+                { icon: FileText, label: 'Фиксированная смета', value: 'Без доплат' },
+                { icon: Zap, label: 'Скорость', value: '15–30 мин' },
+              ].map((card) => {
+                const Icon = card.icon;
+                return (
+                  <div key={card.label} className="glass rounded-2xl px-4 py-3 flex items-center gap-3 shadow-float">
+                    <div className="w-9 h-9 rounded-full bg-emerald-50 flex items-center justify-center flex-shrink-0">
+                      <Icon size={18} className="text-[#059669]" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-gray-400 font-medium leading-none">{card.label}</p>
+                      <p className="text-gray-800 font-bold text-sm leading-tight">{card.value}</p>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
             {/* Mobile cards grid */}
