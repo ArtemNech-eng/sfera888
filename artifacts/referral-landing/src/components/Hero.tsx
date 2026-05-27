@@ -26,12 +26,6 @@ export default function Hero({ refSlug }: HeroProps) {
     show: { opacity: 1, y: 0, transition: { duration: 0.6, ease: 'easeOut' } },
   };
 
-  const floatCards = [
-    { icon: Star, label: 'Рейтинг мастеров', value: '4.8 / 5', top: 'top-8', left: '-left-4', delay: 0 },
-    { icon: CheckCircle2, label: 'Документы', value: 'Проверены', top: 'top-20', right: '-right-4', delay: 0.15 },
-    { icon: ShieldCheck, label: 'Гарантия работ', value: '2 года', bottom: 'bottom-12', left: '-left-4', delay: 0.3 },
-  ];
-
   return (
     <section className="relative pt-28 pb-20 lg:pt-36 lg:pb-28 overflow-hidden">
       {/* Background blobs */}
@@ -203,53 +197,6 @@ export default function Hero({ refSlug }: HeroProps) {
               })}
             </div>
 
-            {/* Desktop floating cards */}
-            <div className="hidden lg:block">
-              {floatCards.map((card, i) => {
-                const Icon = card.icon;
-                return (
-                  <motion.div
-                    key={card.label}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.8 + card.delay, duration: 0.5 }}
-                    className={`absolute ${card.top || ''} ${card.left || ''} ${card.right || ''} ${card.bottom || ''} glass rounded-2xl px-4 py-3 flex items-center gap-3 shadow-float hover:shadow-premium transition-shadow duration-300 animate-float${i === 1 ? '-delay' : i === 2 ? '-delay-2' : ''} z-10`}
-                  >
-                    <div className="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center">
-                      <Icon size={20} className="text-[#059669]" />
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-400 font-medium">{card.label}</p>
-                      <p className="text-gray-800 font-bold text-base leading-none">{card.value}</p>
-                    </div>
-                  </motion.div>
-                );
-              })}
-
-              {/* Estimate card */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 1.4, duration: 0.5 }}
-                className="absolute right-4 bottom-8 glass rounded-2xl px-5 py-4 shadow-float hover:shadow-premium transition-shadow duration-300 animate-float-delay min-w-[180px] z-10"
-              >
-                <p className="text-xs text-gray-400 font-medium mb-2">Смета примерная</p>
-                <div className="space-y-1.5">
-                  <div className="flex justify-between text-xs text-gray-600">
-                    <span>Обои (2 комн.)</span>
-                    <span className="font-semibold">14 000 ₽</span>
-                  </div>
-                  <div className="flex justify-between text-xs text-gray-600">
-                    <span>Шпаклёвка</span>
-                    <span className="font-semibold">8 000 ₽</span>
-                  </div>
-                  <div className="border-t border-gray-200 pt-1.5 flex justify-between text-xs">
-                    <span className="text-gray-500">Итого</span>
-                    <span className="font-bold text-emerald-600">22 000 ₽</span>
-                  </div>
-                </div>
-              </motion.div>
-            </div>
           </motion.div>
 
         </div>
