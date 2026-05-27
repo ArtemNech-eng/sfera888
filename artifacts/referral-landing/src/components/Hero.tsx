@@ -57,11 +57,11 @@ export default function Hero({ refSlug }: HeroProps) {
               </motion.div>
             )}
 
-            <motion.h1 variants={item} className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-[#111827] leading-[1.1] mb-3 tracking-tight">
+            <motion.h1 variants={item} className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-[#111827] leading-[1.1] mb-3 tracking-tight">
               Честный Мастер — городской сервис, который объединяет проверенных частных мастеров.
             </motion.h1>
 
-            <motion.p variants={item} className="text-gray-500 text-xl leading-relaxed mb-6 max-w-lg">
+            <motion.p variants={item} className="text-gray-500 text-lg leading-relaxed mb-6 max-w-lg">
               Без посредников, с понятной сметой и гарантией 2 года.
             </motion.p>
 
