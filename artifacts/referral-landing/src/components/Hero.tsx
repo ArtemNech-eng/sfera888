@@ -144,7 +144,7 @@ export default function Hero({ refSlug }: HeroProps) {
               <div className="absolute -inset-4 bg-gradient-to-br from-emerald-200/50 to-emerald-400/25 rounded-[2.5rem] blur-2xl -z-10" />
               <div className="rounded-[2rem] overflow-hidden border-[3px] border-white/60 shadow-[0_25px_60px_rgba(5,150,105,0.18)] relative">
                 <img
-                  src="images/master-hero.jpg"
+                  src="/images/master-hero.jpg"
                   alt="Проверенный частный мастер"
                   className="w-full h-[320px] sm:h-[400px] lg:h-[420px] object-cover object-top"
                 />
