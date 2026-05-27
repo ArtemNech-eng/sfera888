@@ -1,5 +1,6 @@
 import { Users, FileCheck, Zap, Star, ShieldCheck, TrendingUp, Heart, CheckCircle2, FileText } from 'lucide-react';
 import { motion } from 'framer-motion';
+import OnlineBadge from './OnlineBadge';
 
 interface HeroProps {
   refSlug: string | null;
@@ -106,8 +107,13 @@ export default function Hero({ refSlug }: HeroProps) {
               </button>
             </motion.div>
 
+            {/* Online badge */}
+            <motion.div variants={item} className="mt-6 mb-4">
+              <OnlineBadge />
+            </motion.div>
+
             {/* Social proof */}
-            <motion.div variants={item} className="flex items-center gap-3 text-gray-400 text-sm mt-6">
+            <motion.div variants={item} className="flex items-center gap-3 text-gray-400 text-sm">
               <div className="flex -space-x-2">
                 {[1,2,3,4].map(i => (
                   <div key={i} className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-300 to-emerald-500 border-2 border-white flex items-center justify-center text-[10px] font-bold text-white">

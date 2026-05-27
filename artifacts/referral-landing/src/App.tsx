@@ -11,6 +11,7 @@ import FAQ from './components/FAQ';
 import FinalCTA from './components/FinalCTA';
 import Footer from './components/Footer';
 import StickyCTA from './components/StickyCTA';
+import LiveActivityToast from './components/LiveActivityToast';
 import { useRefSlug } from './hooks/useRefSlug';
 
 export default function App() {
@@ -33,6 +34,7 @@ export default function App() {
       </main>
       <Footer />
       <StickyCTA />
+      <LiveActivityToast />
     </div>
   );
 }
