@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import SectionHeader from "./SectionHeader";
-import { Smartphone, Bell, MessageCircle, CreditCard, Home, ClipboardList, User, Image } from "lucide-react";
+import { Smartphone, Bell, MessageCircle, CreditCard, Home, ClipboardList, User } from "lucide-react";
 
 const features = [
   {
@@ -118,11 +118,14 @@ export default function AppDemo() {
                       <div className="font-semibold text-emerald-900 mb-1">Оплата по факту</div>
                       <div>22 000 ₽ — после приёмки работ</div>
                     </div>
-                    {/* Photo placeholder */}
+                    {/* Repair photo */}
                     <div className="bg-gray-100 rounded-xl p-2 mt-1">
-                      <div className="bg-gray-200 rounded-lg h-20 flex items-center justify-center">
-                        <Image size={20} className="text-gray-400" />
-                      </div>
+                      <img
+                        src="https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=400&q=80"
+                        alt="Фото ремонта"
+                        className="rounded-lg w-full h-20 object-cover"
+                        loading="lazy"
+                      />
                       <div className="text-[9px] text-gray-400 mt-1">Фото ремонта</div>
                     </div>
                   </div>
