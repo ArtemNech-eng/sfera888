@@ -1,5 +1,5 @@
 import React from 'react';
-import { Zap, Send } from 'lucide-react';
+import { Zap, LogIn } from 'lucide-react';
 
 interface FooterProps {
   botUrl: string;
@@ -33,13 +33,13 @@ const Footer: React.FC<FooterProps> = ({ botUrl }) => {
             <span className="hidden sm:block">© 2025</span>
           </div>
 
-          {/* Social */}
+          {/* App link */}
           <a
             href={botUrl}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-[#E2E8F0] text-[#64748B] text-sm font-medium hover:bg-white hover:text-[#0F172A] transition-colors"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-[#10B981]/30 bg-[#10B981]/5 text-[#10B981] text-sm font-semibold hover:bg-[#10B981]/10 transition-colors"
           >
-            <Send size={14} />
-            Telegram-бот Max
+            <LogIn size={14} />
+            Войти в приложение
           </a>
         </div>
 
