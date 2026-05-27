@@ -12,6 +12,7 @@ import HowToStart from './components/HowToStart';
 import FAQ from './components/FAQ';
 import FinalCTA from './components/FinalCTA';
 import Footer from './components/Footer';
+import LiveActivityToast from './components/LiveActivityToast';
 
 const BOT_URL = '/master-pwa/';
 
@@ -56,6 +57,7 @@ function App() {
       </main>
 
       <Footer botUrl={BOT_URL} />
+      <LiveActivityToast />
     </div>
   );
 }
