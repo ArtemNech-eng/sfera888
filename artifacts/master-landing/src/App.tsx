@@ -4,7 +4,7 @@ import HonestLanding from './components/honest/HonestLanding.tsx';
 
 export default function App() {
   return (
-    <Router base={import.meta.env.BASE_URL || '/'}>
+    <Router base={(import.meta.env.BASE_URL || '/').replace(/\/$/, '') || '/'}>
       <Switch>
         <Route path="/">
           <LegacyLanding />

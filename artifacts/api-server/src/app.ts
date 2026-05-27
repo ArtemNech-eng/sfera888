@@ -948,6 +948,9 @@ if (fs.existsSync(landingV2DistPath)) {
   });
 }
 
+// ── Short URL alias for honest master landing ─────────────────────────────────
+app.get("/masters", (_req, res) => res.redirect(301, "/master-landing/v3/honest"));
+
 // ── Serve master-landing-v3 (honest + legacy SPA) ────────────────────────────
 const landingV3DistPath = path.join(__dirname, "../../master-landing/dist/public");
 
