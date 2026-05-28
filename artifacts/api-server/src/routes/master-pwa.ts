@@ -12,7 +12,18 @@ import { objectStorageClient, s3Client } from "../lib/objectStorage.js";
 import { getBotLink, sendOnboardingMemo, sendMaxMessage } from "../maxBot.js";
 import { notifyManagerMasterResponse, notifyManagerNewMaster } from "../managerBot.js";
 import { getFomoBlock, logFomoEvent, checkFomoTransition } from "../lib/fomoBlock.js";
-import { getOrderTokenCost, deductTokens, ensureWallet, checkTokenBalance, deductTokensForLead, checkDebtBlock, deductFromPackages } from "../lib/tokenWallet.js";
+import {
+  getOrderTokenCost,
+  deductTokens,
+  ensureWallet,
+  deductTokensForLead,
+  checkDebtBlock,
+  deductFromPackages,
+  deductFromPackagesTx,
+  TokenWalletError,
+  ERR_INSUFFICIENT_TOKENS,
+  ERR_DEBT_BLOCKED,
+} from "../lib/tokenWallet.js";
 import { sendPushToMaster } from "../lib/push.js";
 import { sendPushToClient } from "../lib/clientPush.js";
 import { performBroadcast } from "../lib/broadcastOrder.js";
@@ -774,73 +785,78 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
   // ── TOKEN MODEL: auto-assign, deduct tokens, return client contact ────────
   if ((order as any).paymentModel === "token") {
     const { cost: tokensCost } = await getOrderTokenCost({ serviceType: order.serviceType, area: order.area ? Number(order.area) : null, manualTokenCost: (order as any).manualTokenCost ?? null, city: order.city ?? null });
-    const { ok, balance } = await checkTokenBalance(masterId, tokensCost);
 
-    if (!ok) {
-      return res.status(402).json({
-        error: `Недостаточно токенов. Баланс: ${balance} т., требуется: ${tokensCost} т.`,
-        insufficientTokens: true,
-        balance,
-        required: tokensCost,
-      });
+    // Pre-check debt (fast path — avoid opening tx if blocked)
+    const debtPre = await checkDebtBlock(masterId);
+    if (debtPre.blocked) {
+      return res.status(403).json({ error: debtPre.reason, debtBlocked: true });
     }
 
-    // Check debt block before deducting
-    const debt = await checkDebtBlock(masterId);
-    if (debt.blocked) {
-      return res.status(403).json({ error: debt.reason, debtBlocked: true });
-    }
-
-    // Deduct tokens from active packages
-    const deduction = await deductFromPackages({
-      masterId,
-      orderId,
-      tokensCost,
-      serviceType: order.serviceType,
-    });
-    if (!deduction.success) {
-      return res.status(402).json({ error: deduction.error, insufficientTokens: true });
-    }
-
-    // Auto-assign order to master
-    await db.update(ordersTable).set({
-      masterId,
-      status: "master_assigned" as any,
-      dispatchStatus: "assigned",
-      masterWorkStatus: "accepted",
-      assignedAt: new Date(),
-      tokensCharged: String(tokensCost),
-      updatedAt: new Date(),
-    }).where(eq(ordersTable.id, orderId));
-
-    // Mark this dispatch as assigned
-    await db.update(orderDispatchesTable)
-      .set({ status: "assigned", respondedAt: new Date() })
-      .where(eq(orderDispatchesTable.id, dispatches[0].id));
-
-    // Reject all other dispatches → order disappears from other masters' feeds
-    await db.update(orderDispatchesTable)
-      .set({ status: "rejected" })
-      .where(and(
-        eq(orderDispatchesTable.orderId, orderId),
-        ne(orderDispatchesTable.id, dispatches[0].id),
-        inArray(orderDispatchesTable.status, ["sent", "responded"]),
-      ));
-
-    // Update master stats and voronka column
+    // Compute target column before tx (read-only helpers)
     const myActiveCount2 = await countActiveMasterOrders(masterId);
     const targetColId = await getColumnIdForActiveCount(myActiveCount2 + 1);
-    await db.update(mastersTable).set({
-      totalOrders: master.totalOrders + 1,
-      acceptedOrders: master.acceptedOrders + 1,
-      voronkaColumnId: targetColId ?? master.voronkaColumnId,
-    }).where(eq(mastersTable.id, masterId));
 
-    // Fetch lead for client contact
+    try {
+      await db.transaction(async (tx) => {
+        // 1. Deduct tokens — single source of truth (packages + row locks)
+        const deduction = await deductFromPackagesTx(tx, {
+          masterId,
+          orderId,
+          tokensCost,
+          serviceType: order.serviceType,
+        });
+        if (!deduction.success) {
+          throw deduction.error; // triggers ROLLBACK
+        }
+
+        // 2. Auto-assign order to master
+        await tx.update(ordersTable).set({
+          masterId,
+          status: "master_assigned" as any,
+          dispatchStatus: "assigned",
+          masterWorkStatus: "accepted",
+          assignedAt: new Date(),
+          tokensCharged: String(tokensCost),
+          updatedAt: new Date(),
+        }).where(eq(ordersTable.id, orderId));
+
+        // 3. Mark this dispatch as assigned
+        await tx.update(orderDispatchesTable)
+          .set({ status: "assigned", respondedAt: new Date() })
+          .where(eq(orderDispatchesTable.id, dispatches[0].id));
+
+        // 4. Reject all other dispatches
+        await tx.update(orderDispatchesTable)
+          .set({ status: "rejected" })
+          .where(and(
+            eq(orderDispatchesTable.orderId, orderId),
+            ne(orderDispatchesTable.id, dispatches[0].id),
+            inArray(orderDispatchesTable.status, ["sent", "responded"]),
+          ));
+
+        // 5. Update master stats
+        await tx.update(mastersTable).set({
+          totalOrders: master.totalOrders + 1,
+          acceptedOrders: master.acceptedOrders + 1,
+          voronkaColumnId: targetColId ?? master.voronkaColumnId,
+        }).where(eq(mastersTable.id, masterId));
+      });
+    } catch (e) {
+      if (e instanceof TokenWalletError) {
+        if (e.code === ERR_INSUFFICIENT_TOKENS) {
+          return res.status(402).json({ error: e.message, insufficientTokens: true });
+        }
+        if (e.code === ERR_DEBT_BLOCKED) {
+          return res.status(403).json({ error: e.message, debtBlocked: true });
+        }
+      }
+      throw e;
+    }
+
+    // After tx commit: fetch lead + send push notifications
     const leadRow = await db.select().from(leadsTable).where(eq(leadsTable.id, order.leadId)).limit(1);
     const lead = leadRow[0];
 
-    // Push notification to master
     if (master.pwaLogin) {
       sendPushToMaster(master.id, {
         type: "order_assigned",
@@ -850,7 +866,6 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
       }).catch(() => {});
     }
 
-    // Push notification to client: "Вам позвонит мастер Иван, рейтинг 4.8★"
     const clientPhone = lead?.clientPhone ?? order.clientPhone;
     if (clientPhone) {
       const ratingStr = Number(master.rating).toFixed(1);
@@ -868,7 +883,6 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
       success: true,
       tokenModel: true,
       tokensCharged: tokensCost,
-      newBalance: deduction.newBalance,
       clientName: lead?.clientName ?? order.clientName ?? null,
       clientPhone: lead?.clientPhone ?? order.clientPhone ?? null,
     });
@@ -1065,60 +1079,68 @@ router.post("/leads/:id/respond", requireMasterPwa, async (req: any, res: any) =
   // Token cost
   const { cost: tokensCost } = await getOrderTokenCost({ serviceType: lead.serviceType, area: lead.area ? Number(lead.area) : null, manualTokenCost: null, city: lead.city ?? null });
 
-  // Check debt block
-  const debt = await checkDebtBlock(masterId);
-  if (debt.blocked) {
-    return res.status(403).json({ error: debt.reason, debtBlocked: true });
+  // Pre-check debt (fast path)
+  const debtPre = await checkDebtBlock(masterId);
+  if (debtPre.blocked) {
+    return res.status(403).json({ error: debtPre.reason, debtBlocked: true });
   }
 
-  // Create order first so we have an orderId for spend transaction
-  const [insertedOrder] = await db.insert(ordersTable).values({
-    leadId: lead.id,
-    city: lead.city,
-    district: lead.district ?? "",
-    serviceType: lead.serviceType,
-    area: String(lead.area),
-    services: lead.services,
-    comment: lead.comment,
-    status: "master_assigned",
-    masterId,
-    dispatchStatus: "assigned",
-    masterWorkStatus: "accepted",
-    assignedAt: new Date(),
-    clientName: lead.clientName,
-    clientPhone: lead.clientPhone,
-    source: "landing",
-    paymentModel: "token",
-    tokensCharged: String(tokensCost),
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  }).returning();
-  const orderId = insertedOrder.id;
+  let orderId = 0;
 
-  // Deduct tokens from active packages
-  const deduction = await deductFromPackages({ masterId, orderId, tokensCost, serviceType: lead.serviceType });
-  if (!deduction.success) {
-    // Rollback: delete the created order
-    await db.delete(ordersTable).where(eq(ordersTable.id, orderId));
-    return res.status(402).json({ insufficientTokens: true, error: deduction.error });
-  }
-
-  // Insert lead_responses — UNIQUE(lead_id) enforces exclusivity
   try {
-    await db.execute(
-      sql`INSERT INTO lead_responses (lead_id, master_id, tokens_spent) VALUES (${leadId}, ${masterId}, ${tokensCost})`
-    );
+    await db.transaction(async (tx) => {
+      // 1. Create order inside tx (rollbacked automatically on failure)
+      const [insertedOrder] = await tx.insert(ordersTable).values({
+        leadId: lead.id,
+        city: lead.city,
+        district: lead.district ?? "",
+        serviceType: lead.serviceType,
+        area: String(lead.area),
+        services: lead.services,
+        comment: lead.comment,
+        status: "master_assigned",
+        masterId,
+        dispatchStatus: "assigned",
+        masterWorkStatus: "accepted",
+        assignedAt: new Date(),
+        clientName: lead.clientName,
+        clientPhone: lead.clientPhone,
+        source: "landing",
+        paymentModel: "token",
+        tokensCharged: String(tokensCost),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }).returning();
+      orderId = insertedOrder.id;
+
+      // 2. Deduct tokens — single source of truth
+      const deduction = await deductFromPackagesTx(tx, { masterId, orderId, tokensCost, serviceType: lead.serviceType });
+      if (!deduction.success) {
+        throw deduction.error; // triggers ROLLBACK (order insert undone)
+      }
+
+      // 3. Insert lead_responses — uniqueness already checked before tx
+      await tx.execute(
+        sql`INSERT INTO lead_responses (lead_id, master_id, tokens_spent) VALUES (${leadId}, ${masterId}, ${tokensCost})`
+      );
+
+      // 4. Update lead status
+      await tx.update(leadsTable).set({ status: "sent_to_work" }).where(eq(leadsTable.id, leadId));
+    });
   } catch (e: any) {
-    // Race condition: another master got there first — rollback everything
-    if (e?.code === "23505" || e?.constraint?.includes("lead_responses")) {
-      await db.delete(ordersTable).where(eq(ordersTable.id, orderId));
+    if (e instanceof TokenWalletError) {
+      if (e.code === ERR_INSUFFICIENT_TOKENS) {
+        return res.status(402).json({ error: e.message, insufficientTokens: true });
+      }
+      if (e.code === ERR_DEBT_BLOCKED) {
+        return res.status(403).json({ error: e.message, debtBlocked: true });
+      }
+    }
+    if (e?.code === "23505" || String(e?.message).includes("lead_responses")) {
       return res.status(409).json({ error: "Заявка только что занята другим мастером", alreadyTaken: true });
     }
     throw e;
   }
-
-  // Update lead status so it no longer appears as new in CRM
-  await db.update(leadsTable).set({ status: "sent_to_work" }).where(eq(leadsTable.id, leadId));
 
   return res.json({
     ok: true,

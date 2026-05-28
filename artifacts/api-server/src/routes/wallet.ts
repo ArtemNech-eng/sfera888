@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db, masterWalletTable, walletTransactionsTable, tokenPackagesTable, ordersTable, mastersTable } from "@workspace/db";
 import { eq, desc, and, inArray, sql, count } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
+import { requireMasterAuth } from "../middlewares/requireMaster.js";
 import { refundTokens, createActivePackage, payOffDebt, getActivePackages, checkDebtBlock } from "../lib/tokenWallet.js";
 import multer from "multer";
 import sharp from "sharp";
@@ -12,12 +13,6 @@ import { randomUUID } from "crypto";
 const router = Router();
 const adminOnly = requireRole("admin");
 const ops = requireRole("admin", "master_operator", "lead_operator");
-
-function requireMasterAuth(req: any, res: any, next: any) {
-  const masterId = (req.session as any).masterId as number | undefined;
-  if (!masterId) return res.status(401).json({ error: "Не авторизован" });
-  next();
-}
 
 const screenshotUpload = multer({
   storage: multer.memoryStorage(),
