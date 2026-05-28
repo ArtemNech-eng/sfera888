@@ -932,8 +932,8 @@ if (fs.existsSync(pwaDistPath)) {
 
 const partnerPwaDistPath = path.join(__dirname, "../../partner-pwa/dist/public");
 if (fs.existsSync(partnerPwaDistPath)) {
-  app.use("/partner-pwa", express.static(partnerPwaDistPath));
-  app.use("/partner-pwa", (_req, res) => {
+  app.use("/partner", express.static(partnerPwaDistPath));
+  app.use("/partner", (_req, res) => {
     res.sendFile(path.join(partnerPwaDistPath, "index.html"));
   });
 }

@@ -15,7 +15,7 @@ if (!isBuild && (!rawPort || Number.isNaN(port) || port <= 0)) {
   );
 }
 
-const basePath = process.env.BASE_PATH ?? "/partner-pwa/";
+const basePath = process.env.BASE_PATH ?? "/partner/";
 
 export default defineConfig({
   base: basePath,
