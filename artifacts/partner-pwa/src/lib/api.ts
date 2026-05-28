@@ -158,6 +158,34 @@ export const leadsApi = {
         comment: data.comment,
       }),
     }),
+  get: async (id: number): Promise<LeadDetail> => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const d = await request<any>(`/leads/${id}`);
+    return {
+      id: d.id,
+      clientName: d.client_name ?? "",
+      clientPhone: d.client_phone ?? "",
+      city: d.city ?? "",
+      district: d.district ?? "",
+      serviceType: d.service_type ?? "",
+      area: d.area ?? null,
+      comment: d.comment ?? null,
+      isPossibleDuplicate: d.is_possible_duplicate ?? null,
+      partnerLeadStatus: d.status ?? null,
+      partnerRejectionReason: d.partner_rejection_reason ?? null,
+      status: d.status ?? "",
+      createdAt: d.created_at,
+      scheduledAt: null,
+      updatedAt: d.updated_at,
+      orderStatus: d.order_status ?? null,
+      timeline: (d.timeline ?? []).map((t: any) => ({
+        status: t.status,
+        label: t.label,
+        date: t.date,
+        active: t.active,
+      })),
+    };
+  },
 };
 
 // ─── Billing ─────────────────────────────────────────────────────────────────
@@ -255,6 +283,19 @@ export interface Lead {
   status: string;
   createdAt: string;
   scheduledAt: string | null;
+}
+
+export interface LeadTimelineItem {
+  status: string;
+  label: string;
+  date: string;
+  active: boolean;
+}
+
+export interface LeadDetail extends Lead {
+  updatedAt: string;
+  orderStatus: string | null;
+  timeline: LeadTimelineItem[];
 }
 
 export interface LeadsResponse {

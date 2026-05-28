@@ -1,4 +1,5 @@
 import type { Lead } from "@/lib/api";
+import { useLocation } from "wouter";
 
 const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
   partner_review:  { label: "На проверке",        color: "#92400E", bg: "#FEF3C7" },
@@ -20,12 +21,16 @@ interface LeadCardProps {
 }
 
 export default function LeadCard({ lead }: LeadCardProps) {
+  const [, navigate] = useLocation();
   const statusKey = lead.partnerLeadStatus ?? lead.status;
   const cfg = statusConfig[statusKey] ?? { label: statusKey, color: "#374151", bg: "#F3F4F6" };
   const isAccepted = lead.status === "master_assigned" || lead.status === "in_progress" || lead.status === "completed";
 
   return (
-    <div className="bg-white rounded-2xl p-4 shadow-sm border border-[#E5E7EB] space-y-2">
+    <div
+      onClick={() => navigate(`/leads/${lead.id}`)}
+      className="bg-white rounded-2xl p-4 shadow-sm border border-[#E5E7EB] space-y-2 cursor-pointer active:scale-[0.98] transition-transform"
+    >
       <div className="flex items-start justify-between gap-2">
         <div>
           <div className="font-semibold text-[#111827] text-sm">{lead.serviceType}</div>

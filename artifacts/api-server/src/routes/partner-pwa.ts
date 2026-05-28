@@ -652,6 +652,93 @@ router.get("/leads", requirePartner, async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/partner/leads/:id — детальная карточка лида с timeline
+router.get("/leads/:id", requirePartner, async (req: Request, res: Response) => {
+  try {
+    const partner = (req as any).partner;
+    const leadId = parseInt(req.params.id);
+    if (isNaN(leadId)) return res.status(400).json({ error: "invalid_id" });
+
+    const [lead] = await db
+      .select()
+      .from(leadsTable)
+      .where(
+        and(
+          eq(leadsTable.id, leadId),
+          eq(leadsTable.trafficPartnerId, partner.id),
+          isNull(leadsTable.deletedAt)
+        )
+      )
+      .limit(1);
+
+    if (!lead) return res.status(404).json({ error: "not_found" });
+
+    // Связанный order
+    const [order] = await db
+      .select({ id: ordersTable.id, status: ordersTable.status, createdAt: ordersTable.createdAt, assignedAt: ordersTable.assignedAt, completedAt: ordersTable.completedAt })
+      .from(ordersTable)
+      .where(and(eq(ordersTable.leadId, leadId), isNull(ordersTable.deletedAt)))
+      .limit(1);
+
+    // Build timeline
+    const timeline: { status: string; label: string; date: string; active: boolean }[] = [];
+
+    // 1. Подан
+    timeline.push({ status: "submitted", label: "Подан", date: lead.createdAt.toISOString(), active: true });
+
+    // 2. На проверке / Одобрен / Отклонён
+    const s = lead.partnerLeadStatus;
+    const statusDate = (lead.statusUpdatedAt ?? lead.createdAt).toISOString();
+
+    if (s === "partner_review") {
+      timeline.push({ status: "review", label: "На проверке", date: statusDate, active: true });
+    } else if (s === "rejected") {
+      timeline.push({ status: "review", label: "На проверке", date: statusDate, active: true });
+      timeline.push({ status: "rejected", label: "Отклонён", date: statusDate, active: true });
+    } else if (["partner_validated", "waiting_master", "token_spent", "in_progress"].includes(s ?? "")) {
+      timeline.push({ status: "review", label: "Проверен", date: statusDate, active: true });
+      timeline.push({ status: "approved", label: "Одобрен", date: statusDate, active: true });
+    }
+
+    // 3. Order statuses
+    if (order) {
+      if (["master_assigned", "in_progress", "completed"].includes(order.status)) {
+        timeline.push({ status: "master_assigned", label: "Мастер назначен", date: (order.assignedAt ?? order.createdAt).toISOString(), active: true });
+      }
+      if (["in_progress", "completed"].includes(order.status)) {
+        timeline.push({ status: "in_progress", label: "В работе", date: (order.assignedAt ?? order.createdAt).toISOString(), active: true });
+      }
+      if (order.status === "completed") {
+        timeline.push({ status: "completed", label: "Выполнен", date: (order.completedAt ?? order.createdAt).toISOString(), active: true });
+      }
+      if (order.status === "cancelled") {
+        timeline.push({ status: "cancelled", label: "Отменён", date: (order.assignedAt ?? order.createdAt).toISOString(), active: true });
+      }
+    }
+
+    return res.json({
+      id: lead.id,
+      client_name: lead.clientName,
+      client_phone: lead.clientPhone,
+      city: lead.city,
+      district: lead.district,
+      service_type: lead.serviceType,
+      area: lead.area,
+      comment: lead.comment,
+      status: lead.partnerLeadStatus,
+      is_possible_duplicate: lead.isPossibleDuplicate,
+      partner_rejection_reason: lead.partnerRejectionReason,
+      created_at: lead.createdAt,
+      updated_at: lead.updatedAt,
+      order_status: order?.status ?? null,
+      timeline,
+    });
+  } catch (err) {
+    console.error("[partner/leads/:id GET]", err);
+    return res.status(500).json({ error: "server_error" });
+  }
+});
+
 const createLeadSchema = z.object({
   client_name: z.string().min(1),
   client_phone: z.string().min(5),

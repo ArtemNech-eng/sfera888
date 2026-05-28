@@ -7,6 +7,7 @@ import AuthPage from "@/pages/auth";
 import DashboardPage from "@/pages/dashboard";
 import CreateLeadPage from "@/pages/create-lead";
 import MyLeadsPage from "@/pages/my-leads";
+import LeadDetailPage from "@/pages/lead-detail";
 import PayoutsPage from "@/pages/payouts";
 import ProfilePage from "@/pages/profile";
 import { Clock } from "lucide-react";
@@ -59,6 +60,7 @@ function AppRoutes() {
         <Route path="/" component={DashboardPage} />
         <Route path="/create-lead" component={CreateLeadPage} />
         <Route path="/my-leads" component={MyLeadsPage} />
+        <Route path="/leads/:id" component={LeadDetailPage} />
         <Route path="/payouts" component={PayoutsPage} />
         <Route path="/profile" component={ProfilePage} />
         <Route>
