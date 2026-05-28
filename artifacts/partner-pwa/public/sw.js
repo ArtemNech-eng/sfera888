@@ -6,7 +6,7 @@ const SHELL_URL = "/partner/index.html";
 self.addEventListener("install", e => {
   e.waitUntil(
     caches.open(SHELL_CACHE)
-      .then(c => c.addAll([SHELL_URL, "/partner/"]))
+      .then(c => c.addAll([SHELL_URL]))
       .then(() => self.skipWaiting())
   );
 });
@@ -17,9 +17,7 @@ self.addEventListener("activate", e => {
     caches.keys()
       .then(keys =>
         Promise.all(
-          keys
-            .filter(k => k !== SHELL_CACHE && k !== ASSET_CACHE)
-            .map(k => caches.delete(k))
+          keys.map(k => caches.delete(k))
         )
       )
       .then(() => self.clients.claim())
@@ -49,7 +47,7 @@ self.addEventListener("fetch", e => {
           }
           return res;
         })
-        .catch(() => caches.match(SHELL_URL))
+        .catch(() => caches.match(SHELL_URL).then(cached => cached || new Response("Offline", { status: 503 })))
     );
     return;
   }
@@ -72,8 +70,8 @@ self.addEventListener("fetch", e => {
     return;
   }
 
-  // Everything else → network only
-  e.respondWith(fetch(e.request));
+  // Everything else → let browser handle it, don't intercept
+  return;
 });
 
 // ─── Push notifications ───────────────────────────────────────────────────────

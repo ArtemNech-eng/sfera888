@@ -11,7 +11,16 @@ if ("serviceWorker" in navigator) {
     }
   });
 
-  const base = import.meta.env.BASE_URL ?? "/partner-pwa/";
+  // Unregister old /partner-pwa/ service workers
+  navigator.serviceWorker.getRegistrations().then(regs => {
+    for (const reg of regs) {
+      if (reg.scope?.includes("/partner-pwa")) {
+        reg.unregister();
+      }
+    }
+  });
+
+  const base = import.meta.env.BASE_URL ?? "/partner/";
   navigator.serviceWorker
     .register(`${base}sw.js`, { updateViaCache: "none" })
     .then(reg => reg.update())
