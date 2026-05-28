@@ -57,6 +57,7 @@ export const ordersTable = pgTable("orders", {
   source: text("source").notNull().default("crm"),
   paymentModel: varchar("payment_model", { length: 50 }).notNull().default("token"),
   tokensCharged: numeric("tokens_charged", { precision: 10, scale: 2 }).notNull().default("0"),
+  manualTokenCost: numeric("manual_token_cost", { precision: 10, scale: 2 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   deletedAt: timestamp("deleted_at"),

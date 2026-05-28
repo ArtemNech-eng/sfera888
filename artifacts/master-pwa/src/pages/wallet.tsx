@@ -15,8 +15,11 @@ interface WalletData {
   total_spent: number;
   total_refunded: number;
   total_rub_spent: number;
+  credit_limit_tokens: number;
   credit_tokens_issued: number;
   credit_tokens_spent: number;
+  available_tokens: number;
+  topup_needed: number;
 }
 
 interface TokenPackage {
@@ -388,6 +391,9 @@ export default function WalletPage() {
   }
 
   const balance = wallet?.tokens_balance ?? 0;
+  const creditLimit = wallet?.credit_limit_tokens ?? 0;
+  const available = wallet?.available_tokens ?? balance + creditLimit;
+  const topupNeeded = wallet?.topup_needed ?? (balance < 0 ? -balance : 0);
   const creditIssued = wallet?.credit_tokens_issued ?? 0;
   const creditSpent = wallet?.credit_tokens_spent ?? 0;
 
@@ -416,11 +422,18 @@ export default function WalletPage() {
             )}
             <div className="flex items-center justify-between">
               <div className="space-y-1">
+                {creditLimit > 0 && (
+                  <p className="text-xs text-slate-400">Кредитный лимит: +{creditLimit} т.</p>
+                )}
+                <p className="text-xs text-emerald-400">Доступно: {available} т.</p>
+                {topupNeeded > 0 && (
+                  <p className="text-xs text-red-400">Пополнить до 0: {topupNeeded} т.</p>
+                )}
                 {creditIssued > 0 && (
-                  <p className="text-xs text-slate-400">Кредитный лимит: {creditIssued}</p>
+                  <p className="text-xs text-slate-400">Тест. токены выдано: {creditIssued}</p>
                 )}
                 {creditSpent > 0 && (
-                  <p className="text-xs text-slate-400">Использовано кредита: {creditSpent}</p>
+                  <p className="text-xs text-slate-400">Тест. токены потрачено: {creditSpent}</p>
                 )}
                 <p className="text-xs text-slate-400">Потрачено: {wallet?.total_spent ?? 0} т.</p>
               </div>

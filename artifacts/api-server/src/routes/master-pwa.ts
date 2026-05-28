@@ -431,18 +431,25 @@ router.get("/home", requireMasterPwa, async (req, res) => {
   // Wallet balance for token model (includes credit limit)
   const wallet = await ensureWallet(masterId);
   const tokensBalance = Number(wallet.tokensBalance);
-  const creditTokensIssued = Number((wallet as any).creditTokensIssued ?? 0);
+  const creditLimitTokens = Number(wallet.creditLimitTokens ?? 0);
   const creditTokensSpent = Number((wallet as any).creditTokensSpent ?? 0);
-  const walletBalance = tokensBalance + creditTokensIssued;
+  const walletBalance = tokensBalance + creditLimitTokens;
 
-  // Enrich availableOrders with tokensCost
+  // Enrich availableOrders with tokensCost + explanation
   const allServiceTypes = [...new Set(availableOrders.map((o: any) => o.serviceType))];
-  const tokenCostMap = new Map<string, number>();
+  const tokenCostMap = new Map<string, { cost: number; explanation: string }>();
   for (const st of allServiceTypes) {
-    tokenCostMap.set(st, await getOrderTokenCost(st));
+    const sampleOrder = availableOrders.find((o: any) => o.serviceType === st);
+    tokenCostMap.set(st, await getOrderTokenCost({
+      serviceType: st,
+      area: sampleOrder?.area ?? null,
+      manualTokenCost: sampleOrder?.manualTokenCost ?? null,
+    }));
   }
   for (const o of availableOrders) {
-    o.tokensCost = tokenCostMap.get(o.serviceType) ?? 1;
+    const tc = tokenCostMap.get(o.serviceType) ?? { cost: 1, explanation: "стандартная стоимость" };
+    o.tokensCost = tc.cost;
+    o.tokensCostExplanation = tc.explanation;
     o.paymentModel = "token";
   }
 
@@ -462,7 +469,14 @@ router.get("/home", requireMasterPwa, async (req, res) => {
 
   const landingServiceTypes = [...new Set(rawLandingLeads.map(l => l.serviceType))];
   for (const st of landingServiceTypes) {
-    if (!tokenCostMap.has(st)) tokenCostMap.set(st, await getOrderTokenCost(st));
+    if (!tokenCostMap.has(st)) {
+      const sample = rawLandingLeads.find(l => l.serviceType === st);
+      tokenCostMap.set(st, await getOrderTokenCost({
+        serviceType: st,
+        area: sample?.area ? Number(sample.area) : null,
+        manualTokenCost: null,
+      }));
+    }
   }
 
   const landingLeads = rawLandingLeads.map(l => {
@@ -476,6 +490,7 @@ router.get("/home", requireMasterPwa, async (req, res) => {
       try { const p = JSON.parse(l.photos); photos = Array.isArray(p) ? p : []; }
       catch { photos = []; }
     }
+    const tc = tokenCostMap.get(l.serviceType) ?? { cost: 1, explanation: "стандартная стоимость" };
     return {
       id: l.id,
       city: l.city,
@@ -485,7 +500,8 @@ router.get("/home", requireMasterPwa, async (req, res) => {
       area: Number(l.area),
       comment: l.comment ?? null,
       createdAt: l.createdAt,
-      tokensCost: tokenCostMap.get(l.serviceType) ?? 1,
+      tokensCost: tc.cost,
+      tokensCostExplanation: tc.explanation,
       photos,
       scheduledAt: l.scheduledAt,
     };
@@ -512,6 +528,7 @@ router.get("/home", requireMasterPwa, async (req, res) => {
     todayActivity,
     walletBalance,
     tokensBalance,
+    creditLimitTokens,
     activeOrders: activeOrders.map(o => ({
       id: o.id,
       leadId: o.leadId ?? null,

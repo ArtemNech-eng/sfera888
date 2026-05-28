@@ -13,6 +13,7 @@ export const masterWalletTable = pgTable("master_wallet", {
   totalRubSpent: integer("total_rub_spent").notNull().default(0),
   creditTokensIssued: numeric("credit_tokens_issued", { precision: 10, scale: 2 }).notNull().default("0"),
   creditTokensSpent: numeric("credit_tokens_spent", { precision: 10, scale: 2 }).notNull().default("0"),
+  creditLimitTokens: numeric("credit_limit_tokens", { precision: 10, scale: 2 }).notNull().default("0"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

@@ -70,14 +70,21 @@ router.get("/my", requireMasterAuth, async (req: any, res: any) => {
   const masterId: number | undefined = (req.session as any).masterId;
   if (!masterId) return res.status(401).json({ error: "Не авторизован" });
   const wallet = await ensureWallet(masterId);
+  const balance = Number(wallet.tokensBalance);
+  const creditLimit = Number(wallet.creditLimitTokens ?? 0);
+  const available = balance + creditLimit;
+  const topupNeeded = balance < 0 ? -balance : 0;
   return res.json({
-    tokens_balance: Number(wallet.tokensBalance),
+    tokens_balance: balance,
     total_purchased: Number(wallet.totalTokensPurchased),
     total_spent: Number(wallet.totalTokensSpent),
     total_refunded: Number(wallet.totalTokensRefunded),
     total_rub_spent: wallet.totalRubSpent,
+    credit_limit_tokens: creditLimit,
     credit_tokens_issued: Number((wallet as any).creditTokensIssued ?? 0),
     credit_tokens_spent: Number((wallet as any).creditTokensSpent ?? 0),
+    available_tokens: available,
+    topup_needed: topupNeeded,
   });
 });
 
@@ -237,14 +244,21 @@ router.get("/:masterId", ops, async (req: any, res: any) => {
   if (isNaN(masterId)) return res.status(400).json({ error: "Неверный masterId" });
 
   const wallet = await ensureWallet(masterId);
+  const balance = Number(wallet.tokensBalance);
+  const creditLimit = Number(wallet.creditLimitTokens ?? 0);
+  const available = balance + creditLimit;
+  const topupNeeded = balance < 0 ? -balance : 0;
   return res.json({
-    tokens_balance: Number(wallet.tokensBalance),
+    tokens_balance: balance,
     total_purchased: Number(wallet.totalTokensPurchased),
     total_spent: Number(wallet.totalTokensSpent),
     total_refunded: Number(wallet.totalTokensRefunded),
     total_rub_spent: wallet.totalRubSpent,
+    credit_limit_tokens: creditLimit,
     credit_tokens_issued: Number((wallet as any).creditTokensIssued ?? 0),
     credit_tokens_spent: Number((wallet as any).creditTokensSpent ?? 0),
+    available_tokens: available,
+    topup_needed: topupNeeded,
   });
 });
 
@@ -445,6 +459,33 @@ router.post("/:masterId/adjustment", adminOnly, async (req: any, res: any) => {
   });
 
   return res.json({ success: true, new_balance: Number(updated.tokensBalance) });
+});
+
+// POST /api/wallet/:masterId/set-credit-limit — установить кредитный лимит (admin)
+router.post("/:masterId/set-credit-limit", adminOnly, async (req: any, res: any) => {
+  const masterId = parseInt(req.params.masterId);
+  if (isNaN(masterId)) return res.status(400).json({ error: "Неверный masterId" });
+
+  const { credit_limit } = req.body;
+  if (credit_limit === undefined || isNaN(Number(credit_limit)) || Number(credit_limit) < 0) {
+    return res.status(400).json({ error: "credit_limit должен быть неотрицательным числом" });
+  }
+
+  const wallet = await ensureWallet(masterId);
+  const [updated] = await db
+    .update(masterWalletTable)
+    .set({
+      creditLimitTokens: String(Number(credit_limit)),
+      updatedAt: new Date(),
+    })
+    .where(eq(masterWalletTable.masterId, masterId))
+    .returning();
+
+  return res.json({
+    success: true,
+    credit_limit_tokens: Number(updated.creditLimitTokens),
+    available_tokens: Number(updated.tokensBalance) + Number(updated.creditLimitTokens),
+  });
 });
 
 // POST /api/wallet/:masterId/credit — выдать тестовые токены в долг (только admin)

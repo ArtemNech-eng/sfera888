@@ -46,6 +46,7 @@ interface TokenMaster {
   totalTokensPurchased: number;
   totalTokensSpent: number;
   totalRubSpent: number;
+  creditLimitTokens: number;
   totalRevenue: number;
   conversion: number | null;
   roi: number | null;
@@ -72,6 +73,7 @@ interface TokenMasterDebt {
   avatarUrl: string | null;
   createdAt: string;
   tokensBalance: number;
+  creditLimitTokens: number;
   creditTokensIssued: number;
   creditTokensSpent: number;
   creditDebt: number;
@@ -449,6 +451,7 @@ function TokenMastersContent() {
                     <th className="text-right px-3 py-3 font-medium cursor-pointer hover:text-foreground select-none" onClick={() => handleSort("balance")}>
                       <span className="flex items-center justify-end gap-1"><SortIcon active={sort === "balance"} sort="balance" />Баланс</span>
                     </th>
+                    <th className="text-right px-3 py-3 font-medium hidden sm:table-cell">Лимит</th>
                     <th className="text-right px-3 py-3 font-medium cursor-pointer hover:text-foreground select-none hidden sm:table-cell" onClick={() => handleSort("orders")}>
                       <span className="flex items-center justify-end gap-1"><SortIcon active={sort === "orders"} sort="orders" />Взял (токен)</span>
                     </th>
@@ -479,7 +482,8 @@ function TokenMastersContent() {
                     <th className="text-left px-3 py-3 font-medium hidden lg:table-cell">Специализация</th>
                     <th className="text-right px-3 py-3 font-medium">Баланс</th>
                     <th className="text-right px-3 py-3 font-medium">Кредитный лимит</th>
-                    <th className="text-right px-3 py-3 font-medium">Использовано кредита</th>
+                    <th className="text-right px-3 py-3 font-medium">Тест. токены выдано</th>
+                    <th className="text-right px-3 py-3 font-medium">Тест. токены потрачено</th>
                     <th className="text-center px-3 py-3 font-medium hidden sm:table-cell">Статус</th>
                     <th className="text-right px-3 py-3 font-medium">Активность</th>
                   </>
@@ -542,6 +546,7 @@ function TokenMastersContent() {
                         <Zap className="w-3 h-3" />{fmt(m.tokensBalance)}
                       </span>
                     </td>
+                    <td className="px-3 py-3 text-right tabular-nums text-muted-foreground hidden sm:table-cell">{fmt(m.creditLimitTokens)}</td>
                     <td className="px-3 py-3 text-right text-muted-foreground tabular-nums hidden sm:table-cell">{fmt(m.tokenOrdersTotal)}</td>
                     <td className="px-3 py-3 text-right hidden md:table-cell">
                       {m.conversion != null ? (
@@ -604,6 +609,7 @@ function TokenMastersContent() {
                         <Zap className="w-3 h-3" />{fmt(m.tokensBalance)}
                       </span>
                     </td>
+                    <td className="px-3 py-3 text-right tabular-nums text-muted-foreground">{fmt(m.creditLimitTokens)}</td>
                     <td className="px-3 py-3 text-right tabular-nums text-muted-foreground">{fmt(m.creditTokensIssued)}</td>
                     <td className="px-3 py-3 text-right tabular-nums text-muted-foreground">{fmt(m.creditTokensSpent)}</td>
                     <td className="px-3 py-3 text-center hidden sm:table-cell">

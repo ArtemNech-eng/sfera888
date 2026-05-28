@@ -34,6 +34,7 @@ interface OrderCard {
   competitorCount: number;
   isRepeatClient: boolean;
   tokensCost?: number;
+  tokensCostExplanation?: string;
   paymentModel?: string;
 }
 
@@ -71,6 +72,7 @@ interface LandingLead {
   comment: string | null;
   createdAt: string;
   tokensCost: number;
+  tokensCostExplanation?: string;
   photos: string[];
   scheduledAt: string | null;
 }
@@ -424,12 +426,17 @@ function RejectReasonSheet({ onConfirm, onCancel }: {
 function InsufficientTokensScreen({
   order,
   walletBalance,
+  tokensBalance,
+  creditLimitTokens,
   onClose,
 }: {
   order: OrderCard;
   walletBalance: number;
+  tokensBalance: number;
+  creditLimitTokens: number;
   onClose: () => void;
 }) {
+  const topupNeeded = tokensBalance < 0 ? -tokensBalance : 0;
   const [, setLocation] = useLocation();
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
@@ -472,9 +479,28 @@ function InsufficientTokensScreen({
             <Coins size={13} /> {order.tokensCost ?? 1} т.
           </span>
         </div>
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">Ваш баланс</span>
-          <span className="font-bold">{walletBalance} т.</span>
+        {order.tokensCostExplanation && (
+          <p className="text-xs text-amber-700/80">{order.tokensCostExplanation}</p>
+        )}
+        <div className="border-t border-amber-200/60 pt-2 space-y-1.5">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-muted-foreground">Баланс</span>
+            <span className="font-medium">{tokensBalance} т.</span>
+          </div>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-muted-foreground">Кредитный лимит</span>
+            <span className="font-medium text-blue-600">+{creditLimitTokens} т.</span>
+          </div>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-muted-foreground">Доступно</span>
+            <span className="font-bold text-emerald-600">{walletBalance} т.</span>
+          </div>
+          {topupNeeded > 0 && (
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Пополнить до 0</span>
+              <span className="font-medium text-red-500">{topupNeeded} т.</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -717,9 +743,9 @@ function LandingLeadSheet({ lead, walletBalance, onClose, onSuccess }: {
 
 // ─── Order Detail Sheet ───────────────────────────────────────────────────────
 
-function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock, walletBalance }: {
+function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock, walletBalance, tokensBalance, creditLimitTokens }: {
   order: OrderCard; onRespond: () => void; onReject: () => void; onClose: () => void;
-  fomoBlock?: FomoBlock | null; walletBalance?: number;
+  fomoBlock?: FomoBlock | null; walletBalance?: number; tokensBalance?: number; creditLimitTokens?: number;
 }) {
   const [state, setState] = useState<"idle" | "loading" | "success" | "constrained_success" | "fomo_blocked" | "needs_contract" | "insufficient_tokens" | "rejecting">("idle");
   const [contractFlags, setContractFlags] = useState<{ contractSigned: boolean; passportVerified: boolean }>({ contractSigned: false, passportVerified: false });
@@ -821,6 +847,8 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock, wall
           <InsufficientTokensScreen
             order={order}
             walletBalance={walletBalance ?? 0}
+            tokensBalance={tokensBalance ?? 0}
+            creditLimitTokens={creditLimitTokens ?? 0}
             onClose={onClose}
           />
         ) : state === "fomo_blocked" && fomoBlock ? (() => {
@@ -1048,6 +1076,9 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock, wall
                 <Coins size={14} /> {order.tokensCost} токен(а)
               </span>
             </div>
+          )}
+          {order.tokensCostExplanation && (
+            <p className="text-xs text-amber-600/80 px-0.5 mb-1">{order.tokensCostExplanation}</p>
           )}
           {isFomoBlocked ? (
             <button onClick={handleRespond}
@@ -1661,7 +1692,16 @@ export default function HomePage() {
                     )}
                   </div>
 
-                  {/* Bottom row: token cost + competition */}
+                  {/* Bottom row: token cost + explanation + competition */}
+                  {order.paymentModel === "token" && (
+                    <div className="flex items-center gap-1.5 text-xs text-amber-600">
+                      <Coins size={12} />
+                      <span className="font-medium">{order.tokensCost ?? 1} т.</span>
+                      {order.tokensCostExplanation && (
+                        <span className="text-amber-500/80">· {order.tokensCostExplanation}</span>
+                      )}
+                    </div>
+                  )}
                   </div>
                 </button>
                 {/* Quick action buttons */}
@@ -1821,6 +1861,8 @@ export default function HomePage() {
           onClose={() => setSelectedAvail(null)}
           fomoBlock={fomoBlock}
           walletBalance={walletBalance}
+          tokensBalance={data?.tokensBalance ?? 0}
+          creditLimitTokens={data?.creditLimitTokens ?? 0}
         />
       )}
       {selectedPending && (

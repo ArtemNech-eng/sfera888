@@ -110,6 +110,7 @@ interface Order {
   photosBefore?: string[];
   photosAfter?: string[];
   photoAct?: string | null;
+  manualTokenCost?: number | null;
 }
 
 interface OrderPanelProps {
@@ -209,6 +210,7 @@ export default function OrderPanel({
   const [partialNote, setPartialNote] = useState("");
 
   const [operatorNoteEdit, setOperatorNoteEdit] = useState<string | null>(null);
+  const [manualTokenCostEdit, setManualTokenCostEdit] = useState<string | null>(null);
 
   const [showReceipts, setShowReceipts] = useState(false);
   const [showCreateReceipt, setShowCreateReceipt] = useState(false);
@@ -343,6 +345,16 @@ export default function OrderPanel({
     onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
   });
 
+  const saveManualTokenCostMutation = useMutation({
+    mutationFn: async ({ orderId: oid, cost }: { orderId: number; cost: number | null }) => {
+      const r = await fetch(`/api/orders/${oid}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ manualTokenCost: cost }) });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Ошибка"); }
+      return r.json();
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/orders"] }); setManualTokenCostEdit(null); toast({ title: "Стоимость в токенах обновлена" }); },
+    onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
+  });
+
   const deleteReceiptMutation = useMutation({
     mutationFn: async (id: number) => {
       const r = await fetch(`/api/receipts/${id}`, { method: "DELETE", credentials: "include" });
@@ -404,6 +416,40 @@ export default function OrderPanel({
               <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
                 <div><p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide">Дата заявки</p><p className="font-medium text-foreground">{formatDate(openOrder.createdAt)}</p></div>
                 <div><p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide">Площадь</p><p className="font-medium text-foreground">{openOrder.area} м²</p></div>
+                <div>
+                  <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide">Стоимость (токены)</p>
+                  {manualTokenCostEdit !== null ? (
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <input
+                        type="number"
+                        step="0.5"
+                        value={manualTokenCostEdit}
+                        onChange={e => setManualTokenCostEdit(e.target.value)}
+                        placeholder="Авто"
+                        className="w-20 border border-border rounded-lg px-2 py-0.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-primary/30"
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => { const v = parseFloat(manualTokenCostEdit); if (!isNaN(v) && v > 0) saveManualTokenCostMutation.mutate({ orderId, cost: v }); else saveManualTokenCostMutation.mutate({ orderId, cost: null }); }}
+                        className="text-emerald-600 hover:text-emerald-700"
+                      ><Check className="w-3 h-3" /></button>
+                      <button
+                        onClick={() => setManualTokenCostEdit(null)}
+                        className="text-slate-400 hover:text-slate-600"
+                      ><X className="w-3 h-3" /></button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <p className="font-medium text-foreground">
+                        {openOrder.manualTokenCost != null ? `${openOrder.manualTokenCost} т` : "Авто"}
+                      </p>
+                      <button
+                        onClick={() => setManualTokenCostEdit(openOrder.manualTokenCost != null ? String(openOrder.manualTokenCost) : "")}
+                        className="text-muted-foreground/50 hover:text-primary"
+                      ><Pencil className="w-3 h-3" /></button>
+                    </div>
+                  )}
+                </div>
                 <div className="col-span-2 border-t border-border/30 pt-2">
                   <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide mb-1.5">Клиент</p>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">

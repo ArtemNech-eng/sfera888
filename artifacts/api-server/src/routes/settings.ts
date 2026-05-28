@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, citiesTable, serviceTypesTable, tokenPackagesTable, serviceTokenPricesTable, tokenPriceHistoryTable, systemSettingsTable } from "@workspace/db";
+import { db, citiesTable, serviceTypesTable, tokenPackagesTable, serviceTokenPricesTable, serviceTokenRulesTable, tokenPriceHistoryTable, systemSettingsTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { requireAuth } from "../middlewares/requireAuth.js";
@@ -245,6 +245,61 @@ router.delete("/service-token-prices/:id", adminOnly, async (req: any, res: any)
   const id = parseInt(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: "Неверный id" });
   await db.update(serviceTokenPricesTable).set({ isActive: false, updatedAt: new Date() }).where(eq(serviceTokenPricesTable.id, id));
+  res.json({ success: true });
+});
+
+// ─── Service token rules (area-based pricing) ────────────────────────────────
+
+router.get("/service-token-rules", adminOnly, async (_req: any, res: any) => {
+  const rows = await db
+    .select()
+    .from(serviceTokenRulesTable)
+    .orderBy(serviceTokenRulesTable.serviceKey, serviceTokenRulesTable.sortOrder);
+  res.json(rows);
+});
+
+router.post("/service-token-rules", adminOnly, async (req: any, res: any) => {
+  const { service_key, title, calc_type, min_area, max_area, tokens_cost, sort_order } = req.body;
+  if (!service_key || !title || calc_type === undefined || tokens_cost === undefined) {
+    return res.status(400).json({ error: "service_key, title, calc_type, tokens_cost обязательны" });
+  }
+  const [inserted] = await db.insert(serviceTokenRulesTable).values({
+    serviceKey: service_key,
+    title,
+    calcType: calc_type,
+    minArea: min_area != null ? String(min_area) : null,
+    maxArea: max_area != null ? String(max_area) : null,
+    tokensCost: String(tokens_cost),
+    sortOrder: sort_order ?? 0,
+  }).returning();
+  res.status(201).json(inserted);
+});
+
+router.put("/service-token-rules/:id", adminOnly, async (req: any, res: any) => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ error: "Неверный id" });
+
+  const old = await db.select().from(serviceTokenRulesTable).where(eq(serviceTokenRulesTable.id, id)).limit(1);
+  if (!old.length) return res.status(404).json({ error: "Правило не найдено" });
+
+  const fields: any = {};
+  if (req.body.service_key !== undefined) fields.serviceKey = req.body.service_key;
+  if (req.body.title !== undefined) fields.title = req.body.title;
+  if (req.body.calc_type !== undefined) fields.calcType = req.body.calc_type;
+  if (req.body.min_area !== undefined) fields.minArea = req.body.min_area != null ? String(req.body.min_area) : null;
+  if (req.body.max_area !== undefined) fields.maxArea = req.body.max_area != null ? String(req.body.max_area) : null;
+  if (req.body.tokens_cost !== undefined) fields.tokensCost = String(req.body.tokens_cost);
+  if (req.body.is_active !== undefined) fields.isActive = req.body.is_active;
+  if (req.body.sort_order !== undefined) fields.sortOrder = req.body.sort_order;
+
+  const [updated] = await db.update(serviceTokenRulesTable).set(fields).where(eq(serviceTokenRulesTable.id, id)).returning();
+  res.json(updated);
+});
+
+router.delete("/service-token-rules/:id", adminOnly, async (req: any, res: any) => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ error: "Неверный id" });
+  await db.update(serviceTokenRulesTable).set({ isActive: false }).where(eq(serviceTokenRulesTable.id, id));
   res.json({ success: true });
 });
 

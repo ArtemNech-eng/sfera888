@@ -239,7 +239,7 @@ router.get("/:id", allOrderRoles, async (req, res) => {
 router.patch("/:id", allOrderRoles, async (req, res) => {
   const id = parseInt(req.params.id as string);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid order ID" });
-  const { status, orderAmount, commission, clientRating, proposedAmount, acceptProposed, approveCancellation, rejectCancellation, restoreOrder, operatorNote, clientCancelReason } = req.body;
+  const { status, orderAmount, commission, clientRating, proposedAmount, acceptProposed, approveCancellation, rejectCancellation, restoreOrder, operatorNote, clientCancelReason, manualTokenCost } = req.body;
 
   // Fetch current order to get masterId before update
   const currentRows = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
@@ -251,6 +251,7 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
   if (proposedAmount !== undefined) updates.proposedAmount = proposedAmount !== null ? String(proposedAmount) : null;
   if (operatorNote !== undefined) updates.operatorNote = operatorNote !== null ? operatorNote : null;
   if (clientCancelReason !== undefined) updates.operatorNote = clientCancelReason || null;
+  if (manualTokenCost !== undefined) updates.manualTokenCost = manualTokenCost !== null ? String(manualTokenCost) : null;
 
   // When operator directly cancels — close dispatches and reset dispatchStatus
   if (status === "cancelled" && current.status !== "cancelled") {

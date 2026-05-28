@@ -44,6 +44,7 @@ interface TokenMasterDetail {
     totalTokensSpent: number;
     totalTokensRefunded: number;
     totalRubSpent: number;
+    creditLimitTokens: number;
   } | null;
   stats: {
     totalRevenue: number;
@@ -389,6 +390,9 @@ function FinanceTab({ m, masterId }: { m: TokenMasterDetail; masterId: number })
   const [creditTokens, setCreditTokens] = useState("1");
   const [creditReason, setCreditReason] = useState("Тестовый заказ");
   const [creditLoading, setCreditLoading] = useState(false);
+  const [showLimitForm, setShowLimitForm] = useState(false);
+  const [limitValue, setLimitValue] = useState("");
+  const [limitLoading, setLimitLoading] = useState(false);
 
   const handleCredit = async () => {
     const n = Number(creditTokens);
@@ -416,6 +420,33 @@ function FinanceTab({ m, masterId }: { m: TokenMasterDetail; masterId: number })
       setCreditLoading(false);
     }
   };
+
+  const handleSetLimit = async () => {
+    const n = Number(limitValue);
+    if (isNaN(n) || n < 0) { toast.error("Лимит должен быть неотрицательным числом"); return; }
+    setLimitLoading(true);
+    try {
+      const r = await fetch(`/api/wallet/${masterId}/set-credit-limit`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ credit_limit: n }),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        toast.error(data.error ?? "Ошибка");
+      } else {
+        toast.success(`Кредитный лимит установлен: ${n} т.`);
+        queryClient.invalidateQueries({ queryKey: ["/api/token-masters", masterId] });
+        setShowLimitForm(false);
+      }
+    } catch {
+      toast.error("Ошибка сети");
+    } finally {
+      setLimitLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Credit token button — admin only */}
@@ -490,6 +521,51 @@ function FinanceTab({ m, masterId }: { m: TokenMasterDetail; masterId: number })
         </div>
       )}
 
+      {/* Set credit limit — admin only */}
+      {user?.role === "admin" && (
+        <div className="rounded-xl border border-violet-200 dark:border-violet-800/40 bg-violet-50 dark:bg-violet-900/20 p-3 space-y-2">
+          <div className="flex items-center gap-1.5">
+            <ShieldCheck className="w-4 h-4 text-violet-600 dark:text-violet-400" />
+            <span className="text-sm font-medium text-violet-700 dark:text-violet-300">Кредитный лимит (допустимый минус)</span>
+          </div>
+          {!showLimitForm ? (
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold">{wallet?.creditLimitTokens ?? 0} т.</span>
+              <button
+                onClick={() => { setLimitValue(String(wallet?.creditLimitTokens ?? 0)); setShowLimitForm(true); }}
+                className="h-8 px-3 text-xs font-semibold rounded-lg bg-violet-500 text-white hover:bg-violet-600 transition-colors"
+              >
+                Изменить
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <input
+                type="number" min={0} step={1}
+                className="w-full h-8 border rounded-lg px-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-violet-300"
+                value={limitValue}
+                onChange={e => setLimitValue(e.target.value)}
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={handleSetLimit}
+                  disabled={limitLoading}
+                  className="flex-1 h-8 text-xs font-semibold rounded-lg bg-violet-500 text-white hover:bg-violet-600 disabled:opacity-50 transition-colors"
+                >
+                  {limitLoading ? "Сохраняю…" : "Сохранить"}
+                </button>
+                <button
+                  onClick={() => setShowLimitForm(false)}
+                  className="h-8 w-8 rounded-lg border flex items-center justify-center hover:bg-muted transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Token balance */}
       <div className={cn(
         "rounded-xl p-4 border",
@@ -504,15 +580,23 @@ function FinanceTab({ m, masterId }: { m: TokenMasterDetail; masterId: number })
         <p className={cn("text-4xl font-bold", wallet && wallet.tokensBalance > 0 ? "text-emerald-700 dark:text-emerald-300" : "text-red-600 dark:text-red-400")}>
           {wallet ? fmt(wallet.tokensBalance) : "0"}
         </p>
-        {wallet && wallet.tokensBalance < 0 && (
-          <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
-            <AlertTriangle className="w-3 h-3" /> Кредитный долг: {Math.abs(wallet.tokensBalance)} ток.
-          </p>
-        )}
-        {wallet && wallet.tokensBalance === 0 && (
-          <p className="text-xs text-amber-500 mt-1 flex items-center gap-1">
-            <AlertTriangle className="w-3 h-3" /> Токены закончились
-          </p>
+        {wallet && (
+          <div className="mt-2 space-y-1">
+            {wallet.creditLimitTokens > 0 && (
+              <p className="text-xs text-blue-600">Кредитный лимит: +{wallet.creditLimitTokens} т.</p>
+            )}
+            <p className="text-xs text-emerald-600">Доступно: {wallet.tokensBalance + wallet.creditLimitTokens} т.</p>
+            {wallet.tokensBalance < 0 && (
+              <p className="text-xs text-red-500 flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" /> Кредитный долг: {Math.abs(wallet.tokensBalance)} ток.
+              </p>
+            )}
+            {wallet.tokensBalance === 0 && (
+              <p className="text-xs text-amber-500 flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" /> Токены закончились
+              </p>
+            )}
+          </div>
         )}
       </div>
 
