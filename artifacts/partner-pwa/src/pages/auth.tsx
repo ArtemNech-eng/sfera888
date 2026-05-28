@@ -3,6 +3,28 @@ import { useAuth } from "@/hooks/use-auth";
 import { Eye, EyeOff, Loader2, User, MapPin, ArrowLeft } from "lucide-react";
 import { authApi } from "@/lib/api";
 
+function formatPhoneInput(raw: string): string {
+  let digits = raw.replace(/\D/g, "");
+  if (digits.startsWith("8")) digits = "7" + digits.slice(1);
+  if (digits.length > 0 && !digits.startsWith("7")) digits = "7" + digits;
+  digits = digits.slice(0, 11);
+  let out = "";
+  if (digits.length >= 1) out = "+" + digits[0];
+  if (digits.length >= 2) out += " (" + digits.slice(1, Math.min(4, digits.length));
+  if (digits.length >= 5) out += ") " + digits.slice(4, Math.min(7, digits.length));
+  if (digits.length >= 8) out += "-" + digits.slice(7, Math.min(9, digits.length));
+  if (digits.length >= 10) out += "-" + digits.slice(9, 11);
+  return out;
+}
+
+function normalizePhone(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 10) return "7" + digits;
+  if (digits.length === 11 && digits[0] === "8") return "7" + digits.slice(1);
+  if (digits.length === 11 && digits[0] === "7") return digits;
+  return digits;
+}
+
 type Mode = "login" | "register" | "reset";
 
 export default function AuthPage() {
@@ -180,7 +202,7 @@ export default function AuthPage() {
               type="tel"
               placeholder="+7 (___) ___-__-__"
               value={phone}
-              onChange={e => { setPhone(e.target.value); setError(""); }}
+              onChange={e => { setPhone(formatPhoneInput(e.target.value)); setError(""); }}
               className="w-full px-4 py-3.5 rounded-xl border border-[#E5E7EB] bg-white text-[#111827] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#34C759] focus:border-transparent text-base"
               autoComplete="tel"
               inputMode="tel"
