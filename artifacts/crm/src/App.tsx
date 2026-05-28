@@ -66,6 +66,7 @@ import PartnerLeadsReviewPage from "@/pages/partner-leads-review";
 import PartnerAnalyticsPage from "@/pages/partner-analytics";
 import TokenMastersPage from "@/pages/token-masters";
 import TokenAnalyticsPage from "@/pages/token-analytics";
+import MasterRevenuePage from "@/pages/master-revenue";
 
 const queryClient = new QueryClient();
 
@@ -114,6 +115,7 @@ function Router() {
       <Route path="/token-purchases" component={TokenPurchasesPage} />
       <Route path="/token-masters" component={TokenMastersPage} />
       <Route path="/token-analytics" component={TokenAnalyticsPage} />
+      <Route path="/master-revenue" component={MasterRevenuePage} />
       <Route path="/partners" component={PartnersPage} />
       <Route path="/partner-leads-review" component={PartnerLeadsReviewPage} />
       <Route path="/partner-analytics" component={PartnerAnalyticsPage} />

@@ -1066,6 +1066,75 @@ router.get("/analytics", ops, async (req: any, res: any) => {
   }
 });
 
+// ─── Per-master revenue breakdown (admin/ops) ────────────────────────────────
+router.get("/master-revenue", ops, async (req: any, res: any) => {
+  try {
+    const rows = await db
+      .select({
+        masterId: walletTransactionsTable.masterId,
+        alias: mastersTable.alias,
+        city: mastersTable.city,
+        month: sql<string>`TO_CHAR(${walletTransactionsTable.createdAt}, 'YYYY-MM')`,
+        revenue: sql<number>`COALESCE(SUM(${walletTransactionsTable.rubAmount}), 0)`,
+      })
+      .from(walletTransactionsTable)
+      .leftJoin(mastersTable, eq(walletTransactionsTable.masterId, mastersTable.id))
+      .where(and(
+        eq(walletTransactionsTable.type, "purchase"),
+        eq(walletTransactionsTable.status, "completed"),
+        sql`${walletTransactionsTable.rubAmount} > 0`,
+        sql`${walletTransactionsTable.createdAt} >= NOW() - INTERVAL '12 months'`,
+      ))
+      .groupBy(
+        walletTransactionsTable.masterId,
+        mastersTable.alias,
+        mastersTable.city,
+        sql`TO_CHAR(${walletTransactionsTable.createdAt}, 'YYYY-MM')`,
+      )
+      .orderBy(
+        walletTransactionsTable.masterId,
+        sql`TO_CHAR(${walletTransactionsTable.createdAt}, 'YYYY-MM')`,
+      );
+
+    const masterMap = new Map<number, {
+      masterId: number; alias: string; city: string;
+      months: { month: string; revenue: number }[];
+    }>();
+    for (const row of rows) {
+      if (!masterMap.has(row.masterId)) {
+        masterMap.set(row.masterId, { masterId: row.masterId, alias: row.alias ?? "—", city: row.city ?? "—", months: [] });
+      }
+      masterMap.get(row.masterId)!.months.push({ month: row.month, revenue: Number(row.revenue) });
+    }
+
+    const now = new Date();
+    const fmtMonth = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const currentMonth = fmtMonth(now);
+    const prevMonth = fmtMonth(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+
+    const result = [...masterMap.values()].map(m => {
+      const monthMap: Record<string, number> = {};
+      for (const x of m.months) monthMap[x.month] = x.revenue;
+
+      const curRev  = monthMap[currentMonth] ?? 0;
+      const prevRev = monthMap[prevMonth] ?? 0;
+      const last3 = [0, 1, 2].reduce((sum, i) => {
+        const key = fmtMonth(new Date(now.getFullYear(), now.getMonth() - i, 1));
+        return sum + (monthMap[key] ?? 0);
+      }, 0);
+      const lastYear = m.months.reduce((s, x) => s + x.revenue, 0);
+      const trend = curRev > prevRev ? "up" : curRev < prevRev ? "down" : "stable";
+
+      return { masterId: m.masterId, alias: m.alias, city: m.city, months: m.months, currentMonth: curRev, prevMonth: prevRev, last3Months: last3, lastYear, trend };
+    }).sort((a, b) => b.currentMonth - a.currentMonth || b.lastYear - a.lastYear);
+
+    return res.json(result);
+  } catch (err: any) {
+    console.error("[wallet/master-revenue]", err);
+    return res.status(500).json({ error: "Ошибка сервера" });
+  }
+});
+
 // ─── Payment screenshot proxy ─────────────────────────────────────────────────
 router.get("/payment-screenshot/:masterId/:filename", async (req, res) => {
   try {
