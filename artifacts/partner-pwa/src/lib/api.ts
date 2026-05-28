@@ -160,6 +160,10 @@ export const leadsApi = {
         comment: data.comment,
       }),
     }),
+  checkDuplicate: async (phone: string): Promise<{ isDuplicate: boolean }> => {
+    const d = await request<{ is_duplicate: boolean }>(`/leads/check-duplicate?phone=${encodeURIComponent(phone)}`);
+    return { isDuplicate: d.is_duplicate ?? false };
+  },
   get: async (id: number): Promise<LeadDetail> => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const d = await request<any>(`/leads/${id}`);

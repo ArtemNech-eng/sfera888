@@ -595,6 +595,26 @@ router.get("/dashboard", requirePartner, async (req: Request, res: Response) => 
   }
 });
 
+// GET /api/partner/leads/check-duplicate?phone=...
+router.get("/leads/check-duplicate", requirePartner, async (req: Request, res: Response) => {
+  try {
+    const phone = String(req.query.phone ?? "").trim();
+    if (!phone) return res.json({ is_duplicate: false });
+
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const [dup] = await db
+      .select({ id: leadsTable.id })
+      .from(leadsTable)
+      .where(and(eq(leadsTable.clientPhone, phone), isNull(leadsTable.deletedAt), gte(leadsTable.createdAt, thirtyDaysAgo)))
+      .limit(1);
+
+    return res.json({ is_duplicate: !!dup });
+  } catch (err) {
+    console.error("[partner/leads/check-duplicate]", err);
+    return res.status(500).json({ error: "server_error" });
+  }
+});
+
 // GET /api/partner/leads
 router.get("/leads", requirePartner, async (req: Request, res: Response) => {
   try {

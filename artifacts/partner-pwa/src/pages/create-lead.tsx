@@ -1,12 +1,24 @@
 import { useState, useRef } from "react";
 import { useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { leadsApi } from "@/lib/api";
 import { AlertTriangle, CheckCircle2, Loader2, ChevronLeft } from "lucide-react";
 
-const SERVICE_TYPES = [
-  "Обои", "Шпаклёвка", "Покраска", "Плитка",
-  "Санузел", "Электрика", "Ремонт под ключ", "Другое",
-];
+async function fetchCities(): Promise<string[]> {
+  const res = await fetch("/api/settings/cities");
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.map((c: { name: string }) => c.name);
+}
+
+async function fetchServices(): Promise<string[]> {
+  const res = await fetch("/api/settings/services");
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.map((s: { name: string }) => s.name);
+}
+
+const FALLBACK_SERVICES = ["Обои", "Шпаклёвка", "Покраска", "Плитка", "Санузел", "Электрика", "Ремонт под ключ", "Другое"];
 
 const SCHEDULE_OPTIONS = [
   { value: "urgent", label: "Срочно" },
@@ -38,6 +50,8 @@ const emptyForm: FormData = {
 
 export default function CreateLeadPage() {
   const [, navigate] = useLocation();
+  const { data: cities = [] } = useQuery<string[]>({ queryKey: ["cities"], queryFn: fetchCities, staleTime: 10 * 60_000 });
+  const { data: serviceTypes = FALLBACK_SERVICES } = useQuery<string[]>({ queryKey: ["services"], queryFn: fetchServices, staleTime: 10 * 60_000 });
   const [form, setForm] = useState<FormData>(emptyForm);
   const [isDuplicate, setIsDuplicate] = useState(false);
   const [checkingDuplicate, setCheckingDuplicate] = useState(false);
@@ -170,12 +184,23 @@ export default function CreateLeadPage() {
         {/* City */}
         <div className="space-y-1.5">
           <label className="text-sm font-medium text-[#374151]">Город <span className="text-red-500">*</span></label>
-          <input
-            value={form.city}
-            onChange={set("city")}
-            placeholder="Москва"
-            className={`w-full px-4 py-3.5 rounded-xl border bg-white text-[#111827] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#34C759] focus:border-transparent text-base ${errors.city ? "border-red-400" : "border-[#E5E7EB]"}`}
-          />
+          {cities.length > 0 ? (
+            <select
+              value={form.city}
+              onChange={set("city")}
+              className={`w-full px-4 py-3.5 rounded-xl border bg-white text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#34C759] focus:border-transparent text-base appearance-none ${errors.city ? "border-red-400" : "border-[#E5E7EB]"} ${!form.city ? "text-[#9CA3AF]" : ""}`}
+            >
+              <option value="">Выберите город</option>
+              {cities.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          ) : (
+            <input
+              value={form.city}
+              onChange={set("city")}
+              placeholder="Москва"
+              className={`w-full px-4 py-3.5 rounded-xl border bg-white text-[#111827] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#34C759] focus:border-transparent text-base ${errors.city ? "border-red-400" : "border-[#E5E7EB]"}`}
+            />
+          )}
           {errors.city && <p className="text-xs text-red-500">{errors.city}</p>}
         </div>
 
@@ -199,7 +224,7 @@ export default function CreateLeadPage() {
             className={`w-full px-4 py-3.5 rounded-xl border bg-white text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#34C759] focus:border-transparent text-base appearance-none ${errors.serviceType ? "border-red-400" : "border-[#E5E7EB]"} ${!form.serviceType ? "text-[#9CA3AF]" : ""}`}
           >
             <option value="">Выберите вид работ</option>
-            {SERVICE_TYPES.map(s => (
+            {serviceTypes.map((s: string) => (
               <option key={s} value={s}>{s}</option>
             ))}
           </select>
