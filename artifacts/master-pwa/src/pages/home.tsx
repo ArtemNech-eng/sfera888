@@ -479,9 +479,6 @@ function InsufficientTokensScreen({
             <Coins size={13} /> {order.tokensCost ?? 1} т.
           </span>
         </div>
-        {order.tokensCostExplanation && (
-          <p className="text-xs text-amber-700/80">{order.tokensCostExplanation}</p>
-        )}
         <div className="border-t border-amber-200/60 pt-2 space-y-1.5">
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">Баланс</span>
@@ -1076,9 +1073,6 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock, wall
                 <Coins size={14} /> {order.tokensCost} токен(а)
               </span>
             </div>
-          )}
-          {order.tokensCostExplanation && (
-            <p className="text-xs text-amber-600/80 px-0.5 mb-1">{order.tokensCostExplanation}</p>
           )}
           {isFomoBlocked ? (
             <button onClick={handleRespond}
@@ -1697,9 +1691,6 @@ export default function HomePage() {
                     <div className="flex items-center gap-1.5 text-xs text-amber-600">
                       <Coins size={12} />
                       <span className="font-medium">{order.tokensCost ?? 1} т.</span>
-                      {order.tokensCostExplanation && (
-                        <span className="text-amber-500/80">· {order.tokensCostExplanation}</span>
-                      )}
                     </div>
                   )}
                   </div>
