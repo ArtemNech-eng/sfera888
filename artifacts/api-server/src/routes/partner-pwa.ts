@@ -58,6 +58,9 @@ interface BillingCalc {
   bonusEarned: number;
   totalEarned: number;
   payoutDate: string;
+  holdLeadsCount: number;
+  holdEarned: number;
+  adBudget: number;
 }
 
 /** Рассчитать текущий расчётный период для партнёра */
@@ -71,6 +74,11 @@ async function calcCurrentBillingPeriod(
   const targetLeads = 30;
   const salaryMax = 15000;
   const bonusPerLead = 250;
+
+  // Настройки hold-модели
+  const payoutModel = await getSetting("partner_payout_model", "classic");
+  const holdAmount = parseInt(await getSetting("partner_hold_amount", "500"));
+  const adBudgetDaily = parseInt(await getSetting("partner_ad_budget_daily", "500"));
 
   // Определяем период
   const isFirstPeriod =
@@ -152,6 +160,15 @@ async function calcCurrentBillingPeriod(
   // Итого
   const totalEarned = fixedSalaryEarned + bonusEarned;
 
+  // Hold-модель: холд-лиды = принятые мастером (токен потрачен) и не отменены
+  // Для простоты используем текущий tokenSpentCount как holdLeadsCount
+  // В проде можно добавить проверку 48ч через assigned_at
+  const holdLeadsCount = tokenSpentCount;
+  const holdEarned = holdLeadsCount * holdAmount;
+
+  // Рекламный бюджет — только в первый период
+  const adBudget = isFirstPeriod ? daysInPeriod * adBudgetDaily : 0;
+
   // Дата выплаты — 1-5 число следующего месяца
   const nextMonth = new Date(periodEnd.getFullYear(), periodEnd.getMonth() + 1, 1);
   const payoutDate = nextMonth.toISOString().slice(0, 10);
@@ -171,6 +188,9 @@ async function calcCurrentBillingPeriod(
     bonusEarned,
     totalEarned,
     payoutDate,
+    holdLeadsCount,
+    holdEarned,
+    adBudget,
   };
 }
 
@@ -485,6 +505,12 @@ router.get("/dashboard", requirePartner, async (req: Request, res: Response) => 
     const bonusEarned = billing?.bonusEarned ?? 0;
     const totalEarned = billing?.totalEarned ?? 0;
 
+    // Hold model data
+    const payoutModel = await getSetting("partner_payout_model", "classic");
+    const holdLeadsCount = billing?.holdLeadsCount ?? 0;
+    const holdEarned = billing?.holdEarned ?? 0;
+    const adBudget = billing?.adBudget ?? 0;
+
     const progressPct = Math.min(Math.round((leadsTotal / monthPlan) * 100), 100);
 
     // Последние 5 лидов
@@ -536,6 +562,12 @@ router.get("/dashboard", requirePartner, async (req: Request, res: Response) => 
             payout_date: billing.payoutDate,
           }
         : null,
+      payout_model: payoutModel,
+      hold: {
+        leads_count: holdLeadsCount,
+        earnings: holdEarned,
+        ad_budget: adBudget,
+      },
       recent_leads: recentLeads.map((l) => ({
         id: l.id,
         client_name: l.clientName,
@@ -707,6 +739,7 @@ router.post("/leads", requirePartner, async (req: Request, res: Response) => {
 router.get("/payouts", requirePartner, async (req: Request, res: Response) => {
   try {
     const partner = (req as any).partner;
+    const payoutModel = await getSetting("partner_payout_model", "classic");
 
     const periods = await db
       .select()
@@ -730,6 +763,10 @@ router.get("/payouts", requirePartner, async (req: Request, res: Response) => {
         bonus_per_lead: p.bonusPerLead,
         bonus_earned: Number(p.bonusEarned),
         total_earned: Number(p.totalEarned),
+        hold_leads_count: p.holdLeadsCount,
+        hold_earned: Number(p.holdEarned),
+        ad_budget: Number(p.adBudget),
+        payout_model: payoutModel,
         status: p.status,
         created_at: p.createdAt,
         paid_at: p.paidAt,
@@ -770,6 +807,9 @@ router.get("/billing-period/current", requirePartner, async (req: Request, res: 
       bonus_per_lead: billing.bonusPerLead,
       bonus_earned: billing.bonusEarned,
       total_earned: billing.totalEarned,
+      hold_leads_count: billing.holdLeadsCount,
+      hold_earned: billing.holdEarned,
+      ad_budget: billing.adBudget,
       status: "calculating",
       payout_date: billing.payoutDate,
     });

@@ -30,7 +30,8 @@ export default function DashboardPage() {
 
   if (!data) return null;
 
-  const { kpi, plan, fixed, earnings, recentLeads } = data;
+  const { kpi, plan, fixed, earnings, recentLeads, payoutModel, hold } = data;
+  const isHold = payoutModel === "hold";
 
   return (
     <div className="min-h-dvh bg-[#F8F9FA] pb-24">
@@ -45,35 +46,60 @@ export default function DashboardPage() {
         <div className="grid grid-cols-2 gap-3">
           <StatsCard label="Лидов сегодня" value={kpi.leadsToday} />
           <StatsCard label="Лидов за период" value={kpi.leadsPeriod} />
-          <StatsCard label="Принятых заявок" value={kpi.acceptedPeriod} accent />
-          <StatsCard label="Заработок" value={`${fmt(kpi.earningsPeriod)} ₽`} accent />
+          {isHold ? (
+            <>
+              <StatsCard label="Холд-лиды" value={hold?.leadsCount ?? 0} accent />
+              <StatsCard label="Заработок" value={`${fmt(hold?.earnings ?? 0)} ₽`} accent />
+            </>
+          ) : (
+            <>
+              <StatsCard label="Принятых заявок" value={kpi.acceptedPeriod} accent />
+              <StatsCard label="Заработок" value={`${fmt(kpi.earningsPeriod)} ₽`} accent />
+            </>
+          )}
         </div>
 
         {/* Plan */}
-        <PlanProgressBar
-          current={plan.current}
-          target={plan.target}
-          completed={plan.completed}
-        />
+        {!isHold && (
+          <PlanProgressBar
+            current={plan.current}
+            target={plan.target}
+            completed={plan.completed}
+          />
+        )}
 
         {/* Fixed */}
-        <FixedSalaryProgress
-          currentLeads={fixed.currentLeads}
-          targetLeads={fixed.targetLeads}
-          maxFixed={fixed.maxFixed}
-          currentFixed={fixed.currentFixed}
-          fixedPct={fixed.fixedPct}
-        />
+        {!isHold && (
+          <FixedSalaryProgress
+            currentLeads={fixed.currentLeads}
+            targetLeads={fixed.targetLeads}
+            maxFixed={fixed.maxFixed}
+            currentFixed={fixed.currentFixed}
+            fixedPct={fixed.fixedPct}
+          />
+        )}
 
         {/* Earnings */}
-        <EarningsCard
-          fixedAmount={earnings.fixedAmount}
-          fixedPct={earnings.fixedPct}
-          bonusCount={earnings.bonusCount}
-          bonusPerLead={earnings.bonusPerLead}
-          bonusAmount={earnings.bonusAmount}
-          total={earnings.total}
-        />
+        {!isHold && (
+          <EarningsCard
+            fixedAmount={earnings.fixedAmount}
+            fixedPct={earnings.fixedPct}
+            bonusCount={earnings.bonusCount}
+            bonusPerLead={earnings.bonusPerLead}
+            bonusAmount={earnings.bonusAmount}
+            total={earnings.total}
+          />
+        )}
+
+        {/* Hold ad budget info */}
+        {isHold && hold && hold.adBudget > 0 && (
+          <div className="bg-white rounded-2xl p-4 shadow-sm border border-[#E5E7EB] space-y-2">
+            <div className="text-sm font-semibold text-[#111827]">Рекламный бюджет</div>
+            <div className="text-xs text-[#6B7280] leading-relaxed">
+              В первый месяц компания инвестирует {fmt(hold.adBudget)} ₽ в рекламный бюджет.
+            </div>
+          </div>
+        )}
 
         {/* Recent leads */}
         {recentLeads.length > 0 && (

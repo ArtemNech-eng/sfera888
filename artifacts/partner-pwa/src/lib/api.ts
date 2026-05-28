@@ -116,6 +116,14 @@ export const dashboardApi = {
         total: d.earnings?.total ?? 0,
       },
       recentLeads: (d.recent_leads ?? []).map(mapLead),
+      payoutModel: d.payout_model ?? "classic",
+      hold: d.hold
+        ? {
+            leadsCount: d.hold.leads_count ?? 0,
+            earnings: d.hold.earnings ?? 0,
+            adBudget: d.hold.ad_budget ?? 0,
+          }
+        : null,
     };
   },
 };
@@ -171,6 +179,10 @@ export const billingApi = {
         fixedAmount: p.fixed_salary_earned ?? 0,
         bonusAmount: p.bonus_earned ?? 0,
         totalAmount: p.total_earned ?? 0,
+        holdLeadsCount: p.hold_leads_count ?? 0,
+        holdEarned: p.hold_earned ?? 0,
+        adBudget: p.ad_budget ?? 0,
+        payoutModel: p.payout_model ?? "classic",
         status: p.status ?? "pending",
         periodStart: String(p.period_start ?? "").slice(0, 10),
         periodEnd: String(p.period_end ?? "").slice(0, 10),
@@ -220,6 +232,12 @@ export interface DashboardData {
     total: number;
   };
   recentLeads: Lead[];
+  payoutModel: "classic" | "hold";
+  hold: {
+    leadsCount: number;
+    earnings: number;
+    adBudget: number;
+  } | null;
 }
 
 export interface Lead {
@@ -268,6 +286,10 @@ export interface BillingPeriod {
   fixedAmount: number;
   bonusAmount: number;
   totalAmount: number;
+  holdLeadsCount: number;
+  holdEarned: number;
+  adBudget: number;
+  payoutModel: "classic" | "hold";
   status: string;
   periodStart: string;
   periodEnd: string;

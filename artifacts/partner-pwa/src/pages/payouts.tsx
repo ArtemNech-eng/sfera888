@@ -16,6 +16,7 @@ const statusConfig: Record<string, { label: string; color: string; bg: string }>
 
 function PeriodCard({ p }: { p: BillingPeriod }) {
   const cfg = statusConfig[p.status] ?? { label: p.status, color: "#374151", bg: "#F3F4F6" };
+  const isHold = p.payoutModel === "hold";
 
   return (
     <div className="bg-white rounded-2xl p-4 shadow-sm border border-[#E5E7EB] space-y-3">
@@ -36,35 +37,75 @@ function PeriodCard({ p }: { p: BillingPeriod }) {
           <div className="text-xs text-[#6B7280]">Лидов подано</div>
           <div className="font-bold text-[#111827]">{p.leadsCount}</div>
         </div>
-        <div className="bg-[#F8F9FA] rounded-xl p-2.5">
-          <div className="text-xs text-[#6B7280]">Принятых заявок</div>
-          <div className="font-bold text-[#34C759]">{p.acceptedCount}</div>
-        </div>
-        <div className="bg-[#F8F9FA] rounded-xl p-2.5">
-          <div className="text-xs text-[#6B7280]">Выполнение плана</div>
-          <div className="font-bold text-[#111827]">{p.planPct}%</div>
-        </div>
-        <div className="bg-[#F8F9FA] rounded-xl p-2.5">
-          <div className="text-xs text-[#6B7280]">% от фиксы</div>
-          <div className="font-bold text-[#111827]">{p.fixedPct}%</div>
-        </div>
+        {isHold ? (
+          <>
+            <div className="bg-[#F8F9FA] rounded-xl p-2.5">
+              <div className="text-xs text-[#6B7280]">Холд-лиды</div>
+              <div className="font-bold text-[#34C759]">{p.holdLeadsCount}</div>
+            </div>
+            <div className="bg-[#F8F9FA] rounded-xl p-2.5">
+              <div className="text-xs text-[#6B7280]">Заработок</div>
+              <div className="font-bold text-[#111827]">{fmt(p.holdEarned)} ₽</div>
+            </div>
+            {p.adBudget > 0 && (
+              <div className="bg-[#F8F9FA] rounded-xl p-2.5">
+                <div className="text-xs text-[#6B7280]">Рекл. бюджет</div>
+                <div className="font-bold text-[#111827]">{fmt(p.adBudget)} ₽</div>
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="bg-[#F8F9FA] rounded-xl p-2.5">
+              <div className="text-xs text-[#6B7280]">Принятых заявок</div>
+              <div className="font-bold text-[#34C759]">{p.acceptedCount}</div>
+            </div>
+            <div className="bg-[#F8F9FA] rounded-xl p-2.5">
+              <div className="text-xs text-[#6B7280]">Выполнение плана</div>
+              <div className="font-bold text-[#111827]">{p.planPct}%</div>
+            </div>
+            <div className="bg-[#F8F9FA] rounded-xl p-2.5">
+              <div className="text-xs text-[#6B7280]">% от фиксы</div>
+              <div className="font-bold text-[#111827]">{p.fixedPct}%</div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Amounts */}
-      <div className="space-y-1">
-        <div className="flex justify-between text-sm">
-          <span className="text-[#6B7280]">Фиксированная часть</span>
-          <span className="font-medium text-[#111827]">{fmt(p.fixedAmount)} ₽</span>
+      {isHold ? (
+        <div className="space-y-1">
+          <div className="flex justify-between text-sm">
+            <span className="text-[#6B7280]">Холд ({p.holdLeadsCount} лиды)</span>
+            <span className="font-medium text-[#111827]">{fmt(p.holdEarned)} ₽</span>
+          </div>
+          {p.adBudget > 0 && (
+            <div className="flex justify-between text-sm">
+              <span className="text-[#6B7280]">Рекламный бюджет</span>
+              <span className="font-medium text-[#111827]">{fmt(p.adBudget)} ₽</span>
+            </div>
+          )}
+          <div className="flex justify-between text-sm font-semibold border-t border-[#E5E7EB] pt-2 mt-1">
+            <span className="text-[#111827]">Итого</span>
+            <span className="text-[#34C759] text-base">{fmt(p.holdEarned)} ₽</span>
+          </div>
         </div>
-        <div className="flex justify-between text-sm">
-          <span className="text-[#6B7280]">Бонус ({p.acceptedCount} заявки)</span>
-          <span className="font-medium text-[#111827]">{fmt(p.bonusAmount)} ₽</span>
+      ) : (
+        <div className="space-y-1">
+          <div className="flex justify-between text-sm">
+            <span className="text-[#6B7280]">Фиксированная часть</span>
+            <span className="font-medium text-[#111827]">{fmt(p.fixedAmount)} ₽</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-[#6B7280]">Бонус ({p.acceptedCount} заявки)</span>
+            <span className="font-medium text-[#111827]">{fmt(p.bonusAmount)} ₽</span>
+          </div>
+          <div className="flex justify-between text-sm font-semibold border-t border-[#E5E7EB] pt-2 mt-1">
+            <span className="text-[#111827]">Итого</span>
+            <span className="text-[#34C759] text-base">{fmt(p.totalAmount)} ₽</span>
+          </div>
         </div>
-        <div className="flex justify-between text-sm font-semibold border-t border-[#E5E7EB] pt-2 mt-1">
-          <span className="text-[#111827]">Итого</span>
-          <span className="text-[#34C759] text-base">{fmt(p.totalAmount)} ₽</span>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -85,9 +126,15 @@ export default function PayoutsPage() {
       {/* Explanation */}
       <div className="mx-4 mt-4 bg-blue-50 border border-blue-100 rounded-2xl p-4 space-y-1.5">
         <p className="text-xs font-semibold text-blue-800">Как считается заработок</p>
-        <p className="text-xs text-blue-700">
-          Фикс — пропорционально числу лидов относительно цели. Бонус — за каждую принятую заявку (мастер взял в работу).
-        </p>
+        {data?.[0]?.payoutModel === "hold" ? (
+          <p className="text-xs text-blue-700">
+            500 ₽ за каждый лид, который мастер взял в работу и не отменил в течение 48 часов. В первый месяц компания инвестирует в рекламный бюджет.
+          </p>
+        ) : (
+          <p className="text-xs text-blue-700">
+            Фикс — пропорционально числу лидов относительно цели. Бонус — за каждую принятую заявку (мастер взял в работу).
+          </p>
+        )}
       </div>
 
       <div className="px-4 py-4">
