@@ -511,6 +511,25 @@ async function runMigrations() {
       ADD COLUMN IF NOT EXISTS status VARCHAR(50) NOT NULL DEFAULT 'pending',
       ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMP
   `);
+  // ── Active token packages (burning packages model) ─────────────────────────
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS master_active_packages (
+      id            SERIAL PRIMARY KEY,
+      master_id     INTEGER NOT NULL REFERENCES masters(id),
+      package_type  VARCHAR(20) NOT NULL DEFAULT 'paid',
+      tokens_total  NUMERIC(10,2) NOT NULL DEFAULT 0,
+      tokens_remaining NUMERIC(10,2) NOT NULL DEFAULT 0,
+      expires_at    TIMESTAMP NOT NULL,
+      status        VARCHAR(20) NOT NULL DEFAULT 'active',
+      is_debt_paid  BOOLEAN NOT NULL DEFAULT TRUE,
+      transaction_id INTEGER,
+      created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at    TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS idx_master_active_packages_master ON master_active_packages(master_id, status, expires_at)
+  `);
   console.log("[startup] Migrations applied");
 }
 

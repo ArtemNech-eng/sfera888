@@ -1,5 +1,5 @@
-import { db, masterWalletTable, walletTransactionsTable, serviceTokenPricesTable, serviceTokenRulesTable, cityTokenMultipliersTable } from "@workspace/db";
-import { eq, or, and, sql } from "drizzle-orm";
+import { db, masterWalletTable, walletTransactionsTable, serviceTokenPricesTable, serviceTokenRulesTable, cityTokenMultipliersTable, masterActivePackagesTable } from "@workspace/db";
+import { eq, or, and, sql, gte } from "drizzle-orm";
 
 // ─── Ensure wallet row exists ─────────────────────────────────────────────────
 
@@ -296,4 +296,160 @@ export async function refundTokens(params: {
     .update(walletTransactionsTable)
     .set({ status: "completed" })
     .where(eq(walletTransactionsTable.id, transactionId));
+}
+
+// ─── Expire overdue packages ────────────────────────────────────────────────
+
+export async function expirePackages(masterId: number) {
+  const now = new Date();
+  await db
+    .update(masterActivePackagesTable)
+    .set({ status: "expired", updatedAt: now })
+    .where(and(
+      eq(masterActivePackagesTable.masterId, masterId),
+      eq(masterActivePackagesTable.status, "active"),
+      sql`${masterActivePackagesTable.expiresAt} < ${now}`,
+    ));
+}
+
+// ─── Get active (non-expired) packages for a master ─────────────────────────
+
+export async function getActivePackages(masterId: number) {
+  await expirePackages(masterId);
+  const rows = await db
+    .select()
+    .from(masterActivePackagesTable)
+    .where(and(
+      eq(masterActivePackagesTable.masterId, masterId),
+      eq(masterActivePackagesTable.status, "active"),
+      gte(masterActivePackagesTable.tokensRemaining, "0"),
+    ))
+    .orderBy(masterActivePackagesTable.createdAt);
+  return rows;
+}
+
+// ─── Check if master is blocked by unpaid credit debt ─────────────────────────
+
+export async function checkDebtBlock(masterId: number): Promise<{
+  blocked: boolean;
+  reason?: string;
+}> {
+  await expirePackages(masterId);
+  const rows = await db
+    .select()
+    .from(masterActivePackagesTable)
+    .where(and(
+      eq(masterActivePackagesTable.masterId, masterId),
+      eq(masterActivePackagesTable.packageType, "credit"),
+      eq(masterActivePackagesTable.isDebtPaid, false),
+      eq(masterActivePackagesTable.status, "expired"),
+      sql`${masterActivePackagesTable.tokensRemaining} = 0`,
+    ))
+    .limit(1);
+
+  if (rows.length > 0) {
+    return {
+      blocked: true,
+      reason: "Оплатите тестовый заказ, купив любой стандартный пакет, чтобы продолжить работу",
+    };
+  }
+  return { blocked: false };
+}
+
+// ─── Create a new active package ─────────────────────────────────────────────
+
+export async function createActivePackage(params: {
+  masterId: number;
+  tokensTotal: number;
+  packageType: "paid" | "credit" | "bonus";
+  expiresAt: Date;
+  transactionId?: number;
+  isDebtPaid?: boolean;
+}) {
+  const { masterId, tokensTotal, packageType, expiresAt, transactionId, isDebtPaid } = params;
+  const [row] = await db
+    .insert(masterActivePackagesTable)
+    .values({
+      masterId,
+      tokensTotal: String(tokensTotal),
+      tokensRemaining: String(tokensTotal),
+      packageType,
+      expiresAt,
+      transactionId,
+      isDebtPaid: isDebtPaid ?? true,
+    })
+    .returning();
+  return row;
+}
+
+// ─── Deduct tokens from active packages (FIFO, oldest first) ─────────────────
+
+export async function deductFromPackages(params: {
+  masterId: number;
+  orderId: number;
+  tokensCost: number;
+  serviceType: string;
+}): Promise<{ success: boolean; error?: string }> {
+  const { masterId, orderId, tokensCost, serviceType } = params;
+
+  await expirePackages(masterId);
+
+  // Check debt block first
+  const debt = await checkDebtBlock(masterId);
+  if (debt.blocked) {
+    return { success: false, error: debt.reason };
+  }
+
+  const packages = await getActivePackages(masterId);
+  const totalAvailable = packages.reduce((s, p) => s + Number(p.tokensRemaining), 0);
+
+  if (totalAvailable < tokensCost) {
+    return { success: false, error: `Недостаточно токенов в активных пакетах. Доступно: ${totalAvailable} т., требуется: ${tokensCost} т.` };
+  }
+
+  let remaining = tokensCost;
+  for (const pack of packages) {
+    if (remaining <= 0) break;
+    const packRem = Number(pack.tokensRemaining);
+    const deduct = Math.min(remaining, packRem);
+    const newRem = packRem - deduct;
+    const newStatus = newRem <= 0 ? "exhausted" : pack.status;
+
+    await db
+      .update(masterActivePackagesTable)
+      .set({
+        tokensRemaining: String(newRem),
+        status: newStatus,
+        updatedAt: new Date(),
+      })
+      .where(eq(masterActivePackagesTable.id, pack.id));
+
+    remaining -= deduct;
+  }
+
+  // Insert spend transaction
+  await db.insert(walletTransactionsTable).values({
+    masterId,
+    type: "spend",
+    tokensAmount: String(-tokensCost),
+    orderId,
+    reason: `Оплата заказа #${orderId} (${serviceType})`,
+    createdBy: "system",
+    status: "completed",
+  });
+
+  return { success: true };
+}
+
+// ─── Pay off credit debt when master buys a paid package ────────────────────
+
+export async function payOffDebt(masterId: number) {
+  await db
+    .update(masterActivePackagesTable)
+    .set({ isDebtPaid: true, updatedAt: new Date() })
+    .where(and(
+      eq(masterActivePackagesTable.masterId, masterId),
+      eq(masterActivePackagesTable.packageType, "credit"),
+      eq(masterActivePackagesTable.isDebtPaid, false),
+    ));
 }

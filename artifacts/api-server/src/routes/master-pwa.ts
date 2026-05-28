@@ -12,7 +12,7 @@ import { objectStorageClient, s3Client } from "../lib/objectStorage.js";
 import { getBotLink, sendOnboardingMemo, sendMaxMessage } from "../maxBot.js";
 import { notifyManagerMasterResponse, notifyManagerNewMaster } from "../managerBot.js";
 import { getFomoBlock, logFomoEvent, checkFomoTransition } from "../lib/fomoBlock.js";
-import { getOrderTokenCost, deductTokens, ensureWallet, checkTokenBalance, deductTokensForLead } from "../lib/tokenWallet.js";
+import { getOrderTokenCost, deductTokens, ensureWallet, checkTokenBalance, deductTokensForLead, checkDebtBlock, deductFromPackages } from "../lib/tokenWallet.js";
 import { sendPushToMaster } from "../lib/push.js";
 import { sendPushToClient } from "../lib/clientPush.js";
 import { performBroadcast } from "../lib/broadcastOrder.js";
@@ -435,6 +435,9 @@ router.get("/home", requireMasterPwa, async (req, res) => {
   const creditTokensSpent = Number((wallet as any).creditTokensSpent ?? 0);
   const walletBalance = tokensBalance + creditLimitTokens;
 
+  // Active packages for burning-package model
+  const activePackages = await getActivePackages(masterId);
+
   // Enrich availableOrders with tokensCost + explanation
   const allServiceTypes = [...new Set(availableOrders.map((o: any) => o.serviceType))];
   const tokenCostMap = new Map<string, { cost: number; explanation: string }>();
@@ -531,6 +534,14 @@ router.get("/home", requireMasterPwa, async (req, res) => {
     walletBalance,
     tokensBalance,
     creditLimitTokens,
+    debtBlock: await checkDebtBlock(masterId),
+    activePackages: activePackages.map(p => ({
+      id: p.id,
+      packageType: p.packageType,
+      tokensTotal: Number(p.tokensTotal),
+      tokensRemaining: Number(p.tokensRemaining),
+      expiresAt: p.expiresAt,
+    })),
     activeOrders: activeOrders.map(o => ({
       id: o.id,
       leadId: o.leadId ?? null,
@@ -774,8 +785,14 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
       });
     }
 
-    // Deduct tokens
-    const deduction = await deductTokens({
+    // Check debt block before deducting
+    const debt = await checkDebtBlock(masterId);
+    if (debt.blocked) {
+      return res.status(403).json({ error: debt.reason, debtBlocked: true });
+    }
+
+    // Deduct tokens from active packages
+    const deduction = await deductFromPackages({
       masterId,
       orderId,
       tokensCost,
@@ -1047,41 +1064,15 @@ router.post("/leads/:id/respond", requireMasterPwa, async (req: any, res: any) =
 
   // Token cost
   const { cost: tokensCost } = await getOrderTokenCost({ serviceType: lead.serviceType, area: lead.area ? Number(lead.area) : null, manualTokenCost: null, city: lead.city ?? null });
-  const { ok, balance } = await checkTokenBalance(masterId, tokensCost);
-  if (!ok) {
-    return res.status(402).json({
-      insufficientTokens: true,
-      balance,
-      required: tokensCost,
-      error: `Недостаточно токенов. Баланс: ${balance} т., требуется: ${tokensCost} т.`,
-    });
+
+  // Check debt block
+  const debt = await checkDebtBlock(masterId);
+  if (debt.blocked) {
+    return res.status(403).json({ error: debt.reason, debtBlocked: true });
   }
 
-  // Deduct tokens
-  const deduction = await deductTokensForLead({ masterId, leadId, tokensCost, serviceType: lead.serviceType });
-  if (!deduction.success) {
-    return res.status(402).json({ insufficientTokens: true, error: deduction.error });
-  }
-
-  // Insert lead_responses — UNIQUE(lead_id) enforces exclusivity
-  try {
-    await db.execute(
-      sql`INSERT INTO lead_responses (lead_id, master_id, tokens_spent) VALUES (${leadId}, ${masterId}, ${tokensCost})`
-    );
-  } catch (e: any) {
-    // Race condition: another master got there first — refund tokens
-    if (e?.code === "23505" || e?.constraint?.includes("lead_responses")) {
-      // Refund: re-add balance
-      await db.execute(
-        sql`UPDATE master_wallet SET tokens_balance = tokens_balance + ${tokensCost}, updated_at = NOW() WHERE master_id = ${masterId}`
-      );
-      return res.status(409).json({ error: "Заявка только что занята другим мастером", alreadyTaken: true });
-    }
-    throw e;
-  }
-
-  // Create a proper order from this landing lead so it appears as an active order
-  const insertedOrder = await db.insert(ordersTable).values({
+  // Create order first so we have an orderId for spend transaction
+  const [insertedOrder] = await db.insert(ordersTable).values({
     leadId: lead.id,
     city: lead.city,
     district: lead.district ?? "",
@@ -1099,7 +1090,32 @@ router.post("/leads/:id/respond", requireMasterPwa, async (req: any, res: any) =
     source: "landing",
     paymentModel: "token",
     tokensCharged: String(tokensCost),
-  }).returning({ id: ordersTable.id });
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }).returning();
+  const orderId = insertedOrder.id;
+
+  // Deduct tokens from active packages
+  const deduction = await deductFromPackages({ masterId, orderId, tokensCost, serviceType: lead.serviceType });
+  if (!deduction.success) {
+    // Rollback: delete the created order
+    await db.delete(ordersTable).where(eq(ordersTable.id, orderId));
+    return res.status(402).json({ insufficientTokens: true, error: deduction.error });
+  }
+
+  // Insert lead_responses — UNIQUE(lead_id) enforces exclusivity
+  try {
+    await db.execute(
+      sql`INSERT INTO lead_responses (lead_id, master_id, tokens_spent) VALUES (${leadId}, ${masterId}, ${tokensCost})`
+    );
+  } catch (e: any) {
+    // Race condition: another master got there first — rollback everything
+    if (e?.code === "23505" || e?.constraint?.includes("lead_responses")) {
+      await db.delete(ordersTable).where(eq(ordersTable.id, orderId));
+      return res.status(409).json({ error: "Заявка только что занята другим мастером", alreadyTaken: true });
+    }
+    throw e;
+  }
 
   // Update lead status so it no longer appears as new in CRM
   await db.update(leadsTable).set({ status: "sent_to_work" }).where(eq(leadsTable.id, leadId));
@@ -1109,8 +1125,7 @@ router.post("/leads/:id/respond", requireMasterPwa, async (req: any, res: any) =
     clientName: lead.clientName,
     clientPhone: lead.clientPhone,
     tokensCost,
-    newBalance: deduction.newBalance,
-    orderId: insertedOrder[0].id,
+    orderId,
   });
 });
 

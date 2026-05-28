@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db, masterWalletTable, walletTransactionsTable, tokenPackagesTable, ordersTable, mastersTable } from "@workspace/db";
 import { eq, desc, and, inArray, sql, count } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
-import { refundTokens } from "../lib/tokenWallet.js";
+import { refundTokens, createActivePackage, payOffDebt, getActivePackages, checkDebtBlock } from "../lib/tokenWallet.js";
 import multer from "multer";
 import sharp from "sharp";
 import { objectStorageClient, s3Client } from "../lib/objectStorage.js";
@@ -85,6 +85,42 @@ router.get("/my", requireMasterAuth, async (req: any, res: any) => {
     credit_tokens_spent: Number((wallet as any).creditTokensSpent ?? 0),
     available_tokens: available,
     topup_needed: topupNeeded,
+  });
+});
+
+// GET /api/wallet/my/packages — активные пакеты мастера (PWA)
+router.get("/my/packages", requireMasterAuth, async (req: any, res: any) => {
+  const masterId: number | undefined = (req.session as any).masterId;
+  if (!masterId) return res.status(401).json({ error: "Не авторизован" });
+
+  const packages = await getActivePackages(masterId);
+  return res.json({
+    packages: packages.map(p => ({
+      id: p.id,
+      package_type: p.packageType,
+      tokens_total: Number(p.tokensTotal),
+      tokens_remaining: Number(p.tokensRemaining),
+      expires_at: p.expiresAt,
+      status: p.status,
+      is_debt_paid: p.isDebtPaid,
+    })),
+  });
+});
+
+// GET /api/wallet/my/packages/check — проверка блокировки + суммарный баланс
+router.get("/my/packages/check", requireMasterAuth, async (req: any, res: any) => {
+  const masterId: number | undefined = (req.session as any).masterId;
+  if (!masterId) return res.status(401).json({ error: "Не авторизован" });
+
+  const debt = await checkDebtBlock(masterId);
+  const packages = await getActivePackages(masterId);
+  const totalRemaining = packages.reduce((s, p) => s + Number(p.tokensRemaining), 0);
+
+  return res.json({
+    blocked: debt.blocked,
+    block_reason: debt.reason,
+    total_remaining: totalRemaining,
+    packages_count: packages.length,
   });
 });
 
@@ -262,6 +298,25 @@ router.get("/:masterId", ops, async (req: any, res: any) => {
   });
 });
 
+// GET /api/wallet/:masterId/packages — активные пакеты (CRM/admin)
+router.get("/:masterId/packages", ops, async (req: any, res: any) => {
+  const masterId = parseInt(req.params.masterId);
+  if (isNaN(masterId)) return res.status(400).json({ error: "Неверный masterId" });
+
+  const packages = await getActivePackages(masterId);
+  return res.json({
+    packages: packages.map(p => ({
+      id: p.id,
+      package_type: p.packageType,
+      tokens_total: Number(p.tokensTotal),
+      tokens_remaining: Number(p.tokensRemaining),
+      expires_at: p.expiresAt,
+      status: p.status,
+      is_debt_paid: p.isDebtPaid,
+    })),
+  });
+});
+
 // GET /api/wallet/:masterId/transactions — история операций
 router.get("/:masterId/transactions", ops, async (req: any, res: any) => {
   const masterId = parseInt(req.params.masterId);
@@ -362,7 +417,46 @@ router.post("/:masterId/purchase", ops, async (req: any, res: any) => {
     status: "completed",
   });
 
+  // Create active package (30 days expiry)
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 30);
+  await createActivePackage({
+    masterId,
+    tokensTotal: tokensToAdd,
+    packageType: "paid",
+    expiresAt,
+  });
+
+  // Pay off any credit debt
+  await payOffDebt(masterId);
+
   return res.json({ success: true, new_balance: Number(updated.tokensBalance) });
+});
+
+// POST /api/wallet/:masterId/active-package — создать пакет токенов (admin)
+router.post("/:masterId/active-package", adminOnly, async (req: any, res: any) => {
+  const masterId = parseInt(req.params.masterId);
+  if (isNaN(masterId)) return res.status(400).json({ error: "Неверный masterId" });
+
+  const { tokens, package_type, expires_days, is_debt_paid } = req.body;
+  const tokensNum = Number(tokens);
+  if (!tokensNum || isNaN(tokensNum) || tokensNum <= 0) {
+    return res.status(400).json({ error: "tokens должен быть положительным числом" });
+  }
+  const type = package_type === "credit" ? "credit" : package_type === "bonus" ? "bonus" : "paid";
+  const days = Math.min(365, Math.max(1, Number(expires_days) || 30));
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + days);
+
+  const pkg = await createActivePackage({
+    masterId,
+    tokensTotal: tokensNum,
+    packageType: type,
+    expiresAt,
+    isDebtPaid: is_debt_paid ?? (type !== "credit"),
+  });
+
+  return res.json({ success: true, package_id: pkg.id, expires_at: expiresAt });
 });
 
 // POST /api/wallet/:masterId/bonus — бонусное начисление
@@ -580,6 +674,20 @@ router.post("/:masterId/confirm-purchase", ops, async (req: any, res: any) => {
   await db.update(walletTransactionsTable)
     .set({ status: "completed", reason: `${tx.reason ?? ""} | Подтверждено администратором` })
     .where(eq(walletTransactionsTable.id, tx.id));
+
+  // Create active package (30 days expiry)
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 30);
+  await createActivePackage({
+    masterId,
+    tokensTotal: tokensToAdd,
+    packageType: "paid",
+    expiresAt,
+    transactionId: tx.id,
+  });
+
+  // Pay off any credit debt
+  await payOffDebt(masterId);
 
   return res.json({ success: true, tokens_added: tokensToAdd, new_balance: newBalance });
 });
