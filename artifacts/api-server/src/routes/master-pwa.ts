@@ -14,15 +14,12 @@ import { notifyManagerMasterResponse, notifyManagerNewMaster } from "../managerB
 import { getFomoBlock, logFomoEvent, checkFomoTransition } from "../lib/fomoBlock.js";
 import {
   getOrderTokenCost,
-  deductTokens,
   ensureWallet,
-  deductTokensForLead,
-  checkDebtBlock,
-  deductFromPackages,
-  deductFromPackagesTx,
+  checkTokenBalance,
+  deductTokensTx,
   TokenWalletError,
   ERR_INSUFFICIENT_TOKENS,
-  ERR_DEBT_BLOCKED,
+  ERR_ORDER_ALREADY_TAKEN,
 } from "../lib/tokenWallet.js";
 import { sendPushToMaster } from "../lib/push.js";
 import { sendPushToClient } from "../lib/clientPush.js";
@@ -446,9 +443,6 @@ router.get("/home", requireMasterPwa, async (req, res) => {
   const creditTokensSpent = Number((wallet as any).creditTokensSpent ?? 0);
   const walletBalance = tokensBalance + creditLimitTokens;
 
-  // Active packages for burning-package model
-  const activePackages = await getActivePackages(masterId);
-
   // Enrich availableOrders with tokensCost + explanation
   const allServiceTypes = [...new Set(availableOrders.map((o: any) => o.serviceType))];
   const tokenCostMap = new Map<string, { cost: number; explanation: string }>();
@@ -545,14 +539,6 @@ router.get("/home", requireMasterPwa, async (req, res) => {
     walletBalance,
     tokensBalance,
     creditLimitTokens,
-    debtBlock: await checkDebtBlock(masterId),
-    activePackages: activePackages.map(p => ({
-      id: p.id,
-      packageType: p.packageType,
-      tokensTotal: Number(p.tokensTotal),
-      tokensRemaining: Number(p.tokensRemaining),
-      expiresAt: p.expiresAt,
-    })),
     activeOrders: activeOrders.map(o => ({
       id: o.id,
       leadId: o.leadId ?? null,
@@ -786,10 +772,10 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
   if ((order as any).paymentModel === "token") {
     const { cost: tokensCost } = await getOrderTokenCost({ serviceType: order.serviceType, area: order.area ? Number(order.area) : null, manualTokenCost: (order as any).manualTokenCost ?? null, city: order.city ?? null });
 
-    // Pre-check debt (fast path — avoid opening tx if blocked)
-    const debtPre = await checkDebtBlock(masterId);
-    if (debtPre.blocked) {
-      return res.status(403).json({ error: debtPre.reason, debtBlocked: true });
+    // Pre-check balance (fast path — avoid opening tx if insufficient)
+    const balanceCheck = await checkTokenBalance(masterId, tokensCost);
+    if (!balanceCheck.ok) {
+      return res.status(402).json({ error: balanceCheck.error, insufficientTokens: true });
     }
 
     // Compute target column before tx (read-only helpers)
@@ -798,8 +784,8 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
 
     try {
       await db.transaction(async (tx) => {
-        // 1. Deduct tokens — single source of truth (packages + row locks)
-        const deduction = await deductFromPackagesTx(tx, {
+        // 1. Deduct tokens — single source of truth (balance + row lock)
+        const deduction = await deductTokensTx(tx, {
           masterId,
           orderId,
           tokensCost,
@@ -809,8 +795,8 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
           throw deduction.error; // triggers ROLLBACK
         }
 
-        // 2. Auto-assign order to master
-        await tx.update(ordersTable).set({
+        // 2. Auto-assign order to master (only if still waiting_master)
+        const updatedOrders = await tx.update(ordersTable).set({
           masterId,
           status: "master_assigned" as any,
           dispatchStatus: "assigned",
@@ -818,7 +804,17 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
           assignedAt: new Date(),
           tokensCharged: String(tokensCost),
           updatedAt: new Date(),
-        }).where(eq(ordersTable.id, orderId));
+        }).where(and(
+          eq(ordersTable.id, orderId),
+          eq(ordersTable.status, "waiting_master"),
+        )).returning();
+
+        if (updatedOrders.length === 0) {
+          throw new TokenWalletError(
+            ERR_ORDER_ALREADY_TAKEN,
+            "Заказ уже взял другой мастер"
+          );
+        }
 
         // 3. Mark this dispatch as assigned
         await tx.update(orderDispatchesTable)
@@ -846,8 +842,8 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
         if (e.code === ERR_INSUFFICIENT_TOKENS) {
           return res.status(402).json({ error: e.message, insufficientTokens: true });
         }
-        if (e.code === ERR_DEBT_BLOCKED) {
-          return res.status(403).json({ error: e.message, debtBlocked: true });
+        if (e.code === ERR_ORDER_ALREADY_TAKEN) {
+          return res.status(409).json({ error: "ORDER_ALREADY_TAKEN", message: e.message });
         }
       }
       throw e;
@@ -1079,10 +1075,10 @@ router.post("/leads/:id/respond", requireMasterPwa, async (req: any, res: any) =
   // Token cost
   const { cost: tokensCost } = await getOrderTokenCost({ serviceType: lead.serviceType, area: lead.area ? Number(lead.area) : null, manualTokenCost: null, city: lead.city ?? null });
 
-  // Pre-check debt (fast path)
-  const debtPre = await checkDebtBlock(masterId);
-  if (debtPre.blocked) {
-    return res.status(403).json({ error: debtPre.reason, debtBlocked: true });
+  // Pre-check balance (fast path)
+  const balanceCheck = await checkTokenBalance(masterId, tokensCost);
+  if (!balanceCheck.ok) {
+    return res.status(402).json({ error: balanceCheck.error, insufficientTokens: true });
   }
 
   let orderId = 0;
@@ -1113,8 +1109,8 @@ router.post("/leads/:id/respond", requireMasterPwa, async (req: any, res: any) =
       }).returning();
       orderId = insertedOrder.id;
 
-      // 2. Deduct tokens — single source of truth
-      const deduction = await deductFromPackagesTx(tx, { masterId, orderId, tokensCost, serviceType: lead.serviceType });
+      // 2. Deduct tokens — single source of truth (balance + row lock)
+      const deduction = await deductTokensTx(tx, { masterId, orderId, tokensCost, serviceType: lead.serviceType });
       if (!deduction.success) {
         throw deduction.error; // triggers ROLLBACK (order insert undone)
       }
@@ -1131,9 +1127,6 @@ router.post("/leads/:id/respond", requireMasterPwa, async (req: any, res: any) =
     if (e instanceof TokenWalletError) {
       if (e.code === ERR_INSUFFICIENT_TOKENS) {
         return res.status(402).json({ error: e.message, insufficientTokens: true });
-      }
-      if (e.code === ERR_DEBT_BLOCKED) {
-        return res.status(403).json({ error: e.message, debtBlocked: true });
       }
     }
     if (e?.code === "23505" || String(e?.message).includes("lead_responses")) {

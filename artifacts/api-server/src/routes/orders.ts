@@ -304,21 +304,23 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
   }
   if (status && !newStatus) newStatus = status;
 
-  // "Accept proposed" — copy proposedAmount → orderAmount and auto-calc commission
+  // "Accept proposed" — copy proposedAmount → orderAmount and auto-calc commission (commission only for non-token orders)
   if (acceptProposed && current.proposedAmount) {
     const amt = Number(current.proposedAmount);
     updates.orderAmount = String(amt);
-    const commSettings = await getCommissionSettings();
-    updates.commission = String(calculateCommission(amt, commSettings));
+    if (current.paymentModel !== "token") {
+      const commSettings = await getCommissionSettings();
+      updates.commission = String(calculateCommission(amt, commSettings));
+    }
   } else if (orderAmount !== undefined) {
     updates.orderAmount = orderAmount !== null ? String(orderAmount) : null;
     if (commission !== undefined) {
       updates.commission = commission !== null ? String(commission) : null;
-    } else if (orderAmount !== null) {
+    } else if (orderAmount !== null && current.paymentModel !== "token") {
       const commSettings = await getCommissionSettings();
       updates.commission = String(calculateCommission(Number(orderAmount), commSettings));
     }
-  } else if (commission !== undefined) {
+  } else if (commission !== undefined && current.paymentModel !== "token") {
     updates.commission = commission !== null ? String(commission) : null;
   }
   if (clientRating !== undefined) updates.clientRating = clientRating;
@@ -374,7 +376,7 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
   const commissionConfirmed = (acceptProposed && current.proposedAmount) ||
     (orderAmount !== undefined && orderAmount !== null);
   let autoCompleteOrder = false;
-  if (commissionConfirmed && o.masterId && o.orderAmount && o.commission) {
+  if (current.paymentModel !== "token" && commissionConfirmed && o.masterId && o.orderAmount && o.commission) {
     const existingTxRows = await db.select().from(transactionsTable).where(eq(transactionsTable.orderId, id));
     const existingTx = existingTxRows[0];
     const commissionValue = Number(o.commission);
@@ -471,7 +473,7 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
   }
 
   // ── Auto-complete order if commission fully covered by prepayment ─────────────
-  if (autoCompleteOrder && o.status !== "completed") {
+  if (current.paymentModel !== "token" && autoCompleteOrder && o.status !== "completed") {
     await db.update(ordersTable)
       .set({ status: "completed", updatedAt: new Date() })
       .where(eq(ordersTable.id, id));
@@ -503,7 +505,7 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
 
   // ── Delete placeholder transaction when order is cancelled ───────────────────
   const isBeingCancelled = approveCancellation || rejectCancellation || updates.status === "cancelled";
-  if (isBeingCancelled && current.masterId) {
+  if (current.paymentModel !== "token" && isBeingCancelled && current.masterId) {
     const txRows = await db.select().from(transactionsTable).where(eq(transactionsTable.orderId, id));
     const tx = txRows[0];
     if (tx && Number(tx.commission) === 0) {

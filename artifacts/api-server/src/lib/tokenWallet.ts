@@ -1,5 +1,5 @@
-import { db, masterWalletTable, walletTransactionsTable, serviceTokenPricesTable, serviceTokenRulesTable, cityTokenMultipliersTable, masterActivePackagesTable } from "@workspace/db";
-import { eq, or, and, sql, gte } from "drizzle-orm";
+import { db, masterWalletTable, walletTransactionsTable, serviceTokenPricesTable, serviceTokenRulesTable, cityTokenMultipliersTable } from "@workspace/db";
+import { eq, and, sql } from "drizzle-orm";
 
 // ─── Typed errors for token-wallet operations ───────────────────────────────
 
@@ -13,8 +13,7 @@ export class TokenWalletError extends Error {
 }
 
 export const ERR_INSUFFICIENT_TOKENS = "INSUFFICIENT_TOKENS";
-export const ERR_DEBT_BLOCKED = "DEBT_BLOCKED";
-export const ERR_NO_ACTIVE_PACKAGE = "NO_ACTIVE_PACKAGE";
+export const ERR_ORDER_ALREADY_TAKEN = "ORDER_ALREADY_TAKEN";
 
 // ─── Ensure wallet row exists ─────────────────────────────────────────────────
 
@@ -164,17 +163,92 @@ export async function checkTokenBalance(masterId: number, required: number): Pro
   creditLimit: number;
   available: number;
   shortfall: number;
+  error?: string;
 }> {
   const wallet = await ensureWallet(masterId);
   const balance = Number(wallet.tokensBalance);
   const creditLimit = Number(wallet.creditLimitTokens ?? 0);
   const available = balance + creditLimit;
   const ok = available >= required;
-  return { ok, balance, creditLimit, available, shortfall: ok ? 0 : required - available };
+  const shortfall = ok ? 0 : required - available;
+  const error = ok
+    ? undefined
+    : `Недостаточно токенов. Баланс: ${balance} т., доступно с кредитом: ${available} т., требуется: ${required} т.`;
+  return { ok, balance, creditLimit, available, shortfall, error };
 }
 
-// ─── Deduct tokens atomically ─────────────────────────────────────────────────
+// ─── Deduct tokens atomically (balance-based, tx-safe) ────────────────────────
 
+// Internal: tx-accepting version. Caller must wrap in db.transaction.
+export async function deductTokensTx(
+  tx: any,
+  params: {
+    masterId: number;
+    orderId: number | null;
+    tokensCost: number;
+    serviceType: string;
+  }
+): Promise<{ success: true } | { success: false; error: TokenWalletError }> {
+  const { masterId, orderId, tokensCost, serviceType } = params;
+
+  // Read wallet with row lock via FOR UPDATE
+  const walletRows = await tx.execute(sql`
+    SELECT * FROM master_wallet WHERE master_id = ${masterId} FOR UPDATE
+  `);
+  const walletRow = walletRows.rows[0];
+  if (!walletRow) {
+    return {
+      success: false,
+      error: new TokenWalletError(
+        ERR_INSUFFICIENT_TOKENS,
+        "Кошелёк мастера не найден"
+      ),
+    };
+  }
+
+  const currentBalance = Number(walletRow.tokens_balance);
+  const creditLimit = Number(walletRow.credit_limit_tokens ?? 0);
+  const newBalance = currentBalance - tokensCost;
+
+  // Gate: balance must stay above negative credit limit
+  if (newBalance < -creditLimit) {
+    return {
+      success: false,
+      error: new TokenWalletError(
+        ERR_INSUFFICIENT_TOKENS,
+        `Недостаточно токенов. Баланс: ${currentBalance} т., требуется: ${tokensCost} т.`
+      ),
+    };
+  }
+
+  // creditTokensSpent tracks how much of the balance is currently negative (legacy analytics field)
+  const creditTokensSpent = newBalance < 0 ? Math.min(creditLimit, -newBalance) : 0;
+
+  await tx.execute(sql`
+    UPDATE master_wallet
+    SET tokens_balance = ${String(newBalance)},
+        total_tokens_spent = ${String(Number(walletRow.total_tokens_spent) + tokensCost)},
+        credit_tokens_spent = ${String(creditTokensSpent)},
+        updated_at = NOW()
+    WHERE master_id = ${masterId}
+  `);
+
+  await tx.insert(walletTransactionsTable).values({
+    masterId,
+    type: "spend",
+    tokensAmount: String(-tokensCost),
+    orderId,
+    reason: orderId
+      ? `Оплата заказа #${orderId} (${serviceType})`
+      : `Открытие контакта по заявке (${serviceType})`,
+    createdBy: "system",
+    status: "completed",
+  });
+
+  return { success: true };
+}
+
+// Wrapper that opens its own transaction (for standalone / legacy use)
 export async function deductTokens(params: {
   masterId: number;
   orderId: number;
@@ -183,102 +257,18 @@ export async function deductTokens(params: {
 }): Promise<{ success: boolean; newBalance: number; error?: string }> {
   const { masterId, orderId, tokensCost, serviceType } = params;
 
-  const wallet = await ensureWallet(masterId);
-  const currentBalance = Number(wallet.tokensBalance);
-  const creditLimit = Number(wallet.creditLimitTokens ?? 0);
-
-  const newBalance = currentBalance - tokensCost;
-
-  // Check if balance would go below negative credit limit
-  if (newBalance < -creditLimit) {
-    return {
-      success: false,
-      newBalance: currentBalance,
-      error: `Недостаточно токенов и кредитный лимит исчерпан. Баланс: ${currentBalance} т., кредитный лимит: ${creditLimit} т., требуется: ${tokensCost} т.`,
-    };
+  try {
+    const result = await db.transaction(async (tx) =>
+      deductTokensTx(tx, { masterId, orderId, tokensCost, serviceType })
+    );
+    if (!result.success) {
+      return { success: false, newBalance: 0, error: result.error.message };
+    }
+    const wallet = await ensureWallet(masterId);
+    return { success: true, newBalance: Number(wallet.tokensBalance) };
+  } catch (e: any) {
+    return { success: false, newBalance: 0, error: e.message };
   }
-
-  // creditTokensSpent tracks how much of the balance is currently negative (debt)
-  const creditTokensSpent = newBalance < 0 ? Math.min(creditLimit, -newBalance) : 0;
-
-  const updateFields: any = {
-    tokensBalance: String(newBalance),
-    totalTokensSpent: String(Number(wallet.totalTokensSpent) + tokensCost),
-    creditTokensSpent: String(creditTokensSpent),
-    updatedAt: new Date(),
-  };
-
-  const [updated] = await db
-    .update(masterWalletTable)
-    .set(updateFields)
-    .where(eq(masterWalletTable.masterId, masterId))
-    .returning();
-
-  await db.insert(walletTransactionsTable).values({
-    masterId,
-    type: "spend",
-    tokensAmount: String(-tokensCost),
-    orderId,
-    reason: `Оплата заказа #${orderId} (${serviceType})`,
-    createdBy: "system",
-    status: "completed",
-  });
-
-  return { success: true, newBalance: Number(updated.tokensBalance) };
-}
-
-// ─── Deduct tokens for a landing lead (no orderId) ───────────────────────────
-
-export async function deductTokensForLead(params: {
-  masterId: number;
-  leadId: number;
-  tokensCost: number;
-  serviceType: string;
-}): Promise<{ success: boolean; newBalance: number; error?: string }> {
-  const { masterId, leadId, tokensCost, serviceType } = params;
-
-  const wallet = await ensureWallet(masterId);
-  const currentBalance = Number(wallet.tokensBalance);
-  const creditLimit = Number(wallet.creditLimitTokens ?? 0);
-
-  const newBalance = currentBalance - tokensCost;
-
-  // Check if balance would go below negative credit limit
-  if (newBalance < -creditLimit) {
-    return {
-      success: false,
-      newBalance: currentBalance,
-      error: `Недостаточно токенов и кредитный лимит исчерпан. Баланс: ${currentBalance} т., кредитный лимит: ${creditLimit} т., требуется: ${tokensCost} т.`,
-    };
-  }
-
-  // creditTokensSpent tracks how much of the balance is currently negative (debt)
-  const creditTokensSpent = newBalance < 0 ? Math.min(creditLimit, -newBalance) : 0;
-
-  const updateFields: any = {
-    tokensBalance: String(newBalance),
-    totalTokensSpent: String(Number(wallet.totalTokensSpent) + tokensCost),
-    creditTokensSpent: String(creditTokensSpent),
-    updatedAt: new Date(),
-  };
-
-  const [updated] = await db
-    .update(masterWalletTable)
-    .set(updateFields)
-    .where(eq(masterWalletTable.masterId, masterId))
-    .returning();
-
-  await db.insert(walletTransactionsTable).values({
-    masterId,
-    type: "spend",
-    tokensAmount: String(-tokensCost),
-    orderId: null,
-    reason: `Открытие контакта по заявке #${leadId} (${serviceType})`,
-    createdBy: "system",
-    status: "completed",
-  });
-
-  return { success: true, newBalance: Number(updated.tokensBalance) };
 }
 
 // ─── Refund tokens ────────────────────────────────────────────────────────────
@@ -290,7 +280,7 @@ export async function refundTokens(params: {
   reason: string;
   transactionId: number;
 }): Promise<void> {
-  const { masterId, orderId, tokensCost, reason, transactionId } = params;
+  const { masterId, orderId, tokensCost, transactionId } = params;
 
   const wallet = await ensureWallet(masterId);
   const newBalance = Number(wallet.tokensBalance) + tokensCost;
@@ -311,217 +301,4 @@ export async function refundTokens(params: {
     .update(walletTransactionsTable)
     .set({ status: "completed" })
     .where(eq(walletTransactionsTable.id, transactionId));
-}
-
-// ─── Expire overdue packages ────────────────────────────────────────────────
-
-export async function expirePackages(masterId: number) {
-  const now = new Date();
-  await db
-    .update(masterActivePackagesTable)
-    .set({ status: "expired", updatedAt: now })
-    .where(and(
-      eq(masterActivePackagesTable.masterId, masterId),
-      eq(masterActivePackagesTable.status, "active"),
-      sql`${masterActivePackagesTable.expiresAt} < ${now}`,
-    ));
-}
-
-// ─── Get active (non-expired) packages for a master ─────────────────────────
-
-export async function getActivePackages(masterId: number) {
-  await expirePackages(masterId);
-  const rows = await db
-    .select()
-    .from(masterActivePackagesTable)
-    .where(and(
-      eq(masterActivePackagesTable.masterId, masterId),
-      eq(masterActivePackagesTable.status, "active"),
-      gte(masterActivePackagesTable.tokensRemaining, "0"),
-    ))
-    .orderBy(masterActivePackagesTable.createdAt);
-  return rows;
-}
-
-// ─── Check if master is blocked by unpaid credit debt ─────────────────────────
-
-export async function checkDebtBlock(masterId: number): Promise<{
-  blocked: boolean;
-  reason?: string;
-}> {
-  await expirePackages(masterId);
-  const rows = await db
-    .select()
-    .from(masterActivePackagesTable)
-    .where(and(
-      eq(masterActivePackagesTable.masterId, masterId),
-      eq(masterActivePackagesTable.packageType, "credit"),
-      eq(masterActivePackagesTable.isDebtPaid, false),
-      eq(masterActivePackagesTable.status, "expired"),
-      sql`${masterActivePackagesTable.tokensRemaining} = 0`,
-    ))
-    .limit(1);
-
-  if (rows.length > 0) {
-    return {
-      blocked: true,
-      reason: "Оплатите тестовый заказ, купив любой стандартный пакет, чтобы продолжить работу",
-    };
-  }
-  return { blocked: false };
-}
-
-// ─── Create a new active package ─────────────────────────────────────────────
-
-export async function createActivePackage(params: {
-  masterId: number;
-  tokensTotal: number;
-  packageType: "paid" | "credit" | "bonus";
-  expiresAt: Date;
-  transactionId?: number;
-  isDebtPaid?: boolean;
-}) {
-  const { masterId, tokensTotal, packageType, expiresAt, transactionId, isDebtPaid } = params;
-  const [row] = await db
-    .insert(masterActivePackagesTable)
-    .values({
-      masterId,
-      tokensTotal: String(tokensTotal),
-      tokensRemaining: String(tokensTotal),
-      packageType,
-      expiresAt,
-      transactionId,
-      isDebtPaid: isDebtPaid ?? true,
-    })
-    .returning();
-  return row;
-}
-
-// ─── Deduct tokens from active packages (FIFO, oldest first) ─────────────────
-
-// Internal: tx-accepting version. Caller must wrap in db.transaction.
-export async function deductFromPackagesTx(
-  tx: any,
-  params: {
-    masterId: number;
-    orderId: number;
-    tokensCost: number;
-    serviceType: string;
-  }
-): Promise<{ success: true } | { success: false; error: TokenWalletError }> {
-  const { masterId, orderId, tokensCost, serviceType } = params;
-  const now = new Date();
-
-  // 1. Expire overdue packages inline inside tx
-  await tx.execute(sql`
-    UPDATE master_active_packages
-    SET status = 'expired', updated_at = ${now}
-    WHERE master_id = ${masterId}
-      AND status = 'active'
-      AND expires_at < ${now}
-  `);
-
-  // 2. Re-check debt block inside tx with FOR UPDATE
-  const debtRows = await tx.execute(sql`
-    SELECT 1 FROM master_active_packages
-    WHERE master_id = ${masterId}
-      AND package_type = 'credit'
-      AND is_debt_paid = false
-      AND status = 'expired'
-      AND tokens_remaining = 0
-    LIMIT 1
-    FOR UPDATE
-  `);
-  if (debtRows.rows.length > 0) {
-    return {
-      success: false,
-      error: new TokenWalletError(
-        ERR_DEBT_BLOCKED,
-        "Оплатите тестовый заказ, купив любой стандартный пакет, чтобы продолжить работу"
-      ),
-    };
-  }
-
-  // 3. Read active packages with FOR UPDATE (row lock)
-  const pkgRows = await tx.execute(sql`
-    SELECT * FROM master_active_packages
-    WHERE master_id = ${masterId}
-      AND status = 'active'
-      AND tokens_remaining > 0
-      AND expires_at > ${now}
-    ORDER BY created_at ASC
-    FOR UPDATE
-  `);
-  const packages = pkgRows.rows;
-
-  const totalAvailable = packages.reduce(
-    (s: number, p: any) => s + Number(p.tokens_remaining),
-    0
-  );
-
-  if (totalAvailable < tokensCost) {
-    return {
-      success: false,
-      error: new TokenWalletError(
-        ERR_INSUFFICIENT_TOKENS,
-        `Недостаточно токенов в активных пакетах. Доступно: ${totalAvailable} т., требуется: ${tokensCost} т.`
-      ),
-    };
-  }
-
-  // 4. FIFO deduction with locked rows
-  let remaining = tokensCost;
-  for (const pack of packages) {
-    if (remaining <= 0) break;
-    const packRem = Number(pack.tokens_remaining);
-    const deduct = Math.min(remaining, packRem);
-    const newRem = packRem - deduct;
-    const newStatus = newRem <= 0 ? "exhausted" : pack.status;
-
-    await tx.execute(sql`
-      UPDATE master_active_packages
-      SET tokens_remaining = ${String(newRem)},
-          status = ${newStatus},
-          updated_at = ${now}
-      WHERE id = ${pack.id}
-    `);
-
-    remaining -= deduct;
-  }
-
-  // 5. Insert spend transaction
-  await tx.insert(walletTransactionsTable).values({
-    masterId,
-    type: "spend",
-    tokensAmount: String(-tokensCost),
-    orderId,
-    reason: `Оплата заказа #${orderId} (${serviceType})`,
-    createdBy: "system",
-    status: "completed",
-  });
-
-  return { success: true };
-}
-
-// Wrapper that opens its own transaction (for standalone use)
-export async function deductFromPackages(params: {
-  masterId: number;
-  orderId: number;
-  tokensCost: number;
-  serviceType: string;
-}): Promise<{ success: true } | { success: false; error: TokenWalletError }> {
-  return await db.transaction(async (tx) => deductFromPackagesTx(tx, params));
-}
-
-// ─── Pay off credit debt when master buys a paid package ────────────────────
-
-export async function payOffDebt(masterId: number) {
-  await db
-    .update(masterActivePackagesTable)
-    .set({ isDebtPaid: true, updatedAt: new Date() })
-    .where(and(
-      eq(masterActivePackagesTable.masterId, masterId),
-      eq(masterActivePackagesTable.packageType, "credit"),
-      eq(masterActivePackagesTable.isDebtPaid, false),
-    ));
 }

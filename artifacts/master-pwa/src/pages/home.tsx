@@ -10,7 +10,7 @@ import {
   MapPin, Calendar, MessageSquare, Clock,
   ChevronRight, X, Images, Wrench, Zap, PauseCircle,
   PlayCircle, Navigation, Users, Heart, ChevronDown, Briefcase,
-  Eye, EyeOff, Lock, FileText, Bot, Coins, Phone, Maximize, Package,
+  Eye, EyeOff, Lock, FileText, Bot, Coins, Phone, Maximize,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -1463,21 +1463,8 @@ export default function HomePage() {
   const dismissSwipeHint = () => { localStorage.setItem(SWIPE_HINT_KEY, "1"); setShowSwipeHint(false); };
 
   const walletBalance: number = data?.walletBalance ?? 0;
-  const activePackages: any[] = data?.activePackages ?? [];
-  const totalPackageTokens = activePackages.reduce((s: number, p: any) => s + (p.tokensRemaining ?? 0), 0);
-  const debtBlock = data?.debtBlock ?? { blocked: false };
 
   const handleSwipeRespond = async (order: OrderCard) => {
-    // Debt block: cannot respond if unpaid credit debt
-    if (debtBlock.blocked) {
-      toast.error(debtBlock.reason, { duration: 4000 });
-      return;
-    }
-    // Token model: open detail sheet if balance insufficient (package-based)
-    if (order.paymentModel === "token" && (order.tokensCost ?? 1) > totalPackageTokens) {
-      setSelectedAvail(order);
-      return;
-    }
     const fomoBlock: FomoBlock | null = data?.fomoBlock ?? null;
     if (fomoBlock?.isBlocked) {
       api.fomoBlockPress(order.id, fomoBlock.reason ?? null).catch(() => {});
@@ -1569,8 +1556,8 @@ export default function HomePage() {
               onClick={() => setLocation("/wallet")}
               className="flex items-center gap-1 bg-white/15 backdrop-blur-md border border-white/20 px-2.5 py-1.5 rounded-xl hover:bg-white/25 transition-colors shrink-0"
             >
-              <Package size={13} className="shrink-0 text-amber-300" />
-              <span className="font-semibold text-sm leading-none text-white">{totalPackageTokens}</span>
+              <Coins size={13} className="shrink-0 text-amber-300" />
+              <span className="font-semibold text-sm leading-none text-white">{walletBalance}</span>
             </button>
           </div>
 
@@ -1634,41 +1621,6 @@ export default function HomePage() {
           <div className="flex-1">
             <p className="text-sm font-semibold text-foreground">Отклики заблокированы</p>
             <p className="text-xs text-muted-foreground mt-0.5">{fomoBlock.reason}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Debt block banner (unpaid credit package) */}
-      {debtBlock.blocked && (
-        <div className="flex items-start gap-3 bg-card rounded-2xl p-4 shadow-sm border-l-4 border-l-destructive">
-          <Lock size={20} className="text-destructive shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <p className="text-sm font-semibold text-foreground">Лента заблокирована</p>
-            <p className="text-xs text-muted-foreground mt-0.5">{debtBlock.reason}</p>
-            <a href="/wallet" className="text-xs text-primary font-medium mt-1 inline-block">Перейти в Кошелёк →</a>
-          </div>
-        </div>
-      )}
-
-      {/* Active packages summary */}
-      {activePackages.length > 0 && (
-        <div className="flex items-start gap-3 bg-card rounded-2xl p-4 shadow-sm border-l-4 border-l-primary">
-          <Package size={20} className="text-primary shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <p className="text-sm font-semibold text-foreground">Активные пакеты</p>
-            <div className="space-y-1 mt-1">
-              {activePackages.map((p: any) => (
-                <div key={p.id} className="flex items-center justify-between text-xs">
-                  <span className={cn("font-medium",
-                    p.packageType === "credit" ? "text-purple-600" :
-                    p.packageType === "paid" ? "text-emerald-600" : "text-blue-600"
-                  )}>
-                    {p.packageType === "credit" ? "Кредит" : p.packageType === "paid" ? "Платный" : "Бонус"}
-                  </span>
-                  <span className="tabular-nums text-muted-foreground">{p.tokensRemaining} / {p.tokensTotal} т. · до {new Date(p.expiresAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}</span>
-                </div>
-              ))}
-            </div>
           </div>
         </div>
       )}

@@ -46,15 +46,6 @@ interface TokenMasterDetail {
     totalRubSpent: number;
     creditLimitTokens: number;
   } | null;
-  activePackages: {
-    id: number;
-    package_type: string;
-    tokens_total: number;
-    tokens_remaining: number;
-    expires_at: string;
-    status: string;
-    is_debt_paid: boolean;
-  }[];
   stats: {
     totalRevenue: number;
     avgRevenue: number;
@@ -403,14 +394,6 @@ function FinanceTab({ m, masterId }: { m: TokenMasterDetail; masterId: number })
   const [limitValue, setLimitValue] = useState("");
   const [limitLoading, setLimitLoading] = useState(false);
 
-  // Active packages
-  const { data: packagesData } = useQuery({
-    queryKey: ["/api/wallet", masterId, "packages"],
-    queryFn: () => fetch(`/api/wallet/${masterId}/packages`, { credentials: "include" }).then(r => r.json()),
-    enabled: masterId !== null,
-  });
-  const activePackages = packagesData?.packages ?? [];
-
   // Test package form
   const [showTestForm, setShowTestForm] = useState(false);
   const [testTokens, setTestTokens] = useState("1");
@@ -419,23 +402,20 @@ function FinanceTab({ m, masterId }: { m: TokenMasterDetail; masterId: number })
 
   const handleCreateTestPackage = async () => {
     const n = Number(testTokens);
-    const d = Number(testDays);
     if (!n || n < 1) { toast.error("Токены должны быть ≥ 1"); return; }
-    if (!d || d < 1) { toast.error("Срок должен быть ≥ 1 день"); return; }
     setTestLoading(true);
     try {
-      const r = await fetch(`/api/wallet/${masterId}/active-package`, {
+      const r = await fetch(`/api/wallet/${masterId}/bonus`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tokens: n, package_type: "credit", expires_days: d, is_debt_paid: false }),
+        body: JSON.stringify({ tokens: n, reason: "Тестовое начисление" }),
       });
       const data = await r.json();
       if (!r.ok) {
-        toast.error(data.error ?? "Ошибка создания пакета");
+        toast.error(data.error ?? "Ошибка начисления");
       } else {
-        toast.success(`Тестовый пакет создан: ${n} ток. на ${d} дн.`);
-        queryClient.invalidateQueries({ queryKey: ["/api/wallet", masterId, "packages"] });
+        toast.success(`Начислено ${n} ток. на баланс`);
         queryClient.invalidateQueries({ queryKey: ["/api/token-masters", masterId] });
         setShowTestForm(false);
       }
@@ -662,75 +642,32 @@ function FinanceTab({ m, masterId }: { m: TokenMasterDetail; masterId: number })
         </div>
       )}
 
-      {/* Active packages */}
-      {activePackages.length > 0 && (
-        <div className="rounded-xl border bg-muted/30 p-4 space-y-2">
-          <div className="flex items-center gap-2 mb-1">
-            <Package className="w-4 h-4 text-muted-foreground" />
-            <span className="text-sm font-medium">Активные пакеты</span>
-          </div>
-          <div className="space-y-1.5">
-            {activePackages.map((p: any) => (
-              <div key={p.id} className={cn(
-                "flex items-center justify-between text-xs rounded-lg px-3 py-2 border",
-                p.package_type === "credit" ? "bg-purple-50 border-purple-100 dark:bg-purple-900/20 dark:border-purple-800/30" :
-                p.package_type === "paid" ? "bg-emerald-50 border-emerald-100 dark:bg-emerald-900/20 dark:border-emerald-800/30" :
-                "bg-blue-50 border-blue-100 dark:bg-blue-900/20 dark:border-blue-800/30"
-              )}>
-                <div className="flex items-center gap-1.5">
-                  <span className={cn("font-semibold",
-                    p.package_type === "credit" ? "text-purple-700 dark:text-purple-300" :
-                    p.package_type === "paid" ? "text-emerald-700 dark:text-emerald-300" :
-                    "text-blue-700 dark:text-blue-300"
-                  )}>
-                    {p.package_type === "credit" ? "Кредит" : p.package_type === "paid" ? "Платный" : "Бонус"}
-                  </span>
-                  {!p.is_debt_paid && <span className="text-[10px] text-red-500 font-medium">· долг</span>}
-                </div>
-                <div className="text-right">
-                  <span className="tabular-nums font-medium">{p.tokens_remaining} / {p.tokens_total} т.</span>
-                  <p className="text-[10px] text-muted-foreground">до {format(new Date(p.expires_at), "d MMM", { locale: ru })}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Test package button — admin only */}
       {user?.role === "admin" && (
         <div className="rounded-xl border border-purple-200 dark:border-purple-800/40 bg-purple-50 dark:bg-purple-900/20 p-3 space-y-2">
           <div className="flex items-center gap-1.5">
             <Gift className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-            <span className="text-sm font-medium text-purple-700 dark:text-purple-300">Выдать тестовый пакет (Кредит)</span>
+            <span className="text-sm font-medium text-purple-700 dark:text-purple-300">Начислить тестовые токены</span>
           </div>
           {!showTestForm ? (
             <button
               onClick={() => setShowTestForm(true)}
               className="w-full h-8 text-xs font-semibold rounded-lg bg-purple-500 text-white hover:bg-purple-600 transition-colors flex items-center justify-center gap-1.5"
             >
-              <Gift className="w-3.5 h-3.5" /> Выдать тестовый пакет
+              <Gift className="w-3.5 h-3.5" /> Начислить токены
             </button>
           ) : (
             <div className="space-y-2">
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <label className="text-xs text-muted-foreground">Токены</label>
-                  <input type="number" min={1} step={1}
-                    className="mt-0.5 w-full h-8 border rounded-lg px-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-purple-300"
-                    value={testTokens} onChange={e => setTestTokens(e.target.value)} />
-                </div>
-                <div className="flex-1">
-                  <label className="text-xs text-muted-foreground">Срок (дн.)</label>
-                  <input type="number" min={1} max={30} step={1}
-                    className="mt-0.5 w-full h-8 border rounded-lg px-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-purple-300"
-                    value={testDays} onChange={e => setTestDays(e.target.value)} />
-                </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Токены</label>
+                <input type="number" min={1} step={1}
+                  className="mt-0.5 w-full h-8 border rounded-lg px-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-purple-300"
+                  value={testTokens} onChange={e => setTestTokens(e.target.value)} />
               </div>
               <div className="flex gap-2">
                 <button onClick={handleCreateTestPackage} disabled={testLoading}
                   className="flex-1 h-8 text-xs font-semibold rounded-lg bg-purple-500 text-white hover:bg-purple-600 disabled:opacity-50 transition-colors">
-                  {testLoading ? "Создаю…" : "Подтвердить"}
+                  {testLoading ? "Начисляю…" : "Подтвердить"}
                 </button>
                 <button onClick={() => setShowTestForm(false)}
                   className="h-8 w-8 rounded-lg border flex items-center justify-center hover:bg-muted transition-colors">
