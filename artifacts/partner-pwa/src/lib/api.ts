@@ -161,6 +161,19 @@ export const leadsApi = {
         comment: data.comment,
       }),
     }),
+  update: (id: number, data: Partial<CreateLeadData>) =>
+    request<{ ok: boolean }>(`/leads/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        client_name: data.clientName,
+        client_phone: data.clientPhone,
+        city: data.city,
+        district: data.district,
+        service_type: data.serviceType,
+        area: data.area,
+        comment: data.comment,
+      }),
+    }),
   checkDuplicate: async (phone: string): Promise<{ isDuplicate: boolean }> => {
     const d = await request<{ is_duplicate: boolean }>(`/leads/check-duplicate?phone=${encodeURIComponent(phone)}`);
     return { isDuplicate: d.is_duplicate ?? false };

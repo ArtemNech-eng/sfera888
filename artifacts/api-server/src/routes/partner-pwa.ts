@@ -770,6 +770,56 @@ router.get("/leads/:id", requirePartner, async (req: Request, res: Response) => 
   }
 });
 
+// PATCH /api/partner/leads/:id — редактирование лида пока статус partner_review
+router.patch("/leads/:id", requirePartner, async (req: Request, res: Response) => {
+  try {
+    const partner = (req as any).partner;
+    const leadId = parseInt(req.params.id);
+    if (isNaN(leadId)) return res.status(400).json({ error: "invalid_id" });
+
+    const [lead] = await db
+      .select()
+      .from(leadsTable)
+      .where(and(eq(leadsTable.id, leadId), eq(leadsTable.trafficPartnerId, partner.id), isNull(leadsTable.deletedAt)))
+      .limit(1);
+
+    if (!lead) return res.status(404).json({ error: "not_found" });
+    if (lead.partnerLeadStatus !== "partner_review") {
+      return res.status(403).json({ error: "Редактирование доступно только для лидов на проверке" });
+    }
+
+    const patchSchema = z.object({
+      client_name: z.string().min(1).optional(),
+      client_phone: z.string().min(5).optional(),
+      city: z.string().min(1).optional(),
+      district: z.string().optional(),
+      service_type: z.string().min(1).optional(),
+      area: z.string().optional(),
+      comment: z.string().optional(),
+    });
+
+    const parsed = patchSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: "validation_error", details: parsed.error.flatten() });
+
+    const updates: Record<string, any> = { updatedAt: new Date() };
+    const b = parsed.data;
+    if (b.client_name !== undefined) updates.clientName = b.client_name;
+    if (b.client_phone !== undefined) updates.clientPhone = b.client_phone;
+    if (b.city !== undefined) updates.city = b.city;
+    if (b.district !== undefined) updates.district = b.district;
+    if (b.service_type !== undefined) updates.serviceType = b.service_type;
+    if (b.area !== undefined) updates.area = b.area;
+    if (b.comment !== undefined) updates.comment = b.comment;
+
+    await db.update(leadsTable).set(updates).where(eq(leadsTable.id, leadId));
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("[partner/leads PATCH]", err);
+    return res.status(500).json({ error: "server_error" });
+  }
+});
+
 const createLeadSchema = z.object({
   client_name: z.string().min(1),
   client_phone: z.string().min(5),
