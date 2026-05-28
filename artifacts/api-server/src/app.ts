@@ -932,8 +932,11 @@ if (fs.existsSync(pwaDistPath)) {
 
 const partnerPwaDistPath = path.join(__dirname, "../../partner-pwa/dist/public");
 if (fs.existsSync(partnerPwaDistPath)) {
-  app.use("/partner", express.static(partnerPwaDistPath));
+  app.use("/partner", express.static(partnerPwaDistPath, { maxAge: 0, setHeaders: (res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  }}));
   app.use("/partner", (_req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
     res.sendFile(path.join(partnerPwaDistPath, "index.html"));
   });
 }
