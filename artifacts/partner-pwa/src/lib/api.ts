@@ -48,6 +48,7 @@ function mapLead(l: any): Lead {
     status: l.partner_lead_status ?? l.status ?? "",
     createdAt: l.created_at ?? l.createdAt ?? "",
     scheduledAt: l.scheduled_at ?? l.scheduledAt ?? null,
+    leadChannel: l.lead_channel ?? l.leadChannel ?? null,
   };
 }
 
@@ -182,6 +183,7 @@ export const leadsApi = {
       status: d.status ?? "",
       createdAt: d.created_at,
       scheduledAt: null,
+      leadChannel: d.lead_channel ?? null,
       updatedAt: d.updated_at,
       orderStatus: d.order_status ?? null,
       timeline: (d.timeline ?? []).map((t: any) => ({
@@ -319,6 +321,7 @@ export interface Lead {
   status: string;
   createdAt: string;
   scheduledAt: string | null;
+  leadChannel: string | null;
 }
 
 export interface LeadTimelineItem {

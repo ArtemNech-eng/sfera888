@@ -1,6 +1,14 @@
 import type { Lead } from "@/lib/api";
 import { useLocation } from "wouter";
 
+const channelLabels: Record<string, string> = {
+  avito_partner: "Avito",
+  referral: "Реферальная ссылка",
+  avito_partner_referral: "Реферальная ссылка",
+  landing: "Лендинг",
+  crm: "CRM",
+};
+
 const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
   partner_review:  { label: "На проверке",        color: "#92400E", bg: "#FEF3C7" },
   waiting_master:  { label: "Подтверждён",         color: "#1D4ED8", bg: "#DBEAFE" },
@@ -63,7 +71,12 @@ export default function LeadCard({ lead }: LeadCardProps) {
         </div>
       )}
 
-      <div className="text-xs text-[#6B7280]">{fmt(lead.createdAt)}</div>
+      <div className="flex items-center justify-between">
+        <div className="text-xs text-[#6B7280]">{fmt(lead.createdAt)}</div>
+        {lead.leadChannel && channelLabels[lead.leadChannel] && (
+          <div className="text-xs text-[#9CA3AF]">{channelLabels[lead.leadChannel]}</div>
+        )}
+      </div>
     </div>
   );
 }
