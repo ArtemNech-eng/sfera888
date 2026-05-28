@@ -1,4 +1,4 @@
-import { Switch, Route, Redirect } from "wouter";
+import { Router, Switch, Route, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import BottomNav from "@/components/BottomNav";
@@ -54,19 +54,23 @@ function AppRoutes() {
     return <PendingScreen />;
   }
 
+  const base = import.meta.env.BASE_URL === "/" ? undefined : import.meta.env.BASE_URL?.replace(/\/$/, "");
+
   return (
     <div className="relative">
-      <Switch>
-        <Route path="/" component={DashboardPage} />
-        <Route path="/create-lead" component={CreateLeadPage} />
-        <Route path="/my-leads" component={MyLeadsPage} />
-        <Route path="/leads/:id" component={LeadDetailPage} />
-        <Route path="/payouts" component={PayoutsPage} />
-        <Route path="/profile" component={ProfilePage} />
-        <Route>
-          <Redirect to="/" />
-        </Route>
-      </Switch>
+      <Router base={base}>
+        <Switch>
+          <Route path="/" component={DashboardPage} />
+          <Route path="/create-lead" component={CreateLeadPage} />
+          <Route path="/my-leads" component={MyLeadsPage} />
+          <Route path="/leads/:id" component={LeadDetailPage} />
+          <Route path="/payouts" component={PayoutsPage} />
+          <Route path="/profile" component={ProfilePage} />
+          <Route>
+            <Redirect to="/" />
+          </Route>
+        </Switch>
+      </Router>
       <BottomNav />
     </div>
   );
