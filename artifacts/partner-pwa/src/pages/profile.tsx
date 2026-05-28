@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { LogOut, User, Phone, MapPin, Calendar, Loader2, ChevronRight } from "lucide-react";
+import { LogOut, User, Phone, MapPin, Calendar, Loader2, ChevronRight, Link2, Copy, Check } from "lucide-react";
 
 function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
@@ -18,6 +18,44 @@ function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string;
 
 function fmtDate(s: string) {
   return new Date(s).toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
+}
+
+function ReferralLinkSection({ url }: { url: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {}
+  };
+
+  return (
+    <div className="bg-white rounded-2xl p-4 shadow-sm border border-[#E5E7EB] space-y-3">
+      <div className="flex items-center gap-2">
+        <Link2 size={16} className="text-[#34C759]" />
+        <div className="text-sm font-semibold text-[#111827]">Ваша реферальная ссылка</div>
+      </div>
+      <div className="text-xs text-[#6B7280] leading-relaxed">
+        Поделитесь ссылкой — лиды будут автоматически привязаны к вам
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          readOnly
+          value={url}
+          className="flex-1 text-xs bg-[#F8F9FA] rounded-lg px-3 py-2 text-[#374151] border border-[#E5E7EB] outline-none"
+        />
+        <button
+          onClick={handleCopy}
+          className="shrink-0 flex items-center gap-1.5 px-3 py-2 bg-[#34C759] text-white rounded-lg text-xs font-medium active:opacity-70 transition-opacity"
+        >
+          {copied ? <Check size={14} /> : <Copy size={14} />}
+          {copied ? "Скопировано" : "Копировать"}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export default function ProfilePage() {
@@ -85,6 +123,9 @@ export default function ProfilePage() {
             За подробностями обращайтесь к вашему менеджеру.
           </div>
         </div>
+
+        {/* Referral link */}
+        {partner.referralUrl && <ReferralLinkSection url={partner.referralUrl} />}
 
         {/* Logout */}
         <button

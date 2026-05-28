@@ -445,6 +445,7 @@ router.get("/auth/check", async (req: Request, res: Response) => {
 router.get("/me", requirePartner, async (req: Request, res: Response) => {
   try {
     const partner = (req as any).partner;
+    const landingDomain = process.env.LANDING_DOMAIN || "https://xn--90a0af.xn--p1ai";
     return res.json({
       id: partner.id,
       name: partner.name,
@@ -455,6 +456,8 @@ router.get("/me", requirePartner, async (req: Request, res: Response) => {
       avito_account_link: partner.avitoAccountLink,
       registered_at: partner.registeredAt,
       first_lead_at: partner.firstLeadAt,
+      ref_slug: partner.refSlug,
+      referral_url: partner.refSlug ? `${landingDomain}/r/${partner.refSlug}` : null,
     });
   } catch (err) {
     console.error("[partner/me]", err);

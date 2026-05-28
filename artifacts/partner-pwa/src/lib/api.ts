@@ -26,6 +26,8 @@ function mapPartner(p: any): Partner {
     status: p.status,
     createdAt: p.registered_at ?? p.createdAt ?? "",
     firstLeadAt: p.first_lead_at ?? p.firstLeadAt ?? null,
+    refSlug: p.ref_slug ?? p.refSlug ?? undefined,
+    referralUrl: p.referral_url ?? p.referralUrl ?? undefined,
   };
 }
 
@@ -229,6 +231,8 @@ export interface Partner {
   status: string;
   createdAt: string;
   firstLeadAt: string | null;
+  refSlug?: string;
+  referralUrl?: string;
 }
 
 export interface DashboardData {
