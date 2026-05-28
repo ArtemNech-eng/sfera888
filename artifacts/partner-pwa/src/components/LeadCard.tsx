@@ -59,7 +59,7 @@ export default function LeadCard({ lead }: LeadCardProps) {
 
       {isAccepted && (
         <div className="bg-[#D1FAE5] text-[#065F46] text-xs font-semibold rounded-lg px-3 py-1.5">
-          Заявку взяли — +250 ₽
+          ✓ Заявку взяли в работу
         </div>
       )}
 

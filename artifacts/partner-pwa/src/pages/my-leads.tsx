@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { leadsApi, type LeadsResponse } from "@/lib/api";
-import { Search, Loader2 } from "lucide-react";
+import { Search, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import LeadCard from "@/components/LeadCard";
 
 const STATUS_FILTERS = [
@@ -16,18 +16,27 @@ const STATUS_FILTERS = [
 export default function MyLeadsPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
+  const [page, setPage] = useState(1);
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const searchTimer = { current: 0 as ReturnType<typeof setTimeout> };
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const handleSearch = (v: string) => {
     setSearch(v);
-    clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => setDebouncedSearch(v), 350);
+    clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      setDebouncedSearch(v);
+      setPage(1);
+    }, 350);
+  };
+
+  const handleStatusChange = (v: string) => {
+    setStatus(v);
+    setPage(1);
   };
 
   const { data, isLoading } = useQuery<LeadsResponse>({
-    queryKey: ["leads", status, debouncedSearch],
-    queryFn: () => leadsApi.list({ status: status || undefined, search: debouncedSearch || undefined }),
+    queryKey: ["leads", status, debouncedSearch, page],
+    queryFn: () => leadsApi.list({ status: status || undefined, search: debouncedSearch || undefined, page }),
   });
 
   return (
@@ -52,7 +61,7 @@ export default function MyLeadsPage() {
           {STATUS_FILTERS.map(f => (
             <button
               key={f.value}
-              onClick={() => setStatus(f.value)}
+              onClick={() => handleStatusChange(f.value)}
               className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
                 status === f.value
                   ? "bg-[#34C759] text-white"
@@ -83,8 +92,30 @@ export default function MyLeadsPage() {
             {data.rows.map(lead => (
               <LeadCard key={lead.id} lead={lead} />
             ))}
-            <p className="text-center text-xs text-[#9CA3AF] pt-2">
-              Показано {data.rows.length} из {data.total}
+            {/* Pagination */}
+            {data.total > data.limit && (
+              <div className="flex items-center justify-between pt-3">
+                <button
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="flex items-center gap-1 px-3 py-2 rounded-xl border border-[#E5E7EB] text-xs font-medium text-[#374151] disabled:opacity-40"
+                >
+                  <ChevronLeft size={14} /> Назад
+                </button>
+                <span className="text-xs text-[#9CA3AF]">
+                  {page} / {Math.ceil(data.total / data.limit)}
+                </span>
+                <button
+                  onClick={() => setPage(p => p + 1)}
+                  disabled={page * data.limit >= data.total}
+                  className="flex items-center gap-1 px-3 py-2 rounded-xl border border-[#E5E7EB] text-xs font-medium text-[#374151] disabled:opacity-40"
+                >
+                  Вперёд <ChevronRight size={14} />
+                </button>
+              </div>
+            )}
+            <p className="text-center text-xs text-[#9CA3AF] pt-1">
+              Показано {(page - 1) * data.limit + data.rows.length} из {data.total}
             </p>
           </div>
         )}

@@ -1,10 +1,11 @@
 import { useLocation } from "wouter";
-import { Home, Plus, List, User } from "lucide-react";
+import { Home, Plus, List, User, Wallet } from "lucide-react";
 
 const tabs = [
   { path: "/", icon: Home, label: "Главная" },
   { path: "/create-lead", icon: Plus, label: "Добавить" },
   { path: "/my-leads", icon: List, label: "Лиды" },
+  { path: "/payouts", icon: Wallet, label: "Выплаты" },
   { path: "/profile", icon: User, label: "Профиль" },
 ];
 

@@ -190,6 +190,34 @@ export const leadsApi = {
   },
 };
 
+// ─── Billing period current ───────────────────────────────────────────────────
+
+export interface CurrentBillingPeriod {
+  started: boolean;
+  periodStart?: string;
+  periodEnd?: string;
+  payoutDate?: string;
+  totalEarned?: number;
+  leadsCount?: number;
+  tokenSpentCount?: number;
+}
+
+export const billingPeriodApi = {
+  current: async (): Promise<CurrentBillingPeriod> => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const d = await request<any>("/billing-period/current");
+    return {
+      started: d.started ?? false,
+      periodStart: d.period_start,
+      periodEnd: d.period_end,
+      payoutDate: d.payout_date,
+      totalEarned: d.total_earned ?? 0,
+      leadsCount: d.leads_count ?? 0,
+      tokenSpentCount: d.token_spent_count ?? 0,
+    };
+  },
+};
+
 // ─── Billing ─────────────────────────────────────────────────────────────────
 
 export const billingApi = {

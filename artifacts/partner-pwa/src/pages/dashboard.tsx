@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { dashboardApi, type DashboardData } from "@/lib/api";
+import { dashboardApi, billingPeriodApi, type DashboardData } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
-import { Loader2 } from "lucide-react";
+import { Loader2, CalendarClock } from "lucide-react";
 import StatsCard from "@/components/StatsCard";
 import PlanProgressBar from "@/components/PlanProgressBar";
 import FixedSalaryProgress from "@/components/FixedSalaryProgress";
@@ -18,6 +18,12 @@ export default function DashboardPage() {
     queryKey: ["dashboard"],
     queryFn: dashboardApi.get,
     refetchInterval: 60_000,
+  });
+
+  const { data: billing } = useQuery({
+    queryKey: ["billing-current"],
+    queryFn: billingPeriodApi.current,
+    staleTime: 5 * 60_000,
   });
 
   if (isLoading) {
@@ -97,6 +103,25 @@ export default function DashboardPage() {
             <div className="text-sm font-semibold text-[#111827]">Рекламный бюджет</div>
             <div className="text-xs text-[#6B7280] leading-relaxed">
               В первый месяц компания инвестирует {fmt(hold.adBudget)} ₽ в рекламный бюджет.
+            </div>
+          </div>
+        )}
+
+        {/* Payout date */}
+        {billing?.started && billing.payoutDate && (
+          <div className="bg-white rounded-2xl p-4 shadow-sm border border-[#E5E7EB] flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-[#D1FAE5] flex items-center justify-center shrink-0">
+              <CalendarClock size={18} className="text-[#34C759]" />
+            </div>
+            <div>
+              <div className="text-xs text-[#9CA3AF]">Дата следующей выплаты</div>
+              <div className="text-sm font-semibold text-[#111827]">
+                {new Date(billing.payoutDate).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}
+              </div>
+            </div>
+            <div className="ml-auto text-right">
+              <div className="text-xs text-[#9CA3AF]">Накоплено</div>
+              <div className="text-sm font-bold text-[#34C759]">{fmt(billing.totalEarned ?? 0)} ₽</div>
             </div>
           </div>
         )}
