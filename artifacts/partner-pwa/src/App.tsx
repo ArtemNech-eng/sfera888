@@ -70,8 +70,8 @@ function AppRoutes() {
             <Redirect to="/" />
           </Route>
         </Switch>
+        <BottomNav />
       </Router>
-      <BottomNav />
     </div>
   );
 }
