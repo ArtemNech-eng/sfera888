@@ -69,6 +69,12 @@ export const authApi = {
     return mapPartner(me);
   },
   logout: () => request<void>("/auth/logout", { method: "POST" }),
+  resetPassword: async (phone: string, newPassword: string): Promise<{ ok: boolean; message?: string }> => {
+    return request<{ ok: boolean; message?: string }>("/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ phone, newPassword }),
+    });
+  },
   me: async (): Promise<Partner> => {
     const me = await request<unknown>("/me");
     return mapPartner(me);

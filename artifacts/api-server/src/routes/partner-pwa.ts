@@ -327,6 +327,62 @@ router.post("/auth/register", async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/partner/auth/reset-password — сброс пароля по телефону (MVP, без SMS)
+router.post("/auth/reset-password", async (req: Request, res: Response) => {
+  try {
+    const { phone, newPassword } = req.body;
+    if (!phone || !newPassword || newPassword.length < 6) {
+      return res.status(400).json({ error: "Номер телефона и пароль (мин. 6 символов) обязательны" });
+    }
+
+    // Normalize phone same way as login
+    const digits = phone.replace(/\D/g, "");
+    const phoneVariants = new Set<string>([phone, digits, "+" + digits]);
+    if (digits.startsWith("7") && digits.length === 11) {
+      phoneVariants.add("8" + digits.slice(1));
+      phoneVariants.add(digits.slice(1));
+    }
+    if (digits.startsWith("8") && digits.length === 11) {
+      phoneVariants.add("7" + digits.slice(1));
+      phoneVariants.add("+7" + digits.slice(1));
+      phoneVariants.add(digits.slice(1));
+    }
+
+    const partnersByPhone = await db
+      .select()
+      .from(trafficPartnersTable)
+      .where(or(...Array.from(phoneVariants).map((v) => eq(trafficPartnersTable.phone, v))));
+
+    if (partnersByPhone.length === 0) {
+      return res.status(404).json({ error: "Партнёр с таким номером не найден" });
+    }
+
+    const partner = partnersByPhone[0];
+
+    // Check partner status
+    if (partner.status === "blocked") {
+      return res.status(403).json({ error: "Аккаунт заблокирован" });
+    }
+
+    const [user] = await db
+      .select()
+      .from(usersTable)
+      .where(and(eq(usersTable.id, partner.userId), eq(usersTable.role, "partner")));
+
+    if (!user) {
+      return res.status(404).json({ error: "Пользователь не найден" });
+    }
+
+    const newHash = await bcrypt.hash(newPassword, 10);
+    await db.update(usersTable).set({ passwordHash: newHash }).where(eq(usersTable.id, user.id));
+
+    return res.json({ ok: true, message: "Пароль успешно изменён" });
+  } catch (err) {
+    console.error("[partner auth/reset-password]", err);
+    return res.status(500).json({ error: "server_error" });
+  }
+});
+
 // POST /api/partner/auth/logout
 router.post("/auth/logout", (req: Request, res: Response) => {
   req.session.destroy(() => {

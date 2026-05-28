@@ -426,16 +426,6 @@ export default function WalletPage() {
                   <p className="text-xs text-slate-400">Кредитный лимит: +{creditLimit} т.</p>
                 )}
                 <p className="text-xs text-emerald-400">Доступно: {available} т.</p>
-                {topupNeeded > 0 && (
-                  <p className="text-xs text-red-400">Пополнить до 0: {topupNeeded} т.</p>
-                )}
-                {creditIssued > 0 && (
-                  <p className="text-xs text-slate-400">Тест. токены выдано: {creditIssued}</p>
-                )}
-                {creditSpent > 0 && (
-                  <p className="text-xs text-slate-400">Тест. токены потрачено: {creditSpent}</p>
-                )}
-                <p className="text-xs text-slate-400">Потрачено: {wallet?.total_spent ?? 0} т.</p>
               </div>
               <button
                 onClick={() => document.getElementById("packages-section")?.scrollIntoView({ behavior: "smooth" })}
