@@ -126,6 +126,9 @@ export default function Settings() {
     manual_partner_lead_review: boolean;
     partner_payout_day_start: number;
     partner_payout_day_end: number;
+    partner_payout_model: "classic" | "hold";
+    partner_hold_amount: number;
+    partner_ad_budget_daily: number;
   }
   const [partnerSettings, setPartnerSettings] = useState<PartnerSettings>({
     partner_fixed_salary_max: 15000,
@@ -135,6 +138,9 @@ export default function Settings() {
     manual_partner_lead_review: true,
     partner_payout_day_start: 1,
     partner_payout_day_end: 5,
+    partner_payout_model: "classic",
+    partner_hold_amount: 500,
+    partner_ad_budget_daily: 500,
   });
   const [partnerSettingsLoaded, setPartnerSettingsLoaded] = useState(false);
 
@@ -635,6 +641,95 @@ export default function Settings() {
                   </div>
                 </div>
               </div>
+
+              {/* Payout model selector */}
+              <div className="space-y-3">
+                <label className="text-sm font-medium">Модель оплаты партнёров</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <button
+                    onClick={() => setPartnerSettings(s => ({ ...s, partner_payout_model: "classic" }))}
+                    className={`relative flex flex-col gap-3 p-5 rounded-xl border-2 text-left transition-all ${
+                      partnerSettings.partner_payout_model === "classic"
+                        ? "border-indigo-500 bg-indigo-50"
+                        : "border-border hover:border-indigo-300 bg-background"
+                    }`}
+                  >
+                    {partnerSettings.partner_payout_model === "classic" && (
+                      <span className="absolute top-3 right-3 w-2.5 h-2.5 rounded-full bg-indigo-500" />
+                    )}
+                    <div className="flex items-center gap-2">
+                      <div className={`p-2 rounded-lg ${partnerSettings.partner_payout_model === "classic" ? "bg-indigo-100" : "bg-muted"}`}>
+                        <Percent className={`w-4 h-4 ${partnerSettings.partner_payout_model === "classic" ? "text-indigo-600" : "text-muted-foreground"}`} />
+                      </div>
+                      <span className={`font-semibold ${partnerSettings.partner_payout_model === "classic" ? "text-indigo-700" : "text-foreground"}`}>
+                        Классическая
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      Фиксированная зарплата + бонус за каждую принятую заявку. Партнёр видит план и прогресс.
+                    </p>
+                  </button>
+
+                  <button
+                    onClick={() => setPartnerSettings(s => ({ ...s, partner_payout_model: "hold" }))}
+                    className={`relative flex flex-col gap-3 p-5 rounded-xl border-2 text-left transition-all ${
+                      partnerSettings.partner_payout_model === "hold"
+                        ? "border-emerald-500 bg-emerald-50"
+                        : "border-border hover:border-emerald-300 bg-background"
+                    }`}
+                  >
+                    {partnerSettings.partner_payout_model === "hold" && (
+                      <span className="absolute top-3 right-3 w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                    )}
+                    <div className="flex items-center gap-2">
+                      <div className={`p-2 rounded-lg ${partnerSettings.partner_payout_model === "hold" ? "bg-emerald-100" : "bg-muted"}`}>
+                        <Zap className={`w-4 h-4 ${partnerSettings.partner_payout_model === "hold" ? "text-emerald-600" : "text-muted-foreground"}`} />
+                      </div>
+                      <span className={`font-semibold ${partnerSettings.partner_payout_model === "hold" ? "text-emerald-700" : "text-foreground"}`}>
+                        Холд (по заявкам)
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      Фиксированная сумма за каждый лид, который мастер взял в работу. Рекламный бюджет в первый месяц.
+                    </p>
+                  </button>
+                </div>
+              </div>
+
+              {/* Hold model fields (conditional) */}
+              {partnerSettings.partner_payout_model === "hold" && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Сумма за холд-лид</label>
+                    <p className="text-xs text-muted-foreground">Сколько платим за лид, принятый мастером</p>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min={0}
+                        value={partnerSettings.partner_hold_amount}
+                        onChange={e => setPartnerSettings(s => ({ ...s, partner_hold_amount: Number(e.target.value) }))}
+                        className="w-full pr-12 pl-4 py-2.5 rounded-xl border border-border focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-background text-sm"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">₽</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Рекламный бюджет в день</label>
+                    <p className="text-xs text-muted-foreground">Инвестиции в рекламу для нового партнёра (первый период)</p>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min={0}
+                        value={partnerSettings.partner_ad_budget_daily}
+                        onChange={e => setPartnerSettings(s => ({ ...s, partner_ad_budget_daily: Number(e.target.value) }))}
+                        className="w-full pr-12 pl-4 py-2.5 rounded-xl border border-border focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-background text-sm"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">₽/день</span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Manual review toggle */}
               <div className="flex items-center justify-between p-4 bg-muted/50 rounded-xl">

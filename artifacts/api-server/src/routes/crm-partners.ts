@@ -84,7 +84,7 @@ async function getSetting(key: string, fallback: string): Promise<string> {
 }
 
 async function getPartnerSettings() {
-  const [max, target, bonus, plan, manualReview, payoutStart, payoutEnd] = await Promise.all([
+  const [max, target, bonus, plan, manualReview, payoutStart, payoutEnd, payoutModel, holdAmount, adBudgetDaily] = await Promise.all([
     getSetting("partner_fixed_salary_max", "15000"),
     getSetting("partner_fixed_target_leads", "30"),
     getSetting("partner_bonus_per_accepted_lead", "250"),
@@ -92,6 +92,9 @@ async function getPartnerSettings() {
     getSetting("manual_partner_lead_review", "true"),
     getSetting("partner_payout_day_start", "1"),
     getSetting("partner_payout_day_end", "5"),
+    getSetting("partner_payout_model", "classic"),
+    getSetting("partner_hold_amount", "500"),
+    getSetting("partner_ad_budget_daily", "500"),
   ]);
   return {
     partner_fixed_salary_max: parseInt(max),
@@ -101,6 +104,9 @@ async function getPartnerSettings() {
     manual_partner_lead_review: manualReview === "true",
     partner_payout_day_start: parseInt(payoutStart),
     partner_payout_day_end: parseInt(payoutEnd),
+    partner_payout_model: payoutModel,
+    partner_hold_amount: parseInt(holdAmount),
+    partner_ad_budget_daily: parseInt(adBudgetDaily),
   };
 }
 
@@ -734,6 +740,9 @@ const settingsSchema = z.object({
   manual_partner_lead_review: z.boolean().optional(),
   partner_payout_day_start: z.number().int().min(1).max(31).optional(),
   partner_payout_day_end: z.number().int().min(1).max(31).optional(),
+  partner_payout_model: z.enum(["classic", "hold"]).optional(),
+  partner_hold_amount: z.number().int().min(0).optional(),
+  partner_ad_budget_daily: z.number().int().min(0).optional(),
 });
 
 router.patch("/settings/partner", async (req: Request, res: Response) => {
@@ -800,6 +809,30 @@ router.patch("/settings/partner", async (req: Request, res: Response) => {
           .insert(systemSettingsTable)
           .values({ key: "partner_payout_day_end", value: String(data.partner_payout_day_end), updatedAt: new Date() })
           .onConflictDoUpdate({ target: systemSettingsTable.key, set: { value: String(data.partner_payout_day_end), updatedAt: new Date() } })
+      );
+    }
+    if (data.partner_payout_model !== undefined) {
+      updates.push(
+        db
+          .insert(systemSettingsTable)
+          .values({ key: "partner_payout_model", value: data.partner_payout_model, updatedAt: new Date() })
+          .onConflictDoUpdate({ target: systemSettingsTable.key, set: { value: data.partner_payout_model, updatedAt: new Date() } })
+      );
+    }
+    if (data.partner_hold_amount !== undefined) {
+      updates.push(
+        db
+          .insert(systemSettingsTable)
+          .values({ key: "partner_hold_amount", value: String(data.partner_hold_amount), updatedAt: new Date() })
+          .onConflictDoUpdate({ target: systemSettingsTable.key, set: { value: String(data.partner_hold_amount), updatedAt: new Date() } })
+      );
+    }
+    if (data.partner_ad_budget_daily !== undefined) {
+      updates.push(
+        db
+          .insert(systemSettingsTable)
+          .values({ key: "partner_ad_budget_daily", value: String(data.partner_ad_budget_daily), updatedAt: new Date() })
+          .onConflictDoUpdate({ target: systemSettingsTable.key, set: { value: String(data.partner_ad_budget_daily), updatedAt: new Date() } })
       );
     }
 
