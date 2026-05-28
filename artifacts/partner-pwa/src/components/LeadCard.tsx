@@ -1,6 +1,18 @@
 import type { Lead } from "@/lib/api";
 import { useLocation } from "wouter";
 
+const HOLD_MS = 48 * 60 * 60 * 1000;
+
+function holdBadge(orderAssignedAt: string | null, bonusAmount: number | null) {
+  if (!orderAssignedAt || !bonusAmount) return null;
+  const elapsed = Date.now() - new Date(orderAssignedAt).getTime();
+  const hoursLeft = Math.ceil((HOLD_MS - elapsed) / (60 * 60 * 1000));
+  if (elapsed < HOLD_MS) {
+    return { text: `Холд ${hoursLeft}ч · +${bonusAmount} ₽`, color: "#92400E", bg: "#FEF3C7" };
+  }
+  return { text: `Засчитано · +${bonusAmount} ₽`, color: "#065F46", bg: "#D1FAE5" };
+}
+
 const channelLabels: Record<string, string> = {
   avito_partner: "Avito",
   referral: "Реферальная ссылка",
@@ -32,7 +44,8 @@ export default function LeadCard({ lead }: LeadCardProps) {
   const [, navigate] = useLocation();
   const statusKey = lead.partnerLeadStatus ?? lead.status;
   const cfg = statusConfig[statusKey] ?? { label: statusKey, color: "#374151", bg: "#F3F4F6" };
-  const isAccepted = lead.status === "master_assigned" || lead.status === "in_progress" || lead.status === "completed";
+  const isAccepted = ["master_assigned", "in_progress", "completed"].includes(lead.partnerLeadStatus ?? lead.status ?? "");
+  const hold = isAccepted ? holdBadge(lead.orderAssignedAt, lead.bonusAmount) : null;
 
   return (
     <div
@@ -65,7 +78,14 @@ export default function LeadCard({ lead }: LeadCardProps) {
         </div>
       )}
 
-      {isAccepted && (
+      {hold ? (
+        <div
+          className="text-xs font-semibold rounded-lg px-3 py-1.5"
+          style={{ color: hold.color, background: hold.bg }}
+        >
+          {hold.text}
+        </div>
+      ) : isAccepted && (
         <div className="bg-[#D1FAE5] text-[#065F46] text-xs font-semibold rounded-lg px-3 py-1.5">
           ✓ Заявку взяли в работу
         </div>

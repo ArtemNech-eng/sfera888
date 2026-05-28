@@ -49,6 +49,8 @@ function mapLead(l: any): Lead {
     createdAt: l.created_at ?? l.createdAt ?? "",
     scheduledAt: l.scheduled_at ?? l.scheduledAt ?? null,
     leadChannel: l.lead_channel ?? l.leadChannel ?? null,
+    orderAssignedAt: l.order_assigned_at ?? null,
+    bonusAmount: l.bonus_amount ?? null,
   };
 }
 
@@ -336,6 +338,8 @@ export interface Lead {
   createdAt: string;
   scheduledAt: string | null;
   leadChannel: string | null;
+  orderAssignedAt: string | null;
+  bonusAmount: number | null;
 }
 
 export interface LeadTimelineItem {

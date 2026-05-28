@@ -660,20 +660,37 @@ router.get("/leads", requirePartner, async (req: Request, res: Response) => {
       .limit(limit)
       .offset(offset);
 
+    const leadIds = rows.map(r => r.id);
+    const orders = leadIds.length > 0
+      ? await db
+          .select({ leadId: ordersTable.leadId, assignedAt: ordersTable.assignedAt, createdAt: ordersTable.createdAt })
+          .from(ordersTable)
+          .where(and(inArray(ordersTable.leadId, leadIds), isNull(ordersTable.deletedAt)))
+      : [];
+    const orderByLead: Record<number, { assignedAt: Date | null; createdAt: Date }> = {};
+    for (const o of orders) { if (o.leadId) orderByLead[o.leadId] = { assignedAt: o.assignedAt, createdAt: o.createdAt }; }
+    const holdAmount = parseInt(await getSetting("partner_hold_amount", "500"));
+
     return res.json({
-      rows: rows.map((l) => ({
-        id: l.id,
-        client_name: l.clientName,
-        city: l.city,
-        district: l.district,
-        service_type: l.serviceType,
-        partner_lead_status: l.partnerLeadStatus,
-        is_possible_duplicate: l.isPossibleDuplicate,
-        partner_rejection_reason: l.partnerRejectionReason,
-        lead_channel: l.leadChannel,
-        source: l.source,
-        created_at: l.createdAt,
-      })),
+      rows: rows.map((l) => {
+        const ord = orderByLead[l.id];
+        const orderAssignedAt = ord ? (ord.assignedAt ?? ord.createdAt) : null;
+        return {
+          id: l.id,
+          client_name: l.clientName,
+          city: l.city,
+          district: l.district,
+          service_type: l.serviceType,
+          partner_lead_status: l.partnerLeadStatus,
+          is_possible_duplicate: l.isPossibleDuplicate,
+          partner_rejection_reason: l.partnerRejectionReason,
+          lead_channel: l.leadChannel,
+          source: l.source,
+          created_at: l.createdAt,
+          order_assigned_at: orderAssignedAt ? orderAssignedAt.toISOString() : null,
+          bonus_amount: holdAmount,
+        };
+      }),
       total: Number(totalRow.total),
       page,
       limit,
