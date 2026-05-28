@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/layout";
 import { ProtectedRoute } from "@/hooks/use-auth";
-import { Coins, Wrench, History, Plus, Pencil, Trash2, Save, X, Check, Loader2 } from "lucide-react";
+import { Coins, Wrench, History, Plus, Pencil, Trash2, Save, X, Check, Loader2, MapPin } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -36,6 +36,14 @@ interface ServiceTokenRule {
   tokensCost: string;
   isActive: boolean;
   sortOrder: number;
+}
+
+interface CityMultiplier {
+  id: number;
+  city: string;
+  multiplier: string;
+  notes: string | null;
+  isActive: boolean;
 }
 
 interface PriceHistory {
@@ -80,6 +88,76 @@ function useServiceTokenRules() {
     queryKey: ["/api/settings/service-token-rules"],
     queryFn: () => apiFetch("/api/settings/service-token-rules").then(r => r.json()),
   });
+}
+
+function useCityMultipliers() {
+  return useQuery<CityMultiplier[]>({
+    queryKey: ["/api/settings/city-token-multipliers"],
+    queryFn: () => apiFetch("/api/settings/city-token-multipliers").then(r => r.json()),
+  });
+}
+
+function CityMultiplierRow({ row, onSave, onDelete }: { row: CityMultiplier; onSave: (id: number, d: Partial<CityMultiplier>) => void; onDelete: (id: number) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [city, setCity] = useState(row.city);
+  const [mult, setMult] = useState(row.multiplier);
+  const [notes, setNotes] = useState(row.notes ?? "");
+  const [active, setActive] = useState(row.isActive);
+  const save = () => { onSave(row.id, { city, multiplier: mult, notes: notes || null, isActive: active }); setEditing(false); };
+  const cancel = () => { setCity(row.city); setMult(row.multiplier); setNotes(row.notes ?? ""); setActive(row.isActive); setEditing(false); };
+  if (editing) {
+    return (
+      <tr className="bg-blue-50">
+        <td className="p-2"><input className="border rounded px-2 py-1 text-sm w-36" value={city} onChange={e => setCity(e.target.value)} /></td>
+        <td className="p-2"><input type="number" step="0.01" min="0.01" className="border rounded px-2 py-1 text-sm w-24" value={mult} onChange={e => setMult(e.target.value)} /></td>
+        <td className="p-2 text-slate-500 text-xs">{mult ? `×${parseFloat(mult).toFixed(2)}` : ""}</td>
+        <td className="p-2"><input className="border rounded px-2 py-1 text-sm w-40" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Примечание..." /></td>
+        <td className="p-2"><input type="checkbox" checked={active} onChange={e => setActive(e.target.checked)} className="w-4 h-4" /></td>
+        <td className="p-2">
+          <div className="flex gap-1">
+            <button onClick={save} className="p-1.5 rounded bg-emerald-500 text-white hover:bg-emerald-600"><Check size={13} /></button>
+            <button onClick={cancel} className="p-1.5 rounded bg-slate-200 hover:bg-slate-300"><X size={13} /></button>
+          </div>
+        </td>
+      </tr>
+    );
+  }
+  return (
+    <tr className="border-b border-slate-100 hover:bg-slate-50">
+      <td className="p-3 font-medium text-slate-700">{row.city}</td>
+      <td className="p-3"><span className="font-mono font-semibold text-blue-600">×{parseFloat(row.multiplier).toFixed(2)}</span></td>
+      <td className="p-3 text-slate-500 text-xs">{row.multiplier !== "1" ? `+${((parseFloat(row.multiplier) - 1) * 100).toFixed(0)}%` : "базовый"}</td>
+      <td className="p-3 text-slate-500 text-sm">{row.notes ?? "—"}</td>
+      <td className="p-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${row.isActive ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{row.isActive ? "Активен" : "Выключен"}</span></td>
+      <td className="p-3">
+        <div className="flex gap-1">
+          <button onClick={() => setEditing(true)} className="p-1.5 rounded hover:bg-slate-100"><Pencil size={13} /></button>
+          <button onClick={() => onDelete(row.id)} className="p-1.5 rounded hover:bg-red-50 text-red-400"><Trash2 size={13} /></button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function AddCityForm({ onAdd, onCancel }: { onAdd: (d: any) => void; onCancel: () => void }) {
+  const [city, setCity] = useState("");
+  const [mult, setMult] = useState("1.25");
+  const [notes, setNotes] = useState("");
+  return (
+    <tr className="bg-emerald-50">
+      <td className="p-2"><input className="border rounded px-2 py-1 text-sm w-36" value={city} onChange={e => setCity(e.target.value)} placeholder="Ростов-на-Дону" /></td>
+      <td className="p-2"><input type="number" step="0.01" min="0.01" className="border rounded px-2 py-1 text-sm w-24" value={mult} onChange={e => setMult(e.target.value)} /></td>
+      <td className="p-2 text-slate-500 text-xs">{mult ? `+${((parseFloat(mult) - 1) * 100).toFixed(0)}%` : ""}</td>
+      <td className="p-2"><input className="border rounded px-2 py-1 text-sm w-40" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Примечание..." /></td>
+      <td className="p-2"></td>
+      <td className="p-2">
+        <div className="flex gap-1">
+          <button onClick={() => city && onAdd({ city, multiplier: parseFloat(mult), notes: notes || undefined })} className="p-1.5 rounded bg-emerald-500 text-white hover:bg-emerald-600"><Check size={13} /></button>
+          <button onClick={onCancel} className="p-1.5 rounded bg-slate-200 hover:bg-slate-300"><X size={13} /></button>
+        </div>
+      </td>
+    </tr>
+  );
 }
 
 // ─── Inline edit row for packages ────────────────────────────────────────────
@@ -514,6 +592,24 @@ export default function TokenSettingsPage() {
     onError: (e: any) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
   });
 
+  const { data: cityMultipliers = [] } = useCityMultipliers();
+  const [addingCity, setAddingCity] = useState(false);
+  const addCityMult = useMutation({
+    mutationFn: async (d: any) => { const r = await apiFetch("/api/settings/city-token-multipliers", { method: "POST", body: JSON.stringify(d) }); if (!r.ok) throw new Error(await r.text()); },
+    onSuccess: () => { invalidate(); setAddingCity(false); toast({ title: "Город добавлен" }); },
+    onError: (e: any) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
+  });
+  const saveCityMult = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => { const r = await apiFetch(`/api/settings/city-token-multipliers/${id}`, { method: "PUT", body: JSON.stringify({ city: data.city, multiplier: data.multiplier, notes: data.notes, is_active: data.isActive }) }); if (!r.ok) throw new Error(await r.text()); },
+    onSuccess: () => { invalidate(); toast({ title: "Сохранено" }); },
+    onError: (e: any) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
+  });
+  const deleteCityMult = useMutation({
+    mutationFn: async (id: number) => { const r = await apiFetch(`/api/settings/city-token-multipliers/${id}`, { method: "DELETE" }); if (!r.ok) throw new Error(await r.text()); },
+    onSuccess: () => { invalidate(); toast({ title: "Удалено" }); },
+    onError: (e: any) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
+  });
+
   const addRule = useMutation({
     mutationFn: async (data: any) => {
       const r = await apiFetch("/api/settings/service-token-rules", { method: "POST", body: JSON.stringify(data) });
@@ -682,6 +778,53 @@ export default function TokenSettingsPage() {
                   </tbody>
                 </table>
               )}
+            </div>
+          </section>
+
+          {/* ── Городские мультипликаторы ── */}
+          <section className="bg-white rounded-2xl shadow-sm border border-slate-100">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <MapPin size={16} className="text-blue-500" />
+                <div>
+                  <h2 className="font-semibold text-slate-700">Ценовые коэффициенты по городам</h2>
+                  <p className="text-xs text-slate-400 mt-0.5">Стоимость заявки = базовая × коэффициент. Города без правила — коэффициент 1.00</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setAddingCity(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500 text-white text-sm hover:bg-blue-600 transition-colors"
+              >
+                <Plus size={14} /> Добавить город
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-slate-400 uppercase tracking-wide border-b border-slate-100">
+                    <th className="p-3">Город</th>
+                    <th className="p-3">Коэффициент</th>
+                    <th className="p-3">Надбавка</th>
+                    <th className="p-3">Примечание</th>
+                    <th className="p-3">Статус</th>
+                    <th className="p-3">Действия</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cityMultipliers.map(row => (
+                    <CityMultiplierRow
+                      key={row.id}
+                      row={row}
+                      onSave={(id, d) => saveCityMult.mutate({ id, data: d })}
+                      onDelete={id => deleteCityMult.mutate(id)}
+                    />
+                  ))}
+                  {addingCity && <AddCityForm onAdd={d => addCityMult.mutate(d)} onCancel={() => setAddingCity(false)} />}
+                  {cityMultipliers.length === 0 && !addingCity && (
+                    <tr><td colSpan={6} className="p-6 text-center text-slate-400 text-sm">Все города используют базовый тариф</td></tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </section>
 

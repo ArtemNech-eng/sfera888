@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, citiesTable, serviceTypesTable, tokenPackagesTable, serviceTokenPricesTable, serviceTokenRulesTable, tokenPriceHistoryTable, systemSettingsTable } from "@workspace/db";
+import { db, citiesTable, serviceTypesTable, tokenPackagesTable, serviceTokenPricesTable, serviceTokenRulesTable, tokenPriceHistoryTable, systemSettingsTable, cityTokenMultipliersTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { requireAuth } from "../middlewares/requireAuth.js";
@@ -382,6 +382,53 @@ router.put("/ai-dispatcher", adminOnly, async (req, res) => {
     .values({ key: "ai_dispatcher_enabled", value: String(enabled), updatedAt: new Date() })
     .onConflictDoUpdate({ target: systemSettingsTable.key, set: { value: String(enabled), updatedAt: new Date() } });
   res.json({ enabled });
+});
+
+// ─── City token multipliers ────────────────────────────────────────────────────
+
+router.get("/city-token-multipliers", adminOnly, async (_req: any, res: any) => {
+  const rows = await db.select().from(cityTokenMultipliersTable).orderBy(cityTokenMultipliersTable.city);
+  res.json(rows);
+});
+
+router.post("/city-token-multipliers", adminOnly, async (req: any, res: any) => {
+  const { city, multiplier, notes } = req.body;
+  if (!city || multiplier == null) return res.status(400).json({ error: "city и multiplier обязательны" });
+  const mult = parseFloat(multiplier);
+  if (isNaN(mult) || mult <= 0) return res.status(400).json({ error: "multiplier должен быть > 0" });
+  try {
+    const [row] = await db.insert(cityTokenMultipliersTable).values({
+      city,
+      multiplier: String(mult),
+      notes: notes ?? null,
+      isActive: true,
+      updatedAt: new Date(),
+    }).returning();
+    res.status(201).json(row);
+  } catch (e: any) {
+    if (e.code === "23505") return res.status(409).json({ error: "Город уже существует" });
+    throw e;
+  }
+});
+
+router.put("/city-token-multipliers/:id", adminOnly, async (req: any, res: any) => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ error: "Неверный id" });
+  const fields: Record<string, any> = { updatedAt: new Date() };
+  if (req.body.city !== undefined) fields.city = req.body.city;
+  if (req.body.multiplier !== undefined) fields.multiplier = String(parseFloat(req.body.multiplier));
+  if (req.body.notes !== undefined) fields.notes = req.body.notes;
+  if (req.body.is_active !== undefined) fields.isActive = req.body.is_active;
+  const [updated] = await db.update(cityTokenMultipliersTable).set(fields).where(eq(cityTokenMultipliersTable.id, id)).returning();
+  if (!updated) return res.status(404).json({ error: "Не найдено" });
+  res.json(updated);
+});
+
+router.delete("/city-token-multipliers/:id", adminOnly, async (req: any, res: any) => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ error: "Неверный id" });
+  await db.delete(cityTokenMultipliersTable).where(eq(cityTokenMultipliersTable.id, id));
+  res.json({ success: true });
 });
 
 export default router;

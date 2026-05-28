@@ -1,4 +1,4 @@
-import { db, masterWalletTable, walletTransactionsTable, serviceTokenPricesTable, serviceTokenRulesTable } from "@workspace/db";
+import { db, masterWalletTable, walletTransactionsTable, serviceTokenPricesTable, serviceTokenRulesTable, cityTokenMultipliersTable } from "@workspace/db";
 import { eq, or, and, sql } from "drizzle-orm";
 
 // ─── Ensure wallet row exists ─────────────────────────────────────────────────
@@ -51,8 +51,9 @@ export async function getOrderTokenCost(order: {
   serviceType: string;
   area?: number | null;
   manualTokenCost?: number | null;
+  city?: string | null;
 }): Promise<{ cost: number; explanation: string }> {
-  const { serviceType, area, manualTokenCost } = order;
+  const { serviceType, area, manualTokenCost, city } = order;
 
   // 1. Manual override
   if (manualTokenCost != null && !isNaN(manualTokenCost)) {
@@ -78,8 +79,10 @@ export async function getOrderTokenCost(order: {
       .from(serviceTokenPricesTable)
       .where(eq(serviceTokenPricesTable.serviceKey, serviceKey))
       .limit(1);
-    const cost = legacy.length ? Number(legacy[0].tokensCost) : 1;
-    return { cost, explanation: `${serviceType} → стандартная стоимость` };
+    const baseCost = legacy.length ? Number(legacy[0].tokensCost) : 1;
+    const { cost, multiplier } = await applyCityMultiplier(baseCost, city);
+    const cityNote = multiplier !== 1 ? ` × ${multiplier} (город)` : "";
+    return { cost, explanation: `${serviceType} → стандартная стоимость${cityNote}` };
   }
 
   // Separate area_range and fixed rules
@@ -96,24 +99,46 @@ export async function getOrderTokenCost(order: {
     if (match) {
       const minLabel = match.minArea != null ? `${match.minArea}` : "0";
       const maxLabel = match.maxArea != null ? `${match.maxArea}` : "∞";
+      const base = Number(match.tokensCost);
+      const { cost, multiplier } = await applyCityMultiplier(base, city);
+      const cityNote = multiplier !== 1 ? ` × ${multiplier} (город)` : "";
       return {
-        cost: Number(match.tokensCost),
-        explanation: `${serviceType}, ${area} м² → диапазон ${minLabel}–${maxLabel} м²`,
+        cost,
+        explanation: `${serviceType}, ${area} м² → диапазон ${minLabel}–${maxLabel} м²${cityNote}`,
       };
     }
   }
 
   // 4. Fixed rule fallback for this service
   if (fixedRules.length > 0) {
-    const rule = fixedRules[0];
+    const base = Number(fixedRules[0].tokensCost);
+    const { cost, multiplier } = await applyCityMultiplier(base, city);
+    const cityNote = multiplier !== 1 ? ` × ${multiplier} (город)` : "";
     return {
-      cost: Number(rule.tokensCost),
-      explanation: `${serviceType} → фиксированная стоимость`,
+      cost,
+      explanation: `${serviceType} → фиксированная стоимость${cityNote}`,
     };
   }
 
   // 5. Absolute fallback
-  return { cost: 1, explanation: `${serviceType} → стандартная стоимость` };
+  const { cost: fallbackCost, multiplier: fallbackMult } = await applyCityMultiplier(1, city);
+  const fallbackNote = fallbackMult !== 1 ? ` × ${fallbackMult} (город)` : "";
+  return { cost: fallbackCost, explanation: `${serviceType} → стандартная стоимость${fallbackNote}` };
+}
+
+async function applyCityMultiplier(baseCost: number, city: string | null | undefined): Promise<{ cost: number; multiplier: number }> {
+  if (!city) return { cost: baseCost, multiplier: 1 };
+  const [row] = await db
+    .select()
+    .from(cityTokenMultipliersTable)
+    .where(and(
+      eq(cityTokenMultipliersTable.city, city),
+      eq(cityTokenMultipliersTable.isActive, true)
+    ))
+    .limit(1);
+  if (!row) return { cost: baseCost, multiplier: 1 };
+  const multiplier = Number(row.multiplier);
+  return { cost: Math.round(baseCost * multiplier * 100) / 100, multiplier };
 }
 
 // ─── Check if master has enough tokens ───────────────────────────────────────

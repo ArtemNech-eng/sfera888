@@ -444,6 +444,7 @@ router.get("/home", requireMasterPwa, async (req, res) => {
       serviceType: st,
       area: sampleOrder?.area ?? null,
       manualTokenCost: sampleOrder?.manualTokenCost ?? null,
+      city: sampleOrder?.city ?? null,
     }));
   }
   for (const o of availableOrders) {
@@ -475,6 +476,7 @@ router.get("/home", requireMasterPwa, async (req, res) => {
         serviceType: st,
         area: sample?.area ? Number(sample.area) : null,
         manualTokenCost: null,
+        city: sample?.city ?? null,
       }));
     }
   }
@@ -760,7 +762,7 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
 
   // ── TOKEN MODEL: auto-assign, deduct tokens, return client contact ────────
   if ((order as any).paymentModel === "token") {
-    const tokensCost = await getOrderTokenCost(order.serviceType);
+    const { cost: tokensCost } = await getOrderTokenCost({ serviceType: order.serviceType, area: order.area ? Number(order.area) : null, manualTokenCost: (order as any).manualTokenCost ?? null, city: order.city ?? null });
     const { ok, balance } = await checkTokenBalance(masterId, tokensCost);
 
     if (!ok) {
@@ -1044,7 +1046,7 @@ router.post("/leads/:id/respond", requireMasterPwa, async (req: any, res: any) =
   }
 
   // Token cost
-  const tokensCost = await getOrderTokenCost(lead.serviceType);
+  const { cost: tokensCost } = await getOrderTokenCost({ serviceType: lead.serviceType, area: lead.area ? Number(lead.area) : null, manualTokenCost: null, city: lead.city ?? null });
   const { ok, balance } = await checkTokenBalance(masterId, tokensCost);
   if (!ok) {
     return res.status(402).json({

@@ -383,6 +383,18 @@ async function runMigrations() {
   await db.execute(sql`
     CREATE INDEX IF NOT EXISTS idx_service_token_rules_key ON service_token_rules(service_key, is_active, sort_order)
   `);
+  // City token multipliers
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS city_token_multipliers (
+      id          SERIAL PRIMARY KEY,
+      city        VARCHAR(150) NOT NULL UNIQUE,
+      multiplier  NUMERIC(6,4) NOT NULL DEFAULT 1.0000,
+      notes       VARCHAR(255),
+      is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at  TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
   // Mark all existing orders as commission model
   await db.execute(sql`
     UPDATE orders SET payment_model = 'commission'
