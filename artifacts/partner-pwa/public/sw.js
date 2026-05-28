@@ -1,12 +1,12 @@
-const SHELL_CACHE = "partner-pwa-shell-v1";
-const ASSET_CACHE = "partner-pwa-assets-v1";
-const SHELL_URL = "/partner-pwa/index.html";
+const SHELL_CACHE = "partner-shell-v1";
+const ASSET_CACHE = "partner-assets-v1";
+const SHELL_URL = "/partner/index.html";
 
 // Pre-cache the app shell on install
 self.addEventListener("install", e => {
   e.waitUntil(
     caches.open(SHELL_CACHE)
-      .then(c => c.addAll([SHELL_URL, "/partner-pwa/"]))
+      .then(c => c.addAll([SHELL_URL, "/partner/"]))
       .then(() => self.skipWaiting())
   );
 });
@@ -87,8 +87,8 @@ self.addEventListener("push", e => {
   const title = data.title ?? "Сфера Партнёр";
   const body = data.body ?? "";
   const tag = data.type ?? "default";
-  const icon = "/partner-pwa/icon-192.png";
-  const badge = "/partner-pwa/icon-192.png";
+  const icon = "/master-pwa/icon-192.png";
+  const badge = "/master-pwa/icon-192.png";
 
   const options = {
     body,
@@ -105,10 +105,10 @@ self.addEventListener("push", e => {
 
 self.addEventListener("notificationclick", e => {
   e.notification.close();
-  const url = "/partner-pwa/";
+  const url = "/partner/";
   e.waitUntil(
     clients.matchAll({ type: "window", includeUncontrolled: true }).then(list => {
-      const existing = list.find(c => c.url.includes("/partner-pwa/"));
+      const existing = list.find(c => c.url.includes("/partner/"));
       if (existing) return existing.focus();
       return clients.openWindow(url);
     })
