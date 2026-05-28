@@ -1,12 +1,13 @@
-import { useState, FormEvent } from 'react';
+import { useState, useEffect, FormEvent } from 'react';
 import { motion } from "framer-motion";
-import { User, Phone, MapPin, MessageSquare, CheckCircle, Loader2, Sparkles, Clock, ShieldCheck, BadgeCheck, Maximize } from 'lucide-react';
+import { User, Phone, MapPin, MessageSquare, CheckCircle, Loader2, Sparkles, Clock, ShieldCheck, BadgeCheck, Maximize, ChevronDown } from 'lucide-react';
 import SectionHeader from "./SectionHeader";
 
-const serviceOptions = [
+const FALLBACK_SERVICES = [
   'Обои', 'Шпаклёвка', 'Штукатурка', 'Покраска', 'Плитка',
   'Санузел', 'Электрика', 'Сантехника', 'Квартира под ключ', 'Другое',
 ];
+const FALLBACK_CITIES: string[] = [];
 
 const PHONE_REGEX = /(\+7|8)?[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}|(\d[\s\-]?){10,}/;
 
@@ -31,6 +32,19 @@ export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [serviceOptions, setServiceOptions] = useState<string[]>(FALLBACK_SERVICES);
+  const [cityOptions, setCityOptions] = useState<string[]>(FALLBACK_CITIES);
+
+  useEffect(() => {
+    fetch('https://sfera-master.ru/api/settings/services')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.length) setServiceOptions(data.map((s: { name: string }) => s.name)); })
+      .catch(() => {});
+    fetch('https://sfera-master.ru/api/settings/cities')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.length) setCityOptions(data.map((c: { name: string }) => c.name)); })
+      .catch(() => {});
+  }, []);
 
   const toggleService = (s: string) => {
     setForm((prev) => ({
@@ -258,18 +272,36 @@ export default function ApplicationForm({ refSlug }: ApplicationFormProps) {
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">Город</label>
                     <div className="relative">
-                      <MapPin size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-                      <input
-                        type="text"
-                        value={form.city}
-                        onChange={(e) => setForm({ ...form, city: e.target.value })}
-                        placeholder="Ваш город"
-                        className={`w-full border rounded-2xl pl-12 pr-4 py-3.5 text-base text-[#111827] placeholder:text-gray-400 focus:outline-none focus:ring-2 transition-all ${
-                          errors.city
-                            ? 'border-red-300 focus:ring-red-100 focus:border-red-400'
-                            : 'border-gray-200 focus:ring-emerald-100 focus:border-emerald-400'
-                        }`}
-                      />
+                      <MapPin size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                      {cityOptions.length > 0 ? (
+                        <>
+                          <ChevronDown size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                          <select
+                            value={form.city}
+                            onChange={(e) => { setForm({ ...form, city: e.target.value }); if (errors.city) setErrors({ ...errors, city: undefined }); }}
+                            className={`w-full border rounded-2xl pl-12 pr-10 py-3.5 text-base text-[#111827] appearance-none focus:outline-none focus:ring-2 transition-all ${
+                              errors.city
+                                ? 'border-red-300 focus:ring-red-100 focus:border-red-400'
+                                : 'border-gray-200 focus:ring-emerald-100 focus:border-emerald-400'
+                            } ${!form.city ? 'text-gray-400' : ''}`}
+                          >
+                            <option value="">Выберите город</option>
+                            {cityOptions.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                        </>
+                      ) : (
+                        <input
+                          type="text"
+                          value={form.city}
+                          onChange={(e) => { setForm({ ...form, city: e.target.value }); if (errors.city) setErrors({ ...errors, city: undefined }); }}
+                          placeholder="Ваш город"
+                          className={`w-full border rounded-2xl pl-12 pr-4 py-3.5 text-base text-[#111827] placeholder:text-gray-400 focus:outline-none focus:ring-2 transition-all ${
+                            errors.city
+                              ? 'border-red-300 focus:ring-red-100 focus:border-red-400'
+                              : 'border-gray-200 focus:ring-emerald-100 focus:border-emerald-400'
+                          }`}
+                        />
+                      )}
                     </div>
                     {errors.city && <p className="text-red-500 text-xs mt-1.5">{errors.city}</p>}
                   </div>

@@ -829,6 +829,7 @@ const createLeadSchema = z.object({
   service_type: z.string().min(1),
   area: z.string().default("0"),
   urgency: z.string().optional(),
+  scheduled_at: z.string().optional(),
   comment: z.string().optional(),
 });
 
@@ -872,6 +873,7 @@ router.post("/leads", requirePartner, async (req: Request, res: Response) => {
         district: body.district,
         serviceType: body.service_type,
         area: body.area,
+        scheduledAt: body.scheduled_at ? new Date(body.scheduled_at) : null,
         comment: body.comment ?? null,
         source: "avito_partner",
         trafficPartnerId: partner.id,

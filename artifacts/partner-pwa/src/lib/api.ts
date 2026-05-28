@@ -158,6 +158,7 @@ export const leadsApi = {
         district: data.district ?? "",
         service_type: data.serviceType,
         area: data.area ?? "0",
+        scheduled_at: data.scheduledAt ?? undefined,
         comment: data.comment,
       }),
     }),

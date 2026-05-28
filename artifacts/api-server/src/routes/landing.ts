@@ -97,6 +97,7 @@ router.post("/leads", async (req: Request, res: Response) => {
         source: "landing",
         status: "new",
         trafficPartnerId: partnerId,
+        partnerLeadStatus: partnerId ? "waiting_master" : null,
         isPossibleDuplicate,
       })
       .returning();

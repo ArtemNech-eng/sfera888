@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { leadsApi } from "@/lib/api";
-import { AlertTriangle, CheckCircle2, Loader2, ChevronLeft } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2, Calendar } from "lucide-react";
 
 async function fetchCities(): Promise<string[]> {
   const res = await fetch("/api/settings/cities");
@@ -20,12 +20,6 @@ async function fetchServices(): Promise<string[]> {
 
 const FALLBACK_SERVICES = ["Обои", "Шпаклёвка", "Покраска", "Плитка", "Санузел", "Электрика", "Ремонт под ключ", "Другое"];
 
-const SCHEDULE_OPTIONS = [
-  { value: "urgent", label: "Срочно" },
-  { value: "this_week", label: "На этой неделе" },
-  { value: "not_urgent", label: "Не срочно" },
-];
-
 interface FormData {
   clientName: string;
   clientPhone: string;
@@ -33,7 +27,7 @@ interface FormData {
   district: string;
   serviceType: string;
   area: string;
-  schedule: string;
+  scheduledAt: string;
   comment: string;
 }
 
@@ -44,7 +38,7 @@ const emptyForm: FormData = {
   district: "",
   serviceType: "",
   area: "",
-  schedule: "",
+  scheduledAt: "",
   comment: "",
 };
 
@@ -98,6 +92,7 @@ export default function CreateLeadPage() {
         district: form.district.trim() || undefined,
         serviceType: form.serviceType,
         area: form.area.trim() || undefined,
+        scheduledAt: form.scheduledAt || undefined,
         comment: form.comment.trim() || undefined,
       });
       setSuccess(true);
@@ -244,25 +239,19 @@ export default function CreateLeadPage() {
           />
         </div>
 
-        {/* Schedule */}
+        {/* Scheduled date */}
         <div className="space-y-1.5">
-          <label className="text-sm font-medium text-[#374151]">Когда нужно</label>
-          <div className="flex gap-2">
-            {SCHEDULE_OPTIONS.map(opt => (
-              <button
-                type="button"
-                key={opt.value}
-                onClick={() => setForm(f => ({ ...f, schedule: opt.value }))}
-                className={`flex-1 py-2.5 rounded-xl border text-sm font-medium transition-colors ${
-                  form.schedule === opt.value
-                    ? "bg-[#34C759] text-white border-[#34C759]"
-                    : "bg-white text-[#374151] border-[#E5E7EB]"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
+          <label className="text-sm font-medium text-[#374151] flex items-center gap-1.5">
+            <Calendar size={14} className="text-[#9CA3AF]" />
+            Дата выезда
+            <span className="text-[#9CA3AF] font-normal text-xs ml-auto">необязательно</span>
+          </label>
+          <input
+            type="datetime-local"
+            value={form.scheduledAt}
+            onChange={set("scheduledAt")}
+            className="w-full px-4 py-3.5 rounded-xl border border-[#E5E7EB] bg-white text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#34C759] focus:border-transparent text-base"
+          />
         </div>
 
         {/* Comment */}
