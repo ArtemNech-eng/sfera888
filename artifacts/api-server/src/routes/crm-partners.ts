@@ -14,6 +14,7 @@ import {
 } from "@workspace/db";
 import { eq, and, desc, asc, like, gte, lte, isNull, isNotNull, inArray, sql, count, or } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth.js";
+import { sendPushToPartner } from "../lib/partnerPush.js";
 import { z } from "zod";
 
 const router = Router();
@@ -411,6 +412,15 @@ router.post("/partner-leads/:id/approve", async (req: Request, res: Response) =>
 
     if (!updated) return res.status(404).json({ error: "lead_not_found_or_already_reviewed" });
 
+    // Push notification to partner
+    if (updated.trafficPartnerId) {
+      sendPushToPartner(updated.trafficPartnerId, {
+        title: "Заявка одобрена ✓",
+        body: `Заявка #${updated.id} (${updated.serviceType}, ${updated.city}) принята в работу`,
+        type: "lead_approved",
+      }).catch(() => {});
+    }
+
     return res.json({ ok: true, lead: updated });
   } catch (err) {
     console.error("[crm/partner-leads/:id/approve]", err);
@@ -453,6 +463,15 @@ router.post("/partner-leads/:id/reject", async (req: Request, res: Response) => 
       .returning();
 
     if (!updated) return res.status(404).json({ error: "lead_not_found_or_already_reviewed" });
+
+    // Push notification to partner
+    if (updated.trafficPartnerId) {
+      sendPushToPartner(updated.trafficPartnerId, {
+        title: "Заявка отклонена",
+        body: `Заявка #${updated.id} отклонена. Причина: ${fullReason}`,
+        type: "lead_rejected",
+      }).catch(() => {});
+    }
 
     return res.json({ ok: true, lead: updated });
   } catch (err) {

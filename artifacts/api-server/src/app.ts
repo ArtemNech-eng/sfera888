@@ -1001,6 +1001,19 @@ app.get("/api/throw-error", (_req, _res) => {
   throw new Error("Test error from ai-log-agent monitoring");
 });
 
+// ── Auto-migration: partner_push_subscriptions ────────────────────────────────
+db.execute(sql`
+  CREATE TABLE IF NOT EXISTS partner_push_subscriptions (
+    id SERIAL PRIMARY KEY,
+    partner_id INTEGER NOT NULL REFERENCES traffic_partners(id) ON DELETE CASCADE,
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  );
+  CREATE INDEX IF NOT EXISTS partner_push_partner_idx ON partner_push_subscriptions(partner_id);
+`).catch((e: Error) => console.error("[migration] partner_push_subscriptions:", e.message));
+
 // ── Register Max Bot Webhooks on startup ──────────────────────────────────────
 const PROD_HOST = "https://sfera-master.ru";
 registerWebhook(`${PROD_HOST}/api/max-webhook`);

@@ -42,5 +42,6 @@ export * from "./wallet-transactions";
 export * from "./token-price-history";
 export * from "./traffic-partners";
 export * from "./partner-billing-periods";
+export * from "./partner-push-subscriptions";
 export * from "./legacy-tables";
 export * from "./ai-error-logs";

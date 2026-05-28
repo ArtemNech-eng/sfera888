@@ -5,9 +5,10 @@
 
 import { Router, Request, Response } from "express";
 import bcrypt from "bcryptjs";
-import { db, usersTable, trafficPartnersTable, partnerBillingPeriodsTable, leadsTable, systemSettingsTable, ordersTable } from "@workspace/db";
+import { db, usersTable, trafficPartnersTable, partnerBillingPeriodsTable, leadsTable, systemSettingsTable, ordersTable, partnerPushSubscriptionsTable } from "@workspace/db";
 import { eq, and, gte, lt, lte, desc, ilike, or, isNull, inArray, count, sql } from "drizzle-orm";
 import { requirePartner } from "../middlewares/requirePartner.js";
+import { sendPushToPartner } from "../lib/partnerPush.js";
 import { z } from "zod";
 
 const router = Router();
@@ -983,6 +984,72 @@ router.get("/billing-period/current", requirePartner, async (req: Request, res: 
     });
   } catch (err) {
     console.error("[partner/billing-period/current]", err);
+    return res.status(500).json({ error: "server_error" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PUSH NOTIFICATIONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/partner/push/vapid-key — публичный VAPID ключ
+router.get("/push/vapid-key", (_req: Request, res: Response) => {
+  const key = process.env.VAPID_PUBLIC_KEY;
+  if (!key) return res.status(503).json({ error: "Push not configured" });
+  return res.json({ key });
+});
+
+// POST /api/partner/push/subscribe
+router.post("/push/subscribe", requirePartner, async (req: Request, res: Response) => {
+  try {
+    const partner = (req as any).partner;
+    const { endpoint, keys } = req.body ?? {};
+    if (!endpoint || !keys?.p256dh || !keys?.auth) {
+      return res.status(400).json({ error: "Invalid subscription object" });
+    }
+
+    await db
+      .insert(partnerPushSubscriptionsTable)
+      .values({ partnerId: partner.id, endpoint, p256dh: keys.p256dh, auth: keys.auth })
+      .onConflictDoUpdate({
+        target: partnerPushSubscriptionsTable.endpoint,
+        set: { partnerId: partner.id, p256dh: keys.p256dh, auth: keys.auth },
+      });
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("[partner/push/subscribe]", err);
+    return res.status(500).json({ error: "server_error" });
+  }
+});
+
+// DELETE /api/partner/push/unsubscribe
+router.delete("/push/unsubscribe", requirePartner, async (req: Request, res: Response) => {
+  try {
+    const { endpoint } = req.body ?? {};
+    if (!endpoint) return res.status(400).json({ error: "Missing endpoint" });
+    await db
+      .delete(partnerPushSubscriptionsTable)
+      .where(eq(partnerPushSubscriptionsTable.endpoint, endpoint));
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("[partner/push/unsubscribe]", err);
+    return res.status(500).json({ error: "server_error" });
+  }
+});
+
+// POST /api/partner/push/test — тест уведомления (только для отладки)
+router.post("/push/test", requirePartner, async (req: Request, res: Response) => {
+  try {
+    const partner = (req as any).partner;
+    await sendPushToPartner(partner.id, {
+      title: "Тест уведомлений",
+      body: "Push-уведомления работают корректно!",
+      type: "test",
+    });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("[partner/push/test]", err);
     return res.status(500).json({ error: "server_error" });
   }
 });

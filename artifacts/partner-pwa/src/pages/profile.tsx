@@ -1,6 +1,133 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { LogOut, User, Phone, MapPin, Calendar, Loader2, ChevronRight, Link2, Copy, Check } from "lucide-react";
+import { LogOut, User, Phone, MapPin, Calendar, Loader2, ChevronRight, Link2, Copy, Check, Bell, BellOff } from "lucide-react";
+
+function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = atob(base64);
+  const buffer = new ArrayBuffer(rawData.length);
+  const arr = new Uint8Array(buffer);
+  for (let i = 0; i < rawData.length; i++) arr[i] = rawData.charCodeAt(i);
+  return arr;
+}
+
+function PushNotificationSection() {
+  const [status, setStatus] = useState<"loading" | "unsupported" | "denied" | "subscribed" | "unsubscribed">("loading");
+  const [working, setWorking] = useState(false);
+
+  useEffect(() => {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+      setStatus("unsupported");
+      return;
+    }
+    if (Notification.permission === "denied") {
+      setStatus("denied");
+      return;
+    }
+    navigator.serviceWorker.ready.then(async reg => {
+      const sub = await reg.pushManager.getSubscription();
+      setStatus(sub ? "subscribed" : "unsubscribed");
+    }).catch(() => setStatus("unsubscribed"));
+  }, []);
+
+  const subscribe = async () => {
+    setWorking(true);
+    try {
+      const keyRes = await fetch("/api/partner/push/vapid-key", { credentials: "include" });
+      if (!keyRes.ok) throw new Error("no_vapid");
+      const { key } = await keyRes.json();
+
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(key),
+      });
+
+      const json = sub.toJSON();
+      await fetch("/api/partner/push/subscribe", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys }),
+      });
+      setStatus("subscribed");
+    } catch (e: any) {
+      if (Notification.permission === "denied") setStatus("denied");
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const unsubscribe = async () => {
+    setWorking(true);
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        await fetch("/api/partner/push/unsubscribe", {
+          method: "DELETE",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: sub.endpoint }),
+        });
+        await sub.unsubscribe();
+      }
+      setStatus("unsubscribed");
+    } catch {} finally {
+      setWorking(false);
+    }
+  };
+
+  if (status === "unsupported") return null;
+
+  return (
+    <div className="bg-white rounded-2xl p-4 shadow-sm border border-[#E5E7EB] space-y-3">
+      <div className="flex items-center gap-2">
+        <Bell size={16} className="text-[#34C759]" />
+        <div className="text-sm font-semibold text-[#111827]">Push-уведомления</div>
+      </div>
+
+      {status === "denied" && (
+        <div className="text-xs text-[#6B7280] leading-relaxed">
+          Уведомления заблокированы в настройках браузера. Разрешите их вручную в настройках.
+        </div>
+      )}
+
+      {status === "loading" && (
+        <div className="flex justify-center py-2"><Loader2 size={18} className="animate-spin text-[#9CA3AF]" /></div>
+      )}
+
+      {status === "subscribed" && (
+        <>
+          <div className="text-xs text-[#6B7280]">Вы получаете уведомления об изменении статусов заявок.</div>
+          <button
+            onClick={unsubscribe}
+            disabled={working}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#E5E7EB] text-xs font-medium text-[#374151] disabled:opacity-50"
+          >
+            {working ? <Loader2 size={13} className="animate-spin" /> : <BellOff size={13} />}
+            Отключить уведомления
+          </button>
+        </>
+      )}
+
+      {status === "unsubscribed" && (
+        <>
+          <div className="text-xs text-[#6B7280]">Включите уведомления, чтобы узнавать об одобрении и отклонении заявок.</div>
+          <button
+            onClick={subscribe}
+            disabled={working}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#34C759] text-white text-xs font-semibold disabled:opacity-50"
+          >
+            {working ? <Loader2 size={13} className="animate-spin" /> : <Bell size={13} />}
+            Включить уведомления
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
 
 function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
@@ -126,6 +253,9 @@ export default function ProfilePage() {
 
         {/* Referral link */}
         {partner.referralUrl && <ReferralLinkSection url={partner.referralUrl} />}
+
+        {/* Push notifications */}
+        <PushNotificationSection />
 
         {/* Logout */}
         <button
