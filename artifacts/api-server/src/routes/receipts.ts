@@ -89,12 +89,15 @@ async function ensureReceiptTransaction(receipt: typeof receiptsTable.$inferSele
   if (receiptTxRows.length > 0) {
     // Update the first receipt-based transaction
     const tx = receiptTxRows[0];
+    // Preserve paid/overdue status — don't overwrite if commission was already paid
+    const isAlreadyPaid = tx.paymentStatus === "paid" || tx.paymentStatus === "overdue";
+    const newPaymentStatus = isAlreadyPaid ? tx.paymentStatus : paymentStatus;
     await db.update(transactionsTable).set({
       orderAmount: String(totalAmount),
       commission: String(commission),
       prepaymentDeducted: String(prepaymentDeducted),
-      paymentStatus,
-      ...(paymentStatus === "paid" && !tx.paidAt ? { paidAt: new Date() } : {}),
+      paymentStatus: newPaymentStatus,
+      ...(newPaymentStatus === "paid" && !tx.paidAt ? { paidAt: new Date() } : {}),
     }).where(eq(transactionsTable.id, tx.id));
 
     // Remove duplicate receipt-based transactions
