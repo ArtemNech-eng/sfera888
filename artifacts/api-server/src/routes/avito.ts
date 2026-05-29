@@ -1002,6 +1002,7 @@ router.post("/leads", async (req, res) => {
     city: city || "Не указан",
     district: district || "Не указан",
     serviceType: serviceType || itemTitle || "Авито",
+    area: area ? String(area) : "0",
     comment: fullComment,
     source: "avito",
     status: "new",
@@ -1275,7 +1276,7 @@ router.get("/items-with-stats", async (req, res) => {
     for (const url of urls) {
       try {
         console.log(`[avito:items] trying: GET ${AVITO_API}${url}`);
-        const data = await avitoGet(url, token) as any;
+        const data = await avitoGet(url, token as string) as any;
         console.log(`[avito:items] success url=${url} keys=${Object.keys(data).join(",")}, count=${(data.resources ?? data.items ?? []).length}`);
         return {
           items: data.resources ?? data.items ?? data.result ?? [],
@@ -1308,7 +1309,7 @@ router.get("/items-with-stats", async (req, res) => {
   // Resolve current userId (may have changed or been stored incorrectly)
   async function resolveUserId(): Promise<string> {
     try {
-      const self = await avitoGet(`/core/v1/accounts/self`, token) as any;
+      const self = await avitoGet(`/core/v1/accounts/self`, token as string) as any;
       const freshId = String(self.id ?? "");
       if (freshId && freshId !== userId) {
         // Silently update stored userId if it changed

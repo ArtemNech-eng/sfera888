@@ -102,7 +102,7 @@ async function verifyPassportPageWithGemini(
       console.error("[Gemini] Error response:", resp.status, err);
       return { valid: true, note: "AI-проверка временно недоступна" };
     }
-    const data = await resp.json();
+    const data = await resp.json() as any;
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
     const cleaned = text.replace(/```json\n?|\n?```/g, "").trim();
     const parsed = JSON.parse(cleaned);

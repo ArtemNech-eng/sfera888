@@ -168,7 +168,7 @@ router.post("/", checkRateLimit, allLeadRoles, async (req, res) => {
     city,
     district,
     serviceType,
-    area,
+    area: String(area),
     services: servicesJson,
     scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
     comment: comment ?? null,

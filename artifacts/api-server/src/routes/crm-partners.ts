@@ -316,7 +316,7 @@ router.get("/partners/:id", async (req: Request, res: Response) => {
     if (!partner) return res.status(404).json({ error: "partner_not_found" });
 
     // Get user login
-    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, partner.userId));
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, partner.userId as number));
 
     // Get billing periods
     const periods = await db

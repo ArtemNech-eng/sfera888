@@ -244,7 +244,7 @@ router.post("/auth/login", async (req: Request, res: Response) => {
         const [foundUser] = await db
           .select()
           .from(usersTable)
-          .where(and(eq(usersTable.id, partnersByPhone[0].userId), eq(usersTable.role, "partner")));
+          .where(and(eq(usersTable.id, partnersByPhone[0].userId as number), eq(usersTable.role, "partner")));
         user = foundUser;
       }
     }
@@ -396,7 +396,7 @@ router.post("/auth/reset-password", async (req: Request, res: Response) => {
     const [user] = await db
       .select()
       .from(usersTable)
-      .where(and(eq(usersTable.id, partner.userId), eq(usersTable.role, "partner")));
+      .where(and(eq(usersTable.id, partner.userId as number), eq(usersTable.role, "partner")));
 
     if (!user) {
       return res.status(404).json({ error: "Пользователь не найден" });

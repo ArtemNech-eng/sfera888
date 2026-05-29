@@ -976,9 +976,9 @@ ${context}${pendingOrderSection}
       addToHistory(masterId, { role: "assistant", content: assistantMsg.content ?? "", tool_calls: assistantMsg.tool_calls });
 
       for (const tc of assistantMsg.tool_calls) {
-        const fnName = tc.function.name;
+        const fnName = (tc as any).function?.name;
         let args: any = {};
-        try { args = JSON.parse(tc.function.arguments); } catch {}
+        try { args = JSON.parse((tc as any).function?.arguments ?? "{}"); } catch {}
 
         let toolResult = "";
         if (fnName === "add_order_note") {
@@ -996,7 +996,7 @@ ${context}${pendingOrderSection}
         model: openaiModel,
         messages: [
           { role: "system", content: systemPrompt },
-          ...getHistory(masterId),
+          ...(getHistory(masterId) as any),
         ],
         temperature: 0.3,
         max_tokens: 600,
@@ -1073,20 +1073,46 @@ async function proactiveAlreadySent(
   return rows.length > 0 && new Date(rows[0].updatedAt) > cutoff;
 }
 
-async function markProactiveSent(masterId: number, type: string, orderId: number) {
+async function markProactiveSent(masterId: number, type: string, orderId: number): Promise<void> {
   const key = `${type}:${orderId}`;
-  const existing = await db.select({ id: botMemoryTable.id })
-    .from(botMemoryTable)
-    .where(and(
-      eq(botMemoryTable.masterId, masterId),
-      eq(botMemoryTable.category, "proactive_sent"),
-      eq(botMemoryTable.content, key),
-    ))
-    .limit(1);
-  if (existing.length > 0) {
-    await db.update(botMemoryTable).set({ updatedAt: new Date() }).where(eq(botMemoryTable.id, existing[0].id));
-  } else {
-    await db.insert(botMemoryTable).values({ masterId, category: "proactive_sent", content: key });
+  try {
+    const existing = await db.select({ id: botMemoryTable.id })
+      .from(botMemoryTable)
+      .where(and(
+        eq(botMemoryTable.masterId, masterId),
+        eq(botMemoryTable.category, "proactive_sent"),
+        eq(botMemoryTable.content, key),
+      ))
+      .limit(1);
+    if (existing.length > 0) {
+      await db.update(botMemoryTable).set({ updatedAt: new Date() }).where(eq(botMemoryTable.id, existing[0].id));
+    } else {
+      await db.insert(botMemoryTable).values({ masterId, category: "proactive_sent", content: key });
+    }
+  } catch (e: any) {
+    // Gracefully handle desynced sequence / duplicate key: treat as already-marked
+    if (e?.code === "23505" || e?.cause?.code === "23505") {
+      console.warn(`[dispatcherAI] markProactiveSent duplicate-key for master ${masterId} key=${key}; treating as already marked`);
+      // Attempt to refresh updatedAt on the existing row by logical key
+      try {
+        const existing = await db.select({ id: botMemoryTable.id })
+          .from(botMemoryTable)
+          .where(and(
+            eq(botMemoryTable.masterId, masterId),
+            eq(botMemoryTable.category, "proactive_sent"),
+            eq(botMemoryTable.content, key),
+          ))
+          .limit(1);
+        if (existing.length > 0) {
+          await db.update(botMemoryTable).set({ updatedAt: new Date() }).where(eq(botMemoryTable.id, existing[0].id));
+        }
+      } catch (inner) {
+        console.error(`[dispatcherAI] markProactiveSent fallback update failed for master ${masterId}:`, inner);
+      }
+    } else {
+      console.error(`[dispatcherAI] markProactiveSent failed for master ${masterId} key=${key}:`, e);
+      throw e;
+    }
   }
 }
 
@@ -1294,13 +1320,13 @@ export async function runProactiveChecks(): Promise<void> {
 
       // 1. Negative token balance
       if (negativeBalanceMap.has(master.id)) {
-        const key = `balance_negative:${master.id}`;
         if (!(await proactiveAlreadySent(master.id, "balance_negative", master.id, 72))) {
           const msg = "Привет! Твой баланс токенов сейчас отрицательный. Чтобы иметь приоритет в ленте и не потерять доступ к новым заказам, пополни кошелёк в приложении. Удачной работы!";
           try {
+            // Dedup FIRST: if this fails, we skip sending entirely
+            await markProactiveSent(master.id, "balance_negative", master.id);
             await sendMaxMessage(master.maxChatId, msg);
             await saveBotReply(master.id, master.maxChatId, msg);
-            await markProactiveSent(master.id, "balance_negative", master.id);
             console.log(`[dispatcherAI] Sent negative balance reminder to ${master.alias}`);
           } catch (e) {
             console.error(`[dispatcherAI] Failed to send balance reminder to ${master.alias}:`, e);
@@ -1314,9 +1340,10 @@ export async function runProactiveChecks(): Promise<void> {
         if (!(await proactiveAlreadySent(master.id, "commission_debt", master.id, 72))) {
           const msg = "Напоминаю: у тебя есть незакрытые старые заказы с комиссией. Закрой хвосты в приложении, чтобы полностью перейти на новую систему.";
           try {
+            // Dedup FIRST: if this fails, we skip sending entirely
+            await markProactiveSent(master.id, "commission_debt", master.id);
             await sendMaxMessage(master.maxChatId, msg);
             await saveBotReply(master.id, master.maxChatId, msg);
-            await markProactiveSent(master.id, "commission_debt", master.id);
             console.log(`[dispatcherAI] Sent commission debt reminder to ${master.alias}`);
           } catch (e) {
             console.error(`[dispatcherAI] Failed to send debt reminder to ${master.alias}:`, e);

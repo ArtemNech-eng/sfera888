@@ -744,7 +744,7 @@ async function runMasterFollowupScenario(sessionId: number): Promise<void> {
       sent++;
       sendLog.push(`${m.alias} (${m.city}): ✅ ${riskLabel(m.risk)} — ${m.orders.length} заказ${m.orders.length === 1 ? "" : "а"}`);
       db.insert(masterMessagesTable).values({
-        masterId: m.id,
+        masterId: m.masterId,
         telegramChatId: `max_${m.maxChatId}`,
         text: `[ИИ-диспетчер]: ${msg}`,
         fromMaster: false,
@@ -865,7 +865,7 @@ async function runALDiagnosticsScenario(sessionId: number, days = 7): Promise<vo
   const t2 = Date.now();
 
   // Build compact data block for GPT (scalable — groups, not rows)
-  const formatEntry = (e: MasterPipelineEntry) => {
+  const formatEntry = (e: AtRiskMaster) => {
     const contactStr = e.lastContactAt
       ? `${Math.floor(e.daysSinceContact)} дн. назад (${e.lastContactAt.toLocaleDateString("ru-RU")})`
       : "никогда";
@@ -888,7 +888,7 @@ async function runALDiagnosticsScenario(sessionId: number, days = 7): Promise<vo
 
 ═══ СВОДКА ═══
 Всего мастеров с активными заказами: ${allEntries.length}
-Заказов: ${orders.length} | Ожидаемые оплаты: ${fmt(totalAmount)}
+Заказов: ${orderCount} | Ожидаемые оплаты: ${fmt(totalAmount)}
 🔴 Критично: ${critical.length} мастеров / ${fmt(criticalAmount)}
 🟡 Внимание: ${warning.length} мастеров / ${fmt(warningAmount)}
 🟢 Норма: ${ok.length} мастеров / ${fmt(okAmount)}
@@ -980,7 +980,7 @@ ${okSummary}
 
   const memorySummary =
     `АЛ-Диагностика ${dateStr}: ` +
-    `${allEntries.length} мастеров, ${orders.length} заказов, ${fmt(totalAmount)}. ` +
+    `${allEntries.length} мастеров, ${orderCount} заказов, ${fmt(totalAmount)}. ` +
     `Критично: ${critical.length} (${fmt(criticalAmount)}), ` +
     `Внимание: ${warning.length} (${fmt(warningAmount)}), ` +
     `Норма: ${ok.length} (${fmt(okAmount)}). ` +

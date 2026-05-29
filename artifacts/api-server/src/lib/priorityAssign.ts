@@ -249,7 +249,7 @@ export async function selectAndAssignWinner(orderId: number): Promise<"assigned"
   if (winner.master.maxChatId) {
     sendMaxMessage(winner.master.maxChatId, winnerText).catch(() => {});
   }
-  sendPushToMaster(winner.master.id, "🎉 Заявка ваша!", `Позвоните клиенту в течение 15 минут. Заявка #${orderId}`).catch(() => {});
+  sendPushToMaster(winner.master.id, { title: "🎉 Заявка ваша!", body: `Позвоните клиенту в течение 15 минут. Заявка #${orderId}` }).catch(() => {});
 
   // Log to CRM chat
   await db.insert(masterMessagesTable).values({
@@ -320,7 +320,7 @@ export async function rebroadcastWave2(orderId: number): Promise<void> {
     const master = masterRows[0];
     if (!master) continue;
     if (master.maxChatId) sendMaxMessage(master.maxChatId, wave2Text).catch(() => {});
-    sendPushToMaster(master.id, "Заявка ещё доступна", `Заявка #${orderId} ещё открыта — откликнитесь!`).catch(() => {});
+    sendPushToMaster(master.id, { title: "Заявка ещё доступна", body: `Заявка #${orderId} ещё открыта — откликнитесь!` }).catch(() => {});
   }
 
   console.log(`[priorityAssign] Order #${orderId} wave 2 broadcast to ${dispatches.length} master(s)`);

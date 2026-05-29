@@ -582,7 +582,7 @@ async function toolGetAvailableMasters(city: string, serviceType?: string) {
     const aCount = assignmentCounts.get(a.id) ?? 0;
     const bCount = assignmentCounts.get(b.id) ?? 0;
     if (bCount !== aCount) return bCount - aCount;
-    return (b.rating ?? 0) - (a.rating ?? 0);
+    return Number(b.rating ?? 0) - Number(a.rating ?? 0);
   });
 
   return `Мастера в ${city} (${sorted.length}), по опыту:\n` + sorted.slice(0, 8).map((m, i) => {
@@ -1477,7 +1477,7 @@ async function toolGetDataQualityIssues(): Promise<string> {
 
   const phoneCount = new Map<string, number>();
   for (const l of recentLeads) {
-    if (l.phone) phoneCount.set(l.phone, (phoneCount.get(l.phone) ?? 0) + 1);
+    if (l.clientPhone) phoneCount.set(l.clientPhone, (phoneCount.get(l.clientPhone) ?? 0) + 1);
   }
   const duplicates = [...phoneCount.entries()].filter(([, count]) => count > 1);
 
@@ -2595,7 +2595,7 @@ export async function handleManagerUpdate(update: unknown) {
       if (type === "create_lead") {
         await sendMsg(userId, "⏳ Создаю заявку...");
         try {
-          const { leadId, orderId } = await toolCreateLeadAndOrder(data);
+          const { leadId, orderId } = await toolCreateLeadAndOrder(data as any);
           actionResult = `Заявка #${leadId} создана → Заказ #${orderId}`;
           // Update context so GPT knows which order is active in this conversation
           session.ctx = { ...session.ctx, orderId, leadId };
@@ -3054,7 +3054,7 @@ export async function handleManagerUpdate(update: unknown) {
         model: "gpt-4o",
         messages: [
           { role: "system", content: SYSTEM_PROMPT + ctxNote },
-          ...session.messages,
+          ...(session.messages as any),
         ],
         max_tokens: 700,
       });
@@ -3666,9 +3666,9 @@ export async function runAutonomousCycle(triggerReason = "scheduled") {
 
       // Execute each tool call
       for (const tc of assistantMsg.tool_calls) {
-        const fnName = tc.function.name;
+        const fnName = (tc as any).function?.name;
         let args: any = {};
-        try { args = JSON.parse(tc.function.arguments); } catch {}
+        try { args = JSON.parse((tc as any).function?.arguments ?? "{}"); } catch {}
 
         let toolResult = "";
 

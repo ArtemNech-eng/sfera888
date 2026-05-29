@@ -76,12 +76,12 @@ async function uploadImageToStorage(buffer: Buffer, mimetype: string): Promise<s
 
 router.get("/chat/:token", async (req, res) => {
   const { token } = req.params;
-  const [receipt] = await db.select().from(receiptsTable).where(eq(receiptsTable.token, token));
+  const [receipt] = await db.select().from(receiptsTable).where(eq(receiptsTable.token, String(token)));
   if (!receipt) return res.status(404).json({ error: "Смета не найдена" });
 
   const messages = await db.select()
     .from(clientSupportMessagesTable)
-    .where(eq(clientSupportMessagesTable.receiptToken, token))
+    .where(eq(clientSupportMessagesTable.receiptToken, String(token)))
     .orderBy(clientSupportMessagesTable.createdAt);
 
   res.json({ messages });
@@ -94,11 +94,11 @@ router.post("/chat/:token", async (req, res) => {
   const { message } = req.body;
   if (!message?.trim()) return res.status(400).json({ error: "Сообщение не может быть пустым" });
 
-  const [receipt] = await db.select().from(receiptsTable).where(eq(receiptsTable.token, token));
+  const [receipt] = await db.select().from(receiptsTable).where(eq(receiptsTable.token, String(token)));
   if (!receipt) return res.status(404).json({ error: "Смета не найдена" });
 
   const [msg] = await db.insert(clientSupportMessagesTable).values({
-    receiptToken: token,
+    receiptToken: String(token),
     message: message.trim(),
     fromClient: true,
   }).returning();
@@ -110,7 +110,7 @@ router.post("/chat/:token", async (req, res) => {
 
 router.get("/history/:token", async (req, res) => {
   const { token } = req.params;
-  const [receipt] = await db.select().from(receiptsTable).where(eq(receiptsTable.token, token));
+  const [receipt] = await db.select().from(receiptsTable).where(eq(receiptsTable.token, String(token)));
   if (!receipt) return res.status(404).json({ error: "Смета не найдена" });
 
   const phone = receipt.clientPhone;
@@ -289,7 +289,6 @@ router.post("/estimate", upload.single("photo"), async (req, res) => {
       .select({ lineItems: receiptsTable.lineItems })
       .from(receiptsTable)
       .where(and(
-        isNull(receiptsTable.deletedAt),
         sql`lower(${receiptsTable.city}) = lower(${cityNorm})`,
         gte(receiptsTable.createdAt, sixMonthsAgo),
       ))
@@ -528,7 +527,7 @@ router.get("/chat/:token/messages", requireRole("admin", "master_operator"), asy
   const { token } = req.params;
   const messages = await db.select()
     .from(clientSupportMessagesTable)
-    .where(eq(clientSupportMessagesTable.receiptToken, token))
+    .where(eq(clientSupportMessagesTable.receiptToken, String(token)))
     .orderBy(clientSupportMessagesTable.createdAt);
 
   // Mark client messages as seen
@@ -536,10 +535,10 @@ router.get("/chat/:token/messages", requireRole("admin", "master_operator"), asy
   if (unread.length) {
     await db.update(clientSupportMessagesTable)
       .set({ seenAt: new Date() })
-      .where(eq(clientSupportMessagesTable.receiptToken, token));
+      .where(eq(clientSupportMessagesTable.receiptToken, String(token)));
   }
 
-  const [receipt] = await db.select().from(receiptsTable).where(eq(receiptsTable.token, token));
+  const [receipt] = await db.select().from(receiptsTable).where(eq(receiptsTable.token, String(token)));
 
   res.json({ messages, receipt: receipt ?? null });
 });
@@ -551,13 +550,13 @@ router.post("/chat/:token/reply", requireRole("admin", "master_operator"), async
   const { message } = req.body;
   if (!message?.trim()) return res.status(400).json({ error: "Пустое сообщение" });
 
-  const [receipt] = await db.select().from(receiptsTable).where(eq(receiptsTable.token, token));
+  const [receipt] = await db.select().from(receiptsTable).where(eq(receiptsTable.token, String(token)));
   if (!receipt) return res.status(404).json({ error: "Смета не найдена" });
 
   const operatorName = req.session?.user?.username ?? "Оператор";
 
   const [msg] = await db.insert(clientSupportMessagesTable).values({
-    receiptToken: token,
+    receiptToken: String(token),
     message: message.trim(),
     fromClient: false,
     operatorName,
@@ -583,7 +582,7 @@ router.get("/chat-unread", requireRole("admin", "master_operator"), async (_req,
 
 // GET /api/client/support/:phone — get messages for a phone number
 router.get("/support/:phone", async (req, res) => {
-  const phone = req.params.phone.replace(/\D/g, "").slice(-10);
+  const phone = String(req.params.phone).replace(/\D/g, "").slice(-10);
   if (phone.length < 10) return res.status(400).json({ error: "Неверный номер" });
 
   const messages = await db.select()
@@ -607,7 +606,7 @@ router.get("/support/:phone", async (req, res) => {
 
 // POST /api/client/support/:phone — client sends message
 router.post("/support/:phone", async (req, res) => {
-  const phone = req.params.phone.replace(/\D/g, "").slice(-10);
+  const phone = String(req.params.phone).replace(/\D/g, "").slice(-10);
   if (phone.length < 10) return res.status(400).json({ error: "Неверный номер" });
   const { message, clientName } = req.body;
   if (!message?.trim()) return res.status(400).json({ error: "Сообщение пустое" });
@@ -670,7 +669,7 @@ router.get("/support-threads", requireRole("admin", "master_operator"), async (_
 // ─── CRM: GET /api/client/support-messages/:phone — messages for a phone ──────
 
 router.get("/support-messages/:phone", requireRole("admin", "master_operator"), async (req, res) => {
-  const phone = req.params.phone.replace(/\D/g, "").slice(-10);
+  const phone = String(req.params.phone).replace(/\D/g, "").slice(-10);
   const messages = await db.select()
     .from(generalSupportMessagesTable)
     .where(sql`right(regexp_replace(${generalSupportMessagesTable.clientPhone}, '[^0-9]', '', 'g'), 10) = ${phone}`)
