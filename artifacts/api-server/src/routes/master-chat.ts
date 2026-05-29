@@ -93,7 +93,7 @@ router.get("/", requireRole("admin", "master_operator"), async (_req, res) => {
       lastSeenAt: master.lastSeenAt ?? null,
       avatarUrl,
       lastMessage,
-      lastAt: row.created_at,
+      lastAt: new Date(row.created_at).toISOString(),
       unread: unreadMap.get(masterId) ?? 0,
       lastFromMaster: row.from_master,
     };

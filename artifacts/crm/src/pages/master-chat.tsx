@@ -5,7 +5,7 @@ import { ProtectedRoute } from "@/hooks/use-auth";
 import { useAuth } from "@/hooks/use-auth";
 import { Send, MessageSquare, RefreshCw, Check, CheckCheck, Paperclip, X, Camera, DollarSign, AlertCircle, RotateCcw, Pencil, Loader2, UserCheck, MapPin, Smile, ChevronRight, User2, Trash2, Search, Phone, ChevronDown, ChevronUp, Filter, Megaphone, Zap, Users, Building2, ListChecks } from "lucide-react";
 import { MasterDrawer, type DrawerMaster, type DrawerColumn } from "@/components/master-drawer";
-import { format, formatDistanceToNow } from "date-fns";
+import { format, formatDistanceToNow, parseISO } from "date-fns";
 import { ru } from "date-fns/locale";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -126,7 +126,7 @@ function timeAgo(dateStr: string) {
 
 function formatChatListTime(dateStr: string): string {
   try {
-    const d = new Date(dateStr);
+    const d = parseISO(dateStr);
     const now = new Date();
     const isToday = d.toDateString() === now.toDateString();
     const yesterday = new Date(now);
