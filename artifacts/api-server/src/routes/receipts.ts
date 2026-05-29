@@ -73,6 +73,15 @@ function lineTotal(item: { price: number; quantity?: number }) {
 // ─── Helper: create/update transaction from confirmed receipt ─────────────────
 
 async function ensureReceiptTransaction(receipt: typeof receiptsTable.$inferSelect): Promise<void> {
+  // Skip orphaned receipts where master no longer exists
+  const [masterExists] = await db.select({ id: mastersTable.id })
+    .from(mastersTable)
+    .where(eq(mastersTable.id, receipt.masterId));
+  if (!masterExists) {
+    console.warn(`[receipts] Skipping receipt ${receipt.id}: master ${receipt.masterId} not found`);
+    return;
+  }
+
   const totalAmount = Number(receipt.totalAmount);
   const prepayAmount = Number(receipt.prepaymentAmount);
   const commSettings = await getCommissionSettings();
@@ -141,14 +150,18 @@ export async function backfillReceiptTransactions(): Promise<number> {
 
   let created = 0;
   for (const receipt of confirmed) {
-    const existingTxRows = await db.select().from(transactionsTable)
-      .where(eq(transactionsTable.orderId, receipt.orderId));
-    if (existingTxRows.length === 0) {
-      await ensureReceiptTransaction(receipt);
-      created++;
-    } else {
-      // Even if transactions exist, call ensureReceiptTransaction to dedupe and update
-      await ensureReceiptTransaction(receipt);
+    try {
+      const existingTxRows = await db.select().from(transactionsTable)
+        .where(eq(transactionsTable.orderId, receipt.orderId));
+      if (existingTxRows.length === 0) {
+        await ensureReceiptTransaction(receipt);
+        created++;
+      } else {
+        // Even if transactions exist, call ensureReceiptTransaction to dedupe and update
+        await ensureReceiptTransaction(receipt);
+      }
+    } catch (err) {
+      console.error(`[backfill] Receipt ${receipt.id} failed:`, err);
     }
   }
   return created;
