@@ -203,7 +203,13 @@ export default function FinalCTA() {
                       <input
                         type="text"
                         value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
+                        onChange={(e) => {
+                          let val = e.target.value;
+                          if (val.startsWith('8')) {
+                            val = '+7' + val.slice(1);
+                          }
+                          setPhone(val);
+                        }}
                         placeholder="+7 900 000-00-00 или @username"
                         required
                         className="w-full px-4 py-3 rounded-xl text-sm outline-none transition-all duration-200"
