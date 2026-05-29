@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { ru } from "date-fns/locale";
 import { History, CheckCircle2, XCircle, RotateCcw, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 
@@ -148,7 +148,7 @@ export function OrderHistorySection({ masterId }: { masterId: number }) {
                   {rec.city && <span className="text-[10px] text-gray-400">{rec.city}</span>}
                 </div>
                 <span className="text-[10px] text-gray-400">
-                  {format(new Date(rec.removedAt), "d MMM yyyy", { locale: ru })}
+                  {format(parseISO(rec.removedAt), "d MMM yyyy", { locale: ru })}
                 </span>
               </div>
               {rec.cancelReason && (

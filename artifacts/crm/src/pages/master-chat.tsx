@@ -120,7 +120,7 @@ function ChatAvatar({ name, id, avatarUrl, size = 32 }: { name: string; id: numb
 }
 
 function timeAgo(dateStr: string) {
-  try { return formatDistanceToNow(new Date(dateStr), { addSuffix: true, locale: ru }); }
+  try { return formatDistanceToNow(parseISO(dateStr), { addSuffix: true, locale: ru }); }
   catch { return ""; }
 }
 
@@ -141,7 +141,7 @@ function formatChatListTime(dateStr: string): string {
 }
 
 function timeStamp(dateStr: string) {
-  try { return format(new Date(dateStr), "HH:mm", { locale: ru }); }
+  try { return format(parseISO(dateStr), "HH:mm", { locale: ru }); }
   catch { return ""; }
 }
 

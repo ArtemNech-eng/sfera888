@@ -10,7 +10,7 @@ import {
   Smartphone, KeyRound, Eye, EyeOff, FlaskConical, ShieldCheck, ShieldAlert, FileSignature,
   ShieldBan, ShieldOff, CalendarCheck, XCircle, Pencil, Lock, Unlock, Coins, Gift,
 } from "lucide-react";
-import { format, formatDistanceToNow } from "date-fns";
+import { format, formatDistanceToNow, parseISO } from "date-fns";
 import { ru } from "date-fns/locale";
 import { OrderHistorySection } from "./OrderHistorySection";
 
@@ -139,11 +139,12 @@ function CheckinHistorySection({ masterId }: { masterId: number }) {
 // ─── Online status ─────────────────────────────────────────────────────────────
 function getOnlineStatus(lastSeenAt?: string | null): { online: boolean; label: string } {
   if (!lastSeenAt) return { online: false, label: "Не заходил" };
-  const diff = Date.now() - new Date(lastSeenAt).getTime();
+  const d = parseISO(lastSeenAt);
+  const diff = Date.now() - d.getTime();
   if (diff < 5 * 60_000) return { online: true, label: "Онлайн" };
   return {
     online: false,
-    label: "Был " + formatDistanceToNow(new Date(lastSeenAt), { locale: ru, addSuffix: true }),
+    label: "Был " + formatDistanceToNow(d, { locale: ru, addSuffix: true }),
   };
 }
 
@@ -234,9 +235,9 @@ export function Avatar({ name, id, avatarUrl, size = 36 }: { name: string; id: n
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function timeAgo(d: string) { try { return formatDistanceToNow(new Date(d), { addSuffix: true, locale: ru }); } catch { return ""; } }
-function ts(d: string) { try { return format(new Date(d), "HH:mm", { locale: ru }); } catch { return ""; } }
-function dateShort(d: string | null) { if (!d) return "—"; try { return format(new Date(d), "d MMM yyyy", { locale: ru }); } catch { return "—"; } }
+function timeAgo(d: string) { try { return formatDistanceToNow(parseISO(d), { addSuffix: true, locale: ru }); } catch { return ""; } }
+function ts(d: string) { try { return format(parseISO(d), "HH:mm", { locale: ru }); } catch { return ""; } }
+function dateShort(d: string | null) { if (!d) return "—"; try { return format(parseISO(d), "d MMM yyyy", { locale: ru }); } catch { return "—"; } }
 
 function Row({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
   return (
@@ -1452,7 +1453,7 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                           <div key={log.id} className="flex items-start gap-2 px-2 py-1 hover:bg-gray-50 rounded">
                             <span className={`text-[10px] font-medium flex-shrink-0 mt-0.5 ${meta.color}`}>{meta.label}</span>
                             <span className="text-[10px] text-gray-400 ml-auto flex-shrink-0">
-                              {format(new Date(log.createdAt), "d MMM HH:mm", { locale: ru })}
+                              {format(parseISO(log.createdAt), "d MMM HH:mm", { locale: ru })}
                             </span>
                           </div>
                         );
