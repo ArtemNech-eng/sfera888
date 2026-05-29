@@ -48,6 +48,11 @@ function AnimatedNumber({ target, suffix = '', prefix = '', duration = 1800 }: {
 export default function Income() {
   const ref = useRef<HTMLElement>(null);
   const inView = useInView(ref as React.RefObject<HTMLElement>);
+  const [leads, setLeads] = useState(100);
+  const ratePerLead = 500;
+  const adBudget = 15000;
+  const earned = leads * ratePerLead;
+  const total = Math.max(earned - adBudget, 0);
 
   const steps = [
     {
@@ -227,66 +232,55 @@ export default function Income() {
 
             {/* Calc body */}
             <div className="p-7 space-y-4">
-              {/* Row */}
-              {[
-                {
-                  label: 'Успешных лидов за период',
-                  value: '100',
-                  unit: 'шт.',
-                  color: '#F8FAFC',
-                  bg: 'rgba(255,255,255,0.03)',
-                },
-                {
-                  label: 'Ставка за лид',
-                  value: '500 ₽',
-                  unit: '',
-                  color: '#34F5A3',
-                  bg: 'rgba(52, 245, 163, 0.04)',
-                },
-                {
-                  label: 'Начислено',
-                  value: '50 000 ₽',
-                  unit: '',
-                  color: '#34F5A3',
-                  bg: 'rgba(52, 245, 163, 0.06)',
-                  large: true,
-                },
-              ].map((row) => (
-                <div
-                  key={row.label}
-                  className={`flex items-center justify-between p-4 rounded-xl ${row.large ? 'py-5' : ''}`}
-                  style={{ background: row.bg, border: '1px solid rgba(255,255,255,0.05)' }}
-                >
-                  <span className="text-sm" style={{ color: '#94A3B8' }}>
-                    {row.label}
-                  </span>
-                  <span
-                    className={`font-bold ${row.large ? 'text-xl' : 'text-base'}`}
-                    style={{ color: row.color }}
-                  >
-                    {row.value}
-                    {row.unit && (
-                      <span className="text-xs ml-1 font-normal" style={{ color: '#475569' }}>
-                        {row.unit}
-                      </span>
-                    )}
-                  </span>
+              {/* Slider */}
+              <div className="p-4 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm" style={{ color: '#94A3B8' }}>Успешных лидов за период</span>
+                  <span className="text-base font-bold" style={{ color: '#F8FAFC' }}>{leads} шт.</span>
                 </div>
-              ))}
+                <input
+                  type="range"
+                  min={10}
+                  max={500}
+                  step={1}
+                  value={leads}
+                  onChange={(e) => setLeads(Number(e.target.value))}
+                  className="w-full h-2 rounded-lg appearance-none cursor-pointer"
+                  style={{
+                    background: 'linear-gradient(90deg, #34F5A3 ' + ((leads - 10) / 490 * 100) + '%, rgba(255,255,255,0.1) ' + ((leads - 10) / 490 * 100) + '%)',
+                  }}
+                />
+                <div className="flex justify-between mt-2 text-xs" style={{ color: '#475569' }}>
+                  <span>10</span>
+                  <span>500</span>
+                </div>
+              </div>
+
+              {/* Rate per lead */}
+              <div
+                className="flex items-center justify-between p-4 rounded-xl"
+                style={{ background: 'rgba(52, 245, 163, 0.04)', border: '1px solid rgba(255,255,255,0.05)' }}
+              >
+                <span className="text-sm" style={{ color: '#94A3B8' }}>Ставка за лид</span>
+                <span className="text-base font-bold" style={{ color: '#34F5A3' }}>{ratePerLead.toLocaleString('ru-RU')} ₽</span>
+              </div>
+
+              {/* Earned */}
+              <div
+                className="flex items-center justify-between p-4 rounded-xl py-5"
+                style={{ background: 'rgba(52, 245, 163, 0.06)', border: '1px solid rgba(255,255,255,0.05)' }}
+              >
+                <span className="text-sm" style={{ color: '#94A3B8' }}>Начислено</span>
+                <span className="text-xl font-bold" style={{ color: '#34F5A3' }}>{earned.toLocaleString('ru-RU')} ₽</span>
+              </div>
 
               {/* Divider */}
               <div className="relative py-2">
-                <div
-                  className="absolute inset-0 flex items-center"
-                  style={{ padding: '0 1px' }}
-                >
+                <div className="absolute inset-0 flex items-center" style={{ padding: '0 1px' }}>
                   <div className="w-full" style={{ borderTop: '1px dashed rgba(255,255,255,0.1)' }} />
                 </div>
                 <div className="relative flex justify-center">
-                  <span
-                    className="px-3 text-xs"
-                    style={{ background: '#111827', color: '#475569' }}
-                  >
+                  <span className="px-3 text-xs" style={{ background: '#111827', color: '#475569' }}>
                     минус рекламный бюджет
                   </span>
                 </div>
@@ -295,52 +289,32 @@ export default function Income() {
               {/* Ad budget */}
               <div
                 className="flex items-center justify-between p-4 rounded-xl"
-                style={{
-                  background: 'rgba(250, 204, 21, 0.04)',
-                  border: '1px solid rgba(250, 204, 21, 0.12)',
-                }}
+                style={{ background: 'rgba(250, 204, 21, 0.04)', border: '1px solid rgba(250, 204, 21, 0.12)' }}
               >
                 <div>
-                  <div className="text-sm" style={{ color: '#94A3B8' }}>
-                    Рекламный бюджет за период
-                  </div>
-                  <div className="text-xs mt-0.5" style={{ color: '#475569' }}>
-                    Оплачен платформой, учитывается в расчёте
-                  </div>
+                  <div className="text-sm" style={{ color: '#94A3B8' }}>Рекламный бюджет за период</div>
+                  <div className="text-xs mt-0.5" style={{ color: '#475569' }}>Оплачен платформой, учитывается в расчёте</div>
                 </div>
-                <span className="text-base font-bold" style={{ color: '#FACC15' }}>
-                  − 15 000 ₽
-                </span>
+                <span className="text-base font-bold" style={{ color: '#FACC15' }}>− {adBudget.toLocaleString('ru-RU')} ₽</span>
               </div>
 
               {/* Result */}
               <div
                 className="p-5 rounded-xl relative overflow-hidden"
-                style={{
-                  background: 'rgba(52, 245, 163, 0.08)',
-                  border: '1px solid rgba(52, 245, 163, 0.3)',
-                }}
+                style={{ background: 'rgba(52, 245, 163, 0.08)', border: '1px solid rgba(52, 245, 163, 0.3)' }}
               >
-                <div
-                  className="absolute top-0 left-0 right-0 h-0.5"
-                  style={{ background: 'linear-gradient(90deg, #34F5A3, #38BDF8)' }}
-                />
+                <div className="absolute top-0 left-0 right-0 h-0.5" style={{ background: 'linear-gradient(90deg, #34F5A3, #38BDF8)' }} />
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="text-sm font-medium mb-1" style={{ color: '#94A3B8' }}>
-                      Итог к выплате
-                    </div>
+                    <div className="text-sm font-medium mb-1" style={{ color: '#94A3B8' }}>Итог к выплате</div>
                     <div className="text-3xl font-black" style={{ color: '#34F5A3' }}>
-                      {inView && <AnimatedNumber target={35000} suffix=" ₽" duration={1600} />}
-                      {!inView && '35 000 ₽'}
+                      {inView && <AnimatedNumber key={total} target={total} suffix=" ₽" duration={600} />}
+                      {!inView && total.toLocaleString('ru-RU') + ' ₽'}
                     </div>
                   </div>
                   <div
                     className="w-14 h-14 rounded-full flex items-center justify-center"
-                    style={{
-                      background: 'rgba(52, 245, 163, 0.12)',
-                      border: '1px solid rgba(52, 245, 163, 0.3)',
-                    }}
+                    style={{ background: 'rgba(52, 245, 163, 0.12)', border: '1px solid rgba(52, 245, 163, 0.3)' }}
                   >
                     <svg width="22" height="22" viewBox="0 0 22 22" fill="none" style={{ color: '#34F5A3' }}>
                       <path d="M11 3v16M6 7l5-4 5 4M6 14.5l5 4.5 5-4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
