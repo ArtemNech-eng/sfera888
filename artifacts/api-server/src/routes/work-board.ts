@@ -299,7 +299,12 @@ async function buildBoard() {
 
     // Pre-calculate commission totals for problem detection
     const commTotalForProblem = total > 0 ? calcCommission(total) : orderAmount > 0 ? calcCommission(orderAmount) : 0;
-    const commPaidForProblem = orderPrepDeduct + orderTotalPartialPaid;
+    const commPaidForProblem = realTxs.reduce((s, t) => {
+      if (isPaidStatus(t.paymentStatus)) return s + safeNumber(t.commission);
+      const pd = safeNumber(t.prepaymentDeducted, 0);
+      const tp = (partialsByTx.get(t.id) ?? []).reduce((ss, p) => ss + safeNumber(p.amount, 0), 0);
+      return s + pd + tp;
+    }, 0);
     const commLeftForProblem = Math.max(0, commTotalForProblem - commPaidForProblem);
 
     const address = [o.city, o.district].filter(Boolean).join(", ");
@@ -336,7 +341,12 @@ async function buildBoard() {
       // instead of misleading "оплачено {total}" badge
       const manualCommission = safeNumber((o as any).commission);
       const commTotal = receipt && total > 0 ? calcCommission(total) : manualCommission > 0 ? manualCommission : 0;
-      const commPaid = commTotal > 0 ? orderPrepDeduct + orderTotalPartialPaid : 0;
+      const commPaid = commTotal > 0 ? realTxs.reduce((s, t) => {
+        if (isPaidStatus(t.paymentStatus)) return s + safeNumber(t.commission);
+        const pd = safeNumber(t.prepaymentDeducted, 0);
+        const tp = (partialsByTx.get(t.id) ?? []).reduce((ss, p) => ss + safeNumber(p.amount, 0), 0);
+        return s + pd + tp;
+      }, 0) : 0;
       const commLeft = commTotal > 0 ? Math.max(0, commTotal - commPaid) : 0;
       const tier = commTotal > 0 ? commissionTier(total) : null;
       const partialPaymentsList = orderPartials.map((p) => ({
@@ -398,7 +408,12 @@ async function buildBoard() {
       const tier = commissionTier(tierBase);
       if (tier === "fixed") commLeftFixed++; else commLeftPercent++;
       const commTotal = effectiveOrderAmount > 0 ? calcCommission(effectiveOrderAmount) : txCommission > 0 ? txCommission : manualCommission;
-      const commPaid = orderPrepDeduct + orderTotalPartialPaid;
+      const commPaid = realTxs.reduce((s, t) => {
+        if (isPaidStatus(t.paymentStatus)) return s + safeNumber(t.commission);
+        const pd = safeNumber(t.prepaymentDeducted, 0);
+        const tp = (partialsByTx.get(t.id) ?? []).reduce((ss, p) => ss + safeNumber(p.amount, 0), 0);
+        return s + pd + tp;
+      }, 0);
       const partialPaymentsList = orderPartials.map((p) => ({
         id: p.id,
         amount: Number(p.amount),
@@ -435,7 +450,12 @@ async function buildBoard() {
       const commTotal = total > 0 ? calcCommission(total) : manualCommission > 0 ? manualCommission : 0;
       // Use transaction data for accurate commission tracking:
       // prepaymentDeducted = бронь зачтённая в комиссию, totalPartialPaid = частичные оплаты мастера
-      const commPaid = orderPrepDeduct + orderTotalPartialPaid;
+      const commPaid = realTxs.reduce((s, t) => {
+        if (isPaidStatus(t.paymentStatus)) return s + safeNumber(t.commission);
+        const pd = safeNumber(t.prepaymentDeducted, 0);
+        const tp = (partialsByTx.get(t.id) ?? []).reduce((ss, p) => ss + safeNumber(p.amount, 0), 0);
+        return s + pd + tp;
+      }, 0);
       const commLeft = Math.max(0, commTotal - commPaid);
       const partialPaymentsList = orderPartials.map((p) => ({
         id: p.id,
