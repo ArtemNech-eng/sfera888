@@ -648,7 +648,8 @@ router.get("/:id/orders", allMasterRoles, async (req, res) => {
     const totalPartialPaid = txPartials.reduce((s, p) => s + Number(p.amount), 0);
     const prepaymentDeducted = tx ? Number(tx.prepaymentDeducted ?? 0) : 0;
     const commission = tx ? Number(tx.commission) : 0;
-    const remainingCommission = Math.max(0, commission - prepaymentDeducted - totalPartialPaid);
+    const isPaid = tx?.paymentStatus === "paid" || tx?.paymentStatus === "overdue";
+    const remainingCommission = isPaid ? 0 : Math.max(0, commission - prepaymentDeducted - totalPartialPaid);
     return {
       id: o.id,
       status: o.status,
