@@ -84,19 +84,28 @@ async function ensureReceiptTransaction(receipt: typeof receiptsTable.$inferSele
   const existingTxRows = await db.select().from(transactionsTable)
     .where(eq(transactionsTable.orderId, receipt.orderId));
 
-  if (existingTxRows.length > 0) {
-    const tx = existingTxRows[0];
-    // Only update if it came from a receipt (don't override order-based transactions)
-    if (tx.sourceType === "receipt") {
-      await db.update(transactionsTable).set({
-        orderAmount: String(totalAmount),
-        commission: String(commission),
-        prepaymentDeducted: String(prepaymentDeducted),
-        paymentStatus,
-        ...(paymentStatus === "paid" && !tx.paidAt ? { paidAt: new Date() } : {}),
-      }).where(eq(transactionsTable.id, tx.id));
+  const receiptTxRows = existingTxRows.filter(tx => tx.sourceType === "receipt");
+
+  if (receiptTxRows.length > 0) {
+    // Update the first receipt-based transaction
+    const tx = receiptTxRows[0];
+    await db.update(transactionsTable).set({
+      orderAmount: String(totalAmount),
+      commission: String(commission),
+      prepaymentDeducted: String(prepaymentDeducted),
+      paymentStatus,
+      ...(paymentStatus === "paid" && !tx.paidAt ? { paidAt: new Date() } : {}),
+    }).where(eq(transactionsTable.id, tx.id));
+
+    // Remove duplicate receipt-based transactions
+    for (let i = 1; i < receiptTxRows.length; i++) {
+      await db.delete(transactionsTable).where(eq(transactionsTable.id, receiptTxRows[i].id));
     }
-    // If existing tx is from an order (source_type != "receipt"), leave it alone
+    return;
+  }
+
+  // If there are order-based transactions, leave them alone and don't create a receipt-based one
+  if (existingTxRows.some(tx => tx.sourceType !== "receipt")) {
     return;
   }
 
@@ -134,6 +143,9 @@ export async function backfillReceiptTransactions(): Promise<number> {
     if (existingTxRows.length === 0) {
       await ensureReceiptTransaction(receipt);
       created++;
+    } else {
+      // Even if transactions exist, call ensureReceiptTransaction to dedupe and update
+      await ensureReceiptTransaction(receipt);
     }
   }
   return created;
