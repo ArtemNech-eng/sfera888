@@ -134,9 +134,9 @@ router.get("/:masterId", requireRole("admin", "master_operator", "lead_operator"
     avatarUrl = tgRows[0]?.avatarUrl ?? master.customAvatarUrl ?? null;
   }
 
-  // Include pending transactions so the chat can show the commission payment card
+  // Include pending/overdue transactions so the chat can show the commission payment card
   const pendingTx = await db.select().from(transactionsTable)
-    .where(and(eq(transactionsTable.masterId, masterId), eq(transactionsTable.paymentStatus, "pending")));
+    .where(and(eq(transactionsTable.masterId, masterId), inArray(transactionsTable.paymentStatus, ["pending", "overdue"])));
 
   // Fetch partial payments for pending transactions
   const pendingTxIds = pendingTx.map(t => t.id);
