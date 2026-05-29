@@ -4,7 +4,7 @@ async function urlBase64ToUint8Array(base64String: string): Promise<Uint8Array> 
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
   const rawData = atob(base64);
-  return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
+  return new Uint8Array([...rawData].map(c => c.charCodeAt(0))) as Uint8Array;
 }
 
 async function subscribe() {
@@ -25,7 +25,7 @@ async function subscribe() {
   const applicationServerKey = await urlBase64ToUint8Array(key);
   const sub = await reg.pushManager.subscribe({
     userVisibleOnly: true,
-    applicationServerKey,
+    applicationServerKey: applicationServerKey as BufferSource,
   });
 
   await sendToServer(sub);

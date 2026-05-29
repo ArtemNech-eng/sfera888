@@ -24,6 +24,10 @@ import {
 import { sendPushToMaster } from "../lib/push.js";
 import { sendPushToClient } from "../lib/clientPush.js";
 import { performBroadcast } from "../lib/broadcastOrder.js";
+import { createRateLimiter } from "../lib/rateLimit.js";
+
+const authRateLimit = createRateLimiter({ windowMs: 60_000, maxAttempts: 5 });
+const forgotPasswordRateLimit = createRateLimiter({ windowMs: 60_000, maxAttempts: 3 });
 
 const avatarUpload = multer({
   storage: multer.memoryStorage(),
@@ -106,7 +110,7 @@ function normalizeLoginInput(raw: string): string {
   return raw.trim();
 }
 
-router.post("/auth/login", async (req, res) => {
+router.post("/auth/login", authRateLimit, async (req, res) => {
   const { login, password, maxChatId } = req.body;
   if (!login || !password) return res.status(400).json({ error: "Укажите логин и пароль" });
 
@@ -166,7 +170,7 @@ router.post("/auth/login", async (req, res) => {
 // POST /api/master-pwa/auth/forgot-password
 // Self-service: master enters phone + new password → password updated
 // If newPassword is omitted, resets to phone number (backwards compat)
-router.post("/auth/forgot-password", async (req, res) => {
+router.post("/auth/forgot-password", forgotPasswordRateLimit, async (req, res) => {
   const { phone, newPassword } = req.body;
   if (!phone) return res.status(400).json({ error: "Введите номер телефона" });
 
@@ -179,15 +183,25 @@ router.post("/auth/forgot-password", async (req, res) => {
     }
   }
 
-  const allMasters = await db.select({
-    id: mastersTable.id, alias: mastersTable.alias,
-    status: mastersTable.status, phone: mastersTable.phone, pwaLogin: mastersTable.pwaLogin,
-  }).from(mastersTable).where(isNull(mastersTable.deletedAt));
+  // Search by pwaLogin (exact) or phone (exact) — avoids loading entire table
+  const [byLogin, byPhone] = await Promise.all([
+    db.select({
+      id: mastersTable.id, alias: mastersTable.alias,
+      status: mastersTable.status, phone: mastersTable.phone, pwaLogin: mastersTable.pwaLogin,
+    }).from(mastersTable).where(and(
+      eq(mastersTable.pwaLogin, normalized),
+      isNull(mastersTable.deletedAt)
+    )).limit(1),
+    db.select({
+      id: mastersTable.id, alias: mastersTable.alias,
+      status: mastersTable.status, phone: mastersTable.phone, pwaLogin: mastersTable.pwaLogin,
+    }).from(mastersTable).where(and(
+      eq(mastersTable.phone, normalized),
+      isNull(mastersTable.deletedAt)
+    )).limit(1),
+  ]);
 
-  const master = allMasters.find(m =>
-    normalizeLoginInput(m.pwaLogin ?? "") === normalized ||
-    (m.phone && normalizeLoginInput(m.phone) === normalized)
-  ) ?? null;
+  const master = byLogin[0] ?? byPhone[0] ?? null;
 
   // Always return "success" even if not found — prevents phone enumeration
   if (!master) {
@@ -646,7 +660,7 @@ router.get("/orders/my", requireMasterPwa, async (req, res) => {
 // Accept order
 router.post("/orders/:id/accept", requireMasterPwa, async (req, res) => {
   const masterId = (req.session as any).masterId;
-  const orderId = parseInt(req.params.id);
+  const orderId = parseInt(String(req.params.id));
 
   const master = await getMasterById(masterId);
   if (!master) return res.status(404).json({ error: "Мастер не найден" });
@@ -739,7 +753,7 @@ router.post("/orders/:id/accept", requireMasterPwa, async (req, res) => {
 // Respond to order (express interest — operator will assign)
 router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
   const masterId = (req.session as any).masterId;
-  const orderId = parseInt(req.params.id);
+  const orderId = parseInt(String(req.params.id));
 
   // Load master profile up-front — нужен для тегов и для `master.contractSignedAt`
   // (раньше переменная `master` использовалась без объявления → 500).
@@ -978,7 +992,7 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
 // ─── Token refund request (master PWA) ───────────────────────────────────────
 router.post("/orders/:id/refund-request", requireMasterPwa, async (req: any, res: any) => {
   const masterId = (req.session as any).masterId;
-  const orderId = parseInt(req.params.id);
+  const orderId = parseInt(String(req.params.id));
   if (isNaN(orderId)) return res.status(400).json({ error: "Неверный orderId" });
 
   const { reason } = req.body ?? {};
@@ -1049,7 +1063,7 @@ router.post("/orders/:id/refund-request", requireMasterPwa, async (req: any, res
 // ─── Landing leads: respond (exclusive — first master takes the lead) ─────────
 router.post("/leads/:id/respond", requireMasterPwa, async (req: any, res: any) => {
   const masterId = (req.session as any).masterId;
-  const leadId = parseInt(req.params.id);
+  const leadId = parseInt(String(req.params.id));
   if (isNaN(leadId)) return res.status(400).json({ error: "Неверный leadId" });
 
   // Load lead — must be a landing lead in 'new' status
@@ -1155,7 +1169,7 @@ router.post("/fomo-block-press", requireMasterPwa, async (req, res) => {
 // Reject order
 router.post("/orders/:id/reject", requireMasterPwa, async (req, res) => {
   const masterId = (req.session as any).masterId;
-  const orderId = parseInt(req.params.id);
+  const orderId = parseInt(String(req.params.id));
   const { reason } = req.body ?? {};
 
   await db.update(orderDispatchesTable).set({
@@ -1180,7 +1194,7 @@ router.post("/orders/:id/reject", requireMasterPwa, async (req, res) => {
 // Update master work status
 router.patch("/orders/:id/status", requireMasterPwa, async (req, res) => {
   const masterId = (req.session as any).masterId;
-  const orderId = parseInt(req.params.id);
+  const orderId = parseInt(String(req.params.id));
   const { masterWorkStatus } = req.body;
 
   if (!masterWorkStatus) return res.status(400).json({ error: "Статус обязателен" });
@@ -1199,7 +1213,7 @@ router.patch("/orders/:id/status", requireMasterPwa, async (req, res) => {
 // Update photos
 router.patch("/orders/:id/photos", requireMasterPwa, async (req, res) => {
   const masterId = (req.session as any).masterId;
-  const orderId = parseInt(req.params.id);
+  const orderId = parseInt(String(req.params.id));
   const { type, url } = req.body;
 
   if (!type || !url) return res.status(400).json({ error: "type и url обязательны" });
@@ -1229,7 +1243,7 @@ router.patch("/orders/:id/photos", requireMasterPwa, async (req, res) => {
 // Complete order
 router.post("/orders/:id/complete", requireMasterPwa, async (req, res) => {
   const masterId = (req.session as any).masterId;
-  const orderId = parseInt(req.params.id);
+  const orderId = parseInt(String(req.params.id));
   const { proposedAmount } = req.body;
 
   if (!proposedAmount || isNaN(Number(proposedAmount))) {
@@ -1289,7 +1303,7 @@ router.get("/balance", requireMasterPwa, async (req, res) => {
   }
 
   const paidTxs = realTxs.filter(t => t.paymentStatus === "paid");
-  const pendingTxs = realTxs.filter(t => t.paymentStatus === "pending" || t.paymentStatus === "debt");
+  const pendingTxs = realTxs.filter(t => t.paymentStatus === "pending" || t.paymentStatus === "overdue");
 
   const totalEarned = paidTxs.reduce((s, t) => s + Number(t.orderAmount), 0);
   const totalPaidCommission = paidTxs.reduce((s, t) => s + Number(t.commission), 0);
@@ -1335,7 +1349,7 @@ router.get("/balance", requireMasterPwa, async (req, res) => {
 // Cancel order (request cancellation)
 router.post("/orders/:id/cancel", requireMasterPwa, async (req, res) => {
   const masterId = (req.session as any).masterId;
-  const orderId = parseInt(req.params.id);
+  const orderId = parseInt(String(req.params.id));
   const { cancelType, reason } = req.body as {
     cancelType?: "client_refused" | "price_disagreement" | "master_cant" | "other";
     reason?: string;
@@ -1974,7 +1988,7 @@ router.post("/admin/set-credentials/:masterId", async (req: any, res: any) => {
   const { login, password } = req.body;
   if (!login || !password) return res.status(400).json({ error: "login и password обязательны" });
 
-  const targetId = parseInt(req.params.masterId);
+  const targetId = parseInt(String(req.params.masterId));
 
   // Normalize login exactly as the login endpoint does — prevents mismatch between stored and queried login
   const normalizedLogin = normalizeLoginInput(login);
@@ -2000,7 +2014,7 @@ router.post("/admin/reset-password-to-phone/:masterId", async (req: any, res: an
   const userId = (req.session as any).userId;
   if (!userId) return res.status(401).json({ error: "Не авторизован" });
 
-  const targetId = parseInt(req.params.masterId);
+  const targetId = parseInt(String(req.params.masterId));
   const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, targetId));
   if (!master) return res.status(404).json({ error: "Мастер не найден" });
 

@@ -375,7 +375,7 @@ router.post("/transactions/:id/partial-payment", opsAndAdmin, async (req, res) =
 // ─── POST /api/finance/transactions/:id/remind ───────────────────────────────
 
 router.post("/transactions/:id/remind", opsAndAdmin, async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
 
   const rows = await db.execute(sql`
     SELECT t.*, m.alias, m.max_chat_id, o.service_type
@@ -432,7 +432,7 @@ router.post("/transactions/:id/remind", opsAndAdmin, async (req, res) => {
 // ─── POST /api/finance/masters/:masterId/remind-all ──────────────────────────
 
 router.post("/masters/:masterId/remind-all", opsAndAdmin, async (req, res) => {
-  const masterId = parseInt(req.params.masterId);
+  const masterId = parseInt(String(req.params.masterId));
 
   const rows = await db.execute(sql`
     SELECT t.id, t.order_id, t.commission, t.created_at, t.payment_status, o.service_type,
@@ -497,7 +497,7 @@ router.post("/masters/:masterId/remind-all", opsAndAdmin, async (req, res) => {
 // ─── POST /api/finance/transactions/:id/snooze (set snooze from CRM or bot) ──
 
 router.post("/transactions/:id/snooze", opsAndAdmin, async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   const { days, date, note } = req.body;
   let snoozeUntil: Date;
   if (date) {
@@ -517,7 +517,7 @@ router.post("/transactions/:id/snooze", opsAndAdmin, async (req, res) => {
 // ─── DELETE /api/finance/transactions/:id/snooze (clear snooze from CRM) ─────
 
 router.delete("/transactions/:id/snooze", opsAndAdmin, async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   await db.execute(sql`
     UPDATE transactions SET snooze_until = NULL, snooze_note = NULL WHERE id = ${id}
   `);
@@ -527,7 +527,7 @@ router.delete("/transactions/:id/snooze", opsAndAdmin, async (req, res) => {
 // ─── POST /api/finance/masters/:masterId/snooze (snooze all unpaid for master) ─
 
 router.post("/masters/:masterId/snooze", opsAndAdmin, async (req, res) => {
-  const masterId = parseInt(req.params.masterId);
+  const masterId = parseInt(String(req.params.masterId));
   const { days, date, note } = req.body;
   let snoozeUntil: Date;
   if (date) {
@@ -547,7 +547,7 @@ router.post("/masters/:masterId/snooze", opsAndAdmin, async (req, res) => {
 // ─── POST /api/finance/masters/:masterId/pay-all ─────────────────────────────
 
 router.post("/masters/:masterId/pay-all", opsAndAdmin, async (req, res) => {
-  const masterId = parseInt(req.params.masterId);
+  const masterId = parseInt(String(req.params.masterId));
   const now      = new Date();
 
   const txRows = await db.select().from(transactionsTable)
@@ -954,7 +954,7 @@ router.get("/estimates/stats", opsAndAdmin, async (req, res) => {
 // POST /api/finance/orders/:orderId/recalc-commission
 // Recalculates transaction commission from receipt totalAmount (fixes stale commission when smeta was updated)
 router.post("/orders/:orderId/recalc-commission", requireRole("admin", "master_operator"), async (req, res) => {
-  const orderId = parseInt(req.params.orderId);
+  const orderId = parseInt(String(req.params.orderId));
   if (isNaN(orderId)) return res.status(400).json({ error: "Invalid orderId" });
 
   const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));

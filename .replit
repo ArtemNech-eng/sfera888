@@ -32,11 +32,11 @@ integrations = ["github:1.0.0"]
 [userenv.production]
 
 [userenv.shared]
-VAPID_PUBLIC_KEY = "BEsTKPbpLdg3SuDxyu9m3xFFr6MUHpBROPKhWgfddaf4D2gp0GbiH0pv1Nv4WBXO_Yk9O4jKgxyxm0VJidHtd9Q"
-VAPID_PRIVATE_KEY = "PlPmqNhWM4ioOIikpRw3WXAgQWuHFbbqlZL_GTyvQdk"
-VAPID_EMAIL = "mailto:admin@sfera-master.ru"
-VITE_YANDEX_MAPS_KEY = "7a61bf5a-2a4f-497e-92b6-899908af56f8"
-ADMIN_PASSWORD = "admin2026"
+# NOTE: All secrets moved to environment variables only.
+# Do NOT store credentials here — this file is in version control.
+# Required env vars: SESSION_SECRET, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY,
+# VAPID_EMAIL, ADMIN_PASSWORD, DATABASE_URL, etc.
+# See RAILWAY_ENV_VARS.md for the full list.
 
   [nix]
   channel = "stable-25_05"

@@ -379,7 +379,7 @@ router.get("/debt", ops, async (req: any, res: any) => {
 // ─── GET /api/token-masters/:id ───────────────────────────────────────────────
 router.get("/:id", ops, async (req: any, res: any) => {
   try {
-    const masterId = parseInt(req.params.id);
+    const masterId = parseInt(String(req.params.id));
     if (isNaN(masterId)) return res.status(400).json({ error: "Неверный id" });
 
     const [masterRows, walletRows, txRows, completedOrderStats] = await Promise.all([

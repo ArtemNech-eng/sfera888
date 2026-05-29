@@ -49,7 +49,7 @@ router.post("/", requireRole("admin"), async (req, res) => {
 });
 
 router.patch("/:id/permissions", requireRole("admin"), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   const { permissions } = req.body;
   if (!Array.isArray(permissions)) return res.status(400).json({ error: "permissions must be array" });
@@ -58,7 +58,7 @@ router.patch("/:id/permissions", requireRole("admin"), async (req, res) => {
 });
 
 router.delete("/:id", requireRole("admin"), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   await db.delete(usersTable).where(eq(usersTable.id, id));
   res.json({ success: true, message: "User deleted" });
 });
@@ -67,7 +67,7 @@ router.patch("/:id/password", async (req, res) => {
   const sessionUserId = (req.session as any).userId;
   if (!sessionUserId) return res.status(401).json({ error: "Unauthorized" });
 
-  const targetId = parseInt(req.params.id);
+  const targetId = parseInt(String(req.params.id));
   if (isNaN(targetId)) return res.status(400).json({ error: "Invalid id" });
 
   const [sessionUser] = await db.select().from(usersTable).where(eq(usersTable.id, sessionUserId));

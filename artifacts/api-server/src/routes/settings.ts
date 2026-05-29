@@ -27,7 +27,7 @@ router.post("/cities", adminOnly, async (req, res) => {
 });
 
 router.delete("/cities/:id", adminOnly, async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   await db.delete(citiesTable).where(eq(citiesTable.id, id));
   res.json({ success: true, message: "City deleted" });
 });
@@ -51,7 +51,7 @@ router.post("/services", adminOnly, async (req, res) => {
 });
 
 router.delete("/services/:id", adminOnly, async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   await db.delete(serviceTypesTable).where(eq(serviceTypesTable.id, id));
   res.json({ success: true, message: "Service deleted" });
 });
@@ -120,7 +120,7 @@ router.post("/token-packages", adminOnly, async (req: any, res: any) => {
 });
 
 router.patch("/token-packages/:id", adminOnly, async (req: any, res: any) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Неверный id" });
 
   const existing = await db.select().from(tokenPackagesTable).where(eq(tokenPackagesTable.id, id)).limit(1);
@@ -169,7 +169,7 @@ router.patch("/token-packages/:id", adminOnly, async (req: any, res: any) => {
 });
 
 router.delete("/token-packages/:id", adminOnly, async (req: any, res: any) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Неверный id" });
   await db.update(tokenPackagesTable).set({ isActive: false, updatedAt: new Date() }).where(eq(tokenPackagesTable.id, id));
   res.json({ success: true });
@@ -205,7 +205,7 @@ router.post("/service-token-prices", adminOnly, async (req: any, res: any) => {
 });
 
 router.patch("/service-token-prices/:id", adminOnly, async (req: any, res: any) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Неверный id" });
 
   const existing = await db.select().from(serviceTokenPricesTable).where(eq(serviceTokenPricesTable.id, id)).limit(1);
@@ -242,7 +242,7 @@ router.patch("/service-token-prices/:id", adminOnly, async (req: any, res: any) 
 });
 
 router.delete("/service-token-prices/:id", adminOnly, async (req: any, res: any) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Неверный id" });
   await db.update(serviceTokenPricesTable).set({ isActive: false, updatedAt: new Date() }).where(eq(serviceTokenPricesTable.id, id));
   res.json({ success: true });
@@ -276,7 +276,7 @@ router.post("/service-token-rules", adminOnly, async (req: any, res: any) => {
 });
 
 router.put("/service-token-rules/:id", adminOnly, async (req: any, res: any) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Неверный id" });
 
   const old = await db.select().from(serviceTokenRulesTable).where(eq(serviceTokenRulesTable.id, id)).limit(1);
@@ -297,7 +297,7 @@ router.put("/service-token-rules/:id", adminOnly, async (req: any, res: any) => 
 });
 
 router.delete("/service-token-rules/:id", adminOnly, async (req: any, res: any) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Неверный id" });
   await db.update(serviceTokenRulesTable).set({ isActive: false }).where(eq(serviceTokenRulesTable.id, id));
   res.json({ success: true });
@@ -412,7 +412,7 @@ router.post("/city-token-multipliers", adminOnly, async (req: any, res: any) => 
 });
 
 router.put("/city-token-multipliers/:id", adminOnly, async (req: any, res: any) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Неверный id" });
   const fields: Record<string, any> = { updatedAt: new Date() };
   if (req.body.city !== undefined) fields.city = req.body.city;
@@ -425,7 +425,7 @@ router.put("/city-token-multipliers/:id", adminOnly, async (req: any, res: any) 
 });
 
 router.delete("/city-token-multipliers/:id", adminOnly, async (req: any, res: any) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Неверный id" });
   await db.delete(cityTokenMultipliersTable).where(eq(cityTokenMultipliersTable.id, id));
   res.json({ success: true });

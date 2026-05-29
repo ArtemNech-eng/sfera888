@@ -32,14 +32,8 @@ function getAllowedOrigins(): string[] {
     .map((value) => value.trim());
 
   const defaults = [
-    "https://crm-production-6fdc.up.railway.app",
-    "https://sfera888-production.up.railway.app",
     "https://sfera-master.ru",
     "https://www.sfera-master.ru",
-    "https://xn--c1aek4afdbi8k.xn--p1ai",
-    "https://честные-мастера.рф",
-    "https://www.xn----8sbarac1cf6adfgg4d6c.xn--p1ai",
-    "https://www.честные-мастера.рф",
   ];
 
   return Array.from(new Set([...raw, ...defaults]));
@@ -144,13 +138,21 @@ const pgPool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
+const sessionSecret = process.env.SESSION_SECRET;
+if (!sessionSecret || sessionSecret.length < 32) {
+  throw new Error(
+    "FATAL: SESSION_SECRET is not set or is shorter than 32 characters. " +
+    "Set a strong random string in the environment variable SESSION_SECRET."
+  );
+}
+
 const sessionMiddleware = session({
   store: new PgSession({
     pool: pgPool,
     createTableIfMissing: true,
     tableName: "sessions",
   }),
-  secret: process.env.SESSION_SECRET || "crm-secret-key-2024",
+  secret: sessionSecret,
   resave: false,
   saveUninitialized: false,
   proxy: true,
@@ -208,8 +210,7 @@ app.get("/api/receipt/:token/data", async (req, res) => {
   }
 });
 
-// ── Public receipt page (no auth required) — served under /api/ so Replit's ──
-// ── deployment proxy doesn't intercept it (non-/api paths go to CRM static). ──
+// ── Public receipt page (no auth required) ───────────────────────────────────
 app.get("/api/receipt/:token/print", async (req, res) => {
   try {
     const { receiptsTable, mastersTable } = await import("@workspace/db");

@@ -164,7 +164,7 @@ router.get("/pending", ops, async (req, res) => {
 // ─── GET /api/dispatch/:orderId — dispatch status ──────────────────────────────
 
 router.get("/:orderId", ops, async (req, res) => {
-  const orderId = parseInt(req.params.orderId);
+  const orderId = parseInt(String(req.params.orderId));
   const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
   const order = orderRows[0];
   if (!order) return res.status(404).json({ error: "Order not found" });
@@ -288,7 +288,7 @@ router.post("/test-order", ops, async (req, res) => {
 // ─── POST /api/dispatch/:orderId/broadcast ─────────────────────────────────────
 
 router.post("/:orderId/broadcast", ops, async (req, res) => {
-  const orderId = parseInt(req.params.orderId);
+  const orderId = parseInt(String(req.params.orderId));
   const result = await performBroadcast(orderId);
   if (!result.ok) {
     return res.status(400).json({ error: result.error });
@@ -302,8 +302,8 @@ router.post("/:orderId/broadcast", ops, async (req, res) => {
 
 // ─── POST /api/dispatch/:orderId/add-master/:masterId — add a single master to dispatch ──
 router.post("/:orderId/add-master/:masterId", ops, async (req, res) => {
-  const orderId = parseInt(req.params.orderId);
-  const masterId = parseInt(req.params.masterId);
+  const orderId = parseInt(String(req.params.orderId));
+  const masterId = parseInt(String(req.params.masterId));
   if (isNaN(orderId) || isNaN(masterId)) return res.status(400).json({ error: "Invalid id" });
 
   const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
@@ -341,8 +341,8 @@ router.post("/:orderId/add-master/:masterId", ops, async (req, res) => {
 // ─── POST /api/dispatch/:orderId/assign/:masterId ──────────────────────────────
 
 router.post("/:orderId/assign/:masterId", ops, async (req, res) => {
-  const orderId = parseInt(req.params.orderId);
-  const masterId = parseInt(req.params.masterId);
+  const orderId = parseInt(String(req.params.orderId));
+  const masterId = parseInt(String(req.params.masterId));
 
   const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
   const order = orderRows[0];

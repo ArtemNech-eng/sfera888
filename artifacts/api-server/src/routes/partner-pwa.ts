@@ -705,7 +705,7 @@ router.get("/leads", requirePartner, async (req: Request, res: Response) => {
 router.get("/leads/:id", requirePartner, async (req: Request, res: Response) => {
   try {
     const partner = (req as any).partner;
-    const leadId = parseInt(req.params.id);
+    const leadId = parseInt(String(req.params.id));
     if (isNaN(leadId)) return res.status(400).json({ error: "invalid_id" });
 
     const [lead] = await db
@@ -792,7 +792,7 @@ router.get("/leads/:id", requirePartner, async (req: Request, res: Response) => 
 router.patch("/leads/:id", requirePartner, async (req: Request, res: Response) => {
   try {
     const partner = (req as any).partner;
-    const leadId = parseInt(req.params.id);
+    const leadId = parseInt(String(req.params.id));
     if (isNaN(leadId)) return res.status(400).json({ error: "invalid_id" });
 
     const [lead] = await db

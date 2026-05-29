@@ -287,7 +287,7 @@ const updateStatusSchema = z.object({
 
 router.patch("/partners/:id/status", async (req: Request, res: Response) => {
   try {
-    const partnerId = parseInt(req.params.id);
+    const partnerId = parseInt(String(req.params.id));
     const parsed = updateStatusSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: "validation_error" });
@@ -311,7 +311,7 @@ router.patch("/partners/:id/status", async (req: Request, res: Response) => {
 // GET /api/crm/partners/:id — детали партнёра
 router.get("/partners/:id", async (req: Request, res: Response) => {
   try {
-    const partnerId = parseInt(req.params.id);
+    const partnerId = parseInt(String(req.params.id));
     const [partner] = await db.select().from(trafficPartnersTable).where(eq(trafficPartnersTable.id, partnerId));
     if (!partner) return res.status(404).json({ error: "partner_not_found" });
 
@@ -399,7 +399,7 @@ router.get("/partner-leads", async (req: Request, res: Response) => {
 // POST /api/crm/partner-leads/:id/approve — подтвердить лид
 router.post("/partner-leads/:id/approve", async (req: Request, res: Response) => {
   try {
-    const leadId = parseInt(req.params.id);
+    const leadId = parseInt(String(req.params.id));
 
     const [updated] = await db
       .update(leadsTable)
@@ -443,7 +443,7 @@ const reasonLabels: Record<string, string> = {
 
 router.post("/partner-leads/:id/reject", async (req: Request, res: Response) => {
   try {
-    const leadId = parseInt(req.params.id);
+    const leadId = parseInt(String(req.params.id));
     const parsed = rejectSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: "validation_error" });
@@ -655,7 +655,7 @@ router.get("/partner-analytics", async (req: Request, res: Response) => {
 // GET /api/crm/partner-analytics/:id/daily — лиды и принятые по дням
 router.get("/partner-analytics/:id/daily", async (req: Request, res: Response) => {
   try {
-    const partnerId = parseInt(req.params.id);
+    const partnerId = parseInt(String(req.params.id));
     const year = parseInt((req.query.year as string) || new Date().getFullYear().toString());
     const month = parseInt((req.query.month as string) || (new Date().getMonth() + 1).toString());
 

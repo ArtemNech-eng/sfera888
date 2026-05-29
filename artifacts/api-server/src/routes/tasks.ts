@@ -68,7 +68,7 @@ router.post("/", opsAndAdmin, async (req: any, res) => {
 });
 
 router.patch("/:id", opsAndAdmin, async (req: any, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   const { status, title, description, priority, category, assignedTo, dueAt } = req.body;
 
   const updates: any = { updatedAt: new Date() };
@@ -95,7 +95,7 @@ router.patch("/:id", opsAndAdmin, async (req: any, res) => {
 });
 
 router.delete("/:id", opsAndAdmin, async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   const [deleted] = await db.delete(systemTasksTable).where(eq(systemTasksTable.id, id)).returning();
   if (!deleted) return res.status(404).json({ error: "Задача не найдена" });
   res.json({ ok: true });

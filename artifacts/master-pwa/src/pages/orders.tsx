@@ -19,8 +19,8 @@ function printEstimate(
     totalAmount: number;
     prepaymentAmount: number;
     notes: string | null;
-    clientName?: string;
-    clientPhone?: string;
+    clientName?: string | null;
+    clientPhone?: string | null;
   },
   order: { city?: string; district?: string | null; serviceType?: string; area?: number },
   masterName: string,
@@ -818,6 +818,7 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
       const interval = setInterval(() => fetchReceipts(true), 30_000);
       return () => clearInterval(interval);
     }
+    return undefined;
   }, [expanded, isActive]);
 
   const handleStatusStep = async (key: string) => {

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, masterWalletTable, walletTransactionsTable, tokenPackagesTable, ordersTable, mastersTable } from "@workspace/db";
+import { db, masterWalletTable, walletTransactionsTable, tokenPackagesTable, ordersTable, mastersTable, systemSettingsTable } from "@workspace/db";
 import { eq, desc, and, inArray, sql, count } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
 import { requireMasterAuth } from "../middlewares/requireMaster.js";
@@ -235,7 +235,7 @@ router.get("/purchases", ops, async (req: any, res: any) => {
 
 // GET /api/wallet/:masterId — баланс и статистика (CRM/admin)
 router.get("/:masterId", ops, async (req: any, res: any) => {
-  const masterId = parseInt(req.params.masterId);
+  const masterId = parseInt(String(req.params.masterId));
   if (isNaN(masterId)) return res.status(400).json({ error: "Неверный masterId" });
 
   const wallet = await ensureWallet(masterId);
@@ -259,7 +259,7 @@ router.get("/:masterId", ops, async (req: any, res: any) => {
 
 // GET /api/wallet/:masterId/transactions — история операций
 router.get("/:masterId/transactions", ops, async (req: any, res: any) => {
-  const masterId = parseInt(req.params.masterId);
+  const masterId = parseInt(String(req.params.masterId));
   if (isNaN(masterId)) return res.status(400).json({ error: "Неверный masterId" });
 
   const page = Math.max(1, parseInt(req.query.page as string) || 1);
@@ -309,7 +309,7 @@ router.get("/:masterId/transactions", ops, async (req: any, res: any) => {
 
 // POST /api/wallet/:masterId/purchase — начисление за покупку пакета
 router.post("/:masterId/purchase", ops, async (req: any, res: any) => {
-  const masterId = parseInt(req.params.masterId);
+  const masterId = parseInt(String(req.params.masterId));
   if (isNaN(masterId)) return res.status(400).json({ error: "Неверный masterId" });
 
   const { package_id } = req.body;
@@ -362,7 +362,7 @@ router.post("/:masterId/purchase", ops, async (req: any, res: any) => {
 
 // POST /api/wallet/:masterId/bonus — бонусное начисление
 router.post("/:masterId/bonus", adminOnly, async (req: any, res: any) => {
-  const masterId = parseInt(req.params.masterId);
+  const masterId = parseInt(String(req.params.masterId));
   if (isNaN(masterId)) return res.status(400).json({ error: "Неверный masterId" });
 
   const { tokens, reason } = req.body;
@@ -404,7 +404,7 @@ router.post("/:masterId/bonus", adminOnly, async (req: any, res: any) => {
 
 // POST /api/wallet/:masterId/adjustment — ручная корректировка (+ или -)
 router.post("/:masterId/adjustment", adminOnly, async (req: any, res: any) => {
-  const masterId = parseInt(req.params.masterId);
+  const masterId = parseInt(String(req.params.masterId));
   if (isNaN(masterId)) return res.status(400).json({ error: "Неверный masterId" });
 
   const { tokens, reason } = req.body;
@@ -458,7 +458,7 @@ router.post("/:masterId/adjustment", adminOnly, async (req: any, res: any) => {
 
 // POST /api/wallet/:masterId/set-credit-limit — установить кредитный лимит (admin)
 router.post("/:masterId/set-credit-limit", adminOnly, async (req: any, res: any) => {
-  const masterId = parseInt(req.params.masterId);
+  const masterId = parseInt(String(req.params.masterId));
   if (isNaN(masterId)) return res.status(400).json({ error: "Неверный masterId" });
 
   const { credit_limit } = req.body;
@@ -485,7 +485,7 @@ router.post("/:masterId/set-credit-limit", adminOnly, async (req: any, res: any)
 
 // POST /api/wallet/:masterId/credit — выдать тестовые токены в долг (только admin)
 router.post("/:masterId/credit", adminOnly, async (req: any, res: any) => {
-  const masterId = parseInt(req.params.masterId);
+  const masterId = parseInt(String(req.params.masterId));
   if (isNaN(masterId)) return res.status(400).json({ error: "Неверный masterId" });
 
   const { tokens, reason } = req.body;
@@ -535,7 +535,7 @@ router.post("/:masterId/credit", adminOnly, async (req: any, res: any) => {
 
 // POST /api/wallet/:masterId/confirm-purchase — approve a pending purchase
 router.post("/:masterId/confirm-purchase", ops, async (req: any, res: any) => {
-  const masterId = parseInt(req.params.masterId);
+  const masterId = parseInt(String(req.params.masterId));
   if (isNaN(masterId)) return res.status(400).json({ error: "Неверный masterId" });
 
   const { transaction_id } = req.body;
@@ -581,7 +581,7 @@ router.post("/:masterId/confirm-purchase", ops, async (req: any, res: any) => {
 
 // POST /api/wallet/:masterId/cancel-purchase — reject a pending purchase
 router.post("/:masterId/cancel-purchase", ops, async (req: any, res: any) => {
-  const masterId = parseInt(req.params.masterId);
+  const masterId = parseInt(String(req.params.masterId));
   if (isNaN(masterId)) return res.status(400).json({ error: "Неверный masterId" });
 
   const { transaction_id, reason } = req.body;
@@ -681,7 +681,7 @@ router.post("/refund-request", requireAuth, async (req: any, res: any) => {
 
 // ─── Arbitrage: approve refund (admin) ────────────────────────────────────────
 router.post("/refund/:transactionId/approve", adminOnly, async (req: any, res: any) => {
-  const transactionId = parseInt(req.params.transactionId);
+  const transactionId = parseInt(String(req.params.transactionId));
   if (isNaN(transactionId)) return res.status(400).json({ error: "Неверный transactionId" });
 
   const txRows = await db.select().from(walletTransactionsTable)
@@ -720,7 +720,7 @@ router.post("/refund/:transactionId/approve", adminOnly, async (req: any, res: a
 
 // ─── Arbitrage: reject refund (admin) ─────────────────────────────────────────
 router.post("/refund/:transactionId/reject", adminOnly, async (req: any, res: any) => {
-  const transactionId = parseInt(req.params.transactionId);
+  const transactionId = parseInt(String(req.params.transactionId));
   if (isNaN(transactionId)) return res.status(400).json({ error: "Неверный transactionId" });
 
   const { reason } = req.body;
@@ -844,7 +844,7 @@ router.get("/purchases", ops, async (req: any, res: any) => {
 
 // ─── Confirm purchase (admin) ─────────────────────────────────────────────────
 router.post("/:masterId/confirm-purchase", adminOnly, async (req: any, res: any) => {
-  const masterId = parseInt(req.params.masterId);
+  const masterId = parseInt(String(req.params.masterId));
   if (isNaN(masterId)) return res.status(400).json({ error: "Неверный masterId" });
 
   const { transaction_id } = req.body;
@@ -897,7 +897,7 @@ router.post("/:masterId/confirm-purchase", adminOnly, async (req: any, res: any)
 
 // ─── Cancel purchase (admin) ─────────────────────────────────────────────────
 router.post("/:masterId/cancel-purchase", adminOnly, async (req: any, res: any) => {
-  const masterId = parseInt(req.params.masterId);
+  const masterId = parseInt(String(req.params.masterId));
   if (isNaN(masterId)) return res.status(400).json({ error: "Неверный masterId" });
 
   const { transaction_id, reason } = req.body;
@@ -1132,6 +1132,11 @@ router.get("/master-revenue", ops, async (req: any, res: any) => {
 
 // ─── Migration: move remaining tokens from active packages to balance ───────
 router.post("/migrate-active-packages", adminOnly, async (req: any, res: any) => {
+  const [flag] = await db.select().from(systemSettingsTable).where(eq(systemSettingsTable.key, "active_packages_migrated"));
+  if (flag?.value === "true") {
+    return res.status(409).json({ done: true, message: "Миграция уже выполнена. Флаг active_packages_migrated установлен." });
+  }
+
   const unmigrated = await db.execute(sql`
     SELECT master_id, SUM(tokens_remaining::numeric) as total
     FROM master_active_packages
@@ -1164,6 +1169,13 @@ router.post("/migrate-active-packages", adminOnly, async (req: any, res: any) =>
     SET status = 'migrated', updated_at = NOW()
     WHERE status NOT IN ('migrated', 'expired')
   `);
+
+  await db.insert(systemSettingsTable)
+    .values({ key: "active_packages_migrated", value: "true", updatedAt: new Date() })
+    .onConflictDoUpdate({
+      target: systemSettingsTable.key,
+      set: { value: "true", updatedAt: new Date() },
+    });
 
   return res.json({ done: true, migratedCount: results.length, details: results });
 });

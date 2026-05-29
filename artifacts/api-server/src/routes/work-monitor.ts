@@ -234,7 +234,7 @@ router.get("/", requireAuth, async (_req, res) => {
 
 // POST /api/work-monitor/complete-order/:id — operator completes order on behalf of master
 router.post("/complete-order/:id", requireAuth, operatorRoles, async (req, res) => {
-  const orderId = parseInt(req.params.id);
+  const orderId = parseInt(String(req.params.id));
   if (isNaN(orderId) || orderId <= 0) return res.status(400).json({ error: "Неверный ID заказа" });
 
   try {

@@ -1064,7 +1064,7 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock, wall
         )}
       </div>
 
-      {state !== "success" && state !== "at_limit" && state !== "fomo_blocked" && state !== "needs_contract" && state !== "insufficient_tokens" && (
+      {state !== "success" && state !== "fomo_blocked" && state !== "needs_contract" && state !== "insufficient_tokens" && (
         <div className="shrink-0 bg-card border-t border-border px-4 py-4 space-y-2">
           {order.paymentModel === "token" && order.tokensCost != null && (
             <div className="flex items-center justify-between text-sm px-0.5 mb-0.5">
@@ -1533,11 +1533,6 @@ export default function HomePage() {
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
               <h1 className="text-lg font-bold truncate text-white">{master?.alias}</h1>
-              {master?.isTestMaster && (
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-white font-medium shrink-0 backdrop-blur-sm">
-                  Тест
-                </span>
-              )}
             </div>
             <div className="flex items-center gap-1 bg-white/15 backdrop-blur-md border border-white/20 px-2.5 py-1.5 rounded-xl shrink-0">
               <Star size={13} className="text-amber-300" fill="currentColor" />

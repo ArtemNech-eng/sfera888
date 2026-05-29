@@ -175,7 +175,7 @@ router.get("/", allOrderRoles, async (req, res) => {
 });
 
 router.get("/:id", allOrderRoles, async (req, res) => {
-  const id = parseInt(req.params.id as string);
+  const id = parseInt(String(req.params.id as string));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid order ID" });
   const rows = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
   if (!rows[0]) return res.status(404).json({ error: "Order not found" });
@@ -237,7 +237,7 @@ router.get("/:id", allOrderRoles, async (req, res) => {
 });
 
 router.patch("/:id", allOrderRoles, async (req, res) => {
-  const id = parseInt(req.params.id as string);
+  const id = parseInt(String(req.params.id as string));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid order ID" });
   const { status, orderAmount, commission, clientRating, proposedAmount, acceptProposed, approveCancellation, rejectCancellation, restoreOrder, operatorNote, clientCancelReason, manualTokenCost } = req.body;
 
@@ -697,7 +697,7 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
 });
 
 router.post("/:id/assign-master", allOrderRoles, async (req, res) => {
-  const id = parseInt(req.params.id as string);
+  const id = parseInt(String(req.params.id as string));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid order ID" });
   const { masterId } = req.body;
   if (!masterId) return res.status(400).json({ error: "masterId required" });
@@ -802,7 +802,7 @@ router.post("/:id/assign-master", allOrderRoles, async (req, res) => {
 
 // ─── POST /api/orders/:id/unassign-master — admin removes master from order ───
 router.post("/:id/unassign-master", requireRole("admin", "master_operator"), async (req, res) => {
-  const id = parseInt(req.params.id as string);
+  const id = parseInt(String(req.params.id as string));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid order id" });
 
   const { reason, rebroadcast } = req.body as { reason?: string; rebroadcast?: boolean };
@@ -877,8 +877,8 @@ router.post("/:id/unassign-master", requireRole("admin", "master_operator"), asy
 
 // ─── POST /api/orders/:id/manual-assign/:masterId — admin force-assigns master ─
 router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operator"), async (req, res) => {
-  const orderId = parseInt(req.params.id as string);
-  const masterId = parseInt(req.params.masterId as string);
+  const orderId = parseInt(String(req.params.id as string));
+  const masterId = parseInt(String(req.params.masterId as string));
   if (isNaN(orderId)) return res.status(400).json({ error: "Invalid order ID" });
   if (isNaN(masterId)) return res.status(400).json({ error: "Invalid master ID" });
   if (isNaN(orderId) || isNaN(masterId)) return res.status(400).json({ error: "Invalid ids" });
@@ -1012,7 +1012,7 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
 
 // ─── GET /api/orders/:id/status-log ───────────────────────────────────────────
 router.get("/:id/status-log", allOrderRoles, async (req, res) => {
-  const id = parseInt(req.params.id as string);
+  const id = parseInt(String(req.params.id as string));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid order id" });
 
   const logs = await db.select().from(orderStatusLogsTable)
@@ -1024,7 +1024,7 @@ router.get("/:id/status-log", allOrderRoles, async (req, res) => {
 
 // GET /api/orders/:id/fomo-presses — FOMO button press events for an order
 router.get("/:id/fomo-presses", allOrderRoles, async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid order id" });
 
   const events = await db
@@ -1045,7 +1045,7 @@ router.get("/:id/fomo-presses", allOrderRoles, async (req, res) => {
 
 // DELETE /api/orders/:id — soft delete (move to trash)
 router.delete("/:id", requireRole("admin"), async (req, res) => {
-  const id = parseInt(req.params.id as string);
+  const id = parseInt(String(req.params.id as string));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid order id" });
 
   // Read masterId before soft-delete so we can recalc the column after

@@ -43,7 +43,7 @@ async function recalculateMasterRating(masterId: number) {
 // ─── GET /api/master-reviews/:masterId ────────────────────────────────────────
 
 router.get("/:masterId", requireAuth, async (req, res) => {
-  const masterId = parseInt(req.params.masterId);
+  const masterId = parseInt(String(req.params.masterId));
   if (isNaN(masterId)) return res.status(400).json({ error: "Invalid masterId" });
 
   const reviews = await db
@@ -85,7 +85,7 @@ router.post("/", opsAndAdmin, async (req: any, res) => {
 // ─── DELETE /api/master-reviews/:id ──────────────────────────────────────────
 
 router.delete("/:id", opsAndAdmin, async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
   // Fetch masterId before deleting so we can recalculate
@@ -107,7 +107,7 @@ router.delete("/:id", opsAndAdmin, async (req, res) => {
 // ─── GET /api/master-reviews/:masterId/ai-recommendation ─────────────────────
 
 router.get("/:masterId/ai-recommendation", opsAndAdmin, async (req, res) => {
-  const masterId = parseInt(req.params.masterId);
+  const masterId = parseInt(String(req.params.masterId));
   if (isNaN(masterId)) return res.status(400).json({ error: "Invalid masterId" });
 
   const [masterRows, reviews, activeOrders] = await Promise.all([

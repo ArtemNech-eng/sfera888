@@ -1021,7 +1021,7 @@ router.get("/items/:itemId/daily-stats", async (req, res) => {
   const userId = settings?.avitoUserId;
   if (!userId) return res.status(400).json({ error: "Нет ID пользователя" });
 
-  const itemId = parseInt(req.params.itemId);
+  const itemId = parseInt(String(req.params.itemId));
   if (!itemId) return res.status(400).json({ error: "Нужен itemId" });
 
   const now = new Date();

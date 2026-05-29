@@ -85,7 +85,7 @@ router.get("/", auth, async (req, res) => {
 
 // GET /api/chat-cases/:id — single case
 router.get("/:id", auth, async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
   const rows = await db.select().from(chatCasesTable).where(eq(chatCasesTable.id, id)).limit(1);
@@ -99,7 +99,7 @@ router.get("/:id", auth, async (req, res) => {
 
 // PATCH /api/chat-cases/:id — update case (resolve, set reviewed, etc.)
 router.patch("/:id", auth, async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
   const { action } = req.body;
@@ -123,7 +123,7 @@ router.patch("/:id", auth, async (req, res) => {
 
 // POST /api/chat-cases/:id/message — send message from template to master
 router.post("/:id/message", auth, async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
   const { text } = req.body as { text: string };

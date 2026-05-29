@@ -530,6 +530,38 @@ async function runMigrations() {
   await db.execute(sql`
     CREATE INDEX IF NOT EXISTS idx_master_active_packages_master ON master_active_packages(master_id, status, expires_at)
   `);
+  // ── Token model guardrails ─────────────────────────────────────────────────
+  // Prevent double-spend: one spend transaction per (master, order)
+  await db.execute(sql`
+    DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_indexes
+        WHERE indexname = 'wallet_transactions_master_order_spend_unique'
+      ) THEN
+        CREATE UNIQUE INDEX wallet_transactions_master_order_spend_unique
+          ON wallet_transactions (master_id, order_id)
+          WHERE type = 'spend';
+      END IF;
+    END $$
+  `);
+  // Enforce balance >= -credit_limit at DB level
+  await db.execute(sql`
+    DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'master_wallet_balance_check'
+          AND conrelid = 'master_wallet'::regclass
+      ) THEN
+        ALTER TABLE master_wallet
+          ADD CONSTRAINT master_wallet_balance_check
+          CHECK (tokens_balance >= -credit_limit_tokens);
+      END IF;
+    END $$
+  `);
+  // Performance indexes
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_orders_city_status ON orders(city, status) WHERE deleted_at IS NULL`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_wallet_transactions_master_type ON wallet_transactions(master_id, type, order_id)`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_order_dispatches_order_status ON order_dispatches(order_id, status)`);
   console.log("[startup] Migrations applied");
 }
 

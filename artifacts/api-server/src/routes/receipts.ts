@@ -142,7 +142,7 @@ export async function backfillReceiptTransactions(): Promise<number> {
 // ─── CRM: GET /api/receipts/order/:orderId ────────────────────────────────────
 
 router.get("/order/:orderId", requireRole("admin", "master_operator"), async (req, res) => {
-  const orderId = parseInt(req.params.orderId);
+  const orderId = parseInt(String(req.params.orderId));
   const rows = await db.select().from(receiptsTable).where(eq(receiptsTable.orderId, orderId));
   const masterIds = [...new Set(rows.map(r => r.masterId))];
   const masters = masterIds.length
@@ -157,7 +157,7 @@ router.get("/order/:orderId", requireRole("admin", "master_operator"), async (re
 router.get("/my/:orderId", async (req: any, res) => {
   const masterId = req.session?.masterId;
   if (!masterId) return res.status(401).json({ error: "Не авторизован" });
-  const orderId = parseInt(req.params.orderId);
+  const orderId = parseInt(String(req.params.orderId));
   const rows = await db.select().from(receiptsTable)
     .where(and(eq(receiptsTable.orderId, orderId), eq(receiptsTable.masterId, masterId)));
   const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
@@ -196,7 +196,7 @@ router.get("/dialogs/unread-count", requireRole("admin", "master_operator"), asy
 // ─── CRM: PATCH /api/receipts/:id/confirm — manually confirm prepayment ───────
 
 router.patch("/:id/confirm", requireRole("admin", "master_operator"), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Неверный ID" });
   const { operatorNote } = req.body;
   const [existing] = await db.select().from(receiptsTable).where(eq(receiptsTable.id, id));
@@ -229,7 +229,7 @@ router.patch("/:id/confirm", requireRole("admin", "master_operator"), async (req
 // ─── CRM: PATCH /api/receipts/:id/seen — mark dialog as seen ─────────────────
 
 router.patch("/:id/seen", requireRole("admin", "master_operator"), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   const [updated] = await db.update(receiptsTable)
     .set({ prepaymentSeenAt: new Date() })
     .where(eq(receiptsTable.id, id))
@@ -242,7 +242,7 @@ router.patch("/:id/seen", requireRole("admin", "master_operator"), async (req, r
 // ─── DELETE /api/receipts/:id ─────────────────────────────────────────────────
 
 router.delete("/:id", requireRole("admin", "master_operator", "master"), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Неверный ID" });
 
   // Masters can only delete their own receipts
@@ -270,7 +270,7 @@ router.get("/public/:token", async (req, res) => {
 // ─── PATCH /api/receipts/:id — Edit receipt (master who owns it or admin) ────
 
 router.patch("/:id", async (req: any, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   const masterId = req.session?.masterId;
   const isAdmin = req.session?.userId && !masterId; // CRM user
 

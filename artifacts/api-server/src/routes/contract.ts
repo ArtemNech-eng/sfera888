@@ -211,7 +211,7 @@ router.get("/view/:masterId", async (req, res) => {
   const sessionUserId = (req.session as any).userId;
   if (!sessionUserId) return res.status(401).send("Не авторизован");
 
-  const masterId = parseInt(req.params.masterId);
+  const masterId = parseInt(String(req.params.masterId));
   if (isNaN(masterId)) return res.status(400).send("Некорректный ID");
 
   const master = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId)).then(r => r[0]);

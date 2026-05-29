@@ -114,7 +114,7 @@ router.get("/stats/unread", requireRole("admin", "master_operator"), async (_req
 
 // GET /api/master-chat/:masterId — full conversation
 router.get("/:masterId", requireRole("admin", "master_operator", "lead_operator"), async (req, res) => {
-  const masterId = parseInt(req.params.masterId as string);
+  const masterId = parseInt(String(req.params.masterId as string));
   if (isNaN(masterId)) return res.status(400).json({ error: "Invalid masterId" });
 
   const messages = await db.select().from(masterMessagesTable)
@@ -197,7 +197,7 @@ router.get("/:masterId", requireRole("admin", "master_operator", "lead_operator"
 // POST /api/master-chat/:masterId/reply — send text or photo reply
 router.post("/:masterId/reply", requireRole("admin", "master_operator"), checkRateLimit, upload.single("photo"), async (req, res) => {
   try {
-    const masterId = parseInt(req.params.masterId as string);
+    const masterId = parseInt(String(req.params.masterId as string));
     const { text, operatorName } = req.body;
     const photoFile = req.file;
 
@@ -274,7 +274,7 @@ router.post("/:masterId/reply", requireRole("admin", "master_operator"), checkRa
 
 // PATCH /api/master-chat/messages/:messageId — edit operator message text
 router.patch("/messages/:messageId", requireRole("admin", "master_operator"), async (req, res) => {
-  const messageId = parseInt(req.params.messageId as string);
+  const messageId = parseInt(String(req.params.messageId as string));
   if (isNaN(messageId)) return res.status(400).json({ error: "Invalid messageId" });
 
   const { text } = req.body;
@@ -298,7 +298,7 @@ router.patch("/messages/:messageId", requireRole("admin", "master_operator"), as
 
 // PATCH /api/master-chat/:masterId/read
 router.patch("/:masterId/read", requireRole("admin", "master_operator"), async (req, res) => {
-  const masterId = parseInt(req.params.masterId as string);
+  const masterId = parseInt(String(req.params.masterId as string));
   await db.update(masterMessagesTable)
     .set({ isRead: true })
     .where(and(eq(masterMessagesTable.masterId, masterId), eq(masterMessagesTable.fromMaster, true)));
@@ -365,7 +365,7 @@ for (const master of targets) {
 
 // DELETE /api/master-chat/:masterId — clear all messages in this conversation
 router.delete("/:masterId", requireRole("admin"), async (req, res) => {
-  const masterId = parseInt(req.params.masterId as string);
+  const masterId = parseInt(String(req.params.masterId as string));
   if (isNaN(masterId)) return res.status(400).json({ error: "Invalid masterId" });
 
   const masterRows = await db.select().from(mastersTable).where(and(eq(mastersTable.id, masterId), isNull(mastersTable.deletedAt)));

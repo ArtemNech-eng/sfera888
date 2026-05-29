@@ -318,6 +318,15 @@ async function runBroadcastOrders() {
           FROM order_dispatches od
           WHERE od.order_id = ${order.id} AND od.status = 'sent'
         `);
+        const masterIds = (sentDispatches.rows as any[]).map(d => Number(d.master_id));
+        const masterRows = masterIds.length
+          ? await db.select({
+              id: mastersTable.id,
+              maxChatId: mastersTable.maxChatId,
+              pwaLogin: mastersTable.pwaLogin,
+            }).from(mastersTable).where(inArray(mastersTable.id, masterIds))
+          : [];
+        const masterMap = new Map(masterRows.map(m => [m.id, m]));
         let reminderSent = 0;
         for (const d of sentDispatches.rows as any[]) {
           const masterId = Number(d.master_id);
@@ -325,10 +334,7 @@ async function runBroadcastOrders() {
           const alreadyNotified = await wasNotified("broadcast-orders", order.id, masterId, "wave-2-reminder");
           if (alreadyNotified) continue;
           // Load master's Max chat ID and PWA login for push
-          const [masterRow] = await db.select({
-            maxChatId: mastersTable.maxChatId,
-            pwaLogin: mastersTable.pwaLogin,
-          }).from(mastersTable).where(eq(mastersTable.id, masterId));
+          const masterRow = masterMap.get(masterId);
           if (!masterRow) continue;
           // Send Max message
           if (masterRow.maxChatId) {
@@ -374,16 +380,22 @@ async function runBroadcastOrders() {
           FROM order_dispatches od
           WHERE od.order_id = ${order.id} AND od.status = 'sent'
         `);
+        const masterIds = (sentDispatches.rows as any[]).map(d => Number(d.master_id));
+        const masterRows = masterIds.length
+          ? await db.select({
+              id: mastersTable.id,
+              maxChatId: mastersTable.maxChatId,
+              pwaLogin: mastersTable.pwaLogin,
+            }).from(mastersTable).where(inArray(mastersTable.id, masterIds))
+          : [];
+        const masterMap = new Map(masterRows.map(m => [m.id, m]));
         let reminderSent = 0;
         for (const d of sentDispatches.rows as any[]) {
           const masterId = Number(d.master_id);
           // Dedup: don't re-notify if already sent wave-3 reminder within DEDUP_HOURS
           const alreadyNotified = await wasNotified("broadcast-orders", order.id, masterId, "wave-3-reminder");
           if (alreadyNotified) continue;
-          const [masterRow] = await db.select({
-            maxChatId: mastersTable.maxChatId,
-            pwaLogin: mastersTable.pwaLogin,
-          }).from(mastersTable).where(eq(mastersTable.id, masterId));
+          const masterRow = masterMap.get(masterId);
           if (!masterRow) continue;
           if (masterRow.maxChatId) {
             await sendMaxMessage(masterRow.maxChatId, reminderMsg).catch(() => {});
@@ -459,7 +471,7 @@ async function runPaymentReminders(runType: "manual" | "auto" = "auto") {
   const commissionSettings = await getCommissionSettings();
 
   const rows = await db.execute(sql`
-    SELECT r.order_id, o.lead_id, r.created_at AS receipt_created_at,
+    SELECT r.order_id, o.lead_id, o.payment_model, r.created_at AS receipt_created_at,
            r.service_type, r.district, r.city, r.client_name, r.client_phone,
            r.total_amount,
            m.id AS master_id, m.alias AS master_alias, m.max_chat_id
@@ -483,6 +495,8 @@ async function runPaymentReminders(runType: "manual" | "auto" = "auto") {
     const hoursElapsed = Math.floor((now.getTime() - new Date(r.receipt_created_at).getTime()) / 3600_000);
     const tier = hoursElapsed >= 72 ? "super" : hoursElapsed >= 48 ? "critical" : "warning";
     const displayId = r.lead_id ?? r.order_id;
+    const isTokenOrder = r.payment_model === "token";
+    const commission = isTokenOrder ? 0 : calculateCommission(Number(r.total_amount ?? 0), commissionSettings);
     const entry = {
       orderId: r.order_id,
       masterId: r.master_id,
@@ -496,7 +510,8 @@ async function runPaymentReminders(runType: "manual" | "auto" = "auto") {
       receiptSentAt: r.receipt_created_at,
       hoursWithoutPayment: hoursElapsed,
       totalAmount: Number(r.total_amount ?? 0),
-      commission: calculateCommission(Number(r.total_amount ?? 0), commissionSettings),
+      commission,
+      paymentModel: r.payment_model ?? "commission",
       risk: tier,
     };
     totalAmount += entry.totalAmount;
@@ -1294,7 +1309,7 @@ router.get("/template-scenarios/payment-reminders/live", async (_req, res) => {
     const h24ago = new Date(now.getTime() - 24 * 3600_000).toISOString();
     const commissionSettings = await getCommissionSettings();
     const rows = await db.execute(sql`
-      SELECT r.order_id, o.lead_id, r.created_at AS receipt_created_at,
+      SELECT r.order_id, o.lead_id, o.payment_model, r.created_at AS receipt_created_at,
              r.service_type, r.district, r.city, r.client_name, r.client_phone,
              r.total_amount,
              m.alias AS master_alias, m.max_chat_id
@@ -1310,6 +1325,8 @@ router.get("/template-scenarios/payment-reminders/live", async (_req, res) => {
 
     const items = (rows.rows as any[]).map(r => {
       const h = Math.floor((now.getTime() - new Date(r.receipt_created_at).getTime()) / 3600_000);
+      const isTokenOrder = r.payment_model === "token";
+      const commission = isTokenOrder ? 0 : calculateCommission(Number(r.total_amount ?? 0), commissionSettings);
       return {
         orderId: r.order_id,
         leadId: r.lead_id ?? null,
@@ -1323,7 +1340,8 @@ router.get("/template-scenarios/payment-reminders/live", async (_req, res) => {
         receiptSentAt: r.receipt_created_at,
         hoursWithoutPayment: h,
         totalAmount: Number(r.total_amount ?? 0),
-        commission: calculateCommission(Number(r.total_amount ?? 0), commissionSettings),
+        commission,
+        paymentModel: r.payment_model ?? "commission",
         risk: h >= 72 ? "super" : h >= 48 ? "critical" : "warning",
       };
     });

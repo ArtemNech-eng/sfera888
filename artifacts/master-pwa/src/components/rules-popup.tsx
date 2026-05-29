@@ -19,6 +19,7 @@ export default function RulesPopup() {
       const t = setTimeout(() => setVisible(true), 800);
       return () => clearTimeout(t);
     }
+    return;
   }, [master?.id, master?.status]);
 
   function dismiss() {

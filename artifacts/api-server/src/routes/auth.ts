@@ -2,10 +2,13 @@ import { Router } from "express";
 import { db, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { verifyPassword } from "../lib/auth.js";
+import { createRateLimiter } from "../lib/rateLimit.js";
 
 const router = Router();
 
-router.post("/login", async (req, res) => {
+const loginRateLimit = createRateLimiter({ windowMs: 60_000, maxAttempts: 5 });
+
+router.post("/login", loginRateLimit, async (req, res) => {
   const rawLogin = typeof req.body?.login === "string" ? req.body.login : "";
   const rawPassword = typeof req.body?.password === "string" ? req.body.password : "";
   const login = rawLogin.trim();

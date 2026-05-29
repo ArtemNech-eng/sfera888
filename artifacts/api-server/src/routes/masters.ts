@@ -286,7 +286,7 @@ router.post("/checkins/nudge/:masterId", requireRole("admin", "master_operator")
 
 // PATCH /api/masters/:id/checkin — manually override checkin status from CRM
 router.patch("/:id/checkin", requireRole("admin", "master_operator"), async (req, res) => {
-  const masterId = parseInt(req.params.id);
+  const masterId = parseInt(String(req.params.id));
   if (isNaN(masterId)) return res.status(400).json({ error: "Invalid id" });
   const { date, isAvailable } = req.body as { date: string; isAvailable: boolean };
   if (typeof isAvailable !== "boolean" || !date) return res.status(400).json({ error: "date and isAvailable required" });
@@ -339,7 +339,7 @@ router.post("/fomo-all", requireRole("admin", "master_operator"), async (req, re
 
 // GET /api/masters/:id
 router.get("/:id", allMasterRoles, async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   const rows = await db.select().from(mastersTable).where(eq(mastersTable.id, id));
   if (!rows[0]) return res.status(404).json({ error: "Master not found" });
 
@@ -379,7 +379,7 @@ router.get("/:id", allMasterRoles, async (req, res) => {
 
 // PATCH /api/masters/:id
 router.patch("/:id", requireRole("admin", "master_operator"), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   const { alias, city, specialization, specializations, telegramId, phone, status, isTestMaster, tags, rating, servicePrices, maxActiveOrders } = req.body;
 
   // Валидация имени мастера
@@ -462,7 +462,7 @@ router.patch("/:id", requireRole("admin", "master_operator"), async (req, res) =
 // Marks the master's contract as signed outside the system (e.g. via OkiDoki).
 // Sets contractSignedAt, passportVerified=true, note, activates master, moves to "Свободен".
 router.post("/:id/mark-contract-external", requireRole("admin"), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   const { source } = req.body; // e.g. "okidoki" or "paper"
   const noteMap: Record<string, string> = {
     okidoki: "Подписан через сервис ОкиДоки",
@@ -498,7 +498,7 @@ router.post("/:id/mark-contract-external", requireRole("admin"), async (req, res
 // POST /api/masters/:id/unblock — снять автоблок мастера (после 2 подряд отменённых заказов)
 // Возвращает счётчик в 0 и убирает blockedFromOrders. Только админ или master_operator.
 router.post("/:id/unblock", requireRole("admin", "master_operator"), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, id));
   if (!master) return res.status(404).json({ error: "Мастер не найден" });
   const sessionUser = (req as any).session?.userId ?? null;
@@ -515,7 +515,7 @@ router.post("/:id/unblock", requireRole("admin", "master_operator"), async (req,
 
 // PATCH /api/masters/:id/verify-passport — manually approve or reject passport verification
 router.patch("/:id/verify-passport", requireRole("admin"), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   const { verified, note } = req.body as { verified: boolean; note?: string };
   if (typeof verified !== "boolean") return res.status(400).json({ error: "verified (boolean) required" });
 
@@ -547,14 +547,14 @@ router.patch("/:id/verify-passport", requireRole("admin"), async (req, res) => {
 
 // DELETE /api/masters/:id — soft delete (move to trash)
 router.delete("/:id", requireRole("admin"), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   await db.update(mastersTable).set({ deletedAt: new Date() }).where(eq(mastersTable.id, id));
   res.json({ success: true });
 });
 
 // POST /api/masters/:id/purge — admin hard delete master + all linked data
 router.post("/:id/purge", requireRole("admin"), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   const orderRows = await db.execute(sql`SELECT id FROM orders WHERE master_id = ${id}`);
   const orderIds: number[] = (orderRows as any).rows?.map((r: any) => r.id) ?? [];
@@ -586,7 +586,7 @@ router.post("/:id/purge", requireRole("admin"), async (req, res) => {
 
 // PATCH /api/masters/:id/tags — update full tags array
 router.patch("/:id/tags", allMasterRoles, async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   const { tags } = req.body;
   if (!Array.isArray(tags)) return res.status(400).json({ error: "tags must be array" });
   const result = await db.update(mastersTable).set({ tags }).where(eq(mastersTable.id, id)).returning();
@@ -598,7 +598,7 @@ router.patch("/:id/tags", allMasterRoles, async (req, res) => {
 
 // GET /api/masters/:id/orders
 router.get("/:id/orders", allMasterRoles, async (req, res) => {
-  const masterId = parseInt(req.params.id);
+  const masterId = parseInt(String(req.params.id));
   const orders = await db.select().from(ordersTable)
     .where(and(eq(ordersTable.masterId, masterId), isNull(ordersTable.deletedAt)))
     .orderBy(desc(ordersTable.createdAt));
@@ -673,7 +673,7 @@ router.get("/:id/orders", allMasterRoles, async (req, res) => {
 
 // GET /api/masters/:id/order-history
 router.get("/:id/order-history", allMasterRoles, async (req, res) => {
-  const masterId = parseInt(req.params.id);
+  const masterId = parseInt(String(req.params.id));
   const statusFilter = req.query.status as string | undefined;
 
   const { orderMasterHistoryTable } = await import("@workspace/db");
@@ -696,7 +696,7 @@ router.get("/:id/order-history", allMasterRoles, async (req, res) => {
 
 // GET /api/masters/:id/tasks
 router.get("/:id/tasks", allMasterRoles, async (req, res) => {
-  const masterId = parseInt(req.params.id);
+  const masterId = parseInt(String(req.params.id));
   const tasks = await db.select().from(masterTasksTable)
     .where(eq(masterTasksTable.masterId, masterId))
     .orderBy(masterTasksTable.createdAt);
@@ -705,7 +705,7 @@ router.get("/:id/tasks", allMasterRoles, async (req, res) => {
 
 // POST /api/masters/:id/tasks
 router.post("/:id/tasks", allMasterRoles, async (req: any, res) => {
-  const masterId = parseInt(req.params.id);
+  const masterId = parseInt(String(req.params.id));
   const { text, dueAt } = req.body;
   if (!text) return res.status(400).json({ error: "text required" });
 
@@ -722,7 +722,7 @@ router.post("/:id/tasks", allMasterRoles, async (req: any, res) => {
 
 // PATCH /api/masters/:id/tasks/:taskId
 router.patch("/:id/tasks/:taskId", allMasterRoles, async (req, res) => {
-  const taskId = parseInt(req.params.taskId);
+  const taskId = parseInt(String(req.params.taskId));
   const { isCompleted, text, dueAt } = req.body;
   const updates: any = {};
   if (isCompleted !== undefined) updates.isCompleted = isCompleted;
@@ -737,7 +737,7 @@ router.patch("/:id/tasks/:taskId", allMasterRoles, async (req, res) => {
 
 // DELETE /api/masters/:id/tasks/:taskId
 router.delete("/:id/tasks/:taskId", allMasterRoles, async (req, res) => {
-  const taskId = parseInt(req.params.taskId);
+  const taskId = parseInt(String(req.params.taskId));
   await db.delete(masterTasksTable).where(eq(masterTasksTable.id, taskId));
   res.json({ success: true });
 });
@@ -768,7 +768,7 @@ router.get("/avatar/:filename", async (req, res) => {
 
 // POST /api/masters/:id/avatar — upload custom avatar photo to GCS
 router.post("/:id/avatar", allMasterRoles, avatarUpload.single("avatar"), async (req, res) => {
-  const masterId = parseInt(req.params.id);
+  const masterId = parseInt(String(req.params.id));
   if (isNaN(masterId)) return res.status(400).json({ error: "Invalid id" });
   if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
@@ -787,7 +787,7 @@ router.post("/:id/avatar", allMasterRoles, avatarUpload.single("avatar"), async 
 
 // POST /api/masters/:id/reset-pwa — clear pwaLogin + pwaPasswordHash
 router.post("/:id/reset-pwa", allMasterRoles, async (req, res) => {
-  const masterId = parseInt(req.params.id);
+  const masterId = parseInt(String(req.params.id));
   if (isNaN(masterId)) return res.status(400).json({ error: "Invalid id" });
 
   const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
@@ -802,7 +802,7 @@ router.post("/:id/reset-pwa", allMasterRoles, async (req, res) => {
 
 // POST /api/masters/:id/toggle-fomo — admin: enable/disable FOMO block for a master
 router.post("/:id/toggle-fomo", requireRole("admin", "master_operator"), async (req, res) => {
-  const masterId = parseInt(req.params.id);
+  const masterId = parseInt(String(req.params.id));
   if (isNaN(masterId)) return res.status(400).json({ error: "Invalid id" });
 
   const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
@@ -890,7 +890,7 @@ router.post("/auto-issue-credentials", requireRole("admin"), async (req, res) =>
 
 // DELETE /api/masters/:id/max-link — CRM operator unlinks Max account
 router.delete("/:id/max-link", requireRole("admin", "master_operator"), async (req, res) => {
-  const masterId = parseInt(req.params.id);
+  const masterId = parseInt(String(req.params.id));
   if (isNaN(masterId)) return res.status(400).json({ error: "Invalid id" });
 
   const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
@@ -905,7 +905,7 @@ router.delete("/:id/max-link", requireRole("admin", "master_operator"), async (r
 
 // GET /api/masters/:id/max-logs — CRM: get Max bot activity log
 router.get("/:id/max-logs", requireRole("admin", "master_operator"), async (req, res) => {
-  const masterId = parseInt(req.params.id);
+  const masterId = parseInt(String(req.params.id));
   if (isNaN(masterId)) return res.status(400).json({ error: "Invalid id" });
 
   const logs = await db.select().from(maxBotLogsTable)
@@ -1046,7 +1046,7 @@ router.post("/checkins/broadcast", requireRole("admin", "master_operator"), asyn
 
 // GET /api/masters/:id/checkins — checkin history for last 30 days
 router.get("/:id/checkins", allMasterRoles, async (req, res) => {
-  const masterId = parseInt(req.params.id);
+  const masterId = parseInt(String(req.params.id));
   if (isNaN(masterId)) return res.status(400).json({ error: "Invalid id" });
 
   const thirtyDaysAgo = new Date();
@@ -1063,7 +1063,7 @@ router.get("/:id/checkins", allMasterRoles, async (req, res) => {
 
 // DELETE /api/masters/:id/avatar — remove custom avatar from GCS
 router.delete("/:id/avatar", allMasterRoles, async (req, res) => {
-  const masterId = parseInt(req.params.id);
+  const masterId = parseInt(String(req.params.id));
   if (isNaN(masterId)) return res.status(400).json({ error: "Invalid id" });
 
   const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
@@ -1079,7 +1079,7 @@ router.delete("/:id/avatar", allMasterRoles, async (req, res) => {
 
 // POST /api/masters/:id/recalculate-debt — recalculate master debt from all transactions
 router.post("/:id/recalculate-debt", requireRole("admin", "master_operator"), async (req, res) => {
-  const masterId = parseInt(req.params.id);
+  const masterId = parseInt(String(req.params.id));
   if (isNaN(masterId)) return res.status(400).json({ error: "Invalid id" });
 
   const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
@@ -1128,7 +1128,7 @@ router.post("/:id/recalculate-debt", requireRole("admin", "master_operator"), as
 
 // GET /api/masters/:id/debug-transactions — inspect all transactions for this master (diagnostic)
 router.get("/:id/debug-transactions", requireRole("admin", "master_operator"), async (req, res) => {
-  const masterId = parseInt(req.params.id);
+  const masterId = parseInt(String(req.params.id));
   if (isNaN(masterId)) return res.status(400).json({ error: "Invalid id" });
 
   const txRows = await db.select().from(transactionsTable)

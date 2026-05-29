@@ -27,7 +27,7 @@ router.post("/columns", requireRole("admin"), async (req, res) => {
 
 // PATCH update column
 router.patch("/columns/:id", requireRole("admin"), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   const { name, receivesOrders, color, position } = req.body;
   const updates: any = {};
   if (name !== undefined) updates.name = name;
@@ -55,7 +55,7 @@ router.post("/columns/reorder", requireRole("admin"), async (req, res) => {
 
 // DELETE column
 router.delete("/columns/:id", requireRole("admin"), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   // Move masters in this column to null
   await db.update(mastersTable).set({ voronkaColumnId: null }).where(eq(mastersTable.voronkaColumnId, id));
   await db.delete(voronkaColumnsTable).where(eq(voronkaColumnsTable.id, id));
@@ -202,7 +202,7 @@ router.get("/masters", requireAuth, async (_req, res) => {
 
 // PATCH move master to column
 router.patch("/masters/:id/column", requireAuth, async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   const { voronkaColumnId } = req.body;
 
   const result = await db.update(mastersTable)
