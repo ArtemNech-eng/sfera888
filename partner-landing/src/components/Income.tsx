@@ -50,7 +50,8 @@ export default function Income() {
   const inView = useInView(ref as React.RefObject<HTMLElement>);
   const [leads, setLeads] = useState(100);
   const ratePerLead = 500;
-  const adBudget = 15000;
+  const costPerLead = 150;
+  const adBudget = leads * costPerLead;
   const earned = leads * ratePerLead;
   const total = Math.max(earned - adBudget, 0);
 
