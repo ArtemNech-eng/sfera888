@@ -544,6 +544,12 @@ async function runMigrations() {
       END IF;
     END $$
   `);
+  // Fix any existing rows that violate the upcoming check constraint
+  await db.execute(sql`
+    UPDATE master_wallet
+    SET tokens_balance = -credit_limit_tokens
+    WHERE tokens_balance < -credit_limit_tokens;
+  `);
   // Enforce balance >= -credit_limit at DB level
   await db.execute(sql`
     DO $$ BEGIN
@@ -562,6 +568,14 @@ async function runMigrations() {
   await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_orders_city_status ON orders(city, status) WHERE deleted_at IS NULL`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_wallet_transactions_master_type ON wallet_transactions(master_id, type, order_id)`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_order_dispatches_order_status ON order_dispatches(order_id, status)`);
+  // Fix fomo_events sequence if out of sync (prevents duplicate key errors)
+  await db.execute(sql`
+    SELECT setval(
+      'fomo_events_id_seq',
+      COALESCE((SELECT MAX(id) FROM fomo_events), 0) + 1,
+      false
+    );
+  `);
   console.log("[startup] Migrations applied");
 }
 
