@@ -371,7 +371,12 @@ async function buildTableData(params: QueryParams): Promise<{
     const manualCommission = safeNumber((o as any).commission);
     const txCommissionTotal = realTxs.reduce((s, t) => s + safeNumber(t.commission), 0);
     const commTotal = txCommissionTotal > 0 ? txCommissionTotal : total > 0 ? calcCommission(total) : orderAmount > 0 ? calcCommission(orderAmount) : manualCommission > 0 ? manualCommission : 0;
-    const commPaid = orderPrepDeduct + orderTotalPartialPaid;
+    const commPaid = realTxs.reduce((s, t) => {
+      if (t.paymentStatus === "paid") return s + safeNumber(t.commission);
+      const pd = safeNumber(t.prepaymentDeducted, 0);
+      const tp = (partialsByTx.get(t.id) ?? []).reduce((ss, p) => ss + safeNumber(p.amount, 0), 0);
+      return s + pd + tp;
+    }, 0);
     const commLeft = Math.max(0, commTotal - commPaid);
 
     // Problem detection (same logic as work-board.ts)
