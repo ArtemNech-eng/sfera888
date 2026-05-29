@@ -131,6 +131,10 @@ function formatMoney(n: number): string {
   return new Intl.NumberFormat("ru-RU").format(Math.round(n)) + " ₽";
 }
 
+function isPaidStatus(status: string | null | undefined): boolean {
+  return status === "paid" || status === "overdue";
+}
+
 // ── Determine column key for an order (same logic as work-board.ts) ─────────────
 
 function determineColumnKey(
@@ -343,13 +347,13 @@ async function buildTableData(params: QueryParams): Promise<{
 
     const txs = txByOrder.get(o.id) ?? [];
     const realTxs = txs.filter((t) => safeNumber(t.commission) > 0);
-    const commissionPaid = realTxs.length > 0 && realTxs.every((t) => t.paymentStatus === "paid");
+    const commissionPaid = realTxs.length > 0 && realTxs.every((t) => isPaidStatus(t.paymentStatus));
     
     const orderPrepDeduct = realTxs.reduce((s, t) => s + safeNumber(t.prepaymentDeducted, 0), 0);
     const orderPartials = realTxs.flatMap((t) => partialsByTx.get(t.id) ?? []);
     const orderTotalPartialPaid = orderPartials.reduce((s, p) => s + safeNumber(p.amount, 0), 0);
     
-    const commissionUnpaidFromTxs = realTxs.filter((t) => t.paymentStatus !== "paid")
+    const commissionUnpaidFromTxs = realTxs.filter((t) => !isPaidStatus(t.paymentStatus))
       .reduce((s, t) => {
         const pd = safeNumber(t.prepaymentDeducted, 0);
         const tp = (partialsByTx.get(t.id) ?? []).reduce((ss, p) => ss + safeNumber(p.amount, 0), 0);
@@ -372,7 +376,7 @@ async function buildTableData(params: QueryParams): Promise<{
     const txCommissionTotal = realTxs.reduce((s, t) => s + safeNumber(t.commission), 0);
     const commTotal = txCommissionTotal > 0 ? txCommissionTotal : total > 0 ? calcCommission(total) : orderAmount > 0 ? calcCommission(orderAmount) : manualCommission > 0 ? manualCommission : 0;
     const commPaid = realTxs.reduce((s, t) => {
-      if (t.paymentStatus === "paid") return s + safeNumber(t.commission);
+      if (isPaidStatus(t.paymentStatus)) return s + safeNumber(t.commission);
       const pd = safeNumber(t.prepaymentDeducted, 0);
       const tp = (partialsByTx.get(t.id) ?? []).reduce((ss, p) => ss + safeNumber(p.amount, 0), 0);
       return s + pd + tp;
