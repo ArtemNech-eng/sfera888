@@ -987,7 +987,7 @@ if (fs.existsSync(referralLandingDistPath)) {
 }
 
 // ── Serve partner-landing (public partner recruitment landing) ───────────────
-const partnerLandingDistPath = path.join(__dirname, "../../partner-landing/dist");
+const partnerLandingDistPath = path.join(__dirname, "../public/partner-landing");
 
 if (fs.existsSync(partnerLandingDistPath)) {
   app.use("/partners", express.static(partnerLandingDistPath));

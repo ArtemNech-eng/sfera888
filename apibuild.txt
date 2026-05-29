@@ -1,0 +1,11 @@
+
+> @workspace/api-server@0.0.0 build C:\Users\User\CascadeProjects\sfera888\artifacts\api-server
+> tsx ./build.ts
+
+building server...
+bundling: @aws-sdk/client-s3, @aws-sdk/s3-request-presigner, @google-cloud/storage, @types/connect-pg-simple, @types/pg, bcryptjs, connect-pg-simple, cookie-parser, cors, drizzle-orm, express, express-session, google-auth-library, multer, node-cron, openai, pg, sharp, web-push, zod
+external: @types/bcryptjs, @types/cookie-parser, @types/cors, @types/express, @types/express-session, @types/multer, @types/node, @types/node-cron, @types/sharp, @types/web-push, esbuild, tsx
+
+  dist\index.cjs  3.8mb
+
+Done in 5379ms
