@@ -1,0 +1,18 @@
+Scope: all 18 workspace projects
+
+   ╭─────────────────────────────────────────╮
+   │                                         │
+   │   Update available! 10.33.2 → 11.4.0.   │
+   │   Changelog: https://pnpm.io/v/11.4.0   │
+   │    To update, run: pnpm add -g pnpm     │
+   │                                         │
+   ╰─────────────────────────────────────────╯
+
+╭ Warning ─────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│   Ignored build scripts: sharp@0.34.5.                                       │
+│   Run "pnpm approve-builds" to pick which dependencies should be allowed     │
+│   to run scripts.                                                            │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+Done in 5.6s using pnpm v10.33.2

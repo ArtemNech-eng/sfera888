@@ -5,6 +5,7 @@
 
 import { Router, Request, Response } from "express";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import { db, usersTable, trafficPartnersTable, partnerBillingPeriodsTable, leadsTable, systemSettingsTable, ordersTable, partnerPushSubscriptionsTable } from "@workspace/db";
 import { eq, and, gte, lt, lte, desc, ilike, or, isNull, inArray, count, sql } from "drizzle-orm";
 import { requirePartner } from "../middlewares/requirePartner.js";
@@ -12,6 +13,18 @@ import { sendPushToPartner } from "../lib/partnerPush.js";
 import { z } from "zod";
 
 const router = Router();
+
+// Simple IP rate limiter for public endpoints (1 req / 5 sec per IP)
+const rateLimitStore = new Map<string, number>();
+const RATE_LIMIT_MS = 5_000;
+
+function checkPartnerRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const last = rateLimitStore.get(ip);
+  if (last && now - last < RATE_LIMIT_MS) return false;
+  rateLimitStore.set(ip, now);
+  return true;
+}
 
 // Disable caching for all partner API responses
 router.use((_req, res, next) => {
@@ -292,33 +305,49 @@ router.post("/auth/login", async (req: Request, res: Response) => {
 });
 
 // POST /api/partner/auth/register
+// Landing usage: password is omitted → backend generates one and returns it.
 const registerSchema = z.object({
   name: z.string().min(1, "Введите имя"),
   phone: z.string().min(5, "Введите номер телефона"),
   city: z.string().min(1, "Введите город"),
-  password: z.string().min(6, "Пароль минимум 6 символов"),
+  password: z.string().min(6, "Пароль минимум 6 символов").optional(),
+  avitoAccountLink: z.string().url("Некорректная ссылка").optional().or(z.literal("")),
 });
 
 router.post("/auth/register", async (req: Request, res: Response) => {
   try {
+    const ip = req.ip || req.socket.remoteAddress || "unknown";
+    if (!checkPartnerRateLimit(ip)) {
+      return res.status(429).json({ error: "too_many_requests", message: "Слишком быстро. Подождите 5 секунд." });
+    }
+
     const parsed = registerSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: "validation_error", details: parsed.error.flatten() });
     }
     const data = parsed.data;
 
+    // Normalize phone
+    const normalizedPhone = data.phone.replace(/\D/g, "");
+
     // Check if phone/login exists
-    const [existing] = await db.select().from(usersTable).where(eq(usersTable.login, data.phone));
+    const [existing] = await db.select().from(usersTable).where(eq(usersTable.login, normalizedPhone));
     if (existing) {
-      return res.status(400).json({ error: "phone_exists", message: "Номер телефона уже зарегистрирован" });
+      return res.status(409).json({ error: "phone_exists", message: "Номер телефона уже зарегистрирован" });
     }
 
+    // Generate or use provided password
+    const plainPassword = data.password ?? crypto.randomBytes(4).toString("hex");
+    const passwordHash = await bcrypt.hash(plainPassword, 10);
+
+    // Generate unique ref slug
+    const refSlug = `${normalizedPhone.slice(-6)}-${crypto.randomBytes(3).toString("hex")}`;
+
     // Create user
-    const passwordHash = await bcrypt.hash(data.password, 10);
     const [user] = await db
       .insert(usersTable)
       .values({
-        login: data.phone,
+        login: normalizedPhone,
         passwordHash,
         name: data.name,
         role: "partner",
@@ -331,9 +360,11 @@ router.post("/auth/register", async (req: Request, res: Response) => {
       .values({
         userId: user.id,
         name: data.name,
-        phone: data.phone,
+        phone: normalizedPhone,
         city: data.city,
         status: "pending",
+        avitoAccountLink: data.avitoAccountLink || null,
+        refSlug,
       })
       .returning();
 
@@ -343,6 +374,8 @@ router.post("/auth/register", async (req: Request, res: Response) => {
 
     return res.status(201).json({
       ok: true,
+      login: normalizedPhone,
+      password: data.password ? undefined : plainPassword,
       partner: {
         id: partner.id,
         name: partner.name,

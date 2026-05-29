@@ -1,0 +1,46 @@
+vite.config.ts (3:24) [33m[UNRESOLVED_IMPORT] [0mCould not resolve '@tailwindcss/vite' in vite.config.ts
+   [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m vite.config.ts:3:25 [38;5;246m][0m
+   [38;5;246m│[0m
+ [38;5;246m3 │[0m [38;5;249mi[0m[38;5;249mm[0m[38;5;249mp[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249mt[0m[38;5;249ma[0m[38;5;249mi[0m[38;5;249ml[0m[38;5;249mw[0m[38;5;249mi[0m[38;5;249mn[0m[38;5;249md[0m[38;5;249mc[0m[38;5;249ms[0m[38;5;249ms[0m[38;5;249m [0m[38;5;249mf[0m[38;5;249mr[0m[38;5;249mo[0m[38;5;249mm[0m[38;5;249m [0m"@tailwindcss/vite"[38;5;249m;[0m
+ [38;5;240m  │[0m                         ─────────┬─────────  
+ [38;5;240m  │[0m                                  ╰─────────── Module not found, treating it as an external dependency
+[38;5;246m───╯[0m
+
+vite.config.ts (4:18) [33m[UNRESOLVED_IMPORT] [0mCould not resolve '@vitejs/plugin-react' in vite.config.ts
+   [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m vite.config.ts:4:19 [38;5;246m][0m
+   [38;5;246m│[0m
+ [38;5;246m4 │[0m [38;5;249mi[0m[38;5;249mm[0m[38;5;249mp[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249mr[0m[38;5;249me[0m[38;5;249ma[0m[38;5;249mc[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249mf[0m[38;5;249mr[0m[38;5;249mo[0m[38;5;249mm[0m[38;5;249m [0m"@vitejs/plugin-react"[38;5;249m;[0m
+ [38;5;240m  │[0m                   ───────────┬──────────  
+ [38;5;240m  │[0m                              ╰──────────── Module not found, treating it as an external dependency
+[38;5;246m───╯[0m
+
+vite.config.ts (5:29) [33m[UNRESOLVED_IMPORT] [0mCould not resolve 'vite' in vite.config.ts
+   [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m vite.config.ts:5:30 [38;5;246m][0m
+   [38;5;246m│[0m
+ [38;5;246m5 │[0m [38;5;249mi[0m[38;5;249mm[0m[38;5;249mp[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249m{[0m[38;5;249m [0m[38;5;249md[0m[38;5;249me[0m[38;5;249mf[0m[38;5;249mi[0m[38;5;249mn[0m[38;5;249me[0m[38;5;249mC[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249mf[0m[38;5;249mi[0m[38;5;249mg[0m[38;5;249m [0m[38;5;249m}[0m[38;5;249m [0m[38;5;249mf[0m[38;5;249mr[0m[38;5;249mo[0m[38;5;249mm[0m[38;5;249m [0m"vite"[38;5;249m;[0m
+ [38;5;240m  │[0m                              ───┬──  
+ [38;5;240m  │[0m                                 ╰──── Module not found, treating it as an external dependency
+[38;5;246m───╯[0m
+
+vite.config.ts (6:31) [33m[UNRESOLVED_IMPORT] [0mCould not resolve 'vite-plugin-singlefile' in vite.config.ts
+   [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m vite.config.ts:6:32 [38;5;246m][0m
+   [38;5;246m│[0m
+ [38;5;246m6 │[0m [38;5;249mi[0m[38;5;249mm[0m[38;5;249mp[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249m{[0m[38;5;249m [0m[38;5;249mv[0m[38;5;249mi[0m[38;5;249mt[0m[38;5;249me[0m[38;5;249mS[0m[38;5;249mi[0m[38;5;249mn[0m[38;5;249mg[0m[38;5;249ml[0m[38;5;249me[0m[38;5;249mF[0m[38;5;249mi[0m[38;5;249ml[0m[38;5;249me[0m[38;5;249m [0m[38;5;249m}[0m[38;5;249m [0m[38;5;249mf[0m[38;5;249mr[0m[38;5;249mo[0m[38;5;249mm[0m[38;5;249m [0m"vite-plugin-singlefile"[38;5;249m;[0m
+ [38;5;240m  │[0m                                ────────────┬───────────  
+ [38;5;240m  │[0m                                            ╰───────────── Module not found, treating it as an external dependency
+[38;5;246m───╯[0m
+
+[31mfailed to load config from C:\Users\User\CascadeProjects\sfera888\partner-landing\vite.config.ts[39m
+[31merror during build:
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package '@tailwindcss/vite' imported from C:\Users\User\CascadeProjects\sfera888\node_modules\.vite-temp\vite.config.ts.timestamp-1780060713421-2d3de85439dfe.mjs
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:268:9)
+    at packageResolve (node:internal/modules/esm/resolve:768:81)
+    at moduleResolve (node:internal/modules/esm/resolve:854:18)
+    at defaultResolve (node:internal/modules/esm/resolve:984:11)
+    at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:780:12)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:704:25)
+    at ModuleLoader.resolve (node:internal/modules/esm/loader:687:38)
+    at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:305:38)
+    at ModuleJob._link (node:internal/modules/esm/module_job:137:49) {
+  code: 'ERR_MODULE_NOT_FOUND'
+}[39m

@@ -986,6 +986,16 @@ if (fs.existsSync(referralLandingDistPath)) {
   });
 }
 
+// ── Serve partner-landing (public partner recruitment landing) ───────────────
+const partnerLandingDistPath = path.join(__dirname, "../../partner-landing/dist");
+
+if (fs.existsSync(partnerLandingDistPath)) {
+  app.use("/partner-landing", express.static(partnerLandingDistPath));
+  app.use("/partner-landing", (_req, res) => {
+    res.sendFile(path.join(partnerLandingDistPath, "index.html"));
+  });
+}
+
 // Root: serve master-landing-v2 directly at sfera-master.ru/
 app.get("/", (_req, res) => {
   if (fs.existsSync(landingV2DistPath)) {

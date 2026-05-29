@@ -1,0 +1,8 @@
+
+> react-vite-tailwind@0.0.0 build C:\Users\User\CascadeProjects\sfera888\partner-landing
+> vite build
+
+"vite" не является внутренней или внешней
+командой, исполняемой программой или пакетным файлом.
+тАЙELIFECYCLEтАЙ Command failed with exit code 1.
+тАЙWARNтАЙ  Local package.json exists, but node_modules missing, did you mean to install?

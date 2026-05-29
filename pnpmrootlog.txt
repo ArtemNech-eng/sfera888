@@ -1,0 +1,43 @@
+Scope: all 19 workspace projects
+partner-landing                          |  WARN  Moving @tailwindcss/vite that was installed by a different package manager to "node_modules/.ignored"
+partner-landing                          |  WARN  Moving @types/node that was installed by a different package manager to "node_modules/.ignored"
+partner-landing                          |  WARN  Moving @types/react that was installed by a different package manager to "node_modules/.ignored"
+partner-landing                          |  WARN  Moving @types/react-dom that was installed by a different package manager to "node_modules/.ignored"
+partner-landing                          |  WARN  Moving @vitejs/plugin-react that was installed by a different package manager to "node_modules/.ignored"
+partner-landing                          |  WARN  Moving tailwindcss that was installed by a different package manager to "node_modules/.ignored"
+partner-landing                          |  WARN  Moving typescript that was installed by a different package manager to "node_modules/.ignored"
+partner-landing                          |  WARN  Moving vite that was installed by a different package manager to "node_modules/.ignored"
+partner-landing                          |  WARN  Moving vite-plugin-singlefile that was installed by a different package manager to "node_modules/.ignored"
+partner-landing                          |  WARN  Moving clsx that was installed by a different package manager to "node_modules/.ignored"
+partner-landing                          |  WARN  Moving react that was installed by a different package manager to "node_modules/.ignored"
+partner-landing                          |  WARN  Moving tailwind-merge that was installed by a different package manager to "node_modules/.ignored"
+partner-landing                          |  WARN  Moving react-dom that was installed by a different package manager to "node_modules/.ignored"
+Progress: resolved 0, reused 1, downloaded 0, added 0
+artifacts/api-server                     |  WARN  deprecated @types/bcryptjs@3.0.0
+artifacts/api-server                     |  WARN  deprecated @types/sharp@0.32.0
+Progress: resolved 32, reused 29, downloaded 0, added 0
+Progress: resolved 74, reused 70, downloaded 0, added 0
+Progress: resolved 82, reused 74, downloaded 0, added 0
+Progress: resolved 82, reused 75, downloaded 0, added 0
+Progress: resolved 88, reused 78, downloaded 0, added 0
+Progress: resolved 124, reused 115, downloaded 0, added 0
+Progress: resolved 300, reused 262, downloaded 0, added 0
+Progress: resolved 349, reused 306, downloaded 0, added 0
+Progress: resolved 471, reused 418, downloaded 3, added 0
+Progress: resolved 621, reused 573, downloaded 9, added 0
+ WARN  2 deprecated subdependencies found: lodash@4.18.0, node-domexception@1.0.0
+Progress: resolved 706, reused 658, downloaded 16, added 0
+Packages: +20 -1
+++++++++++++++++++++-
+Progress: resolved 706, reused 658, downloaded 16, added 1
+Progress: resolved 706, reused 658, downloaded 16, added 12
+Progress: resolved 706, reused 658, downloaded 16, added 20, done
+
+╭ Warning ─────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│   Ignored build scripts: sharp@0.34.5.                                       │
+│   Run "pnpm approve-builds" to pick which dependencies should be allowed     │
+│   to run scripts.                                                            │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+Done in 19.1s using pnpm v10.33.2
