@@ -990,8 +990,8 @@ if (fs.existsSync(referralLandingDistPath)) {
 const partnerLandingDistPath = path.join(__dirname, "../../partner-landing/dist");
 
 if (fs.existsSync(partnerLandingDistPath)) {
-  app.use("/partner-landing", express.static(partnerLandingDistPath));
-  app.use("/partner-landing", (_req, res) => {
+  app.use("/partners", express.static(partnerLandingDistPath));
+  app.use("/partners", (_req, res) => {
     res.sendFile(path.join(partnerLandingDistPath, "index.html"));
   });
 }
