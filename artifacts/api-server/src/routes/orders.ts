@@ -193,9 +193,10 @@ router.get("/:id", allOrderRoles, async (req, res) => {
     clientName = lead?.clientName ?? null;
     clientPhone = lead?.clientPhone ?? null;
   }
-  // Fetch transaction info for this order
+  // Fetch transaction info for this order (aggregate if multiple)
   const txRows = await db.select().from(transactionsTable).where(eq(transactionsTable.orderId, id));
-  const tx = txRows[0] ?? null;
+  const realTxRows = txRows.filter(t => Number(t.commission) > 0);
+  const tx = realTxRows.length > 0 ? realTxRows[0] : (txRows[0] ?? null);
   res.json({
     id: o.id,
     leadId: o.leadId,

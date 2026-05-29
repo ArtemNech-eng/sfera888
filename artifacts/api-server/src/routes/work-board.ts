@@ -278,12 +278,12 @@ async function buildBoard() {
     const orderAmount = safeNumber((o as any).orderAmount);
     const expectedCommission = orderAmount > 0 ? calcCommission(orderAmount) : total > 0 ? calcCommission(total) : 0;
     const realTxs = txs.filter((t) => safeNumber(t.commission) > 0);
-    const commissionPaid = realTxs.length > 0 && realTxs.every((t) => t.paymentStatus === "paid");
+    const commissionPaid = realTxs.length > 0 && realTxs.every((t) => isPaidStatus(t.paymentStatus));
     // Calculate net payable per order: commission - prepaymentDeducted - totalPartialPaid
     const orderPrepDeduct = realTxs.reduce((s, t) => s + safeNumber(t.prepaymentDeducted, 0), 0);
     const orderPartials = realTxs.flatMap((t) => partialsByTx.get(t.id) ?? []);
     const orderTotalPartialPaid = orderPartials.reduce((s, p) => s + safeNumber(p.amount, 0), 0);
-    const commissionUnpaidFromTxs = realTxs.filter((t) => t.paymentStatus !== "paid")
+    const commissionUnpaidFromTxs = realTxs.filter((t) => !isPaidStatus(t.paymentStatus))
       .reduce((s, t) => {
         const pd = safeNumber(t.prepaymentDeducted, 0);
         const tp = (partialsByTx.get(t.id) ?? []).reduce((ss, p) => ss + safeNumber(p.amount, 0), 0);
@@ -672,6 +672,10 @@ function emptyBoard() {
 
 function formatMoney(n: number): string {
   return new Intl.NumberFormat("ru-RU").format(Math.round(n)) + " ₽";
+}
+
+function isPaidStatus(status: string | null | undefined): boolean {
+  return status === "paid" || status === "overdue";
 }
 
 // ── Routes ───────────────────────────────────────────────────────────────────
