@@ -124,6 +124,22 @@ function timeAgo(dateStr: string) {
   catch { return ""; }
 }
 
+function formatChatListTime(dateStr: string): string {
+  try {
+    const d = new Date(dateStr);
+    const now = new Date();
+    const isToday = d.toDateString() === now.toDateString();
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const isYesterday = d.toDateString() === yesterday.toDateString();
+    const sameYear = d.getFullYear() === now.getFullYear();
+    if (isToday) return format(d, "HH:mm", { locale: ru });
+    if (isYesterday) return "Вчера";
+    if (sameYear) return format(d, "d MMM", { locale: ru });
+    return format(d, "d MMM yyyy", { locale: ru });
+  } catch { return ""; }
+}
+
 function timeStamp(dateStr: string) {
   try { return format(new Date(dateStr), "HH:mm", { locale: ru }); }
   catch { return ""; }
@@ -751,7 +767,7 @@ export default function MasterChat() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-1">
                             <span className={`font-semibold text-sm truncate ${t.unread > 0 ? "text-gray-900" : "text-gray-700"}`}>{t.alias}</span>
-                            <span className="text-[10px] text-gray-300 flex-shrink-0 group-hover:hidden">{timeAgo(t.lastAt)}</span>
+                            <span className="text-[10px] text-gray-300 flex-shrink-0 group-hover:hidden">{formatChatListTime(t.lastAt)}</span>
                             {user?.role === "admin" && (
                               <button
                                 onClick={e => { e.stopPropagation(); setSelectedId(t.masterId); setShowDeleteDialog(true); }}
