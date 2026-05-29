@@ -135,6 +135,13 @@ interface Order {
   paymentModel?: string;
   tokensCharged?: number | null;
   assignedAt?: string | null;
+  transactionInfo?: {
+    orderAmount: number;
+    commission: number;
+    prepaymentDeducted: number;
+    paymentStatus: string;
+    paidAt: string | null;
+  } | null;
 }
 
 const workStatusSteps = [
@@ -956,6 +963,12 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
                         <span className="text-muted-foreground">Комиссия</span>
                         <span className="font-semibold text-destructive">{order.commission.toLocaleString("ru-RU")} ₽</span>
                       </div>
+                    )}
+                    {order.transactionInfo?.paymentStatus === "paid" && (
+                      <div className="text-xs text-green-600 font-medium">✅ Комиссия оплачена</div>
+                    )}
+                    {order.transactionInfo?.paymentStatus && order.transactionInfo.paymentStatus !== "paid" && Number(order.transactionInfo.commission) > 0 && (
+                      <div className="text-xs text-amber-600">⏳ Комиссия не оплачена</div>
                     )}
                   </>
                 ) : order.proposedAmount ? (

@@ -627,8 +627,19 @@ router.get("/orders/my", requireMasterPwa, async (req, res) => {
     : [];
   const leadMap = new Map(leads.map(l => [l.id, l]));
 
+  // Fetch transaction info for all orders
+  const orderIds = orders.map(o => o.id);
+  let txMap = new Map<number, any>();
+  if (orderIds.length > 0) {
+    const txRows = await db.select().from(transactionsTable).where(inArray(transactionsTable.orderId, orderIds));
+    for (const t of txRows) {
+      if (!txMap.has(t.orderId)) txMap.set(t.orderId, t);
+    }
+  }
+
   res.json(orders.map(o => {
     const lead = leadMap.get(o.leadId);
+    const tx = txMap.get(o.id);
     return {
       id: o.id,
       leadId: o.leadId ?? null,
@@ -653,6 +664,13 @@ router.get("/orders/my", requireMasterPwa, async (req, res) => {
       paymentModel: (o as any).paymentModel ?? "commission",
       tokensCharged: (o as any).tokensCharged ? Number((o as any).tokensCharged) : null,
       assignedAt: (o as any).assignedAt ?? null,
+      transactionInfo: tx ? {
+        orderAmount: Number(tx.orderAmount),
+        commission: Number(tx.commission),
+        prepaymentDeducted: Number(tx.prepaymentDeducted ?? 0),
+        paymentStatus: tx.paymentStatus,
+        paidAt: tx.paidAt ?? null,
+      } : null,
     };
   }));
 });
