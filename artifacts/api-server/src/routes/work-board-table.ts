@@ -132,7 +132,7 @@ function formatMoney(n: number): string {
 }
 
 function isPaidStatus(status: string | null | undefined): boolean {
-  return status === "paid" || status === "overdue";
+  return status === "paid";
 }
 
 // ── Determine column key for an order (same logic as work-board.ts) ─────────────

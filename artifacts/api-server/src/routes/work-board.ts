@@ -695,7 +695,7 @@ function formatMoney(n: number): string {
 }
 
 function isPaidStatus(status: string | null | undefined): boolean {
-  return status === "paid" || status === "overdue";
+  return status === "paid";
 }
 
 // ── Routes ───────────────────────────────────────────────────────────────────

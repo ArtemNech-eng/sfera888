@@ -1932,15 +1932,18 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                           <div className="w-px h-3 bg-gray-200" />
                           <div className="text-[11px]">
                             <span className="text-gray-400">Комиссия: </span>
-                            <span className={`font-semibold ${o.paymentStatus === "paid" || o.paymentStatus === "overdue" ? "text-emerald-600" : "text-violet-600"}`}>
+                            <span className={`font-semibold ${o.paymentStatus === "paid" ? "text-emerald-600" : "text-violet-600"}`}>
                               {o.commission.toLocaleString("ru-RU")} ₽
                             </span>
                           </div>
-                          {(o.paymentStatus === "paid" || o.paymentStatus === "overdue") && (
+                          {o.paymentStatus === "paid" && (
                             <span className="text-[9px] bg-emerald-50 text-emerald-600 rounded-md px-1.5 py-0.5 font-semibold">Оплачено</span>
                           )}
                           {o.paymentStatus === "pending" && (
                             <span className="text-[9px] bg-amber-50 text-amber-600 rounded-md px-1.5 py-0.5 font-semibold">Ожидает</span>
+                          )}
+                          {o.paymentStatus === "overdue" && (
+                            <span className="text-[9px] bg-red-50 text-red-600 rounded-md px-1.5 py-0.5 font-semibold">Просрочено</span>
                           )}
                           {o.remainingCommission != null && o.remainingCommission > 0 && (
                             <>
