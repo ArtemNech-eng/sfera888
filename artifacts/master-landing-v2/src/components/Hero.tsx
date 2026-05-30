@@ -91,15 +91,14 @@ const Hero: React.FC<HeroProps> = ({ botUrl }) => {
           {/* ── Right column: illustration ── */}
           <div className="flex items-end justify-center lg:justify-end pt-8 lg:pt-0">
             <div className="relative">
-              <div className="absolute inset-0 bg-white" />
               <img
                 src={mastersHero}
                 alt="Мастера"
-                className="relative z-10 w-full max-w-[700px] h-auto"
+                className="relative z-10 w-full max-w-[850px] h-auto"
               />
 
               {/* Floating card: Новый заказ */}
-              <div className="absolute top-4 -left-20 bg-white rounded-2xl shadow-lg border border-[#E2E8F0] px-4 py-3 w-[180px]">
+              <div className="absolute top-[10%] -left-[140px] bg-white rounded-2xl shadow-lg border border-[#E2E8F0] px-4 py-3 w-[180px]">
                 <p className="text-[#64748B] text-xs mb-1">Новый заказ</p>
                 <p className="text-[#0F172A] font-bold text-sm leading-tight">Квартира 85 м²</p>
                 <p className="text-[#64748B] text-xs mb-2">Бюджет 1 350 000 ₽</p>
@@ -109,7 +108,7 @@ const Hero: React.FC<HeroProps> = ({ botUrl }) => {
               </div>
 
               {/* Floating card: Объект взят */}
-              <div className="absolute top-[45%] -left-12 -translate-y-1/2 bg-white rounded-2xl shadow-lg border border-[#E2E8F0] px-4 py-3 flex items-center gap-3 min-w-[160px]">
+              <div className="absolute top-[50%] -left-[100px] -translate-y-1/2 bg-white rounded-2xl shadow-lg border border-[#E2E8F0] px-4 py-3 flex items-center gap-3 min-w-[160px]">
                 <div className="w-8 h-8 rounded-xl bg-[#10B981] flex items-center justify-center flex-shrink-0">
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                     <path d="M3 8l3.5 3.5L13 4.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -122,13 +121,13 @@ const Hero: React.FC<HeroProps> = ({ botUrl }) => {
               </div>
 
               {/* Floating card: Заработок */}
-              <div className="absolute top-8 -right-4 bg-white rounded-2xl shadow-lg border border-[#E2E8F0] px-4 py-3 min-w-[140px]">
+              <div className="absolute top-[12%] -right-6 bg-white rounded-2xl shadow-lg border border-[#E2E8F0] px-4 py-3 min-w-[140px]">
                 <p className="text-[#64748B] text-xs mb-1">Заработок</p>
                 <p className="text-[#10B981] font-black text-lg">+84 000 ₽</p>
               </div>
 
               {/* Floating card: Rating */}
-              <div className="absolute bottom-1/3 -right-4 bg-white rounded-2xl shadow-lg border border-[#E2E8F0] px-4 py-3 min-w-[120px]">
+              <div className="absolute bottom-[20%] -right-6 bg-white rounded-2xl shadow-lg border border-[#E2E8F0] px-4 py-3 min-w-[120px]">
                 <p className="text-[#64748B] text-xs mb-1">Рейтинг</p>
                 <div className="flex items-center gap-1">
                   <span className="text-[#F59E0B] text-lg">★</span>
