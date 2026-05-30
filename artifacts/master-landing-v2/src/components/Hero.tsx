@@ -88,7 +88,7 @@ const Hero: React.FC<HeroProps> = ({ botUrl }) => {
           </div>
 
           {/* ── Right column: illustration ── */}
-          <div className="flex items-center justify-center lg:justify-end pt-8 lg:pt-0">
+          <div className="flex items-center justify-center lg:justify-end pt-8 lg:pt-0 bg-white rounded-2xl">
             <img
               src={mastersHero}
               alt="Мастера"
