@@ -16,7 +16,10 @@ function ensureVapid() {
 
 export async function sendPushToMaster(masterId: number, payload: object): Promise<void> {
   ensureVapid();
-  if (!vapidConfigured) return;
+  if (!vapidConfigured) {
+    console.warn("[push] VAPID keys not configured — push notifications disabled. Set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY env vars.");
+    return;
+  }
 
   const subs = await db.select().from(pushSubscriptionsTable)
     .where(eq(pushSubscriptionsTable.masterId, masterId));

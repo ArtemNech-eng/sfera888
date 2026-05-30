@@ -351,13 +351,19 @@ const messageValues = targets.map(master => ({
 }));
 await db.insert(masterMessagesTable).values(messageValues);
 
-// Отправляем push-уведомления асинхронно
+// Отправляем push-уведомления и Max-сообщения асинхронно
 for (const master of targets) {
   sendPushToMaster(master.id, {
     title: `📢 Объявление`,
     body: text.trim().length > 80 ? text.trim().slice(0, 77) + "…" : text.trim(),
     url: "/chat",
   }).catch((err) => console.error("[master-chat] broadcast push failed for master", master.id, err));
+
+  if (master.maxChatId) {
+    sendMaxMessage(master.maxChatId, `📢 **${senderLabel}:**\n${text.trim()}`).catch((err) =>
+      console.error("[master-chat] broadcast max message failed for master", master.id, err)
+    );
+  }
 }
 
   res.json({ sent: targets.length });
