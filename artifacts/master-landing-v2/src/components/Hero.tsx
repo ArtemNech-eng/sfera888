@@ -84,7 +84,7 @@ const Hero: React.FC<HeroProps> = ({ botUrl }) => {
             {/* Main heading */}
             <motion.h1
               variants={itemVariants}
-              className="text-5xl sm:text-6xl lg:text-7xl font-black leading-[1.05] tracking-tight text-[#0F172A] mb-6"
+              className="text-4xl sm:text-5xl lg:text-5xl font-black leading-[1.1] tracking-tight text-[#0F172A] mb-6"
             >
               Получайте заказы
               <br />
@@ -155,7 +155,7 @@ const Hero: React.FC<HeroProps> = ({ botUrl }) => {
 
           {/* ── Right column: illustration ── */}
           <motion.div
-            className="w-full h-[360px] sm:h-[440px] lg:h-[520px] rounded-2xl overflow-hidden shadow-lg shadow-[#0F172A]/5"
+            className="w-full h-[420px] sm:h-[520px] lg:h-[600px] rounded-2xl overflow-hidden shadow-lg shadow-[#0F172A]/5"
             variants={imageVariants}
             initial="hidden"
             animate="visible"
