@@ -88,11 +88,11 @@ const Hero: React.FC<HeroProps> = ({ botUrl }) => {
           </div>
 
           {/* ── Right column: illustration ── */}
-          <div className="flex items-center justify-center lg:justify-end pt-8 lg:pt-0 bg-white rounded-2xl">
+          <div className="flex items-center justify-center pt-8 lg:pt-0">
             <img
               src={mastersHero}
               alt="Мастера"
-              className="relative z-10 w-full max-w-[750px] h-auto object-contain"
+              className="relative z-10 w-full h-auto object-contain"
             />
           </div>
 
