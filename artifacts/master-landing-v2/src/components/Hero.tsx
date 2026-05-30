@@ -33,7 +33,7 @@ const Hero: React.FC<HeroProps> = ({ botUrl }) => {
       />
 
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-28 pb-16">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-8 items-center">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.3fr] gap-8 lg:gap-4 items-center">
 
           {/* ── Left column: content ── */}
           <div className="flex flex-col items-start">
@@ -95,11 +95,11 @@ const Hero: React.FC<HeroProps> = ({ botUrl }) => {
               <img
                 src={mastersHero}
                 alt="Мастера"
-                className="relative z-10 w-full max-w-[600px] h-auto"
+                className="relative z-10 w-full max-w-[700px] h-auto"
               />
 
               {/* Floating card: Новый заказ */}
-              <div className="absolute top-12 -left-32 bg-white rounded-2xl shadow-lg border border-[#E2E8F0] px-4 py-3 w-[180px]">
+              <div className="absolute top-4 -left-20 bg-white rounded-2xl shadow-lg border border-[#E2E8F0] px-4 py-3 w-[180px]">
                 <p className="text-[#64748B] text-xs mb-1">Новый заказ</p>
                 <p className="text-[#0F172A] font-bold text-sm leading-tight">Квартира 85 м²</p>
                 <p className="text-[#64748B] text-xs mb-2">Бюджет 1 350 000 ₽</p>
@@ -109,7 +109,7 @@ const Hero: React.FC<HeroProps> = ({ botUrl }) => {
               </div>
 
               {/* Floating card: Объект взят */}
-              <div className="absolute top-1/2 -left-24 -translate-y-1/2 bg-white rounded-2xl shadow-lg border border-[#E2E8F0] px-4 py-3 flex items-center gap-3 min-w-[160px]">
+              <div className="absolute top-[45%] -left-12 -translate-y-1/2 bg-white rounded-2xl shadow-lg border border-[#E2E8F0] px-4 py-3 flex items-center gap-3 min-w-[160px]">
                 <div className="w-8 h-8 rounded-xl bg-[#10B981] flex items-center justify-center flex-shrink-0">
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                     <path d="M3 8l3.5 3.5L13 4.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
