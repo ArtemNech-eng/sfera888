@@ -94,7 +94,7 @@ const Earnings: React.FC = () => {
                     WebkitTextFillColor: 'transparent',
                   }}
                 >
-                  До 12 000 ₽
+                  8–12 т.р.
                 </span>
               </div>
               <p className="text-[#0F172A] font-semibold text-lg mb-2">в день</p>
