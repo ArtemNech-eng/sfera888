@@ -86,11 +86,11 @@ const Hero: React.FC<HeroProps> = ({ botUrl }) => {
               variants={itemVariants}
               className="text-5xl sm:text-6xl lg:text-7xl font-black leading-[1.05] tracking-tight text-[#0F172A] mb-6"
             >
-              Заказы для мастеров.
+              Получайте заказы
               <br />
-              <span className="text-[#10B981]">Без хаоса.</span>
+              Работайте напрямую
               <br />
-              Через систему.
+              <span className="text-[#10B981]">Зарабатывайте больше</span>
             </motion.h1>
 
             {/* Subtitle */}
