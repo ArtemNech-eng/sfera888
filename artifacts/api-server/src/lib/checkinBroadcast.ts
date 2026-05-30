@@ -19,6 +19,9 @@ export async function broadcastCheckin(): Promise<void> {
     .from(mastersTable)
     .where(and(eq(mastersTable.status, "active"), isNull(mastersTable.deletedAt)));
 
+  const withMax = masters.filter(m => m.maxChatId);
+  console.log(`[checkin] broadcast: ${masters.length} active masters, ${withMax.length} with maxChatId`);
+
   let sent = 0;
   for (const master of masters) {
     // Skip if already sent today (any existing record = already sent)
@@ -110,6 +113,9 @@ export async function broadcastCheckinReminder(): Promise<void> {
     .select()
     .from(mastersTable)
     .where(and(eq(mastersTable.status, "active"), isNull(mastersTable.deletedAt)));
+
+  const withMax = masters.filter(m => m.maxChatId);
+  console.log(`[checkin] reminder: ${masters.length} active masters, ${withMax.length} with maxChatId`);
 
   let sent = 0;
   for (const master of masters) {

@@ -351,6 +351,10 @@ const messageValues = targets.map(master => ({
 }));
 await db.insert(masterMessagesTable).values(messageValues);
 
+// Логируем статистику перед отправкой
+const withMax = targets.filter(m => m.maxChatId);
+console.log(`[master-chat] broadcast: ${targets.length} targets, ${withMax.length} with maxChatId`);
+
 // Отправляем push-уведомления и Max-сообщения асинхронно
 for (const master of targets) {
   sendPushToMaster(master.id, {
