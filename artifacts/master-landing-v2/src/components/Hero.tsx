@@ -7,14 +7,10 @@ interface HeroProps {
 }
 
 const Hero: React.FC<HeroProps> = ({ botUrl }) => {
-  const scrollToSection = (id: string) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
-  };
-
   return (
     <section className="hero">
       <div className="hero__container">
-        {/* Left column: content */}
+
         <div className="hero__content">
           <div className="hero__badge">
             ● IT-платформа для профессиональных мастеров
@@ -37,22 +33,13 @@ const Hero: React.FC<HeroProps> = ({ botUrl }) => {
             <div>↗ 100% стоимости — ваши</div>
           </div>
 
-          <div>
-            <a href={botUrl} className="hero__btn">
-              Начать работать
-            </a>
-            <button
-              className="hero__btn hero__btn--ghost"
-              onClick={() => scrollToSection('how-it-works')}
-              style={{marginLeft: '16px', background: 'transparent', color: '#07122f', border: '1px solid #e2e8f0'}}
-            >
-              Узнать условия
-            </button>
-          </div>
+          <a href={botUrl} className="hero__btn">
+            Начать работать
+          </a>
         </div>
 
-        {/* Right column: visual */}
         <div className="hero__visual">
+
           <div className="card order-card">
             <small>Новый заказ</small>
             <h4>Квартира 85 м²</h4>
@@ -83,7 +70,9 @@ const Hero: React.FC<HeroProps> = ({ botUrl }) => {
               <p>Обои, 3-комн. кв.</p>
             </div>
           </div>
+
         </div>
+
       </div>
     </section>
   );
