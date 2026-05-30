@@ -1,6 +1,7 @@
 import React from 'react';
 import { ArrowRight, CheckCircle2, Zap, TrendingUp } from 'lucide-react';
 import NeonButton from './NeonButton';
+import mastersHero from '../assets/masters-hero.png';
 
 interface HeroProps {
   botUrl: string;
@@ -90,7 +91,7 @@ const Hero: React.FC<HeroProps> = ({ botUrl }) => {
           {/* ── Right column: illustration ── */}
           <div className="relative flex items-center justify-center lg:justify-end pt-8 lg:pt-0">
             <img
-              src="/images/masters/masters-hero.png"
+              src={mastersHero}
               alt="Мастера"
               className="w-full max-w-[520px] h-auto rounded-3xl"
             />
