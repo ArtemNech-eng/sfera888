@@ -1,4 +1,4 @@
-import { db, mastersTable, masterCheckinsTable, systemSettingsTable } from "@workspace/db";
+import { db, mastersTable, masterCheckinsTable, systemSettingsTable, masterMessagesTable } from "@workspace/db";
 import { eq, isNotNull, and, isNull } from "drizzle-orm";
 import { sendMaxWithButtons, sendMaxMessage } from "../maxBot.js";
 import { sendPushToMaster } from "./push.js";
@@ -17,12 +17,10 @@ export async function broadcastCheckin(): Promise<void> {
   const masters = await db
     .select()
     .from(mastersTable)
-    .where(and(eq(mastersTable.status, "active"), isNotNull(mastersTable.maxChatId)));
+    .where(and(eq(mastersTable.status, "active"), isNull(mastersTable.deletedAt)));
 
   let sent = 0;
   for (const master of masters) {
-    if (!master.maxChatId) continue;
-
     // Skip if already sent today (any existing record = already sent)
     const existing = await db
       .select()
@@ -32,17 +30,21 @@ export async function broadcastCheckin(): Promise<void> {
     if (existing.length > 0) continue;
 
     const name = master.contractFullName?.split(" ")[0] || master.alias;
+    const checkinText = `☀️ Доброе утро, **${name}**!\n\nВы сегодня готовы принимать заказы?\nПри появлении заказа мы отправим его вам в первую очередь.`;
 
-    await sendMaxWithButtons(
-      master.maxChatId,
-      `☀️ Доброе утро, **${name}**!\n\nВы сегодня готовы принимать заказы?\nПри появлении заказа мы отправим его вам в первую очередь.`,
-      [[
-        { text: "✅ Готов", payload: "checkin:yes" },
-        { text: "❌ Не готов", payload: "checkin:no" },
-      ]]
-    );
+    // MAX — только для привязанных мастеров
+    if (master.maxChatId) {
+      await sendMaxWithButtons(
+        master.maxChatId,
+        checkinText,
+        [[
+          { text: "✅ Готов", payload: "checkin:yes" },
+          { text: "❌ Не готов", payload: "checkin:no" },
+        ]]
+      );
+    }
 
-    // Push notification to PWA
+    // Push notification to PWA — для всех активных мастеров
     await sendPushToMaster(master.id, {
       type: "checkin",
       title: "☀️ Доброе утро!",
@@ -52,6 +54,19 @@ export async function broadcastCheckin(): Promise<void> {
         { action: "checkin_no", title: "❌ Не готов" },
       ],
     }).catch(() => {});
+
+    // Сохраняем сообщение в CRM чат, чтобы оператор видел отправку
+    await db.insert(masterMessagesTable).values({
+      masterId: master.id,
+      telegramChatId: master.telegramId ?? `pwa_${master.id}`,
+      text: checkinText,
+      fromMaster: false,
+      senderName: "Система",
+      isRead: true,
+      photoUrl: null,
+      telegramMessageId: null,
+      maxMid: null,
+    });
 
     await db.insert(masterCheckinsTable).values({
       masterId: master.id,
@@ -94,22 +109,32 @@ export async function broadcastCheckinReminder(): Promise<void> {
   const masters = await db
     .select()
     .from(mastersTable)
-    .where(and(eq(mastersTable.status, "active"), isNotNull(mastersTable.maxChatId)));
+    .where(and(eq(mastersTable.status, "active"), isNull(mastersTable.deletedAt)));
 
   let sent = 0;
   for (const master of masters) {
-    if (!master.maxChatId || !pendingIds.has(master.id)) continue;
+    if (!pendingIds.has(master.id)) continue;
 
     const name = master.contractFullName?.split(" ")[0] || master.alias;
 
-    await sendMaxWithButtons(
-      master.maxChatId,
-      `🔔 **${name}**, вы ещё не ответили на утренний вопрос.\n\nВы готовы сегодня принять заказы?`,
-      [[
-        { text: "✅ Готов", payload: "checkin:yes" },
-        { text: "❌ Не готов", payload: "checkin:no" },
-      ]]
-    );
+    // MAX — только для привязанных мастеров
+    if (master.maxChatId) {
+      await sendMaxWithButtons(
+        master.maxChatId,
+        `🔔 **${name}**, вы ещё не ответили на утренний вопрос.\n\nВы готовы сегодня принять заказы?`,
+        [[
+          { text: "✅ Готов", payload: "checkin:yes" },
+          { text: "❌ Не готов", payload: "checkin:no" },
+        ]]
+      );
+    }
+
+    // Push reminder — для всех активных мастеров
+    await sendPushToMaster(master.id, {
+      type: "checkin",
+      title: "🔔 Напоминание",
+      body: `${name}, вы ещё не ответили — готовы ли вы сегодня принимать заказы?`,
+    }).catch(() => {});
 
     sent++;
     await new Promise((r) => setTimeout(r, 200));
