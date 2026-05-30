@@ -89,49 +89,51 @@ const Hero: React.FC<HeroProps> = ({ botUrl }) => {
           </div>
 
           {/* ── Right column: illustration ── */}
-          <div className="relative flex items-center justify-center lg:justify-end pt-8 lg:pt-0">
-            <img
-              src={mastersHero}
-              alt="Мастера"
-              className="w-full max-w-[520px] h-auto rounded-3xl"
-            />
+          <div className="flex items-end justify-center lg:justify-end pt-8 lg:pt-0">
+            <div className="relative">
+              <img
+                src={mastersHero}
+                alt="Мастера"
+                className="w-full max-w-[600px] h-auto"
+              />
 
-            {/* Floating card: Новый заказ */}
-            <div className="absolute top-4 left-0 sm:-left-4 bg-white rounded-2xl shadow-lg border border-[#E2E8F0] px-4 py-3 max-w-[200px]">
-              <p className="text-[#64748B] text-xs mb-1">Новый заказ</p>
-              <p className="text-[#0F172A] font-bold text-sm leading-tight">Квартира 85 м²</p>
-              <p className="text-[#64748B] text-xs mb-2">Бюджет 1 350 000 ₽</p>
-              <button className="w-full bg-[#0F172A] text-white text-xs font-semibold py-2 rounded-lg">
-                Откликнуться
-              </button>
-            </div>
-
-            {/* Floating card: Объект взят */}
-            <div className="absolute top-20 -left-2 sm:-left-6 bg-white rounded-2xl shadow-lg border border-[#E2E8F0] px-4 py-3 flex items-center gap-3 min-w-[160px]">
-              <div className="w-8 h-8 rounded-xl bg-[#10B981] flex items-center justify-center flex-shrink-0">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <path d="M3 8l3.5 3.5L13 4.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
+              {/* Floating card: Новый заказ */}
+              <div className="absolute top-12 -left-32 bg-white rounded-2xl shadow-lg border border-[#E2E8F0] px-4 py-3 w-[180px]">
+                <p className="text-[#64748B] text-xs mb-1">Новый заказ</p>
+                <p className="text-[#0F172A] font-bold text-sm leading-tight">Квартира 85 м²</p>
+                <p className="text-[#64748B] text-xs mb-2">Бюджет 1 350 000 ₽</p>
+                <button className="w-full bg-[#0F172A] text-white text-xs font-semibold py-2 rounded-lg">
+                  Откликнуться
+                </button>
               </div>
-              <div>
-                <p className="text-[#0F172A] font-bold text-sm leading-tight">Объект взят</p>
-                <p className="text-[#64748B] text-xs">Обои, 3-комн. кв.</p>
-              </div>
-            </div>
 
-            {/* Floating card: Rating */}
-            <div className="absolute top-1/3 -right-2 sm:-right-6 bg-white rounded-2xl shadow-lg border border-[#E2E8F0] px-4 py-3 min-w-[120px]">
-              <p className="text-[#64748B] text-xs mb-1">Рейтинг</p>
-              <div className="flex items-center gap-1">
-                <span className="text-[#F59E0B] text-lg">★</span>
-                <span className="text-[#0F172A] font-black text-xl">4.9</span>
+              {/* Floating card: Объект взят */}
+              <div className="absolute top-1/2 -left-24 -translate-y-1/2 bg-white rounded-2xl shadow-lg border border-[#E2E8F0] px-4 py-3 flex items-center gap-3 min-w-[160px]">
+                <div className="w-8 h-8 rounded-xl bg-[#10B981] flex items-center justify-center flex-shrink-0">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <path d="M3 8l3.5 3.5L13 4.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-[#0F172A] font-bold text-sm leading-tight">Объект взят</p>
+                  <p className="text-[#64748B] text-xs">Обои, 3-комн. кв.</p>
+                </div>
               </div>
-            </div>
 
-            {/* Floating card: Earnings */}
-            <div className="absolute bottom-16 -right-2 sm:-right-6 bg-white rounded-2xl shadow-lg border border-[#E2E8F0] px-4 py-3 min-w-[140px]">
-              <p className="text-[#64748B] text-xs mb-1">Заработок</p>
-              <p className="text-[#10B981] font-black text-lg">+84 000 ₽</p>
+              {/* Floating card: Заработок */}
+              <div className="absolute top-8 -right-4 bg-white rounded-2xl shadow-lg border border-[#E2E8F0] px-4 py-3 min-w-[140px]">
+                <p className="text-[#64748B] text-xs mb-1">Заработок</p>
+                <p className="text-[#10B981] font-black text-lg">+84 000 ₽</p>
+              </div>
+
+              {/* Floating card: Rating */}
+              <div className="absolute bottom-1/3 -right-4 bg-white rounded-2xl shadow-lg border border-[#E2E8F0] px-4 py-3 min-w-[120px]">
+                <p className="text-[#64748B] text-xs mb-1">Рейтинг</p>
+                <div className="flex items-center gap-1">
+                  <span className="text-[#F59E0B] text-lg">★</span>
+                  <span className="text-[#0F172A] font-black text-xl">4.9</span>
+                </div>
+              </div>
             </div>
           </div>
 
