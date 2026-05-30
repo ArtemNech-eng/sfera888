@@ -90,11 +90,12 @@ const Hero: React.FC<HeroProps> = ({ botUrl }) => {
 
           {/* ── Right column: illustration ── */}
           <div className="flex items-end justify-center lg:justify-end pt-8 lg:pt-0">
-            <div className="relative bg-white">
+            <div className="relative">
+              <div className="absolute inset-0 bg-white" />
               <img
                 src={mastersHero}
                 alt="Мастера"
-                className="w-full max-w-[600px] h-auto"
+                className="relative z-10 w-full max-w-[600px] h-auto"
               />
 
               {/* Floating card: Новый заказ */}
