@@ -1,3 +1,5 @@
+import { isCircuitOpen, recordCircuitSuccess, recordCircuitFailure } from "./lib/broadcastUtils.js";
+
 const MAX_API = "https://platform-api.max.ru";
 
 function getToken(): string | undefined {
@@ -131,6 +133,11 @@ async function maxPost(
   recipientId: number,
   body: Record<string, unknown>
 ): Promise<void> {
+  if (isCircuitOpen("max_api")) {
+    console.warn(`[maxBot] circuit OPEN — skipping POST ${recipientParam}=${recipientId}`);
+    return;
+  }
+
   const token = getToken();
   if (!token) return;
   const url = `${MAX_API}/messages?${recipientParam}=${recipientId}`;
@@ -147,8 +154,10 @@ async function maxPost(
     if (!res.ok) {
       const err = await res.text();
       console.error(`[maxBot] POST ${recipientParam}=${recipientId} failed:`, res.status, err);
+      recordCircuitFailure("max_api");
     } else {
       console.log(`[maxBot] message sent OK to ${recipientParam}=${recipientId}`);
+      recordCircuitSuccess("max_api");
     }
   } catch (e: any) {
     if (e.name === "AbortError") {
@@ -156,6 +165,7 @@ async function maxPost(
     } else {
       console.error("[maxBot] POST error:", e);
     }
+    recordCircuitFailure("max_api");
   }
 }
 

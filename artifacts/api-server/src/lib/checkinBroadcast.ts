@@ -1,7 +1,10 @@
 import { db, mastersTable, masterCheckinsTable, systemSettingsTable, masterMessagesTable } from "@workspace/db";
-import { eq, isNotNull, and, isNull } from "drizzle-orm";
-import { sendMaxWithButtons, sendMaxMessage } from "../maxBot.js";
+import { eq, isNotNull, and, isNull, inArray, sql } from "drizzle-orm";
+import { sendMaxWithButtons } from "../maxBot.js";
 import { sendPushToMaster } from "./push.js";
+import { runWithConcurrencyLimit } from "./broadcastUtils.js";
+
+const CONCURRENCY = 10;
 
 // ─── Morning broadcast ────────────────────────────────────────────────────────
 
@@ -14,44 +17,86 @@ export async function broadcastCheckin(): Promise<void> {
     .values({ key: "checkin_last_broadcast_date", value: today })
     .onConflictDoUpdate({ target: systemSettingsTable.key, set: { value: today, updatedAt: new Date() } });
 
+  // Fetch only needed columns, not the whole row
   const masters = await db
-    .select()
+    .select({
+      id: mastersTable.id,
+      alias: mastersTable.alias,
+      contractFullName: mastersTable.contractFullName,
+      maxChatId: mastersTable.maxChatId,
+      telegramId: mastersTable.telegramId,
+    })
     .from(mastersTable)
     .where(and(eq(mastersTable.status, "active"), isNull(mastersTable.deletedAt)));
 
-  const withMax = masters.filter(m => m.maxChatId);
+  const withMax = masters.filter((m) => m.maxChatId);
   console.log(`[checkin] broadcast: ${masters.length} active masters, ${withMax.length} with maxChatId`);
 
+  if (masters.length === 0) {
+    console.log("[checkin] no active masters to broadcast to");
+    return;
+  }
+
+  // Batch-fetch existing checkins for today in ONE query
+  const masterIds = masters.map((m) => m.id);
+  const existingRows = await db
+    .select({ masterId: masterCheckinsTable.masterId })
+    .from(masterCheckinsTable)
+    .where(and(eq(masterCheckinsTable.date, today), inArray(masterCheckinsTable.masterId, masterIds)));
+
+  const existingIds = new Set(existingRows.map((r) => r.masterId));
+  const targets = masters.filter((m) => !existingIds.has(m.id));
+
+  console.log(`[checkin] ${targets.length} masters need broadcast (skipped ${existingIds.size} already sent)`);
+
+  if (targets.length === 0) {
+    console.log("[checkin] all masters already have a checkin record for today");
+    return;
+  }
+
+  // Build message + checkin records for bulk insert
+  const messageValues: Array<{
+    masterId: number;
+    telegramChatId: string;
+    text: string;
+    fromMaster: boolean;
+    senderName: string;
+    isRead: boolean;
+    photoUrl: string | null;
+    telegramMessageId: number | null;
+    maxMid: string | null;
+  }> = [];
+
+  const checkinValues: Array<{
+    masterId: number;
+    date: string;
+    isAvailable: boolean | null;
+    respondedAt: Date | null;
+  }> = [];
+
+  // Send phase: concurrency-limited parallel sends
   let sent = 0;
-  for (const master of masters) {
-    // Skip if already sent today (any existing record = already sent)
-    const existing = await db
-      .select()
-      .from(masterCheckinsTable)
-      .where(and(eq(masterCheckinsTable.masterId, master.id), eq(masterCheckinsTable.date, today)));
 
-    if (existing.length > 0) continue;
-
+  await runWithConcurrencyLimit(targets, CONCURRENCY, async (master, index) => {
     const name = master.contractFullName?.split(" ")[0] || master.alias;
-    const checkinText = `☀️ Доброе утро, **${name}**!\n\nВы сегодня готовы принимать заказы?\nПри появлении заказа мы отправим его вам в первую очередь.`;
-    console.log(`[checkin] processing master ${master.id} (${name})...`);
+    const checkinText =
+      `☀️ Доброе утро, **${name}**!\n\n` +
+      `Вы сегодня готовы принимать заказы?\n` +
+      `При появлении заказа мы отправим его вам в первую очередь.`;
 
     // MAX — только для привязанных мастеров
     if (master.maxChatId) {
       try {
-        await Promise.race([
-          sendMaxWithButtons(
-            master.maxChatId,
-            checkinText,
-            [[
+        await sendMaxWithButtons(
+          master.maxChatId,
+          checkinText,
+          [
+            [
               { text: "✅ Готов", payload: "checkin:yes" },
               { text: "❌ Не готов", payload: "checkin:no" },
-            ]]
-          ),
-          new Promise<void>((_, reject) =>
-            setTimeout(() => reject(new Error("MAX send timeout (20s)")), 20_000)
-          ),
-        ]);
+            ],
+          ]
+        );
       } catch (e) {
         console.error(`[checkin] MAX send failed for master ${master.id}:`, e);
       }
@@ -68,10 +113,10 @@ export async function broadcastCheckin(): Promise<void> {
       ],
     }).catch(() => {});
 
-    // Сохраняем сообщение в CRM чат, чтобы оператор видел отправку
-    await db.insert(masterMessagesTable).values({
+    // Collect for bulk insert
+    messageValues.push({
       masterId: master.id,
-      telegramChatId: master.telegramId ?? `pwa_${master.id}`,
+      telegramChatId: String(master.telegramId ?? `pwa_${master.id}`),
       text: checkinText,
       fromMaster: false,
       senderName: "Система",
@@ -81,7 +126,7 @@ export async function broadcastCheckin(): Promise<void> {
       maxMid: null,
     });
 
-    await db.insert(masterCheckinsTable).values({
+    checkinValues.push({
       masterId: master.id,
       date: today,
       isAvailable: null,
@@ -89,8 +134,30 @@ export async function broadcastCheckin(): Promise<void> {
     });
 
     sent++;
-    console.log(`[checkin] done with master ${master.id} (${name})`);
-    await new Promise((r) => setTimeout(r, 200));
+
+    // Log progress every 10 masters
+    if ((index + 1) % 10 === 0 || index === targets.length - 1) {
+      console.log(`[checkin] progress: ${index + 1}/${targets.length} masters processed`);
+    }
+  });
+
+  // Bulk insert messages and checkins
+  if (messageValues.length > 0) {
+    try {
+      await db.insert(masterMessagesTable).values(messageValues);
+      console.log(`[checkin] bulk-inserted ${messageValues.length} messages`);
+    } catch (e) {
+      console.error("[checkin] bulk insert messages failed:", e);
+    }
+  }
+
+  if (checkinValues.length > 0) {
+    try {
+      await db.insert(masterCheckinsTable).values(checkinValues);
+      console.log(`[checkin] bulk-inserted ${checkinValues.length} checkins`);
+    } catch (e) {
+      console.error("[checkin] bulk insert checkins failed:", e);
+    }
   }
 
   console.log(`[checkin] Morning broadcast sent to ${sent} master(s) for ${today}`);
@@ -121,38 +188,43 @@ export async function broadcastCheckinReminder(): Promise<void> {
   const pendingIds = new Set(pending.map((r) => r.masterId));
 
   const masters = await db
-    .select()
+    .select({
+      id: mastersTable.id,
+      alias: mastersTable.alias,
+      contractFullName: mastersTable.contractFullName,
+      maxChatId: mastersTable.maxChatId,
+    })
     .from(mastersTable)
     .where(and(eq(mastersTable.status, "active"), isNull(mastersTable.deletedAt)));
 
-  const withMax = masters.filter(m => m.maxChatId);
-  console.log(`[checkin] reminder: ${masters.length} active masters, ${withMax.length} with maxChatId`);
+  const targets = masters.filter((m) => pendingIds.has(m.id));
+  const withMax = targets.filter((m) => m.maxChatId);
+  console.log(
+    `[checkin] reminder: ${targets.length} pending non-responders, ${withMax.length} with maxChatId`
+  );
+
+  if (targets.length === 0) return;
 
   let sent = 0;
-  for (const master of masters) {
-    if (!pendingIds.has(master.id)) continue;
 
+  await runWithConcurrencyLimit(targets, CONCURRENCY, async (master, index) => {
     const name = master.contractFullName?.split(" ")[0] || master.alias;
-    console.log(`[checkin] reminder processing master ${master.id} (${name})...`);
 
     // MAX — только для привязанных мастеров
     if (master.maxChatId) {
       try {
-        await Promise.race([
-          sendMaxWithButtons(
-            master.maxChatId,
-            `🔔 **${name}**, вы ещё не ответили на утренний вопрос.\n\nВы готовы сегодня принять заказы?`,
-            [[
+        await sendMaxWithButtons(
+          master.maxChatId,
+          `🔔 **${name}**, вы ещё не ответили на утренний вопрос.\n\nВы готовы сегодня принять заказы?`,
+          [
+            [
               { text: "✅ Готов", payload: "checkin:yes" },
               { text: "❌ Не готов", payload: "checkin:no" },
-            ]]
-          ),
-          new Promise<void>((_, reject) =>
-            setTimeout(() => reject(new Error("MAX send timeout (20s)")), 20_000)
-          ),
-        ]);
+            ],
+          ]
+        );
       } catch (e) {
-        console.error(`[checkin] MAX send failed for master ${master.id}:`, e);
+        console.error(`[checkin] MAX reminder failed for master ${master.id}:`, e);
       }
     }
 
@@ -164,9 +236,11 @@ export async function broadcastCheckinReminder(): Promise<void> {
     }).catch(() => {});
 
     sent++;
-    console.log(`[checkin] reminder done with master ${master.id} (${name})`);
-    await new Promise((r) => setTimeout(r, 200));
-  }
+
+    if ((index + 1) % 10 === 0 || index === targets.length - 1) {
+      console.log(`[checkin] reminder progress: ${index + 1}/${targets.length} masters processed`);
+    }
+  });
 
   console.log(`[checkin] Reminder sent to ${sent} non-responder(s) for ${today}`);
 }
