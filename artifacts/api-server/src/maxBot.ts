@@ -97,7 +97,9 @@ export async function logMaxEvent(
       event,
       note: note ?? null,
     });
-  } catch (e) {
+  } catch (e: any) {
+    // Silently ignore duplicate-key log noise (sequence desync)
+    if (e?.code === "23505") return;
     console.error("[maxBot] logEvent error:", e);
   }
 }
