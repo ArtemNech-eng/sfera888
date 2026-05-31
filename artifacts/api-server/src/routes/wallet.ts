@@ -63,7 +63,7 @@ async function ensureWallet(masterId: number) {
 // ─── GET /api/wallet/master-revenue — помесячная выручка от продажи токенов ──
 router.get("/master-revenue", ops, async (req: any, res: any) => {
   try {
-    const rows = await db.execute(sql`
+    const revenueRows = await db.execute(sql`
       SELECT
         w.master_id,
         m.alias,
@@ -80,16 +80,46 @@ router.get("/master-revenue", ops, async (req: any, res: any) => {
       ORDER BY w.master_id, TO_CHAR(w.created_at, 'YYYY-MM')
     `);
 
+    const spentRows = await db.execute(sql`
+      SELECT
+        w.master_id,
+        TO_CHAR(w.created_at, 'YYYY-MM') AS month,
+        COALESCE(SUM(w.tokens_amount), 0)::numeric AS spent
+      FROM wallet_transactions w
+      WHERE w.type = 'spend'
+        AND w.status = 'completed'
+        AND w.created_at >= NOW() - INTERVAL '12 months'
+      GROUP BY w.master_id, TO_CHAR(w.created_at, 'YYYY-MM')
+      ORDER BY w.master_id, TO_CHAR(w.created_at, 'YYYY-MM')
+    `);
+
     const masterMap = new Map<number, {
       masterId: number; alias: string; city: string;
-      months: { month: string; revenue: number }[];
+      months: { month: string; revenue: number; spentTokens: number }[];
     }>();
-    for (const r of rows.rows as any[]) {
+
+    // Process revenue
+    for (const r of revenueRows.rows as any[]) {
       const masterId = Number(r.master_id);
       if (!masterMap.has(masterId)) {
         masterMap.set(masterId, { masterId, alias: r.alias ?? "—", city: r.city ?? "—", months: [] });
       }
-      masterMap.get(masterId)!.months.push({ month: r.month, revenue: Number(r.revenue) });
+      masterMap.get(masterId)!.months.push({ month: r.month, revenue: Number(r.revenue), spentTokens: 0 });
+    }
+
+    // Process spent tokens
+    for (const r of spentRows.rows as any[]) {
+      const masterId = Number(r.master_id);
+      if (!masterMap.has(masterId)) {
+        masterMap.set(masterId, { masterId, alias: "—", city: "—", months: [] });
+      }
+      const entry = masterMap.get(masterId)!;
+      const existing = entry.months.find(m => m.month === r.month);
+      if (existing) {
+        existing.spentTokens = Number(r.spent);
+      } else {
+        entry.months.push({ month: r.month, revenue: 0, spentTokens: Number(r.spent) });
+      }
     }
 
     const now = new Date();
@@ -98,19 +128,31 @@ router.get("/master-revenue", ops, async (req: any, res: any) => {
     const prevMonth = fmtMonth(new Date(now.getFullYear(), now.getMonth() - 1, 1));
 
     const result = [...masterMap.values()].map(m => {
-      const monthMap: Record<string, number> = {};
-      for (const x of m.months) monthMap[x.month] = x.revenue;
+      const monthMap: Record<string, { revenue: number; spentTokens: number }> = {};
+      for (const x of m.months) monthMap[x.month] = { revenue: x.revenue, spentTokens: x.spentTokens };
 
-      const curRev  = monthMap[currentMonth] ?? 0;
-      const prevRev = monthMap[prevMonth] ?? 0;
+      const curRev  = monthMap[currentMonth]?.revenue ?? 0;
+      const prevRev = monthMap[prevMonth]?.revenue ?? 0;
       const last3 = [0, 1, 2].reduce((sum, i) => {
         const key = fmtMonth(new Date(now.getFullYear(), now.getMonth() - i, 1));
-        return sum + (monthMap[key] ?? 0);
+        return sum + (monthMap[key]?.revenue ?? 0);
       }, 0);
       const lastYear = m.months.reduce((s, x) => s + x.revenue, 0);
       const trend = curRev > prevRev ? "up" : curRev < prevRev ? "down" : "stable";
 
-      return { masterId: m.masterId, alias: m.alias, city: m.city, months: m.months, currentMonth: curRev, prevMonth: prevRev, last3Months: last3, lastYear, trend };
+      const curSpent  = monthMap[currentMonth]?.spentTokens ?? 0;
+      const last3Spent = [0, 1, 2].reduce((sum, i) => {
+        const key = fmtMonth(new Date(now.getFullYear(), now.getMonth() - i, 1));
+        return sum + (monthMap[key]?.spentTokens ?? 0);
+      }, 0);
+      const lastYearSpent = m.months.reduce((s, x) => s + x.spentTokens, 0);
+
+      return {
+        masterId: m.masterId, alias: m.alias, city: m.city,
+        months: m.months,
+        currentMonth: curRev, prevMonth: prevRev, last3Months: last3, lastYear, trend,
+        currentMonthSpent: curSpent, last3MonthsSpent: last3Spent, lastYearSpent
+      };
     }).sort((a, b) => b.currentMonth - a.currentMonth || b.lastYear - a.lastYear);
 
     return res.json(result);

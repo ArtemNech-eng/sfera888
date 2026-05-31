@@ -11,12 +11,15 @@ interface MasterRevenueRow {
   masterId: number;
   alias: string;
   city: string;
-  months: { month: string; revenue: number }[];
+  months: { month: string; revenue: number; spentTokens: number }[];
   currentMonth: number;
   prevMonth: number;
   last3Months: number;
   lastYear: number;
   trend: "up" | "down" | "stable";
+  currentMonthSpent: number;
+  last3MonthsSpent: number;
+  lastYearSpent: number;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -26,6 +29,11 @@ function fmtRub(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M ₽`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K ₽`;
   return `${n} ₽`;
+}
+
+function fmtTokens(n: number) {
+  if (n === 0) return "—";
+  return `${n} ток.`;
 }
 
 function fmtMonth(ym: string) {
@@ -272,6 +280,7 @@ function MasterRevenueContent() {
                   <th className="text-right px-3 py-3 font-medium">Текущий мес.</th>
                   <th className="text-right px-3 py-3 font-medium hidden sm:table-cell">3 месяца</th>
                   <th className="text-right px-3 py-3 font-medium hidden lg:table-cell">Год</th>
+                  <th className="text-right px-3 py-3 font-medium hidden md:table-cell">Токены мес.</th>
                   <th className="text-center px-3 py-3 font-medium hidden md:table-cell">Тренд</th>
                   <th className="text-center px-3 py-3 font-medium hidden lg:table-cell">12 мес.</th>
                   <th className="text-left px-3 py-3 font-medium">Прогресс</th>
@@ -280,7 +289,7 @@ function MasterRevenueContent() {
               <tbody>
                 {isLoading && (
                   <tr>
-                    <td colSpan={9} className="text-center py-16 text-muted-foreground">
+                    <td colSpan={10} className="text-center py-16 text-muted-foreground">
                       <div className="flex items-center justify-center gap-2">
                         <div className="w-4 h-4 border-2 border-primary/40 border-t-primary rounded-full animate-spin" />
                         Загрузка…
@@ -290,7 +299,7 @@ function MasterRevenueContent() {
                 )}
                 {!isLoading && filtered.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="text-center py-16 text-muted-foreground">
+                    <td colSpan={10} className="text-center py-16 text-muted-foreground">
                       <Coins className="w-10 h-10 mx-auto mb-3 opacity-20" />
                       <p>Нет данных — мастера ещё не покупали токены</p>
                     </td>
@@ -309,6 +318,9 @@ function MasterRevenueContent() {
                     </td>
                     <td className="px-3 py-3 text-right tabular-nums hidden lg:table-cell text-muted-foreground">
                       {m.lastYear > 0 ? fmtRub(m.lastYear) : "—"}
+                    </td>
+                    <td className="px-3 py-3 text-right tabular-nums hidden md:table-cell text-indigo-600 dark:text-indigo-400 font-medium">
+                      {m.currentMonthSpent > 0 ? fmtTokens(m.currentMonthSpent) : "—"}
                     </td>
                     <td className="px-3 py-3 text-center hidden md:table-cell">
                       <TrendIcon trend={m.trend} cur={m.currentMonth} prev={m.prevMonth} />
@@ -359,28 +371,56 @@ function MasterRevenueContent() {
                   </tr>
                 )}
                 {!isLoading && filtered.map((m, idx) => {
-                  const monthMap: Record<string, number> = {};
-                  for (const x of m.months) monthMap[x.month] = x.revenue;
+                  const revenueMap: Record<string, number> = {};
+                  const spentMap: Record<string, number> = {};
+                  for (const x of m.months) {
+                    revenueMap[x.month] = x.revenue;
+                    spentMap[x.month] = x.spentTokens;
+                  }
                   return (
-                    <tr key={m.masterId} className={cn("border-b last:border-0", idx % 2 === 0 ? "bg-background" : "bg-muted/10")}>
-                      <td className="px-4 py-3 font-medium whitespace-nowrap sticky left-0 bg-inherit z-10">{m.alias}</td>
-                      <td className="px-3 py-3 text-muted-foreground text-xs whitespace-nowrap sticky left-[160px] bg-inherit z-10 hidden md:table-cell">{m.city}</td>
-                      {last12.map(month => {
-                        const rev = monthMap[month] ?? 0;
-                        return (
-                          <td key={month} className={cn("px-3 py-3 text-right tabular-nums", month === currentMonthKey && "bg-primary/5")}>
-                            {rev > 0 ? (
-                              <span className={cn("font-medium", rev >= target ? "text-emerald-600 dark:text-emerald-400" : rev >= target * 0.6 ? "text-amber-600 dark:text-amber-400" : "text-red-500 dark:text-red-400")}>
-                                {fmtRub(rev)}
-                              </span>
-                            ) : <span className="text-muted-foreground/25">—</span>}
-                          </td>
-                        );
-                      })}
-                      <td className="px-3 py-3 text-right tabular-nums font-semibold">
-                        {m.lastYear > 0 ? fmtRub(m.lastYear) : "—"}
-                      </td>
-                    </tr>
+                    <>
+                      {/* Revenue row */}
+                      <tr key={`${m.masterId}-rev`} className={cn("border-b", idx % 2 === 0 ? "bg-background" : "bg-muted/10")}>
+                        <td className="px-4 py-3 font-medium whitespace-nowrap sticky left-0 bg-inherit z-10">{m.alias}</td>
+                        <td className="px-3 py-3 text-muted-foreground text-xs whitespace-nowrap sticky left-[160px] bg-inherit z-10 hidden md:table-cell">{m.city}</td>
+                        {last12.map(month => {
+                          const rev = revenueMap[month] ?? 0;
+                          return (
+                            <td key={month} className={cn("px-3 py-3 text-right tabular-nums", month === currentMonthKey && "bg-primary/5")}>
+                              {rev > 0 ? (
+                                <span className={cn("font-medium", rev >= target ? "text-emerald-600 dark:text-emerald-400" : rev >= target * 0.6 ? "text-amber-600 dark:text-amber-400" : "text-red-500 dark:text-red-400")}>
+                                  {fmtRub(rev)}
+                                </span>
+                              ) : <span className="text-muted-foreground/25">—</span>}
+                            </td>
+                          );
+                        })}
+                        <td className="px-3 py-3 text-right tabular-nums font-semibold">
+                          {m.lastYear > 0 ? fmtRub(m.lastYear) : "—"}
+                        </td>
+                      </tr>
+                      {/* Spent tokens row */}
+                      <tr key={`${m.masterId}-spent`} className={cn("border-b last:border-0", idx % 2 === 0 ? "bg-background" : "bg-muted/10")}>
+                        <td className="px-4 py-2 text-xs text-muted-foreground whitespace-nowrap sticky left-0 bg-inherit z-10" colSpan={2}>
+                          <span className="inline-flex items-center gap-1">
+                            <Coins className="w-3 h-3 text-indigo-500" /> Потрачено токенов
+                          </span>
+                        </td>
+                        {last12.map(month => {
+                          const spent = spentMap[month] ?? 0;
+                          return (
+                            <td key={month} className={cn("px-3 py-2 text-right tabular-nums text-xs", month === currentMonthKey && "bg-primary/5")}>
+                              {spent > 0 ? (
+                                <span className="font-medium text-indigo-600 dark:text-indigo-400">{fmtTokens(spent)}</span>
+                              ) : <span className="text-muted-foreground/25">—</span>}
+                            </td>
+                          );
+                        })}
+                        <td className="px-3 py-2 text-right tabular-nums text-xs font-semibold text-indigo-700 dark:text-indigo-300">
+                          {m.lastYearSpent > 0 ? fmtTokens(m.lastYearSpent) : "—"}
+                        </td>
+                      </tr>
+                    </>
                   );
                 })}
                 {/* Totals row */}
