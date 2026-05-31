@@ -34,18 +34,24 @@ export async function broadcastCheckin(): Promise<void> {
 
     const name = master.contractFullName?.split(" ")[0] || master.alias;
     const checkinText = `☀️ Доброе утро, **${name}**!\n\nВы сегодня готовы принимать заказы?\nПри появлении заказа мы отправим его вам в первую очередь.`;
+    console.log(`[checkin] processing master ${master.id} (${name})...`);
 
     // MAX — только для привязанных мастеров
     if (master.maxChatId) {
       try {
-        await sendMaxWithButtons(
-          master.maxChatId,
-          checkinText,
-          [[
-            { text: "✅ Готов", payload: "checkin:yes" },
-            { text: "❌ Не готов", payload: "checkin:no" },
-          ]]
-        );
+        await Promise.race([
+          sendMaxWithButtons(
+            master.maxChatId,
+            checkinText,
+            [[
+              { text: "✅ Готов", payload: "checkin:yes" },
+              { text: "❌ Не готов", payload: "checkin:no" },
+            ]]
+          ),
+          new Promise<void>((_, reject) =>
+            setTimeout(() => reject(new Error("MAX send timeout (20s)")), 20_000)
+          ),
+        ]);
       } catch (e) {
         console.error(`[checkin] MAX send failed for master ${master.id}:`, e);
       }
@@ -83,6 +89,7 @@ export async function broadcastCheckin(): Promise<void> {
     });
 
     sent++;
+    console.log(`[checkin] done with master ${master.id} (${name})`);
     await new Promise((r) => setTimeout(r, 200));
   }
 
@@ -126,18 +133,24 @@ export async function broadcastCheckinReminder(): Promise<void> {
     if (!pendingIds.has(master.id)) continue;
 
     const name = master.contractFullName?.split(" ")[0] || master.alias;
+    console.log(`[checkin] reminder processing master ${master.id} (${name})...`);
 
     // MAX — только для привязанных мастеров
     if (master.maxChatId) {
       try {
-        await sendMaxWithButtons(
-          master.maxChatId,
-          `🔔 **${name}**, вы ещё не ответили на утренний вопрос.\n\nВы готовы сегодня принять заказы?`,
-          [[
-            { text: "✅ Готов", payload: "checkin:yes" },
-            { text: "❌ Не готов", payload: "checkin:no" },
-          ]]
-        );
+        await Promise.race([
+          sendMaxWithButtons(
+            master.maxChatId,
+            `🔔 **${name}**, вы ещё не ответили на утренний вопрос.\n\nВы готовы сегодня принять заказы?`,
+            [[
+              { text: "✅ Готов", payload: "checkin:yes" },
+              { text: "❌ Не готов", payload: "checkin:no" },
+            ]]
+          ),
+          new Promise<void>((_, reject) =>
+            setTimeout(() => reject(new Error("MAX send timeout (20s)")), 20_000)
+          ),
+        ]);
       } catch (e) {
         console.error(`[checkin] MAX send failed for master ${master.id}:`, e);
       }
@@ -151,6 +164,7 @@ export async function broadcastCheckinReminder(): Promise<void> {
     }).catch(() => {});
 
     sent++;
+    console.log(`[checkin] reminder done with master ${master.id} (${name})`);
     await new Promise((r) => setTimeout(r, 200));
   }
 

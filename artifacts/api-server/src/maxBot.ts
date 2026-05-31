@@ -135,19 +135,27 @@ async function maxPost(
   if (!token) return;
   const url = `${MAX_API}/messages?${recipientParam}=${recipientId}`;
   try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15_000);
     const res = await fetch(url, {
       method: "POST",
       headers: { Authorization: token, "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      signal: ctrl.signal,
     });
+    clearTimeout(timer);
     if (!res.ok) {
       const err = await res.text();
       console.error(`[maxBot] POST ${recipientParam}=${recipientId} failed:`, res.status, err);
     } else {
       console.log(`[maxBot] message sent OK to ${recipientParam}=${recipientId}`);
     }
-  } catch (e) {
-    console.error("[maxBot] POST error:", e);
+  } catch (e: any) {
+    if (e.name === "AbortError") {
+      console.error(`[maxBot] POST ${recipientParam}=${recipientId} timed out after 15s`);
+    } else {
+      console.error("[maxBot] POST error:", e);
+    }
   }
 }
 
@@ -250,6 +258,8 @@ export async function sendMaxWithButtons(
   const token = getToken();
   if (!token) return;
   try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15_000);
     const res = await fetch(`${MAX_API}/messages?user_id=${Number(chatId)}`, {
       method: "POST",
       headers: {
@@ -270,15 +280,21 @@ export async function sendMaxWithButtons(
           },
         ],
       }),
+      signal: ctrl.signal,
     });
+    clearTimeout(timer);
     if (!res.ok) {
       const err = await res.text();
       console.error("[maxBot] sendWithButtons failed:", res.status, err);
     } else {
       console.log(`[maxBot] sendWithButtons OK to user_id=${Number(chatId)}`);
     }
-  } catch (e) {
-    console.error("[maxBot] sendWithButtons error:", e);
+  } catch (e: any) {
+    if (e.name === "AbortError") {
+      console.error(`[maxBot] sendWithButtons to user_id=${Number(chatId)} timed out after 15s`);
+    } else {
+      console.error("[maxBot] sendWithButtons error:", e);
+    }
   }
 }
 
@@ -291,6 +307,8 @@ async function sendMaxWithButtonsToChat(
   const token = getToken();
   if (!token) return;
   try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15_000);
     const res = await fetch(`${MAX_API}/messages?chat_id=${chatId}`, {
       method: "POST",
       headers: { Authorization: token, "Content-Type": "application/json" },
@@ -306,10 +324,16 @@ async function sendMaxWithButtonsToChat(
           },
         }],
       }),
+      signal: ctrl.signal,
     });
+    clearTimeout(timer);
     if (!res.ok) console.error("[maxBot] sendWithButtonsToChat failed:", res.status, await res.text());
-  } catch (e) {
-    console.error("[maxBot] sendWithButtonsToChat error:", e);
+  } catch (e: any) {
+    if (e.name === "AbortError") {
+      console.error(`[maxBot] sendWithButtonsToChat to chat_id=${chatId} timed out after 15s`);
+    } else {
+      console.error("[maxBot] sendWithButtonsToChat error:", e);
+    }
   }
 }
 
