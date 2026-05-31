@@ -79,6 +79,11 @@ export function recordCircuitFailure(name: string): void {
   }
 }
 
+export function resetCircuit(name: string): void {
+  circuits.set(name, { failures: 0, lastFailure: 0, openUntil: 0 });
+  console.log(`[circuit] ${name} manually reset`);
+}
+
 // ─── Exponential backoff helper ─────────────────────────────────────────────
 
 export async function withBackoff<T>(
