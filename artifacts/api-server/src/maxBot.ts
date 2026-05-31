@@ -850,12 +850,14 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
     const digits = text.replace(/\D/g, "");
     if (digits.length >= 10) {
       const last10 = digits.slice(-10);
+      console.log(`[maxBot debug] userId=${userId} sent digits=${digits} last10=${last10}`);
 
       const masters = await db.select().from(mastersTable).where(isNotNull(mastersTable.phone));
       let master = masters.find(m => {
         if (!m.phone) return false;
         return m.phone.replace(/\D/g, "").slice(-10) === last10;
       });
+      console.log(`[maxBot debug] phone search: masters count=${masters.length}, found=${!!master}`);
 
       // Fallback: search by pwaLogin if phone is empty or mismatch
       if (!master) {
@@ -864,6 +866,7 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
           if (!m.pwaLogin) return false;
           return m.pwaLogin.replace(/\D/g, "").slice(-10) === last10;
         });
+        console.log(`[maxBot debug] pwaLogin fallback: masters count=${allMasters.length}, found=${!!master}`);
       }
 
       if (master) {
