@@ -16,7 +16,6 @@ import { UPLOAD_BASE } from "./config.js";
 import { ObjectStorageService } from "./lib/objectStorage.js";
 
 import { handleMaxUpdate, registerWebhook, sendMaxMessage, sendMaxWithButtons } from "./maxBot.js";
-import { resetCircuit, isCircuitOpen } from "./lib/broadcastUtils.js";
 import { handleManagerUpdate, registerManagerWebhook, notifyManagerReceiptPaid } from "./managerBot.js";
 import { errorLoggerMiddleware } from "./middlewares/errorLogger.js";
 import { db } from "@workspace/db";
@@ -1030,30 +1029,6 @@ db.execute(sql`
 const PROD_HOST = "https://sfera-master.ru";
 registerWebhook(`${PROD_HOST}/api/max-webhook`);
 registerManagerWebhook();
-
-// ── Temporary test endpoint for MAX buttons ────────────────────────────────
-app.post("/api/test-max-buttons", async (req, res) => {
-  const { maxChatId } = req.body;
-  if (!maxChatId) return res.status(400).json({ error: "maxChatId required" });
-  try {
-    const wasOpen = isCircuitOpen("max_api");
-    resetCircuit("max_api");
-    await sendMaxWithButtons(
-      maxChatId,
-      "🧪 Тестовое сообщение с кнопками",
-      [
-        [
-          { text: "✅ Готов", payload: "checkin:yes" },
-          { text: "❌ Не готов", payload: "checkin:no" },
-        ],
-      ]
-    );
-    res.json({ ok: true, circuitWasOpen: wasOpen });
-  } catch (e) {
-    console.error("[test-max-buttons] error:", e);
-    res.status(500).json({ error: "failed", detail: String(e) });
-  }
-});
 
 // ── Error Logging Middleware (MUST be last) ─────────────────────────────────
 app.use(errorLoggerMiddleware());
