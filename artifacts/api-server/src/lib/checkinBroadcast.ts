@@ -37,14 +37,18 @@ export async function broadcastCheckin(): Promise<void> {
 
     // MAX — только для привязанных мастеров
     if (master.maxChatId) {
-      await sendMaxWithButtons(
-        master.maxChatId,
-        checkinText,
-        [[
-          { text: "✅ Готов", payload: "checkin:yes" },
-          { text: "❌ Не готов", payload: "checkin:no" },
-        ]]
-      );
+      try {
+        await sendMaxWithButtons(
+          master.maxChatId,
+          checkinText,
+          [[
+            { text: "✅ Готов", payload: "checkin:yes" },
+            { text: "❌ Не готов", payload: "checkin:no" },
+          ]]
+        );
+      } catch (e) {
+        console.error(`[checkin] MAX send failed for master ${master.id}:`, e);
+      }
     }
 
     // Push notification to PWA — для всех активных мастеров
@@ -125,14 +129,18 @@ export async function broadcastCheckinReminder(): Promise<void> {
 
     // MAX — только для привязанных мастеров
     if (master.maxChatId) {
-      await sendMaxWithButtons(
-        master.maxChatId,
-        `🔔 **${name}**, вы ещё не ответили на утренний вопрос.\n\nВы готовы сегодня принять заказы?`,
-        [[
-          { text: "✅ Готов", payload: "checkin:yes" },
-          { text: "❌ Не готов", payload: "checkin:no" },
-        ]]
-      );
+      try {
+        await sendMaxWithButtons(
+          master.maxChatId,
+          `🔔 **${name}**, вы ещё не ответили на утренний вопрос.\n\nВы готовы сегодня принять заказы?`,
+          [[
+            { text: "✅ Готов", payload: "checkin:yes" },
+            { text: "❌ Не готов", payload: "checkin:no" },
+          ]]
+        );
+      } catch (e) {
+        console.error(`[checkin] MAX send failed for master ${master.id}:`, e);
+      }
     }
 
     // Push reminder — для всех активных мастеров
