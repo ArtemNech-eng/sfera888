@@ -140,11 +140,18 @@ function MasterRevenueContent() {
   const [target, setTarget] = useState(20000);
   const [view, setView] = useState<"summary" | "monthly">("summary");
 
-  const { data = [], isLoading } = useQuery<MasterRevenueRow[]>({
+  const { data: rawData, isLoading, error } = useQuery<MasterRevenueRow[]>({
     queryKey: ["/api/wallet/master-revenue"],
-    queryFn: () => fetch("/api/wallet/master-revenue", { credentials: "include" }).then(r => r.json()),
+    queryFn: async () => {
+      const r = await fetch("/api/wallet/master-revenue", { credentials: "include" });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error || `HTTP ${r.status}`);
+      if (!Array.isArray(json)) throw new Error("Неверный формат ответа от сервера");
+      return json;
+    },
     refetchInterval: 60_000,
   });
+  const data = Array.isArray(rawData) ? rawData : [];
 
   const filtered = useMemo(() => {
     return data.filter(m => {
@@ -165,6 +172,16 @@ function MasterRevenueContent() {
 
   return (
     <div className="space-y-6">
+      {/* Error banner */}
+      {error && (
+        <div className="rounded-xl border bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800/30 p-4 flex items-start gap-3">
+          <div className="w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs font-bold shrink-0">!</div>
+          <div>
+            <p className="text-sm font-medium text-red-700 dark:text-red-300">Ошибка загрузки данных</p>
+            <p className="text-xs text-red-600 dark:text-red-400">{(error as Error).message}</p>
+          </div>
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shrink-0">
