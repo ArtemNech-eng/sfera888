@@ -39,6 +39,7 @@ export function MobileNav({
     { href: "/master-chat",   label: "Чат с мастерами",     icon: MessagesSquare,  permKey: "master-chat",  badge: unreadCount },
     { href: "/dialogs",       label: "Диалоги с клиентами", icon: MessageCircle,   permKey: "orders",       badge: unreadDialogs },
     { href: "/finance",       label: "Финансы",             icon: Wallet,          permKey: "finance" },
+    { href: "/master-revenue", label: "Доход с мастеров",    icon: TrendingUp,      permKey: "analytics" },
     { href: "/master-control", label: "Контроль мастеров",  icon: Brain,           permKey: "masters" },
     { href: "/checkins",      label: "Готовность",          icon: CalendarCheck,   permKey: "masters" },
     { href: "/tasks",         label: "Задачи",              icon: ClipboardList,   permKey: "tasks",        badge: openTasksCount },

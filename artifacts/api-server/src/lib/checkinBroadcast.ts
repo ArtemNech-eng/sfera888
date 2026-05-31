@@ -72,7 +72,8 @@ export async function broadcastCheckin(): Promise<void> {
   let sent = 0;
 
   await runWithConcurrencyLimit(targets, CONCURRENCY, async (master, index) => {
-    const name = master.contractFullName?.split(" ")[0] || master.alias;
+    const parts = master.contractFullName?.split(" ") ?? [];
+    const name = parts[1] ?? parts[0] ?? master.alias;
     const checkinText =
       `☀️ Доброе утро, **${name}**!\n\n` +
       `Вы сегодня готовы принимать заказы?\n` +
@@ -203,7 +204,8 @@ export async function broadcastCheckinReminder(): Promise<void> {
   let sent = 0;
 
   await runWithConcurrencyLimit(targets, CONCURRENCY, async (master, index) => {
-    const name = master.contractFullName?.split(" ")[0] || master.alias;
+    const parts = master.contractFullName?.split(" ") ?? [];
+    const name = parts[1] ?? parts[0] ?? master.alias;
 
     // MAX — только для привязанных мастеров
     if (master.maxChatId) {

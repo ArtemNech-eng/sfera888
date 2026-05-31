@@ -19,6 +19,7 @@ import {
   Bot,
   UserCheck,
   Filter,
+  TrendingUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -40,6 +41,7 @@ export function Sidebar() {
     { href: "/checkins",    label: "Готовность",        icon: CalendarCheck,   permKey: "masters" },
     { href: "/tasks",       label: "Задачи",           icon: ClipboardList,   permKey: "tasks" },
     { href: "/finance",     label: "Финансы",          icon: Wallet,          permKey: "finance" },
+    { href: "/master-revenue", label: "Доход с мастеров", icon: TrendingUp,      permKey: "analytics" },
     { href: "/analytics",   label: "Аналитика",        icon: BarChart3,       permKey: "analytics" },
     { href: "/trash",          label: "Корзина",          icon: Trash2,          permKey: "trash" },
     { href: "/ai-office",     label: "ИИ Офис",          icon: Bot,             permKey: "ai-office" },

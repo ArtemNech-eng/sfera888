@@ -862,7 +862,8 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
           return;
         }
 
-        const name = master.contractFullName?.split(" ")[0] || master.alias;
+        const parts = master.contractFullName?.split(" ") ?? [];
+        const name = parts[1] ?? parts[0] ?? master.alias;
 
         // Привязан другой аккаунт Max — предлагаем заменить
         if (master.maxChatId && master.maxChatId !== String(userId)) {
