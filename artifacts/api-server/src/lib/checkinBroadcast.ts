@@ -11,12 +11,6 @@ const CONCURRENCY = 10;
 export async function broadcastCheckin(): Promise<void> {
   const today = new Date().toISOString().split("T")[0];
 
-  // Mark broadcast as fired in DB — prevents double-fire after restart
-  await db
-    .insert(systemSettingsTable)
-    .values({ key: "checkin_last_broadcast_date", value: today })
-    .onConflictDoUpdate({ target: systemSettingsTable.key, set: { value: today, updatedAt: new Date() } });
-
   // Fetch only needed columns, not the whole row
   const masters = await db
     .select({
@@ -161,18 +155,19 @@ export async function broadcastCheckin(): Promise<void> {
   }
 
   console.log(`[checkin] Morning broadcast sent to ${sent} master(s) for ${today}`);
+
+  // Mark broadcast as fired in DB — only after successful insert so retry
+  // on crash will re-process instead of skipping.
+  await db
+    .insert(systemSettingsTable)
+    .values({ key: "checkin_last_broadcast_date", value: today })
+    .onConflictDoUpdate({ target: systemSettingsTable.key, set: { value: today, updatedAt: new Date() } });
 }
 
 // ─── Reminder for non-responders ─────────────────────────────────────────────
 
 export async function broadcastCheckinReminder(): Promise<void> {
   const today = new Date().toISOString().split("T")[0];
-
-  // Mark reminder as fired
-  await db
-    .insert(systemSettingsTable)
-    .values({ key: "checkin_last_reminder_date", value: today })
-    .onConflictDoUpdate({ target: systemSettingsTable.key, set: { value: today, updatedAt: new Date() } });
 
   // Find checkin records created today without a response
   const pending = await db
@@ -243,4 +238,10 @@ export async function broadcastCheckinReminder(): Promise<void> {
   });
 
   console.log(`[checkin] Reminder sent to ${sent} non-responder(s) for ${today}`);
+
+  // Mark reminder as fired only after successful send
+  await db
+    .insert(systemSettingsTable)
+    .values({ key: "checkin_last_reminder_date", value: today })
+    .onConflictDoUpdate({ target: systemSettingsTable.key, set: { value: today, updatedAt: new Date() } });
 }

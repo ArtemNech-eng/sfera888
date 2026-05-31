@@ -215,34 +215,50 @@ router.get("/checkins", allMasterRoles, async (req, res) => {
     historyByMaster.get(h.masterId)!.push({ date: h.date, isAvailable: h.isAvailable, reason: h.reason ?? null, respondedAt: h.respondedAt });
   }
 
+  const RESPONSE_WINDOW_DAYS = 14;
+
   // Calculate streak: consecutive days ending today where isAvailable = true
   function calcStreak(history: { date: string; isAvailable: boolean | null }[]): number {
     const byDate = new Map(history.map((h) => [h.date, h.isAvailable]));
     let streak = 0;
-    const cur = new Date();
     for (let i = 0; i < 30; i++) {
+      const cur = new Date();
+      cur.setDate(cur.getDate() - i);
       const d = cur.toISOString().split("T")[0];
-      if (byDate.get(d) === true) { streak++; cur.setDate(cur.getDate() - 1); }
-      else { break; }
+      if (byDate.get(d) === true) streak++;
+      else break;
     }
     return streak;
   }
 
-  // Calculate response rate: % of days with a response in last 30 days
-  function calcResponseRate(history: { respondedAt: Date | null }[]): number {
-    if (history.length === 0) return 0;
-    const responded = history.filter((h) => h.respondedAt !== null).length;
-    return Math.round((responded / history.length) * 100);
+  // Calculate response rate: % of days with a response in last 14 days (fixed window)
+  function calcResponseRate(history: { date: string; respondedAt: Date | null }[]): number {
+    const byDate = new Map(history.map((h) => [h.date, h.respondedAt]));
+    let responded = 0;
+    for (let i = 0; i < RESPONSE_WINDOW_DAYS; i++) {
+      const cur = new Date();
+      cur.setDate(cur.getDate() - i);
+      const d = cur.toISOString().split("T")[0];
+      const r = byDate.get(d);
+      if (r !== undefined && r !== null) responded++;
+    }
+    return Math.round((responded / RESPONSE_WINDOW_DAYS) * 100);
   }
 
-  // Calculate average response time: avg clock time (HH:MM) of responses
-  function calcAvgResponseTime(history: { respondedAt: Date | null }[]): string | null {
-    const times = history
-      .filter((h) => h.respondedAt !== null)
-      .map((h) => {
-        const d = new Date(h.respondedAt!);
-        return d.getHours() * 60 + d.getMinutes();
-      });
+  // Calculate average response time: avg clock time (HH:MM) of responses in last 14 days
+  function calcAvgResponseTime(history: { date: string; respondedAt: Date | null }[]): string | null {
+    const byDate = new Map(history.map((h) => [h.date, h.respondedAt]));
+    const times: number[] = [];
+    for (let i = 0; i < RESPONSE_WINDOW_DAYS; i++) {
+      const cur = new Date();
+      cur.setDate(cur.getDate() - i);
+      const d = cur.toISOString().split("T")[0];
+      const r = byDate.get(d);
+      if (r) {
+        const dt = new Date(r);
+        times.push(dt.getHours() * 60 + dt.getMinutes());
+      }
+    }
     if (times.length === 0) return null;
     const avg = Math.round(times.reduce((a, b) => a + b, 0) / times.length);
     return `${String(Math.floor(avg / 60)).padStart(2, "0")}:${String(avg % 60).padStart(2, "0")}`;
@@ -279,8 +295,17 @@ router.post("/checkins/nudge/:masterId", requireRole("admin", "master_operator")
   const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
   if (!master) return res.status(404).json({ error: "Мастер не найден" });
   if (!master.maxChatId) return res.status(400).json({ error: "Нет Max аккаунта" });
-  const { sendMaxMessageToChat } = await import("../maxBot.js");
-  await sendMaxMessageToChat(master.maxChatId, "⏰ Напоминаем — пожалуйста, отметьте вашу готовность к заказам на сегодня в боте Честный Мастер.");
+  const { sendMaxWithButtons } = await import("../maxBot.js");
+  await sendMaxWithButtons(
+    master.maxChatId,
+    `🔔 **${master.alias}**, вы ещё не ответили на утренний вопрос.\n\nВы готовы сегодня принять заказы?`,
+    [
+      [
+        { text: "✅ Готов", payload: "checkin:yes" },
+        { text: "❌ Не готов", payload: "checkin:no" },
+      ],
+    ]
+  );
   res.json({ ok: true });
 });
 
@@ -968,6 +993,13 @@ router.get("/checkins/stats", allMasterRoles, async (_req, res) => {
 
   const today = new Date().toISOString().split("T")[0];
 
+  // Get only master IDs that are connected to Max for accurate stats
+  const connectedMasters = await db
+    .select({ id: mastersTable.id })
+    .from(mastersTable)
+    .where(and(eq(mastersTable.status, "active"), isNotNull(mastersTable.maxChatId)));
+  const connectedIds = connectedMasters.map((m) => m.id);
+
   const [
     totalActiveRow,
     connectedRow,
@@ -979,11 +1011,21 @@ router.get("/checkins/stats", allMasterRoles, async (_req, res) => {
   ] = await Promise.all([
     db.select({ c: count() }).from(mastersTable).where(eq(mastersTable.status, "active")).then((r) => r[0]),
     db.select({ c: count() }).from(mastersTable).where(and(eq(mastersTable.status, "active"), isNotNull(mastersTable.maxChatId))).then((r) => r[0]),
-    db.select({ c: count() }).from(masterCheckinsTable).where(gte(masterCheckinsTable.date, sevenDaysAgoStr)).then((r) => r[0]),
-    db.select({ c: count() }).from(masterCheckinsTable).where(and(gte(masterCheckinsTable.date, sevenDaysAgoStr), isNotNull(masterCheckinsTable.respondedAt))).then((r) => r[0]),
-    db.select({ c: count() }).from(masterCheckinsTable).where(and(gte(masterCheckinsTable.date, sevenDaysAgoStr), eq(masterCheckinsTable.isAvailable, true))).then((r) => r[0]),
-    db.select({ c: count() }).from(masterCheckinsTable).where(and(eq(masterCheckinsTable.date, today), eq(masterCheckinsTable.isAvailable, true))).then((r) => r[0]),
-    db.select({ c: count() }).from(masterCheckinsTable).where(and(eq(masterCheckinsTable.date, lastWeekStr), eq(masterCheckinsTable.isAvailable, true))).then((r) => r[0]),
+    connectedIds.length > 0
+      ? db.select({ c: count() }).from(masterCheckinsTable).where(and(gte(masterCheckinsTable.date, sevenDaysAgoStr), inArray(masterCheckinsTable.masterId, connectedIds))).then((r) => r[0])
+      : Promise.resolve({ c: 0 }),
+    connectedIds.length > 0
+      ? db.select({ c: count() }).from(masterCheckinsTable).where(and(gte(masterCheckinsTable.date, sevenDaysAgoStr), isNotNull(masterCheckinsTable.respondedAt), inArray(masterCheckinsTable.masterId, connectedIds))).then((r) => r[0])
+      : Promise.resolve({ c: 0 }),
+    connectedIds.length > 0
+      ? db.select({ c: count() }).from(masterCheckinsTable).where(and(gte(masterCheckinsTable.date, sevenDaysAgoStr), eq(masterCheckinsTable.isAvailable, true), inArray(masterCheckinsTable.masterId, connectedIds))).then((r) => r[0])
+      : Promise.resolve({ c: 0 }),
+    connectedIds.length > 0
+      ? db.select({ c: count() }).from(masterCheckinsTable).where(and(eq(masterCheckinsTable.date, today), eq(masterCheckinsTable.isAvailable, true), inArray(masterCheckinsTable.masterId, connectedIds))).then((r) => r[0])
+      : Promise.resolve({ c: 0 }),
+    connectedIds.length > 0
+      ? db.select({ c: count() }).from(masterCheckinsTable).where(and(eq(masterCheckinsTable.date, lastWeekStr), eq(masterCheckinsTable.isAvailable, true), inArray(masterCheckinsTable.masterId, connectedIds))).then((r) => r[0])
+      : Promise.resolve({ c: 0 }),
   ]);
 
   res.json({
@@ -1040,6 +1082,17 @@ router.post("/checkins/broadcast", requireRole("admin", "master_operator"), asyn
     const { broadcastCheckin } = await import("../lib/checkinBroadcast.js");
     broadcastCheckin().catch(console.error);
     res.json({ ok: true, message: "Рассылка запущена" });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/masters/checkins/reminder — manually trigger reminder to non-responders
+router.post("/checkins/reminder", requireRole("admin", "master_operator"), async (_req, res) => {
+  try {
+    const { broadcastCheckinReminder } = await import("../lib/checkinBroadcast.js");
+    broadcastCheckinReminder().catch(console.error);
+    res.json({ ok: true, message: "Напоминание отправлено" });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }

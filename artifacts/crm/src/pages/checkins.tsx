@@ -348,6 +348,16 @@ function CheckinsContent() {
     onError: () => toast({ title: "Ошибка рассылки", variant: "destructive" }),
   });
 
+  const reminderMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/masters/checkins/reminder", { method: "POST", credentials: "include" });
+      if (!res.ok) throw new Error();
+      return res.json();
+    },
+    onSuccess: () => { toast({ title: "Напоминание отправлено" }); setTimeout(() => refetch(), 3000); },
+    onError: () => toast({ title: "Ошибка отправки напоминания", variant: "destructive" }),
+  });
+
   const nudgeMutation = useMutation({
     mutationFn: async (masterId: number) => {
       const res = await fetch(`/api/masters/checkins/nudge/${masterId}`, { method: "POST", credentials: "include" });
@@ -545,11 +555,11 @@ function CheckinsContent() {
             </p>
           </div>
           <button
-            onClick={() => broadcastMutation.mutate()}
-            disabled={broadcastMutation.isPending}
+            onClick={() => reminderMutation.mutate()}
+            disabled={reminderMutation.isPending}
             className="shrink-0 px-3 py-1.5 rounded-lg bg-amber-500 text-white text-xs font-medium hover:bg-amber-600 transition-colors disabled:opacity-50"
           >
-            {broadcastMutation.isPending ? "Отправляю…" : "Напомнить всем"}
+            {reminderMutation.isPending ? "Отправляю…" : "Напомнить всем"}
           </button>
         </div>
       )}
