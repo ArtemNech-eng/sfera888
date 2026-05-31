@@ -850,10 +850,19 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
       const last10 = digits.slice(-10);
 
       const masters = await db.select().from(mastersTable).where(isNotNull(mastersTable.phone));
-      const master = masters.find(m => {
+      let master = masters.find(m => {
         if (!m.phone) return false;
         return m.phone.replace(/\D/g, "").slice(-10) === last10;
       });
+
+      // Fallback: search by pwaLogin if phone is empty or mismatch
+      if (!master) {
+        const allMasters = await db.select().from(mastersTable).where(isNotNull(mastersTable.pwaLogin));
+        master = allMasters.find(m => {
+          if (!m.pwaLogin) return false;
+          return m.pwaLogin.replace(/\D/g, "").slice(-10) === last10;
+        });
+      }
 
       if (master) {
         // Уже привязан этот же userId

@@ -10,7 +10,7 @@ import { Readable } from "stream";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { objectStorageClient, s3Client } from "../lib/objectStorage.js";
 import { getBotLink, sendOnboardingMemo, sendMaxMessage } from "../maxBot.js";
-import { notifyManagerMasterResponse, notifyManagerNewMaster } from "../managerBot.js";
+import { notifyManagerMasterResponse } from "../managerBot.js";
 import { getFomoBlock, logFomoEvent, checkFomoTransition } from "../lib/fomoBlock.js";
 import {
   getOrderTokenCost,
@@ -27,6 +27,7 @@ import { performBroadcast } from "../lib/broadcastOrder.js";
 import { createRateLimiter } from "../lib/rateLimit.js";
 
 const authRateLimit = createRateLimiter({ windowMs: 60_000, maxAttempts: 5 });
+const registerRateLimit = createRateLimiter({ windowMs: 60_000, maxAttempts: 3 });
 const forgotPasswordRateLimit = createRateLimiter({ windowMs: 60_000, maxAttempts: 3 });
 
 const avatarUpload = multer({
@@ -109,6 +110,64 @@ function normalizeLoginInput(raw: string): string {
   // Otherwise treat as text login (return as-is)
   return raw.trim();
 }
+
+router.post("/auth/register", registerRateLimit, async (req, res) => {
+  const { alias, phone, city, specialization, specializations, login, password, servicePrices, maxChatId } = req.body;
+
+  if (!alias?.trim() || !city?.trim() || !specialization?.trim() || !login || !password) {
+    return res.status(400).json({ error: "Заполните все обязательные поля" });
+  }
+  if (password.length < 6) {
+    return res.status(400).json({ error: "Пароль должен быть не короче 6 символов" });
+  }
+
+  const normalizedLogin = normalizeLoginInput(login);
+  if (normalizedLogin.length < 7) {
+    return res.status(400).json({ error: "Введите корректный номер телефона" });
+  }
+
+  // Check login uniqueness
+  const existing = await db.select().from(mastersTable).where(eq(mastersTable.pwaLogin, normalizedLogin));
+  if (existing.length > 0) {
+    return res.status(409).json({ error: "Этот номер уже зарегистрирован" });
+  }
+
+  const passwordHash = await hashPassword(password);
+
+  // Find the "Свободен" column for new masters
+  const cols = await db.select().from(voronkaColumnsTable);
+  const freeCol = cols.find(c => c.name === "Свободен") ?? cols.find(c => c.receivesOrders);
+
+  const [inserted] = await db.insert(mastersTable).values({
+    alias: alias.trim(),
+    city: city.trim(),
+    specialization: specialization.trim(),
+    specializations: Array.isArray(specializations) ? specializations : [specialization.trim()],
+    phone: phone ? normalizeLoginInput(phone) : normalizedLogin,
+    status: "active",
+    pwaLogin: normalizedLogin,
+    pwaPasswordHash: passwordHash,
+    voronkaColumnId: freeCol?.id ?? null,
+    maxChatId: maxChatId ? String(maxChatId) : null,
+    servicePrices: Array.isArray(servicePrices) ? servicePrices : null,
+  }).returning();
+
+  (req.session as any).masterId = inserted.id;
+
+  // Log new self-registered master
+  console.log(`[auth] self-register: new master ${inserted.id} (${inserted.alias}, ${inserted.city})`);
+
+  res.json({
+    id: inserted.id,
+    alias: inserted.alias,
+    city: inserted.city,
+    specialization: inserted.specialization,
+    rating: Number(inserted.rating),
+    debt: Number(inserted.debt),
+    phone: inserted.phone ?? null,
+    status: inserted.status,
+  });
+});
 
 router.post("/auth/login", authRateLimit, async (req, res) => {
   const { login, password, maxChatId } = req.body;
@@ -1679,14 +1738,8 @@ router.post("/auth/register", async (req, res) => {
 
   (req.session as any).masterId = master.id;
 
-  // Notify manager bot about new master (non-blocking)
-  notifyManagerNewMaster({
-    id: master.id,
-    alias: master.alias,
-    city: master.city,
-    specialization: master.specialization,
-    phone: master.phone ?? null,
-  }).catch(() => {});
+  // Log new master creation
+  console.log(`[crm] new master created: ${master.id} (${master.alias}, ${master.city})`);
 
   res.json({
     id: master.id,

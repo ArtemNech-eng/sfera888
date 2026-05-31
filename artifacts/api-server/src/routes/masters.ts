@@ -440,12 +440,12 @@ router.patch("/:id", requireRole("admin", "master_operator"), async (req, res) =
   const result = await db.update(mastersTable).set(updates).where(eq(mastersTable.id, id)).returning();
   if (!result[0]) return res.status(404).json({ error: "Master not found" });
 
-  // On manual activation: clear contract link and move to "Занят" (master goes online themselves)
+  // On manual activation: clear contract link and move to "Свободен" so master can receive orders
   if (status === "active" && oldStatus === "pending_contract") {
     const cols = await db.select().from(voronkaColumnsTable);
-    const busyCol = cols.find(c => c.name === "Занят") ?? cols.find(c => !c.receivesOrders && c.position > 1);
+    const freeCol = cols.find(c => c.name === "Свободен") ?? cols.find(c => c.receivesOrders);
     await db.update(mastersTable)
-      .set({ contractLink: null, voronkaColumnId: busyCol?.id ?? null })
+      .set({ contractLink: null, voronkaColumnId: freeCol?.id ?? null })
       .where(eq(mastersTable.id, id));
     autoSetPwaCredentials(id, result[0]?.phone ?? null).catch(() => {});
   }
