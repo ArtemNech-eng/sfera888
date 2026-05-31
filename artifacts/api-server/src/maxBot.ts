@@ -169,6 +169,36 @@ async function maxPost(
   }
 }
 
+// ─── Answer callback (required by MAX API after button press) ────────────────
+
+export async function answerMaxCallback(callbackId: string | number, text: string): Promise<void> {
+  const token = getToken();
+  if (!token) return;
+  const url = `${MAX_API}/answers?callback_id=${callbackId}`;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10_000);
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: token, "Content-Type": "application/json" },
+      body: JSON.stringify({ notification: { text } }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (!res.ok) {
+      console.error("[maxBot] answerCallback failed:", res.status, await res.text());
+    } else {
+      console.log(`[maxBot] answerCallback OK id=${callbackId}`);
+    }
+  } catch (e: any) {
+    if (e.name === "AbortError") {
+      console.error(`[maxBot] answerCallback id=${callbackId} timed out after 10s`);
+    } else {
+      console.error("[maxBot] answerCallback error:", e);
+    }
+  }
+}
+
 // ─── Send message (Markdown support) ─────────────────────────────────────────
 
 export async function sendMaxMessage(userId: string | number, text: string): Promise<void> {
@@ -450,19 +480,22 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
       const callback = (update as any).callback;
       const userId: number = callback?.user?.user_id;
       const payload: string = callback?.payload ?? "";
+      const callbackId: string = callback?.callback_id ?? "";
 
-      if (!userId) return;
+      if (!userId || !callbackId) return;
 
       // ── New user: "already registered?" response ──────────────────────────
       if (payload === "new:yes") {
         await sendMaxMessage(userId,
           `Отлично! Войдите в приложение — после входа бот подключится автоматически:\nhttps://sfera-master.ru/master-pwa?max=${userId}`
         );
+        await answerMaxCallback(callbackId, "✅ Ответ принят");
         return;
       }
 
       if (payload === "new:no") {
         await sendOnboarding(userId);
+        await answerMaxCallback(callbackId, "✅ Ответ принят");
         return;
       }
 
@@ -481,6 +514,7 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
           await sendMaxMessage(userId,
             `✅ Принято! Мы проверим поступление в течение 24 часов.\n\nЕсли возникнут вопросы — свяжемся с вами.`
           );
+          await answerMaxCallback(callbackId, "✅ Принято!");
           return;
         }
 
@@ -491,6 +525,7 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
             `📅 Укажите дату, до которой планируете перевести оплату.\n\n` +
             `Можно написать:\n• **25.04** или **25.04.2026**\n• **через 10 дней** или **через 2 недели**`
           );
+          await answerMaxCallback(callbackId, "✅ Ответ принят");
           return;
         }
 
@@ -505,8 +540,10 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
           await sendMaxMessage(userId,
             `✅ Принято! Следующее напоминание придёт **${snoozeLabel}**.\n\nЕсли закроете раньше — просто переведите комиссию в приложении.`
           );
+          await answerMaxCallback(callbackId, "✅ Принято!");
           return;
         }
+        await answerMaxCallback(callbackId, "✅ Ответ принят");
         return;
       }
 
@@ -520,6 +557,7 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
 
       if (!master) {
         await sendMaxMessage(userId, "❌ Аккаунт не найден. Отправьте номер телефона для привязки.");
+        await answerMaxCallback(callbackId, "❌ Ошибка");
         return;
       }
 
@@ -538,6 +576,7 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
           other: "другое",
         };
         await sendMaxMessage(userId, `✅ Понял, причина записана: **${labels[reason] ?? reason}**. Если планы изменятся — напишите нам.`);
+        await answerMaxCallback(callbackId, `✅ Понял!`);
         return;
       }
 
@@ -566,6 +605,7 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
 
       if (isAvailable) {
         await sendMaxMessage(userId, "✅ Отлично! Вы отмечены как **готов к заказам**. Удачного рабочего дня!");
+        await answerMaxCallback(callbackId, "✅ Отлично! Готов к заказам!");
       } else {
         await sendMaxWithButtons(
           userId,
@@ -581,6 +621,7 @@ export async function handleMaxUpdate(update: Record<string, unknown>): Promise<
             ],
           ]
         );
+        await answerMaxCallback(callbackId, "👌 Понял, не готовы");
       }
       return;
     }
