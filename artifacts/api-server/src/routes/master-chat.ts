@@ -4,6 +4,7 @@ import { eq, desc, and, inArray, sql, count, isNull } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
 import { sendPushToMaster } from "../lib/push.js";
 import { sendMaxMessage } from "../maxBot.js";
+import { runWithConcurrencyLimit } from "../lib/broadcastUtils.js";
 import { objectStorageClient } from "../lib/objectStorage.js";
 import multer from "multer";
 
@@ -355,20 +356,20 @@ await db.insert(masterMessagesTable).values(messageValues);
 const withMax = targets.filter(m => m.maxChatId);
 console.log(`[master-chat] broadcast: ${targets.length} targets, ${withMax.length} with maxChatId`);
 
-// Отправляем push-уведомления и Max-сообщения асинхронно
-for (const master of targets) {
-  sendPushToMaster(master.id, {
+// Отправляем push-уведомления и Max-сообщения concurrency-limited
+await runWithConcurrencyLimit(targets, 10, async (master: typeof targets[0]) => {
+  await sendPushToMaster(master.id, {
     title: `📢 Объявление`,
     body: text.trim().length > 80 ? text.trim().slice(0, 77) + "…" : text.trim(),
     url: "/chat",
   }).catch((err) => console.error("[master-chat] broadcast push failed for master", master.id, err));
 
   if (master.maxChatId) {
-    sendMaxMessage(master.maxChatId, `📢 **${senderLabel}:**\n${text.trim()}`).catch((err) =>
+    await sendMaxMessage(master.maxChatId, `📢 **${senderLabel}:**\n${text.trim()}`).catch((err) =>
       console.error("[master-chat] broadcast max message failed for master", master.id, err)
     );
   }
-}
+});
 
   res.json({ sent: targets.length });
 });
