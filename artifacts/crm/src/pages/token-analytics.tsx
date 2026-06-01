@@ -98,6 +98,8 @@ function KpiCard({ icon: Icon, label, value, sub, color = "blue" }: {
     green: "bg-green-50 text-green-600 dark:bg-green-900/20 dark:text-green-400",
     amber: "bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400",
     violet: "bg-violet-50 text-violet-600 dark:bg-violet-900/20 dark:text-violet-400",
+    red: "bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400",
+    orange: "bg-orange-50 text-orange-600 dark:bg-orange-900/20 dark:text-orange-400",
   };
   return (
     <div className="bg-card rounded-2xl border border-border/50 shadow-sm p-5">
@@ -301,7 +303,7 @@ export default function TokenAnalyticsPage() {
     return params.toString();
   }, [dates]);
 
-  const { data, isLoading } = useQuery<AnalyticsData>({
+  const { data, isLoading, error: analyticsError } = useQuery<AnalyticsData>({
     queryKey: ["/api/wallet/analytics", qs],
     queryFn: async () => {
       const r = await fetch(`/api/wallet/analytics?${qs}`, { credentials: "include" });
@@ -375,6 +377,15 @@ export default function TokenAnalyticsPage() {
 
         {activeTab === "overview" && (
           <>
+        {analyticsError && (
+          <div className="rounded-xl border bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800/30 p-4 flex items-start gap-3">
+            <div className="w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs font-bold shrink-0">!</div>
+            <div>
+              <p className="text-sm font-medium text-red-700 dark:text-red-300">Ошибка загрузки аналитики</p>
+              <p className="text-xs text-red-600 dark:text-red-400">{(analyticsError as Error).message}</p>
+            </div>
+          </div>
+        )}
         {/* Period filter */}
         <PeriodFilter value={period} onChange={setPeriod} />
         {period === "custom" && (
@@ -665,12 +676,12 @@ function MastersMatrix({ creditData }: { creditData?: CreditAnalyticsData }) {
 
   return (
     <div className="space-y-6">
-      {error && (
+      {analyticsError && (
         <div className="rounded-xl border bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800/30 p-4 flex items-start gap-3">
           <div className="w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs font-bold shrink-0">!</div>
           <div>
             <p className="text-sm font-medium text-red-700 dark:text-red-300">Ошибка загрузки данных</p>
-            <p className="text-xs text-red-600 dark:text-red-400">{(error as Error).message}</p>
+            <p className="text-xs text-red-600 dark:text-red-400">{(analyticsError as Error).message}</p>
           </div>
         </div>
       )}

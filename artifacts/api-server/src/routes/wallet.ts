@@ -336,9 +336,9 @@ router.get("/purchases", ops, async (req: any, res: any) => {
 });
 
 // GET /api/wallet/:masterId — баланс и статистика (CRM/admin)
-router.get("/:masterId(\\d+)", ops, async (req: any, res: any) => {
+router.get("/:masterId", ops, async (req: any, res: any, next: any) => {
   const masterId = parseInt(String(req.params.masterId));
-  if (isNaN(masterId)) return res.status(400).json({ error: "Неверный masterId" });
+  if (isNaN(masterId)) return next();
 
   const wallet = await ensureWallet(masterId);
   const balance = Number(wallet.tokensBalance);
@@ -360,9 +360,9 @@ router.get("/:masterId(\\d+)", ops, async (req: any, res: any) => {
 });
 
 // GET /api/wallet/:masterId/transactions — история операций
-router.get("/:masterId/transactions", ops, async (req: any, res: any) => {
+router.get("/:masterId/transactions", ops, async (req: any, res: any, next: any) => {
   const masterId = parseInt(String(req.params.masterId));
-  if (isNaN(masterId)) return res.status(400).json({ error: "Неверный masterId" });
+  if (isNaN(masterId)) return next();
 
   const page = Math.max(1, parseInt(req.query.page as string) || 1);
   const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
@@ -410,9 +410,9 @@ router.get("/:masterId/transactions", ops, async (req: any, res: any) => {
 });
 
 // POST /api/wallet/:masterId/purchase — начисление за покупку пакета
-router.post("/:masterId/purchase", ops, async (req: any, res: any) => {
+router.post("/:masterId/purchase", ops, async (req: any, res: any, next: any) => {
   const masterId = parseInt(String(req.params.masterId));
-  if (isNaN(masterId)) return res.status(400).json({ error: "Неверный masterId" });
+  if (isNaN(masterId)) return next();
 
   const { package_id } = req.body;
   if (!package_id) return res.status(400).json({ error: "package_id обязателен" });
@@ -463,9 +463,9 @@ router.post("/:masterId/purchase", ops, async (req: any, res: any) => {
 });
 
 // POST /api/wallet/:masterId/bonus — бонусное начисление
-router.post("/:masterId/bonus", adminOnly, async (req: any, res: any) => {
+router.post("/:masterId/bonus", adminOnly, async (req: any, res: any, next: any) => {
   const masterId = parseInt(String(req.params.masterId));
-  if (isNaN(masterId)) return res.status(400).json({ error: "Неверный masterId" });
+  if (isNaN(masterId)) return next();
 
   const { tokens, reason } = req.body;
   if (!tokens || isNaN(Number(tokens)) || Number(tokens) <= 0) {
@@ -505,9 +505,9 @@ router.post("/:masterId/bonus", adminOnly, async (req: any, res: any) => {
 });
 
 // POST /api/wallet/:masterId/adjustment — ручная корректировка (+ или -)
-router.post("/:masterId/adjustment", adminOnly, async (req: any, res: any) => {
+router.post("/:masterId/adjustment", adminOnly, async (req: any, res: any, next: any) => {
   const masterId = parseInt(String(req.params.masterId));
-  if (isNaN(masterId)) return res.status(400).json({ error: "Неверный masterId" });
+  if (isNaN(masterId)) return next();
 
   const { tokens, reason } = req.body;
   if (tokens === undefined || isNaN(Number(tokens))) {
@@ -559,9 +559,9 @@ router.post("/:masterId/adjustment", adminOnly, async (req: any, res: any) => {
 });
 
 // POST /api/wallet/:masterId/set-credit-limit — установить кредитный лимит (admin)
-router.post("/:masterId/set-credit-limit", adminOnly, async (req: any, res: any) => {
+router.post("/:masterId/set-credit-limit", adminOnly, async (req: any, res: any, next: any) => {
   const masterId = parseInt(String(req.params.masterId));
-  if (isNaN(masterId)) return res.status(400).json({ error: "Неверный masterId" });
+  if (isNaN(masterId)) return next();
 
   const { credit_limit } = req.body;
   if (credit_limit === undefined || isNaN(Number(credit_limit)) || Number(credit_limit) < 0) {
@@ -586,9 +586,9 @@ router.post("/:masterId/set-credit-limit", adminOnly, async (req: any, res: any)
 });
 
 // POST /api/wallet/:masterId/credit — выдать тестовые токены в долг (только admin)
-router.post("/:masterId/credit", adminOnly, async (req: any, res: any) => {
+router.post("/:masterId/credit", adminOnly, async (req: any, res: any, next: any) => {
   const masterId = parseInt(String(req.params.masterId));
-  if (isNaN(masterId)) return res.status(400).json({ error: "Неверный masterId" });
+  if (isNaN(masterId)) return next();
 
   const { tokens, reason } = req.body;
   const tokensNum = Number(tokens);
@@ -636,9 +636,9 @@ router.post("/:masterId/credit", adminOnly, async (req: any, res: any) => {
 });
 
 // POST /api/wallet/:masterId/confirm-purchase — approve a pending purchase
-router.post("/:masterId/confirm-purchase", ops, async (req: any, res: any) => {
+router.post("/:masterId/confirm-purchase", ops, async (req: any, res: any, next: any) => {
   const masterId = parseInt(String(req.params.masterId));
-  if (isNaN(masterId)) return res.status(400).json({ error: "Неверный masterId" });
+  if (isNaN(masterId)) return next();
 
   const { transaction_id } = req.body;
   if (!transaction_id) return res.status(400).json({ error: "transaction_id обязателен" });
@@ -682,9 +682,9 @@ router.post("/:masterId/confirm-purchase", ops, async (req: any, res: any) => {
 });
 
 // POST /api/wallet/:masterId/cancel-purchase — reject a pending purchase
-router.post("/:masterId/cancel-purchase", ops, async (req: any, res: any) => {
+router.post("/:masterId/cancel-purchase", ops, async (req: any, res: any, next: any) => {
   const masterId = parseInt(String(req.params.masterId));
-  if (isNaN(masterId)) return res.status(400).json({ error: "Неверный masterId" });
+  if (isNaN(masterId)) return next();
 
   const { transaction_id, reason } = req.body;
   if (!transaction_id) return res.status(400).json({ error: "transaction_id обязателен" });
@@ -891,157 +891,6 @@ router.get("/refunds", ops, async (req: any, res: any) => {
     status: r.status,
     created_at: r.createdAt,
   })));
-});
-
-// ─── Purchase requests: list all (admin/ops) ──────────────────────────────────
-router.get("/purchases", ops, async (req: any, res: any) => {
-  const page = Math.max(1, parseInt(req.query.page as string) || 1);
-  const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
-  const offset = (page - 1) * limit;
-  const statusFilter = req.query.status as string | undefined;
-  const masterIdFilter = req.query.master_id ? parseInt(req.query.master_id as string) : undefined;
-
-  const conditions: any[] = [eq(walletTransactionsTable.type, "purchase")];
-  if (statusFilter) conditions.push(eq(walletTransactionsTable.status, statusFilter));
-  if (masterIdFilter) conditions.push(eq(walletTransactionsTable.masterId, masterIdFilter));
-
-  const rows = await db
-    .select({
-      id: walletTransactionsTable.id,
-      masterId: walletTransactionsTable.masterId,
-      masterAlias: mastersTable.alias,
-      masterCity: mastersTable.city,
-      tokensAmount: walletTransactionsTable.tokensAmount,
-      rubAmount: walletTransactionsTable.rubAmount,
-      packageId: walletTransactionsTable.packageId,
-      packageName: tokenPackagesTable.name,
-      reason: walletTransactionsTable.reason,
-      screenshotUrl: walletTransactionsTable.screenshotUrl,
-      status: walletTransactionsTable.status,
-      createdAt: walletTransactionsTable.createdAt,
-    })
-    .from(walletTransactionsTable)
-    .leftJoin(mastersTable, eq(walletTransactionsTable.masterId, mastersTable.id))
-    .leftJoin(tokenPackagesTable, eq(walletTransactionsTable.packageId, tokenPackagesTable.id))
-    .where(and(...conditions))
-    .orderBy(desc(walletTransactionsTable.createdAt))
-    .limit(limit)
-    .offset(offset);
-
-  return res.json(rows.map(r => ({
-    id: r.id,
-    master_id: r.masterId,
-    master_alias: r.masterAlias ?? "?",
-    master_city: r.masterCity ?? "",
-    package_id: r.packageId,
-    package_name: r.packageName ?? "?",
-    tokens_amount: Number(r.tokensAmount),
-    rub_amount: r.rubAmount,
-    reason: r.reason,
-    screenshot_url: r.screenshotUrl,
-    status: r.status,
-    created_at: r.createdAt,
-  })));
-});
-
-// ─── Confirm purchase (admin) ─────────────────────────────────────────────────
-router.post("/:masterId/confirm-purchase", adminOnly, async (req: any, res: any) => {
-  const masterId = parseInt(String(req.params.masterId));
-  if (isNaN(masterId)) return res.status(400).json({ error: "Неверный masterId" });
-
-  const { transaction_id } = req.body;
-  if (!transaction_id) return res.status(400).json({ error: "transaction_id обязателен" });
-
-  const txRows = await db.select().from(walletTransactionsTable)
-    .where(and(
-      eq(walletTransactionsTable.id, transaction_id),
-      eq(walletTransactionsTable.masterId, masterId),
-      eq(walletTransactionsTable.type, "purchase"),
-    ))
-    .limit(1);
-  if (!txRows.length) return res.status(404).json({ error: "Транзакция не найдена" });
-
-  const tx = txRows[0];
-  if (tx.status !== "pending") {
-    return res.status(400).json({ error: `Статус уже ${tx.status}` });
-  }
-
-  const tokensToAdd = Number(tx.tokensAmount);
-  const rubAmount = tx.rubAmount ?? 0;
-
-  const wallet = await ensureWallet(masterId);
-  const newBalance = Number(wallet.tokensBalance) + tokensToAdd;
-  const creditTokensIssued = Number((wallet as any).creditTokensIssued ?? 0);
-  const creditTokensSpent = newBalance < 0 ? Math.min(creditTokensIssued, -newBalance) : 0;
-
-  const [updated] = await db
-    .update(masterWalletTable)
-    .set({
-      tokensBalance: String(newBalance),
-      totalTokensPurchased: String(Number(wallet.totalTokensPurchased) + tokensToAdd),
-      totalRubSpent: wallet.totalRubSpent + rubAmount,
-      creditTokensSpent: String(creditTokensSpent),
-      updatedAt: new Date(),
-    })
-    .where(eq(masterWalletTable.masterId, masterId))
-    .returning();
-
-  await db.update(walletTransactionsTable)
-    .set({ status: "completed" })
-    .where(eq(walletTransactionsTable.id, transaction_id));
-
-  return res.json({
-    success: true,
-    tokens_added: tokensToAdd,
-    new_balance: Number(updated.tokensBalance),
-  });
-});
-
-// ─── Cancel purchase (admin) ─────────────────────────────────────────────────
-router.post("/:masterId/cancel-purchase", adminOnly, async (req: any, res: any) => {
-  const masterId = parseInt(String(req.params.masterId));
-  if (isNaN(masterId)) return res.status(400).json({ error: "Неверный masterId" });
-
-  const { transaction_id, reason } = req.body;
-  if (!transaction_id) return res.status(400).json({ error: "transaction_id обязателен" });
-
-  const txRows = await db.select().from(walletTransactionsTable)
-    .where(and(
-      eq(walletTransactionsTable.id, transaction_id),
-      eq(walletTransactionsTable.masterId, masterId),
-      eq(walletTransactionsTable.type, "purchase"),
-    ))
-    .limit(1);
-  if (!txRows.length) return res.status(404).json({ error: "Транзакция не найдена" });
-
-  const tx = txRows[0];
-  if (tx.status !== "pending") {
-    return res.status(400).json({ error: `Статус уже ${tx.status}` });
-  }
-
-  const finalReason = reason ? `Отклонено: ${reason}` : "Отклонено администратором";
-
-  await db.update(walletTransactionsTable)
-    .set({
-      status: "cancelled",
-      reason: `${tx.reason ?? ""} | ${finalReason}`,
-    })
-    .where(eq(walletTransactionsTable.id, transaction_id));
-
-  // Notify master via Max if possible
-  const masterRows = await db.select({ maxChatId: mastersTable.maxChatId, alias: mastersTable.alias })
-    .from(mastersTable)
-    .where(eq(mastersTable.id, masterId))
-    .limit(1);
-  if (masterRows[0]?.maxChatId) {
-    const { sendMaxMessage } = await import("../maxBot.js");
-    sendMaxMessage(
-      masterRows[0].maxChatId,
-      `❌ Пополнение баланса отклонено\n${finalReason}`
-    ).catch(() => {});
-  }
-
-  return res.json({ success: true });
 });
 
 // ─── Token analytics (admin/ops) ────────────────────────────────────────────────
