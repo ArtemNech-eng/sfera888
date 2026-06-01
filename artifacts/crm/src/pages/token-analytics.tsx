@@ -303,12 +303,22 @@ export default function TokenAnalyticsPage() {
 
   const { data, isLoading } = useQuery<AnalyticsData>({
     queryKey: ["/api/wallet/analytics", qs],
-    queryFn: () => fetch(`/api/wallet/analytics?${qs}`, { credentials: "include" }).then(r => r.json()),
+    queryFn: async () => {
+      const r = await fetch(`/api/wallet/analytics?${qs}`, { credentials: "include" });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error || `HTTP ${r.status}`);
+      return json;
+    },
   });
 
   const { data: creditData, isLoading: creditLoading } = useQuery<CreditAnalyticsData>({
     queryKey: ["/api/wallet/credit-analytics"],
-    queryFn: () => fetch("/api/wallet/credit-analytics", { credentials: "include" }).then(r => r.json()),
+    queryFn: async () => {
+      const r = await fetch("/api/wallet/credit-analytics", { credentials: "include" });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error || `HTTP ${r.status}`);
+      return json;
+    },
     refetchInterval: 60_000,
   });
 

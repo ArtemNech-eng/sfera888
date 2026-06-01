@@ -336,7 +336,7 @@ router.get("/purchases", ops, async (req: any, res: any) => {
 });
 
 // GET /api/wallet/:masterId — баланс и статистика (CRM/admin)
-router.get("/:masterId", ops, async (req: any, res: any) => {
+router.get("/:masterId(\\d+)", ops, async (req: any, res: any) => {
   const masterId = parseInt(String(req.params.masterId));
   if (isNaN(masterId)) return res.status(400).json({ error: "Неверный masterId" });
 
