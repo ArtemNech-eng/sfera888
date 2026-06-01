@@ -326,10 +326,17 @@ router.get("/partners/:id", async (req: Request, res: Response) => {
       .where(eq(partnerBillingPeriodsTable.partnerId, partnerId))
       .orderBy(desc(partnerBillingPeriodsTable.periodStart));
 
+    // Get total leads count
+    const [{ totalLeads }] = await db
+      .select({ totalLeads: count() })
+      .from(leadsTable)
+      .where(eq(leadsTable.trafficPartnerId, partnerId));
+
     return res.json({
       ...partner,
       login: user?.login || null,
       billing_periods: periods,
+      total_leads: Number(totalLeads),
     });
   } catch (err) {
     console.error("[crm/partners/:id]", err);

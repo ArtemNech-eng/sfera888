@@ -81,6 +81,7 @@ interface Partner {
   refSlug?: string;
   leads_this_month: number;
   accepted_this_month: number;
+  total_leads?: number;
 }
 
 interface PartnerDetail extends Partner {
@@ -429,6 +430,15 @@ function PartnerDetailDrawer({
                   </Card>
                 </div>
 
+                {(partner.total_leads ?? 0) > 0 && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="text-sm text-amber-800">
+                      У партнёра <span className="font-semibold">{partner.total_leads}</span> лидов. Архивирование или удаление не повлияет на историю лидов и заказов.
+                    </div>
+                  </div>
+                )}
+
                 <div className="space-y-3">
                   <h4 className="font-medium text-sm">Контакты</h4>
                   <div className="flex items-center gap-2 text-sm">
@@ -558,6 +568,11 @@ function PartnerDetailDrawer({
               {confirmAction === "delete" ? "Удалить партнёра навсегда?" : "Архивировать партнёра?"}
             </DialogTitle>
             <DialogDescription>
+              {(partner.total_leads ?? 0) > 0 && (
+                <span className="block text-amber-600 mb-1">
+                  ⚠️ У партнёра {partner.total_leads} лидов.
+                </span>
+              )}
               {confirmAction === "delete"
                 ? "Партнёр и его аккаунт будут полностью удалены. Это действие необратимо."
                 : "Партнёр будет скрыт из списка и не сможет войти в PWA. Данные о лидах и выплатах сохранятся."}
@@ -627,9 +642,11 @@ export default function PartnersPage() {
     const isHardDelete =
       (partner.status === "pending" && partner.leads_this_month === 0 && partner.accepted_this_month === 0) ||
       partner.status === "archived";
+    const leadsCount = partner.total_leads ?? partner.leads_this_month;
+    const leadsWarning = leadsCount > 0 ? `У этого партнёра ${leadsCount} лидов. ` : "";
     const message = isHardDelete
-      ? "Партнёр будет полностью удалён. Это необратимо."
-      : "Партнёр будет архивирован. Данные сохранятся, но он не сможет войти в PWA.";
+      ? `${leadsWarning}Партнёр будет полностью удалён. Это необратимо. Продолжить?`
+      : `${leadsWarning}Партнёр будет архивирован. Данные сохранятся, но он не сможет войти в PWA. Продолжить?`;
     if (window.confirm(message)) {
       deleteMutation.mutate({ id: partner.id, force: partner.status === "archived" });
     }
