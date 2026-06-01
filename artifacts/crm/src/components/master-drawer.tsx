@@ -611,11 +611,11 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
   useEffect(() => {
     if (tab === "profile" && !maxLogsLoaded) loadMaxLogs();
     if (tab === "tasks") {
-      fetch(`/api/masters/${master.id}/tasks`, { credentials: "include" }).then(r => r.json()).then(setTasks);
+      fetch(`/api/masters/${master.id}/tasks`, { credentials: "include" }).then(r => r.json()).then(d => setTasks(Array.isArray(d) ? d : []));
       fetch(`/api/tasks?relatedMasterId=${master.id}`, { credentials: "include" }).then(r => r.json()).then(d => setSystemTasks(Array.isArray(d) ? d : []));
     }
     if (tab === "orders" && !ordersLoaded) {
-      fetch(`/api/masters/${master.id}/orders`).then(r => r.json()).then(d => { setOrders(d); setOrdersLoaded(true); });
+      fetch(`/api/masters/${master.id}/orders`, { credentials: "include" }).then(r => r.json()).then(d => { setOrders(Array.isArray(d) ? d : []); setOrdersLoaded(true); });
     }
     if (tab === "chat" && !chatLoaded) loadChat();
     if (tab === "reviews" && !reviewsLoaded) {
