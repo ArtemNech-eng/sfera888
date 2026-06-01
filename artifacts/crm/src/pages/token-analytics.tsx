@@ -696,9 +696,10 @@ function MasterTransactionsModal({ masterId, alias, open, onClose }: { masterId:
                         tx.type === "purchase" ? "bg-emerald-100 text-emerald-700" :
                         tx.type === "spend" ? "bg-red-100 text-red-700" :
                         tx.type === "refund" ? "bg-blue-100 text-blue-700" :
+                        tx.type === "credit" ? "bg-violet-100 text-violet-700" :
                         "bg-gray-100 text-gray-700"
                       )}>
-                        {tx.type === "purchase" ? "Пополнение" : tx.type === "spend" ? "Списание" : tx.type === "refund" ? "Возврат" : tx.type}
+                        {tx.type === "purchase" ? "Пополнение" : tx.type === "spend" ? "Списание" : tx.type === "refund" ? "Возврат" : tx.type === "credit" ? "Тест. токен" : tx.type}
                       </span>
                     </td>
                     <td className={cn("px-3 py-2 text-right font-medium tabular-nums",

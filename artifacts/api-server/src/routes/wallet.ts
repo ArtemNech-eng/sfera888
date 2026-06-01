@@ -610,10 +610,17 @@ router.post("/:masterId/credit", adminOnly, async (req: any, res: any, next: any
   const wallet = await ensureWallet(masterId);
   const adminAlias = (req as any).user?.name ?? "admin";
 
+  const balance = Number(wallet.tokensBalance);
+  const oldLimit = Number(wallet.creditLimitTokens ?? 0);
+  const newLimit = oldLimit + tokensNum;
+  const newSpent = balance < 0 ? Math.min(newLimit, -balance) : 0;
+
   const [updated] = await db
     .update(masterWalletTable)
     .set({
+      creditLimitTokens: String(newLimit),
       creditTokensIssued: String(Number((wallet as any).creditTokensIssued ?? 0) + tokensNum),
+      creditTokensSpent: String(newSpent),
       updatedAt: new Date(),
     } as any)
     .where(eq(masterWalletTable.masterId, masterId))
@@ -631,6 +638,7 @@ router.post("/:masterId/credit", adminOnly, async (req: any, res: any, next: any
   return res.json({
     success: true,
     new_balance: Number(updated.tokensBalance),
+    credit_limit_tokens: newLimit,
     credit_tokens_issued: Number((updated as any).creditTokensIssued ?? tokensNum),
   });
 });
