@@ -1213,6 +1213,55 @@ router.post("/migrate-active-packages", adminOnly, async (req: any, res: any) =>
   return res.json({ done: true, migratedCount: results.length, details: results });
 });
 
+// ─── Credit analytics (admin/ops) ───────────────────────────────────────────
+router.get("/credit-analytics", ops, async (req: any, res: any) => {
+  try {
+    const rows = await db
+      .select({
+        masterId: masterWalletTable.masterId,
+        alias: mastersTable.alias,
+        city: mastersTable.city,
+        tokensBalance: masterWalletTable.tokensBalance,
+        creditLimitTokens: masterWalletTable.creditLimitTokens,
+        creditTokensIssued: masterWalletTable.creditTokensIssued,
+        creditTokensSpent: masterWalletTable.creditTokensSpent,
+      })
+      .from(masterWalletTable)
+      .leftJoin(mastersTable, eq(masterWalletTable.masterId, mastersTable.id));
+
+    const masters = rows.map(r => {
+      const balance = Number(r.tokensBalance ?? 0);
+      const creditLimit = Number(r.creditLimitTokens ?? 0);
+      const creditIssued = Number(r.creditTokensIssued ?? 0);
+      const creditSpent = Number(r.creditTokensSpent ?? 0);
+      return {
+        masterId: r.masterId,
+        alias: r.alias ?? "—",
+        city: r.city ?? "—",
+        tokensBalance: balance,
+        creditLimitTokens: creditLimit,
+        creditTokensIssued: creditIssued,
+        creditTokensSpent: creditSpent,
+        debtAmount: balance < 0 ? -balance : 0,
+      };
+    });
+
+    const debtors = masters.filter(m => m.debtAmount > 0);
+    const totalDebtTokens = debtors.reduce((s, m) => s + m.debtAmount, 0);
+    const totalCreditSpent = masters.reduce((s, m) => s + m.creditTokensSpent, 0);
+
+    return res.json({
+      totalDebtTokens,
+      totalCreditSpent,
+      debtorCount: debtors.length,
+      masters,
+    });
+  } catch (err: any) {
+    console.error("[wallet/credit-analytics]", err);
+    return res.status(500).json({ error: "Ошибка сервера" });
+  }
+});
+
 // ─── Payment screenshot proxy ─────────────────────────────────────────────────
 router.get("/payment-screenshot/:masterId/:filename", async (req, res) => {
   try {

@@ -188,12 +188,14 @@ function RevBadge({ value, target }: { value: number; target: number }) {
   return <span className={cn("tabular-nums", cls)}>{fmtRubZero(value)}</span>;
 }
 
-function KpiCard2({ label, value, sub, color }: { label: string; value: string; sub?: string; color: "green" | "blue" | "amber" | "violet" }) {
+function KpiCard2({ label, value, sub, color }: { label: string; value: string; sub?: string; color: "green" | "blue" | "amber" | "violet" | "red" | "orange" }) {
   const colors = {
     green:  "from-emerald-50 to-green-50 dark:from-emerald-900/20 dark:to-green-900/20 border-emerald-100 dark:border-emerald-800/30 text-emerald-700 dark:text-emerald-300",
     blue:   "from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-blue-100 dark:border-blue-800/30 text-blue-700 dark:text-blue-300",
     amber:  "from-amber-50 to-yellow-50 dark:from-amber-900/20 dark:to-yellow-900/20 border-amber-100 dark:border-amber-800/30 text-amber-700 dark:text-amber-300",
     violet: "from-violet-50 to-purple-50 dark:from-violet-900/20 dark:to-purple-900/20 border-violet-100 dark:border-violet-800/30 text-violet-700 dark:text-violet-300",
+    red:    "from-red-50 to-rose-50 dark:from-red-900/20 dark:to-rose-900/20 border-red-100 dark:border-red-800/30 text-red-700 dark:text-red-300",
+    orange: "from-orange-50 to-amber-50 dark:from-orange-900/20 dark:to-amber-900/20 border-orange-100 dark:border-orange-800/30 text-orange-700 dark:text-orange-300",
   };
   return (
     <div className={cn("rounded-2xl border bg-gradient-to-br p-4 space-y-1", colors[color])}>
@@ -250,6 +252,24 @@ interface MasterRevenueRow {
   lastYearSpent: number;
 }
 
+interface CreditMasterRow {
+  masterId: number;
+  alias: string;
+  city: string;
+  tokensBalance: number;
+  creditLimitTokens: number;
+  creditTokensIssued: number;
+  creditTokensSpent: number;
+  debtAmount: number;
+}
+
+interface CreditAnalyticsData {
+  totalDebtTokens: number;
+  totalCreditSpent: number;
+  debtorCount: number;
+  masters: CreditMasterRow[];
+}
+
 // ─── MAIN PAGE ───────────────────────────────────────────────────────────────
 
 interface AnalyticsData {
@@ -264,9 +284,10 @@ interface AnalyticsData {
 }
 
 export default function TokenAnalyticsPage() {
-  const [activeTab, setActiveTab] = useState<"overview" | "masters">(() => {
+  const [activeTab, setActiveTab] = useState<"overview" | "masters" | "debt">(() => {
     const params = new URLSearchParams(window.location.search);
-    return params.get("tab") === "masters" ? "masters" : "overview";
+    const t = params.get("tab");
+    return t === "masters" ? "masters" : t === "debt" ? "debt" : "overview";
   });
 
   const [period, setPeriod] = useState<Period>("month");
@@ -283,6 +304,12 @@ export default function TokenAnalyticsPage() {
   const { data, isLoading } = useQuery<AnalyticsData>({
     queryKey: ["/api/wallet/analytics", qs],
     queryFn: () => fetch(`/api/wallet/analytics?${qs}`, { credentials: "include" }).then(r => r.json()),
+  });
+
+  const { data: creditData, isLoading: creditLoading } = useQuery<CreditAnalyticsData>({
+    queryKey: ["/api/wallet/credit-analytics"],
+    queryFn: () => fetch("/api/wallet/credit-analytics", { credentials: "include" }).then(r => r.json()),
+    refetchInterval: 60_000,
   });
 
   const handleExport = () => {
@@ -330,6 +357,10 @@ export default function TokenAnalyticsPage() {
             onClick={() => { setActiveTab("masters"); const u = new URL(window.location.href); u.searchParams.set("tab", "masters"); window.history.replaceState({}, "", u.toString()); }}
             className={cn("px-4 py-1.5 rounded-lg text-sm font-medium transition-colors", activeTab === "masters" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground")}
           >По мастерам</button>
+          <button
+            onClick={() => { setActiveTab("debt"); const u = new URL(window.location.href); u.searchParams.set("tab", "debt"); window.history.replaceState({}, "", u.toString()); }}
+            className={cn("px-4 py-1.5 rounded-lg text-sm font-medium transition-colors", activeTab === "debt" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground")}
+          >Долги / Кредиты</button>
         </div>
 
         {activeTab === "overview" && (
@@ -354,9 +385,9 @@ export default function TokenAnalyticsPage() {
         )}
 
         {/* KPI Cards */}
-        {isLoading ? (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {Array.from({ length: 4 }).map((_, i) => (
+        {isLoading || creditLoading ? (
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+            {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="bg-card rounded-2xl border border-border/50 p-5 animate-pulse">
                 <div className="h-8 w-24 bg-muted rounded mb-2" />
                 <div className="h-10 w-32 bg-muted rounded" />
@@ -364,7 +395,7 @@ export default function TokenAnalyticsPage() {
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
             <KpiCard
               icon={TrendingUp}
               label="Выручка"
@@ -392,6 +423,20 @@ export default function TokenAnalyticsPage() {
               value={formatRub(data?.pendingRevenue ?? 0)}
               sub="не подтверждено"
               color="violet"
+            />
+            <KpiCard
+              icon={TrendingDown}
+              label="В долге"
+              value={fmtNum(creditData?.totalDebtTokens ?? 0)}
+              sub={`${creditData?.debtorCount ?? 0} мастеров`}
+              color="red"
+            />
+            <KpiCard
+              icon={Target}
+              label="Кредит потрачен"
+              value={fmtNum(creditData?.totalCreditSpent ?? 0)}
+              sub="токенов из лимита"
+              color="orange"
             />
           </div>
         )}
@@ -517,17 +562,65 @@ export default function TokenAnalyticsPage() {
         </div>
           </>
         )}
-        {activeTab === "masters" && <MastersMatrix />}
+        {/* Debtors section in Overview */}
+        {activeTab === "overview" && (
+          <div className="bg-card rounded-2xl border border-border/50 shadow-sm p-5">
+            <h2 className="text-lg font-semibold mb-4">Мастера в долге</h2>
+            {creditLoading ? (
+              <div className="h-32 flex items-center justify-center">
+                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50">
+                    <tr className="text-left text-xs font-semibold text-muted-foreground uppercase">
+                      <th className="px-4 py-3">Мастер</th>
+                      <th className="px-4 py-3">Город</th>
+                      <th className="px-4 py-3 text-right">Баланс токенов</th>
+                      <th className="px-4 py-3 text-right">Кредитный лимит</th>
+                      <th className="px-4 py-3 text-right">Долг</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {(creditData?.masters ?? []).filter(m => m.debtAmount > 0).length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                          Нет мастеров с отрицательным балансом
+                        </td>
+                      </tr>
+                    )}
+                    {(creditData?.masters ?? []).filter(m => m.debtAmount > 0).map((m, i) => (
+                      <tr key={i} className="hover:bg-muted/30">
+                        <td className="px-4 py-3 font-medium">{m.alias}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{m.city}</td>
+                        <td className={cn("px-4 py-3 text-right font-semibold", m.tokensBalance < 0 ? "text-red-500" : "text-emerald-600")}>
+                          {m.tokensBalance}
+                        </td>
+                        <td className="px-4 py-3 text-right text-muted-foreground">{m.creditLimitTokens}</td>
+                        <td className="px-4 py-3 text-right font-bold text-red-500">{m.debtAmount}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === "masters" && <MastersMatrix creditData={creditData} />}
+        {activeTab === "debt" && <DebtorsTab />}
       </div>
     </Layout>
   );
 }
 
-function MastersMatrix() {
+function MastersMatrix({ creditData }: { creditData?: CreditAnalyticsData }) {
   const [search, setSearch] = useState("");
   const [city, setCity] = useState("");
   const [target, setTarget] = useState(20000);
   const [view, setView] = useState<"summary" | "monthly">("summary");
+  const [onlyDebtors, setOnlyDebtors] = useState(false);
 
   const { data: rawData, isLoading, error } = useQuery<MasterRevenueRow[]>({
     queryKey: ["/api/wallet/master-revenue"],
@@ -547,9 +640,10 @@ function MastersMatrix() {
       const q = search.toLowerCase();
       const matchSearch = !q || m.alias.toLowerCase().includes(q) || m.city.toLowerCase().includes(q);
       const matchCity = !city || m.city.toLowerCase().includes(city.toLowerCase());
-      return matchSearch && matchCity;
+      const matchDebtor = !onlyDebtors || (creditData?.masters.find(wm => wm.masterId === m.masterId)?.debtAmount ?? 0) > 0;
+      return matchSearch && matchCity && matchDebtor;
     });
-  }, [data, search, city]);
+  }, [data, search, city, onlyDebtors, creditData]);
 
   const totalThisMonth = filtered.reduce((s, m) => s + m.currentMonth, 0);
   const aboveTarget = filtered.filter(m => m.currentMonth >= target).length;
@@ -610,6 +704,15 @@ function MastersMatrix() {
           />
           <span className="text-sm text-muted-foreground">₽/мес</span>
         </div>
+        <label className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={onlyDebtors}
+            onChange={e => setOnlyDebtors(e.target.checked)}
+            className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+          />
+          Только должники
+        </label>
         <div className="ml-auto flex items-center gap-1 bg-muted/40 rounded-xl p-1">
           <button
             onClick={() => setView("summary")}
@@ -638,24 +741,29 @@ function MastersMatrix() {
                   <th className="text-right px-3 py-3 font-medium hidden md:table-cell">Токены мес.</th>
                   <th className="text-center px-3 py-3 font-medium hidden md:table-cell">Тренд</th>
                   <th className="text-center px-3 py-3 font-medium hidden lg:table-cell">12 мес.</th>
+                  <th className="text-right px-3 py-3 font-medium hidden lg:table-cell">Баланс</th>
+                  <th className="text-right px-3 py-3 font-medium hidden lg:table-cell">Кредит</th>
+                  <th className="text-right px-3 py-3 font-medium hidden lg:table-cell">Долг</th>
                   <th className="text-left px-3 py-3 font-medium">Прогресс</th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading && (
-                  <tr><td colSpan={10} className="text-center py-16 text-muted-foreground">
+                  <tr><td colSpan={13} className="text-center py-16 text-muted-foreground">
                     <div className="flex items-center justify-center gap-2">
                       <div className="w-4 h-4 border-2 border-primary/40 border-t-primary rounded-full animate-spin" />Загрузка…
                     </div>
                   </td></tr>
                 )}
                 {!isLoading && filtered.length === 0 && (
-                  <tr><td colSpan={10} className="text-center py-16 text-muted-foreground">
+                  <tr><td colSpan={13} className="text-center py-16 text-muted-foreground">
                     <Coins className="w-10 h-10 mx-auto mb-3 opacity-20" />
                     <p>Нет данных — мастера ещё не покупали токены</p>
                   </td></tr>
                 )}
-                {!isLoading && filtered.map((m, idx) => (
+                {!isLoading && filtered.map((m, idx) => {
+                  const w = creditData?.masters.find(wm => wm.masterId === m.masterId);
+                  return (
                   <tr key={m.masterId} className={cn("border-b last:border-0", idx % 2 === 0 ? "bg-background" : "bg-muted/10")}>
                     <td className="px-4 py-3 text-muted-foreground text-xs font-mono">#{idx + 1}</td>
                     <td className="px-3 py-3 font-medium">{m.alias}</td>
@@ -666,12 +774,16 @@ function MastersMatrix() {
                     <td className="px-3 py-3 text-right tabular-nums hidden md:table-cell text-indigo-600 dark:text-indigo-400 font-medium">{m.currentMonthSpent > 0 ? fmtTokens(m.currentMonthSpent) : "—"}</td>
                     <td className="px-3 py-3 text-center hidden md:table-cell"><TrendIcon trend={m.trend} cur={m.currentMonth} prev={m.prevMonth} /></td>
                     <td className="px-3 py-3 text-center hidden lg:table-cell"><Sparkline data={m.months} /></td>
+                    <td className={cn("px-3 py-3 text-right tabular-nums hidden lg:table-cell font-medium", (w?.tokensBalance ?? 0) < 0 ? "text-red-500" : "text-emerald-600")}>{w?.tokensBalance ?? "—"}</td>
+                    <td className="px-3 py-3 text-right tabular-nums hidden lg:table-cell text-muted-foreground">{w?.creditLimitTokens ?? "—"}</td>
+                    <td className="px-3 py-3 text-right tabular-nums hidden lg:table-cell font-bold text-red-500">{w && w.debtAmount > 0 ? w.debtAmount : "—"}</td>
                     <td className="px-3 py-3 w-32">
                       <TargetBar value={m.currentMonth} target={target} />
                       <p className="text-xs text-muted-foreground mt-0.5 tabular-nums">{target > 0 ? `${Math.min(100, Math.round((m.currentMonth / target) * 100))}%` : ""}</p>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -765,6 +877,132 @@ function MastersMatrix() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function DebtorsTab() {
+  const [search, setSearch] = useState("");
+
+  const { data, isLoading, error } = useQuery<CreditAnalyticsData>({
+    queryKey: ["/api/wallet/credit-analytics"],
+    queryFn: async () => {
+      const r = await fetch("/api/wallet/credit-analytics", { credentials: "include" });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error || `HTTP ${r.status}`);
+      return json;
+    },
+    refetchInterval: 60_000,
+  });
+
+  const sorted = useMemo(() => {
+    const masters = data?.masters ?? [];
+    const q = search.toLowerCase();
+    const filtered = q ? masters.filter(m => m.alias.toLowerCase().includes(q) || m.city.toLowerCase().includes(q)) : masters;
+    return [...filtered].sort((a, b) => b.debtAmount - a.debtAmount || b.tokensBalance - a.tokensBalance);
+  }, [data, search]);
+
+  const debtors = sorted.filter(m => m.debtAmount > 0);
+  const totalDebt = debtors.reduce((s, m) => s + m.debtAmount, 0);
+
+  const handleExport = () => {
+    if (!sorted.length) return;
+    exportCSV(
+      `credit-analytics-${new Date().toISOString().slice(0, 10)}.csv`,
+      ["Мастер", "Город", "Баланс токенов", "Кредитный лимит", "Выдано кредита", "Потрачено из кредита", "Долг"],
+      sorted.map(m => [m.alias, m.city, m.tokensBalance, m.creditLimitTokens, m.creditTokensIssued, m.creditTokensSpent, m.debtAmount])
+    );
+  };
+
+  return (
+    <div className="space-y-6">
+      {error && (
+        <div className="rounded-xl border bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800/30 p-4 flex items-start gap-3">
+          <div className="w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs font-bold shrink-0">!</div>
+          <div>
+            <p className="text-sm font-medium text-red-700 dark:text-red-300">Ошибка загрузки данных</p>
+            <p className="text-xs text-red-600 dark:text-red-400">{(error as Error).message}</p>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <KpiCard2 label="Всего мастеров" value={String(data?.masters.length ?? 0)} sub="в системе" color="blue" />
+        <KpiCard2 label="В долге" value={String(debtors.length)} sub={`${totalDebt} токенов`} color="red" />
+        <KpiCard2 label="Кредит выдан" value={String(data?.masters.reduce((s, m) => s + m.creditTokensIssued, 0) ?? 0)} sub="токенов" color="amber" />
+        <KpiCard2 label="Кредит потрачен" value={String(data?.totalCreditSpent ?? 0)} sub="токенов" color="violet" />
+      </div>
+
+      <div className="flex flex-wrap gap-2 items-center">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <input
+            className="h-9 pl-9 pr-8 text-sm rounded-xl border bg-background w-52 focus:outline-none focus:ring-2 focus:ring-primary/20"
+            placeholder="Имя мастера…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+          {search && (
+            <button className="absolute right-2 top-1/2 -translate-y-1/2" onClick={() => setSearch("")}>
+              <X className="w-3.5 h-3.5 text-muted-foreground" />
+            </button>
+          )}
+        </div>
+        <button
+          onClick={handleExport}
+          disabled={isLoading || !data}
+          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+        >
+          <Download className="w-3.5 h-3.5" />
+          Экспорт
+        </button>
+      </div>
+
+      <div className="rounded-2xl border bg-card overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-muted/40 text-muted-foreground">
+                <th className="text-left px-4 py-3 font-medium">#</th>
+                <th className="text-left px-3 py-3 font-medium">Мастер</th>
+                <th className="text-left px-3 py-3 font-medium hidden md:table-cell">Город</th>
+                <th className="text-right px-3 py-3 font-medium">Баланс токенов</th>
+                <th className="text-right px-3 py-3 font-medium hidden sm:table-cell">Кредитный лимит</th>
+                <th className="text-right px-3 py-3 font-medium hidden md:table-cell">Выдано кредита</th>
+                <th className="text-right px-3 py-3 font-medium hidden md:table-cell">Потрачено из кредита</th>
+                <th className="text-right px-3 py-3 font-medium">Долг</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading && (
+                <tr><td colSpan={8} className="text-center py-16 text-muted-foreground">
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="w-4 h-4 border-2 border-primary/40 border-t-primary rounded-full animate-spin" />Загрузка…
+                  </div>
+                </td></tr>
+              )}
+              {!isLoading && sorted.length === 0 && (
+                <tr><td colSpan={8} className="text-center py-16 text-muted-foreground">
+                  <Coins className="w-10 h-10 mx-auto mb-3 opacity-20" />
+                  <p>Нет данных</p>
+                </td></tr>
+              )}
+              {!isLoading && sorted.map((m, idx) => (
+                <tr key={m.masterId} className={cn("border-b last:border-0", idx % 2 === 0 ? "bg-background" : "bg-muted/10")}>
+                  <td className="px-4 py-3 text-muted-foreground text-xs font-mono">#{idx + 1}</td>
+                  <td className="px-3 py-3 font-medium">{m.alias}</td>
+                  <td className="px-3 py-3 text-muted-foreground hidden md:table-cell text-xs">{m.city}</td>
+                  <td className={cn("px-3 py-3 text-right tabular-nums font-medium", m.tokensBalance < 0 ? "text-red-500" : "text-emerald-600")}>{m.tokensBalance}</td>
+                  <td className="px-3 py-3 text-right tabular-nums hidden sm:table-cell text-muted-foreground">{m.creditLimitTokens}</td>
+                  <td className="px-3 py-3 text-right tabular-nums hidden md:table-cell text-muted-foreground">{m.creditTokensIssued}</td>
+                  <td className="px-3 py-3 text-right tabular-nums hidden md:table-cell text-violet-600 font-medium">{m.creditTokensSpent}</td>
+                  <td className={cn("px-3 py-3 text-right tabular-nums font-bold", m.debtAmount > 0 ? "text-red-500" : "text-muted-foreground")}>{m.debtAmount > 0 ? m.debtAmount : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
