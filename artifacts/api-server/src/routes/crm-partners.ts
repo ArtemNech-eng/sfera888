@@ -11,6 +11,7 @@ import {
   usersTable,
   ordersTable,
   systemSettingsTable,
+  partnerPushSubscriptionsTable,
 } from "@workspace/db";
 import { eq, and, desc, asc, like, gte, lte, isNull, isNotNull, inArray, sql, count, or } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth.js";
@@ -332,6 +333,48 @@ router.get("/partners/:id", async (req: Request, res: Response) => {
     });
   } catch (err) {
     console.error("[crm/partners/:id]", err);
+    return res.status(500).json({ error: "server_error" });
+  }
+});
+
+// DELETE /api/crm/partners/:id — удалить партнёра (hard для pending без лидов, soft archive для остальных)
+router.delete("/partners/:id", async (req: Request, res: Response) => {
+  try {
+    const partnerId = parseInt(String(req.params.id));
+    if (isNaN(partnerId)) return res.status(400).json({ error: "invalid_id" });
+
+    const [partner] = await db.select().from(trafficPartnersTable).where(eq(trafficPartnersTable.id, partnerId));
+    if (!partner) return res.status(404).json({ error: "partner_not_found" });
+
+    // Count all historical leads
+    const [{ leadsCount }] = await db
+      .select({ leadsCount: count() })
+      .from(leadsTable)
+      .where(eq(leadsTable.trafficPartnerId, partnerId));
+
+    const hasLeads = Number(leadsCount) > 0;
+
+    if (partner.status === "pending" && !hasLeads) {
+      // Hard delete: clean up related records
+      await db.delete(partnerPushSubscriptionsTable).where(eq(partnerPushSubscriptionsTable.partnerId, partnerId));
+      await db.delete(partnerBillingPeriodsTable).where(eq(partnerBillingPeriodsTable.partnerId, partnerId));
+      await db.delete(trafficPartnersTable).where(eq(trafficPartnersTable.id, partnerId));
+      if (partner.userId) {
+        await db.delete(usersTable).where(eq(usersTable.id, partner.userId));
+      }
+      return res.status(204).send();
+    }
+
+    // Soft delete: archive
+    const [updated] = await db
+      .update(trafficPartnersTable)
+      .set({ status: "archived", updatedAt: new Date() })
+      .where(eq(trafficPartnersTable.id, partnerId))
+      .returning();
+
+    return res.json(updated);
+  } catch (err) {
+    console.error("[crm/partners/:id DELETE]", err);
     return res.status(500).json({ error: "server_error" });
   }
 });

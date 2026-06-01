@@ -26,6 +26,7 @@ import {
   BarChart3,
   Clock,
   AlertCircle,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -170,6 +171,15 @@ async function updatePartnerStatus(id: number, status: string) {
   });
   if (!r.ok) throw new Error("Failed to update status");
   return r.json();
+}
+
+async function deletePartner(id: number) {
+  const r = await fetch(`/api/crm/partners/${id}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!r.ok) throw new Error("Failed to delete partner");
+  return r.status === 204 ? null : r.json();
 }
 
 // Create Partner Modal
@@ -350,6 +360,9 @@ function PartnerDetailDrawer({
     enabled: !!partnerId,
   });
 
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<"archive" | "delete" | null>(null);
+
   const statusMutation = useMutation({
     mutationFn: ({ id, status }: { id: number; status: string }) => updatePartnerStatus(id, status),
     onSuccess: () => {
@@ -360,129 +373,197 @@ function PartnerDetailDrawer({
     onError: () => toast({ title: "Ошибка", variant: "destructive" }),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => deletePartner(id),
+    onSuccess: () => {
+      toast({ title: confirmAction === "delete" ? "Партнёр удалён" : "Партнёр архивирован" });
+      queryClient.invalidateQueries({ queryKey: ["partners"] });
+      onOpenChange(false);
+    },
+    onError: () => toast({ title: "Ошибка", variant: "destructive" }),
+  });
+
   if (!partner) return null;
 
-  return (
-    <Drawer open={open} onOpenChange={onOpenChange}>
-      <DrawerContent className="max-w-lg mx-auto">
-        <DrawerHeader>
-          <DrawerTitle className="flex items-center gap-2">
-            <Users className="w-5 h-5" />
-            {partner.name}
-          </DrawerTitle>
-          <DrawerDescription>
-            Профиль партнёра и статистика
-          </DrawerDescription>
-        </DrawerHeader>
-        <div className="p-4 space-y-6">
-          {isLoading ? (
-            <div className="text-center py-8 text-muted-foreground">Загрузка...</div>
-          ) : (
-            <>
-              <div className="grid grid-cols-2 gap-4">
-                <Card>
-                  <CardContent className="p-4">
-                    <div className="text-2xl font-bold">{partner.leads_this_month}</div>
-                    <div className="text-xs text-muted-foreground flex items-center gap-1">
-                      <Inbox className="w-3 h-3" />
-                      Лидов за месяц
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="p-4">
-                    <div className="text-2xl font-bold">{partner.accepted_this_month}</div>
-                    <div className="text-xs text-muted-foreground flex items-center gap-1">
-                      <CheckSquare className="w-3 h-3" />
-                      Принято мастером
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
+  const canHardDelete = partner.status === "pending" && partner.leads_this_month === 0 && partner.accepted_this_month === 0;
 
-              <div className="space-y-3">
-                <h4 className="font-medium text-sm">Контакты</h4>
-                <div className="flex items-center gap-2 text-sm">
-                  <Phone className="w-4 h-4 text-muted-foreground" />
-                  {partner.phone}
+  return (
+    <>
+      <Drawer open={open} onOpenChange={onOpenChange}>
+        <DrawerContent className="max-w-lg mx-auto">
+          <DrawerHeader>
+            <DrawerTitle className="flex items-center gap-2">
+              <Users className="w-5 h-5" />
+              {partner.name}
+            </DrawerTitle>
+            <DrawerDescription>
+              Профиль партнёра и статистика
+            </DrawerDescription>
+          </DrawerHeader>
+          <div className="p-4 space-y-6">
+            {isLoading ? (
+              <div className="text-center py-8 text-muted-foreground">Загрузка...</div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <Card>
+                    <CardContent className="p-4">
+                      <div className="text-2xl font-bold">{partner.leads_this_month}</div>
+                      <div className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Inbox className="w-3 h-3" />
+                        Лидов за месяц
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-4">
+                      <div className="text-2xl font-bold">{partner.accepted_this_month}</div>
+                      <div className="text-xs text-muted-foreground flex items-center gap-1">
+                        <CheckSquare className="w-3 h-3" />
+                        Принято мастером
+                      </div>
+                    </CardContent>
+                  </Card>
                 </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <MapPin className="w-4 h-4 text-muted-foreground" />
-                  {partner.city}
-                </div>
-                {partner.avitoAccountName && (
+
+                <div className="space-y-3">
+                  <h4 className="font-medium text-sm">Контакты</h4>
                   <div className="flex items-center gap-2 text-sm">
-                    <ExternalLink className="w-4 h-4 text-muted-foreground" />
-                    {partner.avitoAccountLink ? (
-                      <a href={partner.avitoAccountLink} target="_blank" rel="noreferrer" className="text-primary hover:underline">
-                        {partner.avitoAccountName}
+                    <Phone className="w-4 h-4 text-muted-foreground" />
+                    {partner.phone}
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <MapPin className="w-4 h-4 text-muted-foreground" />
+                    {partner.city}
+                  </div>
+                  {partner.avitoAccountName && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <ExternalLink className="w-4 h-4 text-muted-foreground" />
+                      {partner.avitoAccountLink ? (
+                        <a href={partner.avitoAccountLink} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                          {partner.avitoAccountName}
+                        </a>
+                      ) : (
+                        partner.avitoAccountName
+                      )}
+                    </div>
+                  )}
+                  {partner.login && (
+                    <div className="text-sm text-muted-foreground">
+                      Логин: <span className="font-mono">{partner.login}</span>
+                    </div>
+                  )}
+                  {partner.refSlug && (
+                    <div className="text-sm">
+                      <span className="text-muted-foreground">Ссылка:</span>{" "}
+                      <a
+                        href={`${domain}/r/${partner.refSlug}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary hover:underline font-mono"
+                      >
+                        {domain}/r/{partner.refSlug}
                       </a>
-                    ) : (
-                      partner.avitoAccountName
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  <h4 className="font-medium text-sm">Управление статусом</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(statusLabels).map(([key, label]) => (
+                      <Button
+                        key={key}
+                        variant={partner.status === key ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => statusMutation.mutate({ id: partner.id, status: key })}
+                        disabled={statusMutation.isPending}
+                      >
+                        {statusIcons[key]}
+                        <span className="ml-1">{label}</span>
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
+                {partner.notes && (
+                  <div className="space-y-2">
+                    <h4 className="font-medium text-sm">Примечания</h4>
+                    <p className="text-sm text-muted-foreground">{partner.notes}</p>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <h4 className="font-medium text-sm">Дата регистрации</h4>
+                  <p className="text-sm text-muted-foreground">
+                    {new Date(partner.createdAt).toLocaleDateString("ru-RU")}
+                  </p>
+                </div>
+
+                <div className="border-t pt-4 space-y-3">
+                  <h4 className="font-medium text-sm text-red-600">Опасная зона</h4>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-red-600 border-red-200 hover:bg-red-50"
+                      onClick={() => { setConfirmAction("archive"); setConfirmOpen(true); }}
+                    >
+                      <Archive className="w-4 h-4 mr-1" />
+                      Архивировать
+                    </Button>
+                    {canHardDelete && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-red-600 border-red-200 hover:bg-red-50"
+                        onClick={() => { setConfirmAction("delete"); setConfirmOpen(true); }}
+                      >
+                        <Trash2 className="w-4 h-4 mr-1" />
+                        Удалить навсегда
+                      </Button>
                     )}
                   </div>
-                )}
-                {partner.login && (
-                  <div className="text-sm text-muted-foreground">
-                    Логин: <span className="font-mono">{partner.login}</span>
-                  </div>
-                )}
-                {partner.refSlug && (
-                  <div className="text-sm">
-                    <span className="text-muted-foreground">Ссылка:</span>{" "}
-                    <a
-                      href={`${domain}/r/${partner.refSlug}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-primary hover:underline font-mono"
-                    >
-                      {domain}/r/{partner.refSlug}
-                    </a>
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-3">
-                <h4 className="font-medium text-sm">Управление статусом</h4>
-                <div className="flex flex-wrap gap-2">
-                  {Object.entries(statusLabels).map(([key, label]) => (
-                    <Button
-                      key={key}
-                      variant={partner.status === key ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => statusMutation.mutate({ id: partner.id, status: key })}
-                      disabled={statusMutation.isPending}
-                    >
-                      {statusIcons[key]}
-                      <span className="ml-1">{label}</span>
-                    </Button>
-                  ))}
                 </div>
-              </div>
+              </>
+            )}
+          </div>
+          <DrawerFooter>
+            <DrawerClose asChild>
+              <Button variant="outline">Закрыть</Button>
+            </DrawerClose>
+          </DrawerFooter>
+        </DrawerContent>
+      </Drawer>
 
-              {partner.notes && (
-                <div className="space-y-2">
-                  <h4 className="font-medium text-sm">Примечания</h4>
-                  <p className="text-sm text-muted-foreground">{partner.notes}</p>
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <h4 className="font-medium text-sm">Дата регистрации</h4>
-                <p className="text-sm text-muted-foreground">
-                  {new Date(partner.createdAt).toLocaleDateString("ru-RU")}
-                </p>
-              </div>
-            </>
-          )}
-        </div>
-        <DrawerFooter>
-          <DrawerClose asChild>
-            <Button variant="outline">Закрыть</Button>
-          </DrawerClose>
-        </DrawerFooter>
-      </DrawerContent>
-    </Drawer>
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              {confirmAction === "delete" ? "Удалить партнёра навсегда?" : "Архивировать партнёра?"}
+            </DialogTitle>
+            <DialogDescription>
+              {confirmAction === "delete"
+                ? "Партнёр и его аккаунт будут полностью удалены. Это действие необратимо."
+                : "Партнёр будет скрыт из списка и не сможет войти в PWA. Данные о лидах и выплатах сохранятся."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setConfirmOpen(false)}>Отмена</Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (partner) deleteMutation.mutate(partner.id);
+                setConfirmOpen(false);
+              }}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? "Выполняется..." : confirmAction === "delete" ? "Удалить" : "Архивировать"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -516,6 +597,25 @@ export default function PartnersPage() {
   const handleRowClick = (partner: Partner) => {
     setSelectedPartnerId(partner.id);
     setDetailOpen(true);
+  };
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => deletePartner(id),
+    onSuccess: () => {
+      toast({ title: "Готово" });
+      queryClient.invalidateQueries({ queryKey: ["partners"] });
+    },
+    onError: () => toast({ title: "Ошибка", variant: "destructive" }),
+  });
+
+  const handleDelete = (partner: Partner) => {
+    const isHardDelete = partner.status === "pending" && partner.leads_this_month === 0 && partner.accepted_this_month === 0;
+    const message = isHardDelete
+      ? "Партнёр будет полностью удалён. Это необратимо."
+      : "Партнёр будет архивирован. Данные сохранятся, но он не сможет войти в PWA.";
+    if (window.confirm(message)) {
+      deleteMutation.mutate(partner.id);
+    }
   };
 
   return (
@@ -664,6 +764,15 @@ export default function PartnersPage() {
                           <td className="px-4 py-3">
                             <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleRowClick(p); }}>
                               <Eye className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-red-500 hover:text-red-600 hover:bg-red-50"
+                              onClick={(e) => { e.stopPropagation(); handleDelete(p); }}
+                              disabled={deleteMutation.isPending}
+                            >
+                              <Trash2 className="w-4 h-4" />
                             </Button>
                           </td>
                         </tr>
