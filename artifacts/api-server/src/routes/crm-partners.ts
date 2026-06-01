@@ -353,8 +353,9 @@ router.delete("/partners/:id", async (req: Request, res: Response) => {
       .where(eq(leadsTable.trafficPartnerId, partnerId));
 
     const hasLeads = Number(leadsCount) > 0;
+    const force = req.query.force === "true";
 
-    if (partner.status === "pending" && !hasLeads) {
+    if ((partner.status === "pending" && !hasLeads) || (force && partner.status === "archived")) {
       // Hard delete: clean up related records
       await db.delete(partnerPushSubscriptionsTable).where(eq(partnerPushSubscriptionsTable.partnerId, partnerId));
       await db.delete(partnerBillingPeriodsTable).where(eq(partnerBillingPeriodsTable.partnerId, partnerId));

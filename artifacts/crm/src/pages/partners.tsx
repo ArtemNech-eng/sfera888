@@ -173,8 +173,9 @@ async function updatePartnerStatus(id: number, status: string) {
   return r.json();
 }
 
-async function deletePartner(id: number) {
-  const r = await fetch(`/api/crm/partners/${id}`, {
+async function deletePartner(id: number, force = false) {
+  const qs = force ? "?force=true" : "";
+  const r = await fetch(`/api/crm/partners/${id}${qs}`, {
     method: "DELETE",
     credentials: "include",
   });
@@ -374,7 +375,7 @@ function PartnerDetailDrawer({
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: number) => deletePartner(id),
+    mutationFn: ({ id, force }: { id: number; force?: boolean }) => deletePartner(id, force),
     onSuccess: () => {
       toast({ title: confirmAction === "delete" ? "Партнёр удалён" : "Партнёр архивирован" });
       queryClient.invalidateQueries({ queryKey: ["partners"] });
@@ -385,7 +386,9 @@ function PartnerDetailDrawer({
 
   if (!partner) return null;
 
-  const canHardDelete = partner.status === "pending" && partner.leads_this_month === 0 && partner.accepted_this_month === 0;
+  const canHardDelete =
+    (partner.status === "pending" && partner.leads_this_month === 0 && partner.accepted_this_month === 0) ||
+    partner.status === "archived";
 
   return (
     <>
@@ -503,16 +506,28 @@ function PartnerDetailDrawer({
                 <div className="border-t pt-4 space-y-3">
                   <h4 className="font-medium text-sm text-red-600">Опасная зона</h4>
                   <div className="flex flex-wrap gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-red-600 border-red-200 hover:bg-red-50"
-                      onClick={() => { setConfirmAction("archive"); setConfirmOpen(true); }}
-                    >
-                      <Archive className="w-4 h-4 mr-1" />
-                      Архивировать
-                    </Button>
-                    {canHardDelete && (
+                    {partner.status === "archived" ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-red-600 border-red-200 hover:bg-red-50"
+                        onClick={() => { setConfirmAction("delete"); setConfirmOpen(true); }}
+                      >
+                        <Trash2 className="w-4 h-4 mr-1" />
+                        Удалить полностью
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-red-600 border-red-200 hover:bg-red-50"
+                        onClick={() => { setConfirmAction("archive"); setConfirmOpen(true); }}
+                      >
+                        <Archive className="w-4 h-4 mr-1" />
+                        Архивировать
+                      </Button>
+                    )}
+                    {canHardDelete && partner.status !== "archived" && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -553,7 +568,7 @@ function PartnerDetailDrawer({
             <Button
               variant="destructive"
               onClick={() => {
-                if (partner) deleteMutation.mutate(partner.id);
+                if (partner) deleteMutation.mutate({ id: partner.id, force: partner.status === "archived" });
                 setConfirmOpen(false);
               }}
               disabled={deleteMutation.isPending}
@@ -600,7 +615,7 @@ export default function PartnersPage() {
   };
 
   const deleteMutation = useMutation({
-    mutationFn: (id: number) => deletePartner(id),
+    mutationFn: ({ id, force }: { id: number; force?: boolean }) => deletePartner(id, force),
     onSuccess: () => {
       toast({ title: "Готово" });
       queryClient.invalidateQueries({ queryKey: ["partners"] });
@@ -609,12 +624,14 @@ export default function PartnersPage() {
   });
 
   const handleDelete = (partner: Partner) => {
-    const isHardDelete = partner.status === "pending" && partner.leads_this_month === 0 && partner.accepted_this_month === 0;
+    const isHardDelete =
+      (partner.status === "pending" && partner.leads_this_month === 0 && partner.accepted_this_month === 0) ||
+      partner.status === "archived";
     const message = isHardDelete
       ? "Партнёр будет полностью удалён. Это необратимо."
       : "Партнёр будет архивирован. Данные сохранятся, но он не сможет войти в PWA.";
     if (window.confirm(message)) {
-      deleteMutation.mutate(partner.id);
+      deleteMutation.mutate({ id: partner.id, force: partner.status === "archived" });
     }
   };
 
@@ -765,15 +782,40 @@ export default function PartnersPage() {
                             <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleRowClick(p); }}>
                               <Eye className="w-4 h-4" />
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-red-500 hover:text-red-600 hover:bg-red-50"
-                              onClick={(e) => { e.stopPropagation(); handleDelete(p); }}
-                              disabled={deleteMutation.isPending}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
+                            {p.status === "archived" ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-red-500 hover:text-red-600 hover:bg-red-50"
+                                title="Удалить полностью"
+                                onClick={(e) => { e.stopPropagation(); handleDelete(p); }}
+                                disabled={deleteMutation.isPending}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            ) : p.status === "pending" && p.leads_this_month === 0 && p.accepted_this_month === 0 ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-red-500 hover:text-red-600 hover:bg-red-50"
+                                title="Удалить навсегда"
+                                onClick={(e) => { e.stopPropagation(); handleDelete(p); }}
+                                disabled={deleteMutation.isPending}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-amber-500 hover:text-amber-600 hover:bg-amber-50"
+                                title="Архивировать"
+                                onClick={(e) => { e.stopPropagation(); handleDelete(p); }}
+                                disabled={deleteMutation.isPending}
+                              >
+                                <Archive className="w-4 h-4" />
+                              </Button>
+                            )}
                           </td>
                         </tr>
                       ))
