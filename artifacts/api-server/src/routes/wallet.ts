@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, masterWalletTable, walletTransactionsTable, tokenPackagesTable, ordersTable, mastersTable, systemSettingsTable } from "@workspace/db";
-import { eq, desc, and, inArray, sql, count } from "drizzle-orm";
+import { eq, desc, and, inArray, sql, count, gt } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
 import { requireMasterAuth } from "../middlewares/requireMaster.js";
 import { refundTokens, checkTokenBalance } from "../lib/tokenWallet.js";
@@ -1145,7 +1145,7 @@ router.post("/repair-credit-limits", adminOnly, async (req: any, res: any) => {
         tokensBalance: masterWalletTable.tokensBalance,
       })
       .from(masterWalletTable)
-      .where(sql`${masterWalletTable.creditTokensIssued} > ${masterWalletTable.creditLimitTokens}`);
+      .where(gt(masterWalletTable.creditTokensIssued, masterWalletTable.creditLimitTokens));
 
     const repaired: { masterId: number; oldLimit: number; newLimit: number; balance: number }[] = [];
     for (const row of rows) {
