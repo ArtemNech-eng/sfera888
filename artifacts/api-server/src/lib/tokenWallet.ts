@@ -167,7 +167,10 @@ export async function checkTokenBalance(masterId: number, required: number): Pro
 }> {
   const wallet = await ensureWallet(masterId);
   const balance = Number(wallet.tokensBalance);
-  const creditLimit = Number(wallet.creditLimitTokens ?? 0);
+  const creditLimit = Math.max(
+    Number(wallet.creditLimitTokens ?? 0),
+    Number((wallet as any).creditTokensIssued ?? 0)
+  );
   const available = balance + creditLimit;
   const ok = available >= required;
   const shortfall = ok ? 0 : required - available;
@@ -207,7 +210,10 @@ export async function deductTokensTx(
   }
 
   const currentBalance = Number(walletRow.tokens_balance);
-  const creditLimit = Number(walletRow.credit_limit_tokens ?? 0);
+  const creditLimit = Math.max(
+    Number(walletRow.credit_limit_tokens ?? 0),
+    Number(walletRow.credit_tokens_issued ?? 0)
+  );
   const newBalance = currentBalance - tokensCost;
 
   // Gate: balance must stay above negative credit limit
@@ -284,7 +290,10 @@ export async function refundTokens(params: {
 
   const wallet = await ensureWallet(masterId);
   const newBalance = Number(wallet.tokensBalance) + tokensCost;
-  const creditLimit = Number(wallet.creditLimitTokens ?? 0);
+  const creditLimit = Math.max(
+    Number(wallet.creditLimitTokens ?? 0),
+    Number((wallet as any).creditTokensIssued ?? 0)
+  );
   const creditTokensSpent = newBalance < 0 ? Math.min(creditLimit, -newBalance) : 0;
 
   await db

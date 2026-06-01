@@ -342,7 +342,10 @@ router.get("/:masterId", ops, async (req: any, res: any, next: any) => {
 
   const wallet = await ensureWallet(masterId);
   const balance = Number(wallet.tokensBalance);
-  const creditLimit = Number(wallet.creditLimitTokens ?? 0);
+  const creditLimit = Math.max(
+    Number(wallet.creditLimitTokens ?? 0),
+    Number((wallet as any).creditTokensIssued ?? 0)
+  );
   const available = balance + creditLimit;
   const topupNeeded = balance < 0 ? -balance : 0;
   return res.json({
@@ -351,7 +354,7 @@ router.get("/:masterId", ops, async (req: any, res: any, next: any) => {
     total_spent: Number(wallet.totalTokensSpent),
     total_refunded: Number(wallet.totalTokensRefunded),
     total_rub_spent: wallet.totalRubSpent,
-    credit_limit_tokens: creditLimit,
+    credit_limit_tokens: Number(wallet.creditLimitTokens ?? 0),
     credit_tokens_issued: Number((wallet as any).creditTokensIssued ?? 0),
     credit_tokens_spent: Number((wallet as any).creditTokensSpent ?? 0),
     available_tokens: available,
@@ -433,8 +436,11 @@ router.post("/:masterId/purchase", ops, async (req: any, res: any, next: any) =>
 
   const wallet = await ensureWallet(masterId);
   const newBalance = Number(wallet.tokensBalance) + tokensToAdd;
-  const creditTokensIssued = Number((wallet as any).creditTokensIssued ?? 0);
-  const creditTokensSpent = newBalance < 0 ? Math.min(creditTokensIssued, -newBalance) : 0;
+  const effectiveLimit = Math.max(
+    Number(wallet.creditLimitTokens ?? 0),
+    Number((wallet as any).creditTokensIssued ?? 0)
+  );
+  const creditTokensSpent = newBalance < 0 ? Math.min(effectiveLimit, -newBalance) : 0;
 
   const [updated] = await db
     .update(masterWalletTable)
@@ -477,8 +483,11 @@ router.post("/:masterId/bonus", adminOnly, async (req: any, res: any, next: any)
   const wallet = await ensureWallet(masterId);
 
   const newBalance = Number(wallet.tokensBalance) + tokensNum;
-  const creditTokensIssued = Number((wallet as any).creditTokensIssued ?? 0);
-  const creditTokensSpent = newBalance < 0 ? Math.min(creditTokensIssued, -newBalance) : 0;
+  const effectiveLimit = Math.max(
+    Number(wallet.creditLimitTokens ?? 0),
+    Number((wallet as any).creditTokensIssued ?? 0)
+  );
+  const creditTokensSpent = newBalance < 0 ? Math.min(effectiveLimit, -newBalance) : 0;
 
   const [updated] = await db
     .update(masterWalletTable)
@@ -518,14 +527,17 @@ router.post("/:masterId/adjustment", adminOnly, async (req: any, res: any, next:
   const tokensNum = Number(tokens);
   const wallet = await ensureWallet(masterId);
   const newBalance = Number(wallet.tokensBalance) + tokensNum;
-  const creditTokensIssued = Number((wallet as any).creditTokensIssued ?? 0);
+  const effectiveLimit = Math.max(
+    Number(wallet.creditLimitTokens ?? 0),
+    Number((wallet as any).creditTokensIssued ?? 0)
+  );
 
   // For negative adjustments, check credit limit
-  if (newBalance < -creditTokensIssued) {
+  if (newBalance < -effectiveLimit) {
     return res.status(400).json({ error: "Баланс не может быть ниже кредитного лимита" });
   }
 
-  const creditTokensSpent = newBalance < 0 ? Math.min(creditTokensIssued, -newBalance) : 0;
+  const creditTokensSpent = newBalance < 0 ? Math.min(effectiveLimit, -newBalance) : 0;
 
   const updateFields: any = {
     tokensBalance: String(newBalance),
@@ -668,8 +680,11 @@ router.post("/:masterId/confirm-purchase", ops, async (req: any, res: any, next:
   // Update wallet balance
   const wallet = await ensureWallet(masterId);
   const newBalance = Number(wallet.tokensBalance) + tokensToAdd;
-  const creditTokensIssued = Number((wallet as any).creditTokensIssued ?? 0);
-  const creditTokensSpent = newBalance < 0 ? Math.min(creditTokensIssued, -newBalance) : 0;
+  const effectiveLimit = Math.max(
+    Number(wallet.creditLimitTokens ?? 0),
+    Number((wallet as any).creditTokensIssued ?? 0)
+  );
+  const creditTokensSpent = newBalance < 0 ? Math.min(effectiveLimit, -newBalance) : 0;
 
   await db.update(masterWalletTable)
     .set({
@@ -1115,6 +1130,51 @@ router.get("/credit-analytics", ops, async (req: any, res: any) => {
     });
   } catch (err: any) {
     console.error("[wallet/credit-analytics]", err);
+    return res.status(500).json({ error: "Ошибка сервера" });
+  }
+});
+
+// POST /api/wallet/repair-credit-limits — sync creditLimitTokens with creditTokensIssued
+router.post("/repair-credit-limits", adminOnly, async (req: any, res: any) => {
+  try {
+    const rows = await db
+      .select({
+        masterId: masterWalletTable.masterId,
+        creditTokensIssued: masterWalletTable.creditTokensIssued,
+        creditLimitTokens: masterWalletTable.creditLimitTokens,
+        tokensBalance: masterWalletTable.tokensBalance,
+      })
+      .from(masterWalletTable)
+      .where(sql`${masterWalletTable.creditTokensIssued} > ${masterWalletTable.creditLimitTokens}`);
+
+    const repaired: { masterId: number; oldLimit: number; newLimit: number; balance: number }[] = [];
+    for (const row of rows) {
+      const issued = Number(row.creditTokensIssued ?? 0);
+      const balance = Number(row.tokensBalance ?? 0);
+      const newSpent = balance < 0 ? Math.min(issued, -balance) : 0;
+      await db
+        .update(masterWalletTable)
+        .set({
+          creditLimitTokens: String(issued),
+          creditTokensSpent: String(newSpent),
+          updatedAt: new Date(),
+        })
+        .where(eq(masterWalletTable.masterId, row.masterId));
+      repaired.push({
+        masterId: row.masterId,
+        oldLimit: Number(row.creditLimitTokens ?? 0),
+        newLimit: issued,
+        balance,
+      });
+    }
+
+    return res.json({
+      success: true,
+      repairedCount: repaired.length,
+      repaired,
+    });
+  } catch (err: any) {
+    console.error("[wallet/repair-credit-limits]", err);
     return res.status(500).json({ error: "Ошибка сервера" });
   }
 });

@@ -6,7 +6,7 @@ import {
 } from "recharts";
 import {
   Coins, TrendingUp, ShoppingCart, Clock, Download, Loader2,
-  Search, X, Target, TrendingDown, Minus, History,
+  Search, X, Target, TrendingDown, Minus, History, Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -1011,8 +1011,9 @@ function MastersMatrix({ creditData }: { creditData?: CreditAnalyticsData }) {
 function DebtorsTab() {
   const [search, setSearch] = useState("");
   const [txModal, setTxModal] = useState<{ masterId: number; alias: string } | null>(null);
+  const [repairLoading, setRepairLoading] = useState(false);
 
-  const { data, isLoading, error } = useQuery<CreditAnalyticsData>({
+  const { data, isLoading, error, refetch } = useQuery<CreditAnalyticsData>({
     queryKey: ["/api/wallet/credit-analytics"],
     queryFn: async () => {
       const r = await fetch("/api/wallet/credit-analytics", { credentials: "include" });
@@ -1040,6 +1041,25 @@ function DebtorsTab() {
       ["Мастер", "Город", "Баланс токенов", "Кредитный лимит", "Выдано кредита", "Потрачено из кредита", "Долг"],
       sorted.map(m => [m.alias, m.city, m.tokensBalance, m.creditLimitTokens, m.creditTokensIssued, m.creditTokensSpent, m.debtAmount])
     );
+  };
+
+  const handleRepair = async () => {
+    if (!confirm("Синхронизировать creditLimitTokens с creditTokensIssued для всех мастеров?")) return;
+    setRepairLoading(true);
+    try {
+      const r = await fetch("/api/wallet/repair-credit-limits", {
+        method: "POST",
+        credentials: "include",
+      });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error || "Ошибка");
+      alert(`Исправлено мастеров: ${json.repairedCount ?? 0}`);
+      refetch();
+    } catch (e: any) {
+      alert(e.message || "Ошибка");
+    } finally {
+      setRepairLoading(false);
+    }
   };
 
   return (
@@ -1076,6 +1096,14 @@ function DebtorsTab() {
             </button>
           )}
         </div>
+        <button
+          onClick={handleRepair}
+          disabled={repairLoading || isLoading}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 hover:text-amber-800 transition-colors disabled:opacity-50"
+        >
+          {repairLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wrench className="w-3.5 h-3.5" />}
+          Исправить лимиты
+        </button>
         <button
           onClick={handleExport}
           disabled={isLoading || !data}
