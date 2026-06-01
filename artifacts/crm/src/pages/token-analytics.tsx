@@ -643,7 +643,7 @@ function MastersMatrix({ creditData }: { creditData?: CreditAnalyticsData }) {
   const [view, setView] = useState<"summary" | "monthly">("summary");
   const [onlyDebtors, setOnlyDebtors] = useState(false);
 
-  const { data: rawData, isLoading, error } = useQuery<MasterRevenueRow[]>({
+  const { data: rawData, isLoading, error: analyticsError } = useQuery<MasterRevenueRow[]>({
     queryKey: ["/api/wallet/master-revenue"],
     queryFn: async () => {
       const r = await fetch("/api/wallet/master-revenue", { credentials: "include" });
