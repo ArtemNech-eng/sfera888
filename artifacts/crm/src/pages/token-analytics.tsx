@@ -6,7 +6,7 @@ import {
 } from "recharts";
 import {
   Coins, TrendingUp, ShoppingCart, Clock, Download, Loader2,
-  Search, X, Target, TrendingDown, Minus,
+  Search, X, Target, TrendingDown, Minus, History,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -636,12 +636,98 @@ export default function TokenAnalyticsPage() {
   );
 }
 
+// ─── Master Transactions Modal ──────────────────────────────────────────────
+
+interface WalletTx {
+  id: number;
+  type: string;
+  tokens_amount: number;
+  rub_amount: number | null;
+  package_name: string | null;
+  order_id: number | null;
+  reason: string;
+  status: string;
+  created_at: string;
+}
+
+function MasterTransactionsModal({ masterId, alias, open, onClose }: { masterId: number; alias: string; open: boolean; onClose: () => void }) {
+  const { data: txs, isLoading } = useQuery<WalletTx[]>({
+    queryKey: ["wallet-txs", masterId],
+    queryFn: async () => {
+      const r = await fetch(`/api/wallet/${masterId}/transactions`, { credentials: "include" });
+      if (!r.ok) throw new Error("Failed to fetch transactions");
+      return r.json();
+    },
+    enabled: open && !!masterId,
+  });
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div className="bg-card rounded-2xl border shadow-lg max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="p-4 border-b flex items-center justify-between">
+          <h3 className="text-lg font-semibold">История операций — {alias}</h3>
+          <button onClick={onClose} className="p-1 hover:bg-muted rounded-lg"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="overflow-auto p-4">
+          {isLoading ? (
+            <div className="py-8 text-center text-muted-foreground"><Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />Загрузка…</div>
+          ) : !txs || txs.length === 0 ? (
+            <div className="py-8 text-center text-muted-foreground">Нет операций</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50">
+                <tr className="text-left text-xs font-semibold text-muted-foreground uppercase">
+                  <th className="px-3 py-2">Дата</th>
+                  <th className="px-3 py-2">Тип</th>
+                  <th className="px-3 py-2 text-right">Токены</th>
+                  <th className="px-3 py-2 text-right">₽</th>
+                  <th className="px-3 py-2">Статус</th>
+                  <th className="px-3 py-2">Причина</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {txs.map(tx => (
+                  <tr key={tx.id} className="hover:bg-muted/30">
+                    <td className="px-3 py-2 whitespace-nowrap">{new Date(tx.created_at).toLocaleDateString("ru-RU")}</td>
+                    <td className="px-3 py-2">
+                      <span className={cn("text-xs font-medium px-2 py-0.5 rounded-full",
+                        tx.type === "purchase" ? "bg-emerald-100 text-emerald-700" :
+                        tx.type === "spend" ? "bg-red-100 text-red-700" :
+                        tx.type === "refund" ? "bg-blue-100 text-blue-700" :
+                        "bg-gray-100 text-gray-700"
+                      )}>
+                        {tx.type === "purchase" ? "Пополнение" : tx.type === "spend" ? "Списание" : tx.type === "refund" ? "Возврат" : tx.type}
+                      </span>
+                    </td>
+                    <td className={cn("px-3 py-2 text-right font-medium tabular-nums",
+                      tx.tokens_amount > 0 ? "text-emerald-600" : tx.tokens_amount < 0 ? "text-red-500" : ""
+                    )}>{tx.tokens_amount > 0 ? `+${tx.tokens_amount}` : tx.tokens_amount}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{tx.rub_amount ? `${tx.rub_amount} ₽` : "—"}</td>
+                    <td className="px-3 py-2"><span className={cn("text-xs",
+                      tx.status === "completed" ? "text-emerald-600" :
+                      tx.status === "pending" ? "text-amber-600" : "text-red-500"
+                    )}>{tx.status}</span></td>
+                    <td className="px-3 py-2 text-muted-foreground text-xs max-w-xs truncate">{tx.reason}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MastersMatrix({ creditData }: { creditData?: CreditAnalyticsData }) {
   const [search, setSearch] = useState("");
   const [city, setCity] = useState("");
   const [target, setTarget] = useState(20000);
   const [view, setView] = useState<"summary" | "monthly">("summary");
   const [onlyDebtors, setOnlyDebtors] = useState(false);
+  const [txModal, setTxModal] = useState<{ masterId: number; alias: string } | null>(null);
 
   const { data: rawData, isLoading, error: analyticsError } = useQuery<MasterRevenueRow[]>({
     queryKey: ["/api/wallet/master-revenue"],
@@ -787,7 +873,18 @@ function MastersMatrix({ creditData }: { creditData?: CreditAnalyticsData }) {
                   return (
                   <tr key={m.masterId} className={cn("border-b last:border-0", idx % 2 === 0 ? "bg-background" : "bg-muted/10")}>
                     <td className="px-4 py-3 text-muted-foreground text-xs font-mono">#{idx + 1}</td>
-                    <td className="px-3 py-3 font-medium">{m.alias}</td>
+                    <td className="px-3 py-3 font-medium">
+                      <div className="flex items-center gap-2">
+                        {m.alias}
+                        <button
+                          className="p-1 hover:bg-muted rounded-md text-muted-foreground hover:text-foreground"
+                          title="История операций"
+                          onClick={() => setTxModal({ masterId: m.masterId, alias: m.alias })}
+                        >
+                          <History className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
                     <td className="px-3 py-3 text-muted-foreground hidden md:table-cell text-xs">{m.city}</td>
                     <td className="px-3 py-3 text-right"><RevBadge value={m.currentMonth} target={target} /></td>
                     <td className="px-3 py-3 text-right tabular-nums hidden sm:table-cell text-muted-foreground">{m.last3Months > 0 ? fmtRubZero(m.last3Months) : "—"}</td>
@@ -898,12 +995,21 @@ function MastersMatrix({ creditData }: { creditData?: CreditAnalyticsData }) {
           </div>
         </div>
       )}
+      {txModal && (
+        <MasterTransactionsModal
+          masterId={txModal.masterId}
+          alias={txModal.alias}
+          open={!!txModal}
+          onClose={() => setTxModal(null)}
+        />
+      )}
     </div>
   );
 }
 
 function DebtorsTab() {
   const [search, setSearch] = useState("");
+  const [txModal, setTxModal] = useState<{ masterId: number; alias: string } | null>(null);
 
   const { data, isLoading, error } = useQuery<CreditAnalyticsData>({
     queryKey: ["/api/wallet/credit-analytics"],
@@ -1011,7 +1117,18 @@ function DebtorsTab() {
               {!isLoading && sorted.map((m, idx) => (
                 <tr key={m.masterId} className={cn("border-b last:border-0", idx % 2 === 0 ? "bg-background" : "bg-muted/10")}>
                   <td className="px-4 py-3 text-muted-foreground text-xs font-mono">#{idx + 1}</td>
-                  <td className="px-3 py-3 font-medium">{m.alias}</td>
+                  <td className="px-3 py-3 font-medium">
+                    <div className="flex items-center gap-2">
+                      {m.alias}
+                      <button
+                        className="p-1 hover:bg-muted rounded-md text-muted-foreground hover:text-foreground"
+                        title="История операций"
+                        onClick={() => setTxModal({ masterId: m.masterId, alias: m.alias })}
+                      >
+                        <History className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </td>
                   <td className="px-3 py-3 text-muted-foreground hidden md:table-cell text-xs">{m.city}</td>
                   <td className={cn("px-3 py-3 text-right tabular-nums font-medium", m.tokensBalance < 0 ? "text-red-500" : "text-emerald-600")}>{m.tokensBalance}</td>
                   <td className="px-3 py-3 text-right tabular-nums hidden sm:table-cell text-muted-foreground">{m.creditLimitTokens}</td>
@@ -1024,6 +1141,14 @@ function DebtorsTab() {
           </table>
         </div>
       </div>
+      {txModal && (
+        <MasterTransactionsModal
+          masterId={txModal.masterId}
+          alias={txModal.alias}
+          open={!!txModal}
+          onClose={() => setTxModal(null)}
+        />
+      )}
     </div>
   );
 }
