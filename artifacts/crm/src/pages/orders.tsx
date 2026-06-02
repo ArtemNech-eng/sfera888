@@ -1038,15 +1038,15 @@ export default function Orders() {
                         <td className="px-3 py-2.5 pl-4">
                           <StatusBadge status={order.status} type="order" />
                           <div className="mt-0.5">
-                            {(order as any).paymentModel === "token" ? (
+                            {((order as any).paymentModel ?? "token") === "token" ? (
                               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
                                 Токены
                               </span>
-                            ) : (order as any).paymentModel === "commission" ? (
+                            ) : (
                               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-50 text-slate-600 border border-slate-200">
                                 Комиссия
                               </span>
-                            ) : null}
+                            )}
                           </div>
                           {order.status === "waiting_master" && (
                             <div className={`flex items-center gap-1 mt-0.5 text-[10px] font-medium ${waitH > 24 ? "text-red-500" : "text-amber-500"}`}>

@@ -406,7 +406,7 @@ export default function OrderPanel({
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-lg font-display font-bold text-foreground">Заказ #{orderId}</h2>
               <StatusBadge status={openOrder.status} type="order" />
-              {openOrder.paymentModel === "token" ? (
+              {(openOrder.paymentModel ?? "token") === "token" ? (
                 <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
                   По токенам
                 </span>
@@ -461,7 +461,7 @@ export default function OrderPanel({
                     </div>
                   )}
                 </div>
-                {openOrder.paymentModel === "token" && (
+                {(openOrder.paymentModel ?? "token") === "token" && (
                   <div>
                     <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide">Списано токенов</p>
                     <p className="font-medium text-foreground">{openOrder.tokensCharged ?? 0} т</p>
