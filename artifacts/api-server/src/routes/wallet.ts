@@ -1136,6 +1136,7 @@ router.get("/credit-analytics", ops, async (req: any, res: any) => {
 
 // POST /api/wallet/repair-credit-limits — sync creditLimitTokens with creditTokensIssued
 router.post("/repair-credit-limits", adminOnly, async (req: any, res: any) => {
+  const fixBalances = req.query.fixBalances === "true";
   try {
     const rows = await db
       .select({
@@ -1143,34 +1144,58 @@ router.post("/repair-credit-limits", adminOnly, async (req: any, res: any) => {
         creditTokensIssued: masterWalletTable.creditTokensIssued,
         creditLimitTokens: masterWalletTable.creditLimitTokens,
         tokensBalance: masterWalletTable.tokensBalance,
+        totalTokensPurchased: masterWalletTable.totalTokensPurchased,
+        totalTokensSpent: masterWalletTable.totalTokensSpent,
+        totalTokensRefunded: masterWalletTable.totalTokensRefunded,
       })
       .from(masterWalletTable)
       .where(gt(masterWalletTable.creditTokensIssued, masterWalletTable.creditLimitTokens));
 
     const repaired: { masterId: number; oldLimit: number; newLimit: number; balance: number }[] = [];
+    const fixed: { masterId: number; oldBalance: number; newBalance: number }[] = [];
     for (const row of rows) {
       const issued = Number(row.creditTokensIssued ?? 0);
       const balance = Number(row.tokensBalance ?? 0);
-      const newSpent = balance < 0 ? Math.min(issued, -balance) : 0;
+      const oldLimit = Number(row.creditLimitTokens ?? 0);
+      const newLimit = issued;
+
+      let newBalance = balance;
+      let newSpent = balance < 0 ? Math.min(issued, -balance) : 0;
+
+      if (fixBalances) {
+        const purchased = Number(row.totalTokensPurchased ?? 0);
+        const spent = Number(row.totalTokensSpent ?? 0);
+        const refunded = Number(row.totalTokensRefunded ?? 0);
+        const expectedBalance = purchased + refunded - spent;
+        if (expectedBalance < 0 && balance > expectedBalance) {
+          newBalance = expectedBalance;
+          newSpent = Math.min(issued, -expectedBalance);
+          fixed.push({ masterId: row.masterId, oldBalance: balance, newBalance });
+        }
+      }
+
       await db
         .update(masterWalletTable)
         .set({
-          creditLimitTokens: String(issued),
+          creditLimitTokens: String(newLimit),
           creditTokensSpent: String(newSpent),
+          ...(fixBalances && newBalance !== balance ? { tokensBalance: String(newBalance) } : {}),
           updatedAt: new Date(),
         })
         .where(eq(masterWalletTable.masterId, row.masterId));
       repaired.push({
         masterId: row.masterId,
-        oldLimit: Number(row.creditLimitTokens ?? 0),
-        newLimit: issued,
-        balance,
+        oldLimit,
+        newLimit,
+        balance: newBalance,
       });
     }
 
     return res.json({
       success: true,
       repairedCount: repaired.length,
+      fixedBalancesCount: fixed.length,
+      fixed,
       repaired,
     });
   } catch (err: any) {

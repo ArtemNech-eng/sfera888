@@ -1069,6 +1069,7 @@ function DebtorsTab() {
   const [search, setSearch] = useState("");
   const [txModal, setTxModal] = useState<{ masterId: number; alias: string } | null>(null);
   const [repairLoading, setRepairLoading] = useState(false);
+  const [fixBalances, setFixBalances] = useState(false);
   const [debugModal, setDebugModal] = useState<{ masterId: number; alias: string } | null>(null);
 
   const { data, isLoading, error, refetch } = useQuery<CreditAnalyticsData>({
@@ -1105,13 +1106,19 @@ function DebtorsTab() {
     if (!confirm("Синхронизировать creditLimitTokens с creditTokensIssued для всех мастеров?")) return;
     setRepairLoading(true);
     try {
-      const r = await fetch("/api/wallet/repair-credit-limits", {
+      const url = fixBalances
+        ? "/api/wallet/repair-credit-limits?fixBalances=true"
+        : "/api/wallet/repair-credit-limits";
+      const r = await fetch(url, {
         method: "POST",
         credentials: "include",
       });
       const json = await r.json();
       if (!r.ok) throw new Error(json.error || "Ошибка");
-      alert(`Исправлено мастеров: ${json.repairedCount ?? 0}`);
+      const msg = fixBalances
+        ? `Исправлено мастеров: ${json.repairedCount ?? 0}\nИсправлено балансов: ${json.fixedBalancesCount ?? 0}`
+        : `Исправлено мастеров: ${json.repairedCount ?? 0}`;
+      alert(msg);
       refetch();
     } catch (e: any) {
       alert(e.message || "Ошибка");
@@ -1162,6 +1169,15 @@ function DebtorsTab() {
           {repairLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wrench className="w-3.5 h-3.5" />}
           Исправить лимиты
         </button>
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={fixBalances}
+            onChange={e => setFixBalances(e.target.checked)}
+            className="w-3.5 h-3.5 rounded border-gray-300 text-primary focus:ring-primary"
+          />
+          Исправить балансы
+        </label>
         <button
           onClick={handleExport}
           disabled={isLoading || !data}
