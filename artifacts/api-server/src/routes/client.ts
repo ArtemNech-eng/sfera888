@@ -439,6 +439,7 @@ router.post("/estimate/submit", async (req, res) => {
     comment: description?.trim() || null,
     photos: photoUrl ? JSON.stringify([photoUrl]) : null,
     source: "ai_estimate",
+    paymentModel: "token",
   }).returning();
 
   const [order] = await db.insert(ordersTable).values({
@@ -450,6 +451,7 @@ router.post("/estimate/submit", async (req, res) => {
     comment: lead.comment,
     status: "waiting_master",
     dispatchStatus: "none",
+    paymentModel: "token",
   }).returning();
 
   await db.update(leadsTable).set({ status: "sent_to_work", updatedAt: new Date() }).where(eq(leadsTable.id, lead.id));

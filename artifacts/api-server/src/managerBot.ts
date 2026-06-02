@@ -1817,6 +1817,7 @@ async function toolCreateLeadAndOrder(args: {
     source: "manager_bot",
     status: "sent_to_work",
     scheduledAt: args.scheduledAt ? new Date(args.scheduledAt) : null,
+    paymentModel: "token",
   }).returning();
 
   const [order] = await db.insert(ordersTable).values({
@@ -1828,6 +1829,7 @@ async function toolCreateLeadAndOrder(args: {
     status: "waiting_master",
     dispatchStatus: "none",
     scheduledAt: args.scheduledAt ? new Date(args.scheduledAt) : null,
+    paymentModel: "token",
   }).returning();
 
   await db.update(leadsTable).set({ status: "sent_to_work" }).where(eq(leadsTable.id, lead.id));

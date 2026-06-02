@@ -175,7 +175,7 @@ router.post("/", checkRateLimit, allLeadRoles, async (req, res) => {
     photos: Array.isArray(photos) && photos.length > 0 ? JSON.stringify(photos) : null,
     source: source ?? null,
     status: "new",
-    paymentModel: paymentModel === "commission" ? "commission" : "token",
+    paymentModel: source === "avito_partner" ? "token" : (paymentModel === "commission" ? "commission" : "token"),
   }).returning();
   const lead = result[0];
 
@@ -272,7 +272,9 @@ router.patch("/:id", checkRateLimit, allLeadRoles, async (req, res) => {
     updates.photos = Array.isArray(photos) && photos.length > 0 ? JSON.stringify(photos) : null;
   }
   if (paymentModel !== undefined) {
-    updates.paymentModel = paymentModel === "commission" ? "commission" : "token";
+    const [leadCheck] = await db.select({ source: leadsTable.source, trafficPartnerId: leadsTable.trafficPartnerId }).from(leadsTable).where(eq(leadsTable.id, id)).limit(1);
+    const isPartnerLead = leadCheck?.source === "avito_partner" || leadCheck?.trafficPartnerId != null;
+    updates.paymentModel = isPartnerLead ? "token" : (paymentModel === "commission" ? "commission" : "token");
   }
   if (services !== undefined && Array.isArray(services) && services.length > 0) {
     if (!validateServices(services)) return res.status(400).json({ error: "Некорректные данные услуг: проверьте тип, площадь и цену за м²" });
@@ -351,6 +353,7 @@ router.post("/:id/send-to-buffer", checkRateLimit, allLeadRoles, async (req, res
   await db.update(leadsTable).set({ status: "sent_to_work", updatedAt: new Date() }).where(eq(leadsTable.id, id));
   await db.execute(sql`UPDATE leads SET status_updated_at = NOW() WHERE id = ${id}`);
 
+  const isPartnerLead = lead.source === "avito_partner" || lead.trafficPartnerId != null;
   const orderResult = await db.insert(ordersTable).values({
     leadId: lead.id,
     city: lead.city,
@@ -361,7 +364,7 @@ router.post("/:id/send-to-buffer", checkRateLimit, allLeadRoles, async (req, res
     scheduledAt: lead.scheduledAt || null,
     comment: lead.comment,
     status: "waiting_master",
-    paymentModel: (lead as any).paymentModel || "token",
+    paymentModel: isPartnerLead ? "token" : ((lead as any).paymentModel || "token"),
     clientName: lead.clientName,
     clientPhone: lead.clientPhone,
   }).returning();

@@ -5,11 +5,17 @@ import { sendPushToMaster } from "./push.js";
 import { sendMaxMessage } from "../maxBot.js";
 
 // Telegram-бот удалён — мастера получают заявки только через PWA push и Max.
-function formatDate(d: Date | null | undefined): string {
+function formatDate(d: Date | string | null | undefined): string {
   if (!d) return "не указана";
-  return new Intl.DateTimeFormat("ru-RU", {
-    day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit",
-  }).format(new Date(d));
+  try {
+    const date = new Date(d);
+    if (isNaN(date.getTime())) return "не указана";
+    return new Intl.DateTimeFormat("ru-RU", {
+      day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit",
+    }).format(date);
+  } catch {
+    return "не указана";
+  }
 }
 
 export function buildOrderCard(order: any, orderId: number): string {
@@ -140,7 +146,7 @@ export async function performBroadcast(
     // Normalize: replace ё→е for fuzzy matching (prevents "шпаклевка" vs "шпаклёвка" misses)
     const normalizeRu = (s: string) => s.toLowerCase().replace(/ё/g, "е");
 
-    const orderTerms = order.serviceType
+    const orderTerms = (order.serviceType ?? "")
       .split(/[,;]+/)
       .map(t => normalizeRu(t.trim()))
       .filter(Boolean);
@@ -195,9 +201,7 @@ export async function performBroadcast(
       }).catch(() => {});
     }
     if (master.maxChatId) {
-      const date = order.scheduledAt
-        ? new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(order.scheduledAt))
-        : "не указана";
+      const date = formatDate(order.scheduledAt);
       sendMaxMessage(
         master.maxChatId,
         `📋 Новая заявка #${orderId}\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${date}${order.comment ? "\n💬 " + order.comment : ""}\n\n👉 Откликнитесь в приложении:\nhttps://sfera-master.ru/master-pwa/orders`

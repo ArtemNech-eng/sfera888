@@ -240,6 +240,7 @@ router.post("/test-order", ops, async (req, res) => {
     scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
     source: "test",
     status: "sent_to_work",
+    paymentModel: "token",
   }).returning();
 
   // Create the order linked to that lead
@@ -253,6 +254,7 @@ router.post("/test-order", ops, async (req, res) => {
     scheduledAt: lead.scheduledAt,
     status: "waiting_master",
     dispatchStatus: "dispatching",
+    paymentModel: "token",
   }).returning();
 
   // Send only to the specific master (PWA push + Max)
@@ -289,15 +291,20 @@ router.post("/test-order", ops, async (req, res) => {
 
 router.post("/:orderId/broadcast", ops, async (req, res) => {
   const orderId = parseInt(String(req.params.orderId));
-  const result = await performBroadcast(orderId);
-  if (!result.ok) {
-    return res.status(400).json({ error: result.error });
+  try {
+    const result = await performBroadcast(orderId);
+    if (!result.ok) {
+      return res.status(400).json({ error: result.error });
+    }
+    // Track broadcast time and count
+    if (result.sent > 0) {
+      await db.execute(sql`UPDATE orders SET broadcast_count = COALESCE(broadcast_count, 0) + 1, last_broadcast_at = NOW() WHERE id = ${orderId}`);
+    }
+    res.json({ ok: true, sent: result.sent, skipped: result.skipped });
+  } catch (err: any) {
+    console.error("Broadcast failed for order", orderId, err);
+    return res.status(500).json({ error: "Internal server error during broadcast", details: err?.message ?? String(err) });
   }
-  // Track broadcast time and count
-  if (result.sent > 0) {
-    await db.execute(sql`UPDATE orders SET broadcast_count = COALESCE(broadcast_count, 0) + 1, last_broadcast_at = NOW() WHERE id = ${orderId}`);
-  }
-  res.json({ ok: true, sent: result.sent, skipped: result.skipped });
 });
 
 // ─── POST /api/dispatch/:orderId/add-master/:masterId — add a single master to dispatch ──

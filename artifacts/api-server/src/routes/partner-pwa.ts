@@ -930,6 +930,7 @@ router.post("/leads", requirePartner, async (req: Request, res: Response) => {
         leadChannel: "avito_partner",
         isPossibleDuplicate,
         partnerLeadStatus,
+        paymentModel: "token",
       })
       .returning();
 

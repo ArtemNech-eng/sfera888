@@ -99,6 +99,7 @@ router.post("/leads", async (req: Request, res: Response) => {
         trafficPartnerId: partnerId,
         partnerLeadStatus: partnerId ? "waiting_master" : null,
         isPossibleDuplicate,
+        paymentModel: "token",
       })
       .returning();
 
