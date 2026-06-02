@@ -6,7 +6,7 @@ import {
 } from "recharts";
 import {
   Coins, TrendingUp, ShoppingCart, Clock, Download, Loader2,
-  Search, X, Target, TrendingDown, Minus, History, Wrench,
+  Search, X, Target, TrendingDown, Minus, History, Wrench, Bug,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -722,6 +722,63 @@ function MasterTransactionsModal({ masterId, alias, open, onClose }: { masterId:
   );
 }
 
+function DebugWalletModal({ masterId, alias, open, onClose }: { masterId: number; alias: string; open: boolean; onClose: () => void }) {
+  const { data, isLoading } = useQuery<{ wallet: any; transactions: any[] }>({
+    queryKey: ["wallet-debug", masterId],
+    queryFn: async () => {
+      const r = await fetch(`/api/wallet/${masterId}/debug`, { credentials: "include" });
+      if (!r.ok) throw new Error("Failed to fetch debug data");
+      return r.json();
+    },
+    enabled: open && !!masterId,
+  });
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div className="bg-card rounded-2xl border shadow-lg max-w-3xl w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="p-4 border-b flex items-center justify-between">
+          <h3 className="text-lg font-semibold">Debug — {alias}</h3>
+          <button onClick={onClose} className="p-1 hover:bg-muted rounded-lg"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="overflow-auto p-4">
+          {isLoading ? (
+            <div className="py-8 text-center text-muted-foreground"><Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />Загрузка…</div>
+          ) : (
+            <>
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-semibold text-muted-foreground">Wallet (raw)</h4>
+                  <button
+                    className="text-xs text-primary hover:underline"
+                    onClick={() => navigator.clipboard.writeText(JSON.stringify(data?.wallet ?? null, null, 2))}
+                  >
+                    Копировать
+                  </button>
+                </div>
+                <pre className="bg-muted/40 rounded-lg p-3 text-xs overflow-auto max-h-48">{JSON.stringify(data?.wallet ?? null, null, 2)}</pre>
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-semibold text-muted-foreground">Transactions (raw) — {data?.transactions?.length ?? 0}</h4>
+                  <button
+                    className="text-xs text-primary hover:underline"
+                    onClick={() => navigator.clipboard.writeText(JSON.stringify(data?.transactions ?? [], null, 2))}
+                  >
+                    Копировать
+                  </button>
+                </div>
+                <pre className="bg-muted/40 rounded-lg p-3 text-xs overflow-auto max-h-64">{JSON.stringify(data?.transactions ?? [], null, 2)}</pre>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MastersMatrix({ creditData }: { creditData?: CreditAnalyticsData }) {
   const [search, setSearch] = useState("");
   const [city, setCity] = useState("");
@@ -1012,6 +1069,7 @@ function DebtorsTab() {
   const [search, setSearch] = useState("");
   const [txModal, setTxModal] = useState<{ masterId: number; alias: string } | null>(null);
   const [repairLoading, setRepairLoading] = useState(false);
+  const [debugModal, setDebugModal] = useState<{ masterId: number; alias: string } | null>(null);
 
   const { data, isLoading, error, refetch } = useQuery<CreditAnalyticsData>({
     queryKey: ["/api/wallet/credit-analytics"],
@@ -1156,6 +1214,13 @@ function DebtorsTab() {
                       >
                         <History className="w-3.5 h-3.5" />
                       </button>
+                      <button
+                        className="p-1 hover:bg-amber-50 rounded-md text-amber-600 hover:text-amber-700"
+                        title="Debug — сырые данные"
+                        onClick={() => setDebugModal({ masterId: m.masterId, alias: m.alias })}
+                      >
+                        <Bug className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </td>
                   <td className="px-3 py-3 text-muted-foreground hidden md:table-cell text-xs">{m.city}</td>
@@ -1176,6 +1241,14 @@ function DebtorsTab() {
           alias={txModal.alias}
           open={!!txModal}
           onClose={() => setTxModal(null)}
+        />
+      )}
+      {debugModal && (
+        <DebugWalletModal
+          masterId={debugModal.masterId}
+          alias={debugModal.alias}
+          open={!!debugModal}
+          onClose={() => setDebugModal(null)}
         />
       )}
     </div>

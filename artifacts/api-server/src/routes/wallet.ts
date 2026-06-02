@@ -1179,6 +1179,24 @@ router.post("/repair-credit-limits", adminOnly, async (req: any, res: any) => {
   }
 });
 
+// GET /api/wallet/:masterId/debug — raw wallet + transactions for diagnostics
+router.get("/:masterId/debug", adminOnly, async (req: any, res: any, next: any) => {
+  const masterId = parseInt(String(req.params.masterId));
+  if (isNaN(masterId)) return next();
+
+  const walletRows = await db.select().from(masterWalletTable).where(eq(masterWalletTable.masterId, masterId));
+  const txRows = await db
+    .select()
+    .from(walletTransactionsTable)
+    .where(eq(walletTransactionsTable.masterId, masterId))
+    .orderBy(desc(walletTransactionsTable.createdAt));
+
+  return res.json({
+    wallet: walletRows[0] ?? null,
+    transactions: txRows,
+  });
+});
+
 // ─── Payment screenshot proxy ─────────────────────────────────────────────────
 router.get("/payment-screenshot/:masterId/:filename", async (req, res) => {
   try {
