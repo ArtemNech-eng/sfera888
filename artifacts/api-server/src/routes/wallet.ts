@@ -1100,7 +1100,7 @@ router.get("/credit-analytics", ops, async (req: any, res: any) => {
       })
       .from(mastersTable)
       .leftJoin(masterWalletTable, eq(mastersTable.id, masterWalletTable.masterId))
-      .where(isNull(mastersTable.deletedAt));
+      .where(and(isNull(mastersTable.deletedAt), eq(mastersTable.status, "active")));
 
     const masters = rows.map(r => {
       const balance = Number(r.tokensBalance ?? 0);
