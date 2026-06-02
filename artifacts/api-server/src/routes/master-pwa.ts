@@ -968,6 +968,27 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
       }).catch(() => {});
     }
 
+    // Send Telegram message to master via Max (same as manual assignment)
+    if (master.maxChatId) {
+      const assignedDate = order.scheduledAt
+        ? new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(order.scheduledAt))
+        : "уточните с клиентом";
+      sendMaxMessage(
+        master.maxChatId,
+        `✅ Вы назначены на заказ #${orderId}\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 Дата: ${assignedDate}${order.comment ? "\n💬 " + order.comment : ""}${lead ? `\n\n👤 Клиент: ${lead.clientName}\n📞 ${lead.clientPhone}` : ""}\n\n👉 Подробности в приложении:\nhttps://sfera-master.ru/master-pwa/orders`
+      ).catch(() => {});
+    }
+
+    // Insert message into CRM master chat
+    await db.insert(masterMessagesTable).values({
+      masterId,
+      telegramChatId: master.telegramId ?? `pwa_${master.id}`,
+      text: `✅ Автоназначение (токеновая модель): заказ #${orderId} — ${order.serviceType}, ${order.city}. Списано ${tokensCost} т.`,
+      fromMaster: false,
+      senderName: "Диспетчер",
+      isRead: false,
+    });
+
     return res.json({
       success: true,
       tokenModel: true,

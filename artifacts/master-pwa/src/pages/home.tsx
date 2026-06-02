@@ -1472,8 +1472,22 @@ export default function HomePage() {
       setSelectedAvail(order);
       return;
     }
-    try { await api.orders.respond(order.id); toast.success(`Отклик на заявку #${order.leadId ?? order.id} отправлен!`); load(); }
-    catch (e: any) { toast.error(e.message ?? "Ошибка"); }
+    // Pre-check token balance for token-model orders
+    if (order.paymentModel === "token" && (order.tokensCost ?? 1) > (walletBalance ?? 0)) {
+      toast.error(`Недостаточно токенов. Нужно: ${order.tokensCost ?? 1} т., доступно: ${walletBalance ?? 0} т.`, { duration: 4000 });
+      return;
+    }
+    try {
+      const result = await api.orders.respond(order.id);
+      toast.success(`Отклик на заявку #${order.leadId ?? order.id} отправлен!`);
+      load();
+    } catch (e: any) {
+      if (e.status === 402 || (e.message ?? "").includes("токен")) {
+        toast.error(e.message ?? "Недостаточно токенов для отклика на заявку.", { duration: 4000 });
+      } else {
+        toast.error(e.message ?? "Ошибка");
+      }
+    }
   };
 
   const handleSwipeReject = async (order: OrderCard) => {
