@@ -6,7 +6,7 @@ import {
 } from "recharts";
 import {
   Coins, TrendingUp, ShoppingCart, Clock, Download, Loader2,
-  Search, X, Target, TrendingDown, Minus, History, Wrench, Bug,
+  Search, X, Target, TrendingDown, Minus, History, Wrench, Bug, Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -1069,6 +1069,7 @@ function DebtorsTab() {
   const [search, setSearch] = useState("");
   const [txModal, setTxModal] = useState<{ masterId: number; alias: string } | null>(null);
   const [repairLoading, setRepairLoading] = useState(false);
+  const [createWalletsLoading, setCreateWalletsLoading] = useState(false);
   const [fixBalances, setFixBalances] = useState(false);
   const [debugModal, setDebugModal] = useState<{ masterId: number; alias: string } | null>(null);
 
@@ -1127,6 +1128,25 @@ function DebtorsTab() {
     }
   };
 
+  const handleCreateWallets = async () => {
+    if (!confirm("Создать кошельки для мастеров, у которых их нет?")) return;
+    setCreateWalletsLoading(true);
+    try {
+      const r = await fetch("/api/wallet/repair-missing-wallets", {
+        method: "POST",
+        credentials: "include",
+      });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error || "Ошибка");
+      alert(`Создано кошельков: ${json.createdCount ?? 0}`);
+      refetch();
+    } catch (e: any) {
+      alert(e.message || "Ошибка");
+    } finally {
+      setCreateWalletsLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {error && (
@@ -1168,6 +1188,14 @@ function DebtorsTab() {
         >
           {repairLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wrench className="w-3.5 h-3.5" />}
           Исправить лимиты
+        </button>
+        <button
+          onClick={handleCreateWallets}
+          disabled={createWalletsLoading || isLoading}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 hover:text-emerald-800 transition-colors disabled:opacity-50"
+        >
+          {createWalletsLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wallet className="w-3.5 h-3.5" />}
+          Создать кошельки
         </button>
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
           <input
