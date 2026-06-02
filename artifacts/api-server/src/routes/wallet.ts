@@ -1149,7 +1149,11 @@ router.post("/repair-credit-limits", adminOnly, async (req: any, res: any) => {
         totalTokensRefunded: masterWalletTable.totalTokensRefunded,
       })
       .from(masterWalletTable)
-      .where(gt(masterWalletTable.creditTokensIssued, masterWalletTable.creditLimitTokens));
+      .where(
+        fixBalances
+          ? sql`${masterWalletTable.creditTokensIssued} > ${sql.raw('0')}`
+          : gt(masterWalletTable.creditTokensIssued, masterWalletTable.creditLimitTokens)
+      );
 
     const repaired: { masterId: number; oldLimit: number; newLimit: number; balance: number }[] = [];
     const fixed: { masterId: number; oldBalance: number; newBalance: number }[] = [];
