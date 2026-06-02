@@ -157,6 +157,7 @@ router.get("/", allOrderRoles, async (req, res) => {
         photosBefore: (o as any).photosBefore ?? [],
         photosAfter: (o as any).photosAfter ?? [],
         photoAct: (o as any).photoAct ?? null,
+        paymentModel: o.paymentModel ?? "token",
         createdAt: o.createdAt,
         updatedAt: o.updatedAt,
         transactionInfo: tx ? {
@@ -224,6 +225,9 @@ router.get("/:id", allOrderRoles, async (req, res) => {
     photosBefore: (o as any).photosBefore ?? [],
     photosAfter: (o as any).photosAfter ?? [],
     photoAct: (o as any).photoAct ?? null,
+    paymentModel: o.paymentModel ?? "token",
+    tokensCharged: o.tokensCharged ? Number(o.tokensCharged) : 0,
+    manualTokenCost: o.manualTokenCost ? Number(o.manualTokenCost) : null,
     createdAt: o.createdAt,
     updatedAt: o.updatedAt,
     // Transaction info from finance (may exist even if order fields are empty)
@@ -240,7 +244,7 @@ router.get("/:id", allOrderRoles, async (req, res) => {
 router.patch("/:id", allOrderRoles, async (req, res) => {
   const id = parseInt(String(req.params.id as string));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid order ID" });
-  const { status, orderAmount, commission, clientRating, proposedAmount, acceptProposed, approveCancellation, rejectCancellation, restoreOrder, operatorNote, clientCancelReason, manualTokenCost } = req.body;
+  const { status, orderAmount, commission, clientRating, proposedAmount, acceptProposed, approveCancellation, rejectCancellation, restoreOrder, operatorNote, clientCancelReason, manualTokenCost, paymentModel } = req.body;
 
   // Fetch current order to get masterId before update
   const currentRows = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
@@ -253,6 +257,7 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
   if (operatorNote !== undefined) updates.operatorNote = operatorNote !== null ? operatorNote : null;
   if (clientCancelReason !== undefined) updates.operatorNote = clientCancelReason || null;
   if (manualTokenCost !== undefined) updates.manualTokenCost = manualTokenCost !== null ? String(manualTokenCost) : null;
+  if (paymentModel !== undefined) updates.paymentModel = paymentModel === "commission" ? "commission" : "token";
 
   // When operator directly cancels — close dispatches and reset dispatchStatus
   if (status === "cancelled" && current.status !== "cancelled") {

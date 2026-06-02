@@ -129,7 +129,7 @@ router.get("/check-phone", allLeadRoles, async (req, res) => {
 });
 
 router.post("/", checkRateLimit, allLeadRoles, async (req, res) => {
-  const { clientName, clientPhone, city, district, services, serviceType: rawServiceType, area: rawArea, scheduledAt, comment, source, photos } = req.body;
+  const { clientName, clientPhone, city, district, services, serviceType: rawServiceType, area: rawArea, scheduledAt, comment, source, photos, paymentModel } = req.body;
   if (!clientName || !clientPhone || !city || !district) {
     return res.status(400).json({ error: "Required fields missing" });
   }
@@ -175,6 +175,7 @@ router.post("/", checkRateLimit, allLeadRoles, async (req, res) => {
     photos: Array.isArray(photos) && photos.length > 0 ? JSON.stringify(photos) : null,
     source: source ?? null,
     status: "new",
+    paymentModel: paymentModel === "commission" ? "commission" : "token",
   }).returning();
   const lead = result[0];
 
@@ -200,6 +201,7 @@ router.post("/", checkRateLimit, allLeadRoles, async (req, res) => {
     services: parseServices(lead.services),
     cancellationReason: null,
     orderId: null,
+    paymentModel: lead.paymentModel ?? "token",
   });
 });
 
@@ -236,6 +238,7 @@ router.get("/:id", allLeadRoles, async (req, res) => {
     services: parseServices(l.services),
     cancellationReason: (l as any).cancellation_reason ?? null,
     orderId: orders[0]?.id ?? null,
+    paymentModel: l.paymentModel ?? "token",
   });
 });
 
@@ -255,7 +258,7 @@ router.get("/:id/events", allLeadRoles, async (req, res) => {
 router.patch("/:id", checkRateLimit, allLeadRoles, async (req, res) => {
   const id = parseInt(String(req.params.id as string));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid lead ID" });
-  const { clientName, clientPhone, city, district, serviceType, area, scheduledAt, comment, source, status, services, photos, cancellationReason } = req.body;
+  const { clientName, clientPhone, city, district, serviceType, area, scheduledAt, comment, source, status, services, photos, cancellationReason, paymentModel } = req.body;
   const updates: any = { updatedAt: new Date() };
   if (clientName !== undefined) updates.clientName = clientName;
   if (clientPhone !== undefined) updates.clientPhone = clientPhone;
@@ -267,6 +270,9 @@ router.patch("/:id", checkRateLimit, allLeadRoles, async (req, res) => {
   if (status !== undefined) updates.status = status;
   if (photos !== undefined) {
     updates.photos = Array.isArray(photos) && photos.length > 0 ? JSON.stringify(photos) : null;
+  }
+  if (paymentModel !== undefined) {
+    updates.paymentModel = paymentModel === "commission" ? "commission" : "token";
   }
   if (services !== undefined && Array.isArray(services) && services.length > 0) {
     if (!validateServices(services)) return res.status(400).json({ error: "Некорректные данные услуг: проверьте тип, площадь и цену за м²" });
@@ -331,6 +337,7 @@ router.patch("/:id", checkRateLimit, allLeadRoles, async (req, res) => {
     photos: l.photos ? JSON.parse(l.photos) : null,
     cancellationReason: cancellationReason ?? (l as any).cancellation_reason ?? null,
     orderId: orders[0]?.id ?? null,
+    paymentModel: l.paymentModel ?? "token",
   });
 });
 
@@ -351,9 +358,12 @@ router.post("/:id/send-to-buffer", checkRateLimit, allLeadRoles, async (req, res
     serviceType: lead.serviceType,
     area: lead.area,
     services: lead.services ?? null,
-    scheduledAt: lead.scheduledAt,
+    scheduledAt: lead.scheduledAt || null,
     comment: lead.comment,
     status: "waiting_master",
+    paymentModel: (lead as any).paymentModel || "token",
+    clientName: lead.clientName,
+    clientPhone: lead.clientPhone,
   }).returning();
   const order = orderResult[0];
 

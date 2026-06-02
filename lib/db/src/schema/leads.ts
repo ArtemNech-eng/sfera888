@@ -36,6 +36,7 @@ export const leadsTable = pgTable("leads", {
   isPossibleDuplicate: boolean("is_possible_duplicate").default(false),
   partnerLeadStatus: varchar("partner_lead_status", { length: 50 }),
   partnerRejectionReason: varchar("partner_rejection_reason", { length: 500 }),
+  paymentModel: varchar("payment_model", { length: 50 }).notNull().default("token"),
 }, (t) => ({
   // Поддержка частых выборок: задачи "Что делать сейчас", лента активных заявок,
   // быстрый поиск по телефону при создании заявки.

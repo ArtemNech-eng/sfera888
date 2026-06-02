@@ -40,6 +40,7 @@ export default function CreateLeadModal({
     comment: "",
     scheduledAt: "",
     source: "",
+    paymentModel: "token" as "token" | "commission",
   });
   const [serviceRows, setServiceRows] = useState<ServiceRow[]>([
     { type: "", area: "", pricePerM2: "" },
@@ -70,6 +71,7 @@ export default function CreateLeadModal({
       comment: "",
       scheduledAt: "",
       source: "",
+      paymentModel: "token",
     });
     setServiceRows([{ type: "", area: "", pricePerM2: "" }]);
     setPhotosPaths([]);
@@ -202,6 +204,7 @@ export default function CreateLeadModal({
     createLead({
       data: {
         ...formData,
+        scheduledAt: formData.scheduledAt || null,
         services: srvs as any,
         serviceType: srvs.map((s) => s.type).join(", "),
         area: srvs.reduce((sum, s) => sum + s.area, 0),
@@ -559,6 +562,37 @@ export default function CreateLeadModal({
                       ))}
                     </select>
                   </div>
+                </div>
+              </div>
+
+              {/* Payment model toggle */}
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-gray-700">
+                  Модель оплаты
+                </label>
+                <div className="flex rounded-xl border border-gray-200 bg-white p-1 gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, paymentModel: "token" })}
+                    className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                      formData.paymentModel === "token"
+                        ? "bg-primary text-white shadow-sm"
+                        : "text-gray-500 hover:bg-gray-50"
+                    }`}
+                  >
+                    По токенам
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, paymentModel: "commission" })}
+                    className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                      formData.paymentModel === "commission"
+                        ? "bg-primary text-white shadow-sm"
+                        : "text-gray-500 hover:bg-gray-50"
+                    }`}
+                  >
+                    Обычная комиссия
+                  </button>
                 </div>
               </div>
             </div>
