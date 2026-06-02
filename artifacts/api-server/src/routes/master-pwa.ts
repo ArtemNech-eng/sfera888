@@ -861,7 +861,8 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
   }
 
   // ── TOKEN MODEL: auto-assign, deduct tokens, return client contact ────────
-  if ((order as any).paymentModel === "token") {
+  const orderPaymentModel = (order as any).paymentModel;
+  if (orderPaymentModel === "token" || orderPaymentModel == null) {
     const { cost: tokensCost } = await getOrderTokenCost({ serviceType: order.serviceType, area: order.area ? Number(order.area) : null, manualTokenCost: (order as any).manualTokenCost ?? null, city: order.city ?? null });
 
     // Pre-check balance (fast path — avoid opening tx if insufficient)
