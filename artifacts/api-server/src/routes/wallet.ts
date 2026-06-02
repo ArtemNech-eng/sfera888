@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, masterWalletTable, walletTransactionsTable, tokenPackagesTable, ordersTable, mastersTable, systemSettingsTable } from "@workspace/db";
-import { eq, desc, and, inArray, sql, count, gt } from "drizzle-orm";
+import { eq, desc, and, inArray, sql, count, gt, isNull } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
 import { requireMasterAuth } from "../middlewares/requireMaster.js";
 import { refundTokens, checkTokenBalance } from "../lib/tokenWallet.js";
@@ -1090,7 +1090,7 @@ router.get("/credit-analytics", ops, async (req: any, res: any) => {
   try {
     const rows = await db
       .select({
-        masterId: masterWalletTable.masterId,
+        masterId: mastersTable.id,
         alias: mastersTable.alias,
         city: mastersTable.city,
         tokensBalance: masterWalletTable.tokensBalance,
@@ -1098,8 +1098,9 @@ router.get("/credit-analytics", ops, async (req: any, res: any) => {
         creditTokensIssued: masterWalletTable.creditTokensIssued,
         creditTokensSpent: masterWalletTable.creditTokensSpent,
       })
-      .from(masterWalletTable)
-      .leftJoin(mastersTable, eq(masterWalletTable.masterId, mastersTable.id));
+      .from(mastersTable)
+      .leftJoin(masterWalletTable, eq(mastersTable.id, masterWalletTable.masterId))
+      .where(isNull(mastersTable.deletedAt));
 
     const masters = rows.map(r => {
       const balance = Number(r.tokensBalance ?? 0);
@@ -1204,6 +1205,32 @@ router.post("/repair-credit-limits", adminOnly, async (req: any, res: any) => {
     });
   } catch (err: any) {
     console.error("[wallet/repair-credit-limits]", err);
+    return res.status(500).json({ error: "Ошибка сервера" });
+  }
+});
+
+// POST /api/wallet/repair-missing-wallets — create wallet rows for masters without one
+router.post("/repair-missing-wallets", adminOnly, async (req: any, res: any) => {
+  try {
+    const allMasters = await db.select({ id: mastersTable.id }).from(mastersTable).where(isNull(mastersTable.deletedAt));
+    const existingWallets = await db.select({ masterId: masterWalletTable.masterId }).from(masterWalletTable);
+    const existingIds = new Set(existingWallets.map(w => w.masterId));
+
+    const created: number[] = [];
+    for (const m of allMasters) {
+      if (!existingIds.has(m.id)) {
+        await db.insert(masterWalletTable).values({ masterId: m.id });
+        created.push(m.id);
+      }
+    }
+
+    return res.json({
+      success: true,
+      createdCount: created.length,
+      created,
+    });
+  } catch (err: any) {
+    console.error("[wallet/repair-missing-wallets]", err);
     return res.status(500).json({ error: "Ошибка сервера" });
   }
 });

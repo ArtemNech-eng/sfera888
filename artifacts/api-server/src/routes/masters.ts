@@ -4,6 +4,7 @@ import { eq, desc, inArray, isNull, isNotNull, ne, count, gte, avg, sql, and } f
 import { requireRole } from "../middlewares/requireAuth.js";
 import { logMaxEvent } from "../maxBot.js";
 import { hashPassword } from "../lib/auth.js";
+import { ensureWallet } from "../lib/tokenWallet.js";
 import multer from "multer";
 import { Readable } from "stream";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
@@ -178,6 +179,7 @@ router.post("/", requireRole("admin"), async (req, res) => {
     telegramId: telegramId ?? null,
     phone: phone ?? null,
   }).returning();
+  await ensureWallet(result[0].id);
   return res.status(201).json(formatMaster(result[0]));
 });
 

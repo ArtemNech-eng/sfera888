@@ -153,6 +153,7 @@ router.post("/auth/register", registerRateLimit, async (req, res) => {
   }).returning();
 
   (req.session as any).masterId = inserted.id;
+  await ensureWallet(inserted.id);
 
   // Log new self-registered master
   console.log(`[auth] self-register: new master ${inserted.id} (${inserted.alias}, ${inserted.city})`);
