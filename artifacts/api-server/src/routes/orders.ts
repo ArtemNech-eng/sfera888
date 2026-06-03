@@ -257,7 +257,11 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
   if (operatorNote !== undefined) updates.operatorNote = operatorNote !== null ? operatorNote : null;
   if (clientCancelReason !== undefined) updates.operatorNote = clientCancelReason || null;
   if (manualTokenCost !== undefined) updates.manualTokenCost = manualTokenCost !== null ? String(manualTokenCost) : null;
-  if (paymentModel !== undefined) updates.paymentModel = paymentModel === "commission" ? "commission" : "token";
+  if (paymentModel !== undefined) {
+    const [leadCheck] = await db.select({ source: leadsTable.source, trafficPartnerId: leadsTable.trafficPartnerId }).from(leadsTable).where(eq(leadsTable.id, current.leadId ?? 0)).limit(1);
+    const isPartnerOrder = leadCheck?.source === "avito_partner" || leadCheck?.trafficPartnerId != null;
+    updates.paymentModel = isPartnerOrder ? "token" : (paymentModel === "commission" ? "commission" : "token");
+  }
 
   // When operator directly cancels — close dispatches and reset dispatchStatus
   if (status === "cancelled" && current.status !== "cancelled") {

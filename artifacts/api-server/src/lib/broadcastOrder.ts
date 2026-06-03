@@ -1,5 +1,5 @@
 import { db, ordersTable, mastersTable, orderDispatchesTable } from "@workspace/db";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { sendPushToMaster } from "./push.js";
 import { sendMaxMessage } from "../maxBot.js";
 
@@ -201,16 +201,22 @@ export async function performBroadcast(
   // ── BULK INSERT dispatch records ──
   const masterIds = availableEligible.map(m => m.id);
   if (masterIds.length > 0) {
-    const values = masterIds.map(mid =>
-      `(${orderId}, ${mid}, 'pwa_${mid}', null, 'sent')`
-    ).join(", ");
-    await db.execute(sql`INSERT INTO order_dispatches (order_id, master_id, telegram_chat_id, telegram_message_id, status) VALUES ${sql.raw(values)}`);
+    await db.insert(orderDispatchesTable).values(
+      masterIds.map(mid => ({
+        orderId,
+        masterId: mid,
+        telegramChatId: `pwa_${mid}`,
+        telegramMessageId: null,
+        status: "sent" as const,
+      }))
+    );
   }
 
   // ── BULK UPDATE master stats ──
   if (masterIds.length > 0) {
-    const idList = masterIds.join(",");
-    await db.execute(sql`UPDATE masters SET total_leads_received = total_leads_received + 1, updated_at = NOW() WHERE id IN (${sql.raw(idList)})`);
+    await db.update(mastersTable)
+      .set({ totalLeadsReceived: sql`${mastersTable.totalLeadsReceived} + 1` })
+      .where(inArray(mastersTable.id, masterIds));
   }
 
   // ── PARALLEL PUSH / MAX (batched, 10 at a time) ──
