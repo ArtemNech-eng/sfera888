@@ -28,7 +28,7 @@ export async function ensureWallet(masterId: number) {
 
   const [inserted] = await db
     .insert(masterWalletTable)
-    .values({ masterId })
+    .values({ masterId, creditLimitTokens: "5" })
     .returning();
   return inserted;
 }
