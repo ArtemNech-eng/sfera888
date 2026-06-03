@@ -10,7 +10,7 @@ import {
   DollarSign, Check, Pencil, AlertCircle, MessageSquare, Trash2, Search,
   ClipboardList, CalendarDays, ChevronDown, AlertTriangle,
   FileText, History, Timer, RefreshCw, CopyX, XCircle, ReceiptText, ExternalLink, Plus, Copy,
-  Bell, Printer, Lock, Banknote,
+  Bell, Printer, Lock, Banknote, Diamond,
 } from "lucide-react";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -218,7 +218,10 @@ export default function Orders() {
   const [dateFilter, setDateFilter] = useState<"all"|"today"|"yesterday"|"week"|"month">("all");
   const [statusFilter, setStatusFilter] = useState<string>("active");
   const [cityFilter, setCityFilter] = useState<string>("all");
-  const [paymentModelFilter, setPaymentModelFilter] = useState<string>("all");
+  const [paymentModelFilter, setPaymentModelFilter] = useState<string>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("pm") ?? "all";
+  });
   const highlightId = parseInt(new URLSearchParams(window.location.search).get("highlight") ?? "") || null;
   const highlightRowRef = useRef<HTMLTableRowElement | null>(null);
 
@@ -242,6 +245,18 @@ export default function Orders() {
       highlightRowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
     }
   }, [highlightId, orders]);
+
+  // Sync paymentModel filter with URL
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (paymentModelFilter !== "all") {
+      url.searchParams.set("pm", paymentModelFilter);
+    } else {
+      url.searchParams.delete("pm");
+    }
+    window.history.replaceState({}, "", url);
+  }, [paymentModelFilter]);
+
   const { data: dispatchData, isLoading: dispatchLoading } = useDispatch(openDispatchId);
 
   const broadcastMutation = useMutation({
@@ -598,6 +613,13 @@ export default function Orders() {
   const cancellationOrders = orders?.filter(o => o.status === "cancellation_requested" as any) ?? [];
   const pendingResponseOrders = pendingDispatches ?? [];
 
+  const getOrderPaymentModel = (orderId: number) => {
+    const o = orders?.find(x => x.id === orderId);
+    return ((o as any)?.paymentModel ?? "token") as string;
+  };
+  const tokenPendingResponses = pendingResponseOrders.filter(p => getOrderPaymentModel(p.orderId) === "token");
+  const commissionPendingResponses = pendingResponseOrders.filter(p => getOrderPaymentModel(p.orderId) === "commission");
+
   const availableCities = useMemo(() => {
     if (!orders) return [];
     const cities = Array.from(new Set(orders.map(o => o.city).filter(Boolean) as string[]));
@@ -650,6 +672,15 @@ export default function Orders() {
       if (paymentModelFilter !== "all" && ((o as any).paymentModel ?? "token") !== paymentModelFilter) return false;
 
       return true;
+    }).sort((a, b) => {
+      // When showing all, token orders come first
+      if (paymentModelFilter === "all") {
+        const aToken = ((a as any).paymentModel ?? "token") === "token" ? 1 : 0;
+        const bToken = ((b as any).paymentModel ?? "token") === "token" ? 1 : 0;
+        if (aToken !== bToken) return bToken - aToken;
+      }
+      // Within group, sort by createdAt desc (newest first)
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
   }, [orders, search, dateFilter, statusFilter, cityFilter, paymentModelFilter]);
 
@@ -757,16 +788,64 @@ export default function Orders() {
             </div>
           )}
 
-          {/* Pending responses banner */}
-          {pendingResponseOrders.length > 0 && (
+          {/* Token pending responses banner */}
+          {tokenPendingResponses.length > 0 && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 space-y-2">
+              <div className="flex items-center gap-2 text-emerald-800 font-semibold text-sm mb-1">
+                <Diamond className="w-4 h-4" />
+                {tokenPendingResponses.length === 1
+                  ? `1 токеновая заявка — есть отклики`
+                  : `${tokenPendingResponses.length} токеновые заявки — есть отклики`}
+              </div>
+              {tokenPendingResponses.map(item => (
+                <div key={item.orderId} className="bg-white rounded-xl border border-emerald-100 px-4 py-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
+                      <span className="font-medium text-foreground">#{item.orderId}</span>
+                      <span className="text-muted-foreground">·</span>
+                      <span className="text-foreground">{item.serviceType}</span>
+                      <span className="text-muted-foreground">·</span>
+                      <span className="text-muted-foreground text-xs">{item.city}{item.district ? `, ${item.district}` : ""}</span>
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-100 rounded-full px-2 py-0.5">
+                        <UserCheck className="w-3 h-3" />
+                        {item.respondentCount} {item.respondentCount === 1 ? "отклик" : item.respondentCount < 5 ? "отклика" : "откликов"}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setOpenDispatchId(item.orderId)}
+                      className="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 text-white hover:bg-emerald-600 rounded-lg font-medium text-xs transition-colors"
+                    >
+                      <UserCheck className="w-3 h-3" />
+                      Назначить мастера
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {item.respondents.map(r => (
+                      <button
+                        key={r.masterId}
+                        onClick={() => openMasterChat(r.masterId)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-50 rounded-lg text-xs font-medium transition-colors"
+                      >
+                        <MessageSquare className="w-3 h-3" />
+                        {r.masterName}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Commission pending responses banner */}
+          {commissionPendingResponses.length > 0 && (
             <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 space-y-2">
               <div className="flex items-center gap-2 text-blue-800 font-semibold text-sm mb-1">
                 <Users className="w-4 h-4" />
-                {pendingResponseOrders.length === 1
-                  ? `1 заявка — есть отклики от мастеров`
-                  : `${pendingResponseOrders.length} заявки — есть отклики от мастеров`}
+                {commissionPendingResponses.length === 1
+                  ? `1 комиссионная заявка — есть отклики`
+                  : `${commissionPendingResponses.length} комиссионные заявки — есть отклики`}
               </div>
-              {pendingResponseOrders.map(item => (
+              {commissionPendingResponses.map(item => (
                 <div key={item.orderId} className="bg-white rounded-xl border border-blue-100 px-4 py-3 space-y-2">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
@@ -987,22 +1066,35 @@ export default function Orders() {
                   </div>
                 )}
 
-                {/* Payment model filter */}
-                <div className="relative">
-                  <select
-                    value={paymentModelFilter}
-                    onChange={e => setPaymentModelFilter(e.target.value)}
-                    className={`appearance-none pl-3 pr-7 py-1 rounded-xl text-xs font-medium border transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 ${
-                      paymentModelFilter !== "all"
-                        ? "bg-amber-50 border-amber-300 text-amber-700"
-                        : "bg-background border-border/60 text-muted-foreground hover:bg-slate-100"
-                    }`}
-                  >
-                    <option value="all">Все модели</option>
-                    <option value="token">Токены</option>
-                    <option value="commission">Комиссия</option>
-                  </select>
-                  <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
+                {/* Payment model tabs */}
+                <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-0.5">
+                  {([
+                    { key: "all", label: "Все" },
+                    { key: "token", label: "Токены", icon: Diamond },
+                    { key: "commission", label: "Комиссия", icon: Banknote },
+                  ] as const).map(t => {
+                    const isActive = paymentModelFilter === t.key;
+                    const count = t.key === "all" ? orders?.length ?? 0
+                      : orders?.filter(o => ((o as any).paymentModel ?? "token") === t.key).length ?? 0;
+                    const Icon = t.icon;
+                    return (
+                      <button
+                        key={t.key}
+                        onClick={() => setPaymentModelFilter(t.key)}
+                        className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+                          isActive
+                            ? "bg-white text-foreground shadow-sm ring-1 ring-black/5"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {Icon && <Icon className="w-3 h-3" />}
+                        <span>{t.label}</span>
+                        <span className={`ml-0.5 text-[10px] ${isActive ? "text-muted-foreground" : "text-muted-foreground/60"}`}>
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
 
               </div>
@@ -1040,12 +1132,15 @@ export default function Orders() {
                     const pendingResp = pendingResponseOrders.find(p => p.orderId === order.id);
                     const waitH = (Date.now() - new Date(order.createdAt).getTime()) / 3600000;
                     const openPanel = () => { setOpenDispatchId(order.id); broadcastMutation.reset(); };
+                    const isToken = ((order as any).paymentModel ?? "token") === "token";
                     return (
                       <tr
                         key={order.id}
                         ref={order.id === highlightId ? highlightRowRef : undefined}
                         onClick={openPanel}
                         className={`cursor-pointer transition-colors ${
+                          isToken ? "border-l-4 border-l-emerald-400 " : ""
+                        }${
                           order.status === "cancelled"
                             ? "opacity-50 bg-slate-50/60 hover:opacity-70"
                             : order.id === highlightId ? "bg-primary/5 ring-2 ring-inset ring-primary/40 hover:bg-slate-50"
