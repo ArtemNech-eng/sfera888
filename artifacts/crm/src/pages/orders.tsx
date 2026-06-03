@@ -276,6 +276,7 @@ export default function Orders() {
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dispatch", openDispatchId] });
     },
+    onError: (e: Error) => toast({ title: "Ошибка назначения", description: e.message, variant: "destructive" }),
   });
 
   const acceptProposedMutation = useMutation({

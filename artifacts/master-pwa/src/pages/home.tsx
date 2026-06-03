@@ -782,18 +782,11 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock, wall
   };
 
   const handleRespond = async () => {
-    if (order.paymentModel === "token" && (order.tokensCost ?? 1) > (walletBalance ?? 0)) {
-      setState("insufficient_tokens");
-      return;
-    }
     setState("loading");
     try {
       const result = await api.orders.respond(order.id, priceNote.trim() || undefined);
       if (result?.insufficientTokens) {
         setState("insufficient_tokens");
-      } else if (result?.tokenModel) {
-        toast.success("\u0417\u0430\u044f\u0432\u043a\u0430 \u0432\u0430\u0448\u0430! \u041a\u043e\u043d\u0442\u0430\u043a\u0442 \u043a\u043b\u0438\u0435\u043d\u0442\u0430 \u043e\u0442\u043a\u0440\u044b\u0442.");
-        onRespond();
       } else if (result?.needsContract) {
         setContractFlags({ contractSigned: !!result.contractSigned, passportVerified: !!result.passportVerified });
         setState("needs_contract");
@@ -1470,11 +1463,6 @@ export default function HomePage() {
       api.fomoBlockPress(order.id, fomoBlock.reason ?? null).catch(() => {});
       toast.error("Отклик заблокирован. Откройте заявку для деталей.", { duration: 3000 });
       setSelectedAvail(order);
-      return;
-    }
-    // Pre-check token balance for token-model orders
-    if (order.paymentModel === "token" && (order.tokensCost ?? 1) > (walletBalance ?? 0)) {
-      toast.error(`Недостаточно токенов. Нужно: ${order.tokensCost ?? 1} т., доступно: ${walletBalance ?? 0} т.`, { duration: 4000 });
       return;
     }
     try {
