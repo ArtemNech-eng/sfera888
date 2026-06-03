@@ -1069,10 +1069,10 @@ export default function Orders() {
                 {/* Payment model tabs */}
                 <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-0.5">
                   {([
-                    { key: "all", label: "Все" },
-                    { key: "token", label: "Токены", icon: Diamond },
-                    { key: "commission", label: "Комиссия", icon: Banknote },
-                  ] as const).map(t => {
+                    { key: "all" as string, label: "Все", icon: undefined },
+                    { key: "token" as string, label: "Токены", icon: Diamond },
+                    { key: "commission" as string, label: "Комиссия", icon: Banknote },
+                  ]).map(t => {
                     const isActive = paymentModelFilter === t.key;
                     const count = t.key === "all" ? orders?.length ?? 0
                       : orders?.filter(o => ((o as any).paymentModel ?? "token") === t.key).length ?? 0;

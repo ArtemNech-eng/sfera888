@@ -17,7 +17,7 @@ import {
   AlertTriangle, Bell, Bot, CheckCircle2, ChevronDown, ChevronUp,
   Clock, Filter, Inbox, MapPin, Radio, RefreshCw, Search,
   TrendingUp, User, Wallet, ArrowUpDown, MoreHorizontal,
-  Circle, CircleDot, ArrowRight,
+  Circle, CircleDot, ArrowRight, Diamond, Banknote,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -75,6 +75,7 @@ interface Card {
   status: string;
   problemReason?: string;
   responseCount?: number;
+  paymentModel?: string;
 }
 
 export interface TableRowData extends Card {
@@ -83,6 +84,7 @@ export interface TableRowData extends Card {
   isProblem: boolean;
   columnKey: ColumnKey;
   clientName?: string;
+  paymentModel?: string;
 }
 
 interface TableResponse {
@@ -200,6 +202,7 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [globalFilter, setGlobalFilter] = useState("");
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 50 });
+  const [paymentModelFilter, setPaymentModelFilter] = useState<string>("all");
   
   // Query params
   const queryParams = useMemo(() => {
@@ -245,6 +248,34 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
     },
     refetchInterval: 15_000,
   });
+
+  // Fetch orders for paymentModel enrichment
+  const { data: ordersData } = useQuery<{ rows: any[] }>({
+    queryKey: ["/api/orders"],
+    queryFn: async () => {
+      const r = await fetch("/api/orders", { credentials: "include" });
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+    refetchInterval: 15_000,
+  });
+
+  const enrichedData = useMemo(() => {
+    if (!data) return null;
+    const orderMap = new Map((ordersData?.rows ?? []).map((o: any) => [o.id, (o as any).paymentModel ?? "token"]));
+    let rows = data.rows.map(row => ({
+      ...row,
+      paymentModel: orderMap.get(row.orderId) ?? "token",
+    }));
+    if (paymentModelFilter !== "all") {
+      rows = rows.filter(row => row.paymentModel === paymentModelFilter);
+    }
+    return {
+      ...data,
+      rows,
+      total: rows.length,
+    };
+  }, [data, ordersData, paymentModelFilter]);
 
   // SSE for live updates
   useEffect(() => {
@@ -337,9 +368,20 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
           </Button>
         ),
         cell: ({ row }) => (
-          <Button variant="link" className="font-mono font-bold p-0 h-auto" onClick={() => onOpenOrder(row.original.orderId)}>
-            #{row.original.orderId}
-          </Button>
+          <div className="flex flex-col gap-0.5">
+            <Button variant="link" className="font-mono font-bold p-0 h-auto" onClick={() => onOpenOrder(row.original.orderId)}>
+              #{row.original.orderId}
+            </Button>
+            {row.original.paymentModel === "token" ? (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 w-fit">
+                <Diamond className="w-2.5 h-2.5 mr-0.5" /> Токены
+              </span>
+            ) : (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-50 text-slate-600 border border-slate-200 w-fit">
+                <Banknote className="w-2.5 h-2.5 mr-0.5" /> Комиссия
+              </span>
+            )}
+          </div>
         ),
         size: 80,
       },
@@ -504,8 +546,8 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
   );
 
   // Table instance
-  const table = useReactTable({
-    data: data?.rows || [],
+  const table = useReactTable<TableRowData>({
+    data: enrichedData?.rows || [],
     columns,
     state: { sorting, columnFilters, globalFilter, pagination },
     onSortingChange: setSorting,
@@ -519,7 +561,7 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
     manualPagination: true,
     manualFiltering: true,
     manualSorting: true,
-    pageCount: data ? Math.ceil(data.total / pagination.pageSize) : -1,
+    pageCount: enrichedData ? Math.ceil(enrichedData.total / pagination.pageSize) : -1,
   });
 
   // Container ref for scrolling
@@ -584,20 +626,51 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
           />
         </div>
         <div className="flex gap-2 overflow-x-auto pb-2">
+          {/* Payment model tabs mobile */}
+          <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-0.5 flex-shrink-0">
+            {([
+              { key: "all" as string, label: "Все", icon: undefined },
+              { key: "token" as string, label: "Токены", icon: Diamond },
+              { key: "commission" as string, label: "Комиссия", icon: Banknote },
+            ]).map(t => {
+              const isActive = paymentModelFilter === t.key;
+              const count = t.key === "all" ? (enrichedData?.rows.length ?? data?.total ?? 0)
+                : enrichedData?.rows.filter(r => r.paymentModel === t.key).length ?? 0;
+              const Icon = t.icon;
+              return (
+                <button
+                  key={t.key}
+                  onClick={() => setPaymentModelFilter(t.key)}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+                    isActive
+                      ? "bg-white text-foreground shadow-sm ring-1 ring-black/5"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {Icon && <Icon className="w-3 h-3" />}
+                  <span>{t.label}</span>
+                  <span className={`ml-0.5 text-[10px] ${isActive ? "text-muted-foreground" : "text-muted-foreground/60"}`}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
           <Button variant="outline" size="sm" onClick={() => {
             setColumnFilters(prev => prev.filter(f => f.id !== "hasCommissionLeft"));
             setColumnFilters(prev => [...prev, { id: "hasCommissionLeft", value: true }]);
           }}>
-            С остатком комиссии
+            С остатком
           </Button>
           <Button variant="outline" size="sm" onClick={() => {
             setColumnFilters(prev => prev.filter(f => f.id !== "problemOnly"));
             setColumnFilters(prev => [...prev, { id: "problemOnly", value: true }]);
           }}>
-            Только проблемы
+            Проблемы
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setColumnFilters([])}>
-            Сбросить фильтры
+          <Button variant="outline" size="sm" onClick={() => { setColumnFilters([]); setPaymentModelFilter("all"); }}>
+            Сбросить
           </Button>
         </div>
 
@@ -610,17 +683,28 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
         {isLoading && !data && (
           <div className="text-center py-8 text-muted-foreground">Загрузка...</div>
         )}
-        {!isLoading && data && data.rows.length === 0 && (
+        {!isLoading && enrichedData && enrichedData.rows.length === 0 && (
           <div className="text-center py-8 text-muted-foreground">
             Заявок не найдено
           </div>
         )}
-        {data?.rows.map(row => (
-          <div key={row.id} className="bg-card border border-border rounded-xl p-4 space-y-3">
+        {enrichedData?.rows.map(row => (
+          <div key={row.id} className={`bg-card border ${row.paymentModel === "token" ? "border-l-4 border-l-emerald-400 border-emerald-200" : "border-border"} rounded-xl p-4 space-y-3`}>
             <div className="flex items-start justify-between">
-              <Button variant="link" className="p-0 font-bold" onClick={() => onOpenOrder(row.orderId)}>
-                #{row.orderId}
-              </Button>
+              <div className="flex flex-col gap-0.5">
+                <Button variant="link" className="p-0 font-bold h-auto" onClick={() => onOpenOrder(row.orderId)}>
+                  #{row.orderId}
+                </Button>
+                {row.paymentModel === "token" ? (
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 w-fit">
+                    <Diamond className="w-2.5 h-2.5 mr-0.5" /> Токены
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-50 text-slate-600 border border-slate-200 w-fit">
+                    <Banknote className="w-2.5 h-2.5 mr-0.5" /> Комиссия
+                  </span>
+                )}
+              </div>
               <StatusBadge columnKey={row.columnKey} />
             </div>
             <div className="space-y-2">
@@ -759,6 +843,39 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
           />
         </div>
         <div className="flex items-center gap-2">
+          {/* Payment model tabs */}
+          <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-0.5">
+            {([
+              { key: "all" as string, label: "Все", icon: undefined },
+              { key: "token" as string, label: "Токены", icon: Diamond },
+              { key: "commission" as string, label: "Комиссия", icon: Banknote },
+            ]).map(t => {
+              const isActive = paymentModelFilter === t.key;
+              const count = t.key === "all" ? (enrichedData?.rows.length ?? data?.total ?? 0)
+                : enrichedData?.rows.filter(r => r.paymentModel === t.key).length ?? 0;
+              const Icon = t.icon;
+              return (
+                <button
+                  key={t.key}
+                  onClick={() => setPaymentModelFilter(t.key)}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+                    isActive
+                      ? "bg-white text-foreground shadow-sm ring-1 ring-black/5"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {Icon && <Icon className="w-3 h-3" />}
+                  <span>{t.label}</span>
+                  <span className={`ml-0.5 text-[10px] ${isActive ? "text-muted-foreground" : "text-muted-foreground/60"}`}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="h-4 w-px bg-border/50" />
+
           <Filter className="h-4 w-4 text-muted-foreground" />
           <select
             className="bg-background border border-input rounded-md px-3 py-1 text-sm"
@@ -845,16 +962,19 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
                   </TableCell>
                 </TableRow>
               ) : (
-                table.getRowModel().rows.map(row => (
-                  <TableRow key={row.id} data-state={row.getIsSelected() && "selected"}
-                           className={row.original.isProblem ? "bg-red-50/30 hover:bg-red-50/50" : ""}>
-                    {row.getVisibleCells().map(cell => (
-                      <TableCell key={cell.id}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))
+                table.getRowModel().rows.map(row => {
+                  const isToken = row.original.paymentModel === "token";
+                  return (
+                    <TableRow key={row.id} data-state={row.getIsSelected() && "selected"}
+                             className={`${row.original.isProblem ? "bg-red-50/30 hover:bg-red-50/50" : ""} ${isToken ? "border-l-4 border-l-emerald-400" : ""}`}>
+                      {row.getVisibleCells().map(cell => (
+                        <TableCell key={cell.id}>
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
