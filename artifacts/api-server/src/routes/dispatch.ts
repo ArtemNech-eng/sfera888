@@ -291,20 +291,19 @@ router.post("/test-order", ops, async (req, res) => {
 
 router.post("/:orderId/broadcast", ops, async (req, res) => {
   const orderId = parseInt(String(req.params.orderId));
-  try {
-    const result = await performBroadcast(orderId);
-    if (!result.ok) {
-      return res.status(400).json({ error: result.error });
+  // Fire-and-forget: launch broadcast in background so HTTP responds immediately.
+  // performBroadcast handles its own DB state updates and logging.
+  setImmediate(async () => {
+    try {
+      const result = await performBroadcast(orderId);
+      if (result.ok && result.sent > 0) {
+        await db.execute(sql`UPDATE orders SET broadcast_count = COALESCE(broadcast_count, 0) + 1, last_broadcast_at = NOW() WHERE id = ${orderId}`);
+      }
+    } catch (err: any) {
+      console.error("[broadcast] background error for order", orderId, err);
     }
-    // Track broadcast time and count
-    if (result.sent > 0) {
-      await db.execute(sql`UPDATE orders SET broadcast_count = COALESCE(broadcast_count, 0) + 1, last_broadcast_at = NOW() WHERE id = ${orderId}`);
-    }
-    res.json({ ok: true, sent: result.sent, skipped: result.skipped });
-  } catch (err: any) {
-    console.error("Broadcast failed for order", orderId, err);
-    return res.status(500).json({ error: "Internal server error during broadcast", details: err?.message ?? String(err) });
-  }
+  });
+  res.json({ ok: true, message: "Рассылка запущена" });
 });
 
 // ─── POST /api/dispatch/:orderId/add-master/:masterId — add a single master to dispatch ──

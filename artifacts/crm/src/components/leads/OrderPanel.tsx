@@ -239,7 +239,12 @@ export default function OrderPanel({
       if (!r.ok) { const text = await r.text(); let msg = "Ошибка"; try { msg = JSON.parse(text).error ?? msg; } catch {} throw new Error(msg); }
       return r.json();
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/orders"] }); queryClient.invalidateQueries({ queryKey: ["/api/dispatch", orderId] }); },
+    onSuccess: (data) => {
+      toast({ title: "Рассылка запущена", description: data?.message ?? "Мастерам отправляются уведомления" });
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dispatch", orderId] });
+    },
+    onError: (e: Error) => toast({ title: "Ошибка рассылки", description: e.message, variant: "destructive" }),
   });
 
   const assignMutation = useMutation({
@@ -613,13 +618,14 @@ export default function OrderPanel({
                 <p className="text-sm text-muted-foreground">Заявка будет отправлена активным мастерам в городе <b>{openOrder.city}</b>. Телефон клиента скрыт — передаётся только после назначения.</p>
                 {broadcastMutation.isError && <p className="text-sm text-red-500">{(broadcastMutation.error as Error).message}</p>}
                 {broadcastMutation.isSuccess && (
-                  <div className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl p-3 space-y-0.5">
-                    <p>✅ Разослано: <b>{(broadcastMutation.data as any)?.sent}</b> мастеров</p>
-                    {(broadcastMutation.data as any)?.skipped > 0 && <p className="text-muted-foreground text-xs">⏭ Пропущено {(broadcastMutation.data as any).skipped}</p>}
+                  <div className="text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Рассылка запущена, уведомления отправляются мастерам…</span>
                   </div>
                 )}
                 <button onClick={() => broadcastMutation.mutate(orderId)} disabled={broadcastMutation.isPending || broadcastMutation.isSuccess} className="w-full py-2.5 bg-blue-500 text-white rounded-xl font-medium hover:bg-blue-600 flex items-center justify-center gap-2 disabled:opacity-50">
-                  {broadcastMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}Разослать мастерам
+                  {broadcastMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : broadcastMutation.isSuccess ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  {broadcastMutation.isPending ? "Запуск…" : broadcastMutation.isSuccess ? "Рассылка выполняется…" : "Разослать мастерам"}
                 </button>
               </div>
             )}

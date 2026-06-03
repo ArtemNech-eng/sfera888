@@ -1,6 +1,5 @@
-import { db, ordersTable, mastersTable, orderDispatchesTable, masterCheckinsTable } from "@workspace/db";
-import { eq, and, inArray, sql } from "drizzle-orm";
-import { getMasterEligibility, getOverdueMasterIds } from "./orderEligibility.js";
+import { db, ordersTable, mastersTable, orderDispatchesTable } from "@workspace/db";
+import { eq, and, sql } from "drizzle-orm";
 import { sendPushToMaster } from "./push.js";
 import { sendMaxMessage } from "../maxBot.js";
 
@@ -59,21 +58,43 @@ export interface BroadcastSkipStats {
   notReady: number;
 }
 
+// ─── Batch helpers ────────────────────────────────────────────────────────────
+
+async function batchAsync<T, R>(
+  items: T[],
+  batchSize: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    const batchResults = await Promise.all(batch.map(fn));
+    results.push(...batchResults);
+  }
+  return results;
+}
+
 export async function performBroadcast(
   orderId: number,
   force = false,
   skipSpecialtyFilter = false,
 ): Promise<BroadcastResult & { skipStats?: BroadcastSkipStats }> {
+  const startedAt = Date.now();
+  console.log(`[broadcast] order=${orderId} started`);
+
   const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
   const order = orderRows[0];
-  if (!order) return { ok: false, sent: 0, skipped: 0, error: "Order not found" };
+  if (!order) {
+    console.error(`[broadcast] order=${orderId} not found`);
+    return { ok: false, sent: 0, skipped: 0, error: "Order not found" };
+  }
 
   if (order.dispatchStatus !== "none" && !force) {
+    console.warn(`[broadcast] order=${orderId} already dispatched (status=${order.dispatchStatus})`);
     return { ok: false, sent: 0, skipped: 0, error: "Already dispatched" };
   }
 
-  // Force re-broadcast: delete old "sent" (unanswered) dispatches so masters get a fresh notification.
-  // Keep "rejected" records so explicitly refused masters are still excluded.
+  // Force re-broadcast: delete old "sent" dispatches, keep "rejected"
   if (force && order.dispatchStatus !== "none") {
     await db.delete(orderDispatchesTable)
       .where(and(
@@ -83,13 +104,10 @@ export async function performBroadcast(
     await db.update(ordersTable)
       .set({ dispatchStatus: "none", updatedAt: new Date() })
       .where(eq(ordersTable.id, orderId));
+    console.log(`[broadcast] order=${orderId} cleared old sent dispatches for re-broadcast`);
   }
 
-  // Рассылаем заявку ВСЕМ активным мастерам в городе, включая заблокированных.
-  // Это создаёт ажиотаж/FOMO: все видят, что в городе есть работа.
-  // Фильтр репутации применяется на этапе отклика (см. master-pwa.ts /respond
-  // и telegram.ts respond_order_*) — заблокированный мастер получает понятное
-  // уведомление с причиной отказа, оператор видит активность как сигнал к разблоку.
+  // Load all active masters in the city
   const allMasters = await db.select().from(mastersTable)
     .where(and(
       eq(mastersTable.status, "active"),
@@ -100,7 +118,7 @@ export async function performBroadcast(
     notReachable: 0, rejected: 0, notEligible: 0, wrongSpecialty: 0, notReady: 0,
   };
 
-  // Telegram-бот удалён: считаем мастера достижимым только при наличии PWA-логина или Max-чата.
+  // Reachable = has PWA login or Max chat
   const reachable = allMasters.filter(m => {
     if (m.pwaLogin || m.maxChatId) return true;
     skipStats.notReachable++;
@@ -108,10 +126,11 @@ export async function performBroadcast(
   });
 
   if (reachable.length === 0) {
+    console.warn(`[broadcast] order=${orderId} no reachable masters in city=${order.city}`);
     return { ok: false, sent: 0, skipped: 0, error: `Нет активных мастеров в городе «${order.city}»` };
   }
 
-  // Load existing "rejected" dispatch records for this order — exclude those masters
+  // Exclude previously rejected
   const existingRejected = await db.select({ masterId: orderDispatchesTable.masterId })
     .from(orderDispatchesTable)
     .where(and(
@@ -126,40 +145,27 @@ export async function performBroadcast(
     return false;
   });
 
-  const activeOrders = await db.select().from(ordersTable)
-    .where(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
-
-  const overdueMasterIds = await getOverdueMasterIds();
-
-  // No eligibility filter on broadcast — all reachable active masters in the city
-  // receive the order. Constraints (limit, debt, FOMO, no contract) are tagged in CRM
-  // when the master responds, so the operator sees the full picture.
+  // No eligibility filter on broadcast — all reachable active masters receive the order.
   const eligible = reachableFiltered;
 
   if (eligible.length === 0) {
     return { ok: false, sent: 0, skipped: reachable.length, error: "Нет доступных мастеров для рассылки", skipStats };
   }
 
-  // Specialty filter — can be bypassed with skipSpecialtyFilter
+  // Specialty filter
   let specialtyEligible = eligible;
   if (!skipSpecialtyFilter) {
-    // Normalize: replace ё→е for fuzzy matching (prevents "шпаклевка" vs "шпаклёвка" misses)
     const normalizeRu = (s: string) => s.toLowerCase().replace(/ё/g, "е");
-
     const orderTerms = (order.serviceType ?? "")
       .split(/[,;]+/)
       .map(t => normalizeRu(t.trim()))
       .filter(Boolean);
-
-    // "Комплексный ремонт" is a wildcard — master can accept any type of order
     const WILDCARD_SPECS = ["комплексный ремонт", "комплексная отделка"];
 
     specialtyEligible = eligible.filter(master => {
       const specs = master.specializations ?? [];
-      // Masters with no specializations listed → accept any order
       if (specs.length === 0) return true;
       const specsNorm = specs.map(s => normalizeRu(s.trim()));
-      // Wildcard specialization → always match
       if (specsNorm.some(sp => WILDCARD_SPECS.includes(sp))) return true;
       const matches = orderTerms.some(term =>
         specsNorm.some(sp => sp === term || term.includes(sp) || sp.includes(term))
@@ -177,52 +183,13 @@ export async function performBroadcast(
     }
   }
 
-  // NOTE: Checkin no longer filters order broadcast. All active masters receive orders.
   const availableEligible = specialtyEligible;
-
-  const cardText = buildOrderCard(order, orderId);
-  const replyMarkup = {
-    inline_keyboard: [
-      [{ text: "Откликнуться 🙋", callback_data: `respond_order_${orderId}` }],
-      [{ text: "💬 Задать вопрос оператору", callback_data: `ask_question_${orderId}` }],
-    ],
-  };
-
-  let sent = 0;
   const skipped = reachable.length - availableEligible.length;
 
-  for (const master of availableEligible) {
-    if (master.pwaLogin) {
-      await sendPushToMaster(master.id, {
-        type: "new_order",
-        title: "Новый заказ",
-        body: `${order.city}${order.district ? ", " + order.district : ""} · ${order.serviceType} · ${order.area} м²`,
-        orderId,
-      }).catch(() => {});
-    }
-    if (master.maxChatId) {
-      const date = formatDate(order.scheduledAt);
-      sendMaxMessage(
-        master.maxChatId,
-        `📋 Новая заявка #${orderId}\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${date}${order.comment ? "\n💬 " + order.comment : ""}\n\n👉 Откликнитесь в приложении:\nhttps://sfera-master.ru/master-pwa/orders`
-      ).catch(() => {});
-    }
-    await db.insert(orderDispatchesTable).values({
-      orderId,
-      masterId: master.id,
-      telegramChatId: `pwa_${master.id}`,
-      telegramMessageId: null,
-      status: "sent",
-    });
-    // Track total leads received per master for conversion analytics
-    await db.update(mastersTable)
-      .set({ totalLeadsReceived: sql`${mastersTable.totalLeadsReceived} + 1` })
-      .where(eq(mastersTable.id, master.id));
-    sent++;
-  }
-
-  // Set 30-minute response window for priority assignment (only if at least one master was notified)
-  const windowCloseAt = sent > 0 ? new Date(Date.now() + 30 * 60 * 1000) : null;
+  // ── ATOMIC: update order to dispatching BEFORE sending pushes ──
+  const windowCloseAt = availableEligible.length > 0
+    ? new Date(Date.now() + 30 * 60 * 1000)
+    : null;
   await db.update(ordersTable)
     .set({
       dispatchStatus: "dispatching",
@@ -231,5 +198,43 @@ export async function performBroadcast(
     })
     .where(eq(ordersTable.id, orderId));
 
-  return { ok: true, sent, skipped };
+  // ── BULK INSERT dispatch records ──
+  const masterIds = availableEligible.map(m => m.id);
+  if (masterIds.length > 0) {
+    const values = masterIds.map(mid =>
+      `(${orderId}, ${mid}, 'pwa_${mid}', null, 'sent')`
+    ).join(", ");
+    await db.execute(sql`INSERT INTO order_dispatches (order_id, master_id, telegram_chat_id, telegram_message_id, status) VALUES ${sql.raw(values)}`);
+  }
+
+  // ── BULK UPDATE master stats ──
+  if (masterIds.length > 0) {
+    const idList = masterIds.join(",");
+    await db.execute(sql`UPDATE masters SET total_leads_received = total_leads_received + 1, updated_at = NOW() WHERE id IN (${sql.raw(idList)})`);
+  }
+
+  // ── PARALLEL PUSH / MAX (batched, 10 at a time) ──
+  const date = formatDate(order.scheduledAt);
+  const maxMsg = `📋 Новая заявка #${orderId}\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${date}${order.comment ? "\n💬 " + order.comment : ""}\n\n👉 Откликнитесь в приложении:\nhttps://sfera-master.ru/master-pwa/orders`;
+
+  await batchAsync(availableEligible, 10, async (master) => {
+    await Promise.all([
+      master.pwaLogin
+        ? sendPushToMaster(master.id, {
+            type: "new_order",
+            title: "Новый заказ",
+            body: `${order.city}${order.district ? ", " + order.district : ""} · ${order.serviceType} · ${order.area} м²`,
+            orderId,
+          }).catch(() => {})
+        : Promise.resolve(),
+      master.maxChatId
+        ? sendMaxMessage(master.maxChatId, maxMsg).catch(() => {})
+        : Promise.resolve(),
+    ]);
+  });
+
+  const duration = Date.now() - startedAt;
+  console.log(`[broadcast] order=${orderId} finished sent=${availableEligible.length} skipped=${skipped} duration=${duration}ms`);
+
+  return { ok: true, sent: availableEligible.length, skipped, skipStats };
 }
