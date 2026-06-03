@@ -43,6 +43,8 @@ export const ordersTable = pgTable("orders", {
   dispatchWave: integer("dispatch_wave").notNull().default(1),
   broadcastCount: integer("broadcast_count").notNull().default(0),
   lastBroadcastAt: timestamp("last_broadcast_at"),
+  dispatchResendCount: integer("dispatch_resend_count").notNull().default(0),
+  lastDispatchResendAt: timestamp("last_dispatch_resend_at"),
   avitoLeadId: text("avito_lead_id"),
   avitoChatId: text("avito_chat_id"),
   clientName: text("client_name"),

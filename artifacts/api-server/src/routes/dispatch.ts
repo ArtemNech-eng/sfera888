@@ -5,7 +5,7 @@ import { sql } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { sendPushToMaster } from "../lib/push.js";
 import { getOverdueMasterIds, getMasterEligibility } from "../lib/orderEligibility.js";
-import { performBroadcast } from "../lib/broadcastOrder.js";
+import { performBroadcast, performResend } from "../lib/broadcastOrder.js";
 import { sendMaxMessage, sendOnboardingMemo } from "../maxBot.js";
 import { getOrderTokenCost, deductTokensTx, TokenWalletError, ERR_INSUFFICIENT_TOKENS } from "../lib/tokenWallet.js";
 
@@ -305,6 +305,28 @@ router.post("/:orderId/broadcast", ops, async (req, res) => {
     }
   });
   res.json({ ok: true, message: "Рассылка запущена" });
+});
+
+// ─── POST /api/dispatch/:orderId/resend ────────────────────────────────────────
+
+router.post("/:orderId/resend", ops, async (req, res) => {
+  const orderId = parseInt(String(req.params.orderId));
+  const userId = (req as any).user?.id ?? null;
+
+  setImmediate(async () => {
+    try {
+      const result = await performResend(orderId, userId);
+      if (!result.ok) {
+        console.error(`[resend] order=${orderId} failed: ${result.error}`);
+      } else {
+        console.log(`[resend] order=${orderId} sent=${result.sent}`);
+      }
+    } catch (err: any) {
+      console.error("[resend] background error for order", orderId, err);
+    }
+  });
+
+  res.json({ ok: true, message: "Повторная рассылка запущена" });
 });
 
 // ─── POST /api/dispatch/:orderId/add-master/:masterId — add a single master to dispatch ──

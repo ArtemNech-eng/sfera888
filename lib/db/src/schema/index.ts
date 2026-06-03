@@ -3,6 +3,7 @@ export * from "./leads";
 export * from "./masters";
 export * from "./orders";
 export * from "./order-dispatches";
+export * from "./dispatch-resend-logs";
 export * from "./transactions";
 export * from "./transaction-payments";
 export * from "./settings";

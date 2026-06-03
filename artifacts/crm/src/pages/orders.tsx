@@ -276,6 +276,25 @@ export default function Orders() {
     },
   });
 
+  const resendMutation = useMutation({
+    mutationFn: async (orderId: number) => {
+      const r = await fetch(`/api/dispatch/${orderId}/resend`, { method: "POST", credentials: "include" });
+      if (!r.ok) {
+        const text = await r.text();
+        let msg = "Ошибка сервера";
+        try { msg = JSON.parse(text).error ?? msg; } catch {}
+        throw new Error(msg);
+      }
+      return r.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Повторная рассылка запущена", description: "Неответившим мастерам отправлено напоминание" });
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dispatch", openDispatchId] });
+    },
+    onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
+  });
+
   const assignMutation = useMutation({
     mutationFn: async ({ orderId, masterId }: { orderId: number; masterId: number }) => {
       const r = await fetch(`/api/dispatch/${orderId}/assign/${masterId}`, { method: "POST", credentials: "include" });
@@ -1771,6 +1790,65 @@ export default function Orders() {
                       </p>
                       {dispatchLoading && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
                     </div>
+
+                    {/* Dispatch stats bar */}
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-muted-foreground">
+                        <Send className="w-3 h-3" /> Отправлено {(dispatchData?.dispatches.length ?? 0)}
+                      </span>
+                      {respondents.length > 0 && (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-green-50 text-green-700">
+                          <Check className="w-3 h-3" /> Откликнулись {respondents.length}
+                        </span>
+                      )}
+                      {pendingDispatched.length > 0 && (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-50 text-amber-700">
+                          <Clock className="w-3 h-3" /> Без ответа {pendingDispatched.length}
+                        </span>
+                      )}
+                      {rejectedDispatches.length > 0 && (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-red-50 text-red-700">
+                          <X className="w-3 h-3" /> Отказались {rejectedDispatches.length}
+                        </span>
+                      )}
+                      {((openOrder as any).dispatchResendCount ?? 0) > 0 && (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-50 text-blue-700">
+                          <RefreshCw className="w-3 h-3" /> Повторно {(openOrder as any).dispatchResendCount ?? 0}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Resend button */}
+                    {openOrder.status === "waiting_master" && pendingDispatched.length > 0 && (
+                      <div>
+                        {(() => {
+                          const lastResend = (openOrder as any).lastDispatchResendAt ? new Date((openOrder as any).lastDispatchResendAt).getTime() : 0;
+                          const cooldownMs = 15 * 60 * 1000;
+                          const now = Date.now();
+                          const canResend = now - lastResend >= cooldownMs;
+                          const minutesLeft = Math.ceil((cooldownMs - (now - lastResend)) / 60000);
+                          const maxResends = 3;
+                          const atLimit = ((openOrder as any).dispatchResendCount ?? 0) >= maxResends;
+                          if (atLimit) {
+                            return (
+                              <p className="text-xs text-muted-foreground">
+                                Достигнут лимит повторных рассылок ({maxResends})
+                              </p>
+                            );
+                          }
+                          return (
+                            <button
+                              onClick={() => resendMutation.mutate(openDispatchId!)}
+                              disabled={!canResend || resendMutation.isPending}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-border rounded-lg text-xs font-medium text-foreground hover:bg-slate-100 transition-colors disabled:opacity-50"
+                            >
+                              {resendMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                              {canResend ? `Повторить рассылку (${pendingDispatched.length})` : `Повторная рассылка через ${minutesLeft} мин`}
+                            </button>
+                          );
+                        })()}
+                      </div>
+                    )}
 
                     {/* Responded masters */}
                     {respondents.length > 0 && (

@@ -1,4 +1,4 @@
-import { db, ordersTable, mastersTable, orderDispatchesTable } from "@workspace/db";
+import { db, ordersTable, mastersTable, orderDispatchesTable, dispatchResendLogsTable } from "@workspace/db";
 import { eq, and, inArray, sql } from "drizzle-orm";
 import { sendPushToMaster } from "./push.js";
 import { sendMaxMessage } from "../maxBot.js";
@@ -248,4 +248,118 @@ export async function performBroadcast(
   console.log(`[broadcast] order=${orderId} finished sent=${availableEligible.length} skipped=${skipped} skipStats=${JSON.stringify(skipStats)} duration=${duration}ms`);
 
   return { ok: true, sent: availableEligible.length, skipped, skipStats };
+}
+
+// ─── Resend dispatch to non-responders ──────────────────────────────────────────
+
+export interface ResendResult {
+  ok: boolean;
+  sent: number;
+  error?: string;
+  cooldownMinutes?: number;
+}
+
+const RESEND_COOLDOWN_MS = 15 * 60 * 1000; // 15 minutes
+const MAX_RESENDS = 3;
+
+export async function performResend(
+  orderId: number,
+  createdByUserId?: number | null,
+): Promise<ResendResult> {
+  const startedAt = Date.now();
+  console.log(`[resend] order=${orderId} started`);
+
+  const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
+  const order = orderRows[0];
+  if (!order) {
+    console.error(`[resend] order=${orderId} not found`);
+    return { ok: false, sent: 0, error: "Order not found" };
+  }
+
+  if (order.status !== "waiting_master") {
+    return { ok: false, sent: 0, error: "Рассылка доступна только для заказов «Ожидает мастера»" };
+  }
+
+  // Check cooldown
+  if (order.lastDispatchResendAt) {
+    const elapsed = Date.now() - new Date(order.lastDispatchResendAt).getTime();
+    if (elapsed < RESEND_COOLDOWN_MS) {
+      const minutesLeft = Math.ceil((RESEND_COOLDOWN_MS - elapsed) / 60000);
+      return { ok: false, sent: 0, error: `Подождите ${minutesLeft} мин до повторной рассылки`, cooldownMinutes: minutesLeft };
+    }
+  }
+
+  // Check max resends
+  const currentResendCount = order.dispatchResendCount ?? 0;
+  if (currentResendCount >= MAX_RESENDS) {
+    return { ok: false, sent: 0, error: `Достигнут лимит повторных рассылок (${MAX_RESENDS})` };
+  }
+
+  // Find non-responders: dispatches with status "sent"
+  const nonResponders = await db.select().from(orderDispatchesTable)
+    .where(and(
+      eq(orderDispatchesTable.orderId, orderId),
+      eq(orderDispatchesTable.status, "sent"),
+    ));
+
+  if (nonResponders.length === 0) {
+    return { ok: false, sent: 0, error: "Нет мастеров для повторной рассылки (все уже откликнулись или отказались)" };
+  }
+
+  const masterIds = nonResponders.map(d => d.masterId);
+  const masters = masterIds.length > 0
+    ? await db.select().from(mastersTable).where(inArray(mastersTable.id, masterIds))
+    : [];
+
+  const masterMap = new Map(masters.map(m => [m.id, m]));
+  const eligible = nonResponders
+    .map(d => masterMap.get(d.masterId))
+    .filter(Boolean) as typeof masters;
+
+  if (eligible.length === 0) {
+    return { ok: false, sent: 0, error: "Нет доступных мастеров для повторной рассылки" };
+  }
+
+  // Send reminder pushes / Max messages
+  const date = formatDate(order.scheduledAt);
+  const maxMsg = `🔔 Напоминание: заявка #${orderId} ждёт вашего отклика\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${date}${order.comment ? "\n💬 " + order.comment : ""}\n\n👉 Откликнитесь в приложении:\nhttps://sfera-master.ru/master-pwa/orders`;
+
+  await batchAsync(eligible, 10, async (master) => {
+    await Promise.all([
+      master.pwaLogin
+        ? sendPushToMaster(master.id, {
+            type: "new_order",
+            title: "🔔 Напоминание: новый заказ",
+            body: `${order.city}${order.district ? ", " + order.district : ""} · ${order.serviceType} · ${order.area} м²`,
+            orderId,
+          }).catch(() => {})
+        : Promise.resolve(),
+      master.maxChatId
+        ? sendMaxMessage(master.maxChatId, maxMsg).catch(() => {})
+        : Promise.resolve(),
+    ]);
+  });
+
+  // Update order counters
+  await db.update(ordersTable)
+    .set({
+      dispatchResendCount: currentResendCount + 1,
+      lastDispatchResendAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(ordersTable.id, orderId));
+
+  // Insert audit log
+  await db.insert(dispatchResendLogsTable).values({
+    orderId,
+    resendNumber: currentResendCount + 1,
+    scope: "non_responders",
+    recipientCount: eligible.length,
+    createdBy: createdByUserId ?? null,
+  });
+
+  const duration = Date.now() - startedAt;
+  console.log(`[resend] order=${orderId} finished sent=${eligible.length} duration=${duration}ms`);
+
+  return { ok: true, sent: eligible.length };
 }
