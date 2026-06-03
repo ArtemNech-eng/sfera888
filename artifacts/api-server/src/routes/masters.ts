@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, mastersTable, masterTasksTable, ordersTable, leadsTable, telegramChatsTable, voronkaColumnsTable, transactionsTable, transactionPaymentsTable, maxBotLogsTable, masterCheckinsTable, systemSettingsTable, usersTable } from "@workspace/db";
+import { db, mastersTable, masterTasksTable, ordersTable, leadsTable, telegramChatsTable, voronkaColumnsTable, transactionsTable, transactionPaymentsTable, maxBotLogsTable, masterCheckinsTable, systemSettingsTable, usersTable, masterWalletTable } from "@workspace/db";
 import { eq, desc, inArray, isNull, isNotNull, ne, count, gte, avg, sql, and } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { logMaxEvent } from "../maxBot.js";
@@ -154,8 +154,20 @@ router.get("/", allMasterRoles, async (_req, res) => {
     .groupBy(transactionsTable.masterId);
   const paidMap = new Map(paidCounts.map(r => [r.masterId, Number(r.cnt)]));
 
+  // Load wallet balances for token-model visibility
+  const wallets = await db.select().from(masterWalletTable);
+  const walletMap = new Map(wallets.map(w => [w.masterId, w]));
+
   console.log(`[masters] Total request time: ${Date.now() - startTime}ms`);
-  res.json(masters.map(m => ({ ...formatMaster(m), paidOrdersCount: paidMap.get(m.id) ?? 0 })));
+  res.json(masters.map(m => {
+    const w = walletMap.get(m.id);
+    return {
+      ...formatMaster(m),
+      paidOrdersCount: paidMap.get(m.id) ?? 0,
+      tokensBalance: w ? Number(w.tokensBalance) : 0,
+      creditLimitTokens: w ? Number(w.creditLimitTokens) : 0,
+    };
+  }));
 });
 
 // POST /api/masters

@@ -218,6 +218,7 @@ export default function Orders() {
   const [dateFilter, setDateFilter] = useState<"all"|"today"|"yesterday"|"week"|"month">("all");
   const [statusFilter, setStatusFilter] = useState<string>("active");
   const [cityFilter, setCityFilter] = useState<string>("all");
+  const [paymentModelFilter, setPaymentModelFilter] = useState<string>("all");
   const highlightId = parseInt(new URLSearchParams(window.location.search).get("highlight") ?? "") || null;
   const highlightRowRef = useRef<HTMLTableRowElement | null>(null);
 
@@ -432,7 +433,7 @@ export default function Orders() {
     onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
   });
 
-  const { data: activeMasters } = useQuery<{ id: number; alias: string; city: string | null }[]>({
+  const { data: activeMasters } = useQuery<{ id: number; alias: string; city: string | null; tokensBalance: number; creditLimitTokens: number }[]>({
     queryKey: ["/api/masters"],
     queryFn: async () => {
       const r = await fetch("/api/masters", { credentials: "include" });
@@ -440,7 +441,7 @@ export default function Orders() {
       const data = await r.json();
       return (data as any[])
         .filter((m: any) => m.status === "active")
-        .map(m => ({ id: m.id, alias: m.alias, city: m.city }));
+        .map(m => ({ id: m.id, alias: m.alias, city: m.city, tokensBalance: m.tokensBalance ?? 0, creditLimitTokens: m.creditLimitTokens ?? 0 }));
     },
     staleTime: 30000,
   });
@@ -606,6 +607,7 @@ export default function Orders() {
     dateFilter !== "all" ? 1 : 0,
     statusFilter !== "all" ? 1 : 0,
     cityFilter !== "all" ? 1 : 0,
+    paymentModelFilter !== "all" ? 1 : 0,
   ].reduce((a, b) => a + b, 0);
 
   const filteredOrders = useMemo(() => {
@@ -644,10 +646,11 @@ export default function Orders() {
         if (o.status === "cancelled" || o.status === "completed") return false;
       } else if (statusFilter !== "all" && o.status !== statusFilter) return false;
       if (cityFilter !== "all" && o.city !== cityFilter) return false;
+      if (paymentModelFilter !== "all" && ((o as any).paymentModel ?? "token") !== paymentModelFilter) return false;
 
       return true;
     });
-  }, [orders, search, dateFilter, statusFilter, cityFilter]);
+  }, [orders, search, dateFilter, statusFilter, cityFilter, paymentModelFilter]);
 
   return (
     <ProtectedRoute allowedRoles={['admin', 'master_operator', 'lead_operator']} permissionKey="orders">
@@ -885,7 +888,7 @@ export default function Orders() {
                 </div>
                 {activeFilterCount > 0 && (
                   <button
-                    onClick={() => { setDateFilter("all"); setStatusFilter("all"); setCityFilter("all"); }}
+                    onClick={() => { setDateFilter("all"); setStatusFilter("all"); setCityFilter("all"); setPaymentModelFilter("all"); }}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-600 bg-red-50 border border-red-200 rounded-xl hover:bg-red-100 transition-colors"
                   >
                     <X className="w-3 h-3" />
@@ -982,6 +985,24 @@ export default function Orders() {
                     <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
                   </div>
                 )}
+
+                {/* Payment model filter */}
+                <div className="relative">
+                  <select
+                    value={paymentModelFilter}
+                    onChange={e => setPaymentModelFilter(e.target.value)}
+                    className={`appearance-none pl-3 pr-7 py-1 rounded-xl text-xs font-medium border transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 ${
+                      paymentModelFilter !== "all"
+                        ? "bg-amber-50 border-amber-300 text-amber-700"
+                        : "bg-background border-border/60 text-muted-foreground hover:bg-slate-100"
+                    }`}
+                  >
+                    <option value="all">Все модели</option>
+                    <option value="token">Токены</option>
+                    <option value="commission">Комиссия</option>
+                  </select>
+                  <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
+                </div>
 
               </div>
             </div>
@@ -1377,6 +1398,35 @@ export default function Orders() {
                         </div>
                       );
                     })()}
+                    {((openOrder as any).paymentModel ?? "token") === "token" && (
+                      <div>
+                        <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide">Токены</p>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold text-amber-700">
+                            {(openOrder as any).tokensCharged ? Number((openOrder as any).tokensCharged) : ((openOrder as any).manualTokenCost ? Number((openOrder as any).manualTokenCost) : "—")} т.
+                          </span>
+                          <button
+                            onClick={() => {
+                              const val = prompt("Укажите стоимость в токенах:", String((openOrder as any).manualTokenCost ?? ""));
+                              if (val !== null) {
+                                const num = parseFloat(val);
+                                if (!isNaN(num) && num >= 0) {
+                                  fetch(`/api/orders/${openDispatchId}`, {
+                                    method: "PATCH",
+                                    headers: { "Content-Type": "application/json" },
+                                    credentials: "include",
+                                    body: JSON.stringify({ manualTokenCost: num }),
+                                  }).then(() => queryClient.invalidateQueries({ queryKey: ["/api/orders"] }));
+                                }
+                              }
+                            }}
+                            className="text-muted-foreground/50 hover:text-primary"
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   {openOrder.comment && (
                     <div className="pt-1.5 border-t border-border/40">
@@ -1801,17 +1851,49 @@ export default function Orders() {
                           <option value="">— Выберите мастера —</option>
                           {(activeMasters ?? [])
                             .filter(m => !openOrder || !m.city || m.city === (openOrder as any).city)
-                            .map(m => (
-                              <option key={m.id} value={String(m.id)}>
-                                {m.alias}{m.city ? ` (${m.city})` : ""}
-                              </option>
-                            ))}
+                            .map(m => {
+                              const balance = m.tokensBalance;
+                              const limit = m.creditLimitTokens;
+                              const available = balance + limit;
+                              return (
+                                <option key={m.id} value={String(m.id)}>
+                                  {m.alias}{m.city ? ` (${m.city})` : ""} — {balance} т. (лимит {limit}){available < 0 ? " ❌" : ""}
+                                </option>
+                              );
+                            })}
                         </select>
                         {(openOrder as any)?.masterId && selectedMasterForAssign && (
                           <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                             ⚠️ Текущий мастер будет заменён
                           </p>
                         )}
+                        {(() => {
+                          const selId = parseInt(selectedMasterForAssign);
+                          if (isNaN(selId)) return null;
+                          const m = activeMasters?.find(x => x.id === selId);
+                          if (!m) return null;
+                          if ((openOrder as any)?.paymentModel !== "token") return null;
+                          const orderCost = (openOrder as any)?.tokensCharged ? Number((openOrder as any).tokensCharged) : ((openOrder as any)?.manualTokenCost ? Number((openOrder as any).manualTokenCost) : 1);
+                          if (m.tokensBalance + m.creditLimitTokens < orderCost) {
+                            return (
+                              <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                                ❌ Недостаточно токенов: баланс {m.tokensBalance} + лимит {m.creditLimitTokens} = {m.tokensBalance + m.creditLimitTokens} т., нужно {orderCost} т.
+                              </p>
+                            );
+                          }
+                          if (m.tokensBalance < orderCost) {
+                            return (
+                              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                                ⚠️ Токены уйдут в минус: баланс {m.tokensBalance} т., спишется {orderCost} т. (лимит {m.creditLimitTokens})
+                              </p>
+                            );
+                          }
+                          return (
+                            <p className="text-xs text-green-600 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                              ✅ Достаточно токенов: {m.tokensBalance} т. (спишется {orderCost} т.)
+                            </p>
+                          );
+                        })()}
                         <div className="flex gap-2">
                           <button
                             onClick={() => { setShowManualAssign(false); setSelectedMasterForAssign(""); }}
