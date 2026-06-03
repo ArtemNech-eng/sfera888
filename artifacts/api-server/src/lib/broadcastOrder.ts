@@ -122,6 +122,7 @@ export async function performBroadcast(
   const reachable = allMasters.filter(m => {
     if (m.pwaLogin || m.maxChatId) return true;
     skipStats.notReachable++;
+    console.log(`[broadcast] order=${orderId} skip master=${m.alias}(${m.id}) reason=notReachable (no pwaLogin/maxChatId)`);
     return false;
   });
 
@@ -142,6 +143,7 @@ export async function performBroadcast(
   const reachableFiltered = reachable.filter(m => {
     if (!excludedMasterIds.has(m.id)) return true;
     skipStats.rejected++;
+    console.log(`[broadcast] order=${orderId} skip master=${m.alias}(${m.id}) reason=previouslyRejected`);
     return false;
   });
 
@@ -170,7 +172,10 @@ export async function performBroadcast(
       const matches = orderTerms.some(term =>
         specsNorm.some(sp => sp === term || term.includes(sp) || sp.includes(term))
       );
-      if (!matches) skipStats.wrongSpecialty++;
+      if (!matches) {
+        skipStats.wrongSpecialty++;
+        console.log(`[broadcast] order=${orderId} skip master=${master.alias}(${master.id}) reason=wrongSpecialty (specs=${JSON.stringify(specs)}, orderTerms=${JSON.stringify(orderTerms)})`);
+      }
       return matches;
     });
 
@@ -240,7 +245,7 @@ export async function performBroadcast(
   });
 
   const duration = Date.now() - startedAt;
-  console.log(`[broadcast] order=${orderId} finished sent=${availableEligible.length} skipped=${skipped} duration=${duration}ms`);
+  console.log(`[broadcast] order=${orderId} finished sent=${availableEligible.length} skipped=${skipped} skipStats=${JSON.stringify(skipStats)} duration=${duration}ms`);
 
   return { ok: true, sent: availableEligible.length, skipped, skipStats };
 }
