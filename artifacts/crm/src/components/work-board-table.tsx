@@ -249,24 +249,9 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
     refetchInterval: 15_000,
   });
 
-  // Fetch orders for paymentModel enrichment
-  const { data: ordersData } = useQuery<{ rows: any[] }>({
-    queryKey: ["/api/orders"],
-    queryFn: async () => {
-      const r = await fetch("/api/orders", { credentials: "include" });
-      if (!r.ok) throw new Error("Failed");
-      return r.json();
-    },
-    refetchInterval: 15_000,
-  });
-
   const enrichedData = useMemo(() => {
     if (!data) return null;
-    const orderMap = new Map((ordersData?.rows ?? []).map((o: any) => [o.id, (o as any).paymentModel ?? "token"]));
-    let rows = data.rows.map(row => ({
-      ...row,
-      paymentModel: orderMap.get(row.orderId) ?? "token",
-    }));
+    let rows = data.rows;
     if (paymentModelFilter !== "all") {
       rows = rows.filter(row => row.paymentModel === paymentModelFilter);
     }
@@ -275,7 +260,7 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
       rows,
       total: rows.length,
     };
-  }, [data, ordersData, paymentModelFilter]);
+  }, [data, paymentModelFilter]);
 
   // SSE for live updates
   useEffect(() => {
