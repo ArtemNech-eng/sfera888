@@ -188,7 +188,7 @@ export default function OrderPanel({
   // ── Computed ───────────────────────────────────────────────────────────────
   const respondents = useMemo(() => dispatchData?.dispatches.filter(d => d.status === "responded") ?? [], [dispatchData]);
   const rejectedDispatches = useMemo(() => dispatchData?.dispatches.filter(d => d.status === "rejected") ?? [], [dispatchData]);
-  const pendingDispatched = useMemo(() => dispatchData?.dispatches.filter(d => d.status === "dispatched") ?? [], [dispatchData]);
+  const pendingDispatched = useMemo(() => dispatchData?.dispatches.filter(d => d.status === "sent") ?? [], [dispatchData]);
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [notifCopied, setNotifCopied] = useState(false);
