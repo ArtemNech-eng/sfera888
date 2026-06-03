@@ -11,6 +11,7 @@ import { sendPushToClient } from "../lib/clientPush.js";
 import { sendMaxMessage } from "../maxBot.js";
 import { analyseOrderCancellation } from "../lib/dispatcherAI.js";
 import { recordOrderCancelled, recordOrderCompleted, revertOrderCancellation } from "../lib/masterReputation.js";
+import { getOrderTokenCost, deductTokensTx, TokenWalletError, ERR_INSUFFICIENT_TOKENS } from "../lib/tokenWallet.js";
 
 // Telegram-бот удалён.
 
@@ -736,34 +737,87 @@ router.post("/:id/assign-master", allOrderRoles, async (req, res) => {
     return res.status(400).json({ error: eligibility.reason });
   }
 
-  const result = await db.update(ordersTable).set({
-    masterId,
-    status: "master_assigned",
-    updatedAt: new Date(),
-  }).where(eq(ordersTable.id, id)).returning();
+  // Load order for token-model check
+  const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
+  if (!orderRows[0]) return res.status(404).json({ error: "Order not found" });
+  const order = orderRows[0];
 
-  if (!result[0]) return res.status(404).json({ error: "Order not found" });
-  const o = result[0];
-
-  // Update master stats + move to "На объекте" column automatically
-  const onSiteCol = await getOnSiteColumn();
-  await db.update(mastersTable).set({
-    totalOrders: master.totalOrders + 1,
-    acceptedOrders: master.acceptedOrders + 1,
-    voronkaColumnId: onSiteCol?.id ?? master.voronkaColumnId,
-  }).where(eq(mastersTable.id, masterId));
-
-  // Create placeholder transaction — commission amount unknown yet, will be updated when order completes
-  const existingTx = await db.select().from(transactionsTable).where(eq(transactionsTable.orderId, id));
-  if (existingTx.length === 0) {
-    await db.insert(transactionsTable).values({
-      orderId: id,
-      masterId,
-      orderAmount: "0",
-      commission: "0",
-      paymentStatus: "pending",
+  const isTokenModel = (order as any).paymentModel === "token";
+  let tokensCost = 0;
+  if (isTokenModel) {
+    const { cost } = await getOrderTokenCost({
+      serviceType: order.serviceType,
+      area: order.area ? Number(order.area) : null,
+      manualTokenCost: (order as any).manualTokenCost ?? null,
+      city: order.city ?? null,
     });
+    tokensCost = cost;
   }
+
+  try {
+    await db.transaction(async (tx) => {
+      if (isTokenModel) {
+        const deduction = await deductTokensTx(tx, {
+          masterId: masterIdNum,
+          orderId: id,
+          tokensCost,
+          serviceType: order.serviceType,
+        });
+        if (!deduction.success) {
+          throw deduction.error;
+        }
+      }
+
+      const result = await tx.update(ordersTable).set({
+        masterId,
+        status: "master_assigned",
+        updatedAt: new Date(),
+        ...(isTokenModel ? { tokensCharged: String(tokensCost) } : {}),
+      }).where(eq(ordersTable.id, id)).returning();
+
+      if (!result[0]) throw new Error("Order not found");
+
+      // Update master stats + move to "На объекте" column automatically
+      const onSiteCol = await getOnSiteColumn();
+      await tx.update(mastersTable).set({
+        totalOrders: master.totalOrders + 1,
+        acceptedOrders: master.acceptedOrders + 1,
+        voronkaColumnId: onSiteCol?.id ?? master.voronkaColumnId,
+      }).where(eq(mastersTable.id, masterIdNum));
+
+      // Create placeholder transaction — commission amount unknown yet, will be updated when order completes
+      const existingTxRows = await tx.select().from(transactionsTable).where(eq(transactionsTable.orderId, id));
+      if (existingTxRows.length === 0) {
+        await tx.insert(transactionsTable).values({
+          orderId: id,
+          masterId: masterIdNum,
+          orderAmount: "0",
+          commission: "0",
+          paymentStatus: "pending",
+        });
+      }
+    });
+  } catch (e) {
+    if (e instanceof TokenWalletError && e.code === ERR_INSUFFICIENT_TOKENS) {
+      return res.status(402).json({ error: e.message, insufficientTokens: true });
+    }
+    throw e;
+  }
+
+  // Log token deduction to CRM chat
+  if (isTokenModel) {
+    await db.insert(masterMessagesTable).values({
+      masterId: master.id,
+      telegramChatId: `pwa_${master.id}`,
+      text: `✅ Назначение (токеновая модель): заказ #${id} — ${order.serviceType}, ${order.city}. Списано ${tokensCost} т.`,
+      fromMaster: false,
+      senderName: "system",
+      isRead: false,
+    }).catch(() => {});
+  }
+
+  // Fetch updated order for response
+  const o = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).then(r => r[0]);
 
   if (master.maxChatId) {
     const amLead = o.leadId ? await db.select().from(leadsTable).where(eq(leadsTable.id, o.leadId)) : [];
@@ -907,79 +961,113 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
   // If there was a previous master assigned, log it
   const prevMasterId = order.masterId;
 
-  // Assign master to order
-  await db.update(ordersTable).set({
-    masterId,
-    status: "master_assigned",
-    dispatchStatus: "assigned",
-    updatedAt: new Date(),
-  }).where(eq(ordersTable.id, orderId));
-
-  // Update or create dispatch record for this master
-  const existingDispatch = await db.select().from(orderDispatchesTable)
-    .where(and(eq(orderDispatchesTable.orderId, orderId), eq(orderDispatchesTable.masterId, masterId)));
-
-  if (existingDispatch.length > 0) {
-    await db.update(orderDispatchesTable)
-      .set({ status: "assigned" })
-      .where(and(eq(orderDispatchesTable.orderId, orderId), eq(orderDispatchesTable.masterId, masterId)));
-  } else {
-    await db.insert(orderDispatchesTable).values({
-      orderId,
-      masterId,
-      telegramChatId: `pwa_${masterId}`,
-      status: "assigned",
+  const isTokenModel = (order as any).paymentModel === "token";
+  let tokensCost = 0;
+  if (isTokenModel) {
+    const { cost } = await getOrderTokenCost({
+      serviceType: order.serviceType,
+      area: order.area ? Number(order.area) : null,
+      manualTokenCost: (order as any).manualTokenCost ?? null,
+      city: order.city ?? null,
     });
+    tokensCost = cost;
   }
 
-  // Mark other dispatch records as rejected
-  await db.update(orderDispatchesTable)
-    .set({ status: "rejected" })
-    .where(and(eq(orderDispatchesTable.orderId, orderId), ne(orderDispatchesTable.masterId, masterId)));
+  try {
+    await db.transaction(async (tx) => {
+      if (isTokenModel) {
+        const deduction = await deductTokensTx(tx, {
+          masterId,
+          orderId,
+          tokensCost,
+          serviceType: order.serviceType,
+        });
+        if (!deduction.success) {
+          throw deduction.error;
+        }
+      }
 
-  // Move new master to "На объекте" column and update stats
-  const onSiteCol = await getOnSiteColumn();
-  await db.update(mastersTable).set({
-    voronkaColumnId: onSiteCol?.id ?? master.voronkaColumnId,
-    totalOrders: master.totalOrders + 1,
-    acceptedOrders: master.acceptedOrders + 1,
-  }).where(eq(mastersTable.id, masterId));
+      // Assign master to order
+      await tx.update(ordersTable).set({
+        masterId,
+        status: "master_assigned",
+        dispatchStatus: "assigned",
+        updatedAt: new Date(),
+        ...(isTokenModel ? { tokensCharged: String(tokensCost) } : {}),
+      }).where(eq(ordersTable.id, orderId));
 
-  // If there was a previous master, update their voronka column
-  if (prevMasterId && prevMasterId !== masterId) {
-    const remainingCount = await countActiveMasterOrders(prevMasterId, orderId);
-    const colId = await getColumnIdForActiveCount(remainingCount);
-    if (colId) {
-      await db.update(mastersTable).set({ voronkaColumnId: colId }).where(eq(mastersTable.id, prevMasterId));
+      // Update or create dispatch record for this master
+      const existingDispatch = await tx.select().from(orderDispatchesTable)
+        .where(and(eq(orderDispatchesTable.orderId, orderId), eq(orderDispatchesTable.masterId, masterId)));
+
+      if (existingDispatch.length > 0) {
+        await tx.update(orderDispatchesTable)
+          .set({ status: "assigned" })
+          .where(and(eq(orderDispatchesTable.orderId, orderId), eq(orderDispatchesTable.masterId, masterId)));
+      } else {
+        await tx.insert(orderDispatchesTable).values({
+          orderId,
+          masterId,
+          telegramChatId: `pwa_${masterId}`,
+          status: "assigned",
+        });
+      }
+
+      // Mark other dispatch records as rejected
+      await tx.update(orderDispatchesTable)
+        .set({ status: "rejected" })
+        .where(and(eq(orderDispatchesTable.orderId, orderId), ne(orderDispatchesTable.masterId, masterId)));
+
+      // Move new master to "На объекте" column and update stats
+      const onSiteCol = await getOnSiteColumn();
+      await tx.update(mastersTable).set({
+        voronkaColumnId: onSiteCol?.id ?? master.voronkaColumnId,
+        totalOrders: master.totalOrders + 1,
+        acceptedOrders: master.acceptedOrders + 1,
+      }).where(eq(mastersTable.id, masterId));
+
+      // If there was a previous master, update their voronka column
+      if (prevMasterId && prevMasterId !== masterId) {
+        const remainingCount = await countActiveMasterOrders(prevMasterId, orderId);
+        const colId = await getColumnIdForActiveCount(remainingCount);
+        if (colId) {
+          await tx.update(mastersTable).set({ voronkaColumnId: colId }).where(eq(mastersTable.id, prevMasterId));
+        }
+      }
+
+      // Set assignedAt timestamp on manual assign
+      await tx.update(ordersTable)
+        .set({ assignedAt: new Date() })
+        .where(eq(ordersTable.id, orderId));
+
+      // Log the status change
+      const maSessionUser = (req as any).session?.userId ?? null;
+      let maUserAlias = "система";
+      if (maSessionUser) {
+        const userRows = await tx.select().from(usersTable).where(eq(usersTable.id, maSessionUser));
+        maUserAlias = userRows[0]?.name ?? userRows[0]?.login ?? "система";
+      }
+      await tx.insert(orderStatusLogsTable).values({
+        orderId,
+        oldStatus: order.status,
+        newStatus: "master_assigned",
+        userId: maSessionUser,
+        userAlias: maUserAlias,
+        note: `Назначен вручную: ${master.alias}`,
+      }).catch(() => {});
+    });
+  } catch (e) {
+    if (e instanceof TokenWalletError && e.code === ERR_INSUFFICIENT_TOKENS) {
+      return res.status(402).json({ error: e.message, insufficientTokens: true });
     }
+    throw e;
   }
-
-  // Set assignedAt timestamp on manual assign
-  await db.update(ordersTable)
-    .set({ assignedAt: new Date() })
-    .where(eq(ordersTable.id, orderId));
-
-  // Log the status change
-  const maSessionUser = (req as any).session?.userId ?? null;
-  let maUserAlias = "система";
-  if (maSessionUser) {
-    const userRows = await db.select().from(usersTable).where(eq(usersTable.id, maSessionUser));
-    maUserAlias = userRows[0]?.name ?? userRows[0]?.login ?? "система";
-  }
-  await db.insert(orderStatusLogsTable).values({
-    orderId,
-    oldStatus: order.status,
-    newStatus: "master_assigned",
-    userId: maSessionUser,
-    userAlias: maUserAlias,
-    note: `Назначен вручную: ${master.alias}`,
-  }).catch(() => {});
 
   // Log to CRM chat (visible in PWA chat tab)
   await db.insert(masterMessagesTable).values({
     masterId: master.id,
     telegramChatId: `pwa_${master.id}`,
-    text: `✅ Назначен на заявку #${orderId} (вручную администратором)`,
+    text: `✅ Назначен на заявку #${orderId} (вручную администратором)${isTokenModel ? `. Списано ${tokensCost} т.` : ""}`,
     fromMaster: false,
     senderName: "system",
     isRead: false,
