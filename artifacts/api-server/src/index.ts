@@ -395,11 +395,6 @@ async function runMigrations() {
       updated_at  TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `);
-  // Mark all existing orders as commission model
-  await db.execute(sql`
-    UPDATE orders SET payment_model = 'commission'
-    WHERE payment_model = 'token' AND created_at < NOW()
-  `);
   // ── Partner PWA tables ─────────────────────────────────────────────────────
   // Add 'partner' to user_role enum (idempotent)
   await db.execute(sql`
