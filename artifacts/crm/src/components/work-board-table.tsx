@@ -253,7 +253,7 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
     if (!data) return null;
     let rows = data.rows;
     if (paymentModelFilter !== "all") {
-      rows = rows.filter(row => (row.paymentModel ?? "token") === paymentModelFilter);
+      rows = rows.filter(row => (row.paymentModel || "token") === paymentModelFilter);
     }
     return {
       ...data,
@@ -357,7 +357,7 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
             <Button variant="link" className="font-mono font-bold p-0 h-auto" onClick={() => onOpenOrder(row.original.orderId)}>
               #{row.original.orderId}
             </Button>
-            {row.original.paymentModel === "token" ? (
+            {(row.original.paymentModel || "token") === "token" ? (
               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 w-fit">
                 <Diamond className="w-2.5 h-2.5 mr-0.5" /> Токены
               </span>
@@ -620,7 +620,7 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
             ]).map(t => {
               const isActive = paymentModelFilter === t.key;
               const count = t.key === "all" ? (enrichedData?.rows.length ?? data?.total ?? 0)
-                : enrichedData?.rows.filter(r => (r.paymentModel ?? "token") === t.key).length ?? 0;
+                : enrichedData?.rows.filter(r => (r.paymentModel || "token") === t.key).length ?? 0;
               const Icon = t.icon;
               return (
                 <button
@@ -674,13 +674,13 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
           </div>
         )}
         {enrichedData?.rows.map(row => (
-          <div key={row.id} className={`bg-card border ${(row.paymentModel ?? "token") === "token" ? "border-l-4 border-l-emerald-400 border-emerald-200" : "border-border"} rounded-xl p-4 space-y-3`}>
+          <div key={row.id} className={`bg-card border ${(row.paymentModel || "token") === "token" ? "border-l-4 border-l-emerald-400 border-emerald-200" : "border-border"} rounded-xl p-4 space-y-3`}>
             <div className="flex items-start justify-between">
               <div className="flex flex-col gap-0.5">
                 <Button variant="link" className="p-0 font-bold h-auto" onClick={() => onOpenOrder(row.orderId)}>
                   #{row.orderId}
                 </Button>
-                {(row.paymentModel ?? "token") === "token" ? (
+                {(row.paymentModel || "token") === "token" ? (
                   <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 w-fit">
                     <Diamond className="w-2.5 h-2.5 mr-0.5" /> Токены
                   </span>
@@ -837,7 +837,7 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
             ]).map(t => {
               const isActive = paymentModelFilter === t.key;
               const count = t.key === "all" ? (enrichedData?.rows.length ?? data?.total ?? 0)
-                : enrichedData?.rows.filter(r => (r.paymentModel ?? "token") === t.key).length ?? 0;
+                : enrichedData?.rows.filter(r => (r.paymentModel || "token") === t.key).length ?? 0;
               const Icon = t.icon;
               return (
                 <button
@@ -948,7 +948,7 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
                 </TableRow>
               ) : (
                 table.getRowModel().rows.map(row => {
-                  const isToken = (row.original.paymentModel ?? "token") === "token";
+                  const isToken = (row.original.paymentModel || "token") === "token";
                   return (
                     <TableRow key={row.id} data-state={row.getIsSelected() && "selected"}
                              className={`${row.original.isProblem ? "bg-red-50/30 hover:bg-red-50/50" : ""} ${isToken ? "border-l-4 border-l-emerald-400" : ""}`}>

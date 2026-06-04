@@ -533,7 +533,7 @@ async function buildTableData(params: QueryParams): Promise<{
       isProblem,
       columnKey,
       clientName: lead?.clientName ?? undefined,
-      paymentModel: (o as any).paymentModel ?? "token",
+      paymentModel: (o as any).paymentModel || "token",
     };
 
     // Skip completed orders with 0 commission that are older than 14 days (archive them)
