@@ -1,4 +1,4 @@
-import { db, masterWalletTable, walletTransactionsTable, serviceTokenPricesTable, serviceTokenRulesTable, cityTokenMultipliersTable } from "@workspace/db";
+import { db, masterWalletTable, walletTransactionsTable, serviceTokenPricesTable, serviceTokenRulesTable, cityTokenMultipliersTable, tokenAuditLogTable } from "@workspace/db";
 import { eq, and, sql } from "drizzle-orm";
 
 // ─── Typed errors for token-wallet operations ───────────────────────────────
@@ -40,7 +40,8 @@ function resolveServiceKey(serviceType: string): string {
 
   const keyMap: Record<string, string> = {
     обои: "oboi", обоев: "oboi", обоями: "oboi", поклейка: "oboi",
-    шпаклёвка: "shpaklevka", шпаклевка: "shpaklevka", штукатурка: "shpaklevka",
+    шпаклёвка: "shpaklevka", шпаклевка: "shpaklevka",
+    штукатурка: "shtukaturka", штукатурки: "shtukaturka",
     покраска: "pokraska", покраске: "pokraska", покрасить: "pokraska",
     плитка: "plitka", плиткой: "plitka", укладка: "plitka",
     санузел: "sanuzul", ванная: "sanuzul", туалет: "sanuzul",
@@ -251,6 +252,19 @@ export async function deductTokensTx(
     status: "completed",
   });
 
+  await tx.insert(tokenAuditLogTable).values({
+    masterId,
+    orderId,
+    type: "deduct",
+    tokensAmount: String(-tokensCost),
+    balanceBefore: String(currentBalance),
+    balanceAfter: String(newBalance),
+    reason: orderId
+      ? `Оплата заказа #${orderId} (${serviceType})`
+      : `Открытие контакта по заявке (${serviceType})`,
+    createdBy: "system",
+  });
+
   return { success: true };
 }
 
@@ -286,7 +300,7 @@ export async function refundTokens(params: {
   reason: string;
   transactionId: number;
 }): Promise<void> {
-  const { masterId, orderId, tokensCost, transactionId } = params;
+  const { masterId, orderId, tokensCost, reason, transactionId } = params;
 
   const wallet = await ensureWallet(masterId);
   const newBalance = Number(wallet.tokensBalance) + tokensCost;
@@ -295,6 +309,8 @@ export async function refundTokens(params: {
     Number((wallet as any).creditTokensIssued ?? 0)
   );
   const creditTokensSpent = newBalance < 0 ? Math.min(creditLimit, -newBalance) : 0;
+
+  const balanceBefore = Number(wallet.tokensBalance);
 
   await db
     .update(masterWalletTable)
@@ -310,4 +326,15 @@ export async function refundTokens(params: {
     .update(walletTransactionsTable)
     .set({ status: "completed" })
     .where(eq(walletTransactionsTable.id, transactionId));
+
+  await db.insert(tokenAuditLogTable).values({
+    masterId,
+    orderId,
+    type: "refund",
+    tokensAmount: String(tokensCost),
+    balanceBefore: String(balanceBefore),
+    balanceAfter: String(newBalance),
+    reason,
+    createdBy: "system",
+  });
 }

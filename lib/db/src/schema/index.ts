@@ -40,6 +40,7 @@ export * from "./service-token-prices";
 export * from "./service-token-rules";
 export * from "./master-wallet";
 export * from "./wallet-transactions";
+export * from "./token-audit-log";
 export * from "./token-price-history";
 export * from "./traffic-partners";
 export * from "./partner-billing-periods";

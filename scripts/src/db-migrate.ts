@@ -194,6 +194,26 @@ const queries: string[] = [
     created_by INTEGER REFERENCES users(id),
     response_count INTEGER DEFAULT 0
   ); END IF; END $$;`,
+
+  // ── token_audit_log — audit trail for all token operations ─────────────────
+  `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'masters') AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'orders') THEN CREATE TABLE IF NOT EXISTS token_audit_log (
+    id SERIAL PRIMARY KEY,
+    master_id INTEGER NOT NULL REFERENCES masters(id),
+    order_id INTEGER REFERENCES orders(id),
+    type VARCHAR(50) NOT NULL,
+    tokens_amount NUMERIC(10,2) NOT NULL,
+    balance_before NUMERIC(10,2) NOT NULL,
+    balance_after NUMERIC(10,2) NOT NULL,
+    reason TEXT,
+    created_by VARCHAR(100) NOT NULL DEFAULT 'system',
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  ); END IF; END $$;`,
+  `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'token_audit_log') THEN CREATE INDEX IF NOT EXISTS token_audit_log_master_id_idx ON token_audit_log(master_id); END IF; END $$;`,
+  `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'token_audit_log') THEN CREATE INDEX IF NOT EXISTS token_audit_log_order_id_idx ON token_audit_log(order_id); END IF; END $$;`,
+  `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'token_audit_log') THEN CREATE INDEX IF NOT EXISTS token_audit_log_created_at_idx ON token_audit_log(created_at); END IF; END $$;`,
+
+  // ── orders: payment_model index for Work Board filtering ─────────────────────
+  `DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'orders') THEN CREATE INDEX IF NOT EXISTS orders_payment_model_idx ON orders(payment_model); END IF; END $$;`,
 ];
 
 async function run() {

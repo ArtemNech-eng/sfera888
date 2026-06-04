@@ -73,6 +73,8 @@ export const ordersTable = pgTable("orders", {
   masterStatusIdx: index("orders_master_status_idx").on(t.masterId, t.status, t.deletedAt),
   // 4) Поиск завершённых для аналитики/комиссий
   completedAtIdx: index("orders_completed_at_idx").on(t.completedAt),
+  // 5) Фильтр по модели оплаты (токеновые / комиссионные)
+  paymentModelIdx: index("orders_payment_model_idx").on(t.paymentModel),
 }));
 
 export const insertOrderSchema = createInsertSchema(ordersTable).omit({ id: true, createdAt: true, updatedAt: true });

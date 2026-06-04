@@ -79,6 +79,7 @@ export interface TableRow extends Card {
   columnKey: ColumnKey;        // ключ колонки для цветового кодирования
   clientName?: string;         // имя клиента (из leadsTable)
   paymentModel?: string;       // модель оплаты: token | commission
+  tokensCharged?: number;      // стоимость заявки в токенах
 }
 
 // ── Query parameter schema ─────────────────────────────────────────────────────
@@ -534,6 +535,7 @@ async function buildTableData(params: QueryParams): Promise<{
       columnKey,
       clientName: lead?.clientName ?? undefined,
       paymentModel: (o as any).paymentModel || "token",
+      tokensCharged: Number((o as any).tokensCharged || 0),
     };
 
     // Skip completed orders with 0 commission that are older than 14 days (archive them)

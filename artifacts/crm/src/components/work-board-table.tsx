@@ -85,6 +85,7 @@ export interface TableRowData extends Card {
   columnKey: ColumnKey;
   clientName?: string;
   paymentModel?: string;
+  tokensCharged?: number;
 }
 
 interface TableResponse {
@@ -398,6 +399,15 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
           </Button>
         ),
         cell: ({ row }) => {
+          const isToken = (row.original.paymentModel || "token") === "token";
+          if (isToken) {
+            return (
+              <div className="font-bold flex items-center gap-1 text-emerald-700">
+                <Diamond className="w-3 h-3" />
+                {row.original.tokensCharged ?? 0} т
+              </div>
+            );
+          }
           const total = row.original.commission?.orderTotal || row.original.money?.amount || 0;
           return <div className="font-bold">{fmtMoney(total)}</div>;
         },
@@ -406,7 +416,17 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
       {
         accessorKey: "commission",
         header: "Комиссия",
-        cell: ({ row }) => <CommissionProgress commission={row.original.commission} />,
+        cell: ({ row }) => {
+          const isToken = (row.original.paymentModel || "token") === "token";
+          if (isToken) {
+            return (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <Diamond className="w-2.5 h-2.5 mr-0.5" /> Токеновая
+              </span>
+            );
+          }
+          return <CommissionProgress commission={row.original.commission} />;
+        },
         size: 180,
       },
       {
@@ -419,6 +439,14 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
           </Button>
         ),
         cell: ({ row }) => {
+          const isToken = (row.original.paymentModel || "token") === "token";
+          if (isToken) {
+            return (
+              <div className="text-emerald-600 font-bold">
+                0 т
+              </div>
+            );
+          }
           const left = row.original.commissionLeft;
           return (
             <div className={left === 0 ? "text-emerald-600 font-bold" : "text-red-600 font-bold"}>
@@ -705,7 +733,16 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
                 )}
               </div>
             </div>
-            {row.commission && (
+            {(row.paymentModel || "token") === "token" ? (
+              <div className="bg-emerald-50 rounded-lg p-3">
+                <div className="flex justify-between text-sm font-bold text-emerald-800">
+                  <span className="flex items-center gap-1">
+                    <Diamond className="w-3 h-3" /> Стоимость: {row.tokensCharged ?? 0} т
+                  </span>
+                  <span>Списано</span>
+                </div>
+              </div>
+            ) : row.commission && (
               <div className="bg-slate-50 rounded-lg p-3">
                 <div className="flex justify-between text-sm font-bold">
                   <span>Сумма: {fmtMoney(row.commission.orderTotal)}</span>
@@ -730,7 +767,7 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
                     ↩️ Вернуть
                   </Button>
                 )}
-                {row.commissionLeft > 0 && (
+                {(row.paymentModel || "token") !== "token" && row.commissionLeft > 0 && (
                   <Button variant="default" size="sm" onClick={() => {
                     const input = window.prompt(`Сумма оплаты (остаток ${fmtMoney(row.commissionLeft)}):`, String(row.commissionLeft));
                     if (input === null) return;

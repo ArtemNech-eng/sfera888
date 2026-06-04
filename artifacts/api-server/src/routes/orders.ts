@@ -786,15 +786,17 @@ router.post("/:id/assign-master", allOrderRoles, async (req, res) => {
       }).where(eq(mastersTable.id, masterIdNum));
 
       // Create placeholder transaction — commission amount unknown yet, will be updated when order completes
-      const existingTxRows = await tx.select().from(transactionsTable).where(eq(transactionsTable.orderId, id));
-      if (existingTxRows.length === 0) {
-        await tx.insert(transactionsTable).values({
-          orderId: id,
-          masterId: masterIdNum,
-          orderAmount: "0",
-          commission: "0",
-          paymentStatus: "pending",
-        });
+      if (!isTokenModel) {
+        const existingTxRows = await tx.select().from(transactionsTable).where(eq(transactionsTable.orderId, id));
+        if (existingTxRows.length === 0) {
+          await tx.insert(transactionsTable).values({
+            orderId: id,
+            masterId: masterIdNum,
+            orderAmount: "0",
+            commission: "0",
+            paymentStatus: "pending",
+          });
+        }
       }
     });
   } catch (e) {
@@ -918,6 +920,12 @@ router.post("/:id/unassign-master", requireRole("admin", "master_operator"), asy
     if (colId) {
       await db.update(mastersTable).set({ voronkaColumnId: colId }).where(eq(mastersTable.id, prevMasterId));
     }
+
+    // Decrement stats to reflect actual active orders
+    await db.update(mastersTable).set({
+      totalOrders: Math.max(0, master.totalOrders - 1),
+      acceptedOrders: Math.max(0, master.acceptedOrders - 1),
+    }).where(eq(mastersTable.id, prevMasterId));
 
     // Log to CRM chat (visible in PWA chat tab)
     await db.insert(masterMessagesTable).values({
