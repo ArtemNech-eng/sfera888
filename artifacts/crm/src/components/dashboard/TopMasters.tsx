@@ -10,6 +10,12 @@ interface Master {
   conversion: number;
   rating: number;
   revenue_brought: number;
+  // Token metrics
+  tokens_balance: number;
+  tokens_spent: number;
+  total_purchases: number;
+  days_until_zero: number;
+  days_since_purchase: number | null;
 }
 
 interface Props {
@@ -98,11 +104,29 @@ export function TopMasters({ data, isLoading }: Props) {
                     <span className="text-[11px] text-[#6B7280]">{master.rating}</span>
                   </div>
                 </div>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-[11px] text-[#3B82F6]">{master.tokens_balance} токенов</span>
+                  <span className="text-[11px] text-[#9CA3AF]">·</span>
+                  <span className="text-[11px] text-[#6B7280]">{master.tokens_spent} потрачено</span>
+                  {master.days_until_zero < 14 && master.days_until_zero > 0 && (
+                    <>
+                      <span className="text-[11px] text-[#9CA3AF]">·</span>
+                      <span className="text-[11px] text-[#EF4444]">{master.days_until_zero}д до 0</span>
+                    </>
+                  )}
+                  {master.days_since_purchase != null && master.days_since_purchase > 30 && (
+                    <>
+                      <span className="text-[11px] text-[#9CA3AF]">·</span>
+                      <span className="text-[11px] text-[#F59E0B]">не покупал {master.days_since_purchase}д</span>
+                    </>
+                  )}
+                </div>
               </div>
               <div className="text-right flex-shrink-0">
                 <div className="text-[14px] font-bold" style={{ color: isTop3 ? '#34C759' : '#111827' }}>
                   {formatCurrency(master.revenue_brought)}
                 </div>
+                <div className="text-[11px] text-[#9CA3AF]">{master.total_purchases} покупок</div>
               </div>
               <ChevronRight size={14} color="#D1D5DB" className="hover:text-[#34C759]" />
             </div>

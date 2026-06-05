@@ -8,7 +8,7 @@ import {
   FileText, Timer, History, MessageSquare, ClipboardList, Banknote,
   XCircle, Trash2, RefreshCw, Check, Bell,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -269,7 +269,7 @@ export default function OrderPanel({
       if (!r.ok) { const text = await r.text(); let msg = "Ошибка"; try { msg = JSON.parse(text).error ?? msg; } catch {} throw new Error(msg); }
       return r.json();
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/orders"] }); queryClient.invalidateQueries({ queryKey: ["/api/dispatch", orderId] }); toast({ title: "Мастер назначен" }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/orders"] }); queryClient.invalidateQueries({ queryKey: ["/api/dispatch", orderId] }); broadcastMutation.reset(); toast({ title: "Мастер назначен" }); },
     onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
   });
 
@@ -282,6 +282,7 @@ export default function OrderPanel({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dispatch", orderId] });
+      broadcastMutation.reset();
       setShowManualAssign(false);
       setSelectedMasterForAssign("");
       toast({ title: "Мастер назначен вручную" });
@@ -390,6 +391,11 @@ export default function OrderPanel({
 
   // ── Derived order data ─────────────────────────────────────────────────────
   const openOrder = order ?? fetchedOrder;
+
+  // Reset broadcast mutation when order's dispatchStatus changes from the server
+  useEffect(() => {
+    broadcastMutation.reset();
+  }, [openOrder?.dispatchStatus]);
 
   if (!openOrder && orderLoading) {
     return (
@@ -633,15 +639,20 @@ export default function OrderPanel({
                 )}
                 <p className="text-sm text-muted-foreground">Заявка будет отправлена активным мастерам в городе <b>{openOrder.city}</b>. Телефон клиента скрыт — передаётся только после назначения.</p>
                 {broadcastMutation.isError && <p className="text-sm text-red-500">{(broadcastMutation.error as Error).message}</p>}
-                {broadcastMutation.isSuccess && (
+                {openOrder.dispatchStatus === "dispatching" && (
                   <div className="text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center gap-2">
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Рассылка запущена, уведомления отправляются мастерам…</span>
+                    <span>Рассылка выполняется, уведомления отправляются мастерам…</span>
                   </div>
                 )}
-                <button onClick={() => broadcastMutation.mutate(orderId)} disabled={broadcastMutation.isPending || broadcastMutation.isSuccess} className="w-full py-2.5 bg-blue-500 text-white rounded-xl font-medium hover:bg-blue-600 flex items-center justify-center gap-2 disabled:opacity-50">
-                  {broadcastMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : broadcastMutation.isSuccess ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                  {broadcastMutation.isPending ? "Запуск…" : broadcastMutation.isSuccess ? "Рассылка выполняется…" : "Разослать мастерам"}
+                {((dispatchData?.dispatches.length ?? 0) > 0 && openOrder.dispatchStatus === "none") && (
+                  <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    ⚠️ Рассылка была выполнена ранее, но статус сброшен. Можно разослать повторно.
+                  </p>
+                )}
+                <button onClick={() => broadcastMutation.mutate(orderId)} disabled={broadcastMutation.isPending || openOrder.dispatchStatus === "dispatching"} className="w-full py-2.5 bg-blue-500 text-white rounded-xl font-medium hover:bg-blue-600 flex items-center justify-center gap-2 disabled:opacity-50">
+                  {broadcastMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : openOrder.dispatchStatus === "dispatching" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  {broadcastMutation.isPending ? "Запуск…" : openOrder.dispatchStatus === "dispatching" ? "Рассылка выполняется…" : "Разослать мастерам"}
                 </button>
               </div>
             )}

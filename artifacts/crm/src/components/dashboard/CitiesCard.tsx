@@ -9,6 +9,11 @@ interface CityData {
   masters_total: number;
   masters_active: number;
   conversion: number;
+  // Token metrics
+  token_revenue: number;
+  free_masters: number;
+  waiting_orders: number;
+  ratio: number;
 }
 
 interface Props {
@@ -16,10 +21,10 @@ interface Props {
   isLoading: boolean;
 }
 
-function convColor(pct: number): string {
-  if (pct > 25) return '#34C759';
-  if (pct >= 15) return '#F59E0B';
-  return '#EF4444';
+function cityStatus(ratio: number): { label: string; color: string; bg: string } {
+  if (ratio > 2.0) return { label: 'дефицит мастеров', color: '#EF4444', bg: '#FEF2F2' };
+  if (ratio < 0.5) return { label: 'дефицит заказов', color: '#F59E0B', bg: '#FFFBEB' };
+  return { label: 'норма', color: '#34C759', bg: '#E8F9EE' };
 }
 
 export function CitiesCard({ data, isLoading }: Props) {
@@ -34,7 +39,7 @@ export function CitiesCard({ data, isLoading }: Props) {
     );
   }
 
-  const maxRevenue = Math.max(...data.map(c => c.revenue), 1);
+  const maxRevenue = Math.max(...data.map(c => c.token_revenue), 1);
 
   return (
     <div className="bg-white border border-[#E5E7EB] rounded-2xl p-6 transition-all duration-200
@@ -52,8 +57,8 @@ export function CitiesCard({ data, isLoading }: Props) {
             <div className="text-xs text-[#D1D5DB] mt-1">Данные появятся после первых заказов</div>
           </div>
         ) : data.map(city => {
-          const cc = convColor(city.conversion);
-          const widthPct = (city.revenue / maxRevenue) * 100;
+          const status = cityStatus(city.ratio);
+          const widthPct = (city.token_revenue / maxRevenue) * 100;
           return (
             <div
               key={city.city}
@@ -61,18 +66,27 @@ export function CitiesCard({ data, isLoading }: Props) {
             >
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[15px] font-bold text-[#111827]">{city.city}</span>
-                <span className="text-[13px] font-semibold" style={{ color: cc }}>
-                  {city.conversion.toFixed(1)}%
+                <span
+                  className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
+                  style={{ color: status.color, backgroundColor: status.bg }}
+                >
+                  {status.label}
                 </span>
               </div>
               <div className="h-1 bg-[#F3F4F6] rounded-full overflow-hidden mb-1.5">
                 <div
                   className="h-full rounded-full transition-all duration-700"
-                  style={{ width: `${widthPct}%`, backgroundColor: cc }}
+                  style={{ width: `${widthPct}%`, backgroundColor: '#34C759' }}
                 />
               </div>
-              <div className="text-[12px] text-[#9CA3AF]">
-                Заявки: {city.leads} · Оплат: {city.payments} · {formatCurrency(city.revenue)}
+              <div className="text-[12px] text-[#9CA3AF] flex items-center gap-2 flex-wrap">
+                <span>Заказов: {city.waiting_orders}</span>
+                <span>·</span>
+                <span>Свободных: {city.free_masters}</span>
+                <span>·</span>
+                <span>Ratio: {city.ratio}</span>
+                <span>·</span>
+                <span>{formatCurrency(city.token_revenue)}</span>
               </div>
             </div>
           );

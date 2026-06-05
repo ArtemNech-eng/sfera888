@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   DollarSign, BarChart3, FileText, CreditCard,
-  UserCheck, UserPlus, Wallet, TrendingUp, TrendingDown, Edit2
+  UserCheck, UserPlus, Wallet, TrendingUp, TrendingDown, Edit2,
+  Coins, Users, Clock, Ban, AlertCircle
 } from 'lucide-react';
 import { useCountUp } from '../../hooks/useCountUp';
 import { formatCurrency, formatChange } from '../../utils/format';
@@ -22,6 +23,17 @@ interface KPIData {
   masters_new_today: number;
   masters_new_today_prev: number;
   avito_balance: number;
+  // Token KPIs
+  token_revenue_today?: number;
+  token_revenue_yesterday?: number;
+  tokens_sold_today?: number;
+  tokens_sold_yesterday?: number;
+  new_buyers_today?: number;
+  new_buyers_yesterday?: number;
+  orders_pending?: number;
+  masters_at_zero?: number;
+  masters_low_balance?: number;
+  token_refunds_today?: number;
 }
 
 interface KPICardProps {
@@ -151,62 +163,53 @@ export function KPICards({ data, isLoading, onEditAvitoBalance }: Props) {
   const avitoLow = data.avito_balance < 1000;
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-4">
+    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-7 gap-4">
+      {/* Token KPI Cards */}
       <KPICard
         index={0}
-        title="Доход сегодня"
-        value={data.revenue_today}
-        prevValue={data.revenue_today_prev}
+        title="Выручка от токенов"
+        value={data.token_revenue_today ?? 0}
+        prevValue={data.token_revenue_yesterday ?? 0}
         icon={<DollarSign size={18} color="#34C759" />}
         iconBg="bg-[#E8F9EE]"
         formatValue={formatCurrency}
-        progress={revenueTodayProgress}
-        progressColor="#34C759"
       />
       <KPICard
         index={1}
-        title="Доход за месяц"
-        value={data.revenue_month}
-        prevValue={data.revenue_month_prev}
-        icon={<BarChart3 size={18} color="#3B82F6" />}
-        iconBg="bg-[#EFF6FF]"
-        formatValue={formatCurrency}
-        changeLabel="vs прошлый месяц"
-      />
-      <KPICard
-        index={2}
-        title="Заявок сегодня"
-        value={data.leads_today}
-        prevValue={data.leads_today_prev}
-        icon={<FileText size={18} color="#F59E0B" />}
+        title="Токенов продано"
+        value={data.tokens_sold_today ?? 0}
+        prevValue={data.tokens_sold_yesterday ?? 0}
+        icon={<Coins size={18} color="#F59E0B" />}
         iconBg="bg-[#FFFBEB]"
       />
       <KPICard
+        index={2}
+        title="Новых покупателей"
+        value={data.new_buyers_today ?? 0}
+        prevValue={data.new_buyers_yesterday ?? 0}
+        icon={<Users size={18} color="#3B82F6" />}
+        iconBg="bg-[#EFF6FF]"
+      />
+      <KPICard
         index={3}
-        title="Оплат сегодня"
-        value={data.payments_today}
-        prevValue={data.payments_today_prev}
-        icon={<CreditCard size={18} color="#34C759" />}
-        iconBg="bg-[#E8F9EE]"
+        title="Ждут бронирования"
+        value={data.orders_pending ?? 0}
+        icon={<Clock size={18} color="#EF4444" />}
+        iconBg="bg-[#FEF2F2]"
       />
       <KPICard
         index={4}
-        title="Активных мастеров"
-        value={data.masters_active}
-        icon={<UserCheck size={18} color="#8B5CF6" />}
-        iconBg="bg-[#F5F3FF]"
-        subLabel="из"
-        subValue={`${data.masters_total} всего`}
-        progress={mastersProgress}
-        progressColor="#8B5CF6"
+        title="На нулевом балансе"
+        value={data.masters_at_zero ?? 0}
+        icon={<Ban size={18} color="#EF4444" />}
+        iconBg="bg-[#FEF2F2]"
       />
       <KPICard
         index={5}
-        title="Новых мастеров"
-        value={data.masters_new_today}
-        prevValue={data.masters_new_today_prev}
-        icon={<UserPlus size={18} color="#34C759" />}
-        iconBg="bg-[#E8F9EE]"
+        title="Низкий баланс"
+        value={data.masters_low_balance ?? 0}
+        icon={<AlertCircle size={18} color="#F59E0B" />}
+        iconBg="bg-[#FFFBEB]"
       />
 
       {/* Avito Balance — custom card */}

@@ -10,7 +10,7 @@ import { ActionItemsBlock } from "../components/dashboard/ActionItemsBlock";
 import { ForecastCard } from "../components/dashboard/ForecastCard";
 import { RiskMonitor } from "../components/dashboard/RiskMonitor";
 import { RevenueChart } from "../components/dashboard/RevenueChart";
-import { FunnelCard } from "../components/dashboard/FunnelCard";
+import { TokenFunnelCard } from "../components/dashboard/TokenFunnelCard";
 import { LiveFeed } from "../components/dashboard/LiveFeed";
 import { SpeedMetrics } from "../components/dashboard/SpeedMetrics";
 import { CitiesCard } from "../components/dashboard/CitiesCard";
@@ -193,12 +193,15 @@ function DashboardPage() {
   const riskMonitor = data?.riskMonitor;
   const revenueChart = data?.revenueChart;
   const funnel = data?.funnel;
+  const tokenFunnel = data?.tokenFunnel;
   const liveFeed = data?.liveFeed ?? [];
   const speedMetrics = data?.speedMetrics;
   const cities = data?.cities ?? [];
   const roiSources = data?.roiSources ?? [];
   const topMasters = data?.topMasters ?? [];
   const recentOrders = data?.recentOrders ?? [];
+  const dailyTokenSales = data?.dailyTokenSales;
+  const tokenFlow = data?.tokenFlow;
 
   // Error state
   if (error) {
@@ -299,7 +302,7 @@ function DashboardPage() {
             <RevenueChart data={revenueChart} isLoading={isLoading} chartDays={chartDays} onDaysChange={setChartDays} />
           </div>
           <div className="lg:col-span-2">
-            <FunnelCard data={funnel} isLoading={isLoading} />
+            <TokenFunnelCard data={tokenFunnel} isLoading={isLoading} />
           </div>
         </div>
 
