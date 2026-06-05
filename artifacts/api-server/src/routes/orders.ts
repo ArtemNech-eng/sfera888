@@ -11,7 +11,7 @@ import { sendPushToClient } from "../lib/clientPush.js";
 import { sendMaxMessage } from "../maxBot.js";
 import { analyseOrderCancellation } from "../lib/dispatcherAI.js";
 import { recordOrderCancelled, recordOrderCompleted, revertOrderCancellation } from "../lib/masterReputation.js";
-import { getOrderTokenCost, deductTokensTx, TokenWalletError, ERR_INSUFFICIENT_TOKENS } from "../lib/tokenWallet.js";
+import { getOrderTokenCost, deductTokensTx, refundTokens, TokenWalletError, ERR_INSUFFICIENT_TOKENS } from "../lib/tokenWallet.js";
 
 // Telegram-бот удалён.
 
@@ -911,6 +911,27 @@ router.post("/:id/unassign-master", requireRole("admin", "master_operator"), asy
     note: `Мастер снят. Причина: ${reason.trim()}`,
   }).catch(() => {});
 
+  // Refund tokens if token model
+  const isTokenModelUnassign = (order as any).paymentModel === "token";
+  if (isTokenModelUnassign && order.tokensCharged && Number(order.tokensCharged) > 0) {
+    const spendTx = await db.select().from(walletTransactionsTable)
+      .where(and(
+        eq(walletTransactionsTable.masterId, prevMasterId),
+        eq(walletTransactionsTable.orderId, id),
+        eq(walletTransactionsTable.type, "spend"),
+      ))
+      .limit(1);
+    if (spendTx.length > 0) {
+      await refundTokens({
+        masterId: prevMasterId,
+        orderId: id,
+        tokensCost: Number(order.tokensCharged),
+        reason: `Снятие с заказа администратором: ${reason.trim()}`,
+        transactionId: spendTx[0].id,
+      });
+    }
+  }
+
   // Update master voronka column based on remaining active orders
   const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, prevMasterId));
   const master = masterRows[0];
@@ -981,8 +1002,12 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
     tokensCost = cost;
   }
 
+  console.log(`[manual-assign] start order=${orderId} master=${masterId} tokenModel=${isTokenModel} tokensCost=${tokensCost}`);
+
   try {
     await db.transaction(async (tx) => {
+      console.log(`[manual-assign] transaction started order=${orderId}`);
+
       if (isTokenModel) {
         const deduction = await deductTokensTx(tx, {
           masterId,
@@ -990,6 +1015,7 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
           tokensCost,
           serviceType: order.serviceType,
         });
+        console.log(`[manual-assign] deductTokensTx result order=${orderId} success=${deduction.success}`);
         if (!deduction.success) {
           throw deduction.error;
         }
@@ -1063,23 +1089,27 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
         userAlias: maUserAlias,
         note: `Назначен вручную: ${master.alias}`,
       }).catch(() => {});
+
+      // Log to CRM chat (visible in PWA chat tab)
+      await tx.insert(masterMessagesTable).values({
+        masterId: master.id,
+        telegramChatId: `pwa_${master.id}`,
+        text: `✅ Назначен на заявку #${orderId} (вручную администратором)${isTokenModel ? `. Списано ${tokensCost} т.` : ""}`,
+        fromMaster: false,
+        senderName: "system",
+        isRead: false,
+      }).catch(() => {});
+
+      console.log(`[manual-assign] transaction body completed order=${orderId}`);
     });
+    console.log(`[manual-assign] transaction committed order=${orderId}`);
   } catch (e) {
+    console.error(`[manual-assign] transaction FAILED order=${orderId} error=`, e);
     if (e instanceof TokenWalletError && e.code === ERR_INSUFFICIENT_TOKENS) {
       return res.status(402).json({ error: e.message, insufficientTokens: true });
     }
     throw e;
   }
-
-  // Log to CRM chat (visible in PWA chat tab)
-  await db.insert(masterMessagesTable).values({
-    masterId: master.id,
-    telegramChatId: `pwa_${master.id}`,
-    text: `✅ Назначен на заявку #${orderId} (вручную администратором)${isTokenModel ? `. Списано ${tokensCost} т.` : ""}`,
-    fromMaster: false,
-    senderName: "system",
-    isRead: false,
-  }).catch(() => {});
 
   // Push notification to master's PWA
   const leadRows = await db.select().from(leadsTable).where(eq(leadsTable.id, order.leadId));
