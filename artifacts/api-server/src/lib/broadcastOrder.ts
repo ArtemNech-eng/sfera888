@@ -178,21 +178,35 @@ export async function performBroadcast(
       }
       return matches;
     });
-
-    if (specialtyEligible.length === 0) {
-      return {
-        ok: false, sent: 0, skipped: reachable.length,
-        error: `Нет мастеров с нужной специализацией «${order.serviceType}». Используйте «разошли всем без фильтра специализации».`,
-        skipStats,
-      };
-    }
   }
 
-  const availableEligible = specialtyEligible;
-  const skipped = reachable.length - availableEligible.length;
+  // Include previous sent recipients even if they don't match specialty filter
+  const previousSent = await db.select({ masterId: orderDispatchesTable.masterId })
+    .from(orderDispatchesTable)
+    .where(and(
+      eq(orderDispatchesTable.orderId, orderId),
+      eq(orderDispatchesTable.status, "sent"),
+    ));
+  const previousSentIds = new Set(previousSent.map(r => r.masterId));
+
+  const finalEligible = reachableFiltered.filter(m => {
+    if (specialtyEligible.some(se => se.id === m.id)) return true;
+    if (previousSentIds.has(m.id)) return true;
+    return false;
+  });
+
+  if (finalEligible.length === 0) {
+    return {
+      ok: false, sent: 0, skipped: reachable.length,
+      error: `Нет мастеров с нужной специализацией «${order.serviceType}». Используйте «разошли всем без фильтра специализации».`,
+      skipStats,
+    };
+  }
+
+  const skipped = reachable.length - finalEligible.length;
 
   // ── ATOMIC: update order to dispatching BEFORE sending pushes ──
-  const windowCloseAt = availableEligible.length > 0
+  const windowCloseAt = finalEligible.length > 0
     ? new Date(Date.now() + 30 * 60 * 1000)
     : null;
   await db.update(ordersTable)
@@ -203,11 +217,11 @@ export async function performBroadcast(
     })
     .where(eq(ordersTable.id, orderId));
 
-  // ── BULK INSERT dispatch records ──
-  const masterIds = availableEligible.map(m => m.id);
-  if (masterIds.length > 0) {
+  // ── BULK INSERT dispatch records (only for NEW recipients) ──
+  const newMasterIds = finalEligible.map(m => m.id).filter(mid => !previousSentIds.has(mid));
+  if (newMasterIds.length > 0) {
     await db.insert(orderDispatchesTable).values(
-      masterIds.map(mid => ({
+      newMasterIds.map(mid => ({
         orderId,
         masterId: mid,
         telegramChatId: `pwa_${mid}`,
@@ -217,18 +231,18 @@ export async function performBroadcast(
     );
   }
 
-  // ── BULK UPDATE master stats ──
-  if (masterIds.length > 0) {
+  // ── BULK UPDATE master stats (only for NEW recipients) ──
+  if (newMasterIds.length > 0) {
     await db.update(mastersTable)
       .set({ totalLeadsReceived: sql`${mastersTable.totalLeadsReceived} + 1` })
-      .where(inArray(mastersTable.id, masterIds));
+      .where(inArray(mastersTable.id, newMasterIds));
   }
 
   // ── PARALLEL PUSH / MAX (batched, 10 at a time) ──
   const date = formatDate(order.scheduledAt);
   const maxMsg = `📋 Новая заявка #${orderId}\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${date}${order.comment ? "\n💬 " + order.comment : ""}\n\n👉 Откликнитесь в приложении:\nhttps://sfera-master.ru/master-pwa/orders`;
 
-  await batchAsync(availableEligible, 10, async (master) => {
+  await batchAsync(finalEligible, 10, async (master) => {
     await Promise.all([
       master.pwaLogin
         ? sendPushToMaster(master.id, {
@@ -245,9 +259,9 @@ export async function performBroadcast(
   });
 
   const duration = Date.now() - startedAt;
-  console.log(`[broadcast] order=${orderId} finished sent=${availableEligible.length} skipped=${skipped} skipStats=${JSON.stringify(skipStats)} duration=${duration}ms`);
+  console.log(`[broadcast] order=${orderId} finished sent=${finalEligible.length} skipped=${skipped} skipStats=${JSON.stringify(skipStats)} duration=${duration}ms`);
 
-  return { ok: true, sent: availableEligible.length, skipped, skipStats };
+  return { ok: true, sent: finalEligible.length, skipped, skipStats };
 }
 
 // ─── Resend dispatch to non-responders ──────────────────────────────────────────

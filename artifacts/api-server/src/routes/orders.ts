@@ -1042,11 +1042,6 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
         });
       }
 
-      // Mark other dispatch records as rejected
-      await tx.update(orderDispatchesTable)
-        .set({ status: "rejected" })
-        .where(and(eq(orderDispatchesTable.orderId, orderId), ne(orderDispatchesTable.masterId, masterId)));
-
       // Move new master to "На объекте" column and update stats
       const onSiteCol = await getOnSiteColumn();
       await tx.update(mastersTable).set({
