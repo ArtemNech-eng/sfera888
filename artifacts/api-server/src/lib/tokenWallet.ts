@@ -195,14 +195,11 @@ export async function deductTokensTx(
 ): Promise<{ success: true } | { success: false; error: TokenWalletError }> {
   const { masterId, orderId, tokensCost, serviceType } = params;
 
-  console.log(`[deductTokensTx] start master=${masterId} order=${orderId} cost=${tokensCost}`);
-
   // Read wallet with row lock via FOR UPDATE
   const walletRows = await tx.execute(sql`
     SELECT * FROM master_wallet WHERE master_id = ${masterId} FOR UPDATE
   `);
   const walletRow = walletRows.rows[0];
-  console.log(`[deductTokensTx] wallet found=${!!walletRow}`);
   if (!walletRow) {
     return {
       success: false,
@@ -219,7 +216,6 @@ export async function deductTokensTx(
     Number(walletRow.credit_tokens_issued ?? 0)
   );
   const newBalance = currentBalance - tokensCost;
-  console.log(`[deductTokensTx] balance=${currentBalance} credit=${creditLimit} new=${newBalance}`);
 
   // Gate: balance must stay above negative credit limit
   if (newBalance < -creditLimit) {
@@ -243,7 +239,6 @@ export async function deductTokensTx(
         updated_at = NOW()
     WHERE master_id = ${masterId}
   `);
-  console.log(`[deductTokensTx] wallet updated`);
 
   // Prevent duplicate spend record for same (master, order) — unique index guards this
   const existingSpend = await tx.select().from(walletTransactionsTable)
@@ -253,7 +248,6 @@ export async function deductTokensTx(
       eq(walletTransactionsTable.type, "spend"),
     ))
     .limit(1);
-  console.log(`[deductTokensTx] existingSpend=${existingSpend.length}`);
 
   if (existingSpend.length === 0) {
     await tx.insert(walletTransactionsTable).values({
@@ -267,7 +261,6 @@ export async function deductTokensTx(
     createdBy: "system",
     status: "completed",
   });
-    console.log(`[deductTokensTx] spend inserted`);
   }
 
   await tx.insert(tokenAuditLogTable).values({
@@ -282,7 +275,6 @@ export async function deductTokensTx(
       : `Открытие контакта по заявке (${serviceType})`,
     createdBy: "system",
   });
-  console.log(`[deductTokensTx] audit log inserted`);
 
   return { success: true };
 }

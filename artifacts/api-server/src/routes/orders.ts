@@ -1002,12 +1002,8 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
     tokensCost = cost;
   }
 
-  console.log(`[manual-assign] start order=${orderId} master=${masterId} tokenModel=${isTokenModel} tokensCost=${tokensCost}`);
-
   try {
     await db.transaction(async (tx) => {
-      console.log(`[manual-assign] transaction started order=${orderId}`);
-
       if (isTokenModel) {
         const deduction = await deductTokensTx(tx, {
           masterId,
@@ -1015,7 +1011,6 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
           tokensCost,
           serviceType: order.serviceType,
         });
-        console.log(`[manual-assign] deductTokensTx result order=${orderId} success=${deduction.success}`);
         if (!deduction.success) {
           throw deduction.error;
         }
@@ -1088,7 +1083,7 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
         userId: maSessionUser,
         userAlias: maUserAlias,
         note: `Назначен вручную: ${master.alias}`,
-      }).catch(() => {});
+      });
 
       // Log to CRM chat (visible in PWA chat tab)
       await tx.insert(masterMessagesTable).values({
@@ -1098,13 +1093,10 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
         fromMaster: false,
         senderName: "system",
         isRead: false,
-      }).catch(() => {});
+      });
 
-      console.log(`[manual-assign] transaction body completed order=${orderId}`);
     });
-    console.log(`[manual-assign] transaction committed order=${orderId}`);
   } catch (e) {
-    console.error(`[manual-assign] transaction FAILED order=${orderId} error=`, e);
     if (e instanceof TokenWalletError && e.code === ERR_INSUFFICIENT_TOKENS) {
       return res.status(402).json({ error: e.message, insufficientTokens: true });
     }
