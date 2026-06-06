@@ -403,12 +403,12 @@ export default function Leads() {
   });
 
   const sendToWorkMutation = useMutation({
-    mutationFn: async ({ id, manualTokenCost }: { id: number; manualTokenCost?: number }) => {
+    mutationFn: async ({ id, manualTokenCost, maxMasters }: { id: number; manualTokenCost?: number; maxMasters?: number }) => {
       const r = await fetch(`/api/leads/${id}/send-to-buffer`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ manualTokenCost }),
+        body: JSON.stringify({ manualTokenCost, maxMasters }),
       });
       if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Ошибка отправки"); }
       return r.json();
@@ -747,7 +747,7 @@ export default function Leads() {
           <ConfirmSendDialog
             lead={confirmSendLead}
             onClose={() => setConfirmSendLead(null)}
-            onConfirm={(id, manualTokenCost) => sendToWorkMutation.mutate({ id, manualTokenCost })}
+            onConfirm={(id, manualTokenCost, maxMasters) => sendToWorkMutation.mutate({ id, manualTokenCost, maxMasters })}
             isPending={sendToWorkMutation.isPending}
           />
         )}

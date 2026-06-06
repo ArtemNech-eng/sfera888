@@ -13,7 +13,7 @@ interface LeadRow {
 interface ConfirmSendDialogProps {
   lead: LeadRow;
   onClose: () => void;
-  onConfirm: (leadId: number, manualTokenCost?: number) => void;
+  onConfirm: (leadId: number, manualTokenCost?: number, maxMasters?: number) => void;
   isPending?: boolean;
 }
 
@@ -24,6 +24,7 @@ export default function ConfirmSendDialog({
   isPending,
 }: ConfirmSendDialogProps) {
   const [manualTokenCost, setManualTokenCost] = useState<string>("");
+  const [maxMasters, setMaxMasters] = useState<number>(3);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.55)", backdropFilter: "blur(6px)" }}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in fade-in zoom-in-95 duration-200">
@@ -48,9 +49,21 @@ export default function ConfirmSendDialog({
             className="w-full h-9 px-3 text-sm rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
           />
         </div>
+        <div className="mb-4">
+          <label className="text-xs text-gray-500 block mb-1">Макс. мастеров</label>
+          <div className="flex gap-2">
+            {[1, 2, 3].map(n => (
+              <button
+                key={n}
+                onClick={() => setMaxMasters(n)}
+                className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-all ${maxMasters === n ? 'bg-primary text-white border-primary' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+              >{n} {n === 1 ? 'мастер' : 'мастера'}</button>
+            ))}
+          </div>
+        </div>
         <div className="flex gap-3">
           <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl font-medium text-gray-500 hover:bg-gray-100 transition-colors text-sm">Отмена</button>
-          <button onClick={() => onConfirm(lead.id, manualTokenCost ? parseFloat(manualTokenCost) : undefined)} disabled={isPending} className="flex-1 px-4 py-2.5 bg-primary text-white rounded-xl font-semibold hover:bg-primary/90 flex items-center justify-center gap-2 disabled:opacity-50 transition-all text-sm">
+          <button onClick={() => onConfirm(lead.id, manualTokenCost ? parseFloat(manualTokenCost) : undefined, maxMasters)} disabled={isPending} className="flex-1 px-4 py-2.5 bg-primary text-white rounded-xl font-semibold hover:bg-primary/90 flex items-center justify-center gap-2 disabled:opacity-50 transition-all text-sm">
             {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}Отправить
           </button>
         </div>
