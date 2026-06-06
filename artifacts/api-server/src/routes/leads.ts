@@ -350,6 +350,8 @@ router.post("/:id/send-to-buffer", checkRateLimit, allLeadRoles, async (req, res
   const lead = rows[0];
   if (!lead) return res.status(404).json({ error: "Lead not found" });
 
+  const { manualTokenCost } = req.body as { manualTokenCost?: number };
+
   await db.update(leadsTable).set({ status: "sent_to_work", updatedAt: new Date() }).where(eq(leadsTable.id, id));
   await db.execute(sql`UPDATE leads SET status_updated_at = NOW() WHERE id = ${id}`);
 
@@ -367,6 +369,7 @@ router.post("/:id/send-to-buffer", checkRateLimit, allLeadRoles, async (req, res
     paymentModel: isPartnerLead ? "token" : ((lead as any).paymentModel || "token"),
     clientName: lead.clientName,
     clientPhone: lead.clientPhone,
+    manualTokenCost: manualTokenCost != null ? String(manualTokenCost) : null,
   }).returning();
   const order = orderResult[0];
 

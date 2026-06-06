@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from "express";
-import { db, ordersTable, mastersTable, transactionsTable, voronkaColumnsTable, orderDispatchesTable, leadsTable, masterMessagesTable, orderStatusLogsTable, usersTable, receiptsTable, fomoEventsTable, orderMastersTable } from "@workspace/db";
+import { db, ordersTable, mastersTable, transactionsTable, voronkaColumnsTable, orderDispatchesTable, leadsTable, masterMessagesTable, orderStatusLogsTable, usersTable, receiptsTable, fomoEventsTable, orderMastersTable, mlPricingDecisionsTable } from "@workspace/db";
 import { eq, inArray, and, ne, isNull, isNotNull, desc, count, sql } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { calculateCommission, getCommissionSettings } from "../lib/commission.js";
@@ -894,6 +894,29 @@ router.post("/:id/assign-master", allOrderRoles, async (req, res) => {
     }).catch(() => {});
   }
 
+  // Record ML training data
+  try {
+    const now = new Date();
+    await db.insert(mlPricingDecisionsTable).values({
+      orderId: id,
+      masterId: masterIdNum,
+      tokensCharged: String(tokensCost),
+      maxMasters: (order as any).maxMasters ?? 3,
+      assignedCount: ((order as any).assignedMasterCount ?? 0) + 1,
+      serviceType: order.serviceType,
+      city: order.city,
+      district: order.district,
+      area: order.area ? String(order.area) : null,
+      scheduledAt: order.scheduledAt,
+      hourOfDay: now.getHours(),
+      isWeekend: now.getDay() === 0 || now.getDay() === 6,
+      masterRating: master.rating ? String(master.rating) : null,
+      masterExperience: master.acceptedOrders ?? 0,
+    });
+  } catch (e) {
+    console.error("[ml-pricing-decisions] insert failed:", e);
+  }
+
   res.json({
     id: o.id,
     leadId: o.leadId,
@@ -1199,6 +1222,29 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
       master.maxChatId,
       `✅ Вам назначена заявка #${orderId}\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${maDate}${order.comment ? "\n💬 " + order.comment : ""}${lead ? `\n\n📞 ${lead.clientName}\n${lead.clientPhone}` : ""}\n\n👉 Подробности в приложении:\nhttps://sfera-master.ru/master-pwa/orders`
     ).catch(() => {});
+  }
+
+  // Record ML training data
+  try {
+    const now = new Date();
+    await db.insert(mlPricingDecisionsTable).values({
+      orderId,
+      masterId,
+      tokensCharged: String(tokensCost),
+      maxMasters: (order as any).maxMasters ?? 3,
+      assignedCount: currentAssignedCount + 1,
+      serviceType: order.serviceType,
+      city: order.city,
+      district: order.district,
+      area: order.area ? String(order.area) : null,
+      scheduledAt: order.scheduledAt,
+      hourOfDay: now.getHours(),
+      isWeekend: now.getDay() === 0 || now.getDay() === 6,
+      masterRating: master.rating ? String(master.rating) : null,
+      masterExperience: master.acceptedOrders ?? 0,
+    });
+  } catch (e) {
+    console.error("[ml-pricing-decisions] insert failed:", e);
   }
 
   res.json({ ok: true });

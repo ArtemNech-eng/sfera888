@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { Layout } from "@/components/layout";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
-  useCreateLead, useSendLeadToBuffer, useGetCities, useGetServices,
+  useCreateLead, useGetCities, useGetServices,
 } from "@workspace/api-client-react";
 import { ProtectedRoute } from "@/hooks/use-auth";
 import { WorkBoardTable } from "@/components/work-board-table";
@@ -402,17 +402,25 @@ export default function Leads() {
     }
   });
 
-  const sendToWorkMutation = useSendLeadToBuffer({
-    mutation: {
-      onSuccess: (data: any) => {
-        queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
-        setConfirmSendLead(null);
-        toast({ title: "Заявка отправлена мастерам", description: data?.id ? `Создан заказ #${data.leadId ?? data.id}` : "Заказ создан" });
-        setActiveTab("work");
-      },
-      onError: () => toast({ title: "Ошибка отправки", variant: "destructive" }),
-    }
+  const sendToWorkMutation = useMutation({
+    mutationFn: async ({ id, manualTokenCost }: { id: number; manualTokenCost?: number }) => {
+      const r = await fetch(`/api/leads/${id}/send-to-buffer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ manualTokenCost }),
+      });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Ошибка отправки"); }
+      return r.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      setConfirmSendLead(null);
+      toast({ title: "Заявка отправлена мастерам", description: data?.id ? `Создан заказ #${data.leadId ?? data.id}` : "Заказ создан" });
+      setActiveTab("work");
+    },
+    onError: (e: Error) => toast({ title: "Ошибка отправки", description: e.message, variant: "destructive" }),
   });
 
   const quickStatusMutation = useMutation({
@@ -739,7 +747,7 @@ export default function Leads() {
           <ConfirmSendDialog
             lead={confirmSendLead}
             onClose={() => setConfirmSendLead(null)}
-            onConfirm={(id) => sendToWorkMutation.mutate({ id })}
+            onConfirm={(id, manualTokenCost) => sendToWorkMutation.mutate({ id, manualTokenCost })}
             isPending={sendToWorkMutation.isPending}
           />
         )}

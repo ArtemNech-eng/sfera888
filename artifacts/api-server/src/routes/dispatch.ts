@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, ordersTable, mastersTable, orderDispatchesTable, leadsTable, masterMessagesTable, voronkaColumnsTable, orderStatusLogsTable } from "@workspace/db";
+import { db, ordersTable, mastersTable, orderDispatchesTable, leadsTable, masterMessagesTable, voronkaColumnsTable, orderStatusLogsTable, mlPricingDecisionsTable } from "@workspace/db";
 import { eq, and, ne, inArray } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
@@ -541,6 +541,29 @@ router.post("/:orderId/assign/:masterId", ops, async (req, res) => {
         isRead: false,
       }).catch(() => {});
     }
+  }
+
+  // Record ML training data
+  try {
+    const now = new Date();
+    await db.insert(mlPricingDecisionsTable).values({
+      orderId,
+      masterId,
+      tokensCharged: String(tokensCost),
+      maxMasters: order.maxMasters ?? 3,
+      assignedCount: (order.assignedMasterCount ?? 0) + 1,
+      serviceType: order.serviceType,
+      city: order.city,
+      district: order.district,
+      area: order.area ? String(order.area) : null,
+      scheduledAt: order.scheduledAt,
+      hourOfDay: now.getHours(),
+      isWeekend: now.getDay() === 0 || now.getDay() === 6,
+      masterRating: master.rating ? String(master.rating) : null,
+      masterExperience: master.acceptedOrders ?? 0,
+    });
+  } catch (e) {
+    console.error("[ml-pricing-decisions] insert failed:", e);
   }
 
   res.json({ ok: true });

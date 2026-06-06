@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { CheckCircle2, Loader2, Play } from "lucide-react";
 
 interface LeadRow {
@@ -12,7 +13,7 @@ interface LeadRow {
 interface ConfirmSendDialogProps {
   lead: LeadRow;
   onClose: () => void;
-  onConfirm: (leadId: number) => void;
+  onConfirm: (leadId: number, manualTokenCost?: number) => void;
   isPending?: boolean;
 }
 
@@ -22,6 +23,7 @@ export default function ConfirmSendDialog({
   onConfirm,
   isPending,
 }: ConfirmSendDialogProps) {
+  const [manualTokenCost, setManualTokenCost] = useState<string>("");
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.55)", backdropFilter: "blur(6px)" }}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in fade-in zoom-in-95 duration-200">
@@ -35,9 +37,20 @@ export default function ConfirmSendDialog({
           <div className="flex justify-between"><span className="text-gray-500">Город</span><span className="font-medium text-gray-800">{lead.city}{lead.district ? `, ${lead.district}` : ""}</span></div>
           <div className="flex justify-between"><span className="text-gray-500">Услуга</span><span className="font-medium text-gray-800">{lead.serviceType}</span></div>
         </div>
+        <div className="mb-4">
+          <label className="text-xs text-gray-500 block mb-1">Стоимость в токенах (опционально)</label>
+          <input
+            type="number"
+            step="0.5"
+            value={manualTokenCost}
+            onChange={e => setManualTokenCost(e.target.value)}
+            placeholder="Авто"
+            className="w-full h-9 px-3 text-sm rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
+          />
+        </div>
         <div className="flex gap-3">
           <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl font-medium text-gray-500 hover:bg-gray-100 transition-colors text-sm">Отмена</button>
-          <button onClick={() => onConfirm(lead.id)} disabled={isPending} className="flex-1 px-4 py-2.5 bg-primary text-white rounded-xl font-semibold hover:bg-primary/90 flex items-center justify-center gap-2 disabled:opacity-50 transition-all text-sm">
+          <button onClick={() => onConfirm(lead.id, manualTokenCost ? parseFloat(manualTokenCost) : undefined)} disabled={isPending} className="flex-1 px-4 py-2.5 bg-primary text-white rounded-xl font-semibold hover:bg-primary/90 flex items-center justify-center gap-2 disabled:opacity-50 transition-all text-sm">
             {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}Отправить
           </button>
         </div>
