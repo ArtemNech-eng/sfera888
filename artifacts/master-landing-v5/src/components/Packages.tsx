@@ -2,28 +2,30 @@ const packages = [
   {
     name: 'Старт',
     price: '5 000',
-    orders: '1 заказ',
-    ordersCount: 1,
+    tokens: '4 токена',
+    orders: '2 заказа',
+    ordersCount: 2,
     desc: 'Для входа в рабочий ритм',
     tag: null,
     highlight: false,
     features: [
-      '1 заказ из системы',
+      '4 токена (2 заказа)',
       'Полный доступ к приложению',
       'Смета и бронь',
       'Весь заработок — ваш',
     ],
   },
   {
-    name: 'Профи',
-    price: '20 000',
-    orders: '5 заказов',
-    ordersCount: 5,
+    name: 'Оптима',
+    price: '10 000',
+    tokens: '8 токенов',
+    orders: '4 заказа',
+    ordersCount: 4,
     desc: 'Оптимальный пакет для стабильной работы',
     tag: 'Популярный',
     highlight: true,
     features: [
-      '5 заказов из системы',
+      '8 токенов (4 заказа)',
       'Приоритет в ленте заказов',
       'Смета и бронь',
       'Весь заработок — ваш',
@@ -31,15 +33,16 @@ const packages = [
     ],
   },
   {
-    name: 'Максимум',
-    price: '30 000',
+    name: 'Профи',
+    price: '25 000',
+    tokens: '20 токенов',
     orders: '10 заказов',
     ordersCount: 10,
     desc: 'Для сильных мастеров и бригад',
     tag: 'Выгодно',
     highlight: false,
     features: [
-      '10 заказов из системы',
+      '20 токенов (10 заказов)',
       'Максимальный приоритет',
       'Смета и бронь',
       'Весь заработок — ваш',
@@ -70,17 +73,17 @@ export default function Packages() {
             <span className="text-sm font-semibold text-[#6B7280]">После тестового периода</span>
           </div>
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-[#111827] mb-4">
-            Пакеты заказов
+            Пакеты токенов
           </h2>
           <p className="text-lg text-[#6B7280] max-w-2xl mx-auto">
-            Вы не отдаёте проценты с объекта. Вы покупаете доступ к реальным заказам.
+            1 токен = 1 250 ₽. Заказ стоит 2 токена. Вы покупаете токены и тратите их на заказы.
           </p>
         </div>
 
         {/* Main explanation */}
         <div className="bg-[#F8FAFC] border border-[#E5E7EB] rounded-2xl p-6 mb-12 max-w-3xl mx-auto text-center">
           <p className="text-[#374151] leading-relaxed">
-            После тестового периода мастер подключается к платной модели доступа. Вы покупаете пакет заказов и сами решаете, какие объекты брать.{' '}
+            После тестового периода мастер подключается к токенной модели. Вы покупаете пакет токенов и тратите их на заказы.{' '}
             <span className="font-bold text-[#111827]">Весь заработок по объекту — ваш. Платформа не забирает процент с ремонта.</span>
           </p>
         </div>
@@ -118,11 +121,14 @@ export default function Packages() {
                   </span>
                 </div>
 
-                {/* Orders count */}
-                <div className={`inline-flex items-center gap-2 rounded-xl px-3 py-1.5 mb-3 ${
+                {/* Tokens count */}
+                <div className={`inline-flex items-center gap-2 rounded-xl px-3 py-1.5 mb-1 ${
                   pkg.highlight ? 'bg-[#34C759]/20' : 'bg-[#E8F9EE]'
                 }`}>
-                  <span className="text-[#34C759] font-bold text-sm">{pkg.orders}</span>
+                  <span className="text-[#34C759] font-bold text-sm">{pkg.tokens}</span>
+                </div>
+                <div className={`text-xs mb-3 ${pkg.highlight ? 'text-white/50' : 'text-[#9CA3AF]'}`}>
+                  {pkg.orders} · 1 250 ₽ за токен
                 </div>
 
                 <p className={`text-sm mb-6 leading-relaxed ${pkg.highlight ? 'text-white/60' : 'text-[#6B7280]'}`}>

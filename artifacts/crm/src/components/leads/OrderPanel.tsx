@@ -115,6 +115,8 @@ interface Order {
   manualTokenCost?: number | null;
   paymentModel?: "token" | "commission" | string;
   tokensCharged?: number;
+  maxMasters?: number;
+  assignedMasterCount?: number;
 }
 
 interface OrderPanelProps {
@@ -191,6 +193,7 @@ export default function OrderPanel({
   const respondents = useMemo(() => dispatchData?.dispatches.filter(d => d.status === "responded") ?? [], [dispatchData]);
   const rejectedDispatches = useMemo(() => dispatchData?.dispatches.filter(d => d.status === "rejected") ?? [], [dispatchData]);
   const pendingDispatched = useMemo(() => dispatchData?.dispatches.filter(d => d.status === "sent") ?? [], [dispatchData]);
+  const assignedDispatches = useMemo(() => dispatchData?.dispatches.filter(d => d.status === "assigned") ?? [], [dispatchData]);
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [notifCopied, setNotifCopied] = useState(false);
@@ -215,6 +218,7 @@ export default function OrderPanel({
 
   const [operatorNoteEdit, setOperatorNoteEdit] = useState<string | null>(null);
   const [manualTokenCostEdit, setManualTokenCostEdit] = useState<string | null>(null);
+  const [maxMastersEdit, setMaxMastersEdit] = useState<string | null>(null);
 
   const [showReceipts, setShowReceipts] = useState(false);
   const [showCreateReceipt, setShowCreateReceipt] = useState(false);
@@ -291,8 +295,8 @@ export default function OrderPanel({
   });
 
   const unassignMutation = useMutation({
-    mutationFn: async ({ orderId: oid, reason, rebroadcast }: { orderId: number; reason: string; rebroadcast: boolean }) => {
-      const r = await fetch(`/api/orders/${oid}/unassign-master`, { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ reason, rebroadcast }) });
+    mutationFn: async ({ orderId: oid, reason, rebroadcast, masterId }: { orderId: number; reason: string; rebroadcast: boolean; masterId?: number }) => {
+      const r = await fetch(`/api/orders/${oid}/unassign-master`, { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ reason, rebroadcast, masterId }) });
       if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Ошибка"); }
       return r.json();
     },
@@ -376,6 +380,30 @@ export default function OrderPanel({
       return r.json();
     },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/orders"] }); setManualTokenCostEdit(null); toast({ title: "Стоимость в токенах обновлена" }); },
+    onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
+  });
+
+  const saveMaxMastersMutation = useMutation({
+    mutationFn: async ({ orderId: oid, maxMasters: mm }: { orderId: number; maxMasters: number }) => {
+      const r = await fetch(`/api/orders/${oid}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ maxMasters: mm }) });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Ошибка"); }
+      return r.json();
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/orders"] }); setMaxMastersEdit(null); toast({ title: "Макс. мастеров обновлено" }); },
+    onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
+  });
+
+  const closeEnrollmentMutation = useMutation({
+    mutationFn: async (oid: number) => {
+      const r = await fetch(`/api/orders/${oid}/close-enrollment`, { method: "POST", credentials: "include" });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Ошибка"); }
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dispatch", orderId] });
+      toast({ title: "Набор мастеров завершён" });
+    },
     onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
   });
 
@@ -494,6 +522,37 @@ export default function OrderPanel({
                     <p className="font-medium text-foreground">{openOrder.tokensCharged ?? 0} т</p>
                   </div>
                 )}
+                <div>
+                  <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide">Макс. мастеров</p>
+                  {maxMastersEdit !== null ? (
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <input
+                        type="number"
+                        min={Math.max(1, openOrder.assignedMasterCount ?? 0)}
+                        value={maxMastersEdit}
+                        onChange={e => setMaxMastersEdit(e.target.value)}
+                        className="w-16 border border-border rounded-lg px-2 py-0.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-primary/30"
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => { const v = parseInt(maxMastersEdit); if (!isNaN(v) && v >= 1) saveMaxMastersMutation.mutate({ orderId, maxMasters: v }); }}
+                        className="text-emerald-600 hover:text-emerald-700"
+                      ><Check className="w-3 h-3" /></button>
+                      <button
+                        onClick={() => setMaxMastersEdit(null)}
+                        className="text-slate-400 hover:text-slate-600"
+                      ><X className="w-3 h-3" /></button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <p className="font-medium text-foreground">{openOrder.maxMasters ?? 3}</p>
+                      <button
+                        onClick={() => setMaxMastersEdit(String(openOrder.maxMasters ?? 3))}
+                        className="text-muted-foreground/50 hover:text-primary"
+                      ><Pencil className="w-3 h-3" /></button>
+                    </div>
+                  )}
+                </div>
                 <div className="col-span-2 border-t border-border/30 pt-2">
                   <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide mb-1.5">Клиент</p>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
@@ -669,6 +728,11 @@ export default function OrderPanel({
                   <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-muted-foreground">
                     <Send className="w-3 h-3" /> Отправлено {(dispatchData?.dispatches.length ?? 0)}
                   </span>
+                  {assignedDispatches.length > 0 && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-violet-50 text-violet-700">
+                      <UserCheck className="w-3 h-3" /> Назначено {assignedDispatches.length}
+                    </span>
+                  )}
                   {respondents.length > 0 && (
                     <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-green-50 text-green-700">
                       <Check className="w-3 h-3" /> Откликнулись {respondents.length}
@@ -746,7 +810,7 @@ export default function OrderPanel({
                               <p className="text-sm font-semibold text-foreground truncate">{d.masterName}</p>
                               {d.respondedAt && <p className="text-xs text-muted-foreground">{new Date(d.respondedAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</p>}
                             </div>
-                            {openOrder.dispatchStatus !== "assigned" && (
+                            {(openOrder.assignedMasterCount ?? 0) < (openOrder.maxMasters ?? 3) && (
                               <button onClick={() => assignMutation.mutate({ orderId, masterId: d.masterId })} disabled={assignMutation.isPending} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-500 text-white hover:bg-green-600 rounded-lg font-medium text-xs disabled:opacity-50 flex-shrink-0">{assignMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserCheck className="w-3 h-3" />}Назначить</button>
                             )}
                           </div>
@@ -790,9 +854,15 @@ export default function OrderPanel({
                 {respondents.length === 0 && rejectedDispatches.length === 0 && (
                   <div className="text-center py-6 text-sm text-muted-foreground"><Clock className="w-8 h-8 mx-auto mb-2 text-muted-foreground/40" />Ожидаем откликов от мастеров...</div>
                 )}
-                {openOrder.dispatchStatus === "assigned" && (
+                {(openOrder.assignedMasterCount ?? 0) > 0 && (
                   <div className="space-y-2">
-                    <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm"><CheckCircle2 className="w-4 h-4 flex-shrink-0" />Заявка назначена. Мастер получил контакт клиента.</div>
+                    <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm">
+                      <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                      Назначено {openOrder.assignedMasterCount} из {openOrder.maxMasters ?? 3} мастеров.
+                    </div>
+                    {(openOrder.assignedMasterCount ?? 0) < (openOrder.maxMasters ?? 3) && openOrder.status !== "master_assigned" && (
+                      <button onClick={() => { if (confirm("Завершить набор мастеров? Новые отклики будут недоступны.")) closeEnrollmentMutation.mutate(orderId); }} disabled={closeEnrollmentMutation.isPending} className="w-full flex items-center justify-center gap-2 py-2 px-4 text-sm font-medium text-blue-600 border border-blue-200 rounded-xl hover:bg-blue-50 disabled:opacity-50 transition-colors">{closeEnrollmentMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}Завершить набор мастеров</button>
+                    )}
                     <button onClick={() => { setShowUnassignDialog(true); setUnassignReason(""); }} disabled={unassignMutation.isPending} className="w-full flex items-center justify-center gap-2 py-2 px-4 text-sm font-medium text-red-600 border border-red-200 rounded-xl hover:bg-red-50 disabled:opacity-50 transition-colors">{unassignMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}Снять мастера с заказа</button>
                   </div>
                 )}
@@ -823,7 +893,7 @@ export default function OrderPanel({
                   Сразу переразослать заявку другим мастерам
                 </label>
                 <div className="flex gap-2">
-                  <button onClick={() => { if (!unassignReason.trim()) return; unassignMutation.mutate({ orderId, reason: unassignReason, rebroadcast: rebroadcastOnUnassign }); }} disabled={!unassignReason.trim() || unassignMutation.isPending} className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-red-500 text-white rounded-lg text-xs font-medium hover:bg-red-600 disabled:opacity-50">{unassignMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}Снять мастера</button>
+                  <button onClick={() => { if (!unassignReason.trim()) return; unassignMutation.mutate({ orderId, reason: unassignReason, rebroadcast: rebroadcastOnUnassign, masterId: openOrder.masterId ?? undefined }); }} disabled={!unassignReason.trim() || unassignMutation.isPending} className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-red-500 text-white rounded-lg text-xs font-medium hover:bg-red-600 disabled:opacity-50">{unassignMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}Снять мастера</button>
                   <button onClick={() => { setShowUnassignDialog(false); setUnassignReason(""); setRebroadcastOnUnassign(false); }} className="px-3 py-1.5 bg-white border border-red-200 rounded-lg text-xs font-medium text-red-700 hover:bg-red-50">Отмена</button>
                 </div>
               </div>

@@ -1,4 +1,4 @@
-import { db, transactionsTable, mastersTable, voronkaColumnsTable, ordersTable } from "@workspace/db";
+import { db, transactionsTable, mastersTable, voronkaColumnsTable, ordersTable, orderMastersTable } from "@workspace/db";
 import { eq, and, lte, ne, inArray, isNull } from "drizzle-orm";
 
 /**
@@ -12,10 +12,26 @@ export async function countActiveMasterOrders(masterId: number, excludeOrderId?:
       inArray(ordersTable.status, ["master_assigned", "in_progress", "cancellation_requested"]),
       isNull(ordersTable.deletedAt),
     ));
+
+  const omRows = await db.select({ orderId: orderMastersTable.orderId })
+    .from(orderMastersTable)
+    .innerJoin(ordersTable, eq(orderMastersTable.orderId, ordersTable.id))
+    .where(and(
+      eq(orderMastersTable.masterId, masterId),
+      eq(orderMastersTable.status, "active"),
+      inArray(ordersTable.status, ["master_assigned", "in_progress", "cancellation_requested", "waiting_master"]),
+      isNull(ordersTable.deletedAt),
+    ));
+
+  const allIds = new Set([
+    ...rows.map(r => r.id),
+    ...omRows.map(r => r.orderId),
+  ]);
+
   if (excludeOrderId !== undefined) {
-    return rows.filter(r => r.id !== excludeOrderId).length;
+    allIds.delete(excludeOrderId);
   }
-  return rows.length;
+  return allIds.size;
 }
 
 /**

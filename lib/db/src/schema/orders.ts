@@ -60,6 +60,8 @@ export const ordersTable = pgTable("orders", {
   paymentModel: varchar("payment_model", { length: 50 }).notNull().default("token"),
   tokensCharged: numeric("tokens_charged", { precision: 10, scale: 2 }).notNull().default("0"),
   manualTokenCost: numeric("manual_token_cost", { precision: 10, scale: 2 }),
+  maxMasters: integer("max_masters").notNull().default(3),
+  assignedMasterCount: integer("assigned_master_count").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   deletedAt: timestamp("deleted_at"),

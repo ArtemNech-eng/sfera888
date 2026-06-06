@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from "express";
-import { db, ordersTable, mastersTable, transactionsTable, voronkaColumnsTable, orderDispatchesTable, leadsTable, masterMessagesTable, orderStatusLogsTable, usersTable, receiptsTable, fomoEventsTable } from "@workspace/db";
+import { db, ordersTable, mastersTable, transactionsTable, voronkaColumnsTable, orderDispatchesTable, leadsTable, masterMessagesTable, orderStatusLogsTable, usersTable, receiptsTable, fomoEventsTable, orderMastersTable } from "@workspace/db";
 import { eq, inArray, and, ne, isNull, isNotNull, desc, count, sql } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { calculateCommission, getCommissionSettings } from "../lib/commission.js";
@@ -11,7 +11,7 @@ import { sendPushToClient } from "../lib/clientPush.js";
 import { sendMaxMessage } from "../maxBot.js";
 import { analyseOrderCancellation } from "../lib/dispatcherAI.js";
 import { recordOrderCancelled, recordOrderCompleted, revertOrderCancellation } from "../lib/masterReputation.js";
-import { getOrderTokenCost, deductTokensTx, refundTokens, TokenWalletError, ERR_INSUFFICIENT_TOKENS } from "../lib/tokenWallet.js";
+import { getOrderTokenCost, deductTokensTx, TokenWalletError, ERR_INSUFFICIENT_TOKENS } from "../lib/tokenWallet.js";
 
 // Telegram-бот удалён.
 
@@ -159,6 +159,8 @@ router.get("/", allOrderRoles, async (req, res) => {
         photosAfter: (o as any).photosAfter ?? [],
         photoAct: (o as any).photoAct ?? null,
         paymentModel: o.paymentModel ?? "token",
+        maxMasters: (o as any).maxMasters ?? 3,
+        assignedMasterCount: (o as any).assignedMasterCount ?? 0,
         createdAt: o.createdAt,
         updatedAt: o.updatedAt,
         transactionInfo: tx ? {
@@ -229,6 +231,8 @@ router.get("/:id", allOrderRoles, async (req, res) => {
     paymentModel: o.paymentModel ?? "token",
     tokensCharged: o.tokensCharged ? Number(o.tokensCharged) : 0,
     manualTokenCost: o.manualTokenCost ? Number(o.manualTokenCost) : null,
+    maxMasters: (o as any).maxMasters ?? 3,
+    assignedMasterCount: (o as any).assignedMasterCount ?? 0,
     createdAt: o.createdAt,
     updatedAt: o.updatedAt,
     // Transaction info from finance (may exist even if order fields are empty)
@@ -245,7 +249,7 @@ router.get("/:id", allOrderRoles, async (req, res) => {
 router.patch("/:id", allOrderRoles, async (req, res) => {
   const id = parseInt(String(req.params.id as string));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid order ID" });
-  const { status, orderAmount, commission, clientRating, proposedAmount, acceptProposed, approveCancellation, rejectCancellation, restoreOrder, operatorNote, clientCancelReason, manualTokenCost, paymentModel } = req.body;
+  const { status, orderAmount, commission, clientRating, proposedAmount, acceptProposed, approveCancellation, rejectCancellation, restoreOrder, operatorNote, clientCancelReason, manualTokenCost, paymentModel, maxMasters } = req.body;
 
   // Fetch current order to get masterId before update
   const currentRows = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
@@ -258,6 +262,9 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
   if (operatorNote !== undefined) updates.operatorNote = operatorNote !== null ? operatorNote : null;
   if (clientCancelReason !== undefined) updates.operatorNote = clientCancelReason || null;
   if (manualTokenCost !== undefined) updates.manualTokenCost = manualTokenCost !== null ? String(manualTokenCost) : null;
+  if (maxMasters !== undefined && !isNaN(Number(maxMasters)) && Number(maxMasters) >= 1) {
+    updates.maxMasters = Number(maxMasters);
+  }
   if (paymentModel !== undefined) {
     const [leadCheck] = await db.select({ source: leadsTable.source, trafficPartnerId: leadsTable.trafficPartnerId }).from(leadsTable).where(eq(leadsTable.id, current.leadId ?? 0)).limit(1);
     const isPartnerOrder = leadCheck?.source === "avito_partner" || leadCheck?.trafficPartnerId != null;
@@ -768,14 +775,55 @@ router.post("/:id/assign-master", allOrderRoles, async (req, res) => {
         }
       }
 
-      const result = await tx.update(ordersTable).set({
-        masterId,
-        status: "master_assigned",
-        updatedAt: new Date(),
-        ...(isTokenModel ? { tokensCharged: String(tokensCost) } : {}),
-      }).where(eq(ordersTable.id, id)).returning();
+      // Add master to order_masters
+      await tx.insert(orderMastersTable).values({
+        orderId: id,
+        masterId: masterIdNum,
+        tokensCharged: tokensCost,
+        status: "active",
+      });
 
+      const currentAssignedCount = (order as any).assignedMasterCount ?? 0;
+      const maxMasters = (order as any).maxMasters ?? 3;
+      const newCount = currentAssignedCount + 1;
+      const isFull = newCount >= maxMasters;
+
+      const orderUpdates: any = {
+        assignedMasterCount: newCount,
+        updatedAt: new Date(),
+        ...(isTokenModel ? { tokensCharged: String(Number((order as any).tokensCharged ?? 0) + tokensCost) } : {}),
+        ...( !order.masterId ? { masterId: masterIdNum } : {} ),
+      };
+
+      if (isFull) {
+        orderUpdates.status = "master_assigned";
+        orderUpdates.dispatchStatus = "assigned";
+        await tx.update(orderDispatchesTable)
+          .set({ status: "rejected" })
+          .where(and(
+            eq(orderDispatchesTable.orderId, id),
+            eq(orderDispatchesTable.status, "sent"),
+          ));
+      }
+
+      const result = await tx.update(ordersTable).set(orderUpdates).where(eq(ordersTable.id, id)).returning();
       if (!result[0]) throw new Error("Order not found");
+
+      // Update dispatch record to assigned
+      const existingDispatch = await tx.select().from(orderDispatchesTable)
+        .where(and(eq(orderDispatchesTable.orderId, id), eq(orderDispatchesTable.masterId, masterIdNum)));
+      if (existingDispatch.length > 0) {
+        await tx.update(orderDispatchesTable)
+          .set({ status: "assigned" })
+          .where(eq(orderDispatchesTable.id, existingDispatch[0].id));
+      } else {
+        await tx.insert(orderDispatchesTable).values({
+          orderId: id,
+          masterId: masterIdNum,
+          telegramChatId: `pwa_${masterIdNum}`,
+          status: "assigned",
+        });
+      }
 
       // Update master stats + move to "На объекте" column automatically
       const onSiteCol = await getOnSiteColumn();
@@ -871,26 +919,50 @@ router.post("/:id/unassign-master", requireRole("admin", "master_operator"), asy
   const id = parseInt(String(req.params.id as string));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid order id" });
 
-  const { reason, rebroadcast } = req.body as { reason?: string; rebroadcast?: boolean };
+  const { reason, rebroadcast, masterId: bodyMasterId } = req.body as { reason?: string; rebroadcast?: boolean; masterId?: number };
   if (!reason?.trim()) return res.status(400).json({ error: "Укажите причину снятия мастера" });
 
   const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
   const order = orderRows[0];
   if (!order) return res.status(404).json({ error: "Order not found" });
-  if (!order.masterId) return res.status(400).json({ error: "Нет назначенного мастера" });
 
-  const prevMasterId = order.masterId;
+  const prevMasterId = bodyMasterId ?? order.masterId;
+  if (!prevMasterId) return res.status(400).json({ error: "Укажите мастера для снятия" });
 
-  // Remove master from order, reset to waiting, store reason
-  await db.update(ordersTable).set({
-    masterId: null,
-    status: "waiting_master",
-    dispatchStatus: "none",
-    cancelReason: reason.trim(),
+  // Remove from order_masters
+  const omRow = await db.select().from(orderMastersTable)
+    .where(and(eq(orderMastersTable.orderId, id), eq(orderMastersTable.masterId, prevMasterId)))
+    .limit(1);
+  if (omRow.length > 0) {
+    await db.update(orderMastersTable)
+      .set({ status: "cancelled" })
+      .where(eq(orderMastersTable.id, omRow[0].id));
+  }
+
+  const currentCount = (order as any).assignedMasterCount ?? 0;
+  const newCount = Math.max(0, currentCount - 1);
+
+  // Check remaining assigned masters
+  const remainingMasters = await db.select().from(orderMastersTable)
+    .where(and(eq(orderMastersTable.orderId, id), eq(orderMastersTable.status, "active")));
+
+  const updates: any = {
+    assignedMasterCount: newCount,
     updatedAt: new Date(),
-  }).where(eq(ordersTable.id, id));
+    cancelReason: reason.trim(),
+  };
 
-  // Mark unassigned master's dispatch record as "rejected" so they're excluded from future re-broadcasts
+  if (remainingMasters.length === 0) {
+    updates.masterId = null;
+    updates.status = "waiting_master";
+    updates.dispatchStatus = "none";
+  } else if (order.masterId === prevMasterId) {
+    updates.masterId = remainingMasters[0].masterId;
+  }
+
+  await db.update(ordersTable).set(updates).where(eq(ordersTable.id, id));
+
+  // Mark unassigned master's dispatch record as "rejected"
   await db.update(orderDispatchesTable)
     .set({ status: "rejected" })
     .where(and(eq(orderDispatchesTable.orderId, id), eq(orderDispatchesTable.masterId, prevMasterId)));
@@ -905,32 +977,11 @@ router.post("/:id/unassign-master", requireRole("admin", "master_operator"), asy
   await db.insert(orderStatusLogsTable).values({
     orderId: id,
     oldStatus: order.status,
-    newStatus: "waiting_master",
+    newStatus: remainingMasters.length === 0 ? "waiting_master" : order.status,
     userId: sessionUser,
     userAlias: unassignUserAlias,
     note: `Мастер снят. Причина: ${reason.trim()}`,
   }).catch(() => {});
-
-  // Refund tokens if token model
-  const isTokenModelUnassign = (order as any).paymentModel === "token";
-  if (isTokenModelUnassign && order.tokensCharged && Number(order.tokensCharged) > 0) {
-    const spendTx = await db.select().from(walletTransactionsTable)
-      .where(and(
-        eq(walletTransactionsTable.masterId, prevMasterId),
-        eq(walletTransactionsTable.orderId, id),
-        eq(walletTransactionsTable.type, "spend"),
-      ))
-      .limit(1);
-    if (spendTx.length > 0) {
-      await refundTokens({
-        masterId: prevMasterId,
-        orderId: id,
-        tokensCost: Number(order.tokensCharged),
-        reason: `Снятие с заказа администратором: ${reason.trim()}`,
-        transactionId: spendTx[0].id,
-      });
-    }
-  }
 
   // Update master voronka column based on remaining active orders
   const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, prevMasterId));
@@ -959,9 +1010,9 @@ router.post("/:id/unassign-master", requireRole("admin", "master_operator"), asy
     }).catch(() => {});
   }
 
-  // If rebroadcast requested — trigger broadcast to other eligible masters immediately
+  // If rebroadcast requested and no remaining masters — trigger broadcast
   let broadcastResult = null;
-  if (rebroadcast) {
+  if (rebroadcast && remainingMasters.length === 0) {
     broadcastResult = await performBroadcast(id).catch(() => null);
   }
 
@@ -980,15 +1031,22 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
   const order = orderRows[0];
   if (!order) return res.status(404).json({ error: "Order not found" });
 
-  if (order.masterId === masterId) return res.status(400).json({ error: "Этот мастер уже назначен на заказ" });
+  // Check if already assigned via order_masters
+  const existingOm = await db.select().from(orderMastersTable)
+    .where(and(eq(orderMastersTable.orderId, orderId), eq(orderMastersTable.masterId, masterId)));
+  if (existingOm.length > 0) return res.status(400).json({ error: "Этот мастер уже назначен на заказ" });
 
   const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
   const master = masterRows[0];
   if (!master) return res.status(404).json({ error: "Master not found" });
   if (master.status !== "active") return res.status(400).json({ error: "Мастер неактивен" });
 
-  // If there was a previous master assigned, log it
-  const prevMasterId = order.masterId;
+  // Check room
+  const currentAssignedCount = (order as any).assignedMasterCount ?? 0;
+  const maxMasters = (order as any).maxMasters ?? 3;
+  if (currentAssignedCount >= maxMasters) {
+    return res.status(400).json({ error: "Заказ уже занят максимальным числом мастеров" });
+  }
 
   const isTokenModel = (order as any).paymentModel === "token";
   let tokensCost = 0;
@@ -1016,14 +1074,36 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
         }
       }
 
-      // Assign master to order
-      await tx.update(ordersTable).set({
+      // Add to order_masters
+      await tx.insert(orderMastersTable).values({
+        orderId,
         masterId,
-        status: "master_assigned",
-        dispatchStatus: "assigned",
+        tokensCharged: tokensCost,
+        status: "active",
+      });
+
+      const newCount = currentAssignedCount + 1;
+      const isFull = newCount >= maxMasters;
+
+      const orderUpdates: any = {
+        assignedMasterCount: newCount,
         updatedAt: new Date(),
-        ...(isTokenModel ? { tokensCharged: String(tokensCost) } : {}),
-      }).where(eq(ordersTable.id, orderId));
+        ...(isTokenModel ? { tokensCharged: String(Number((order as any).tokensCharged ?? 0) + tokensCost) } : {}),
+        ...( !order.masterId ? { masterId } : {} ),
+      };
+
+      if (isFull) {
+        orderUpdates.status = "master_assigned";
+        orderUpdates.dispatchStatus = "assigned";
+        await tx.update(orderDispatchesTable)
+          .set({ status: "rejected" })
+          .where(and(
+            eq(orderDispatchesTable.orderId, orderId),
+            eq(orderDispatchesTable.status, "sent"),
+          ));
+      }
+
+      await tx.update(ordersTable).set(orderUpdates).where(eq(ordersTable.id, orderId));
 
       // Update or create dispatch record for this master
       const existingDispatch = await tx.select().from(orderDispatchesTable)
@@ -1032,7 +1112,7 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
       if (existingDispatch.length > 0) {
         await tx.update(orderDispatchesTable)
           .set({ status: "assigned" })
-          .where(and(eq(orderDispatchesTable.orderId, orderId), eq(orderDispatchesTable.masterId, masterId)));
+          .where(eq(orderDispatchesTable.id, existingDispatch[0].id));
       } else {
         await tx.insert(orderDispatchesTable).values({
           orderId,
@@ -1050,15 +1130,6 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
         acceptedOrders: master.acceptedOrders + 1,
       }).where(eq(mastersTable.id, masterId));
 
-      // If there was a previous master, update their voronka column
-      if (prevMasterId && prevMasterId !== masterId) {
-        const remainingCount = await countActiveMasterOrders(prevMasterId, orderId);
-        const colId = await getColumnIdForActiveCount(remainingCount);
-        if (colId) {
-          await tx.update(mastersTable).set({ voronkaColumnId: colId }).where(eq(mastersTable.id, prevMasterId));
-        }
-      }
-
       // Set assignedAt timestamp on manual assign
       await tx.update(ordersTable)
         .set({ assignedAt: new Date() })
@@ -1074,7 +1145,7 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
       await tx.insert(orderStatusLogsTable).values({
         orderId,
         oldStatus: order.status,
-        newStatus: "master_assigned",
+        newStatus: isFull ? "master_assigned" : order.status,
         userId: maSessionUser,
         userAlias: maUserAlias,
         note: `Назначен вручную: ${master.alias}`,
@@ -1129,6 +1200,52 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
       `✅ Вам назначена заявка #${orderId}\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${maDate}${order.comment ? "\n💬 " + order.comment : ""}${lead ? `\n\n📞 ${lead.clientName}\n${lead.clientPhone}` : ""}\n\n👉 Подробности в приложении:\nhttps://sfera-master.ru/master-pwa/orders`
     ).catch(() => {});
   }
+
+  res.json({ ok: true });
+});
+
+// ─── POST /api/orders/:id/close-enrollment — admin manually closes master enrollment ───
+router.post("/:id/close-enrollment", requireRole("admin", "master_operator"), async (req, res) => {
+  const orderId = parseInt(String(req.params.id as string));
+  if (isNaN(orderId)) return res.status(400).json({ error: "Invalid order ID" });
+
+  const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
+  const order = orderRows[0];
+  if (!order) return res.status(404).json({ error: "Order not found" });
+
+  if (order.status === "master_assigned") {
+    return res.status(400).json({ error: "Набор уже завершён" });
+  }
+
+  await db.transaction(async (tx) => {
+    await tx.update(ordersTable).set({
+      status: "master_assigned",
+      dispatchStatus: "assigned",
+      updatedAt: new Date(),
+    }).where(eq(ordersTable.id, orderId));
+
+    await tx.update(orderDispatchesTable)
+      .set({ status: "rejected" })
+      .where(and(
+        eq(orderDispatchesTable.orderId, orderId),
+        eq(orderDispatchesTable.status, "sent"),
+      ));
+
+    const sessionUser = (req as any).session?.userId ?? null;
+    let userAlias = "система";
+    if (sessionUser) {
+      const userRows = await tx.select().from(usersTable).where(eq(usersTable.id, sessionUser));
+      userAlias = userRows[0]?.name ?? userRows[0]?.login ?? "система";
+    }
+    await tx.insert(orderStatusLogsTable).values({
+      orderId,
+      oldStatus: order.status,
+      newStatus: "master_assigned",
+      userId: sessionUser,
+      userAlias,
+      note: `Набор мастеров завершён вручную. Назначено: ${(order as any).assignedMasterCount ?? 0} мастеров`,
+    });
+  });
 
   res.json({ ok: true });
 });

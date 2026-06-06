@@ -135,8 +135,8 @@ export async function getOrderTokenCost(order: {
     };
   }
 
-  // 5. Absolute fallback
-  const { cost: fallbackCost, multiplier: fallbackMult } = await applyCityMultiplier(1, city);
+  // 5. Absolute fallback — все заказы по умолчанию 2 токена
+  const { cost: fallbackCost, multiplier: fallbackMult } = await applyCityMultiplier(2, city);
   const fallbackNote = fallbackMult !== 1 ? ` × ${fallbackMult} (город)` : "";
   return { cost: fallbackCost, explanation: `${serviceType} → стандартная стоимость${fallbackNote}` };
 }
@@ -228,8 +228,9 @@ export async function deductTokensTx(
     };
   }
 
-  // creditTokensSpent tracks how much of the balance is currently negative (legacy analytics field)
-  const creditTokensSpent = newBalance < 0 ? Math.min(creditLimit, -newBalance) : 0;
+  // creditTokensSpent tracks how much of the issued credit has been used
+  const creditTokensIssued = Number(walletRow.credit_tokens_issued ?? 0);
+  const creditTokensSpent = newBalance < 0 ? Math.min(creditTokensIssued, -newBalance) : 0;
 
   await tx.execute(sql`
     UPDATE master_wallet
@@ -315,11 +316,8 @@ export async function refundTokens(params: {
 
   const wallet = await ensureWallet(masterId);
   const newBalance = Number(wallet.tokensBalance) + tokensCost;
-  const creditLimit = Math.max(
-    Number(wallet.creditLimitTokens ?? 0),
-    Number((wallet as any).creditTokensIssued ?? 0)
-  );
-  const creditTokensSpent = newBalance < 0 ? Math.min(creditLimit, -newBalance) : 0;
+  const creditTokensIssued = Number((wallet as any).creditTokensIssued ?? 0);
+  const creditTokensSpent = newBalance < 0 ? Math.min(creditTokensIssued, -newBalance) : 0;
 
   const balanceBefore = Number(wallet.tokensBalance);
 

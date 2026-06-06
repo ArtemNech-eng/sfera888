@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, mastersTable, ordersTable, orderDispatchesTable, transactionsTable, leadsTable, voronkaColumnsTable, masterMessagesTable, pushSubscriptionsTable, masterCheckinsTable, transactionPaymentsTable, walletTransactionsTable } from "@workspace/db";
+import { db, mastersTable, ordersTable, orderDispatchesTable, transactionsTable, leadsTable, voronkaColumnsTable, masterMessagesTable, pushSubscriptionsTable, masterCheckinsTable, transactionPaymentsTable, walletTransactionsTable, orderMastersTable } from "@workspace/db";
 import { maybeEarlyAssign } from "../lib/priorityAssign.js";
 import { eq, and, inArray, isNull, ne, asc, desc, gte, sql } from "drizzle-orm";
 import { verifyPassword, hashPassword } from "../lib/auth.js";
@@ -17,6 +17,7 @@ import {
   ensureWallet,
   checkTokenBalance,
   deductTokensTx,
+  deductTokens,
   TokenWalletError,
   ERR_INSUFFICIENT_TOKENS,
   ERR_ORDER_ALREADY_TAKEN,
@@ -343,12 +344,26 @@ router.get("/home", requireMasterPwa, async (req, res) => {
   const minArea = master.minArea ?? 0;
   const preferredDistricts: string[] = (master.preferredDistricts as string[]) ?? [];
 
-  // Available orders — "sent" dispatches, order still waiting
+  // Available orders — "sent" dispatches, order still accepting masters
   let availableOrders: any[] = [];
   if (sentDispatches.length > 0) {
     const orderIds = sentDispatches.map(d => d.orderId);
-    let orders = await db.select().from(ordersTable)
-      .where(and(inArray(ordersTable.id, orderIds), eq(ordersTable.status, "waiting_master"), isNull(ordersTable.deletedAt)));
+    // Exclude orders where this master is already assigned
+    const alreadyAssigned = await db.select({ orderId: orderMastersTable.orderId })
+      .from(orderMastersTable)
+      .where(and(eq(orderMastersTable.masterId, masterId), inArray(orderMastersTable.orderId, orderIds)));
+    const assignedSet = new Set(alreadyAssigned.map(r => r.orderId));
+    const filteredOrderIds = orderIds.filter(oid => !assignedSet.has(oid));
+
+    let orders = filteredOrderIds.length > 0
+      ? await db.select().from(ordersTable)
+          .where(and(
+            inArray(ordersTable.id, filteredOrderIds),
+            eq(ordersTable.status, "waiting_master"),
+            isNull(ordersTable.deletedAt),
+            sql`${ordersTable.assignedMasterCount} < ${ordersTable.maxMasters}`,
+          ))
+      : [];
 
     // Apply smart filters
     if (minArea > 0) orders = orders.filter(o => Number(o.area) >= minArea);
@@ -431,13 +446,30 @@ router.get("/home", requireMasterPwa, async (req, res) => {
     }));
   }
 
-  // Active orders (assigned to me)
-  const activeOrders = await db.select().from(ordersTable)
+  // Active orders (assigned to me — legacy + order_masters)
+  const legacyActive = await db.select().from(ordersTable)
     .where(and(
       eq(ordersTable.masterId, masterId),
       inArray(ordersTable.status, ["master_assigned", "in_progress", "cancellation_requested"]),
       isNull(ordersTable.deletedAt)
     ));
+  const omActiveIds = await db.select({ orderId: orderMastersTable.orderId })
+    .from(orderMastersTable)
+    .innerJoin(ordersTable, eq(orderMastersTable.orderId, ordersTable.id))
+    .where(and(
+      eq(orderMastersTable.masterId, masterId),
+      eq(orderMastersTable.status, "active"),
+      inArray(ordersTable.status, ["master_assigned", "in_progress", "cancellation_requested", "waiting_master"]),
+      isNull(ordersTable.deletedAt),
+    ));
+  const legacyIds = new Set(legacyActive.map(o => o.id));
+  const missingOmIds = omActiveIds.map(r => r.orderId).filter(id => !legacyIds.has(id));
+  let activeOrders = [...legacyActive];
+  if (missingOmIds.length > 0) {
+    const missing = await db.select().from(ordersTable)
+      .where(and(inArray(ordersTable.id, missingOmIds), isNull(ordersTable.deletedAt)));
+    activeOrders.push(...missing);
+  }
 
   // Availability — based on voronka column receivesOrders flag
   let isAvailable = true;
@@ -536,61 +568,6 @@ router.get("/home", requireMasterPwa, async (req, res) => {
     o.paymentModel = "token";
   }
 
-  // ─── Landing leads (direct from landing page, exclusive model) ──────────────
-  const since14d = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
-  const rawLandingLeads = await db.select().from(leadsTable)
-    .where(and(
-      eq(leadsTable.status, "new"),
-      eq(leadsTable.leadChannel, "partner_landing"),
-      isNull(leadsTable.deletedAt),
-      gte(leadsTable.createdAt, since14d),
-      sql`lower(${leadsTable.city}) = lower(${master.city})`,
-      sql`NOT EXISTS (SELECT 1 FROM lead_responses lr WHERE lr.lead_id = ${leadsTable.id})`,
-    ))
-    .orderBy(desc(leadsTable.createdAt))
-    .limit(20);
-
-  const landingServiceTypes = [...new Set(rawLandingLeads.map(l => l.serviceType))];
-  for (const st of landingServiceTypes) {
-    if (!tokenCostMap.has(st)) {
-      const sample = rawLandingLeads.find(l => l.serviceType === st);
-      tokenCostMap.set(st, await getOrderTokenCost({
-        serviceType: st,
-        area: sample?.area ? Number(sample.area) : null,
-        manualTokenCost: null,
-        city: sample?.city ?? null,
-      }));
-    }
-  }
-
-  const landingLeads = rawLandingLeads.map(l => {
-    let services: string[] = [];
-    if (l.services) {
-      try { const p = JSON.parse(l.services); services = Array.isArray(p) ? p : [l.serviceType]; }
-      catch { services = [l.serviceType]; }
-    } else { services = [l.serviceType]; }
-    let photos: string[] = [];
-    if (l.photos) {
-      try { const p = JSON.parse(l.photos); photos = Array.isArray(p) ? p : []; }
-      catch { photos = []; }
-    }
-    const tc = tokenCostMap.get(l.serviceType) ?? { cost: 1, explanation: "стандартная стоимость" };
-    return {
-      id: l.id,
-      city: l.city,
-      district: l.district,
-      serviceType: l.serviceType,
-      services,
-      area: Number(l.area),
-      comment: l.comment ?? null,
-      createdAt: l.createdAt,
-      tokensCost: tc.cost,
-      tokensCostExplanation: tc.explanation,
-      photos,
-      scheduledAt: l.scheduledAt,
-    };
-  });
-
   res.json({
     master: {
       id: master.id,
@@ -606,7 +583,6 @@ router.get("/home", requireMasterPwa, async (req, res) => {
     },
     fomoBlock,
     availableOrders,
-    landingLeads,
     pendingOrders,
     missedOrders,
     todayActivity,
@@ -642,8 +618,21 @@ router.get("/orders/available", requireMasterPwa, async (req, res) => {
   if (dispatches.length === 0) return res.json([]);
 
   const orderIds = dispatches.map(d => d.orderId);
-  const orders = await db.select().from(ordersTable)
-    .where(and(inArray(ordersTable.id, orderIds), eq(ordersTable.status, "waiting_master"), isNull(ordersTable.deletedAt)));
+  const alreadyAssigned = await db.select({ orderId: orderMastersTable.orderId })
+    .from(orderMastersTable)
+    .where(and(eq(orderMastersTable.masterId, masterId), inArray(orderMastersTable.orderId, orderIds)));
+  const assignedSet = new Set(alreadyAssigned.map(r => r.orderId));
+  const filteredOrderIds = orderIds.filter(oid => !assignedSet.has(oid));
+
+  const orders = filteredOrderIds.length > 0
+    ? await db.select().from(ordersTable)
+        .where(and(
+          inArray(ordersTable.id, filteredOrderIds),
+          eq(ordersTable.status, "waiting_master"),
+          isNull(ordersTable.deletedAt),
+          sql`${ordersTable.assignedMasterCount} < ${ordersTable.maxMasters}`,
+        ))
+    : [];
 
   const dispatchByOrder = new Map(dispatches.map(d => [d.orderId, d]));
 
@@ -666,19 +655,34 @@ router.get("/orders/my", requireMasterPwa, async (req, res) => {
 
   let statusFilter: string[];
   if (filter === "active") {
-    statusFilter = ["master_assigned", "in_progress", "cancellation_requested"];
+    statusFilter = ["master_assigned", "in_progress", "cancellation_requested", "waiting_master"];
   } else if (filter === "completed") {
     statusFilter = ["completed", "cancelled"];
   } else {
-    statusFilter = ["master_assigned", "in_progress", "cancellation_requested", "refund_requested", "completed", "cancelled"];
+    statusFilter = ["master_assigned", "in_progress", "cancellation_requested", "refund_requested", "completed", "cancelled", "waiting_master"];
   }
 
-  const orders = await db.select().from(ordersTable)
+  // Legacy orders by masterId
+  const legacyOrders = await db.select().from(ordersTable)
     .where(and(
       eq(ordersTable.masterId, masterId),
       inArray(ordersTable.status, statusFilter as any),
       isNull(ordersTable.deletedAt)
     ));
+
+  // Also include orders from order_masters where this master is active
+  const omRows = await db.select({ orderId: orderMastersTable.orderId })
+    .from(orderMastersTable)
+    .where(and(eq(orderMastersTable.masterId, masterId), eq(orderMastersTable.status, "active")));
+  const omOrderIds = omRows.map(r => r.orderId);
+  const missingIds = omOrderIds.filter(oid => !legacyOrders.some(o => o.id === oid));
+
+  let orders = [...legacyOrders];
+  if (missingIds.length > 0) {
+    const missing = await db.select().from(ordersTable)
+      .where(and(inArray(ordersTable.id, missingIds), inArray(ordersTable.status, statusFilter as any), isNull(ordersTable.deletedAt)));
+    orders.push(...missing);
+  }
 
   // Get lead info for client data
   const leadIds = [...new Set(orders.map(o => o.leadId))];
@@ -782,22 +786,80 @@ router.post("/orders/:id/accept", requireMasterPwa, async (req, res) => {
     return res.status(400).json({ error: acceptEligibility.reason });
   }
 
-  // Assign master to order
-  await db.update(ordersTable).set({
+  // Check if master already assigned
+  const existingAssignment = await db.select().from(orderMastersTable)
+    .where(and(eq(orderMastersTable.orderId, orderId), eq(orderMastersTable.masterId, masterId)));
+  if (existingAssignment.length > 0) {
+    return res.status(400).json({ error: "Вы уже назначены на этот заказ" });
+  }
+
+  // Check order still has room
+  const currentAssignedCount = (order as any).assignedMasterCount ?? 0;
+  const maxMasters = (order as any).maxMasters ?? 3;
+  if (currentAssignedCount >= maxMasters) {
+    return res.status(400).json({ error: "Заказ уже занят максимальным числом мастеров" });
+  }
+
+  // Token deduction if token model
+  const isTokenModel = (order as any).paymentModel === "token";
+  let tokensCost = 0;
+  if (isTokenModel) {
+    const { cost } = await getOrderTokenCost({
+      serviceType: order.serviceType,
+      area: order.area ? Number(order.area) : null,
+      manualTokenCost: (order as any).manualTokenCost ?? null,
+      city: order.city ?? null,
+    });
+    tokensCost = cost;
+    const deduction = await deductTokens({
+      masterId,
+      orderId,
+      tokensCost,
+      serviceType: order.serviceType,
+    });
+    if (!deduction.success) {
+      if (deduction.error instanceof TokenWalletError && deduction.error.code === ERR_INSUFFICIENT_TOKENS) {
+        return res.status(402).json({ error: deduction.error.message, insufficientTokens: true });
+      }
+      throw deduction.error;
+    }
+  }
+
+  // Add to order_masters
+  await db.insert(orderMastersTable).values({
+    orderId,
     masterId,
-    status: "master_assigned",
-    dispatchStatus: "assigned",
-    masterWorkStatus: "accepted",
+    tokensCharged: tokensCost,
+    status: "active",
+  });
+
+  const newCount = currentAssignedCount + 1;
+  const isFull = newCount >= maxMasters;
+
+  const orderUpdates: any = {
+    assignedMasterCount: newCount,
     updatedAt: new Date(),
-  }).where(eq(ordersTable.id, orderId));
+    ...(isTokenModel ? { tokensCharged: String(Number((order as any).tokensCharged ?? 0) + tokensCost) } : {}),
+    ...( !order.masterId ? { masterId } : {} ),
+    masterWorkStatus: "accepted",
+  };
+
+  if (isFull) {
+    orderUpdates.status = "master_assigned";
+    orderUpdates.dispatchStatus = "assigned";
+    await db.update(orderDispatchesTable)
+      .set({ status: "rejected" })
+      .where(and(
+        eq(orderDispatchesTable.orderId, orderId),
+        eq(orderDispatchesTable.status, "sent"),
+      ));
+  }
+
+  await db.update(ordersTable).set(orderUpdates).where(eq(ordersTable.id, orderId));
 
   // Update this dispatch to assigned
   await db.update(orderDispatchesTable).set({ status: "assigned", respondedAt: new Date() })
     .where(eq(orderDispatchesTable.id, dispatches[0].id));
-
-  // Reject other dispatches for this order
-  await db.update(orderDispatchesTable).set({ status: "rejected" })
-    .where(and(eq(orderDispatchesTable.orderId, orderId), ne(orderDispatchesTable.id, dispatches[0].id)));
 
   // Update master stats and move to correct column based on active order count
   const activeAfterAccept = myActiveForAccept + 1;
@@ -1020,104 +1082,6 @@ router.post("/orders/:id/refund-request", requireMasterPwa, async (req: any, res
     .where(eq(ordersTable.id, orderId));
 
   res.json({ success: true, transactionId: tx.id, tokensRequested: tokensCost });
-});
-
-// ─── Landing leads: respond (exclusive — first master takes the lead) ─────────
-router.post("/leads/:id/respond", requireMasterPwa, async (req: any, res: any) => {
-  const masterId = (req.session as any).masterId;
-  const leadId = parseInt(String(req.params.id));
-  if (isNaN(leadId)) return res.status(400).json({ error: "Неверный leadId" });
-
-  // Load lead — must be a landing lead in 'new' status
-  const leadRows = await db.select().from(leadsTable)
-    .where(and(
-      eq(leadsTable.id, leadId),
-      eq(leadsTable.status, "new"),
-      eq(leadsTable.leadChannel, "partner_landing"),
-      isNull(leadsTable.deletedAt),
-    ))
-    .limit(1);
-  if (!leadRows[0]) return res.status(404).json({ error: "Заявка не найдена или недоступна" });
-  const lead = leadRows[0];
-
-  // Check if already taken by any master
-  const takenCheck = await db.execute(
-    sql`SELECT 1 FROM lead_responses WHERE lead_id = ${leadId} LIMIT 1`
-  );
-  if ((takenCheck as any).rows?.length > 0 || (takenCheck as any).rowCount > 0) {
-    return res.status(409).json({ error: "Заявка уже занята другим мастером", alreadyTaken: true });
-  }
-
-  // Token cost
-  const { cost: tokensCost } = await getOrderTokenCost({ serviceType: lead.serviceType, area: lead.area ? Number(lead.area) : null, manualTokenCost: null, city: lead.city ?? null });
-
-  // Pre-check balance (fast path)
-  const balanceCheck = await checkTokenBalance(masterId, tokensCost);
-  if (!balanceCheck.ok) {
-    return res.status(402).json({ error: balanceCheck.error, insufficientTokens: true });
-  }
-
-  let orderId = 0;
-
-  try {
-    await db.transaction(async (tx) => {
-      // 1. Create order inside tx (rollbacked automatically on failure)
-      const [insertedOrder] = await tx.insert(ordersTable).values({
-        leadId: lead.id,
-        city: lead.city,
-        district: lead.district ?? "",
-        serviceType: lead.serviceType,
-        area: String(lead.area),
-        services: lead.services,
-        comment: lead.comment,
-        status: "master_assigned",
-        masterId,
-        dispatchStatus: "assigned",
-        masterWorkStatus: "accepted",
-        assignedAt: new Date(),
-        clientName: lead.clientName,
-        clientPhone: lead.clientPhone,
-        source: "landing",
-        paymentModel: "token",
-        tokensCharged: String(tokensCost),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }).returning();
-      orderId = insertedOrder.id;
-
-      // 2. Deduct tokens — single source of truth (balance + row lock)
-      const deduction = await deductTokensTx(tx, { masterId, orderId, tokensCost, serviceType: lead.serviceType });
-      if (!deduction.success) {
-        throw deduction.error; // triggers ROLLBACK (order insert undone)
-      }
-
-      // 3. Insert lead_responses — uniqueness already checked before tx
-      await tx.execute(
-        sql`INSERT INTO lead_responses (lead_id, master_id, tokens_spent) VALUES (${leadId}, ${masterId}, ${tokensCost})`
-      );
-
-      // 4. Update lead status
-      await tx.update(leadsTable).set({ status: "sent_to_work" }).where(eq(leadsTable.id, leadId));
-    });
-  } catch (e: any) {
-    if (e instanceof TokenWalletError) {
-      if (e.code === ERR_INSUFFICIENT_TOKENS) {
-        return res.status(402).json({ error: e.message, insufficientTokens: true });
-      }
-    }
-    if (e?.code === "23505" || String(e?.message).includes("lead_responses")) {
-      return res.status(409).json({ error: "Заявка только что занята другим мастером", alreadyTaken: true });
-    }
-    throw e;
-  }
-
-  return res.json({
-    ok: true,
-    clientName: lead.clientName,
-    clientPhone: lead.clientPhone,
-    tokensCost,
-    orderId,
-  });
 });
 
 // Log FOMO button press
