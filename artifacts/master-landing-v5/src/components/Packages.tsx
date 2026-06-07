@@ -76,7 +76,7 @@ export default function Packages() {
             Пакеты токенов
           </h2>
           <p className="text-lg text-[#6B7280] max-w-2xl mx-auto">
-            1 токен = 1 250 ₽. Заказ стоит 2 токена. Вы покупаете токены и тратите их на заказы.
+            1 заказ = 2 токена ≈ 2 500 ₽. Вы покупаете пакет токенов и тратите их на заказы.
           </p>
         </div>
 
@@ -128,7 +128,7 @@ export default function Packages() {
                   <span className="text-[#34C759] font-bold text-sm">{pkg.tokens}</span>
                 </div>
                 <div className={`text-xs mb-3 ${pkg.highlight ? 'text-white/50' : 'text-[#9CA3AF]'}`}>
-                  {pkg.orders} · 1 250 ₽ за токен
+                  {pkg.orders} · 2 токена за заказ
                 </div>
 
                 <p className={`text-sm mb-6 leading-relaxed ${pkg.highlight ? 'text-white/60' : 'text-[#6B7280]'}`}>

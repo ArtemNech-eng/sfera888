@@ -18,6 +18,7 @@ interface Plan {
   name: string;
   price: string;
   tokens: number;
+  orders: number;
   pricePerOrder: string;
   desc: string;
   color: string;
@@ -44,12 +45,20 @@ function tokenWord(n: number) {
   return `заказов (токенов)`;
 }
 
+function orderWord(n: number) {
+  if (n === 1) return 'заказ';
+  if (n < 5) return 'заказа';
+  return 'заказов';
+}
+
 function apiToPlans(pkgs: ApiPackage[]): Plan[] {
   const baseRate = pkgs.length > 0 ? pkgs[0].price_per_token : 0;
   const midIdx = Math.floor((pkgs.length - 1) / 2);
   return pkgs.map((pkg, i) => {
     const scheme = COLOR_SCHEMES[Math.min(i, COLOR_SCHEMES.length - 1)];
     const featured = pkgs.length > 1 && i === midIdx;
+    const orders = Math.round(pkg.tokens_count / 2);
+    const pricePerOrder = Math.round(pkg.price_per_token * 2);
     const savings = pkg.tokens_count > 1 && baseRate > pkg.price_per_token
       ? `Экономия ${fmt(Math.round((baseRate - pkg.price_per_token) * pkg.tokens_count))} ₽`
       : null;
@@ -63,12 +72,13 @@ function apiToPlans(pkgs: ApiPackage[]): Plan[] {
       name: `Пакет ${pkg.name.toUpperCase()}`,
       price: fmt(pkg.price_rub),
       tokens: pkg.tokens_count,
-      pricePerOrder: fmt(Math.round(pkg.price_per_token)),
-      desc: pkg.tokens_count === 1
+      orders,
+      pricePerOrder: fmt(pricePerOrder),
+      desc: orders === 1
         ? 'Идеально для входа в рабочий ритм.'
         : featured
-        ? `Всего ${fmt(Math.round(pkg.price_per_token))} ₽ за заказ. Оптимальный выбор.`
-        : `Для активных мастеров. Цена заказа — всего ${fmt(Math.round(pkg.price_per_token))} ₽.`,
+        ? `Всего ${fmt(pricePerOrder)} ₽ за заказ. Оптимальный выбор.`
+        : `Для активных мастеров. Цена заказа — всего ${fmt(pricePerOrder)} ₽.`,
       ...scheme,
       featured,
       features,
@@ -77,9 +87,9 @@ function apiToPlans(pkgs: ApiPackage[]): Plan[] {
 }
 
 const FALLBACK_PLANS: Plan[] = [
-  { name: 'Пакет СТАРТ', price: '5 000', tokens: 1, pricePerOrder: '5 000', desc: 'Идеально для входа в рабочий ритм.', color: '#3B82F6', colorBg: 'rgba(59,130,246,0.05)', colorBorder: 'rgba(59,130,246,0.2)', colorGlow: 'rgba(59,130,246,0.1)', featured: false, features: ['1 заказ (токен)', 'Доступ к ленте объектов', 'Поддержка в боте'] },
-  { name: 'Пакет ОПТИМА', price: '12 000', tokens: 3, pricePerOrder: '4 000', desc: 'Всего 4 000 ₽ за заказ. Оптимальный выбор.', color: '#10B981', colorBg: 'rgba(16,185,129,0.05)', colorBorder: 'rgba(16,185,129,0.25)', colorGlow: 'rgba(16,185,129,0.1)', featured: true, features: ['3 заказа (токена)', 'Доступ к ленте объектов', 'Приоритетная поддержка', 'Экономия 3 000 ₽'] },
-  { name: 'Пакет ПРОФИ', price: '15 000', tokens: 5, pricePerOrder: '3 000', desc: 'Для активных мастеров. Цена заказа — всего 3 000 ₽.', color: '#F59E0B', colorBg: 'rgba(245,158,11,0.05)', colorBorder: 'rgba(245,158,11,0.2)', colorGlow: 'rgba(245,158,11,0.1)', featured: false, features: ['5 заказов (токенов)', 'Доступ к ленте объектов', 'Приоритетная поддержка', 'Экономия 10 000 ₽'] },
+  { name: 'Пакет СТАРТ', price: '5 000', tokens: 4, orders: 2, pricePerOrder: '2 500', desc: 'Идеально для входа в рабочий ритм.', color: '#3B82F6', colorBg: 'rgba(59,130,246,0.05)', colorBorder: 'rgba(59,130,246,0.2)', colorGlow: 'rgba(59,130,246,0.1)', featured: false, features: ['4 токена (2 заказа)', 'Доступ к ленте объектов', 'Поддержка в боте'] },
+  { name: 'Пакет ОПТИМА', price: '10 000', tokens: 8, orders: 4, pricePerOrder: '2 500', desc: 'Всего 2 500 ₽ за заказ. Оптимальный выбор.', color: '#10B981', colorBg: 'rgba(16,185,129,0.05)', colorBorder: 'rgba(16,185,129,0.25)', colorGlow: 'rgba(16,185,129,0.1)', featured: true, features: ['8 токенов (4 заказа)', 'Доступ к ленте объектов', 'Приоритетная поддержка'] },
+  { name: 'Пакет ПРОФИ', price: '25 000', tokens: 20, orders: 10, pricePerOrder: '2 500', desc: 'Для активных мастеров. Цена заказа — всего 2 500 ₽.', color: '#F59E0B', colorBg: 'rgba(245,158,11,0.05)', colorBorder: 'rgba(245,158,11,0.2)', colorGlow: 'rgba(245,158,11,0.1)', featured: false, features: ['20 токенов (10 заказов)', 'Доступ к ленте объектов', 'Приоритетная поддержка'] },
 ];
 
 const Pricing: React.FC<PricingProps> = ({ botUrl }) => {
@@ -176,7 +186,7 @@ const Pricing: React.FC<PricingProps> = ({ botUrl }) => {
                         color: plan.color,
                       }}
                     >
-                      {plan.tokens} {plan.tokens === 1 ? 'заказ' : plan.tokens < 5 ? 'заказа' : 'заказов'} ·{' '}
+                      {plan.orders} {plan.orders === 1 ? 'заказ' : plan.orders < 5 ? 'заказа' : 'заказов'} ({plan.tokens} {plan.tokens === 1 ? 'токен' : plan.tokens < 5 ? 'токена' : 'токенов'}) ·{' '}
                       {plan.pricePerOrder} ₽ / заказ
                     </div>
                   </div>

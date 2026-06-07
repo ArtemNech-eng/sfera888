@@ -93,7 +93,7 @@ router.get("/stats", ops, async (_req: any, res: any) => {
           sql`${masterWalletTable.tokensBalance} = 0`,
           lte(mastersTable.lastSeenAt, sevenDaysAgo),
         )),
-      // Debtors: creditTokensIssued > creditTokensSpent
+      // Debtors: negative balance = real debt
       db
         .select({ cnt: count() })
         .from(masterWalletTable)
@@ -101,7 +101,7 @@ router.get("/stats", ops, async (_req: any, res: any) => {
           eq(masterWalletTable.masterId, mastersTable.id),
           isNull(mastersTable.deletedAt),
         ))
-        .where(sql`${masterWalletTable.creditTokensIssued} > 0`),
+        .where(sql`${masterWalletTable.tokensBalance} < 0`),
     ]);
 
     return res.json({
@@ -300,7 +300,7 @@ router.get("/debt", ops, async (req: any, res: any) => {
 
     const conditions: any[] = [
       isNull(mastersTable.deletedAt),
-      sql`${masterWalletTable.creditTokensIssued} > 0`,
+      sql`${masterWalletTable.tokensBalance} < 0`,
     ];
     if (search) {
       conditions.push(or(
@@ -334,7 +334,7 @@ router.get("/debt", ops, async (req: any, res: any) => {
         .from(mastersTable)
         .innerJoin(masterWalletTable, eq(masterWalletTable.masterId, mastersTable.id))
         .where(whereClause)
-        .orderBy(desc(sql`${masterWalletTable.creditTokensIssued} - ${masterWalletTable.creditTokensSpent}`))
+        .orderBy(desc(sql`-${masterWalletTable.tokensBalance}`))
         .limit(limit)
         .offset(offset),
       db
@@ -361,7 +361,7 @@ router.get("/debt", ops, async (req: any, res: any) => {
       creditLimitTokens: Number(r.creditLimitTokens ?? 0),
       creditTokensIssued: Number(r.creditTokensIssued ?? 0),
       creditTokensSpent: Number(r.creditTokensSpent ?? 0),
-      creditDebt: Number(r.creditTokensIssued ?? 0) - Number(r.creditTokensSpent ?? 0),
+      creditDebt: -Number(r.tokensBalance ?? 0),
     }));
 
     return res.json({

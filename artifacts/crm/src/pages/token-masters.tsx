@@ -482,6 +482,7 @@ function TokenMastersContent() {
                     <th className="text-left px-3 py-3 font-medium hidden lg:table-cell">Специализация</th>
                     <th className="text-right px-3 py-3 font-medium">Баланс</th>
                     <th className="text-right px-3 py-3 font-medium">Кредитный лимит</th>
+                    <th className="text-right px-3 py-3 font-medium text-red-600">Долг</th>
                     <th className="text-right px-3 py-3 font-medium">Тест. токены выдано</th>
                     <th className="text-right px-3 py-3 font-medium">Тест. токены потрачено</th>
                     <th className="text-center px-3 py-3 font-medium hidden sm:table-cell">Статус</th>
@@ -511,7 +512,7 @@ function TokenMastersContent() {
               )}
               {!isLoading && activeTab === "debt" && (!debtData?.data?.length) && (
                 <tr>
-                  <td colSpan={12} className="text-center py-16 text-muted-foreground">
+                  <td colSpan={10} className="text-center py-16 text-muted-foreground">
                     <Zap className="w-10 h-10 mx-auto mb-3 opacity-20" />
                     <p>Должники не найдены</p>
                   </td>
@@ -610,6 +611,11 @@ function TokenMastersContent() {
                       </span>
                     </td>
                     <td className="px-3 py-3 text-right tabular-nums text-muted-foreground">{fmt(m.creditLimitTokens)}</td>
+                    <td className="px-3 py-3 text-right">
+                      <span className="inline-flex items-center gap-1 font-semibold tabular-nums text-sm text-red-600 dark:text-red-400">
+                        <Zap className="w-3 h-3" />{fmt(m.creditDebt)}
+                      </span>
+                    </td>
                     <td className="px-3 py-3 text-right tabular-nums text-muted-foreground">{fmt(m.creditTokensIssued)}</td>
                     <td className="px-3 py-3 text-right tabular-nums text-muted-foreground">{fmt(m.creditTokensSpent)}</td>
                     <td className="px-3 py-3 text-center hidden sm:table-cell">
