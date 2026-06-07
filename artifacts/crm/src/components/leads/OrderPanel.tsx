@@ -270,17 +270,49 @@ export default function OrderPanel({
   const assignMutation = useMutation({
     mutationFn: async ({ orderId: oid, masterId }: { orderId: number; masterId: number }) => {
       const r = await fetch(`/api/dispatch/${oid}/assign/${masterId}`, { method: "POST", credentials: "include" });
-      if (!r.ok) { const text = await r.text(); let msg = "Ошибка"; try { msg = JSON.parse(text).error ?? msg; } catch {} throw new Error(msg); }
+      if (!r.ok) {
+        const text = await r.text();
+        let msg = "Ошибка";
+        let insufficientTokens = false;
+        try {
+          const parsed = JSON.parse(text);
+          msg = parsed.error ?? msg;
+          if (parsed.insufficientTokens) insufficientTokens = true;
+        } catch {}
+        const err = new Error(msg) as any;
+        err.insufficientTokens = insufficientTokens;
+        err.status = r.status;
+        throw err;
+      }
       return r.json();
     },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/orders"] }); queryClient.invalidateQueries({ queryKey: ["/api/dispatch", orderId] }); broadcastMutation.reset(); toast({ title: "Мастер назначен" }); },
-    onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
+    onError: (e: any) => {
+      if (e.insufficientTokens || e.status === 402) {
+        toast({ title: "Недостаточно токенов", description: e.message, variant: "destructive" });
+      } else {
+        toast({ title: "Ошибка", description: e.message, variant: "destructive" });
+      }
+    },
   });
 
   const manualAssignMutation = useMutation({
     mutationFn: async ({ orderId: oid, masterId }: { orderId: number; masterId: number }) => {
       const r = await fetch(`/api/orders/${oid}/manual-assign/${masterId}`, { method: "POST", credentials: "include" });
-      if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Ошибка"); }
+      if (!r.ok) {
+        const text = await r.text();
+        let msg = "Ошибка";
+        let insufficientTokens = false;
+        try {
+          const parsed = JSON.parse(text);
+          msg = parsed.error ?? msg;
+          if (parsed.insufficientTokens) insufficientTokens = true;
+        } catch {}
+        const err = new Error(msg) as any;
+        err.insufficientTokens = insufficientTokens;
+        err.status = r.status;
+        throw err;
+      }
       return r.json();
     },
     onSuccess: () => {
@@ -291,7 +323,13 @@ export default function OrderPanel({
       setSelectedMasterForAssign("");
       toast({ title: "Мастер назначен вручную" });
     },
-    onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
+    onError: (e: any) => {
+      if (e.insufficientTokens || e.status === 402) {
+        toast({ title: "Недостаточно токенов", description: e.message, variant: "destructive" });
+      } else {
+        toast({ title: "Ошибка", description: e.message, variant: "destructive" });
+      }
+    },
   });
 
   const unassignMutation = useMutation({
