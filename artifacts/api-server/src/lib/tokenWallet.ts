@@ -1,5 +1,5 @@
 import { db, masterWalletTable, walletTransactionsTable, serviceTokenPricesTable, serviceTokenRulesTable, cityTokenMultipliersTable, tokenAuditLogTable } from "@workspace/db";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, isNull } from "drizzle-orm";
 
 // ─── Typed errors for token-wallet operations ───────────────────────────────
 
@@ -245,7 +245,7 @@ export async function deductTokensTx(
   const existingSpend = await tx.select().from(walletTransactionsTable)
     .where(and(
       eq(walletTransactionsTable.masterId, masterId),
-      eq(walletTransactionsTable.orderId, orderId),
+      orderId != null ? eq(walletTransactionsTable.orderId, orderId) : isNull(walletTransactionsTable.orderId),
       eq(walletTransactionsTable.type, "spend"),
     ))
     .limit(1);
@@ -286,7 +286,7 @@ export async function deductTokens(params: {
   orderId: number;
   tokensCost: number;
   serviceType: string;
-}): Promise<{ success: boolean; newBalance: number; error?: string }> {
+}): Promise<{ success: boolean; newBalance: number; error?: string | TokenWalletError }> {
   const { masterId, orderId, tokensCost, serviceType } = params;
 
   try {
@@ -294,12 +294,12 @@ export async function deductTokens(params: {
       deductTokensTx(tx, { masterId, orderId, tokensCost, serviceType })
     );
     if (!result.success) {
-      return { success: false, newBalance: 0, error: result.error.message };
+      return { success: false, newBalance: 0, error: result.error };
     }
     const wallet = await ensureWallet(masterId);
     return { success: true, newBalance: Number(wallet.tokensBalance) };
   } catch (e: any) {
-    return { success: false, newBalance: 0, error: e.message };
+    return { success: false, newBalance: 0, error: e.message ?? String(e) };
   }
 }
 

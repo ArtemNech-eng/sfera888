@@ -58,6 +58,10 @@ const TYPE_ICON: Record<string, ReactNode> = {
   conflict: <BadgeAlert className="w-5 h-5" />,
   no_manager_id: <UserRoundPen className="w-5 h-5" />,
   custom_manual: <Settings className="w-5 h-5" />,
+  token_refund_pending: <RefreshCw className="w-5 h-5" />,
+  master_zero_balance: <Banknote className="w-5 h-5" />,
+  master_churn_risk: <Clock className="w-5 h-5" />,
+  order_stalled_token: <AlertTriangle className="w-5 h-5" />,
 };
 const PRIORITY_LEFT: Record<string, string> = {
   critical: "bg-red-500",
@@ -328,11 +332,6 @@ export function ActionItemModal({ id, open, onOpenChange }: {
   const [assignedMasterConfirm, setAssignedMasterConfirm] = useState<{ id: number; name: string; city: string | null } | null>(null);
   const [cancelAsMasterPending, setCancelAsMasterPending] = useState(false);
   const [cancelReason, setCancelReason] = useState<"bypass" | "no_contact" | "no_estimate" | "other">("bypass");
-  const [completeAsMasterPending, setCompleteAsMasterPending] = useState(false);
-  const [completeAmount, setCompleteAmount] = useState<string>("");
-  const [commissionMode, setCommissionMode] = useState<"no_debt" | "as_debt" | "as_paid">("as_paid");
-  const [partialOrderAmount, setPartialOrderAmount] = useState<string>("");
-  const [partialPaidAmount, setPartialPaidAmount] = useState<string>("");
   const [snoozeDays, setSnoozeDays] = useState<number>(1);
   const [returnToPoolPending, setReturnToPoolPending] = useState(false);
   const [, navigate] = useLocation();
@@ -361,8 +360,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
   useEffect(() => {
     if (!open) {
       setMessageText(""); setSelectedMasterId(null); setMasterSearch("");
-      setBalanceInput(""); setCancelConfirmStep(false); setCancelOrderReason(""); setToast(null); setAssignedMasterConfirm(null); setCancelAsMasterPending(false); setCancelReason("bypass"); setCompleteAsMasterPending(false); setCompleteAmount(""); setCommissionMode("as_paid");
-      setPartialOrderAmount(""); setPartialPaidAmount(""); setReturnToPoolPending(false);
+      setBalanceInput(""); setCancelConfirmStep(false); setCancelOrderReason(""); setToast(null); setAssignedMasterConfirm(null); setCancelAsMasterPending(false); setCancelReason("bypass"); setReturnToPoolPending(false);
     }
   }, [open]);
 
@@ -373,7 +371,6 @@ export function ActionItemModal({ id, open, onOpenChange }: {
       setCancelConfirmStep(false);
       setCancelOrderReason("");
       setCancelAsMasterPending(false);
-      setCompleteAsMasterPending(false);
     }
   }, [id]);
   useEffect(() => {
@@ -501,6 +498,16 @@ export function ActionItemModal({ id, open, onOpenChange }: {
           ? "⚠️ Заказ отменён (другая причина мастера). Рейтинг мастера обновлён, уведомление отправлено."
           : "⚠️ Заказ отменён (обход платформы). Рейтинг мастера обновлён, уведомление отправлено.";
         showToast(msg);
+        onOpenChange(false);
+        return;
+      }
+      if (action === "approve_refund") {
+        showToast(`✅ Возврат одобрен. ${orchestration?.tokensRefunded ?? ""} токенов возвращены мастеру. Заказ возвращён в пул.`);
+        onOpenChange(false);
+        return;
+      }
+      if (action === "reject_refund") {
+        showToast(`❌ Возврат отклонён. Заказ остаётся у мастера.`);
         onOpenChange(false);
         return;
       }
@@ -669,189 +676,23 @@ export function ActionItemModal({ id, open, onOpenChange }: {
           </SectionBox>
         );
 
-      // ─── Нет оплаты ──────────────────────────────────────────────
-      case "no_payment": {
-        // receipt-подтип: клиент уже прислал скриншот, оператор должен подтвердить
-        const isReceiptPending = !!(ctx.receipt?.prepaymentSubmittedAt && !ctx.receipt?.prepaymentSeenAt);
+      // ─── Нет оплаты (deprecated) ─────────────────────────────────
+      case "no_payment":
         return (
-          <SectionBox title={isReceiptPending ? "Ситуация: подтвердите получение оплаты" : "Ситуация: предоплата не получена"}>
-            {isReceiptPending ? (
-              <NextActionBanner
-                text={`Клиент подтвердил оплату${ctx.receipt?.prepaymentSubmittedAt ? ` ${fmtAge((Date.now() - new Date(ctx.receipt.prepaymentSubmittedAt).getTime()) / 3600000)} назад` : ""}. Проверьте скриншот и нажмите «Подтвердить получение».`}
-                phone={ctx.order?.clientPhone ?? ctx.client?.clientPhone}
-                callLabel="Позвонить клиенту"
-              />
-            ) : (
-              <NextActionBanner
-                text={`Клиент не оплатил смету${ctx.order?.hoursOld != null ? ` уже ${fmtAge(ctx.order.hoursOld)}` : ""}. Позвоните клиенту и напомните об оплате.`}
-                phone={ctx.order?.clientPhone ?? ctx.client?.clientPhone}
-                callLabel={`Позвонить${(ctx.order?.clientName ?? ctx.client?.clientName) ? ` ${ctx.order?.clientName ?? ctx.client?.clientName}` : " клиенту"}`}
-              />
-            )}
-            <OrderInfoBlock ctx={ctx} ageLabel="Ожидаем оплату" />
-      {ctx.order?.proposedAmount != null && (
-        <InfoRow icon={<Banknote className="w-4 h-4" />} label="Сумма сметы" value={
-          <span className="inline-flex items-center gap-2">
-            {`${Number(ctx.order.proposedAmount).toLocaleString("ru-RU")} ₽`}
-            {ctx.receipt?.token && (
-              <a href={`/api/receipt/${ctx.receipt.token}`} target="_blank" rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-xs font-semibold text-teal-600 hover:text-teal-800 underline underline-offset-2"
-              >Открыть смету ↗</a>
-            )}
-          </span>
-        } />
-      )}
-            {isReceiptPending && (
-              <div className="border-t pt-3">
-                <Button
-                  size="sm"
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white w-full"
-                  disabled={busy === "confirm_receipt"}
-                  onClick={() => fire("confirm_receipt")}
-                >
-                  <CheckCircle2 className="w-4 h-4 mr-1" />
-                  {busy === "confirm_receipt" ? "Подтверждаем..." : "✅ Подтвердить получение оплаты"}
-                </Button>
-              </div>
-            )}
-            {ctx.receipt && (
-              <div className="space-y-2">
-                {ctx.receipt.prepaymentAmount && (
-                  <InfoRow icon={<Banknote className="w-4 h-4" />} label="Предоплата" value={`${Number(ctx.receipt.prepaymentAmount).toLocaleString("ru-RU")} ₽`} />
-                )}
-                {ctx.receipt.prepaymentSubmittedAt && (
-                  <InfoRow icon={<Clock className="w-4 h-4" />} label="Клиент оплатил" value={new Date(ctx.receipt.prepaymentSubmittedAt).toLocaleString("ru-RU")} />
-                )}
-                {ctx.receipt.prepaymentScreenshotUrl && (
-                  <ScreenshotBlock url={ctx.receipt.prepaymentScreenshotUrl} />
-                )}
-              </div>
-            )}
-            <div className="border-t pt-3 space-y-3">
-              <div className="text-sm font-semibold text-muted-foreground">Написать мастеру</div>
-              <TemplateChips type="no_payment" orderCtx={{ orderId: ctx.order?.id, city: ctx.order?.city, district: ctx.order?.district, clientName: ctx.order?.clientName ?? ctx.client?.clientName, proposedAmount: ctx.order?.proposedAmount }} onSelect={setMessageText} />
-              <Textarea
-                value={messageText}
-                onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setMessageText(e.target.value)}
-                placeholder="Привет! Клиент пока не оплатил смету. Свяжитесь с ним и напомните."
-                className="min-h-[80px] bg-white"
-              />
-              <Button
-                onClick={() => fire("message_master", { message: messageText })}
-                disabled={busy === "message_master" || !messageText.trim()}
-                size="sm"
-                variant="outline"
-              >
-                <MessageSquare className="w-4 h-4" /> Написать мастеру
-              </Button>
+          <SectionBox title="Ситуация: задача устарела">
+            <div className="text-sm text-muted-foreground">
+              Задачи типа «нет оплаты» больше не генерируются в token-модели.
             </div>
-              {ctx.transaction && (ctx.transaction.paidCommission > 0 || ctx.transaction.prepaymentDeducted > 0) && (
-                <div className="space-y-2">
-                  <PaymentProgress total={ctx.transaction.commission} paid={ctx.transaction.paidCommission} />
-                  {ctx.transaction.prepaymentDeducted > 0 && (
-                    <div className="flex items-center gap-2 text-xs text-blue-700 bg-blue-50 rounded-lg px-3 py-2 border border-blue-200">
-                      <Banknote className="w-3.5 h-3.5 shrink-0" />
-                      <span>Бронь по смете: <strong>{Number(ctx.transaction.prepaymentDeducted).toLocaleString("ru-RU")} ₽</strong> уже зачтена в счёт комиссии</span>
-                    </div>
-                  )}
-                  {ctx.transaction.payments?.length > 0 && (
-                    <div className="space-y-1">
-                      <div className="text-xs font-semibold text-muted-foreground">История платежей:</div>
-                      {ctx.transaction.payments.map((p: any, i: number) => (
-                        <div key={i} className="flex items-center justify-between text-xs bg-slate-50 rounded-lg px-3 py-1.5 border">
-                          <span className="text-muted-foreground">
-                            {new Date(p.paidAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-                            {p.note && <span className="ml-1 text-slate-400">· {p.note}</span>}
-                          </span>
-                          <span className="font-semibold text-emerald-700">+{Number(p.amount).toLocaleString("ru-RU")} ₽</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-              <div className="border-t pt-3 space-y-3">
-              <div className="text-sm font-semibold">Внести частичную оплату комиссии</div>
-              <div className="text-xs text-muted-foreground">Заказ не закрывается — только фиксируется оплата части комиссии. Мастеру придёт уведомление.</div>
-              <div className="flex gap-2 flex-wrap items-end">
-                <div>
-                  <label className="text-xs text-muted-foreground block mb-1">Полная сумма сметы, ₽</label>
-                  <Input type="number" inputMode="decimal" min={0} step={100} value={partialOrderAmount} onChange={(e: ChangeEvent<HTMLInputElement>) => setPartialOrderAmount(e.target.value)} placeholder="Например: 150000" className="bg-white w-40" disabled={busy === "partial_payment"} />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground block mb-1">Оплачено комиссии, ₽</label>
-                  <Input type="number" inputMode="decimal" min={0} step={100} value={partialPaidAmount} onChange={(e: ChangeEvent<HTMLInputElement>) => setPartialPaidAmount(e.target.value)} placeholder="Например: 20000" className="bg-white w-40" disabled={busy === "partial_payment"} />
-                </div>
-                <Button size="sm" variant="outline" className="border-emerald-400 text-emerald-700 hover:bg-emerald-50" disabled={busy === "partial_payment" || !partialOrderAmount || !partialPaidAmount} onClick={async () => { const n = Number(partialOrderAmount); const p = Number(partialPaidAmount); if (!Number.isFinite(n) || n <= 0) { showToast("Укажите полную сумму сметы", false); return; } if (!Number.isFinite(p) || p <= 0) { showToast("Укажите оплаченную сумму комиссии", false); return; } await fire("partial_payment", { orderAmount: n, paidAmount: p }); setPartialOrderAmount(""); setPartialPaidAmount(""); }}>
-                  <Banknote className="w-4 h-4" /> Зафиксировать оплату
-                </Button>
-              </div>
-              {(() => { const n = Number(partialOrderAmount); const p = Number(partialPaidAmount); if (!Number.isFinite(n) || n <= 0 || !Number.isFinite(p) || p <= 0) return null; const totalComm = n <= 50000 ? 5000 : Math.round(n * 0.15); const remaining = Math.max(0, totalComm - p); return (<div className="text-xs text-emerald-700 bg-emerald-50 rounded-lg px-3 py-2 border border-emerald-200">Комиссия с {n.toLocaleString("ru-RU")} ₽ ≈ {totalComm.toLocaleString("ru-RU")} ₽ · Оплачено {p.toLocaleString("ru-RU")} ₽{remaining > 0 ? ` · Остаток ${remaining.toLocaleString("ru-RU")} ₽` : " · Полностью оплачено ✅"}</div>); })()}
-            </div>
-
             <div className="border-t pt-3 flex flex-wrap gap-2">
-              {!returnToPoolPending ? (
-                <Button size="sm" variant="outline" onClick={() => setReturnToPoolPending(true)} disabled={busy === "return_to_pool"}>
-                  <RefreshCw className="w-4 h-4" /> Вернуть в пул
-                </Button>
-              ) : (
-                <div className="w-full rounded-xl border-2 border-amber-200 bg-amber-50 p-3 space-y-2">
-                  <div className="flex items-start gap-2">
-                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                    <div className="text-xs text-amber-800">Рейтинг мастера будет понижен. Мастер получит уведомление о возврате заказа в пул.</div>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" className="border-amber-400 text-amber-700 hover:bg-amber-100" disabled={busy === "return_to_pool"}
-                      onClick={() => { fire("return_to_pool"); setReturnToPoolPending(false); }}>
-                      {busy === "return_to_pool" ? "Возвращаем..." : "Да, вернуть в пул"}
-                    </Button>
-                    <Button size="sm" variant="outline" disabled={busy === "return_to_pool"}
-                      onClick={() => setReturnToPoolPending(false)}>Отмена</Button>
-                  </div>
-                </div>
-              )}
-              {!cancelConfirmStep ? (
-                <Button size="sm" variant="destructive" onClick={() => setCancelConfirmStep("select")} disabled={busy === "cancel_order"}>
-                  Отменить заказ
-                </Button>
-              ) : cancelConfirmStep === "select" ? (
-                <div className="w-full rounded-xl border-2 border-red-200 bg-red-50 p-3 space-y-2">
-                  <div className="flex items-start gap-2">
-                    <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                    <div className="text-xs text-red-800">Заказ будет отменён, рейтинг мастера будет понижен. Мастер получит уведомление. Действие необратимо.</div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {[
-                      { value: "client_refused", label: "Клиент отказался" },
-                      { value: "master_no_response", label: "Мастер не выходит на связь" },
-                      { value: "wrong_order", label: "Ошибка создания" },
-                      { value: "other", label: "Другая причина" },
-                    ].map(r => (
-                      <button key={r.value} type="button" onClick={() => { setCancelOrderReason(r.value); setCancelConfirmStep("confirm"); }}
-                        className="text-xs px-3 py-2 rounded-lg border border-red-200 bg-white hover:bg-red-100 text-red-900 font-medium transition">
-                        {r.label}
-                      </button>
-                    ))}
-                  </div>
-                  <Button size="sm" variant="outline" onClick={() => setCancelConfirmStep(false)}>Отмена</Button>
-                </div>
-              ) : (
-                <div className="w-full rounded-xl border-2 border-red-300 bg-red-50 p-3 space-y-2">
-                  <div className="text-xs font-bold text-red-800">Подтвердите отмену заказа</div>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="destructive" disabled={busy === "cancel_order"}
-                      onClick={async () => { await fire("cancel_order", { cancelReason: cancelOrderReason }); setCancelConfirmStep(false); setCancelOrderReason(""); }}>
-                      {busy === "cancel_order" ? "Отменяем..." : "Да, отменить заказ"}
-                    </Button>
-                    <Button size="sm" variant="outline" disabled={busy === "cancel_order"}
-                      onClick={() => { setCancelConfirmStep(false); setCancelOrderReason(""); }}>Отмена</Button>
-                  </div>
-                </div>
-              )}
+              <Button size="sm" variant="outline" onClick={() => fire("resolve")} disabled={busy === "resolve"}>
+                <CheckCircle2 className="w-4 h-4" /> Пометить выполненной
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => fire("dismiss")} disabled={busy === "dismiss"}>
+                <Clock className="w-4 h-4" /> Отложить
+              </Button>
             </div>
           </SectionBox>
         );
-      }
 
       // ─── Нет отклика мастера ─────────────────────────────────────
       case "no_master_response":
@@ -1134,132 +975,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                 </Button>
               </div>
             </div>
-            {isAdmin && ctx.order?.id && ctx.master?.id && (
-              <div className="border-t pt-3 space-y-2">
-                {!completeAsMasterPending ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="w-full border-green-400 text-green-700 hover:bg-green-50"
-                    onClick={() => {
-                      const initial = ctx.order?.proposedAmount ?? ctx.order?.orderAmount ?? "";
-                      setCompleteAmount(initial ? String(initial) : "");
-                      setCompleteAsMasterPending(true);
-                    }}
-                  >
-                    <CheckCircle2 className="w-4 h-4 mr-1" /> Завершить как выполненный
-                  </Button>
-                ) : (
-                  <div className="rounded-xl border-2 border-green-300 bg-green-50 p-4 space-y-3">
-                    <div className="flex items-start gap-2">
-                      <CheckCircle2 className="w-5 h-5 text-green-700 shrink-0 mt-0.5" />
-                      <div className="text-sm text-green-900">
-                        <div className="font-bold mb-1">Подтвердите завершение заказа</div>
-                        <div>Заказ <strong>#{ctx.order?.id}</strong> будет отмечен как выполненный для мастера {ctx.master?.name ? <strong>{ctx.master.name}</strong> : null}. В чат мастера придёт уведомление.</div>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-xs text-green-900 font-semibold block mb-1">Итоговая сумма заказа, ₽</label>
-                      <Input
-                        type="number"
-                        inputMode="decimal"
-                        min={0}
-                        step={100}
-                        value={completeAmount}
-                        onChange={(e: ChangeEvent<HTMLInputElement>) => setCompleteAmount(e.target.value)}
-                        placeholder="Например: 5000"
-                        className="bg-white"
-                        disabled={busy === "complete_as_master"}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-green-900 font-semibold block mb-1">Что делать с комиссией?</label>
-                      <div className="grid gap-1.5">
-                        <label className={`flex items-start gap-2 rounded-lg border p-2 cursor-pointer ${commissionMode === "as_paid" ? "border-green-500 bg-green-100" : "border-green-200 bg-white"}`}>
-                          <input
-                            type="radio"
-                            name="commissionMode"
-                            value="as_paid"
-                            checked={commissionMode === "as_paid"}
-                            onChange={() => setCommissionMode("as_paid")}
-                            disabled={busy === "complete_as_master"}
-                            className="mt-0.5"
-                          />
-                          <div className="text-xs">
-                            <div className="font-semibold text-green-900">Засчитать как оплаченную</div>
-                            <div className="text-green-800">Мастер уже передал комиссию (наличными/переводом). В аналитике появится доход, долг мастера уменьшится.</div>
-                          </div>
-                        </label>
-                        <label className={`flex items-start gap-2 rounded-lg border p-2 cursor-pointer ${commissionMode === "as_debt" ? "border-orange-500 bg-orange-100" : "border-green-200 bg-white"}`}>
-                          <input
-                            type="radio"
-                            name="commissionMode"
-                            value="as_debt"
-                            checked={commissionMode === "as_debt"}
-                            onChange={() => setCommissionMode("as_debt")}
-                            disabled={busy === "complete_as_master"}
-                            className="mt-0.5"
-                          />
-                          <div className="text-xs">
-                            <div className="font-semibold text-orange-900">Начислить как долг мастера</div>
-                            <div className="text-orange-800">Мастер ещё не платил — комиссия добавится к его долгу, статус «ожидает оплаты». Мастер получит уведомление о задолженности.</div>
-                          </div>
-                        </label>
-                        <label className={`flex items-start gap-2 rounded-lg border p-2 cursor-pointer ${commissionMode === "no_debt" ? "border-slate-500 bg-slate-100" : "border-green-200 bg-white"}`}>
-                          <input
-                            type="radio"
-                            name="commissionMode"
-                            value="no_debt"
-                            checked={commissionMode === "no_debt"}
-                            onChange={() => setCommissionMode("no_debt")}
-                            disabled={busy === "complete_as_master"}
-                            className="mt-0.5"
-                          />
-                          <div className="text-xs">
-                            <div className="font-semibold text-slate-900">Закрыть без комиссии</div>
-                            <div className="text-slate-700">Спорная ситуация / мастер не делал смету. Комиссия = 0, долг мастера не меняется, в аналитике 0 ₽.</div>
-                          </div>
-                        </label>
-                      </div>
-                    </div>
-                    {(() => {
-                      const n = Number(completeAmount);
-                      const validAmount = Number.isFinite(n) && n > 0;
-                      let preview = "";
-                      if (!validAmount) {
-                        preview = "Сумма не указана — заказ закроется с комиссией 0 ₽.";
-                      } else {
-                        const calc = n <= 50000 ? 5000 : Math.round(n * 0.15);
-                        if (commissionMode === "no_debt") preview = `Сумма заказа: ${Math.round(n).toLocaleString("ru-RU")} ₽. Комиссия не начисляется.`;
-                        else if (commissionMode === "as_debt") preview = `Сумма ${Math.round(n).toLocaleString("ru-RU")} ₽ → комиссия ≈ ${calc.toLocaleString("ru-RU")} ₽ будет добавлена к долгу мастера.`;
-                        else preview = `Сумма ${Math.round(n).toLocaleString("ru-RU")} ₽ → комиссия ≈ ${calc.toLocaleString("ru-RU")} ₽ засчитается как оплаченная.`;
-                      }
-                      return <div className="text-xs text-green-700">{preview}</div>;
-                    })()}
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        className="bg-green-600 hover:bg-green-700 text-white"
-                        disabled={busy === "complete_as_master"}
-                        onClick={async () => {
-                          console.log("[btn:complete_as_master] clicked, id=", id, "amount=", completeAmount, "mode=", commissionMode);
-                          const payload: Record<string, unknown> = { commissionMode, orderId: ctx.order?.id, masterId: ctx.master?.id };
-                          const n = Number(completeAmount);
-                          if (Number.isFinite(n) && n > 0) payload.orderAmount = n;
-                          await fire("complete_as_master", payload);
-                          setCompleteAsMasterPending(false);
-                        }}
-                      >
-                        <CheckCircle2 className="w-4 h-4 mr-1" /> {busy === "complete_as_master" ? "Завершаем..." : "Да, завершить заказ"}
-                      </Button>
-                      <Button size="sm" variant="outline" disabled={busy === "complete_as_master"} onClick={() => setCompleteAsMasterPending(false)}>
-                        Отмена
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+            {/* complete_as_master UI removed — token model handles completion differently */}
             {isAdmin && !!(ctx.order?.id && ctx.master?.id) && (
               <div className="border-t pt-3 space-y-2">
                 {!cancelAsMasterPending ? (
@@ -1528,6 +1244,114 @@ export function ActionItemModal({ id, open, onOpenChange }: {
           </SectionBox>
         );
 
+      // ─── Возврат токена на рассмотрении ───────────────────────────
+      case "token_refund_pending":
+        return (
+          <SectionBox title="Ситуация: заявка на возврат токена">
+            <NextActionBanner
+              text={`Мастер ${ctx.master?.name ?? `#${item.masterId}`} запросил возврат ${Number(item.amountAtRisk ?? 0)} токенов по заказу #${item.orderId}. Заявка висит уже ${fmtAge((Date.now() - new Date(item.createdAt).getTime()) / 3600000)}.`}
+            />
+            <OrderInfoBlock ctx={ctx} />
+            <div className="border-t pt-3 space-y-3">
+              <div className="text-sm font-semibold">Решение по возврату</div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => fire("approve_refund")}
+                  disabled={busy === "approve_refund"}
+                  className="bg-emerald-600 hover:bg-emerald-700"
+                >
+                  <CheckCircle2 className="w-4 h-4" /> Одобрить возврат
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => fire("resolve")} disabled={busy === "resolve"}>
+                  <CheckCircle2 className="w-4 h-4" /> Пометить как проверено
+                </Button>
+              </div>
+              <div className="space-y-2">
+                <div className="text-xs text-muted-foreground">Причина отклонения (обязательно):</div>
+                <Textarea
+                  value={messageText}
+                  onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setMessageText(e.target.value)}
+                  placeholder="Например: мастер уже приступил к работе, возврат невозможен"
+                  className="min-h-[60px] bg-white"
+                />
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  disabled={busy === "reject_refund" || !messageText.trim()}
+                  onClick={() => fire("reject_refund", { reason: messageText.trim() })}
+                >
+                  <X className="w-4 h-4" /> Отклонить возврат
+                </Button>
+              </div>
+            </div>
+          </SectionBox>
+        );
+
+      // ─── Мастер с нулевым балансом ─────────────────────────────
+      case "master_zero_balance":
+        return (
+          <SectionBox title="Ситуация: у мастера закончились токены">
+            <NextActionBanner
+              text={`Мастер ${ctx.master?.name ?? `#${item.masterId}`} имеет нулевой баланс токенов. Он не сможет принимать новые заказы. Напишите мастеру и предложите купить токены.`}
+              phone={ctx.master?.phone}
+              callLabel="Позвонить мастеру"
+            />
+            <OrderInfoBlock ctx={ctx} />
+            <div className="border-t pt-3 flex flex-wrap gap-2">
+              <Button size="sm" onClick={() => fire("message_master", { message: messageText || "Добрый день! У вас закончились токены. Купите пакет, чтобы продолжать принимать заказы." })} disabled={busy === "message_master"}>
+                <MessageSquare className="w-4 h-4" /> Написать мастеру
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => fire("resolve")} disabled={busy === "resolve"}>
+                <CheckCircle2 className="w-4 h-4" /> Пометить выполненной
+              </Button>
+            </div>
+          </SectionBox>
+        );
+
+      // ─── Риск оттока мастера ─────────────────────────────────────
+      case "master_churn_risk":
+        return (
+          <SectionBox title="Ситуация: риск оттока мастера">
+            <NextActionBanner
+              text={`Мастер ${ctx.master?.name ?? `#${item.masterId}`} не покупал токены уже давно. Остаток: ${Number(item.amountAtRisk ?? 0)} токенов. Свяжитесь и предложите акцию или бонус.`}
+              phone={ctx.master?.phone}
+              callLabel="Позвонить мастеру"
+            />
+            <OrderInfoBlock ctx={ctx} />
+            <div className="border-t pt-3 flex flex-wrap gap-2">
+              <Button size="sm" onClick={() => fire("message_master", { message: messageText || "Добрый день! Давно не видели ваших покупок токенов. Есть спецпредложение — напишите, расскажем!" })} disabled={busy === "message_master"}>
+                <MessageSquare className="w-4 h-4" /> Написать мастеру
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => fire("resolve")} disabled={busy === "resolve"}>
+                <CheckCircle2 className="w-4 h-4" /> Пометить выполненной
+              </Button>
+            </div>
+          </SectionBox>
+        );
+
+      // ─── Заказ завис (токены) ────────────────────────────────────
+      case "order_stalled_token":
+        return (
+          <SectionBox title="Ситуация: заказ завис, у мастера нет токенов">
+            <NextActionBanner
+              text={`Заказ #${item.orderId} завис. У назначенного мастера нет токенов. Нужно переназначить или отменить заказ.`}
+            />
+            <OrderInfoBlock ctx={ctx} ageLabel="Возраст заказа" />
+            <div className="border-t pt-3 flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" onClick={() => fire("reassign")} disabled={busy === "reassign"}>
+                <RefreshCw className="w-4 h-4" /> Переназначить
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => fire("message_master", { message: messageText || "Добрый день! Заказ завис. У вас нет токенов. Купите пакет или заказ будет передан другому мастеру." })} disabled={busy === "message_master"}>
+                <MessageSquare className="w-4 h-4" /> Написать мастеру
+              </Button>
+              <Button size="sm" variant="destructive" onClick={() => fire("cancel_order")} disabled={busy === "cancel_order"}>
+                <X className="w-4 h-4" /> Отменить заказ
+              </Button>
+            </div>
+          </SectionBox>
+        );
+
       // ─── Нет движения / прочее ───────────────────────────────────
       default:
         return (
@@ -1616,86 +1440,6 @@ export function ActionItemModal({ id, open, onOpenChange }: {
 
             {/* Тип-специфичный виджет */}
             {renderTypePanel()}
-
-            {/* Частичная оплата — универсальный блок для всех типов задач */}
-            {item?.type !== "no_payment" && !!ctx.order?.id && (
-              <SectionBox title="Частичная оплата комиссии">
-                <>
-                  <div className="text-xs text-muted-foreground">Заказ не закрывается — только фиксируется оплата части комиссии. Мастеру придёт уведомление.</div>
-                  {/* Прогресс-бар: если транзакция есть — берём реальные данные, иначе считаем комиссию из сметы */}
-                  {(() => {
-                    const totalComm = ctx.transaction?.commission != null
-                      ? ctx.transaction.commission
-                      : ctx.order?.proposedAmount != null
-                        ? (Number(ctx.order.proposedAmount) <= 50000 ? 5000 : Math.round(Number(ctx.order.proposedAmount) * 0.15))
-                        : null;
-                    const prepaymentDeducted = ctx.transaction?.prepaymentDeducted ?? 0;
-                    const paidComm = (ctx.transaction?.paidCommission ?? 0) + prepaymentDeducted;
-                    return (
-                      <>
-                        <PaymentProgress total={totalComm} paid={paidComm} />
-                        {prepaymentDeducted > 0 && (
-                          <div className="flex items-center gap-2 text-xs text-blue-700 bg-blue-50 rounded-lg px-3 py-2 border border-blue-200">
-                            <Banknote className="w-3.5 h-3.5 shrink-0" />
-                            <span>Бронь по смете: <strong>{Number(prepaymentDeducted).toLocaleString("ru-RU")} ₽</strong> уже зачтена в счёт комиссии</span>
-                          </div>
-                        )}
-                      </>
-                    );
-                  })()}
-                  {ctx.transaction?.payments?.length > 0 && (
-                    <div className="space-y-1">
-                      <div className="text-xs font-semibold text-muted-foreground">История платежей:</div>
-                      {ctx.transaction.payments.map((p: any, i: number) => (
-                        <div key={i} className="flex items-center justify-between text-xs bg-emerald-50 rounded-lg px-3 py-1.5 border border-emerald-100">
-                          <span className="text-emerald-800 font-medium">+{Number(p.amount).toLocaleString("ru-RU")} ₽</span>
-                          <span className="text-muted-foreground">{p.paidAt ? new Date(p.paidAt).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <div className="flex gap-2 flex-wrap items-end">
-                    <div>
-                      <label className="text-xs text-muted-foreground block mb-1">Полная сумма сметы, ₽</label>
-                      <Input type="number" inputMode="decimal" min={0} step={100} value={partialOrderAmount} onChange={(e: ChangeEvent<HTMLInputElement>) => setPartialOrderAmount(e.target.value)} placeholder="Например: 10000" className="bg-white w-40" disabled={busy === "partial_payment"} />
-                    </div>
-                    <div>
-                      <label className="text-xs text-muted-foreground block mb-1">Оплачено комиссии, ₽</label>
-                      <Input type="number" inputMode="decimal" min={0} step={100} value={partialPaidAmount} onChange={(e: ChangeEvent<HTMLInputElement>) => setPartialPaidAmount(e.target.value)} placeholder="Например: 20000" className="bg-white w-40" disabled={busy === "partial_payment"} />
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="border-emerald-400 text-emerald-700 hover:bg-emerald-50"
-                      disabled={busy === "partial_payment" || !partialOrderAmount || !partialPaidAmount}
-                      onClick={async () => {
-                        const n = Number(partialOrderAmount);
-                        const p = Number(partialPaidAmount);
-                        if (!Number.isFinite(n) || n <= 0) { showToast("Укажите полную сумму сметы", false); return; }
-                        if (!Number.isFinite(p) || p <= 0) { showToast("Укажите оплаченную сумму", false); return; }
-                        await fire("partial_payment", { orderAmount: n, paidAmount: p });
-                        setPartialOrderAmount("");
-                        setPartialPaidAmount("");
-                      }}
-                    >
-                      <Banknote className="w-4 h-4" /> Зафиксировать оплату
-                    </Button>
-                  </div>
-                  {(() => {
-                    const n = Number(partialOrderAmount);
-                    const p = Number(partialPaidAmount);
-                    if (!Number.isFinite(n) || n <= 0 || !Number.isFinite(p) || p <= 0) return null;
-                    const totalComm = n <= 50000 ? 5000 : Math.round(n * 0.15);
-                    const remaining = Math.max(0, totalComm - p);
-                    return (
-                      <div className="text-xs text-emerald-700 bg-emerald-50 rounded-lg px-3 py-2 border border-emerald-200">
-                        Комиссия с {n.toLocaleString("ru-RU")} ₽ ≈ {totalComm.toLocaleString("ru-RU")} ₽ · Оплачено {p.toLocaleString("ru-RU")} ₽{remaining > 0 ? ` · Остаток ${remaining.toLocaleString("ru-RU")} ₽` : " · Полностью оплачено ✅"}
-                      </div>
-                    );
-                  })()}
-                </>
-              </SectionBox>
-            )}
 
             {/* Комментарий */}
             <div>

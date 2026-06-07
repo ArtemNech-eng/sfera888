@@ -163,7 +163,7 @@ async function calcCurrentBillingPeriod(
     // + подтверждённые (96ч прошло) директные отклики мастеров на лендинговые лиды (холд 96ч)
     const confirmedResponses = await db.execute(
       sql`SELECT COUNT(*)::int AS cnt FROM lead_responses
-          WHERE lead_id = ANY(${sql.array(leadIds)}) AND status = 'confirmed'`
+          WHERE lead_id = ANY(${leadIds}) AND status = 'confirmed'`
     );
     const confirmedCount = Number((confirmedResponses as any).rows?.[0]?.cnt ?? 0);
     tokenSpentCount += confirmedCount;

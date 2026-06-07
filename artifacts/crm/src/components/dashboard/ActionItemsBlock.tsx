@@ -294,7 +294,7 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
         } else if (scopeTab === "masters") {
           if (!(i.masterId != null || i.entityType === "master")) return false;
         } else if (scopeTab === "finance") {
-          if (!(i.entityType === "finance" || i.type.includes("payment") || i.type === "low_avito_balance")) return false;
+          if (!(i.entityType === "finance" || i.type.includes("payment") || i.type === "token_refund_pending")) return false;
         } else if (scopeTab === "system") {
           if (i.entityType !== "system") return false;
         } else {
@@ -305,7 +305,7 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
         return true;
       })
       // Фильтр по городу: системные задачи (city=null) всегда показываем,
-      // чтобы low_avito_balance и custom_manual не пропадали при выборе города
+      // чтобы custom_manual не пропадали при выборе города
       .filter((i) => !city || city === "Все города" || city === "all" || i.city === null || i.city === city)
       .filter((i) => {
         if (search.trim() === "") return true;
@@ -393,11 +393,17 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
       }
       return [...byOrder.values()].reduce((s, v) => s + v, 0);
     })();
+    // Token-specific metrics
+    const pendingRefunds = filtered.filter(i => i.type === "token_refund_pending");
+    const tokensAtRisk = pendingRefunds.reduce((s, i) => s + (Number(i.amountAtRisk) || 0), 0);
+    const pendingRefundsCount = pendingRefunds.length;
+    const zeroBalanceMasters = filtered.filter(i => i.type === "master_zero_balance");
+    const zeroBalanceCount = zeroBalanceMasters.length;
     const ages = filtered.map(i => (Date.now() - new Date(i.createdAt).getTime()) / 3600000);
     const avgAgeH = ages.length > 0 ? ages.reduce((a, b) => a + b, 0) / ages.length : 0;
     const total = filtered.length;
     const oldestH = ages.length > 0 ? Math.max(...ages) : 0;
-    return { totalAtRisk, avgAgeH, oldestH, total };
+    return { totalAtRisk, tokensAtRisk, pendingRefundsCount, zeroBalanceCount, avgAgeH, oldestH, total };
   }, [filtered]);
 
   // Счётчики по приоритету из filtered (учитывают текущие фильтры)
@@ -942,14 +948,32 @@ export function ActionItemsBlock({ period: externalPeriod, city }: { period?: st
       </div>
 
       {/* ─── Фаза 3: KPI-панель ──────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-2 mb-4">
         <div className="rounded-xl border bg-white p-3 flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center shrink-0">
             <DollarSign className="w-4 h-4 text-red-600" />
           </div>
           <div>
-            <div className="text-[10px] text-muted-foreground font-medium">Под риском</div>
-            <div className="text-sm font-bold text-red-700">{kpi.totalAtRisk.toLocaleString("ru-RU")} ₽</div>
+            <div className="text-[10px] text-muted-foreground font-medium">Токенов под риском</div>
+            <div className="text-sm font-bold text-red-700">{Math.round(kpi.tokensAtRisk).toLocaleString("ru-RU")} ток.</div>
+          </div>
+        </div>
+        <div className="rounded-xl border bg-white p-3 flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-rose-50 flex items-center justify-center shrink-0">
+            <AlertTriangle className="w-4 h-4 text-rose-600" />
+          </div>
+          <div>
+            <div className="text-[10px] text-muted-foreground font-medium">Возвратов на рассмотрении</div>
+            <div className="text-sm font-bold text-rose-700">{kpi.pendingRefundsCount}</div>
+          </div>
+        </div>
+        <div className="rounded-xl border bg-white p-3 flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-orange-50 flex items-center justify-center shrink-0">
+            <AlertTriangle className="w-4 h-4 text-orange-600" />
+          </div>
+          <div>
+            <div className="text-[10px] text-muted-foreground font-medium">Мастеров с нулём</div>
+            <div className="text-sm font-bold text-orange-700">{kpi.zeroBalanceCount}</div>
           </div>
         </div>
         <div className="rounded-xl border bg-white p-3 flex items-center gap-2.5">

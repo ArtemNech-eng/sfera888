@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, ordersTable, mastersTable, leadsTable, receiptsTable, avitoSettingsTable, chatCasesTable, systemTasksTable, masterMessagesTable, transactionsTable, transactionPaymentsTable, taskSnoozesTable, orderDispatchesTable } from "@workspace/db";
+import { db, ordersTable, mastersTable, leadsTable, receiptsTable, avitoSettingsTable, chatCasesTable, systemTasksTable, masterMessagesTable, transactionsTable, transactionPaymentsTable, taskSnoozesTable, orderDispatchesTable, walletTransactionsTable, masterWalletTable } from "@workspace/db";
 import { desc, isNull, eq, and, sql, not, inArray, lte, gt } from "drizzle-orm";
 import { sendMaxMessage } from "../maxBot.js";
 import { sendPushToMaster } from "../lib/push.js";
@@ -40,7 +40,7 @@ const ops = requireRole("admin", "master_operator", "lead_operator");
 
 type Priority = "critical" | "high" | "medium" | "low";
 type Status = "open" | "in_progress" | "done" | "dismissed";
-type TaskType = "no_estimate" | "no_payment" | "no_master_response" | "no_progress" | "low_avito_balance" | "blocked_master" | "possible_bypass" | "conflict" | "no_manager_id" | "custom_manual";
+type TaskType = "no_estimate" | "no_payment" | "no_master_response" | "no_progress" | "low_avito_balance" | "blocked_master" | "possible_bypass" | "conflict" | "no_manager_id" | "custom_manual" | "token_refund_pending" | "master_zero_balance" | "master_churn_risk" | "order_stalled_token";
 
 type Item = {
   id: string;
@@ -84,6 +84,8 @@ const actionToRoute = {
   open_issue_order: "/orders",
   resend: "/dispatch",
   call_master: "/master-chat",
+  approve_refund: "/wallet",
+  reject_refund: "/wallet",
 } as const;
 
 function pFromHours(hours: number): Priority {
@@ -133,13 +135,15 @@ function matchesFilters(item: Item, filters: { period?: string; city?: string; p
 
 function actionSet(type: TaskType) {
   if (type === "no_estimate") return [{ key: "message_master", label: "Написать мастеру", style: "primary" as const }, { key: "call_master", label: "Позвонить мастеру", style: "secondary" as const }, { key: "reassign", label: "Переназначить", style: "secondary" as const }, { key: "cancel_order", label: "Отменить заказ", style: "danger" as const }, { key: "resolve", label: "Пометить задачу выполненной", style: "secondary" as const }];
-  if (type === "no_payment") return [{ key: "message_master", label: "Напомнить мастеру", style: "primary" as const }, { key: "call_client", label: "Позвонить клиенту", style: "secondary" as const }, { key: "return_to_pool", label: "Вернуть в пул", style: "secondary" as const }, { key: "cancel_order", label: "Отменить заказ", style: "danger" as const }, { key: "resolve", label: "Пометить выполненной", style: "secondary" as const }];
   if (type === "no_master_response") return [{ key: "message_master", label: "Написать мастеру", style: "primary" as const }, { key: "resend", label: "Повторно разослать", style: "secondary" as const }, { key: "reassign", label: "Назначить вручную", style: "secondary" as const }, { key: "cancel_order", label: "Отменить заказ", style: "danger" as const }];
   if (type === "no_progress") return [{ key: "message_master", label: "Написать мастеру", style: "primary" as const }, { key: "call_master", label: "Позвонить мастеру", style: "secondary" as const }, { key: "reassign", label: "Переназначить", style: "secondary" as const }, { key: "cancel_order", label: "Отменить заказ", style: "danger" as const }, { key: "resolve", label: "Пометить задачу выполненной", style: "secondary" as const }];
   if (type === "blocked_master") return [{ key: "message_master", label: "Написать мастеру", style: "primary" as const }, { key: "manual_unblock", label: "Разблокировать вручную", style: "danger" as const }, { key: "open_issue_order", label: "Открыть проблемный заказ", style: "secondary" as const }, { key: "resolve", label: "Пометить как проверено", style: "secondary" as const }];
-  if (type === "low_avito_balance") return [{ key: "update_balance", label: "Обновить баланс вручную", style: "primary" as const }, { key: "resolve", label: "Пометить как решено", style: "secondary" as const }];
-  if (type === "possible_bypass" || type === "conflict") return [{ key: "message_master", label: "Написать мастеру", style: "primary" as const }, { key: "complete_as_master", label: "Завершить как выполненный (только admin)", style: "secondary" as const }, { key: "cancel_order", label: "Отменить заказ", style: "danger" as const }, { key: "cancel_as_master", label: "Отменить заказ (вина мастера)", style: "danger" as const }, { key: "block_master", label: "Заблокировать мастера", style: "danger" as const }, { key: "manual_control", label: "Перевести заказ в ручной контроль", style: "secondary" as const }, { key: "resolve", label: "Пометить как проверено", style: "secondary" as const }];
+  if (type === "possible_bypass" || type === "conflict") return [{ key: "message_master", label: "Написать мастеру", style: "primary" as const }, { key: "cancel_order", label: "Отменить заказ", style: "danger" as const }, { key: "cancel_as_master", label: "Отменить заказ (вина мастера)", style: "danger" as const }, { key: "block_master", label: "Заблокировать мастера", style: "danger" as const }, { key: "manual_control", label: "Перевести заказ в ручной контроль", style: "secondary" as const }, { key: "resolve", label: "Пометить как проверено", style: "secondary" as const }];
   if (type === "no_manager_id") return [{ key: "reassign", label: "Назначить менеджера", style: "primary" as const }, { key: "resolve", label: "Пометить выполненной", style: "secondary" as const }];
+  if (type === "token_refund_pending") return [{ key: "approve_refund", label: "Одобрить возврат", style: "primary" as const }, { key: "reject_refund", label: "Отклонить возврат", style: "danger" as const }, { key: "resolve", label: "Пометить как проверено", style: "secondary" as const }];
+  if (type === "master_zero_balance") return [{ key: "message_master", label: "Написать мастеру", style: "primary" as const }, { key: "resolve", label: "Пометить выполненной", style: "secondary" as const }];
+  if (type === "master_churn_risk") return [{ key: "message_master", label: "Написать мастеру", style: "primary" as const }, { key: "resolve", label: "Пометить выполненной", style: "secondary" as const }];
+  if (type === "order_stalled_token") return [{ key: "reassign", label: "Переназначить", style: "primary" as const }, { key: "message_master", label: "Написать мастеру", style: "secondary" as const }, { key: "cancel_order", label: "Отменить заказ", style: "danger" as const }];
   return [{ key: "resolve", label: "Пометить выполненной", style: "secondary" as const }, { key: "dismiss", label: "Отложить", style: "ghost" as const }];
 }
 
@@ -158,16 +162,16 @@ async function buildItems(): Promise<Item[]> {
   const now = new Date();
   // Load commission settings once for amountAtRisk calculations
   const commSettings = await getCommissionSettings().catch(() => DEFAULT_COMMISSION);
-  const [orders, masters, allMastersForNames, leads, receipts, cases, avitoRows, manualTasks, txRows] = await Promise.all([
+  const [orders, masters, allMastersForNames, leads, receipts, cases, manualTasks, txRows, masterWallets] = await Promise.all([
     db.select({ id: ordersTable.id, leadId: ordersTable.leadId, masterId: ordersTable.masterId, city: ordersTable.city, status: ordersTable.status, proposedAmount: ordersTable.proposedAmount, orderAmount: ordersTable.orderAmount, createdAt: ordersTable.createdAt, updatedAt: ordersTable.updatedAt, assignedAt: ordersTable.assignedAt, cancelReason: ordersTable.cancelReason }).from(ordersTable).where(and(isNull(ordersTable.deletedAt), not(inArray(ordersTable.status, ["completed", "cancelled"])))),
     db.select({ id: mastersTable.id, alias: mastersTable.alias, city: mastersTable.city, status: mastersTable.status, createdAt: mastersTable.createdAt, blockedAt: (mastersTable as any).blockedAt }).from(mastersTable).where(and(isNull(mastersTable.deletedAt), sql`${mastersTable.status}::text ilike '%blocked%' or ${mastersTable.status}::text ilike '%fomo%'`)),
-    db.select({ id: mastersTable.id, alias: mastersTable.alias }).from(mastersTable).where(isNull(mastersTable.deletedAt)),
+    db.select({ id: mastersTable.id, alias: mastersTable.alias, city: mastersTable.city }).from(mastersTable).where(isNull(mastersTable.deletedAt)),
     db.select({ id: leadsTable.id, clientName: leadsTable.clientName, clientPhone: leadsTable.clientPhone, city: leadsTable.city, createdAt: leadsTable.createdAt }).from(leadsTable).where(isNull(leadsTable.deletedAt)),
     db.select({ id: receiptsTable.id, orderId: receiptsTable.orderId, masterId: receiptsTable.masterId, city: receiptsTable.city, prepaymentSubmittedAt: receiptsTable.prepaymentSubmittedAt, prepaymentSeenAt: receiptsTable.prepaymentSeenAt, prepaymentAmount: receiptsTable.prepaymentAmount }).from(receiptsTable),
     db.select().from(chatCasesTable).where(eq(chatCasesTable.isArchived, false)).orderBy(desc(chatCasesTable.updatedAt)).limit(50),
-    db.select().from(avitoSettingsTable).limit(1),
     db.select().from(systemTasksTable).orderBy(desc(systemTasksTable.createdAt)).limit(50),
     db.select({ id: transactionsTable.id, orderId: transactionsTable.orderId, orderAmount: transactionsTable.orderAmount }).from(transactionsTable),
+    db.select({ masterId: masterWalletTable.masterId, tokensBalance: masterWalletTable.tokensBalance }).from(masterWalletTable),
   ]);
   const leadMap = new Map(leads.map((l: any) => [l.id, l]));
   const orderMap = new Map(orders.map((o: any) => [o.id, o]));
@@ -210,7 +214,7 @@ async function buildItems(): Promise<Item[]> {
       // createdAt задачи = момент когда задача стала актуальной (через 24ч после создания заказа),
       // а не дата создания заказа — иначе фильтр "Месяц/Неделя" скрывает старые активные задачи
       const noEstimateTaskCreatedAt = new Date(new Date(o.createdAt).getTime() + 24 * 3600000).toISOString();
-      items.push({ id: `no_estimate-${o.id}`, type: "no_estimate", priority: pFromHours(estimateAgeH), title: `Заказ #${o.id} — нет сметы`, shortDescription: clientLabel.trim(), fullDescription: descParts.join(""), createdAt: noEstimateTaskCreatedAt, updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterNameMap.get(Number(o.masterId)) ?? null) : null, amountAtRisk: o.orderAmount ? calculateCommission(Number(o.orderAmount), commSettings) : null, actions: actionSet("no_estimate") });
+      items.push({ id: `no_estimate-${o.id}`, type: "no_estimate", priority: "medium", title: `Заказ #${o.id} — нет сметы`, shortDescription: clientLabel.trim(), fullDescription: descParts.join(""), createdAt: noEstimateTaskCreatedAt, updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterNameMap.get(Number(o.masterId)) ?? null) : null, amountAtRisk: o.orderAmount ? calculateCommission(Number(o.orderAmount), commSettings) : null, actions: actionSet("no_estimate") });
     }
     if (o.status === "waiting_master") {
       // createdAt задачи = updatedAt заказа (последнее изменение статуса), чтобы задача не выпадала
@@ -218,16 +222,7 @@ async function buildItems(): Promise<Item[]> {
       const noMasterTaskCreatedAt = new Date(o.updatedAt ?? o.createdAt).toISOString();
       items.push({ id: `no_master_response-${o.id}`, type: "no_master_response", priority: pFromHours(ageH), title: `Заказ #${o.id} — нет отклика мастера`, shortDescription: clientLabel.trim(), fullDescription: `Заказ завис без отклика мастера ${fmtAge(ageH)}.`, createdAt: noMasterTaskCreatedAt, updatedAt: noMasterTaskCreatedAt, lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterNameMap.get(Number(o.masterId)) ?? null) : null, amountAtRisk: o.orderAmount ? calculateCommission(Number(o.orderAmount), commSettings) : null, actions: actionSet("no_master_response") });
     }
-    // no_payment: смета есть, заказ не оплачен (orderAmount = null), ждём >= 24ч
-    // Дедупликация: если для этого orderId есть receipt с prepaymentSubmittedAt — не добавляем из orders,
-    // потому что receipt-задача (подтверждение оплаты) точнее и приоритетнее
-    // Skip no_payment if commission was already partially/fully paid (transaction_payments exist)
-    // — if operator recorded commission payment, prepayment is definitely received
-    if (o.proposedAmount && !o.orderAmount && ageH >= 24 && !receiptSubmittedOrderIds.has(Number(o.id)) && !txOrderIdsWithPayments.has(Number(o.id))) {
-      // createdAt задачи = момент когда задача стала актуальной (через 24ч после создания заказа)
-      const noPaymentTaskCreatedAt = new Date(new Date(o.createdAt).getTime() + 24 * 3600000).toISOString();
-      items.push({ id: `no_payment-${o.id}`, type: "no_payment", priority: pFromHours(ageH), title: `Заказ #${o.id} — не оплачена предоплата`, shortDescription: clientLabel.trim(), fullDescription: `Смета ${Number(o.proposedAmount).toLocaleString("ru-RU")} ₽ отправлена, ожидаем оплату ${fmtAge(ageH)}.`, createdAt: noPaymentTaskCreatedAt, updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "finance", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterNameMap.get(Number(o.masterId)) ?? null) : null, amountAtRisk: calculateCommission(Number(o.proposedAmount), commSettings), actions: actionSet("no_payment") });
-    }
+    // no_payment removed — token model doesn't track prepayment this way
     // no_progress: count from updatedAt (last activity), not from createdAt
     const progressAgeH = o.updatedAt
       ? (now.getTime() - new Date(o.updatedAt).getTime()) / 3600000
@@ -237,23 +232,16 @@ async function buildItems(): Promise<Item[]> {
       const progressPriority: Priority = progressAgeH >= 336 ? "critical" : progressAgeH >= 240 ? "high" : "medium";
       items.push({ id: `no_progress-${o.id}`, type: "no_progress", priority: progressPriority, title: `Заказ #${o.id} — нет движения`, shortDescription: `${fmtAge(progressAgeH)} без обновлений`, fullDescription: `Заказ без движения уже ${fmtAge(progressAgeH)}.`, createdAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterNameMap.get(Number(o.masterId)) ?? null) : null, amountAtRisk: o.orderAmount ? calculateCommission(Number(o.orderAmount), commSettings) : null, actions: actionSet("no_progress") });
     }
-    // possible_bypass из cancelReason убран — заказы с cancelReason уже cancelled и не попадают в выборку
-  }
-  // Receipts: клиент подтвердил оплату, но оператор ещё не видел (prepaymentSeenAt = null)
-  // Дедупликация: если для этого orderId уже есть задача no_payment из orders — заменяем её (receipt-задача точнее)
-  const noPaymentOrderIds = new Set(items.filter(i => i.type === "no_payment").map(i => i.orderId != null ? Number(i.orderId) : null).filter(Boolean));
-  for (const r of receipts) {
-    // Skip receipt task if commission was already partially/fully paid (transaction_payments exist)
-    // — if operator recorded commission payment, prepayment is definitely received
-    if (r.prepaymentSubmittedAt && !r.prepaymentSeenAt && !txOrderIdsWithPayments.has(Number(r.orderId))) {
-      const ageH = (now.getTime() - new Date(r.prepaymentSubmittedAt).getTime()) / 3600000;
-      // Если уже есть задача no_payment для этого заказа из orders — удаляем её (receipt-задача приоритетнее)
-      if (r.orderId != null && noPaymentOrderIds.has(Number(r.orderId))) {
-        const idx = items.findIndex(i => i.type === "no_payment" && i.orderId != null && Number(i.orderId) === Number(r.orderId));
-        if (idx !== -1) items.splice(idx, 1);
-      }
-      items.push({ id: `receipt-${r.id}`, type: "no_payment", priority: pFromHours(ageH), title: `Заказ #${r.orderId} — подтверждение оплаты`, shortDescription: `${r.city ?? ""}`.trim(), fullDescription: `Клиент подтвердил оплату ${Math.round(ageH)} ч назад. Необходимо подтвердить получение.`, createdAt: new Date(r.prepaymentSubmittedAt).toISOString(), updatedAt: new Date(r.prepaymentSubmittedAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "finance", entityId: r.id, orderId: r.orderId, masterId: r.masterId, clientId: null, city: r.city ?? null, amountAtRisk: Number(r.prepaymentAmount ?? 0), actions: actionSet("no_payment") });
+    // order_stalled_token: заказ завис >24ч, assigned master имеет tokensBalance <= 0
+    const stalledAgeH = o.updatedAt
+      ? (now.getTime() - new Date(o.updatedAt).getTime()) / 3600000
+      : ageH;
+    const masterWallet = masterWallets.find((w: any) => Number(w.masterId) === Number(o.masterId));
+    const masterTokens = masterWallet ? Number(masterWallet.tokensBalance ?? 0) : null;
+    if (["waiting_master", "master_assigned"].includes(String(o.status ?? "")) && stalledAgeH >= 24 && masterTokens !== null && masterTokens <= 0) {
+      items.push({ id: `order_stalled_token-${o.id}`, type: "order_stalled_token", priority: "high", title: `Заказ #${o.id} — завис, у мастера нет токенов`, shortDescription: clientLabel.trim(), fullDescription: `Заказ завис ${fmtAge(stalledAgeH)}. У назначенного мастера нет токенов (${masterTokens}).`, createdAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterNameMap.get(Number(o.masterId)) ?? null) : null, amountAtRisk: null, actions: actionSet("order_stalled_token") });
     }
+    // possible_bypass из cancelReason убран — заказы с cancelReason уже cancelled и не попадают в выборку
   }
   for (const m of masters) {
     const status = String(m.status ?? "").toLowerCase();
@@ -266,8 +254,72 @@ async function buildItems(): Promise<Item[]> {
       items.push({ id: `blocked_master-${m.id}`, type: "blocked_master", priority: blockedPriority, title: `Мастер ${m.alias} заблокирован`, shortDescription: `${m.city ?? ""} · ${ageStr} в блокировке`.trim(), fullDescription: `Мастер в блокировке / FOMO_BLOCKED уже ${ageStr}. Требует проверки.`, createdAt: (blockedAt ?? new Date(m.createdAt)).toISOString(), updatedAt: (blockedAt ?? new Date(m.createdAt)).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "master", entityId: m.id, orderId: null, masterId: m.id, clientId: null, city: m.city ?? null, amountAtRisk: null, actions: actionSet("blocked_master") });
     }
   }
-  const balance = avitoRows[0] as any;
-  if (balance && Number(balance.advanceBalance ?? 0) < 1000) items.push({ id: "low_avito_balance-1", type: "low_avito_balance", priority: "high", title: "Баланс Avito ниже нормы", shortDescription: `Текущий баланс: ${Number(balance.advanceBalance ?? 0).toLocaleString("ru-RU")} ₽`, fullDescription: "Баланс Avito ниже рекомендуемого порога.", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "finance", entityId: balance.id ?? null, orderId: null, masterId: null, clientId: null, city: null, amountAtRisk: null, actions: actionSet("low_avito_balance") });
+  // Token refunds pending — оператор должен решить одобрить или отклонить
+  const pendingRefunds = await db.select()
+    .from(walletTransactionsTable)
+    .where(and(eq(walletTransactionsTable.type, "refund"), eq(walletTransactionsTable.status, "pending")));
+  for (const refund of pendingRefunds) {
+    const ageH = (now.getTime() - new Date(refund.createdAt!).getTime()) / 3600000;
+    const refundPriority: Priority = ageH >= 24 ? "critical" : "high";
+    const masterId = Number(refund.masterId);
+    items.push({
+      id: `token_refund_pending-${refund.id}`,
+      type: "token_refund_pending",
+      priority: refundPriority,
+      title: `Возврат токена по заказу #${refund.orderId}`,
+      shortDescription: `Мастер #${masterId}`,
+      fullDescription: `Мастер запросил возврат ${Math.abs(Number(refund.tokensAmount))} токенов. Заявка висит ${fmtAge(ageH)}.`,
+      createdAt: new Date(refund.createdAt!).toISOString(),
+      updatedAt: new Date(refund.createdAt!).toISOString(),
+      lastActionBy: null,
+      deadline: null,
+      status: "open",
+      entityType: "finance",
+      entityId: refund.id,
+      orderId: refund.orderId,
+      masterId,
+      clientId: null,
+      city: null,
+      masterName: masterNameMap.get(masterId) ?? null,
+      amountAtRisk: Math.abs(Number(refund.tokensAmount)),
+      actions: actionSet("token_refund_pending"),
+    });
+  }
+  // Master zero balance: мастеры без токенов, но с активными заказами
+  const activeOrderMasterIds = new Set(orders.map((o: any) => Number(o.masterId)).filter(Boolean));
+  const masterWalletMap = new Map(masterWallets.map((w: any) => [Number(w.masterId), w]));
+  for (const [masterId, wallet] of masterWalletMap) {
+    const tokensBalance = Number((wallet as any).tokensBalance ?? 0);
+    if (tokensBalance <= 0 && activeOrderMasterIds.has(masterId)) {
+      const master = allMastersForNames.find((m: any) => m.id === masterId);
+      if (master) {
+        items.push({ id: `master_zero_balance-${masterId}`, type: "master_zero_balance", priority: "high", title: `Мастер ${master.alias} — нулевой баланс`, shortDescription: `${master.city ?? ""}`.trim(), fullDescription: `У мастера ${master.alias} закончились токены (баланс: ${tokensBalance}). Он не сможет принимать новые заказы.`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "master", entityId: masterId, orderId: null, masterId, clientId: null, city: master.city ?? null, masterName: master.alias ?? null, amountAtRisk: 0, actions: actionSet("master_zero_balance") });
+      }
+    }
+  }
+  // Master churn risk: мастеры с токенами, но не покупали >30 дней
+  const purchaseRows = await db.select({ masterId: walletTransactionsTable.masterId, createdAt: walletTransactionsTable.createdAt })
+    .from(walletTransactionsTable)
+    .where(and(eq(walletTransactionsTable.type, "purchase"), gt(walletTransactionsTable.createdAt, new Date(Date.now() - 60 * 24 * 60 * 60 * 1000))));
+  const lastPurchaseMap = new Map<number, Date>();
+  for (const p of purchaseRows) {
+    const d = new Date(p.createdAt!);
+    const existing = lastPurchaseMap.get(p.masterId);
+    if (!existing || d > existing) lastPurchaseMap.set(p.masterId, d);
+  }
+  for (const [masterId, lastPurchase] of lastPurchaseMap) {
+    const daysSince = (now.getTime() - lastPurchase.getTime()) / (24 * 3600000);
+    if (daysSince > 30) {
+      const wallet = masterWalletMap.get(masterId);
+      const tokensBalance = wallet ? Number((wallet as any).tokensBalance ?? 0) : 0;
+      if (tokensBalance > 0) {
+        const master = allMastersForNames.find((m: any) => m.id === masterId);
+        if (master) {
+          items.push({ id: `master_churn_risk-${masterId}`, type: "master_churn_risk", priority: "medium", title: `Мастер ${master.alias} — риск оттока`, shortDescription: `Последняя покупка ${Math.round(daysSince)} дн. назад`, fullDescription: `Мастер ${master.alias} не покупал токены уже ${Math.round(daysSince)} дней. Остаток: ${tokensBalance} токенов.`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "master", entityId: masterId, orderId: null, masterId, clientId: null, city: master.city ?? null, masterName: master.alias ?? null, amountAtRisk: tokensBalance, actions: actionSet("master_churn_risk") });
+        }
+      }
+    }
+  }
   for (const c of cases) {
     let risk = String((c as any).riskLevel ?? (c as any).risk ?? "");
     if (risk !== "red" && risk !== "yellow") continue;
@@ -372,6 +424,58 @@ items.push({ id: `case-${(c as any).id}`, type, priority: risk === "red" ? "crit
 
 async function orchestrateDashboardAction(action: string, item: Item, payload: any, operatorName = "Оператор", operatorRole = "operator") {
   const route = actionToRoute[action as keyof typeof actionToRoute] ?? "/tasks";
+
+  if (action === "approve_refund" && item.entityId != null) {
+    const transactionId = Number(item.entityId);
+    const txRows = await db.select().from(walletTransactionsTable)
+      .where(and(
+        eq(walletTransactionsTable.id, transactionId),
+        eq(walletTransactionsTable.type, "refund"),
+        eq(walletTransactionsTable.status, "pending"),
+      )).limit(1);
+    if (!txRows.length) throw Object.assign(new Error("Заявка не найдена или уже обработана"), { status: 404 });
+    const tx = txRows[0];
+    const tokensCost = Math.abs(Number(tx.tokensAmount));
+    const [wallet] = await db.select().from(masterWalletTable).where(eq(masterWalletTable.masterId, tx.masterId)).limit(1);
+    if (wallet) {
+      const newBalance = Number(wallet.tokensBalance) + tokensCost;
+      await db.update(masterWalletTable)
+        .set({ tokensBalance: String(newBalance), totalTokensRefunded: String(Number(wallet.totalTokensRefunded) + tokensCost), updatedAt: new Date() })
+        .where(eq(masterWalletTable.masterId, tx.masterId));
+    }
+    await db.update(walletTransactionsTable).set({ status: "completed" }).where(eq(walletTransactionsTable.id, transactionId));
+    if (tx.orderId != null) {
+      await db.update(ordersTable)
+        .set({ masterId: null, status: "waiting_master" as any, dispatchStatus: "none", assignedAt: null, updatedAt: new Date() })
+        .where(eq(ordersTable.id, tx.orderId!));
+    }
+    invalidateBuildItemsCache();
+    return { routedTo: "/wallet", applied: true, action, payload, itemId: item.id, tokensRefunded: tokensCost };
+  }
+
+  if (action === "reject_refund" && item.entityId != null) {
+    const transactionId = Number(item.entityId);
+    const rejectReason = String(payload?.reason ?? "").trim();
+    if (!rejectReason) throw Object.assign(new Error("Укажите причину отклонения"), { status: 400 });
+    const txRows = await db.select().from(walletTransactionsTable)
+      .where(and(
+        eq(walletTransactionsTable.id, transactionId),
+        eq(walletTransactionsTable.type, "refund"),
+        eq(walletTransactionsTable.status, "pending"),
+      )).limit(1);
+    if (!txRows.length) throw Object.assign(new Error("Заявка не найдена или уже обработана"), { status: 404 });
+    const tx = txRows[0];
+    await db.update(walletTransactionsTable)
+      .set({ status: "cancelled", reason: `${tx.reason ?? ""} | Отклонено: ${rejectReason}` })
+      .where(eq(walletTransactionsTable.id, transactionId));
+    if (tx.orderId != null) {
+      await db.update(ordersTable)
+        .set({ status: "master_assigned" as any, updatedAt: new Date() })
+        .where(eq(ordersTable.id, tx.orderId!));
+    }
+    invalidateBuildItemsCache();
+    return { routedTo: "/wallet", applied: true, action, payload, itemId: item.id };
+  }
 
   if (action === "update_balance" && payload.balance != null) {
     const rows = await db.select().from(avitoSettingsTable).limit(1);
@@ -483,57 +587,71 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
       } as any).where(eq(ordersTable.id, orderId));
       console.log(`[complete_as_master] order #${orderId} marked completed, amount=${amount}, commission=${commission}`);
 
-      // Determine commission accounting based on mode
-      // - no_debt: commission forced to 0, no transaction money flow, master debt unchanged
-      // - as_debt: commission = pending, master debt += commission (master must pay later)
-      // - as_paid: commission = paid (master already paid in cash/transfer), debt reduced
-      const effectiveCommission = commissionMode === "no_debt" ? 0 : commission;
-      const txStatus: "paid" | "pending" = commissionMode === "as_debt" ? "pending" : "paid";
+      // Check if order is token-based (has token spend transaction)
+      const spendRows = await db.select({ id: walletTransactionsTable.id })
+        .from(walletTransactionsTable)
+        .where(and(eq(walletTransactionsTable.orderId, orderId), eq(walletTransactionsTable.type, "spend")))
+        .limit(1);
+      const isTokenBased = spendRows.length > 0;
 
-      const [existingTx] = await db.select({ id: transactionsTable.id, paidAt: transactionsTable.paidAt }).from(transactionsTable).where(eq(transactionsTable.orderId, orderId)).limit(1);
-      if (existingTx) {
-        await db.update(transactionsTable).set({
-          orderAmount: String(amount),
-          commission: String(effectiveCommission),
-          paymentStatus: txStatus,
-          paidAt: txStatus === "paid" ? (existingTx.paidAt ?? now) : null,
-        }).where(eq(transactionsTable.id, existingTx.id));
-      } else {
-        await db.insert(transactionsTable).values({
-          orderId,
-          masterId,
-          orderAmount: String(amount),
-          commission: String(effectiveCommission),
-          paymentStatus: txStatus,
-          paidAt: txStatus === "paid" ? now : null,
-        });
-      }
+      if (!isTokenBased) {
+        // Determine commission accounting based on mode
+        // - no_debt: commission forced to 0, no transaction money flow, master debt unchanged
+        // - as_debt: commission = pending, master debt += commission (master must pay later)
+        // - as_paid: commission = paid (master already paid in cash/transfer), debt reduced
+        const effectiveCommission = commissionMode === "no_debt" ? 0 : commission;
+        const txStatus: "paid" | "pending" = commissionMode === "as_debt" ? "pending" : "paid";
 
-      if (effectiveCommission > 0) {
-        if (commissionMode === "as_debt") {
-          // Master owes us this commission — increase debt
-          await db.update(mastersTable).set({
-            debt: sql`COALESCE(${mastersTable.debt}::numeric, 0) + ${effectiveCommission}`,
-          }).where(eq(mastersTable.id, masterId));
-          console.log(`[complete_as_master] master #${masterId} debt increased by ${effectiveCommission}`);
-        } else if (commissionMode === "as_paid") {
-          // Master already paid — reduce debt by net amount (after prepayment offset)
-          const prepaymentDeducted = Number(existingTx ? (await db.select({ pd: transactionsTable.prepaymentDeducted }).from(transactionsTable).where(eq(transactionsTable.orderId, orderId)).limit(1))[0]?.pd ?? 0 : 0);
-          const netPayable = Math.max(0, effectiveCommission - prepaymentDeducted);
-          if (netPayable > 0) {
+        const [existingTx] = await db.select({ id: transactionsTable.id, paidAt: transactionsTable.paidAt }).from(transactionsTable).where(eq(transactionsTable.orderId, orderId)).limit(1);
+        if (existingTx) {
+          await db.update(transactionsTable).set({
+            orderAmount: String(amount),
+            commission: String(effectiveCommission),
+            paymentStatus: txStatus,
+            paidAt: txStatus === "paid" ? (existingTx.paidAt ?? now) : null,
+          }).where(eq(transactionsTable.id, existingTx.id));
+        } else {
+          await db.insert(transactionsTable).values({
+            orderId,
+            masterId,
+            orderAmount: String(amount),
+            commission: String(effectiveCommission),
+            paymentStatus: txStatus,
+            paidAt: txStatus === "paid" ? now : null,
+          });
+        }
+
+        if (effectiveCommission > 0) {
+          if (commissionMode === "as_debt") {
+            // Master owes us this commission — increase debt
             await db.update(mastersTable).set({
-              debt: sql`GREATEST(${mastersTable.debt}::numeric - ${netPayable}, 0)`,
+              debt: sql`COALESCE(${mastersTable.debt}::numeric, 0) + ${effectiveCommission}`,
             }).where(eq(mastersTable.id, masterId));
-            console.log(`[complete_as_master] master #${masterId} debt decreased by ${netPayable}`);
+            console.log(`[complete_as_master] master #${masterId} debt increased by ${effectiveCommission}`);
+          } else if (commissionMode === "as_paid") {
+            // Master already paid — reduce debt by net amount (after prepayment offset)
+            const prepaymentDeducted = Number(existingTx ? (await db.select({ pd: transactionsTable.prepaymentDeducted }).from(transactionsTable).where(eq(transactionsTable.orderId, orderId)).limit(1))[0]?.pd ?? 0 : 0);
+            const netPayable = Math.max(0, effectiveCommission - prepaymentDeducted);
+            if (netPayable > 0) {
+              await db.update(mastersTable).set({
+                debt: sql`GREATEST(${mastersTable.debt}::numeric - ${netPayable}, 0)`,
+              }).where(eq(mastersTable.id, masterId));
+              console.log(`[complete_as_master] master #${masterId} debt decreased by ${netPayable}`);
+            }
           }
         }
+      } else {
+        console.log(`[complete_as_master] token-based order #${orderId} — skipping commission transaction`);
       }
 
       await recordOrderCompleted(masterId).catch(() => {});
       await recordOrderMasterHistory(masterId, orderId, "completed").catch((e: any) => console.error("[complete_as_master] history record failed:", e));
 
+      const effectiveCommission = commissionMode === "no_debt" ? 0 : commission;
       const commFmt = effectiveCommission > 0 ? `${Math.round(effectiveCommission).toLocaleString("ru-RU")} ₽` : "0 ₽";
-      const notifyText = commissionMode === "as_debt"
+      const notifyText = isTokenBased
+        ? `✅ Заказ #${orderId} отмечен как выполненный оператором. Спасибо за работу!`
+        : commissionMode === "as_debt"
         ? `✅ Заказ #${orderId} отмечен как выполненный оператором. К оплате комиссия ${commFmt} — она добавлена к вашему долгу. Пожалуйста, погасите задолженность.`
         : commissionMode === "no_debt"
         ? `✅ Заказ #${orderId} отмечен как выполненный оператором. Комиссия по этому заказу не начисляется. Спасибо за работу!`
@@ -1349,7 +1467,7 @@ router.post("/action-items/:id/action", ops, async (req: any, res: any) => {
     }
   }
   if (!item) return res.status(404).json({ error: "Не найдено" });
-  if (!["message_master", "call_client", "reassign", "cancel_order", "cancel_as_master", "complete_as_master", "partial_payment", "return_to_pool", "resolve", "dismiss", "snooze", "update_balance", "manual_unblock", "call_master", "resend", "block_master", "manual_control", "open_issue_order", "confirm_receipt", "assign_self"].includes(action)) return res.status(400).json({ error: "Недопустимое действие" });
+  if (!["message_master", "call_client", "reassign", "cancel_order", "cancel_as_master", "complete_as_master", "partial_payment", "return_to_pool", "resolve", "dismiss", "snooze", "update_balance", "manual_unblock", "call_master", "resend", "block_master", "manual_control", "open_issue_order", "confirm_receipt", "assign_self", "approve_refund", "reject_refund"].includes(action)) return res.status(400).json({ error: "Недопустимое действие" });
   const operatorName = (req as any).user?.name ?? "Оператор";
   const operatorRole = (req as any).user?.role ?? "operator";
   let result: any;
@@ -1386,13 +1504,16 @@ const openaiClient = openaiApiKey
 
 const TYPE_HINT_CONTEXT: Record<string, string> = {
   no_estimate: "Мастер не отправил смету клиенту. Нужно срочно связаться с мастером и напомнить, либо переназначить заказ другому мастеру.",
-  no_payment: "Клиент не оплатил предоплату после получения сметы. Нужно напомнить клиенту или уточнить у мастера статус оплаты.",
+  no_payment: "(deprecated) Комиссионная задача, больше не генерируется в token-модели.",
   no_master_response: "Заказ висит без отклика мастера. Нужно либо повторно разослать, либо назначить мастера вручную.",
   no_progress: "Заказ давно без обновлений. Нужно уточнить у мастера статус работ.",
   blocked_master: "Мастер заблокирован. Нужно проверить причину и решить — разблокировать или оставить.",
   possible_bypass: "Подозрение на обход платформы. Нужно связаться с мастером и проверить ситуацию.",
   conflict: "Конфликтная ситуация по заказу. Требует внимания оператора.",
-  low_avito_balance: "Баланс Avito ниже нормы. Нужно пополнить баланс вручную.",
+  token_refund_pending: "Мастер запросил возврат токена. Нужно проверить заявку и решить — одобрить или отклонить.",
+  master_zero_balance: "У мастера закончились токены. Нужно напомнить о покупке, иначе он не сможет принимать заказы.",
+  master_churn_risk: "Мастер давно не покупал токены. Риск оттока — нужен proactive-контакт.",
+  order_stalled_token: "Заказ завис, а у назначенного мастера нет токенов. Нужно переназначить или отменить.",
   no_manager_id: "Нет назначенного менеджера. Нужно назначить ответственного.",
   custom_manual: "Ручная задача. Требует внимания оператора.",
 };

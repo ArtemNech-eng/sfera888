@@ -817,7 +817,7 @@ router.post("/orders/:id/accept", requireMasterPwa, async (req, res) => {
       tokensCost,
       serviceType: order.serviceType,
     });
-    if (!deduction.success) {
+    if (!deduction.success && deduction.error) {
       if (deduction.error instanceof TokenWalletError && deduction.error.code === ERR_INSUFFICIENT_TOKENS) {
         return res.status(402).json({ error: deduction.error.message, insufficientTokens: true });
       }
