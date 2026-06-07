@@ -1,4 +1,5 @@
-export function formatCurrency(value: number): string {
+export function formatCurrency(value: number | null | undefined): string {
+  if (value == null || Number.isNaN(value)) return "—";
   if (value >= 1_000_000) {
     return `${(value / 1_000_000).toFixed(1)}М₽`;
   }
@@ -8,19 +9,23 @@ export function formatCurrency(value: number): string {
   return `${value.toLocaleString('ru-RU')}₽`;
 }
 
-export function formatCurrencyFull(value: number): string {
+export function formatCurrencyFull(value: number | null | undefined): string {
+  if (value == null || Number.isNaN(value)) return "— ₽";
   return `${value.toLocaleString('ru-RU')} ₽`;
 }
 
-export function formatNumber(value: number): string {
+export function formatNumber(value: number | null | undefined): string {
+  if (value == null || Number.isNaN(value)) return "—";
   return value.toLocaleString('ru-RU');
 }
 
-export function formatPercent(value: number, decimals = 1): string {
+export function formatPercent(value: number | null | undefined, decimals = 1): string {
+  if (value == null || Number.isNaN(value)) return "—%";
   return `${value.toFixed(decimals)}%`;
 }
 
-export function formatChange(value: number): string {
+export function formatChange(value: number | null | undefined): string {
+  if (value == null || Number.isNaN(value)) return "—";
   const sign = value >= 0 ? '+' : '';
   return `${sign}${value.toFixed(1)}%`;
 }

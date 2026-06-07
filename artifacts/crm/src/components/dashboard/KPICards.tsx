@@ -80,7 +80,9 @@ function KPICard({
     : null;
   const isPositive = change !== null && change >= 0;
 
-  const displayValue = formatValue ? formatValue(animated) : animated.toLocaleString('ru-RU');
+  const displayValue = formatValue
+    ? formatValue(animated)
+    : (animated ?? 0).toLocaleString('ru-RU');
 
   return (
     <div

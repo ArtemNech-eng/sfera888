@@ -71,7 +71,7 @@ export function TokenFunnelCard({ data, isLoading }: Props) {
                     {stage.label}
                   </span>
                   <span className="text-[18px] font-bold text-[#111827]">
-                    {stage.value.toLocaleString('ru-RU')}
+                    {(stage.value ?? 0).toLocaleString('ru-RU')}
                   </span>
                 </div>
                 <div className="h-1.5 bg-[#F3F4F6] rounded-full overflow-hidden">

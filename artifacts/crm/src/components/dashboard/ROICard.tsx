@@ -100,8 +100,8 @@ export function ROICard({ data, isLoading }: Props) {
                     <span className="text-[13px] text-[#374151]">{row.orders}</span>
                   </td>
                   <td className="py-2 pr-3">
-                    <span className="text-[13px] font-medium" style={{ color: convColor(row.conversion) }}>
-                      {row.conversion.toFixed(1)}%
+                    <span className="text-[13px] font-medium" style={{ color: convColor(row.conversion ?? 0) }}>
+                      {(row.conversion ?? 0).toFixed(1)}%
                     </span>
                   </td>
                   <td className="py-2">

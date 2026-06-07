@@ -212,8 +212,9 @@ export function Avatar({ name, id, avatarUrl, size = 36 }: { name: string; id: n
   const resolvedUrl = useMemo(() => {
     if (!avatarUrl) return null;
     if (avatarUrl.startsWith("http")) return avatarUrl;
+    if (avatarUrl.startsWith("/")) return avatarUrl;
     const base = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
-    return `${base}${avatarUrl}`;
+    return `${base}/${avatarUrl}`;
   }, [avatarUrl]);
 
   if (resolvedUrl && !imgFailed) {

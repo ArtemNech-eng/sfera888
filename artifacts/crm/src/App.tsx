@@ -1,5 +1,5 @@
 import { Switch, Route, Router as WouterRouter, useLocation, Redirect } from "wouter";
-import { useEffect, Component, ReactNode } from "react";
+import { useEffect, Component, ReactNode, lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -37,35 +37,36 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
   }
 }
 
-// Pages
+// Pages (eager)
 import Login from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
-import Leads from "@/pages/leads";
-import Orders from "@/pages/orders";
-import Masters from "@/pages/masters";
-import Finance from "@/pages/finance";
-import Analytics from "@/pages/analytics";
-import Settings from "@/pages/settings";
-import Users from "@/pages/users";
-import MasterChatPage from "@/pages/master-chat";
-import TrashPage from "@/pages/trash";
-import TasksPage from "@/pages/tasks";
-import DialogsPage from "@/pages/dialogs";
-import CheckinsPage from "@/pages/checkins";
-import AvitoPage from "@/pages/avito";
-import AvitoMessagesPage from "@/pages/avito-messages";
-import AiOfficePage from "@/pages/ai-office";
-import MasterControlPage from "@/pages/master-control";
-import ScoreDistributionPage from "@/pages/score-distribution";
 import NotFound from "@/pages/not-found";
-import TokenSettingsPage from "@/pages/token-settings";
-import TokenRefundsPage from "@/pages/token-refunds";
-import TokenPurchasesPage from "@/pages/token-purchases";
-import PartnersPage from "@/pages/partners";
-import PartnerLeadsReviewPage from "@/pages/partner-leads-review";
-import PartnerAnalyticsPage from "@/pages/partner-analytics";
-import TokenMastersPage from "@/pages/token-masters";
-import TokenAnalyticsPage from "@/pages/token-analytics";
+
+// Pages (lazy)
+const Leads = lazy(() => import("@/pages/leads"));
+const Masters = lazy(() => import("@/pages/masters"));
+const Finance = lazy(() => import("@/pages/finance"));
+const Analytics = lazy(() => import("@/pages/analytics"));
+const ScoreDistributionPage = lazy(() => import("@/pages/score-distribution"));
+const Settings = lazy(() => import("@/pages/settings"));
+const Users = lazy(() => import("@/pages/users"));
+const MasterChatPage = lazy(() => import("@/pages/master-chat"));
+const TrashPage = lazy(() => import("@/pages/trash"));
+const TasksPage = lazy(() => import("@/pages/tasks"));
+const DialogsPage = lazy(() => import("@/pages/dialogs"));
+const CheckinsPage = lazy(() => import("@/pages/checkins"));
+const AvitoPage = lazy(() => import("@/pages/avito"));
+const AvitoMessagesPage = lazy(() => import("@/pages/avito-messages"));
+const AiOfficePage = lazy(() => import("@/pages/ai-office"));
+const MasterControlPage = lazy(() => import("@/pages/master-control"));
+const TokenSettingsPage = lazy(() => import("@/pages/token-settings"));
+const TokenRefundsPage = lazy(() => import("@/pages/token-refunds"));
+const TokenPurchasesPage = lazy(() => import("@/pages/token-purchases"));
+const PartnersPage = lazy(() => import("@/pages/partners"));
+const PartnerLeadsReviewPage = lazy(() => import("@/pages/partner-leads-review"));
+const PartnerAnalyticsPage = lazy(() => import("@/pages/partner-analytics"));
+const TokenMastersPage = lazy(() => import("@/pages/token-masters"));
+const TokenAnalyticsPage = lazy(() => import("@/pages/token-analytics"));
 
 const queryClient = new QueryClient();
 
@@ -86,6 +87,12 @@ function RootRedirect() {
 
 function Router() {
   return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center h-screen text-sm text-gray-500">
+        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-700 mr-3" />
+        Загрузка…
+      </div>
+    }>
     <Switch>
       <Route path="/login" component={Login} />
       <Route path="/" component={RootRedirect} />
@@ -121,6 +128,7 @@ function Router() {
       <Route path="/work-monitor">{() => <Redirect to="/leads?tab=work" />}</Route>
       <Route component={NotFound} />
     </Switch>
+    </Suspense>
   );
 }
 
