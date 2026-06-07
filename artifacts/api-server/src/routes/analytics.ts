@@ -182,6 +182,7 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
       orders_pending: orders.filter(o => o.status === "waiting_master").length,
       masters_at_zero: wallets.filter(w => Number(w.tokensBalance) === 0).length,
       masters_low_balance: wallets.filter(w => Number(w.tokensBalance) > 0 && Number(w.tokensBalance) < 10).length,
+      debtors_count: wallets.filter(w => Number(w.tokensBalance) < 0).length,
       token_refunds_today: walletTxs
         .filter(w => w.type === "refund" && w.createdAt >= todayStart && w.createdAt < new Date(todayStart.getTime() + 86400000))
         .length,
@@ -201,13 +202,13 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
       o.createdAt <= fortyEightHAgo &&
       !receiptRows.some(r => r.orderId === o.id && r.prepaymentSubmittedAt)
     );
-    const overdueCount = txRows.filter(t => t.paymentStatus === "overdue").length;
+    const debtorsCount = wallets.filter(w => Number(w.tokensBalance) < 0).length;
 
     const alerts: { id: number; type: "critical" | "warning"; text: string; count: number; link: string }[] = [];
     if (noMaster.length > 0) alerts.push({ id: 1, type: "critical", text: "Заказы без мастера > 2ч", count: noMaster.length, link: "/orders?filter=no_master" });
     if (noEstimate.length > 0) alerts.push({ id: 2, type: "critical", text: "Нет сметы > 24ч", count: noEstimate.length, link: "/orders?filter=no_estimate" });
     if (noPaymentOrders.length > 0) alerts.push({ id: 3, type: "warning", text: "Нет оплаты > 48ч", count: noPaymentOrders.length, link: "/orders?filter=no_payment" });
-    if (overdueCount > 0) alerts.push({ id: 4, type: "warning", text: "Просроченных комиссий", count: overdueCount, link: "/finance?tab=transactions&status=overdue" });
+    if (debtorsCount > 0) alerts.push({ id: 4, type: "critical", text: "Должников по токенам", count: debtorsCount, link: "/token-masters?tab=debt" });
 
     // ── Token Alerts (new) ───────────────────────────────────────────────────────
     const mastersAtZero = wallets.filter(w => Number(w.tokensBalance) === 0).length;
@@ -226,24 +227,23 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
     if (tokenRefundsToday > 0) alerts.push({ id: 12, type: "warning", text: "Возвратов токенов сегодня", count: tokenRefundsToday, link: "/finance?tab=token_refunds" });
     if (creditExceededMasters.length > 0) alerts.push({ id: 13, type: "critical", text: "Мастеров превысили кредитный лимит", count: creditExceededMasters.length, link: "/masters?filter=credit_exceeded" });
 
-    // ── Forecast ───────────────────────────────────────────────────────────────
-    const dailyAvg = daysPassed > 0 ? revenueMonth / daysPassed : 0;
-    const forecast = Math.round(dailyAvg * daysInMonth);
-    // Получаем цель из настроек (по умолчанию 3 млн)
-    const goalSetting = await db.query.systemSettingsTable.findFirst({
-      where: (t, { eq }) => eq(t.key, "monthly_revenue_goal"),
-    });
-    const goal = goalSetting ? parseInt(goalSetting.value, 10) : 3_000_000;
-    const progressPct = goal > 0 ? Math.round((forecast / goal) * 100) : 0;
+    // ── Forecast (token revenue) ───────────────────────────────────────────────
+    const tokenRevenueMonth = walletTxs
+      .filter(w => w.type === "purchase" && w.createdAt >= monthStart && w.createdAt < new Date(todayStart.getTime() + 86400000))
+      .reduce((s, w) => s + (w.rubAmount ?? 0), 0);
+    const tokenDailyAvg = daysPassed > 0 ? tokenRevenueMonth / daysPassed : 0;
+    const tokenForecast = Math.round(tokenDailyAvg * daysInMonth);
+    const tokenGoal = 150_000;
+    const tokenProgressPct = tokenGoal > 0 ? Math.round((tokenForecast / tokenGoal) * 100) : 0;
     const forecastData = {
       days_passed: daysPassed,
       days_in_month: daysInMonth,
-      revenue_so_far: revenueMonth,
-      daily_average: Math.round(dailyAvg),
-      forecast,
-      goal,
-      status: (progressPct >= 110 ? "ahead" : progressPct >= 90 ? "on_track" : "behind") as "ahead" | "on_track" | "behind",
-      progress_pct: progressPct,
+      revenue_so_far: tokenRevenueMonth,
+      daily_average: Math.round(tokenDailyAvg),
+      forecast: tokenForecast,
+      goal: tokenGoal,
+      status: (tokenProgressPct >= 110 ? "ahead" : tokenProgressPct >= 90 ? "on_track" : "behind") as "ahead" | "on_track" | "behind",
+      progress_pct: tokenProgressPct,
     };
 
     // ── Risk Monitor ───────────────────────────────────────────────────────────
@@ -269,14 +269,12 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
           risk_level = hoursOld > 72 ? "critical" : "warning";
           risk_reason = `Нет оплаты ${hoursOld}ч`;
         }
-        const tx = txRows.find(t => t.orderId === o.id);
         return {
           id: o.id,
           master: master?.alias ?? "Без мастера",
           city: o.city,
           risk_level,
           risk_reason,
-          expected_commission: tx ? Number(tx.commission) : Math.round((Number((o as any).orderAmount ?? 0) || 50000) * 0.15),
         };
       })
       .sort((a, b) => (a.risk_level === "critical" ? -1 : 1) - (b.risk_level === "critical" ? -1 : 1))
@@ -285,7 +283,6 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
     const riskMonitor = {
       critical_count: riskOrders.filter(o => o.risk_level === "critical").length,
       warning_count: riskOrders.filter(o => o.risk_level === "warning").length,
-      total_at_risk: riskOrders.reduce((s, o) => s + o.expected_commission, 0),
       orders: riskOrders,
     };
 

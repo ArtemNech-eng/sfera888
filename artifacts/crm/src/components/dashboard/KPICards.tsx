@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  DollarSign, BarChart3, FileText, CreditCard,
-  UserCheck, UserPlus, Wallet, TrendingUp, TrendingDown, Edit2,
-  Coins, Users, Clock, Ban, AlertCircle
+  DollarSign,
+  UserCheck, UserPlus,
+  Coins, Users, Clock, Ban,
+  AlertTriangle,
+  TrendingUp, TrendingDown
 } from 'lucide-react';
 import { useCountUp } from '../../hooks/useCountUp';
 import { formatCurrency, formatChange } from '../../utils/format';
@@ -33,6 +35,7 @@ interface KPIData {
   orders_pending?: number;
   masters_at_zero?: number;
   masters_low_balance?: number;
+  debtors_count?: number;
   token_refunds_today?: number;
 }
 
@@ -132,10 +135,9 @@ function KPICard({
 interface Props {
   data: KPIData | undefined;
   isLoading: boolean;
-  onEditAvitoBalance: () => void;
 }
 
-export function KPICards({ data, isLoading, onEditAvitoBalance }: Props) {
+export function KPICards({ data, isLoading }: Props) {
   if (isLoading || !data) {
     return (
       <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-4">
@@ -153,18 +155,8 @@ export function KPICards({ data, isLoading, onEditAvitoBalance }: Props) {
     );
   }
 
-  // Используем реальное число прошедших дней месяца вместо хардкода 30
-  const daysPassed = data.days_passed ?? new Date().getDate();
-  const revenueDailyAvg = daysPassed > 0 ? data.revenue_month / daysPassed : 0;
-  const revenueTodayProgress = revenueDailyAvg > 0
-    ? (data.revenue_today / revenueDailyAvg) * 100 : 0;
-  const mastersProgress = data.masters_total > 0
-    ? (data.masters_active / data.masters_total) * 100 : 0;
-  const avitoLow = data.avito_balance < 1000;
-
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-7 gap-4">
-      {/* Token KPI Cards */}
       <KPICard
         index={0}
         title="Выручка от токенов"
@@ -199,54 +191,27 @@ export function KPICards({ data, isLoading, onEditAvitoBalance }: Props) {
       />
       <KPICard
         index={4}
+        title="Активных мастеров"
+        value={data.masters_active ?? 0}
+        icon={<UserCheck size={18} color="#8B5CF6" />}
+        iconBg="bg-[#F3E8FF]"
+        subLabel="из"
+        subValue={String(data.masters_total ?? 0)}
+      />
+      <KPICard
+        index={5}
         title="На нулевом балансе"
         value={data.masters_at_zero ?? 0}
         icon={<Ban size={18} color="#EF4444" />}
         iconBg="bg-[#FEF2F2]"
       />
       <KPICard
-        index={5}
-        title="Низкий баланс"
-        value={data.masters_low_balance ?? 0}
-        icon={<AlertCircle size={18} color="#F59E0B" />}
-        iconBg="bg-[#FFFBEB]"
+        index={6}
+        title="Должников"
+        value={data.debtors_count ?? 0}
+        icon={<AlertTriangle size={18} color="#DC2626" />}
+        iconBg="bg-[#FEE2E2]"
       />
-
-      {/* Avito Balance — custom card */}
-      <div
-        className={`bg-white border rounded-2xl px-6 py-5 overflow-hidden relative
-          transition-all duration-200 hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)]
-          ${avitoLow ? 'border-[#FECACA] hover:border-[#EF4444]' : 'border-[#E5E7EB] hover:border-[#34C759]'}
-          animate-fade-in-up`}
-        style={{ animationDelay: '360ms' }}
-      >
-        <div className="flex items-start justify-between mb-3">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[#6B7280] leading-tight pr-1">
-            Баланс Авито
-          </span>
-          <div className="flex items-center gap-1">
-            {avitoLow && (
-              <div className="w-2 h-2 rounded-full bg-[#EF4444] animate-blink" />
-            )}
-            <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${avitoLow ? 'bg-[#FEF2F2]' : 'bg-[#E8F9EE]'}`}>
-              <Wallet size={18} color={avitoLow ? '#EF4444' : '#34C759'} />
-            </div>
-          </div>
-        </div>
-        <div className={`text-[32px] font-bold leading-none mb-2 ${avitoLow ? 'text-[#EF4444]' : 'text-[#111827]'}`}>
-          {formatCurrency(data.avito_balance)}
-        </div>
-        {avitoLow && (
-          <div className="text-[12px] text-[#EF4444] mb-2">Пополните баланс</div>
-        )}
-        <button
-          onClick={onEditAvitoBalance}
-          className="flex items-center gap-1 text-[12px] text-[#6B7280] hover:text-[#34C759] transition-colors"
-        >
-          <Edit2 size={12} />
-          Обновить
-        </button>
-      </div>
     </div>
   );
 }

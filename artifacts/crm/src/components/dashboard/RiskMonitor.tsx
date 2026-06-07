@@ -1,6 +1,5 @@
 import { Shield, CheckCircle, ChevronRight } from 'lucide-react';
 import { useLocation } from 'wouter';
-import { formatCurrency } from '../../utils/format';
 
 interface RiskOrder {
   id: number;
@@ -8,13 +7,11 @@ interface RiskOrder {
   city: string;
   risk_level: 'critical' | 'warning';
   risk_reason: string;
-  expected_commission: number;
 }
 
 interface RiskData {
   critical_count: number;
   warning_count: number;
-  total_at_risk: number;
   orders: RiskOrder[];
 }
 
@@ -55,7 +52,7 @@ export function RiskMonitor({ data, isLoading }: Props) {
       ) : (
         <>
           {/* Summary cards */}
-          <div className="grid grid-cols-3 gap-3 mb-4">
+          <div className="grid grid-cols-2 gap-3 mb-4">
             <div className="bg-[#FEF2F2] rounded-xl p-3 text-center">
               <div className="text-[22px] font-bold text-[#EF4444]">{data.critical_count}</div>
               <div className="text-[11px] text-[#6B7280] mt-0.5">Критичных</div>
@@ -63,10 +60,6 @@ export function RiskMonitor({ data, isLoading }: Props) {
             <div className="bg-[#FFFBEB] rounded-xl p-3 text-center">
               <div className="text-[22px] font-bold text-[#F59E0B]">{data.warning_count}</div>
               <div className="text-[11px] text-[#6B7280] mt-0.5">Внимания</div>
-            </div>
-            <div className="bg-[#F0FFF8] rounded-xl p-3 text-center">
-              <div className="text-[16px] font-bold text-[#34C759]">{formatCurrency(data.total_at_risk)}</div>
-              <div className="text-[11px] text-[#6B7280] mt-0.5">Под угрозой</div>
             </div>
           </div>
 
@@ -92,9 +85,6 @@ export function RiskMonitor({ data, isLoading }: Props) {
                       <span className="text-[12px] text-[#6B7280] truncate">{order.master} · {order.city}</span>
                     </div>
                     <span className={`text-[12px] font-medium ${textColor}`}>{order.risk_reason}</span>
-                  </div>
-                  <div className="text-right flex-shrink-0">
-                    <div className="text-[12px] font-semibold text-[#34C759]">{formatCurrency(order.expected_commission)}</div>
                   </div>
                   <ChevronRight size={14} color="#D1D5DB" />
                 </div>

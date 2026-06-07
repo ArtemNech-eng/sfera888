@@ -1,6 +1,5 @@
 import { Trophy, Package, Star, ChevronRight } from 'lucide-react';
 import { useLocation } from 'wouter';
-import { formatCurrency } from '../../utils/format';
 
 interface Master {
   id: number;
@@ -124,7 +123,7 @@ export function TopMasters({ data, isLoading }: Props) {
               </div>
               <div className="text-right flex-shrink-0">
                 <div className="text-[14px] font-bold" style={{ color: isTop3 ? '#34C759' : '#111827' }}>
-                  {formatCurrency(master.revenue_brought)}
+                  {master.tokens_spent} т.
                 </div>
                 <div className="text-[11px] text-[#9CA3AF]">{master.total_purchases} покупок</div>
               </div>

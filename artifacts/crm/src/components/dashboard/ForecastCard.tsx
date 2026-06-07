@@ -67,7 +67,7 @@ export function ForecastCard({ data, isLoading }: Props) {
       hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)] hover:border-[#34C759]">
       <div className="flex items-center gap-2 mb-5">
         <TrendingUp size={18} color="#34C759" />
-        <span className="text-[14px] font-semibold text-[#111827]">Прогноз месяца</span>
+        <span className="text-[14px] font-semibold text-[#111827]">Прогноз токеновой выручки</span>
       </div>
 
       {/* Days progress */}
@@ -87,7 +87,7 @@ export function ForecastCard({ data, isLoading }: Props) {
       {/* 3 metrics */}
       <div className="grid grid-cols-3 gap-3 mb-4">
         <div className="text-center">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-[#9CA3AF] mb-1">Заработано</div>
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-[#9CA3AF] mb-1">Продажи токенов</div>
           <div className="text-[18px] font-bold text-[#111827]">{formatCurrency(data.revenue_so_far)}</div>
         </div>
         <div className="text-center">
