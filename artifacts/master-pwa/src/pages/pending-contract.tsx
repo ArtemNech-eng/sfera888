@@ -16,17 +16,6 @@ interface PassportData {
   address: string;
 }
 
-// ─── Legacy v1 contract text (commission-based, kept for reference) ──────────────
-function buildContractTextV1(data: PassportData, phone: string, masterId: number): string {
-  const now = new Date();
-  const months = ["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
-  const dateStr = `${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()} г.`;
-  const contractNum = String(masterId).padStart(3, "0");
-  return `ДОГОВОР № ${contractNum}  г. Краснодар  ${dateStr}
-о порядке передачи заказов и вознаграждении агента
-(устаревшая версия — сохранена для архива)`;
-}
-
 function buildContractText(data: PassportData, phone: string, masterId: number): string {
   const now = new Date();
   const months = ["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
@@ -151,7 +140,10 @@ function buildContractText(data: PassportData, phone: string, masterId: number):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Мастер: ${data.fullName || "______________________"}
-Подписано электронно: ${dateStr}, IP: (при подписании)`;
+Подписано электронно: ${dateStr}, IP: (при подписании)
+
+Исполнитель: ИП Коваленко Игорь Геннадьевич
+ОГРНИП / ИНН: указываются при необходимости`;
 }
 
 const inputCls = "w-full h-11 px-4 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring";
