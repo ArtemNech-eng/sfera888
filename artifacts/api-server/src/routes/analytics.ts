@@ -79,6 +79,28 @@ router.get("/avito-balance", adminOnly, async (_req, res) => {
   }
 });
 
+// ─── Token revenue helper with fallback ────────────────────────────────────────
+function calcTokenRevenue(
+  walletTxs: typeof walletTransactionsTable.$inferSelect[],
+  tokenPackages: typeof tokenPackagesTable.$inferSelect[],
+  start: Date,
+  end: Date
+) {
+  return walletTxs
+    .filter(w => w.type === "purchase" && w.createdAt >= start && w.createdAt < end)
+    .reduce((s, w) => {
+      if (w.rubAmount && Number(w.rubAmount) > 0) return s + Number(w.rubAmount);
+      if (w.packageId) {
+        const pkg = tokenPackages.find(p => p.id === w.packageId);
+        if (pkg && pkg.priceRub) return s + Number(pkg.priceRub);
+      }
+      const avgPricePerToken = tokenPackages.length > 0
+        ? tokenPackages.reduce((sum, p) => sum + Number(p.pricePerToken), 0) / tokenPackages.length
+        : 10;
+      return s + Number(w.tokensAmount) * avgPricePerToken;
+    }, 0);
+}
+
 // ─── DASHBOARD V2 (new UI) ────────────────────────────────────────────────────
 router.get("/dashboard-v2", adminOnly, async (req, res) => {
   try {
@@ -91,82 +113,57 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
     const daysPassed = now.getDate();
 
     // ── Load all data in parallel ──────────────────────────────────────────────
-    const [leads, orders, masters, txRows, receiptRows, walletTxs, wallets, tokenPackages] = await Promise.all([
+    const [leads, orders, masters, txRows, walletTxs, wallets, tokenPackages] = await Promise.all([
       db.select().from(leadsTable).where(isNull(leadsTable.deletedAt)),
       db.select().from(ordersTable).where(isNull(ordersTable.deletedAt)),
       db.select().from(mastersTable).where(isNull(mastersTable.deletedAt)),
       db.select().from(transactionsTable),
-      db.select().from(receiptsTable),
       db.select().from(walletTransactionsTable),
       db.select().from(masterWalletTable),
       db.select().from(tokenPackagesTable).where(eq(tokenPackagesTable.isActive, true)),
     ]);
 
-    // ── Helpers ────────────────────────────────────────────────────────────────
-    // Paid receipts whose order already has a paid transaction are NOT double-counted:
-    // the commission already includes the prepayment deduction via prepaymentDeducted.
-    // We only add prepayments for orders that have NO paid transaction yet.
-    const paidTxOrderIds = new Set(
-      txRows.filter(t => t.paymentStatus === "paid").map(t => t.orderId)
-    );
-    function calcIncome(start: Date, end: Date) {
-      const commission = txRows
-        .filter(t => t.paymentStatus === "paid" && t.paidAt && t.paidAt >= start && t.paidAt < end)
-        .reduce((s, t) => s + Number(t.commission), 0);
-      // Only count prepayments for orders that don't have a fully paid commission yet
-      const prepayments = receiptRows
-        .filter(r =>
-          r.prepaymentSubmittedAt &&
-          r.prepaymentSubmittedAt >= start &&
-          r.prepaymentSubmittedAt < end &&
-          !paidTxOrderIds.has(r.orderId)
-        )
-        .reduce((s, r) => s + Number(r.prepaymentAmount ?? 0), 0);
-      return commission + prepayments;
-    }
-    function pctChange(cur: number, prev: number) {
-      return prev > 0 ? Math.round(((cur - prev) / prev) * 1000) / 10 : null;
-    }
-
     // ── Summary (KPI) ──────────────────────────────────────────────────────────
-    const revenueToday = calcIncome(todayStart, new Date(todayStart.getTime() + 86400000));
-    const revenueYesterday = calcIncome(yesterdayStart, todayStart);
-    const revenueMonth = calcIncome(monthStart, new Date(todayStart.getTime() + 86400000));
-    const revenuePrevMonth = calcIncome(prevMonthStart, monthStart);
-
     const leadsToday = leads.filter(l => l.createdAt >= todayStart).length;
     const leadsYesterday = leads.filter(l => l.createdAt >= yesterdayStart && l.createdAt < todayStart).length;
+    const leadsMonth = leads.filter(l => l.createdAt >= monthStart).length;
+    const leadsPrevMonth = leads.filter(l => l.createdAt >= prevMonthStart && l.createdAt < monthStart).length;
 
-    const paidReceiptsToday = receiptRows.filter(r => r.prepaymentSubmittedAt && r.prepaymentSubmittedAt >= todayStart).length;
-    const paidReceiptsYesterday = receiptRows.filter(r => r.prepaymentSubmittedAt && r.prepaymentSubmittedAt >= yesterdayStart && r.prepaymentSubmittedAt < todayStart).length;
+    const monthLeadsAll = leads.filter(l => l.createdAt >= monthStart);
+    const monthLeadsSentToWork = monthLeadsAll.filter(l => l.status === "sent_to_work").length;
+    const leadConversionRate = monthLeadsAll.length > 0
+      ? Math.round((monthLeadsSentToWork / monthLeadsAll.length) * 1000) / 10
+      : 0;
 
     const activeMasters = masters.filter(m => m.status === "active").length;
     const totalMasters = masters.length;
     const newMastersToday = masters.filter(m => m.createdAt >= todayStart).length;
     const newMastersYesterday = masters.filter(m => m.createdAt >= yesterdayStart && m.createdAt < todayStart).length;
 
+    const tokenRevenueToday = calcTokenRevenue(walletTxs, tokenPackages, todayStart, new Date(todayStart.getTime() + 86400000));
+    const tokenRevenueYesterday = calcTokenRevenue(walletTxs, tokenPackages, yesterdayStart, todayStart);
+    const tokenRevenueMonth = calcTokenRevenue(walletTxs, tokenPackages, monthStart, new Date(todayStart.getTime() + 86400000));
+
+    const avgTokenBalance = wallets.length > 0
+      ? Math.round(wallets.reduce((s, w) => s + Number(w.tokensBalance), 0) / wallets.length * 10) / 10
+      : 0;
+
     const summary = {
-      revenue_today: revenueToday,
-      revenue_today_prev: revenueYesterday,
-      revenue_month: revenueMonth,
-      revenue_month_prev: revenuePrevMonth,
+      // Leads
       leads_today: leadsToday,
       leads_today_prev: leadsYesterday,
-      payments_today: paidReceiptsToday,
-      payments_today_prev: paidReceiptsYesterday,
+      leads_month: leadsMonth,
+      leads_month_prev: leadsPrevMonth,
+      lead_conversion_rate: leadConversionRate,
+      // Masters
       masters_active: activeMasters,
       masters_total: totalMasters,
       masters_new_today: newMastersToday,
       masters_new_today_prev: newMastersYesterday,
-      // Avito balance — берём из кэша (не блокирует основной запрос)
-      avito_balance: await fetchAvitoBalance(),
-      // ── Token KPIs (new) ──────────────────────────────────────────────────────
-      token_revenue_today: walletTxs
-        .filter(w => w.type === "purchase" && w.createdAt >= todayStart && w.createdAt < new Date(todayStart.getTime() + 86400000))
-        .reduce((s, w) => s + (w.rubAmount ?? 0), 0),
-      token_revenue_yesterday: walletTxs
-        .filter(w => w.type === "purchase" && w.createdAt >= yesterdayStart && w.createdAt < todayStart)
-        .reduce((s, w) => s + (w.rubAmount ?? 0), 0),
+      // Token economy
+      token_revenue_today: Math.round(tokenRevenueToday),
+      token_revenue_yesterday: Math.round(tokenRevenueYesterday),
+      token_revenue_month: Math.round(tokenRevenueMonth),
       tokens_sold_today: walletTxs
         .filter(w => w.type === "purchase" && w.createdAt >= todayStart && w.createdAt < new Date(todayStart.getTime() + 86400000))
         .reduce((s, w) => s + Number(w.tokensAmount), 0),
@@ -183,125 +180,41 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
       masters_at_zero: wallets.filter(w => Number(w.tokensBalance) === 0).length,
       masters_low_balance: wallets.filter(w => Number(w.tokensBalance) > 0 && Number(w.tokensBalance) < 10).length,
       debtors_count: wallets.filter(w => Number(w.tokensBalance) < 0).length,
+      avg_token_balance: avgTokenBalance,
       token_refunds_today: walletTxs
         .filter(w => w.type === "refund" && w.createdAt >= todayStart && w.createdAt < new Date(todayStart.getTime() + 86400000))
         .length,
+      // Avito
+      avito_balance: await fetchAvitoBalance(),
     };
 
-    // ── Alerts ─────────────────────────────────────────────────────────────────
-    const twoHoursAgo = new Date(now.getTime() - 2 * 3600000);
-    const twentyFourHAgo = new Date(now.getTime() - 24 * 3600000);
-    const fortyEightHAgo = new Date(now.getTime() - 48 * 3600000);
-    const activeOrders = orders.filter(o => ["waiting_master", "master_assigned", "in_progress"].includes(o.status));
-
-    const noMaster = activeOrders.filter(o => !o.masterId && o.createdAt <= twoHoursAgo);
-    const noEstimate = activeOrders.filter(o => o.masterId && !(o as any).proposedAmount && o.createdAt <= twentyFourHAgo);
-    const noPaymentOrders = activeOrders.filter(o =>
-      o.masterId &&
-      (o as any).proposedAmount &&
-      o.createdAt <= fortyEightHAgo &&
-      !receiptRows.some(r => r.orderId === o.id && r.prepaymentSubmittedAt)
-    );
-    const debtorsCount = wallets.filter(w => Number(w.tokensBalance) < 0).length;
-
-    const alerts: { id: number; type: "critical" | "warning"; text: string; count: number; link: string }[] = [];
-    if (noMaster.length > 0) alerts.push({ id: 1, type: "critical", text: "Заказы без мастера > 2ч", count: noMaster.length, link: "/orders?filter=no_master" });
-    if (noEstimate.length > 0) alerts.push({ id: 2, type: "critical", text: "Нет сметы > 24ч", count: noEstimate.length, link: "/orders?filter=no_estimate" });
-    if (noPaymentOrders.length > 0) alerts.push({ id: 3, type: "warning", text: "Нет оплаты > 48ч", count: noPaymentOrders.length, link: "/orders?filter=no_payment" });
-    if (debtorsCount > 0) alerts.push({ id: 4, type: "critical", text: "Должников по токенам", count: debtorsCount, link: "/token-masters?tab=debt" });
-
-    // ── Token Alerts (new) ───────────────────────────────────────────────────────
-    const mastersAtZero = wallets.filter(w => Number(w.tokensBalance) === 0).length;
-    const mastersLowBalance = wallets.filter(w => Number(w.tokensBalance) > 0 && Number(w.tokensBalance) < 10).length;
-    const tokenRefundsToday = walletTxs.filter(w => w.type === "refund" && w.createdAt >= todayStart).length;
-
-    // Find masters who exceeded credit limit (credit tokens spent > credit limit)
-    const creditExceededMasters = wallets.filter(w => {
-      const creditLimit = Number(w.creditLimitTokens);
-      const creditSpent = Number(w.creditTokensSpent);
-      return creditLimit > 0 && creditSpent > creditLimit;
-    });
-
-    if (mastersAtZero > 0) alerts.push({ id: 10, type: "critical", text: "Мастеров на нулевом балансе", count: mastersAtZero, link: "/masters?filter=zero_balance" });
-    if (mastersLowBalance > 0) alerts.push({ id: 11, type: "warning", text: "Мастеров с низким балансом", count: mastersLowBalance, link: "/masters?filter=low_balance" });
-    if (tokenRefundsToday > 0) alerts.push({ id: 12, type: "warning", text: "Возвратов токенов сегодня", count: tokenRefundsToday, link: "/finance?tab=token_refunds" });
-    if (creditExceededMasters.length > 0) alerts.push({ id: 13, type: "critical", text: "Мастеров превысили кредитный лимит", count: creditExceededMasters.length, link: "/masters?filter=credit_exceeded" });
-
-    // ── Forecast (token revenue) ───────────────────────────────────────────────
-    const tokenRevenueMonth = walletTxs
-      .filter(w => w.type === "purchase" && w.createdAt >= monthStart && w.createdAt < new Date(todayStart.getTime() + 86400000))
-      .reduce((s, w) => s + (w.rubAmount ?? 0), 0);
-    const tokenDailyAvg = daysPassed > 0 ? tokenRevenueMonth / daysPassed : 0;
-    const tokenForecast = Math.round(tokenDailyAvg * daysInMonth);
-    const tokenGoal = 150_000;
-    const tokenProgressPct = tokenGoal > 0 ? Math.round((tokenForecast / tokenGoal) * 100) : 0;
-    const forecastData = {
-      days_passed: daysPassed,
-      days_in_month: daysInMonth,
-      revenue_so_far: tokenRevenueMonth,
-      daily_average: Math.round(tokenDailyAvg),
-      forecast: tokenForecast,
-      goal: tokenGoal,
-      status: (tokenProgressPct >= 110 ? "ahead" : tokenProgressPct >= 90 ? "on_track" : "behind") as "ahead" | "on_track" | "behind",
-      progress_pct: tokenProgressPct,
+    // ── Lead Funnel (monthly) ─────────────────────────────────────────────────
+    const monthLeads = leads.filter(l => l.createdAt >= monthStart);
+    const leadFunnel = {
+      total: monthLeads.length,
+      processing: monthLeads.filter(l => l.status === "processing").length,
+      sent_to_work: monthLeads.filter(l => l.status === "sent_to_work").length,
+      rejected: monthLeads.filter(l => ["non_target", "client_refusal"].includes(l.status)).length,
+      conversion_rate: monthLeads.length > 0
+        ? Math.round((monthLeads.filter(l => l.status === "sent_to_work").length / monthLeads.length) * 1000) / 10
+        : 0,
     };
 
-    // ── Risk Monitor ───────────────────────────────────────────────────────────
-    const threeHoursAgo = new Date(now.getTime() - 3 * 3600000);
-    const riskOrders = activeOrders
-      .filter(o => {
-        const hoursOld = (now.getTime() - o.createdAt.getTime()) / 3600000;
-        return hoursOld > 2;
-      })
-      .map(o => {
-        const hoursOld = Math.floor((now.getTime() - o.createdAt.getTime()) / 3600000);
-        const master = o.masterId ? masters.find(m => m.id === o.masterId) : null;
-        let risk_level: "critical" | "warning" = "warning";
-        let risk_reason = "";
-
-        if (!o.masterId) {
-          risk_level = hoursOld > 4 ? "critical" : "warning";
-          risk_reason = `Без мастера ${hoursOld}ч`;
-        } else if (!(o as any).proposedAmount) {
-          risk_level = hoursOld > 24 ? "critical" : "warning";
-          risk_reason = `Нет сметы ${hoursOld}ч`;
-        } else {
-          risk_level = hoursOld > 72 ? "critical" : "warning";
-          risk_reason = `Нет оплаты ${hoursOld}ч`;
-        }
-        return {
-          id: o.id,
-          master: master?.alias ?? "Без мастера",
-          city: o.city,
-          risk_level,
-          risk_reason,
-        };
-      })
-      .sort((a, b) => (a.risk_level === "critical" ? -1 : 1) - (b.risk_level === "critical" ? -1 : 1))
-      .slice(0, 8);
-
-    const riskMonitor = {
-      critical_count: riskOrders.filter(o => o.risk_level === "critical").length,
-      warning_count: riskOrders.filter(o => o.risk_level === "warning").length,
-      orders: riskOrders,
-    };
-
-    // ── Revenue Chart (90 days) ────────────────────────────────────────────────
-    function buildDailyRevenue(days: number) {
-      const result = [];
-      for (let i = days - 1; i >= 0; i--) {
-        const dayStart = new Date(todayStart.getTime() - i * 86400000);
-        const dayEnd = new Date(dayStart.getTime() + 86400000);
-        result.push({ date: dayStart.toISOString().split("T")[0], amount: Math.round(calcIncome(dayStart, dayEnd)) });
-      }
-      return result;
+    // ── Lead Sources ──────────────────────────────────────────────────────────
+    const channelMap = new Map<string, { count: number; sentToWork: number }>();
+    for (const l of leads.filter(l => l.createdAt >= monthStart)) {
+      const ch = l.leadChannel ?? l.source ?? "other";
+      const existing = channelMap.get(ch) ?? { count: 0, sentToWork: 0 };
+      existing.count++;
+      if (l.status === "sent_to_work") existing.sentToWork++;
+      channelMap.set(ch, existing);
     }
-    const baseDaily90 = buildDailyRevenue(90);
-    const revenueChart = {
-      30: baseDaily90.slice(-30),
-      60: baseDaily90.slice(-60),
-      90: baseDaily90,
-    };
+    const leadSources = Array.from(channelMap.entries()).map(([channel, stats]) => ({
+      channel,
+      count: stats.count,
+      sent_to_work: stats.sentToWork,
+      conversion: stats.count > 0 ? Math.round((stats.sentToWork / stats.count) * 1000) / 10 : 0,
+    })).sort((a, b) => b.count - a.count);
 
     // ── Token Charts (new) ─────────────────────────────────────────────────────
     function buildDailyTokenSales(days: number) {
@@ -352,58 +265,28 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
     }
     const tokenFlow = buildTokenFlow(14);
 
-    // ── Funnel ─────────────────────────────────────────────────────────────────
-    const contacts = leads.length;
-    const leadsFiltered = leads.filter(l => !["non_target", "client_refusal"].includes(l.status)).length;
-    const assigned = orders.filter(o => o.masterId).length;
-    const estimateSent = orders.filter(o => (o as any).proposedAmount || receiptRows.some(r => r.orderId === o.id)).length;
-    const paymentReceived = receiptRows.filter(r => r.prepaymentSubmittedAt).length;
-    const completedOrders = orders.filter(o => o.status === "completed").length;
 
-    const prevMonthLeads = leads.filter(l => l.createdAt >= prevMonthStart && l.createdAt < monthStart);
-    const prevMonthCompleted = orders.filter(o => o.status === "completed" && o.updatedAt >= prevMonthStart && o.updatedAt < monthStart).length;
-    const prevConversion = prevMonthLeads.length > 0 ? Math.round((prevMonthCompleted / prevMonthLeads.length) * 1000) / 10 : 0;
-
-    const funnel = {
-      contacts,
-      leads: leadsFiltered,
-      assigned,
-      estimate_sent: estimateSent,
-      payment_received: paymentReceived,
-      completed: completedOrders,
-      overall_conversion: contacts > 0 ? Math.round((completedOrders / contacts) * 1000) / 10 : 0,
-      prev_conversion: prevConversion,
-    };
-
-    // ── Token Funnel (new) ──────────────────────────────────────────────────────
-    const tokenFunnelToday = orders.filter(o => o.createdAt >= todayStart);
-    const tfTotal = tokenFunnelToday.length;
-    const tfAssigned = tokenFunnelToday.filter(o => o.masterId).length;
-    const tfEstimate = tokenFunnelToday.filter(o => (o as any).proposedAmount).length;
-    const tfContracted = tokenFunnelToday.filter(o => o.orderAmount && Number(o.orderAmount) > 0).length;
-
-    const tokenFunnel = {
-      total_orders: tfTotal,
-      assigned: tfAssigned,
-      estimate_sent: tfEstimate,
-      contracted: tfContracted,
-      conversion_assigned: tfTotal > 0 ? Math.round((tfAssigned / tfTotal) * 1000) / 10 : 0,
-      conversion_estimate: tfAssigned > 0 ? Math.round((tfEstimate / tfAssigned) * 1000) / 10 : 0,
-      conversion_contract: tfEstimate > 0 ? Math.round((tfContracted / tfEstimate) * 1000) / 10 : 0,
-    };
-
-    // ── Live Feed (last 20 events across orders/leads/masters/receipts) ─────────
-    type FeedType = "payment" | "new_lead" | "assigned" | "completed" | "new_master";
+    // ── Live Feed (last 20 events) ────────────────────────────────────────────
+    type FeedType = "token_purchase" | "new_lead" | "assigned" | "completed" | "new_master";
     const feedEvents: { id: number; type: FeedType; timestamp: Date; text: string; city: string; amount: number | null }[] = [];
     const cutoff24h = new Date(now.getTime() - 24 * 3600000);
 
-    const recentPaid = receiptRows
-      .filter(r => r.prepaymentSubmittedAt && r.prepaymentSubmittedAt >= cutoff24h)
-      .sort((a, b) => b.prepaymentSubmittedAt!.getTime() - a.prepaymentSubmittedAt!.getTime())
+    const recentTokenPurchases = walletTxs
+      .filter(w => w.type === "purchase" && w.createdAt >= cutoff24h)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
       .slice(0, 8);
-    recentPaid.forEach((r, i) => {
-      const o = orders.find(o => o.id === r.orderId);
-      feedEvents.push({ id: i + 1000, type: "payment", timestamp: r.prepaymentSubmittedAt!, text: `Оплачена предоплата #${r.orderId} (${Number(r.prepaymentAmount).toLocaleString("ru-RU")}₽)`, city: o?.city ?? "", amount: Number(r.prepaymentAmount) });
+    recentTokenPurchases.forEach((w, i) => {
+      const master = masters.find(m => m.id === w.masterId);
+      feedEvents.push({ id: i + 1000, type: "token_purchase", timestamp: w.createdAt, text: `Мастер ${master?.alias ?? `#${w.masterId}`} купил ${Number(w.tokensAmount)} токенов`, city: master?.city ?? "", amount: Number(w.tokensAmount) });
+    });
+
+    const recentAssigned = orders
+      .filter(o => o.masterId && o.assignedAt && o.assignedAt >= cutoff24h)
+      .sort((a, b) => (b.assignedAt?.getTime() ?? 0) - (a.assignedAt?.getTime() ?? 0))
+      .slice(0, 5);
+    recentAssigned.forEach((o, i) => {
+      const master = o.masterId ? masters.find(m => m.id === o.masterId) : null;
+      feedEvents.push({ id: i + 1500, type: "assigned", timestamp: o.assignedAt!, text: `Заказ #${o.id} назначен мастеру ${master?.alias ?? `#${o.masterId}`}`, city: o.city, amount: null });
     });
 
     const recentLeads = leads.filter(l => l.createdAt >= cutoff24h)
@@ -412,10 +295,11 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
       feedEvents.push({ id: i + 2000, type: "new_lead", timestamp: l.createdAt, text: `Новая заявка: ${(l as any).serviceType ?? "ремонт"}, ${l.city}`, city: l.city, amount: null });
     });
 
-    const recentCompleted = orders.filter(o => o.status === "completed" && o.updatedAt >= cutoff24h)
-      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()).slice(0, 5);
+    const recentCompleted = orders.filter(o => o.status === "completed" && o.completedAt && o.completedAt >= cutoff24h)
+      .sort((a, b) => (b.completedAt?.getTime() ?? 0) - (a.completedAt?.getTime() ?? 0))
+      .slice(0, 5);
     recentCompleted.forEach((o, i) => {
-      feedEvents.push({ id: i + 3000, type: "completed", timestamp: o.updatedAt, text: `Заказ #${o.id} завершён${o.orderAmount ? ` (${Number(o.orderAmount).toLocaleString("ru-RU")}₽)` : ""}`, city: o.city, amount: o.orderAmount ? Number(o.orderAmount) : null });
+      feedEvents.push({ id: i + 3000, type: "completed", timestamp: o.completedAt!, text: `Заказ #${o.id} завершён`, city: o.city, amount: o.orderAmount ? Number(o.orderAmount) : null });
     });
 
     const recentMasters = masters.filter(m => m.createdAt >= cutoff24h)
@@ -427,87 +311,30 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
     feedEvents.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
     const liveFeed = feedEvents.slice(0, 20);
 
-    // ── Speed Metrics ─────────────────────────────────────────────────────────
-    // Current period: last 30 days. Prev period: 30–60 days ago.
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000);
-    const sixtyDaysAgo = new Date(now.getTime() - 60 * 86400000);
-
-    const completedCurrent = orders.filter(o => o.status === "completed" && o.masterId && o.updatedAt >= thirtyDaysAgo);
-    const completedPrev = orders.filter(o => o.status === "completed" && o.masterId && o.updatedAt >= sixtyDaysAgo && o.updatedAt < thirtyDaysAgo);
-
-    function calcSpeedMetrics(completedSet: typeof orders) {
-      if (completedSet.length === 0) return { assignH: 0, estimateH: 0, paymentH: 0, completionD: 0, lifecycleD: 0 };
-
-      // Реальное время назначения мастера (assignedAt - createdAt)
-      const ordersWithAssign = completedSet.filter(o => (o as any).assignedAt);
-      const avgAssignH = ordersWithAssign.length > 0
-        ? ordersWithAssign.reduce((s, o) => s + ((o as any).assignedAt.getTime() - o.createdAt.getTime()) / 3600000, 0) / ordersWithAssign.length
-        : 0;
-
-      // Полный цикл (updatedAt - createdAt)
-      const totalLifecycleH = completedSet.reduce((s, o) => s + (o.updatedAt.getTime() - o.createdAt.getTime()) / 3600000, 0);
-      const avgLifecycleH = totalLifecycleH / completedSet.length;
-
-      // Приблизительные метрики для остальных этапов (пока нет точных полей)
-      return {
-        assignH: avgAssignH,
-        estimateH: avgLifecycleH * 0.2,  // ~20% от цикла
-        paymentH: avgLifecycleH * 0.35,  // ~35% от цикла
-        completionD: avgLifecycleH / 24 * 0.6,  // ~60% от цикла
-        lifecycleD: avgLifecycleH / 24
-      };
-    }
-
-    const cur = calcSpeedMetrics(completedCurrent);
-    const prv = calcSpeedMetrics(completedPrev);
-
-    const speedMetrics = {
-      assign_min: {
-        current: Math.round(Math.max(15, Math.min(cur.assignH * 60, 480))),
-        prev: completedPrev.length > 0 ? Math.round(Math.max(15, Math.min(prv.assignH * 60, 480))) : null,
-        norm: 30,
-      },
-      estimate_h: {
-        current: Math.round(Math.max(2, Math.min(cur.estimateH, 48)) * 10) / 10,
-        prev: completedPrev.length > 0 ? Math.round(Math.max(2, Math.min(prv.estimateH, 48)) * 10) / 10 : null,
-        norm: 6,
-      },
-      payment_h: {
-        current: Math.round(Math.max(4, Math.min(cur.paymentH, 96)) * 10) / 10,
-        prev: completedPrev.length > 0 ? Math.round(Math.max(4, Math.min(prv.paymentH, 96)) * 10) / 10 : null,
-        norm: 12,
-      },
-      completion_d: {
-        current: Math.round(Math.max(1, Math.min(cur.completionD, 14)) * 10) / 10,
-        prev: completedPrev.length > 0 ? Math.round(Math.max(1, Math.min(prv.completionD, 14)) * 10) / 10 : null,
-        norm: 3,
-      },
-      lifecycle_d: {
-        current: Math.round(Math.max(2, Math.min(cur.lifecycleD, 30)) * 10) / 10,
-        prev: completedPrev.length > 0 ? Math.round(Math.max(2, Math.min(prv.lifecycleD, 30)) * 10) / 10 : null,
-        norm: 7,
-      },
-    };
-
     // ── Cities ────────────────────────────────────────────────────────────────
     const allCities = [...new Set([...leads.map(l => l.city), ...orders.map(o => o.city)])].filter(Boolean);
     const citiesData = allCities.map(city => {
       const cityLeads = leads.filter(l => l.city === city);
       const cityOrders = orders.filter(o => o.city === city);
       const cityCompletedOrders = cityOrders.filter(o => o.status === "completed");
-      const cityPaid = receiptRows.filter(r => r.prepaymentSubmittedAt && orders.find(o => o.id === r.orderId && o.city === city));
-      const cityRevenue = cityCompletedOrders.reduce((s, o) => {
-        const tx = txRows.filter(t => t.orderId === o.id && t.paymentStatus === "paid").reduce((ss, t) => ss + Number(t.commission), 0);
-        return s + tx;
-      }, 0);
       const cityMastersTotal = masters.filter(m => m.city === city).length;
       const cityMastersActive = masters.filter(m => m.city === city && m.status === "active").length;
 
-      // Token metrics per city
+      // Token metrics per city with fallback
       const cityMasterIds = new Set(masters.filter(m => m.city === city).map(m => m.id));
       const cityTokenRevenue = walletTxs
         .filter(w => w.type === "purchase" && cityMasterIds.has(w.masterId))
-        .reduce((s, w) => s + (w.rubAmount ?? 0), 0);
+        .reduce((s, w) => {
+          if (w.rubAmount && Number(w.rubAmount) > 0) return s + Number(w.rubAmount);
+          if (w.packageId) {
+            const pkg = tokenPackages.find(p => p.id === w.packageId);
+            if (pkg && pkg.priceRub) return s + Number(pkg.priceRub);
+          }
+          const avgPricePerToken = tokenPackages.length > 0
+            ? tokenPackages.reduce((sum, p) => sum + Number(p.pricePerToken), 0) / tokenPackages.length
+            : 10;
+          return s + Number(w.tokensAmount) * avgPricePerToken;
+        }, 0);
       const cityWallets = wallets.filter(w => {
         const master = masters.find(m => m.id === w.masterId);
         return master && master.city === city;
@@ -522,47 +349,15 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
       return {
         city,
         leads: cityLeads.length,
-        payments: cityPaid.length,
-        revenue: Math.round(cityRevenue),
         masters_total: cityMastersTotal,
         masters_active: cityMastersActive,
         conversion: cityLeads.length > 0 ? Math.round((cityCompletedOrders.length / cityLeads.length) * 1000) / 10 : 0,
-        // Token metrics
         token_revenue: Math.round(cityTokenRevenue),
         free_masters: freeMasters,
         waiting_orders: waitingOrders,
         ratio: Math.round(ratio * 10) / 10,
       };
     }).sort((a, b) => b.token_revenue - a.token_revenue).slice(0, 6);
-
-    // ── ROI Sources ────────────────────────────────────────────────────────────
-    const SOURCE_LABELS: Record<string, string> = {
-      avito: "Авито", website: "Сайт", ads: "Директ",
-      call: "Звонки", referral: "Сарафан", repeat: "Повторный", other: "Другое",
-    };
-    const roiSources = Object.entries(SOURCE_LABELS).map(([src, label]) => {
-      const srcLeads = leads.filter(l => (l.source ?? "other") === src);
-      const srcOrders = orders.filter(o => o.leadId && srcLeads.find(l => l.id === o.leadId) && o.status === "completed");
-      // Собираем ID заказов с оплаченной комиссией для исключения двойного подсчёта
-      const paidTxOrderIds = new Set(txRows.filter(t => t.paymentStatus === "paid").map(t => t.orderId));
-      const revenue = srcOrders.reduce((s, o) => {
-        const tx = txRows.filter(t => t.orderId === o.id && t.paymentStatus === "paid").reduce((ss, t) => ss + Number(t.commission), 0);
-        // Предоплаты учитываем только если комиссия ещё не оплачена
-        const pr = !paidTxOrderIds.has(o.id)
-          ? receiptRows.filter(r => r.orderId === o.id && r.prepaymentSubmittedAt).reduce((ss, r) => ss + Number(r.prepaymentAmount), 0)
-          : 0;
-        return s + tx + pr;
-      }, 0);
-      return {
-        source: label,
-        leads: srcLeads.length,
-        orders: srcOrders.length,
-        revenue: Math.round(revenue),
-        spend: 0,
-        conversion: srcLeads.length > 0 ? Math.round((srcOrders.length / srcLeads.length) * 1000) / 10 : 0,
-        roi: null as number | null,
-      };
-    }).filter(s => s.leads > 0).sort((a, b) => b.revenue - a.revenue);
 
     // ── Top Masters ───────────────────────────────────────────────────────────
     const topMasters = masters
@@ -644,16 +439,10 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
 
     res.json({
       summary,
-      alerts,
-      forecast: forecastData,
-      riskMonitor,
-      revenueChart,
-      funnel,
-      tokenFunnel,
+      leadFunnel,
+      leadSources,
       liveFeed,
-      speedMetrics,
       cities: citiesData,
-      roiSources,
       topMasters,
       recentOrders,
       dailyTokenSales,

@@ -4,12 +4,9 @@ import { formatCurrency } from '../../utils/format';
 interface CityData {
   city: string;
   leads: number;
-  payments: number;
-  revenue: number;
   masters_total: number;
   masters_active: number;
   conversion: number;
-  // Token metrics
   token_revenue: number;
   free_masters: number;
   waiting_orders: number;

@@ -1,42 +1,40 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   DollarSign,
-  UserCheck, UserPlus,
-  Coins, Users, Clock, Ban,
-  AlertTriangle,
+  UserPlus,
+  Coins, Users, Clock,
   TrendingUp, TrendingDown
 } from 'lucide-react';
 import { useCountUp } from '../../hooks/useCountUp';
 import { formatCurrency, formatChange } from '../../utils/format';
 
 interface KPIData {
-  days_passed?: number;
-  days_in_month?: number;
-  revenue_today: number;
-  revenue_today_prev: number;
-  revenue_month: number;
-  revenue_month_prev: number;
+  // Leads
   leads_today: number;
   leads_today_prev: number;
-  payments_today: number;
-  payments_today_prev: number;
+  leads_month: number;
+  leads_month_prev: number;
+  lead_conversion_rate: number;
+  // Masters
   masters_active: number;
   masters_total: number;
   masters_new_today: number;
   masters_new_today_prev: number;
+  // Token economy
+  token_revenue_today: number;
+  token_revenue_yesterday: number;
+  token_revenue_month: number;
+  tokens_sold_today: number;
+  tokens_sold_yesterday: number;
+  new_buyers_today: number;
+  new_buyers_yesterday: number;
+  orders_pending: number;
+  masters_at_zero: number;
+  masters_low_balance: number;
+  debtors_count: number;
+  avg_token_balance: number;
+  token_refunds_today: number;
   avito_balance: number;
-  // Token KPIs
-  token_revenue_today?: number;
-  token_revenue_yesterday?: number;
-  tokens_sold_today?: number;
-  tokens_sold_yesterday?: number;
-  new_buyers_today?: number;
-  new_buyers_yesterday?: number;
-  orders_pending?: number;
-  masters_at_zero?: number;
-  masters_low_balance?: number;
-  debtors_count?: number;
-  token_refunds_today?: number;
 }
 
 interface KPICardProps {
@@ -161,6 +159,23 @@ export function KPICards({ data, isLoading }: Props) {
     <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-7 gap-4">
       <KPICard
         index={0}
+        title="Заявки сегодня"
+        value={data.leads_today ?? 0}
+        prevValue={data.leads_today_prev ?? 0}
+        icon={<Users size={18} color="#3B82F6" />}
+        iconBg="bg-[#EFF6FF]"
+      />
+      <KPICard
+        index={1}
+        title="Конверсия заявок"
+        value={data.lead_conversion_rate ?? 0}
+        icon={<TrendingUp size={18} color="#34C759" />}
+        iconBg="bg-[#E8F9EE]"
+        formatValue={(v) => `${v}%`}
+        changeLabel="за месяц"
+      />
+      <KPICard
+        index={2}
         title="Выручка от токенов"
         value={data.token_revenue_today ?? 0}
         prevValue={data.token_revenue_yesterday ?? 0}
@@ -169,7 +184,7 @@ export function KPICards({ data, isLoading }: Props) {
         formatValue={formatCurrency}
       />
       <KPICard
-        index={1}
+        index={3}
         title="Токенов продано"
         value={data.tokens_sold_today ?? 0}
         prevValue={data.tokens_sold_yesterday ?? 0}
@@ -177,42 +192,29 @@ export function KPICards({ data, isLoading }: Props) {
         iconBg="bg-[#FFFBEB]"
       />
       <KPICard
-        index={2}
-        title="Новых покупателей"
-        value={data.new_buyers_today ?? 0}
-        prevValue={data.new_buyers_yesterday ?? 0}
-        icon={<Users size={18} color="#3B82F6" />}
-        iconBg="bg-[#EFF6FF]"
-      />
-      <KPICard
-        index={3}
-        title="Ждут бронирования"
-        value={data.orders_pending ?? 0}
-        icon={<Clock size={18} color="#EF4444" />}
-        iconBg="bg-[#FEF2F2]"
-      />
-      <KPICard
         index={4}
-        title="Активных мастеров"
-        value={data.masters_active ?? 0}
-        icon={<UserCheck size={18} color="#8B5CF6" />}
+        title="Новых мастеров"
+        value={data.masters_new_today ?? 0}
+        prevValue={data.masters_new_today_prev ?? 0}
+        icon={<UserPlus size={18} color="#8B5CF6" />}
         iconBg="bg-[#F3E8FF]"
         subLabel="из"
         subValue={String(data.masters_total ?? 0)}
       />
       <KPICard
         index={5}
-        title="На нулевом балансе"
-        value={data.masters_at_zero ?? 0}
-        icon={<Ban size={18} color="#EF4444" />}
-        iconBg="bg-[#FEF2F2]"
+        title="Средний баланс"
+        value={data.avg_token_balance ?? 0}
+        icon={<Coins size={18} color="#3B82F6" />}
+        iconBg="bg-[#EFF6FF]"
+        formatValue={(v) => `${v.toFixed(1)}`}
       />
       <KPICard
         index={6}
-        title="Должников"
-        value={data.debtors_count ?? 0}
-        icon={<AlertTriangle size={18} color="#DC2626" />}
-        iconBg="bg-[#FEE2E2]"
+        title="В ожидании"
+        value={data.orders_pending ?? 0}
+        icon={<Clock size={18} color="#EF4444" />}
+        iconBg="bg-[#FEF2F2]"
       />
     </div>
   );

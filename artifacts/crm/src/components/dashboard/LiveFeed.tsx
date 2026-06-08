@@ -1,9 +1,9 @@
-import { Activity, DollarSign, UserPlus, UserCheck, CheckCircle } from 'lucide-react';
+import { Activity, Coins, UserPlus, UserCheck, CheckCircle } from 'lucide-react';
 import { formatRelativeTime } from '../../utils/format';
 
 interface FeedItem {
   id: number;
-  type: 'payment' | 'new_lead' | 'assigned' | 'completed' | 'new_master';
+  type: 'token_purchase' | 'new_lead' | 'assigned' | 'completed' | 'new_master';
   timestamp: Date | string;
   text: string;
   city: string;
@@ -17,8 +17,8 @@ interface Props {
 
 function getEventConfig(type: FeedItem['type']) {
   switch (type) {
-    case 'payment':
-      return { icon: <DollarSign size={15} color="#34C759" />, bg: 'bg-[#E8F9EE]' };
+    case 'token_purchase':
+      return { icon: <Coins size={15} color="#F59E0B" />, bg: 'bg-[#FFFBEB]' };
     case 'new_lead':
       return { icon: <UserPlus size={15} color="#3B82F6" />, bg: 'bg-[#EFF6FF]' };
     case 'assigned':

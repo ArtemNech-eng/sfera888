@@ -5,18 +5,13 @@ import { Layout } from "@/components/layout";
 import { ProtectedRoute } from "@/hooks/use-auth";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { KPICards } from "../components/dashboard/KPICards";
-import { AlertsBlock } from "../components/dashboard/AlertsBlock";
-import { ActionItemsBlock } from "../components/dashboard/ActionItemsBlock";
-import { ForecastCard } from "../components/dashboard/ForecastCard";
-import { RiskMonitor } from "../components/dashboard/RiskMonitor";
 import { TokenFlowChart } from "../components/dashboard/TokenFlowChart";
-import { TokenFunnelCard } from "../components/dashboard/TokenFunnelCard";
 import { LiveFeed } from "../components/dashboard/LiveFeed";
-import { SpeedMetrics } from "../components/dashboard/SpeedMetrics";
 import { CitiesCard } from "../components/dashboard/CitiesCard";
-import { ROICard } from "../components/dashboard/ROICard";
 import { TopMasters } from "../components/dashboard/TopMasters";
 import { RecentOrders } from "../components/dashboard/RecentOrders";
+import { LeadFunnelCard } from "../components/dashboard/LeadFunnelCard";
+import { LeadSourcesCard } from "../components/dashboard/LeadSourcesCard";
 
 type Period = "today" | "week" | "month" | "quarter";
 
@@ -34,7 +29,7 @@ async function fetchDashboard() {
 }
 
 function DashboardPage() {
-  usePushNotifications(); // register SW and auto-subscribe if permission already granted
+  usePushNotifications();
   const [period, setPeriod] = useState<Period>("month");
   const [secondsAgo, setSecondsAgo] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -47,7 +42,6 @@ function DashboardPage() {
     refetchInterval: 60000,
   });
 
-  // Сброс таймера «Обновлено X назад» при авторефетче
   const prevDataRef = useRef(data);
   useEffect(() => {
     if (data !== prevDataRef.current) {
@@ -57,15 +51,9 @@ function DashboardPage() {
   }, [data]);
 
   useEffect(() => {
-    const onChanged = () => refetch();
-    window.addEventListener("dashboard-action-items:changed", onChanged);
-    return () => window.removeEventListener("dashboard-action-items:changed", onChanged);
-  }, [refetch]);
-
-  useEffect(() => {
     const interval = setInterval(() => setSecondsAgo(s => s + 1), 1000);
     return () => clearInterval(interval);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps — интервал создаётся один раз, сброс через setSecondsAgo(0) в эффекте выше
+  }, []);
 
   const handleRefresh = useCallback(() => {
     if (isRefreshing) return;
@@ -78,29 +66,20 @@ function DashboardPage() {
     }
   }, [isRefreshing, refetch]);
 
-
   const formatUpdated = () => {
     if (secondsAgo < 60) return `${secondsAgo}с назад`;
     return `${Math.floor(secondsAgo / 60)}м назад`;
   };
 
-  // Filter city-specific data from the aggregated response
   const summary = data?.summary;
-  const alerts = data?.alerts ?? [];
-  const forecast = data?.forecast;
-  const riskMonitor = data?.riskMonitor;
-  const funnel = data?.funnel;
-  const tokenFunnel = data?.tokenFunnel;
+  const leadFunnel = data?.leadFunnel;
+  const leadSources = data?.leadSources ?? [];
   const liveFeed = data?.liveFeed ?? [];
-  const speedMetrics = data?.speedMetrics;
   const cities = data?.cities ?? [];
-  const roiSources = data?.roiSources ?? [];
   const topMasters = data?.topMasters ?? [];
   const recentOrders = data?.recentOrders ?? [];
-  const dailyTokenSales = data?.dailyTokenSales;
   const tokenFlow = data?.tokenFlow;
 
-  // Error state
   if (error) {
     return (
       <div className="min-h-full bg-[#F8F9FA] flex items-center justify-center">
@@ -163,57 +142,29 @@ function DashboardPage() {
           </div>
         </div>
 
-        {/* TASKS FEED — что делать прямо сейчас */}
-        <div className="mb-6">
-          {/* Задачи всегда показываем все — period дашборда не должен их фильтровать */}
-          <ActionItemsBlock period="all" city="all" />
-        </div>
-
         {/* KPI CARDS */}
         <div className="mb-6">
           <KPICards data={summary} isLoading={isLoading} />
         </div>
 
-        {/* ALERTS */}
-        {alerts.length > 0 && (
-          <div className="mb-6">
-            <AlertsBlock alerts={alerts} />
-          </div>
-        )}
-
-        {/* ROW 1: Forecast + Risk Monitor */}
+        {/* ROW 1: Lead Funnel + Lead Sources */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <ForecastCard data={forecast} isLoading={isLoading} />
-          <RiskMonitor data={riskMonitor} isLoading={isLoading} />
+          <LeadFunnelCard data={leadFunnel} isLoading={isLoading} />
+          <LeadSourcesCard data={leadSources} isLoading={isLoading} />
         </div>
 
-        {/* ROW 2: Revenue Chart (60%) + Funnel (40%) */}
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-4">
-          <div className="lg:col-span-3">
-            <TokenFlowChart data={tokenFlow} isLoading={isLoading} />
-          </div>
-          <div className="lg:col-span-2">
-            <TokenFunnelCard data={tokenFunnel} isLoading={isLoading} />
-          </div>
+        {/* ROW 2: Token Flow Chart */}
+        <div className="mb-4">
+          <TokenFlowChart data={tokenFlow} isLoading={isLoading} />
         </div>
 
-        {/* ROW 3: Live Feed (55%) + Speed Metrics (45%) */}
-        <div className="grid grid-cols-1 lg:grid-cols-11 gap-4 mb-4">
-          <div className="lg:col-span-6">
-            <LiveFeed data={liveFeed.length > 0 ? liveFeed : undefined} isLoading={isLoading} />
-          </div>
-          <div className="lg:col-span-5">
-            <SpeedMetrics data={speedMetrics} isLoading={isLoading} />
-          </div>
-        </div>
-
-        {/* ROW 4: Cities (50%) + ROI (50%) */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        {/* ROW 3: Live Feed + Cities */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+          <LiveFeed data={liveFeed.length > 0 ? liveFeed : undefined} isLoading={isLoading} />
           <CitiesCard data={cities.length > 0 ? cities : undefined} isLoading={isLoading} />
-          <ROICard data={roiSources.length > 0 ? roiSources : undefined} isLoading={isLoading} />
         </div>
 
-        {/* ROW 5: Top Masters (40%) + Recent Orders (60%) */}
+        {/* ROW 4: Top Masters + Recent Orders */}
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
           <div className="lg:col-span-2">
             <TopMasters data={topMasters.length > 0 ? topMasters : undefined} isLoading={isLoading} />
