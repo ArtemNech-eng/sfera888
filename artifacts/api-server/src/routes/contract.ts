@@ -206,12 +206,13 @@ router.get("/status", requireMasterPwa, async (req, res) => {
   res.json(master);
 });
 
-// GET /api/contract/view/:masterId — HTML printable contract view (admin only)
+// GET /api/contract/view/:masterId — HTML printable contract view (admin or own master)
 router.get("/view/:masterId", async (req, res) => {
   const sessionUserId = (req.session as any).userId;
-  if (!sessionUserId) return res.status(401).send("Не авторизован");
-
+  const sessionMasterId = (req.session as any).masterId;
   const masterId = parseInt(String(req.params.masterId));
+  const isOwnContract = sessionMasterId && sessionMasterId === masterId;
+  if (!sessionUserId && !isOwnContract) return res.status(401).send("Не авторизован");
   if (isNaN(masterId)) return res.status(400).send("Некорректный ID");
 
   const master = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId)).then(r => r[0]);
