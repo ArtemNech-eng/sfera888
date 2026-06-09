@@ -215,7 +215,7 @@ export default function LeadList({
                   <p className="text-xs text-muted-foreground mt-1">{serviceLabel} · {totalArea2} м²</p>
                 </div>
                 <div className="flex border-t border-border/50 divide-x divide-border/50" onClick={e => e.stopPropagation()}>
-                  {isActive && <button onClick={() => onSendToWork(lead)} className="flex-1 flex items-center justify-center gap-1 py-2.5 text-primary hover:bg-primary/5 text-xs font-medium"><Play className="w-3.5 h-3.5" />Отправить</button>}
+                  {(isActive || (lead.status === "sent_to_work" && !lead.orderId)) && <button onClick={() => onSendToWork(lead)} className="flex-1 flex items-center justify-center gap-1 py-2.5 text-primary hover:bg-primary/5 text-xs font-medium"><Play className="w-3.5 h-3.5" />Отправить</button>}
                   {lead.status === "sent_to_work" && lead.orderId && <button onClick={() => onOpenOrder(lead.orderId!)} className="flex-1 flex items-center justify-center gap-1 py-2.5 text-emerald-700 hover:bg-emerald-50 text-xs font-medium"><ExternalLink className="w-3.5 h-3.5" />Заказ #{lead.orderId}</button>}
                   <button onClick={() => onSelectLead(lead)} className="flex-1 flex items-center justify-center gap-1 py-2.5 text-muted-foreground hover:bg-muted text-xs font-medium"><Eye className="w-3.5 h-3.5" />Открыть</button>
                   <button onClick={() => onDeleteLead(lead.id)} disabled={deletePending} className="flex items-center justify-center px-4 py-2.5 text-muted-foreground/50 hover:text-red-500 hover:bg-red-50 text-xs disabled:opacity-30">{deletePending && deleteTargetId === lead.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}</button>
@@ -293,7 +293,7 @@ export default function LeadList({
                           {lead.status === "sent_to_work" && lead.orderId && (
                             <button onClick={e => { e.stopPropagation(); onOpenOrder(lead.orderId!); }} className="inline-flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-2 py-0.5 font-medium hover:bg-emerald-100 transition-colors"><ExternalLink className="w-2.5 h-2.5" />Заказ #{lead.orderId}</button>
                           )}
-                          {isActive && (
+                          {(isActive || (lead.status === "sent_to_work" && !lead.orderId)) && (
                             <button onClick={e => { e.stopPropagation(); onSendToWork(lead); }} className="inline-flex items-center gap-1 text-[10px] bg-primary/10 text-primary rounded-full px-2 py-0.5 font-medium hover:bg-primary/20 transition-colors"><Play className="w-2.5 h-2.5" />Отправить</button>
                           )}
                           <button onClick={e => { e.stopPropagation(); onDeleteLead(lead.id); }} disabled={deletePending} title="В корзину" className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground/30 hover:text-red-500 hover:bg-red-50 transition-all disabled:opacity-30">{deletePending && deleteTargetId === lead.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}</button>

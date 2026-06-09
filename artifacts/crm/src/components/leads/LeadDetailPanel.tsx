@@ -3,7 +3,7 @@ import { formatDate } from "@/lib/utils";
 import { LeadStatus } from "@workspace/api-client-react";
 import {
   X, History, ChevronDown, Loader2, CheckCircle2, ExternalLink,
-  Clock, Ban, UserX, Play, Pencil, Trash2,
+  Clock, Ban, UserX, Play, Pencil, Trash2, AlertCircle,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -191,6 +191,13 @@ export default function LeadDetailPanel({
                 </button>
               </div>
             )}
+            {/* Stuck lead without order */}
+            {lead.status === "sent_to_work" && !lead.orderId && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                <span className="text-sm font-medium text-amber-700">Заявка зависла — заказ не создан. Повторите отправку.</span>
+              </div>
+            )}
             {/* Cancellation reason */}
             {lead.cancellationReason && (
               <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
@@ -219,7 +226,7 @@ export default function LeadDetailPanel({
             )}
             {/* Main actions */}
             <div className="border-t border-border/50 pt-4 space-y-2">
-              {(lead.status === LeadStatus.new || lead.status === LeadStatus.processing) && (
+              {(lead.status === LeadStatus.new || lead.status === LeadStatus.processing || (lead.status === "sent_to_work" && !lead.orderId)) && (
                 <button onClick={() => { onSendToWork(lead); onClose(); }} className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-primary text-primary-foreground rounded-xl font-semibold text-sm hover:bg-primary/90 transition-colors">
                   <Play className="w-4 h-4" />🚀 Отправить мастерам
                 </button>

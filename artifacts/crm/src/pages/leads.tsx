@@ -418,7 +418,7 @@ export default function Leads() {
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       setConfirmSendLead(null);
       toast({ title: "Заявка отправлена мастерам", description: data?.id ? `Создан заказ #${data.leadId ?? data.id}` : "Заказ создан" });
-      setActiveTab("work");
+      setTimeout(() => setActiveTab("work"), 100);
     },
     onError: (e: Error) => toast({ title: "Ошибка отправки", description: e.message, variant: "destructive" }),
   });
