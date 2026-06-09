@@ -954,7 +954,7 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
             Сбросить
           </Button>
           <div className="h-4 w-px bg-border/50" />
-          <DropdownMenu>
+          <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm">
                 <Filter className="h-3 w-3 mr-1" /> Колонки
@@ -964,7 +964,7 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
               {table.getAllLeafColumns().map(column => {
                 if (column.id === "actions") return null;
                 return (
-                  <DropdownMenuItem key={column.id} onClick={column.getToggleVisibilityHandler()} className="flex items-center gap-2 cursor-pointer">
+                  <DropdownMenuItem key={column.id} onSelect={(e) => e.preventDefault()} onClick={column.getToggleVisibilityHandler()} className="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" checked={column.getIsVisible()} readOnly className="w-3.5 h-3.5 rounded border-border accent-primary" />
                     <span className="text-sm">{typeof column.columnDef.header === "string" ? column.columnDef.header : column.id}</span>
                   </DropdownMenuItem>
