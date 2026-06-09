@@ -800,7 +800,10 @@ router.get("/avatar/:filename", async (req, res) => {
     } else {
       res.end();
     }
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.Code === "NoSuchKey" || err?.name === "NoSuchKey") {
+      return res.status(404).end();
+    }
     console.error("[avatar proxy] error:", err);
     res.status(404).json({ error: "Not found" });
   }
