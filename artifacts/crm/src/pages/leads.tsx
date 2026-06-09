@@ -396,8 +396,10 @@ export default function Leads() {
     mutation: {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
-        setIsCreateOpen(false);
-        toast({ title: "Заявка создана" });
+        setTimeout(() => {
+          setIsCreateOpen(false);
+          toast({ title: "Заявка создана" });
+        }, 100);
       }
     }
   });
