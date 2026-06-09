@@ -185,10 +185,12 @@ function CommissionProgress({ commission }: { commission: TableRowData['commissi
 function MasterWithDebt({ master, masterDebt }: { master: string | null; masterDebt: number }) {
   if (!master) return <span className="text-slate-400">не назначен</span>;
   return (
-    <div className="space-y-1">
+    <div className="flex items-center gap-1.5">
       <div className="font-medium">{master}</div>
       {masterDebt > 0 && (
-        <div className="text-xs text-red-600 font-semibold">долг: {fmtMoney(masterDebt)}</div>
+        <span className="inline-flex items-center px-1 py-0.5 rounded text-[10px] font-medium bg-red-50 text-red-700 border border-red-200" title={`Общий долг: ${fmtMoney(masterDebt)}`}>
+          ⚠️ долг
+        </span>
       )}
     </div>
   );
@@ -202,11 +204,12 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
   const { toast } = useToast();
   
   // State for table
-  const [sorting, setSorting] = useState<SortingState>([{ id: "commissionLeft", desc: true }]);
+  const [sorting, setSorting] = useState<SortingState>([{ id: "ageMs", desc: false }]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [globalFilter, setGlobalFilter] = useState("");
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 50 });
   const [paymentModelFilter, setPaymentModelFilter] = useState<string>("all");
+  const [columnVisibility, setColumnVisibility] = useState({ problemReason: false });
   
   // Query params
   const queryParams = useMemo(() => {
@@ -400,14 +403,14 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
         size: 160,
       },
       {
-        accessorKey: "serviceType",
-        header: "Услуга",
+        accessorKey: "address",
+        header: "Адрес",
         cell: ({ row }) => (
-          <div className="text-sm text-foreground truncate max-w-[140px]" title={row.original.serviceType || row.original.title}>
-            {row.original.serviceType || row.original.title}
+          <div className="text-sm text-foreground truncate max-w-[160px]" title={row.original.address}>
+            {row.original.address || "—"}
           </div>
         ),
-        size: 140,
+        size: 160,
       },
       {
         accessorKey: "master",
@@ -440,22 +443,6 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
           return <div className="font-bold">{fmtMoney(total)}</div>;
         },
         size: 120,
-      },
-      {
-        accessorKey: "commission",
-        header: "Комиссия",
-        cell: ({ row }) => {
-          const isToken = (row.original.paymentModel || "token") === "token";
-          if (isToken) {
-            return (
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                <Diamond className="w-2.5 h-2.5 mr-0.5" /> Токеновая
-              </span>
-            );
-          }
-          return <CommissionProgress commission={row.original.commission} />;
-        },
-        size: 180,
       },
       {
         accessorKey: "commissionLeft",
@@ -529,55 +516,34 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
       },
       {
         id: "actions",
-        header: "Действия",
+        header: "",
         cell: ({ row }) => {
           const isReturnable = row.original.columnKey === "problem" || row.original.columnKey === "waiting_master";
           const hasCommissionLeft = row.original.commissionLeft > 0;
           return (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm">
-                  <MoreHorizontal className="h-4 w-4" />
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="icon" className="h-7 w-7" title="Открыть детали" onClick={() => onOpenOrder(row.original.orderId)}>
+                <ArrowRight className="h-3.5 w-3.5 text-slate-500" />
+              </Button>
+              {isReturnable && (
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-amber-600" title="Вернуть в пул" onClick={() => returnToPool.mutate(row.original.orderId)} disabled={returnToPool.isPending}>
+                  <RefreshCw className="h-3.5 w-3.5" />
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => onOpenOrder(row.original.orderId)}>
-                  <ArrowRight className="mr-2 h-4 w-4" />
-                  Открыть детали
-                </DropdownMenuItem>
-                {isReturnable && (
-                  <DropdownMenuItem
-                    onClick={() => returnToPool.mutate(row.original.orderId)}
-                    disabled={returnToPool.isPending}
-                    className="text-amber-700"
-                  >
-                    ↩️ Вернуть в пул
-                  </DropdownMenuItem>
-                )}
-                {hasCommissionLeft && (
-                  <DropdownMenuItem
-                    onClick={() => {
-                      const input = window.prompt(`Сумма оплаты (остаток ${fmtMoney(row.original.commissionLeft)}):`, String(row.original.commissionLeft));
-                      if (input === null) return;
-                      const amount = parseFloat(input.replace(/[^0-9.]/g, ""));
-                      if (!amount || amount <= 0 || amount > row.original.commissionLeft + 0.01) {
-                        alert("Некорректная сумма"); return;
-                      }
-                      if (confirm(`Принять оплату ${fmtMoney(amount)} по заказу #${row.original.orderId}?`)) {
-                        partialPayment.mutate({ orderId: row.original.orderId, amount });
-                      }
-                    }}
-                    className="text-emerald-700"
-                  >
-                    💰 Частичная оплата
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => navigator.clipboard.writeText(`#${row.original.orderId}`)}>
-                  Копировать номер
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+              )}
+              {hasCommissionLeft && (
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-emerald-600" title="Частичная оплата" onClick={() => {
+                  const input = window.prompt(`Сумма оплаты (остаток ${fmtMoney(row.original.commissionLeft)}):`, String(row.original.commissionLeft));
+                  if (input === null) return;
+                  const amount = parseFloat(input.replace(/[^0-9.]/g, ""));
+                  if (!amount || amount <= 0 || amount > row.original.commissionLeft + 0.01) { alert("Некорректная сумма"); return; }
+                  if (confirm(`Принять оплату ${fmtMoney(amount)} по заказу #${row.original.orderId}?`)) {
+                    partialPayment.mutate({ orderId: row.original.orderId, amount });
+                  }
+                }}>
+                  <Banknote className="h-3.5 w-3.5" />
+                </Button>
+              )}
+            </div>
           );
         },
         size: 80,
@@ -590,11 +556,12 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
   const table = useReactTable<TableRowData>({
     data: enrichedData?.rows || [],
     columns,
-    state: { sorting, columnFilters, globalFilter, pagination },
+    state: { sorting, columnFilters, globalFilter, pagination, columnVisibility },
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onGlobalFilterChange: setGlobalFilter,
     onPaginationChange: setPagination,
+    onColumnVisibilityChange: setColumnVisibility,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -986,6 +953,25 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
           }}>
             Сбросить
           </Button>
+          <div className="h-4 w-px bg-border/50" />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                <Filter className="h-3 w-3 mr-1" /> Колонки
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {table.getAllLeafColumns().map(column => {
+                if (column.id === "actions") return null;
+                return (
+                  <DropdownMenuItem key={column.id} onClick={column.getToggleVisibilityHandler()} className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={column.getIsVisible()} readOnly className="w-3.5 h-3.5 rounded border-border accent-primary" />
+                    <span className="text-sm">{typeof column.columnDef.header === "string" ? column.columnDef.header : column.id}</span>
+                  </DropdownMenuItem>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -1022,7 +1008,7 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
                   const isToken = (row.original.paymentModel || "token") === "token";
                   return (
                     <TableRow key={row.id} data-state={row.getIsSelected() && "selected"}
-                             className={`${row.original.isProblem ? "bg-red-50/30 hover:bg-red-50/50" : ""} ${isToken ? "border-l-4 border-l-emerald-400" : ""}`}>
+                             className={`${row.original.isProblem ? "bg-red-50/60 hover:bg-red-50/80" : isToken ? "bg-emerald-50/20 hover:bg-emerald-50/40" : ""}`}>
                       {row.getVisibleCells().map(cell => (
                         <TableCell key={cell.id}>
                           {flexRender(cell.column.columnDef.cell, cell.getContext())}
