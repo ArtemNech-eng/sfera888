@@ -273,7 +273,7 @@ export default function Leads() {
   const openOrder = openDispatchId ? orders?.find(o => o.id === openDispatchId) : null;
 
   const activeLeads = useMemo(() => {
-    return leads.filter(l => l.status === "new" || l.status === "processing");
+    return leads.filter(l => l.status === "new" || l.status === "processing" || l.status === "sent_to_work");
   }, [leads]);
 
   const allLeads = useMemo(() => leads, [leads]);
@@ -303,10 +303,10 @@ export default function Leads() {
     });
   }, [allLeads, leadStatusFilter, leadSourceFilter, leadDateFilter, leadSearchQuery]);
 
-  // Only new/processing leads for Tab 1 display when no filter is set
+  // Show new, processing and sent_to_work leads in Tab 1 by default
   const tab1Leads = useMemo(() => {
     if (leadStatusFilter || leadSourceFilter || leadDateFilter !== "all" || leadSearchQuery) return filteredLeads;
-    return allLeads.filter(l => l.status === "new" || l.status === "processing");
+    return allLeads.filter(l => l.status === "new" || l.status === "processing" || l.status === "sent_to_work");
   }, [allLeads, filteredLeads, leadStatusFilter, leadSourceFilter, leadDateFilter, leadSearchQuery]);
 
   const activeOrders = useMemo(() => {
