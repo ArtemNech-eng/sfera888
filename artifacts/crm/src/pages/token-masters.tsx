@@ -50,6 +50,8 @@ interface TokenMaster {
   totalRevenue: number;
   conversion: number | null;
   roi: number | null;
+  contractSignedAt: string | null;
+  passportVerified: boolean | null;
 }
 
 interface TokenMastersResponse {
@@ -184,7 +186,7 @@ export default function TokenMastersPage() {
   );
 }
 
-type TabKey = "all" | "debt";
+type TabKey = "all" | "debt" | "new";
 
 function TokenMastersContent() {
   const [activeTab, setActiveTab] = useState<TabKey>("all");
@@ -195,6 +197,8 @@ function TokenMastersContent() {
   const [status, setStatus] = useState("");
   const [sort, setSort] = useState<SortKey>("activity");
   const [selectedMasterId, setSelectedMasterId] = useState<number | null>(null);
+  const [newPeriod, setNewPeriod] = useState<"1d" | "7d" | "30d">("7d");
+  const [newContractStatus, setNewContractStatus] = useState<"all" | "none" | "pending" | "signed">("all");
   const LIMIT = 20;
 
   const params = useMemo(() => {
@@ -216,6 +220,17 @@ function TokenMastersContent() {
     if (search) p.set("search", search);
     return p.toString();
   }, [page, search]);
+
+  const newParams = useMemo(() => {
+    const p = new URLSearchParams();
+    p.set("page", String(page));
+    p.set("limit", String(LIMIT));
+    if (search) p.set("search", search);
+    p.set("period", newPeriod);
+    if (newContractStatus !== "all") p.set("contractStatus", newContractStatus);
+    p.set("sort", "activity");
+    return p.toString();
+  }, [page, search, newPeriod, newContractStatus]);
 
   const { data: stats, isLoading: statsLoading } = useQuery<TokenMasterStats>({
     queryKey: ["/api/token-masters/stats"],
@@ -245,11 +260,24 @@ function TokenMastersContent() {
     enabled: activeTab === "debt",
   });
 
+  const { data: newMastersData, isLoading: newMastersLoading } = useQuery<TokenMastersResponse>({
+    queryKey: ["/api/token-masters", newParams],
+    queryFn: async () => {
+      const r = await fetch(`/api/token-masters?${newParams}`, { credentials: "include" });
+      if (!r.ok) throw new Error("Ошибка загрузки новых мастеров");
+      return r.json();
+    },
+    refetchInterval: 30_000,
+    enabled: activeTab === "new",
+  });
+
   const totalPages = activeTab === "all"
     ? (mastersData ? Math.ceil(mastersData.total / LIMIT) : 1)
-    : (debtData ? Math.ceil(debtData.total / LIMIT) : 1);
+    : activeTab === "debt"
+    ? (debtData ? Math.ceil(debtData.total / LIMIT) : 1)
+    : (newMastersData ? Math.ceil(newMastersData.total / LIMIT) : 1);
 
-  const isLoading = activeTab === "all" ? mastersLoading : debtLoading;
+  const isLoading = activeTab === "all" ? mastersLoading : activeTab === "debt" ? debtLoading : newMastersLoading;
 
   const handleSort = (key: SortKey) => {
     setSort(key);
@@ -296,6 +324,17 @@ function TokenMastersContent() {
           )}
         >
           Должники по токенам
+        </button>
+        <button
+          onClick={() => { setActiveTab("new"); setPage(1); }}
+          className={cn(
+            "px-4 py-2 rounded-xl text-sm font-medium transition-colors",
+            activeTab === "new"
+              ? "bg-blue-500 text-white"
+              : "bg-muted/40 text-muted-foreground hover:bg-muted/60"
+          )}
+        >
+          Новые мастера
         </button>
       </div>
 
@@ -435,6 +474,46 @@ function TokenMastersContent() {
             {fmt(debtData.total)} должников
           </span>
         )}
+
+        {activeTab === "new" && (
+          <>
+            {/* Period filter */}
+            <div className="flex items-center gap-1">
+              {(["1d", "7d", "30d"] as const).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => { setNewPeriod(p); handleFilter(); }}
+                  className={cn(
+                    "h-9 px-3 text-sm rounded-xl border transition-colors",
+                    newPeriod === p
+                      ? "bg-blue-500 text-white border-blue-500"
+                      : "bg-background text-muted-foreground hover:bg-muted/40"
+                  )}
+                >
+                  {p === "1d" ? "1 день" : p === "7d" ? "7 дней" : "30 дней"}
+                </button>
+              ))}
+            </div>
+
+            {/* Contract status filter */}
+            <select
+              className="h-9 px-3 text-sm rounded-xl border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20"
+              value={newContractStatus}
+              onChange={e => { setNewContractStatus(e.target.value as any); handleFilter(); }}
+            >
+              <option value="all">Все по договору</option>
+              <option value="none">Без договора</option>
+              <option value="pending">На проверке</option>
+              <option value="signed">Подписан</option>
+            </select>
+          </>
+        )}
+
+        {activeTab === "new" && newMastersData && (
+          <span className="text-sm text-muted-foreground whitespace-nowrap">
+            {fmt(newMastersData.total)} новых
+          </span>
+        )}
       </div>
 
       {/* Table */}
@@ -489,6 +568,17 @@ function TokenMastersContent() {
                     <th className="text-right px-3 py-3 font-medium">Активность</th>
                   </>
                 )}
+                {activeTab === "new" && (
+                  <>
+                    <th className="text-left px-3 py-3 font-medium hidden md:table-cell">Город</th>
+                    <th className="text-left px-3 py-3 font-medium hidden lg:table-cell">Телефон</th>
+                    <th className="text-left px-3 py-3 font-medium">Регистрация</th>
+                    <th className="text-center px-3 py-3 font-medium">Договор</th>
+                    <th className="text-right px-3 py-3 font-medium">Баланс</th>
+                    <th className="text-center px-3 py-3 font-medium hidden sm:table-cell">Статус</th>
+                    <th className="text-right px-3 py-3 font-medium">Активность</th>
+                  </>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -515,6 +605,14 @@ function TokenMastersContent() {
                   <td colSpan={10} className="text-center py-16 text-muted-foreground">
                     <Zap className="w-10 h-10 mx-auto mb-3 opacity-20" />
                     <p>Должники не найдены</p>
+                  </td>
+                </tr>
+              )}
+              {!isLoading && activeTab === "new" && (!newMastersData?.data?.length) && (
+                <tr>
+                  <td colSpan={8} className="text-center py-16 text-muted-foreground">
+                    <Zap className="w-10 h-10 mx-auto mb-3 opacity-20" />
+                    <p>Новые мастера не найдены</p>
                   </td>
                 </tr>
               )}
@@ -618,6 +716,57 @@ function TokenMastersContent() {
                     </td>
                     <td className="px-3 py-3 text-right tabular-nums text-muted-foreground">{fmt(m.creditTokensIssued)}</td>
                     <td className="px-3 py-3 text-right tabular-nums text-muted-foreground">{fmt(m.creditTokensSpent)}</td>
+                    <td className="px-3 py-3 text-center hidden sm:table-cell">
+                      <span className={cn("text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap", statusInfo.cls)}>{statusInfo.label}</span>
+                    </td>
+                    <td className="px-3 py-3 text-right text-xs text-muted-foreground whitespace-nowrap">
+                      {m.lastSeenAt ? fmtRelative(m.lastSeenAt) : <span className="text-muted-foreground/40">—</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+
+              {/* New masters rows */}
+              {activeTab === "new" && newMastersData?.data.map((m, idx) => {
+                const statusInfo = STATUS_LABELS[m.status] ?? { label: m.status, cls: "bg-gray-100 text-gray-500" };
+                const now = new Date();
+                const lastSeen = m.lastSeenAt ? new Date(m.lastSeenAt) : null;
+                const isOnline = lastSeen && (now.getTime() - lastSeen.getTime()) < 5 * 60 * 1000;
+                const contractLabel = !m.contractSignedAt
+                  ? { text: "Без договора", cls: "bg-gray-100 text-gray-600" }
+                  : m.passportVerified
+                  ? { text: "Подписан", cls: "bg-green-100 text-green-700" }
+                  : { text: "На проверке", cls: "bg-amber-100 text-amber-700" };
+                return (
+                  <tr
+                    key={m.id}
+                    className={cn("border-b last:border-0 cursor-pointer transition-colors", idx % 2 === 0 ? "bg-background" : "bg-muted/20", "hover:bg-primary/5")}
+                    onClick={() => setSelectedMasterId(m.id)}
+                  >
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="relative shrink-0">
+                          <MasterAvatar url={m.avatarUrl} alias={m.alias} size={34} />
+                          {isOnline && <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-background rounded-full" />}
+                        </div>
+                        <span className="font-medium truncate max-w-[120px]">{m.alias}</span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-muted-foreground hidden md:table-cell"><span className="truncate max-w-[80px] block">{m.city}</span></td>
+                    <td className="px-3 py-3 text-muted-foreground hidden lg:table-cell"><span className="truncate max-w-[120px] block text-xs">{m.phone ?? "—"}</span></td>
+                    <td className="px-3 py-3 text-muted-foreground whitespace-nowrap">
+                      {format(new Date(m.createdAt), "dd.MM.yyyy")}
+                    </td>
+                    <td className="px-3 py-3 text-center">
+                      <span className={cn("text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap", contractLabel.cls)}>
+                        {contractLabel.text}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 text-right">
+                      <span className={cn("inline-flex items-center gap-1 font-semibold tabular-nums text-sm", m.tokensBalance > 0 ? "text-violet-600 dark:text-violet-400" : "text-red-500 dark:text-red-400")}>
+                        <Zap className="w-3 h-3" />{fmt(m.tokensBalance)}
+                      </span>
+                    </td>
                     <td className="px-3 py-3 text-center hidden sm:table-cell">
                       <span className={cn("text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap", statusInfo.cls)}>{statusInfo.label}</span>
                     </td>

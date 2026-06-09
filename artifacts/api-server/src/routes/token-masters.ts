@@ -133,6 +133,8 @@ router.get("/", ops, async (req: any, res: any) => {
     const specialization = (req.query.specialization as string) ?? "";
     const status = (req.query.status as string) ?? "";
     const sort = (req.query.sort as string) ?? "activity";
+    const period = (req.query.period as string) ?? "";
+    const contractStatus = (req.query.contractStatus as string) ?? "";
 
     const conditions: any[] = [isNull(mastersTable.deletedAt)];
     if (search) {
@@ -144,6 +146,20 @@ router.get("/", ops, async (req: any, res: any) => {
     if (city) conditions.push(ilike(mastersTable.city, `%${city}%`));
     if (specialization) conditions.push(ilike(mastersTable.specialization, `%${specialization}%`));
     if (status) conditions.push(eq(mastersTable.status, status as any));
+
+    if (period === "1d" || period === "7d" || period === "30d") {
+      const days = period === "1d" ? 1 : period === "7d" ? 7 : 30;
+      const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+      conditions.push(gte(mastersTable.createdAt, cutoff));
+    }
+
+    if (contractStatus === "none") {
+      conditions.push(isNull(mastersTable.contractSignedAt));
+    } else if (contractStatus === "pending") {
+      conditions.push(sql`${mastersTable.contractSignedAt} IS NOT NULL AND (${mastersTable.passportVerified} IS NULL OR ${mastersTable.passportVerified} = false)`);
+    } else if (contractStatus === "signed") {
+      conditions.push(sql`${mastersTable.contractSignedAt} IS NOT NULL AND ${mastersTable.passportVerified} = true`);
+    }
 
     const whereClause = and(...conditions);
 
@@ -215,6 +231,8 @@ router.get("/", ops, async (req: any, res: any) => {
           lastSeenAt: mastersTable.lastSeenAt,
           avatarUrl: mastersTable.customAvatarUrl,
           createdAt: mastersTable.createdAt,
+          contractSignedAt: mastersTable.contractSignedAt,
+          passportVerified: mastersTable.passportVerified,
           tokensBalance: masterWalletTable.tokensBalance,
           totalTokensPurchased: masterWalletTable.totalTokensPurchased,
           totalTokensSpent: masterWalletTable.totalTokensSpent,
@@ -264,6 +282,8 @@ router.get("/", ops, async (req: any, res: any) => {
         lastSeenAt: r.lastSeenAt,
         avatarUrl: r.avatarUrl,
         createdAt: r.createdAt,
+        contractSignedAt: r.contractSignedAt,
+        passportVerified: r.passportVerified,
         tokensBalance,
         totalTokensPurchased: Number(r.totalTokensPurchased ?? 0),
         totalTokensSpent: Number(r.totalTokensSpent ?? 0),
