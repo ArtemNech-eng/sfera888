@@ -106,8 +106,17 @@ const STATUS_LABELS: Record<string, { label: string; cls: string }> = {
 };
 
 function MasterAvatar({ url, alias, size = 36 }: { url: string | null; alias: string; size?: number }) {
-  if (url) {
-    return <img src={url} alt={alias} style={{ width: size, height: size }} className="rounded-full object-cover shrink-0" />;
+  const [failed, setFailed] = useState(false);
+  if (url && !failed) {
+    return (
+      <img
+        src={url}
+        alt={alias}
+        style={{ width: size, height: size }}
+        className="rounded-full object-cover shrink-0"
+        onError={() => setFailed(true)}
+      />
+    );
   }
   return (
     <div

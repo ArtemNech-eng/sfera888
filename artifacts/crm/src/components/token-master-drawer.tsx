@@ -5,7 +5,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { format, formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
 import {
-  Sheet, SheetContent, SheetHeader, SheetTitle,
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -94,8 +94,16 @@ function fmtDate(s: string) { return format(new Date(s), "d MMM yyyy", { locale:
 function fmtRelative(s: string) { return formatDistanceToNow(new Date(s), { addSuffix: true, locale: ru }); }
 
 function Avatar({ url, alias }: { url: string | null; alias: string }) {
-  if (url) {
-    return <img src={url} alt={alias} className="w-14 h-14 rounded-full object-cover shrink-0" />;
+  const [failed, setFailed] = useState(false);
+  if (url && !failed) {
+    return (
+      <img
+        src={url}
+        alt={alias}
+        className="w-14 h-14 rounded-full object-cover shrink-0"
+        onError={() => setFailed(true)}
+      />
+    );
   }
   return (
     <div className="w-14 h-14 rounded-full bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shrink-0">
@@ -855,12 +863,15 @@ export function TokenMasterDrawer({ masterId, onClose }: TokenMasterDrawerProps)
 
   return (
     <Sheet open={masterId !== null} onOpenChange={open => !open && onClose()}>
-      <SheetContent side="right" className="w-full sm:max-w-lg flex flex-col gap-0 p-0 overflow-hidden">
+      <SheetContent key={masterId ?? "closed"} side="right" className="w-full sm:max-w-lg flex flex-col gap-0 p-0 overflow-hidden">
         <SheetHeader className="px-6 pt-6 pb-4 border-b shrink-0">
           <SheetTitle className="flex items-center gap-2 text-base">
             <Zap className="w-5 h-5 text-violet-500" />
             Token Master
           </SheetTitle>
+          <SheetDescription className="sr-only">
+            Детальная информация о мастере
+          </SheetDescription>
         </SheetHeader>
 
         {isLoading && (
