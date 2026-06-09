@@ -78,6 +78,9 @@ export interface TableRow extends Card {
   isProblem: boolean;          // флаг проблемного заказа
   columnKey: ColumnKey;        // ключ колонки для цветового кодирования
   clientName?: string;         // имя клиента (из leadsTable)
+  clientPhone?: string;        // телефон клиента (из leadsTable)
+  clientDistrict?: string;      // район клиента (из leadsTable)
+  serviceType?: string;        // тип услуги (из leadsTable)
   paymentModel?: string;       // модель оплаты: token | commission
   tokensCharged?: number;      // стоимость заявки в токенах
 }
@@ -253,6 +256,10 @@ async function buildTableData(params: QueryParams): Promise<{
           .select({
             id: leadsTable.id,
             clientName: leadsTable.clientName,
+            clientPhone: leadsTable.clientPhone,
+            city: leadsTable.city,
+            district: leadsTable.district,
+            serviceType: leadsTable.serviceType,
           })
           .from(leadsTable)
           .where(inArray(leadsTable.id, leadIds))
@@ -416,6 +423,7 @@ async function buildTableData(params: QueryParams): Promise<{
         address.toLowerCase().includes(searchTerm) ||
         (masterAlias ?? "").toLowerCase().includes(searchTerm) ||
         (lead?.clientName ?? "").toLowerCase().includes(searchTerm) ||
+        (lead?.clientPhone ?? "").toLowerCase().includes(searchTerm) ||
         title.toLowerCase().includes(searchTerm);
       if (!matches) continue;
     }
@@ -534,6 +542,9 @@ async function buildTableData(params: QueryParams): Promise<{
       isProblem,
       columnKey,
       clientName: lead?.clientName ?? undefined,
+      clientPhone: lead?.clientPhone ?? undefined,
+      clientDistrict: lead?.district ?? undefined,
+      serviceType: lead?.serviceType ?? undefined,
       paymentModel: (o as any).paymentModel || "token",
       tokensCharged: Number((o as any).tokensCharged || 0),
     };

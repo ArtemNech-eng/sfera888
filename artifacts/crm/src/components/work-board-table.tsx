@@ -84,6 +84,9 @@ export interface TableRowData extends Card {
   isProblem: boolean;
   columnKey: ColumnKey;
   clientName?: string;
+  clientPhone?: string;
+  clientDistrict?: string;
+  serviceType?: string;
   paymentModel?: string;
   tokensCharged?: number;
 }
@@ -379,6 +382,31 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
           if (!filterValue || filterValue.length === 0) return true;
           return filterValue.includes(row.original.columnKey);
         },
+        size: 140,
+      },
+      {
+        accessorKey: "clientName",
+        header: "Клиент",
+        cell: ({ row }) => {
+          const name = row.original.clientName || "—";
+          const phone = row.original.clientPhone;
+          return (
+            <div className="space-y-0.5">
+              <div className="font-medium text-sm">{name}</div>
+              {phone && <a href={`tel:${phone}`} className="text-xs text-blue-600 hover:underline">{phone}</a>}
+            </div>
+          );
+        },
+        size: 160,
+      },
+      {
+        accessorKey: "serviceType",
+        header: "Услуга",
+        cell: ({ row }) => (
+          <div className="text-sm text-foreground truncate max-w-[140px]" title={row.original.serviceType || row.original.title}>
+            {row.original.serviceType || row.original.title}
+          </div>
+        ),
         size: 140,
       },
       {
@@ -721,6 +749,12 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
               <StatusBadge columnKey={row.columnKey} />
             </div>
             <div className="space-y-2">
+              {row.clientName && (
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="font-medium text-foreground">{row.clientName}</span>
+                  {row.clientPhone && <a href={`tel:${row.clientPhone}`} className="text-xs text-blue-600">{row.clientPhone}</a>}
+                </div>
+              )}
               <div className="flex items-center gap-2 text-sm">
                 <MapPin className="h-4 w-4 text-muted-foreground" />
                 <span>{row.address}</span>
