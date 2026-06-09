@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
@@ -855,15 +855,22 @@ interface TokenMasterDrawerProps {
 export function TokenMasterDrawer({ masterId, onClose }: TokenMasterDrawerProps) {
   const [tab, setTab] = useState("overview");
 
+  useEffect(() => {
+    if (masterId !== null) {
+      setTab("overview");
+    }
+  }, [masterId]);
+
   const { data, isLoading, isError } = useQuery<TokenMasterDetail>({
     queryKey: ["/api/token-masters", masterId],
     queryFn: () => fetch(`/api/token-masters/${masterId}`, { credentials: "include" }).then(r => r.json()),
     enabled: masterId !== null,
+    placeholderData: (previousData) => previousData,
   });
 
   return (
     <Sheet open={masterId !== null} onOpenChange={open => !open && onClose()}>
-      <SheetContent key={masterId ?? "closed"} side="right" className="w-full sm:max-w-lg flex flex-col gap-0 p-0 overflow-hidden">
+      <SheetContent side="right" className="w-full sm:max-w-lg flex flex-col gap-0 p-0 overflow-hidden">
         <SheetHeader className="px-6 pt-6 pb-4 border-b shrink-0">
           <SheetTitle className="flex items-center gap-2 text-base">
             <Zap className="w-5 h-5 text-violet-500" />
@@ -874,48 +881,46 @@ export function TokenMasterDrawer({ masterId, onClose }: TokenMasterDrawerProps)
           </SheetDescription>
         </SheetHeader>
 
-        {isLoading && (
-          <div className="flex-1 flex items-center justify-center">
-            <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-          </div>
-        )}
-
-        {isError && (
-          <div className="flex-1 flex items-center justify-center flex-col gap-2 text-muted-foreground">
-            <AlertTriangle className="w-8 h-8" />
-            <p className="text-sm">Ошибка загрузки данных</p>
-          </div>
-        )}
-
-        {data && (
-          <Tabs value={tab} onValueChange={setTab} className="flex-1 flex flex-col overflow-hidden">
-            <TabsList className="mx-6 mt-4 mb-0 shrink-0 h-9 text-xs grid grid-cols-5">
-              <TabsTrigger value="overview" className="text-xs px-1">Обзор</TabsTrigger>
-              <TabsTrigger value="efficiency" className="text-xs px-1">Эффект.</TabsTrigger>
-              <TabsTrigger value="finance" className="text-xs px-1">Финансы</TabsTrigger>
-              <TabsTrigger value="history" className="text-xs px-1">Токены</TabsTrigger>
-              <TabsTrigger value="activity" className="text-xs px-1">Активность</TabsTrigger>
-            </TabsList>
-
-            <div className="flex-1 overflow-y-auto px-6 py-4">
-              <TabsContent value="overview" className="mt-0">
-                <OverviewTab m={data} masterId={masterId!} />
-              </TabsContent>
-              <TabsContent value="efficiency" className="mt-0">
-                <EfficiencyTab m={data} />
-              </TabsContent>
-              <TabsContent value="finance" className="mt-0">
-                <FinanceTab m={data} masterId={masterId!} />
-              </TabsContent>
-              <TabsContent value="history" className="mt-0">
-                <TokenHistoryTab m={data} />
-              </TabsContent>
-              <TabsContent value="activity" className="mt-0">
-                <ActivityTab m={data} />
-              </TabsContent>
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {isLoading && !data ? (
+            <div className="flex-1 flex items-center justify-center">
+              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
             </div>
-          </Tabs>
-        )}
+          ) : isError ? (
+            <div className="flex-1 flex items-center justify-center flex-col gap-2 text-muted-foreground">
+              <AlertTriangle className="w-8 h-8" />
+              <p className="text-sm">Ошибка загрузки данных</p>
+            </div>
+          ) : data ? (
+            <Tabs value={tab} onValueChange={setTab} className="flex-1 flex flex-col overflow-hidden">
+              <TabsList className="mx-6 mt-4 mb-0 shrink-0 h-9 text-xs grid grid-cols-5">
+                <TabsTrigger value="overview" className="text-xs px-1">Обзор</TabsTrigger>
+                <TabsTrigger value="efficiency" className="text-xs px-1">Эффект.</TabsTrigger>
+                <TabsTrigger value="finance" className="text-xs px-1">Финансы</TabsTrigger>
+                <TabsTrigger value="history" className="text-xs px-1">Токены</TabsTrigger>
+                <TabsTrigger value="activity" className="text-xs px-1">Активность</TabsTrigger>
+              </TabsList>
+
+              <div className="flex-1 overflow-y-auto px-6 py-4">
+                <TabsContent value="overview" className="mt-0">
+                  <OverviewTab m={data} masterId={masterId!} />
+                </TabsContent>
+                <TabsContent value="efficiency" className="mt-0">
+                  <EfficiencyTab m={data} />
+                </TabsContent>
+                <TabsContent value="finance" className="mt-0">
+                  <FinanceTab m={data} masterId={masterId!} />
+                </TabsContent>
+                <TabsContent value="history" className="mt-0">
+                  <TokenHistoryTab m={data} />
+                </TabsContent>
+                <TabsContent value="activity" className="mt-0">
+                  <ActivityTab m={data} />
+                </TabsContent>
+              </div>
+            </Tabs>
+          ) : null}
+        </div>
       </SheetContent>
     </Sheet>
   );

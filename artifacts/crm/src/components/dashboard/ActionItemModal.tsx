@@ -344,6 +344,7 @@ export function ActionItemModal({ id, open, onOpenChange }: {
     enabled: !!id && open,
     refetchInterval: open && id ? 30_000 : false,
     retry: false,
+    placeholderData: (previousData) => previousData,
   });
 
   // Автозакрытие: если при refetch сервер вернул 404 — задача исчезла (выполнена/отменена)
