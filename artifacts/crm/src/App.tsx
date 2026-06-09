@@ -58,7 +58,6 @@ const CheckinsPage = lazy(() => import("@/pages/checkins"));
 const AvitoPage = lazy(() => import("@/pages/avito"));
 const AvitoMessagesPage = lazy(() => import("@/pages/avito-messages"));
 const AiOfficePage = lazy(() => import("@/pages/ai-office"));
-const MasterControlPage = lazy(() => import("@/pages/master-control"));
 const TokenSettingsPage = lazy(() => import("@/pages/token-settings"));
 const TokenRefundsPage = lazy(() => import("@/pages/token-refunds"));
 const TokenPurchasesPage = lazy(() => import("@/pages/token-purchases"));
@@ -115,7 +114,6 @@ function Router() {
       <Route path="/avito" component={AvitoPage} />
       <Route path="/avito-messages" component={AvitoMessagesPage} />
       <Route path="/ai-office" component={AiOfficePage} />
-      <Route path="/master-control" component={MasterControlPage} />
       <Route path="/token-settings" component={TokenSettingsPage} />
       <Route path="/token-refunds" component={TokenRefundsPage} />
       <Route path="/token-purchases" component={TokenPurchasesPage} />

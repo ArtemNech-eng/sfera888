@@ -212,7 +212,6 @@ function EmptyTasksState({
                   <div>Завершено/отменено: <b>{debugInfo.summary?.completedOrCancelled ?? 0}</b></div>
                   <div>Активных snooze: <b>{debugInfo.summary?.activeSnoozesCount ?? 0}</b></div>
                   <div>Заблок. мастеров: <b>{debugInfo.summary?.blockedMastersCount ?? 0}</b></div>
-                  <div>Активных кейсов: <b>{debugInfo.summary?.activeChatCases ?? 0}</b></div>
                   <div>Ручных задач: <b>{debugInfo.summary?.openManualTasks ?? 0}</b></div>
                   <div>Ожид. оплат: <b>{debugInfo.summary?.pendingReceipts ?? 0}</b></div>
                   <div>Без сметы &gt;24ч: <b>{debugInfo.summary?.noEstimateOrdersOlderThan24h ?? 0}</b></div>

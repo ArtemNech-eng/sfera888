@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, Inbox, Users, Activity, MoreHorizontal,
-  Brain, Smartphone, MessagesSquare, ClipboardList, CalendarCheck,
+  Smartphone, MessagesSquare, ClipboardList, CalendarCheck,
   Wallet, BarChart3, Settings, UserCog, LogOut, Trash2, Bot,
   MessageCircle, Tag, X, Filter,
 } from "lucide-react";
@@ -39,7 +39,6 @@ export function MobileNav({
     { href: "/master-chat",   label: "Чат с мастерами",     icon: MessagesSquare,  permKey: "master-chat",  badge: unreadCount },
     { href: "/dialogs",       label: "Диалоги с клиентами", icon: MessageCircle,   permKey: "orders",       badge: unreadDialogs },
     { href: "/finance",       label: "Финансы",             icon: Wallet,          permKey: "finance" },
-    { href: "/master-control", label: "Контроль мастеров",  icon: Brain,           permKey: "masters" },
     { href: "/checkins",      label: "Готовность",          icon: CalendarCheck,   permKey: "masters" },
     { href: "/tasks",         label: "Задачи",              icon: ClipboardList,   permKey: "tasks",        badge: openTasksCount },
     { href: "/avito",         label: "Авито",               icon: Tag,             permKey: "leads" },

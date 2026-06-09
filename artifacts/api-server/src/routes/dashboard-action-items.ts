@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, ordersTable, mastersTable, leadsTable, receiptsTable, avitoSettingsTable, chatCasesTable, systemTasksTable, masterMessagesTable, transactionsTable, transactionPaymentsTable, taskSnoozesTable, orderDispatchesTable, walletTransactionsTable, masterWalletTable } from "@workspace/db";
+import { db, ordersTable, mastersTable, leadsTable, receiptsTable, avitoSettingsTable, systemTasksTable, masterMessagesTable, transactionsTable, transactionPaymentsTable, taskSnoozesTable, orderDispatchesTable, walletTransactionsTable, masterWalletTable } from "@workspace/db";
 import { desc, isNull, eq, and, sql, not, inArray, lte, gt } from "drizzle-orm";
 import { sendMaxMessage } from "../maxBot.js";
 import { sendPushToMaster } from "../lib/push.js";
@@ -162,13 +162,12 @@ async function buildItems(): Promise<Item[]> {
   const now = new Date();
   // Load commission settings once for amountAtRisk calculations
   const commSettings = await getCommissionSettings().catch(() => DEFAULT_COMMISSION);
-  const [orders, masters, allMastersForNames, leads, receipts, cases, manualTasks, txRows, masterWallets] = await Promise.all([
+  const [orders, masters, allMastersForNames, leads, receipts, manualTasks, txRows, masterWallets] = await Promise.all([
     db.select({ id: ordersTable.id, leadId: ordersTable.leadId, masterId: ordersTable.masterId, city: ordersTable.city, status: ordersTable.status, proposedAmount: ordersTable.proposedAmount, orderAmount: ordersTable.orderAmount, createdAt: ordersTable.createdAt, updatedAt: ordersTable.updatedAt, assignedAt: ordersTable.assignedAt, cancelReason: ordersTable.cancelReason }).from(ordersTable).where(and(isNull(ordersTable.deletedAt), not(inArray(ordersTable.status, ["completed", "cancelled"])))),
     db.select({ id: mastersTable.id, alias: mastersTable.alias, city: mastersTable.city, status: mastersTable.status, createdAt: mastersTable.createdAt, blockedAt: (mastersTable as any).blockedAt }).from(mastersTable).where(and(isNull(mastersTable.deletedAt), sql`${mastersTable.status}::text ilike '%blocked%' or ${mastersTable.status}::text ilike '%fomo%'`)),
     db.select({ id: mastersTable.id, alias: mastersTable.alias, city: mastersTable.city }).from(mastersTable).where(isNull(mastersTable.deletedAt)),
     db.select({ id: leadsTable.id, clientName: leadsTable.clientName, clientPhone: leadsTable.clientPhone, city: leadsTable.city, createdAt: leadsTable.createdAt }).from(leadsTable).where(isNull(leadsTable.deletedAt)),
     db.select({ id: receiptsTable.id, orderId: receiptsTable.orderId, masterId: receiptsTable.masterId, city: receiptsTable.city, prepaymentSubmittedAt: receiptsTable.prepaymentSubmittedAt, prepaymentSeenAt: receiptsTable.prepaymentSeenAt, prepaymentAmount: receiptsTable.prepaymentAmount }).from(receiptsTable),
-    db.select().from(chatCasesTable).where(eq(chatCasesTable.isArchived, false)).orderBy(desc(chatCasesTable.updatedAt)).limit(50),
     db.select().from(systemTasksTable).orderBy(desc(systemTasksTable.createdAt)).limit(50),
     db.select({ id: transactionsTable.id, orderId: transactionsTable.orderId, orderAmount: transactionsTable.orderAmount }).from(transactionsTable),
     db.select({ masterId: masterWalletTable.masterId, tokensBalance: masterWalletTable.tokensBalance }).from(masterWalletTable),
@@ -318,103 +317,6 @@ async function buildItems(): Promise<Item[]> {
           items.push({ id: `master_churn_risk-${masterId}`, type: "master_churn_risk", priority: "medium", title: `Мастер ${master.alias} — риск оттока`, shortDescription: `Последняя покупка ${Math.round(daysSince)} дн. назад`, fullDescription: `Мастер ${master.alias} не покупал токены уже ${Math.round(daysSince)} дней. Остаток: ${tokensBalance} токенов.`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "master", entityId: masterId, orderId: null, masterId, clientId: null, city: master.city ?? null, masterName: master.alias ?? null, amountAtRisk: tokensBalance, actions: actionSet("master_churn_risk") });
         }
       }
-    }
-  }
-  for (const c of cases) {
-    let risk = String((c as any).riskLevel ?? (c as any).risk ?? "");
-    if (risk !== "red" && risk !== "yellow") continue;
-
-    const cOrderId = (c as any).orderId ?? null;
-    const linkedOrder = cOrderId ? orderMap.get(Number(cOrderId)) : null;
-
-    // If the linked order is no longer in the active pool (completed / cancelled / deleted) — skip
-    if (cOrderId && !linkedOrder) continue;
-
-    const hasEstimate = (linkedOrder && Number(linkedOrder.proposedAmount ?? 0) > 0) || (cOrderId && receiptOrderIds.has(Number(cOrderId))) || (cOrderId && txOrderIds.has(Number(cOrderId))) || (cOrderId && txOrderIdsWithPayments.has(Number(cOrderId)));
-    const hasPaid = linkedOrder && Number(linkedOrder.orderAmount ?? 0) > 0;
-    const orderCancelled = linkedOrder && ["cancelled", "completed", "done"].includes(String(linkedOrder.status ?? ""));
-
-    // If the order is already paid or cancelled — the bypass flag is stale, skip entirely
-    if (hasPaid || orderCancelled) continue;
-
-    // If estimate was already sent — downgrade "red" (possible_bypass) to "yellow" (conflict)
-    if (risk === "red" && hasEstimate) risk = "yellow";
-
-    const rawNext = String((c as any).nextAction ?? "");
-    const nextRu = NEXT_ACTION_RU[rawNext] ?? (rawNext || "Требует внимания");
-    const baseType = risk === "red" ? "possible_bypass" : "conflict";
-
-    // Build fresh human-readable title + description (never use stale summary from DB)
-    // Prefer DB fields, but fall back to computing from order data if null/zero
-    const linkedOrderAny = linkedOrder as any;
-    const orderAgeH = linkedOrderAny
-      ? (now.getTime() - new Date(linkedOrderAny.createdAt).getTime()) / 3600000
-      : 0;
-    const hasEstimateInOrder = (linkedOrderAny && Number(linkedOrderAny.proposedAmount ?? 0) > 0) || (cOrderId && receiptOrderIds.has(Number(cOrderId))) || (cOrderId && txOrderIds.has(Number(cOrderId))) || (cOrderId && txOrderIdsWithPayments.has(Number(cOrderId)));
-    const hasPaidInOrder = linkedOrderAny && Number(linkedOrderAny.orderAmount ?? 0) > 0;
-
-    const hEstRaw = Number((c as any).hoursWithoutEstimate ?? 0);
-    // Real-time ordersTable always wins: if estimate already exists in orders — hEst = 0
-    const hEst = hasEstimateInOrder ? 0 : (hEstRaw > 0 ? hEstRaw : orderAgeH);
-
-    const hPayRaw = Number((c as any).hoursWithoutPayment ?? 0);
-    // Real-time ordersTable always wins: if order is already paid — hPay = 0
-    const hPay = hasPaidInOrder ? 0 : (hPayRaw > 0 ? hPayRaw : (hasEstimateInOrder ? orderAgeH : 0));
-
-    const hCont = Number((c as any).hoursWithoutContact ?? 0);
-    const stage = String((c as any).currentStage ?? "");
-    const cMaster = masterMap.get(Number((c as any).masterId)) as any;
-    const masterLabel = cMaster?.alias ?? `Мастер #${(c as any).masterId}`;
-    const cLead = linkedOrder ? leadMap.get((linkedOrder as any).leadId) as any : null;
-    const clientName = (cLead?.clientName ?? null) as string | null;
-    const cCity = String((c as any).city || (linkedOrder as any)?.city || "");
-
-    // Derive the most specific type based on what's actually missing
-    let type: TaskType;
-    let freshTitle: string;
-    let freshDesc: string;
-    if (hEst > 24) {
-      type = "no_estimate";
-      freshTitle = `${masterLabel} — смета не отправлена ${fmtAge(hEst)}`;
-      freshDesc = `Заказ #${cOrderId}: мастер ${masterLabel} не отправил смету уже ${fmtAge(hEst)}.`;
-    } else if (hPay > 24) {
-      type = "no_payment";
-      freshTitle = `${masterLabel} — клиент не оплатил ${fmtAge(hPay)}`;
-      freshDesc = `Заказ #${cOrderId}: смета отправлена, клиент не платит уже ${fmtAge(hPay)}.`;
-    } else if (hCont > 12 || stage === "waiting_update") {
-      type = "no_master_response";
-      freshTitle = `${masterLabel} — нет связи ${fmtAge(hCont)}`;
-      freshDesc = `Заказ #${cOrderId}: мастер ${masterLabel} не выходит на связь ${fmtAge(hCont)}.`;
-    } else if (baseType === "possible_bypass") {
-      type = "possible_bypass";
-      freshTitle = `${masterLabel} — подозрение на обход платформы`;
-      freshDesc = `Заказ #${cOrderId}: зафиксированы признаки работы в обход платформы.`;
-    } else {
-      type = "conflict";
-      freshTitle = `${masterLabel} — конфликт по заказу #${cOrderId}`;
-      freshDesc = `Заказ #${cOrderId}: требует внимания оператора.`;
-    }
-    const shortDesc = clientName ? `${clientName}${cCity ? ` · ${cCity}` : ""}` : (cCity || nextRu);
-
-    const cLeadId = (linkedOrder as any)?.leadId ?? null;
-items.push({ id: `case-${(c as any).id}`, type, priority: risk === "red" ? "critical" : "high", title: freshTitle, shortDescription: shortDesc, fullDescription: freshDesc, createdAt: new Date((c as any).createdAt ?? now).toISOString(), updatedAt: new Date((c as any).updatedAt ?? now).toISOString(), lastActionBy: (c as any).lastActionBy ?? null, deadline: (c as any).nextActionDeadline ? new Date((c as any).nextActionDeadline).toISOString() : null, status: "open", entityType: "system", entityId: (c as any).id, orderId: cOrderId, masterId: (c as any).masterId ?? null, clientId: cLeadId, city: cCity || null, amountAtRisk: null, actions: actionSet(type) });
-  }
-  // Deduplicate: if chatCases produced a no_estimate/no_payment/no_master_response/no_progress item
-  // for an orderId that already has an item from orders — keep the orders version (more accurate),
-  // remove the chatCase duplicate (id starts with "case-")
-  const seenOrderType = new Map<string, string>();
-  for (const i of items) {
-    if (i.orderId != null && ["no_estimate", "no_payment", "no_master_response", "no_progress"].includes(i.type)) {
-      const key = `${i.type}-${i.orderId}`;
-      if (!seenOrderType.has(key)) seenOrderType.set(key, i.id);
-    }
-  }
-  for (let idx = items.length - 1; idx >= 0; idx--) {
-    const i = items[idx];
-    if (i.id.startsWith("case-") && i.orderId != null && ["no_estimate", "no_payment", "no_master_response", "no_progress"].includes(i.type)) {
-      const key = `${i.type}-${i.orderId}`;
-      const firstId = seenOrderType.get(key);
-      if (firstId && firstId !== i.id) items.splice(idx, 1);
     }
   }
   for (const t of manualTasks) if ((t as any).status !== "done" && (t as any).status !== "dismissed") items.push({ id: `manual-${(t as any).id}`, type: "custom_manual", priority: "low", title: String((t as any).title ?? "Ручная задача"), shortDescription: String((t as any).description ?? ""), fullDescription: String((t as any).description ?? ""), createdAt: new Date((t as any).createdAt ?? now).toISOString(), updatedAt: new Date((t as any).updatedAt ?? t.createdAt ?? now).toISOString(), lastActionBy: (t as any).lastActionBy ?? null, deadline: (t as any).dueAt ? new Date((t as any).dueAt).toISOString() : null, status: (t as any).status ?? "open", entityType: "system", entityId: (t as any).id, orderId: (t as any).relatedOrderId ?? null, masterId: (t as any).relatedMasterId ?? null, clientId: null, city: null, amountAtRisk: null, actions: actionSet("custom_manual") });
@@ -669,9 +571,7 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
       sendPushToMaster(masterId, { type: "new_message", title: "Заказ выполнен", body: pushBody }).catch((e: any) => console.error("[complete_as_master] push failed:", e));
       const chatId = master?.maxChatId ? `max_${master.maxChatId}` : `pwa_${masterId}`;
       await db.insert(masterMessagesTable).values({ masterId, telegramChatId: chatId, text: notifyText, fromMaster: false, senderName: operatorName, isRead: true });
-      // Archive linked chat case so it doesn't reappear in dashboards
-      await db.update(chatCasesTable).set({ isResolved: true, isArchived: true, updatedAt: now } as any).where(eq(chatCasesTable.orderId, orderId)).catch((e) => console.error("[complete_as_master] case archive failed:", e));
-      console.log(`[complete_as_master] order #${orderId} fully processed (notifications sent, case archived)`);
+      console.log(`[complete_as_master] order #${orderId} fully processed (notifications sent)`);
     }
   }
 
@@ -756,9 +656,7 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
       senderName: operatorName,
       isRead: true,
     });
-    // Archive linked chat case so it doesn't reappear in dashboards
-    await db.update(chatCasesTable).set({ isResolved: true, isArchived: true, updatedAt: now } as any).where(eq(chatCasesTable.orderId, orderId)).catch((e) => console.error("[cancel_as_master] case archive failed:", e));
-    console.log(`[cancel_as_master] order #${orderId} fully processed (notifications sent, case archived)`);
+    console.log(`[cancel_as_master] order #${orderId} fully processed (notifications sent)`);
     invalidateBuildItemsCache();
   }
 
@@ -851,22 +749,6 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
         isRead: true,
       });
 
-      // Обновляем chatCase: помечаем как разрешённый на 24ч, чтобы ИИ-диспетчер не дублировал
-      if (item.orderId != null) {
-        const now = new Date();
-        const resolvedUntil = new Date(now.getTime() + 24 * 3600000);
-        await db.update(chatCasesTable)
-          .set({
-            isResolved: true,
-            resolvedUntil,
-            lastAiMessageAt: now,
-            nextAction: "wait",
-            summary: `Оператор ${operatorName} ведёт диалог с мастером (сообщение отправлено ${now.toISOString()})`,
-            updatedAt: now,
-          })
-          .where(eq(chatCasesTable.orderId, Number(item.orderId)))
-          .catch((e: any) => console.error("[message_master] chatCase update failed:", e));
-      }
     }
   }
 
@@ -959,13 +841,6 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
       console.log(`[partial_payment] order #${orderId} proposedAmount set to ${orderAmount}`);
     }
 
-    // Archive linked chat case so the order doesn't reappear in "problems" from chatCases
-    if (orderId != null) {
-      await db.update(chatCasesTable)
-        .set({ isResolved: true, isArchived: true, updatedAt: now } as any)
-        .where(eq(chatCasesTable.orderId, orderId))
-        .catch((e: any) => console.error("[partial_payment] chatCase archive failed:", e));
-    }
     // Инвалидируем кэш — задача должна исчезнуть из списка сразу после оплаты
     invalidateBuildItemsCache();
   }
@@ -1094,13 +969,6 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
     await db.update(ordersTable)
       .set({ dispatchStatus: "manual", updatedAt: new Date() } as any)
       .where(eq(ordersTable.id, Number(item.orderId)));
-    // Archive chat case so AI dispatcher stops interfering
-    if (item.orderId != null) {
-      await db.update(chatCasesTable)
-        .set({ isResolved: true, nextAction: "wait", summary: `Переведён в ручной контроль оператором ${operatorName}`, updatedAt: new Date() } as any)
-        .where(eq(chatCasesTable.orderId, Number(item.orderId)))
-        .catch((e: any) => console.error("[manual_control] chatCase update failed:", e));
-    }
   }
 
   // ─── resend: повторная рассылка заказа мастерам ──────────────────
@@ -1145,13 +1013,6 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
     await db.insert(taskSnoozesTable)
       .values({ itemId: item.id, snoozedUntil, snoozedBy: operatorName })
       .onConflictDoUpdate({ target: taskSnoozesTable.itemId, set: { snoozedUntil, snoozedBy: operatorName } });
-    // Archive linked chat case if any
-    if (item.orderId != null) {
-      await db.update(chatCasesTable)
-        .set({ isResolved: true, isArchived: true, updatedAt: new Date() } as any)
-        .where(eq(chatCasesTable.orderId, Number(item.orderId)))
-        .catch(() => {});
-    }
     invalidateBuildItemsCache();
     return { routedTo: "/tasks", applied: true, action, payload, itemId: item.id, snoozedUntil: snoozedUntil.toISOString() };
   }
@@ -1174,7 +1035,7 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
 router.get("/action-items/debug", ops, async (req: any, res: any) => {
   try {
     const now = new Date();
-    const [allOrders, activeOrders, snoozes, blockedMasters, cases, manualTasks, receipts, txRows, txPayments] = await Promise.all([
+    const [allOrders, activeOrders, snoozes, blockedMasters, manualTasks, receipts, txRows, txPayments] = await Promise.all([
       db.select({ id: ordersTable.id, status: ordersTable.status, createdAt: ordersTable.createdAt, updatedAt: ordersTable.updatedAt, proposedAmount: ordersTable.proposedAmount, orderAmount: ordersTable.orderAmount, masterId: ordersTable.masterId, assignedAt: ordersTable.assignedAt })
         .from(ordersTable).where(isNull(ordersTable.deletedAt)),
       db.select({ id: ordersTable.id, status: ordersTable.status, createdAt: ordersTable.createdAt, updatedAt: ordersTable.updatedAt, proposedAmount: ordersTable.proposedAmount, orderAmount: ordersTable.orderAmount, masterId: ordersTable.masterId, assignedAt: ordersTable.assignedAt })
@@ -1182,8 +1043,6 @@ router.get("/action-items/debug", ops, async (req: any, res: any) => {
       db.select().from(taskSnoozesTable).where(gt(taskSnoozesTable.snoozedUntil, now)),
       db.select({ id: mastersTable.id, alias: mastersTable.alias, status: mastersTable.status })
         .from(mastersTable).where(and(isNull(mastersTable.deletedAt), sql`${mastersTable.status}::text ilike '%blocked%'`)),
-      db.select({ id: (chatCasesTable as any).id, riskLevel: (chatCasesTable as any).riskLevel, isArchived: (chatCasesTable as any).isArchived })
-        .from(chatCasesTable).where(eq(chatCasesTable.isArchived, false)),
       db.select({ id: (systemTasksTable as any).id, status: (systemTasksTable as any).status })
         .from(systemTasksTable),
       db.select({ id: receiptsTable.id, orderId: receiptsTable.orderId, prepaymentSubmittedAt: receiptsTable.prepaymentSubmittedAt, prepaymentSeenAt: receiptsTable.prepaymentSeenAt })
@@ -1271,7 +1130,6 @@ router.get("/action-items/debug", ops, async (req: any, res: any) => {
         completedOrCancelled: allOrders.length - activeOrders.length,
         activeSnoozesCount: snoozes.length,
         blockedMastersCount: blockedMasters.length,
-        activeChatCases: cases.length,
         openManualTasks,
         pendingReceipts,
         noEstimateOrdersOlderThan24h: noEstimateCount,

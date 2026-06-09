@@ -30,7 +30,6 @@ export * from "./scenario-runs";
 export * from "./order-broadcast-waves";
 export * from "./sessions";
 export * from "./browser-agent-scenarios";
-export * from "./chat-cases";
 export * from "./fomo-events";
 export * from "./task-snoozes";
 export * from "./operator-push-subscriptions";

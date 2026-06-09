@@ -28,7 +28,6 @@ import avitoRouter from "./avito.js";
 import aiOfficeRouter from "./ai-office.js";
 import autonomousRouter from "./autonomous.js";
 import memoryRouter from "./memory.js";
-import chatCasesRouter from "./chat-cases.js";
 import workMonitorRouter from "./work-monitor.js";
 import workBoardRouter from "./work-board.js";
 import workBoardTableRouter from "./work-board-table.js";
@@ -36,7 +35,6 @@ import dashboardActionItemsRouter from "./dashboard-action-items.js";
 import walletRouter from "./wallet.js";
 import tokenMastersRouter from "./token-masters.js";
 import contractRouter from "./contract.js";
-import { processCases, scheduleDigest } from "../lib/casesEngine.js";
 import { sendPushToAllOperators } from "../lib/operatorPush.js";
 import { buildItems } from "./dashboard-action-items.js";
 import { requireRole } from "../middlewares/requireAuth.js";
@@ -73,7 +71,6 @@ router.use("/avito", avitoRouter);
 router.use("/ai-office", aiOfficeRouter);
 router.use("/autonomous", autonomousRouter);
 router.use("/agent-memory", memoryRouter);
-router.use("/chat-cases", chatCasesRouter);
 router.use("/work-monitor", workMonitorRouter);
 router.use("/work-board", workBoardRouter);
 router.use("/work-board/table", workBoardTableRouter);
@@ -120,11 +117,6 @@ seedServices().catch(console.error);
 // Run trash cleanup on startup, then every hour
 runTrashCleanup().catch(console.error);
 setInterval(() => runTrashCleanup().catch(console.error), 60 * 60 * 1000);
-
-// Cases engine: process on startup, then every 5 minutes
-setTimeout(() => processCases().catch(console.error), 10_000);
-setInterval(() => processCases().catch(console.error), 5 * 60 * 1000);
-scheduleDigest();
 
 // Snooze wakeup job: every 15 minutes check for expired snoozes and send push
 async function processExpiredSnoozes() {
