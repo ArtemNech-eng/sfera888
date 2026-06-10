@@ -501,15 +501,9 @@ export default function OrderPanel({
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-lg font-display font-bold text-foreground">Заказ #{orderId}</h2>
               <StatusBadge status={openOrder.status} type="order" />
-              {(openOrder.paymentModel ?? "token") === "token" ? (
-                <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                  По токенам
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 border border-slate-200">
-                  Комиссия
-                </span>
-              )}
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 border border-slate-200">
+                Комиссия
+              </span>
             </div>
             <p className="text-sm text-muted-foreground mt-0.5">{openOrder.serviceType} · {openOrder.city}{openOrder.district ? `, ${openOrder.district}` : ""}</p>
           </div>
@@ -522,46 +516,6 @@ export default function OrderPanel({
               <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
                 <div><p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide">Дата заявки</p><p className="font-medium text-foreground">{formatDate(openOrder.createdAt)}</p></div>
                 <div><p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide">Площадь</p><p className="font-medium text-foreground">{openOrder.area} м²</p></div>
-                <div>
-                  <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide">Стоимость (токены)</p>
-                  {manualTokenCostEdit !== null ? (
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <input
-                        type="number"
-                        step="0.5"
-                        value={manualTokenCostEdit}
-                        onChange={e => setManualTokenCostEdit(e.target.value)}
-                        placeholder="Авто"
-                        className="w-20 border border-border rounded-lg px-2 py-0.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-primary/30"
-                        autoFocus
-                      />
-                      <button
-                        onClick={() => { const v = parseFloat(manualTokenCostEdit); if (!isNaN(v) && v > 0) saveManualTokenCostMutation.mutate({ orderId, cost: v }); else saveManualTokenCostMutation.mutate({ orderId, cost: null }); }}
-                        className="text-emerald-600 hover:text-emerald-700"
-                      ><Check className="w-3 h-3" /></button>
-                      <button
-                        onClick={() => setManualTokenCostEdit(null)}
-                        className="text-slate-400 hover:text-slate-600"
-                      ><X className="w-3 h-3" /></button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-1.5">
-                      <p className="font-medium text-foreground">
-                        {openOrder.manualTokenCost != null ? `${openOrder.manualTokenCost} т` : "Авто"}
-                      </p>
-                      <button
-                        onClick={() => setManualTokenCostEdit(openOrder.manualTokenCost != null ? String(openOrder.manualTokenCost) : "")}
-                        className="text-muted-foreground/50 hover:text-primary"
-                      ><Pencil className="w-3 h-3" /></button>
-                    </div>
-                  )}
-                </div>
-                {(openOrder.paymentModel ?? "token") === "token" && (
-                  <div>
-                    <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide">Списано токенов</p>
-                    <p className="font-medium text-foreground">{openOrder.tokensCharged ?? 0} т</p>
-                  </div>
-                )}
                 <div>
                   <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wide">Макс. мастеров</p>
                   {maxMastersEdit !== null ? (

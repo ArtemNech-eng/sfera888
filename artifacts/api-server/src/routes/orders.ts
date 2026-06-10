@@ -11,7 +11,6 @@ import { sendPushToClient } from "../lib/clientPush.js";
 import { sendMaxMessage } from "../maxBot.js";
 import { analyseOrderCancellation } from "../lib/dispatcherAI.js";
 import { recordOrderCancelled, recordOrderCompleted, revertOrderCancellation } from "../lib/masterReputation.js";
-import { getOrderTokenCost, deductTokensTx, TokenWalletError, ERR_INSUFFICIENT_TOKENS } from "../lib/tokenWallet.js";
 
 // Telegram-бот удалён.
 
@@ -734,42 +733,17 @@ router.post("/:id/manual-assign/:masterId", allOrderRoles, async (req, res) => {
     return res.status(400).json({ error: eligibility.reason });
   }
 
-  // Load order for token-model check
+  // Load order
   const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
   if (!orderRows[0]) return res.status(404).json({ error: "Order not found" });
   const order = orderRows[0];
 
-  const isTokenModel = (order as any).paymentModel === "token";
-  let tokensCost = 0;
-  if (isTokenModel) {
-    const { cost } = await getOrderTokenCost({
-      serviceType: order.serviceType,
-      area: order.area ? Number(order.area) : null,
-      manualTokenCost: (order as any).manualTokenCost ?? null,
-      city: order.city ?? null,
-    });
-    tokensCost = cost;
-  }
-
   try {
     await db.transaction(async (tx) => {
-      if (isTokenModel) {
-        const deduction = await deductTokensTx(tx, {
-          masterId: masterIdNum,
-          orderId: id,
-          tokensCost,
-          serviceType: order.serviceType,
-        });
-        if (!deduction.success) {
-          throw deduction.error;
-        }
-      }
-
       // Add master to order_masters
       await tx.insert(orderMastersTable).values({
         orderId: id,
         masterId: masterIdNum,
-        tokensCharged: Math.round(Number(tokensCost)),
         status: "active",
       });
 
@@ -781,7 +755,6 @@ router.post("/:id/manual-assign/:masterId", allOrderRoles, async (req, res) => {
       const orderUpdates: any = {
         assignedMasterCount: newCount,
         updatedAt: new Date(),
-        ...(isTokenModel ? { tokensCharged: String(Number((order as any).tokensCharged ?? 0) + tokensCost) } : {}),
         ...( !order.masterId ? { masterId: masterIdNum } : {} ),
       };
 
@@ -824,37 +797,20 @@ router.post("/:id/manual-assign/:masterId", allOrderRoles, async (req, res) => {
       }).where(eq(mastersTable.id, masterIdNum));
 
       // Create placeholder transaction — commission amount unknown yet, will be updated when order completes
-      if (!isTokenModel) {
-        const existingTxRows = await tx.select().from(transactionsTable).where(eq(transactionsTable.orderId, id));
-        if (existingTxRows.length === 0) {
-          await tx.insert(transactionsTable).values({
-            orderId: id,
-            masterId: masterIdNum,
-            orderAmount: "0",
-            commission: "0",
-            paymentStatus: "pending",
-          });
-        }
+      const existingTxRows = await tx.select().from(transactionsTable).where(eq(transactionsTable.orderId, id));
+      if (existingTxRows.length === 0) {
+        await tx.insert(transactionsTable).values({
+          orderId: id,
+          masterId: masterIdNum,
+          orderAmount: "0",
+          commission: "0",
+          paymentStatus: "pending",
+        });
       }
     });
   } catch (e) {
-    if (e instanceof TokenWalletError && e.code === ERR_INSUFFICIENT_TOKENS) {
-      return res.status(402).json({ error: e.message, insufficientTokens: true });
-    }
     console.error("[manual-assign] error:", e);
     return res.status(500).json({ error: e instanceof Error ? e.message : "Internal server error" });
-  }
-
-  // Log token deduction to CRM chat
-  if (isTokenModel) {
-    await db.insert(masterMessagesTable).values({
-      masterId: master.id,
-      telegramChatId: `pwa_${master.id}`,
-      text: `✅ Назначение (токеновая модель): заказ #${id} — ${order.serviceType}, ${order.city}. Списано ${tokensCost} т.`,
-      fromMaster: false,
-      senderName: "system",
-      isRead: false,
-    }).catch(() => {});
   }
 
   // Fetch updated order for response
@@ -891,7 +847,6 @@ router.post("/:id/manual-assign/:masterId", allOrderRoles, async (req, res) => {
     await db.insert(mlPricingDecisionsTable).values({
       orderId: id,
       masterId: masterIdNum,
-      tokensCharged: String(tokensCost),
       maxMasters: (order as any).maxMasters ?? 3,
       assignedCount: ((order as any).assignedMasterCount ?? 0) + 1,
       serviceType: order.serviceType,
@@ -1062,37 +1017,12 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
     return res.status(400).json({ error: "Заказ уже занят максимальным числом мастеров" });
   }
 
-  const isTokenModel = (order as any).paymentModel === "token";
-  let tokensCost = 0;
-  if (isTokenModel) {
-    const { cost } = await getOrderTokenCost({
-      serviceType: order.serviceType,
-      area: order.area ? Number(order.area) : null,
-      manualTokenCost: (order as any).manualTokenCost ?? null,
-      city: order.city ?? null,
-    });
-    tokensCost = cost;
-  }
-
   try {
     await db.transaction(async (tx) => {
-      if (isTokenModel) {
-        const deduction = await deductTokensTx(tx, {
-          masterId,
-          orderId,
-          tokensCost,
-          serviceType: order.serviceType,
-        });
-        if (!deduction.success) {
-          throw deduction.error;
-        }
-      }
-
       // Add to order_masters
       await tx.insert(orderMastersTable).values({
         orderId,
         masterId,
-        tokensCharged: tokensCost,
         status: "active",
       });
 
@@ -1102,7 +1032,6 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
       const orderUpdates: any = {
         assignedMasterCount: newCount,
         updatedAt: new Date(),
-        ...(isTokenModel ? { tokensCharged: String(Number((order as any).tokensCharged ?? 0) + tokensCost) } : {}),
         ...( !order.masterId ? { masterId } : {} ),
       };
 
@@ -1169,7 +1098,7 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
       await tx.insert(masterMessagesTable).values({
         masterId: master.id,
         telegramChatId: `pwa_${master.id}`,
-        text: `✅ Назначен на заявку #${orderId} (вручную администратором)${isTokenModel ? `. Списано ${tokensCost} т.` : ""}`,
+        text: `✅ Назначен на заявку #${orderId} (вручную администратором)`,
         fromMaster: false,
         senderName: "system",
         isRead: false,
@@ -1177,9 +1106,6 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
 
     });
   } catch (e) {
-    if (e instanceof TokenWalletError && e.code === ERR_INSUFFICIENT_TOKENS) {
-      return res.status(402).json({ error: e.message, insufficientTokens: true });
-    }
     throw e;
   }
 
@@ -1221,7 +1147,6 @@ router.post("/:id/manual-assign/:masterId", requireRole("admin", "master_operato
     await db.insert(mlPricingDecisionsTable).values({
       orderId,
       masterId,
-      tokensCharged: String(tokensCost),
       maxMasters: (order as any).maxMasters ?? 3,
       assignedCount: currentAssignedCount + 1,
       serviceType: order.serviceType,

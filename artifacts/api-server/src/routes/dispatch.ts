@@ -7,7 +7,6 @@ import { sendPushToMaster } from "../lib/push.js";
 import { getOverdueMasterIds, getMasterEligibility } from "../lib/orderEligibility.js";
 import { performBroadcast, performResend } from "../lib/broadcastOrder.js";
 import { sendMaxMessage, sendOnboardingMemo } from "../maxBot.js";
-import { getOrderTokenCost, deductTokensTx, TokenWalletError, ERR_INSUFFICIENT_TOKENS } from "../lib/tokenWallet.js";
 
 const router = Router();
 // Telegram-бот удалён — рассылка только через PWA push и Max.
@@ -385,41 +384,16 @@ router.post("/:orderId/assign/:masterId", ops, async (req, res) => {
   const leadRows = await db.select().from(leadsTable).where(eq(leadsTable.id, order.leadId));
   const lead = leadRows[0];
 
-  const isTokenModel = (order as any).paymentModel === "token";
-  let tokensCost = 0;
-  if (isTokenModel) {
-    const { cost } = await getOrderTokenCost({
-      serviceType: order.serviceType,
-      area: order.area ? Number(order.area) : null,
-      manualTokenCost: (order as any).manualTokenCost ?? null,
-      city: order.city ?? null,
-    });
-    tokensCost = cost;
-  }
-
   let respondedDispatches: any[] = [];
 
   try {
     await db.transaction(async (tx) => {
-      if (isTokenModel) {
-        const deduction = await deductTokensTx(tx, {
-          masterId,
-          orderId,
-          tokensCost,
-          serviceType: order.serviceType,
-        });
-        if (!deduction.success) {
-          throw deduction.error;
-        }
-      }
-
       // Update order
       await tx.update(ordersTable).set({
         masterId,
         status: "master_assigned",
         dispatchStatus: "assigned",
         updatedAt: new Date(),
-        ...(isTokenModel ? { tokensCharged: String(tokensCost) } : {}),
       }).where(eq(ordersTable.id, orderId));
 
       // Update dispatch records
@@ -454,16 +428,13 @@ router.post("/:orderId/assign/:masterId", ops, async (req, res) => {
       await tx.insert(masterMessagesTable).values({
         masterId: master.id,
         telegramChatId: `pwa_${master.id}`,
-        text: `✅ Назначен на заявку #${orderId}${isTokenModel ? ` (токеновая модель). Списано ${tokensCost} т.` : ""}`,
+        text: `✅ Назначен на заявку #${orderId}`,
         fromMaster: false,
         senderName: "system",
         isRead: false,
       }).catch(() => {});
     });
   } catch (e) {
-    if (e instanceof TokenWalletError && e.code === ERR_INSUFFICIENT_TOKENS) {
-      return res.status(402).json({ error: e.message, insufficientTokens: true });
-    }
     throw e;
   }
 
@@ -549,7 +520,7 @@ router.post("/:orderId/assign/:masterId", ops, async (req, res) => {
     await db.insert(mlPricingDecisionsTable).values({
       orderId,
       masterId,
-      tokensCharged: String(tokensCost),
+      tokensCharged: "0",
       maxMasters: order.maxMasters ?? 3,
       assignedCount: (order.assignedMasterCount ?? 0) + 1,
       serviceType: order.serviceType,

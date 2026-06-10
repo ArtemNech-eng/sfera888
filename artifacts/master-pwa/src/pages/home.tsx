@@ -10,7 +10,7 @@ import {
   MapPin, Calendar, MessageSquare, Clock,
   ChevronRight, X, Images, Wrench, Zap, PauseCircle,
   PlayCircle, Navigation, Users, Heart, ChevronDown, Briefcase,
-  Eye, EyeOff, Lock, FileText, Bot, Coins, Phone, Maximize, Wallet,
+  Eye, EyeOff, Lock, FileText, Bot, Phone, Maximize, Wallet,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -1676,13 +1676,7 @@ export default function HomePage() {
                     )}
                   </div>
 
-                  {/* Bottom row: token cost + explanation + competition */}
-                  {order.paymentModel === "token" && (
-                    <div className="flex items-center gap-1.5 text-xs text-amber-600">
-                      <Coins size={12} />
-                      <span className="font-medium">{order.tokensCost ?? 1} т.</span>
-                    </div>
-                  )}
+                  {/* Bottom row: competition info */}
                   </div>
                 </button>
                 {/* Quick action buttons */}

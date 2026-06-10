@@ -12,16 +12,6 @@ import { objectStorageClient, s3Client } from "../lib/objectStorage.js";
 import { getBotLink, sendOnboardingMemo, sendMaxMessage } from "../maxBot.js";
 import { notifyManagerMasterResponse } from "../managerBot.js";
 import { getFomoBlock, logFomoEvent, checkFomoTransition } from "../lib/fomoBlock.js";
-import {
-  getOrderTokenCost,
-  ensureWallet,
-  checkTokenBalance,
-  deductTokensTx,
-  deductTokens,
-  TokenWalletError,
-  ERR_INSUFFICIENT_TOKENS,
-  ERR_ORDER_ALREADY_TAKEN,
-} from "../lib/tokenWallet.js";
 import { sendPushToMaster } from "../lib/push.js";
 import { sendPushToClient } from "../lib/clientPush.js";
 import { performBroadcast } from "../lib/broadcastOrder.js";
@@ -543,33 +533,6 @@ router.get("/home", requireMasterPwa, async (req, res) => {
   // Background: check if status changed (for unblock notifications)
   checkFomoTransition(masterId, master.isTestMaster).catch(() => {});
 
-  // Wallet balance for token model (includes credit limit)
-  const wallet = await ensureWallet(masterId);
-  const tokensBalance = Number(wallet.tokensBalance);
-  const creditLimitTokens = Number(wallet.creditLimitTokens ?? 0);
-  const creditTokensSpent = Number((wallet as any).creditTokensSpent ?? 0);
-  const walletBalance = tokensBalance + creditLimitTokens;
-
-  // Enrich availableOrders with tokensCost + explanation (token model only)
-  const tokenServiceTypes = [...new Set(availableOrders.filter((o: any) => o.paymentModel === "token").map((o: any) => o.serviceType))];
-  const tokenCostMap = new Map<string, { cost: number; explanation: string }>();
-  for (const st of tokenServiceTypes) {
-    const sampleOrder = availableOrders.find((o: any) => o.serviceType === st && o.paymentModel === "token");
-    tokenCostMap.set(st, await getOrderTokenCost({
-      serviceType: st,
-      area: sampleOrder?.area ?? null,
-      manualTokenCost: sampleOrder?.manualTokenCost ?? null,
-      city: sampleOrder?.city ?? null,
-    }));
-  }
-  for (const o of availableOrders) {
-    if (o.paymentModel === "token") {
-      const tc = tokenCostMap.get(o.serviceType) ?? { cost: 1, explanation: "стандартная стоимость" };
-      o.tokensCost = tc.cost;
-      o.tokensCostExplanation = tc.explanation;
-    }
-  }
-
   res.json({
     master: {
       id: master.id,
@@ -588,9 +551,6 @@ router.get("/home", requireMasterPwa, async (req, res) => {
     pendingOrders,
     missedOrders,
     todayActivity,
-    walletBalance,
-    tokensBalance,
-    creditLimitTokens,
     activeOrders: activeOrders.map(o => ({
       id: o.id,
       leadId: o.leadId ?? null,
@@ -802,36 +762,10 @@ router.post("/orders/:id/accept", requireMasterPwa, async (req, res) => {
     return res.status(400).json({ error: "Заказ уже занят максимальным числом мастеров" });
   }
 
-  // Token deduction if token model
-  const isTokenModel = (order as any).paymentModel === "token";
-  let tokensCost = 0;
-  if (isTokenModel) {
-    const { cost } = await getOrderTokenCost({
-      serviceType: order.serviceType,
-      area: order.area ? Number(order.area) : null,
-      manualTokenCost: (order as any).manualTokenCost ?? null,
-      city: order.city ?? null,
-    });
-    tokensCost = cost;
-    const deduction = await deductTokens({
-      masterId,
-      orderId,
-      tokensCost,
-      serviceType: order.serviceType,
-    });
-    if (!deduction.success && deduction.error) {
-      if (deduction.error instanceof TokenWalletError && deduction.error.code === ERR_INSUFFICIENT_TOKENS) {
-        return res.status(402).json({ error: deduction.error.message, insufficientTokens: true });
-      }
-      throw deduction.error;
-    }
-  }
-
   // Add to order_masters
   await db.insert(orderMastersTable).values({
     orderId,
     masterId,
-    tokensCharged: tokensCost,
     status: "active",
   });
 
@@ -841,7 +775,6 @@ router.post("/orders/:id/accept", requireMasterPwa, async (req, res) => {
   const orderUpdates: any = {
     assignedMasterCount: newCount,
     updatedAt: new Date(),
-    ...(isTokenModel ? { tokensCharged: String(Number((order as any).tokensCharged ?? 0) + tokensCost) } : {}),
     ...( !order.masterId ? { masterId } : {} ),
     masterWorkStatus: "accepted",
   };
