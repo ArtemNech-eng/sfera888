@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from "express";
-import { db, ordersTable, mastersTable, transactionsTable, voronkaColumnsTable, orderDispatchesTable, leadsTable, masterMessagesTable, orderStatusLogsTable, usersTable, receiptsTable, fomoEventsTable, orderMastersTable, mlPricingDecisionsTable } from "@workspace/db";
+import { db, ordersTable, mastersTable, transactionsTable, voronkaColumnsTable, orderDispatchesTable, leadsTable, masterMessagesTable, orderStatusLogsTable, usersTable, receiptsTable, fomoEventsTable, orderMastersTable, mlPricingDecisionsTable, orderStagesTable } from "@workspace/db";
 import { eq, inArray, and, ne, isNull, isNotNull, desc, count, sql } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { calculateCommission, getCommissionSettings } from "../lib/commission.js";
@@ -1345,6 +1345,86 @@ router.delete("/:id", requireRole("admin"), async (req, res) => {
   }
 
   res.json({ success: true });
+});
+
+// ─── Order stages ───────────────────────────────────────────────────────────
+
+// GET /api/orders/:id/stages
+router.get("/:id/stages", allOrderRoles, async (req, res) => {
+  const id = parseInt(String(req.params.id as string));
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid order ID" });
+
+  const stages = await db.select()
+    .from(orderStagesTable)
+    .where(eq(orderStagesTable.orderId, id))
+    .orderBy(sql`${orderStagesTable.sortOrder} ASC`);
+
+  res.json(stages.map(s => ({
+    id: s.id,
+    orderId: s.orderId,
+    stageName: s.stageName,
+    stageAmount: Number(s.stageAmount),
+    commissionAmount: Number(s.commissionAmount),
+    paymentStatus: s.paymentStatus,
+    paidAt: s.paidAt ?? null,
+    sortOrder: s.sortOrder,
+    createdAt: s.createdAt,
+  })));
+});
+
+// POST /api/orders/:id/stages — create or replace stages (admin)
+router.post("/:id/stages", requireRole("admin", "master_operator"), async (req, res) => {
+  const id = parseInt(String(req.params.id as string));
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid order ID" });
+
+  const { stages } = req.body as { stages?: Array<{ stageName: string; stageAmount: number; sortOrder?: number }> };
+  if (!Array.isArray(stages) || stages.length === 0) {
+    return res.status(400).json({ error: "Укажите этапы" });
+  }
+
+  const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
+  if (!orderRows[0]) return res.status(404).json({ error: "Order not found" });
+  const order = orderRows[0];
+
+  const commSettings = await getCommissionSettings();
+
+  await db.transaction(async (tx) => {
+    // Remove existing stages
+    await tx.delete(orderStagesTable).where(eq(orderStagesTable.orderId, id));
+
+    // Insert new stages
+    for (let i = 0; i < stages.length; i++) {
+      const s = stages[i];
+      const stageAmount = Number(s.stageAmount);
+      const commissionAmount = calculateCommission(stageAmount, commSettings);
+      await tx.insert(orderStagesTable).values({
+        orderId: id,
+        stageName: s.stageName,
+        stageAmount: String(stageAmount),
+        commissionAmount: String(commissionAmount),
+        sortOrder: s.sortOrder ?? i,
+      });
+    }
+  });
+
+  res.json({ ok: true, count: stages.length });
+});
+
+// POST /api/orders/:id/stages/:stageId/pay — mark stage as paid (admin)
+router.post("/:id/stages/:stageId/pay", requireRole("admin", "master_operator"), async (req, res) => {
+  const orderId = parseInt(String(req.params.id as string));
+  const stageId = parseInt(String(req.params.stageId as string));
+  if (isNaN(orderId) || isNaN(stageId)) return res.status(400).json({ error: "Invalid IDs" });
+
+  const [stage] = await db.select().from(orderStagesTable)
+    .where(and(eq(orderStagesTable.id, stageId), eq(orderStagesTable.orderId, orderId)));
+  if (!stage) return res.status(404).json({ error: "Stage not found" });
+
+  await db.update(orderStagesTable)
+    .set({ paymentStatus: "paid", paidAt: new Date() })
+    .where(eq(orderStagesTable.id, stageId));
+
+  res.json({ ok: true, stageId, paymentStatus: "paid" });
 });
 
 export default router;

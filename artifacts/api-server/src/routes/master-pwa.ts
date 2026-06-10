@@ -1,9 +1,9 @@
 import { Router } from "express";
-import { db, mastersTable, ordersTable, orderDispatchesTable, transactionsTable, leadsTable, voronkaColumnsTable, masterMessagesTable, pushSubscriptionsTable, masterCheckinsTable, transactionPaymentsTable, walletTransactionsTable, orderMastersTable } from "@workspace/db";
+import { db, mastersTable, ordersTable, orderDispatchesTable, transactionsTable, leadsTable, voronkaColumnsTable, masterMessagesTable, pushSubscriptionsTable, masterCheckinsTable, transactionPaymentsTable, walletTransactionsTable, orderMastersTable, masterDepositsTable, masterDepositTransactionsTable } from "@workspace/db";
 import { maybeEarlyAssign } from "../lib/priorityAssign.js";
 import { eq, and, inArray, isNull, ne, asc, desc, gte, sql } from "drizzle-orm";
 import { verifyPassword, hashPassword } from "../lib/auth.js";
-import { getMasterEligibility, getOverdueMasterIds, countActiveMasterOrders, getColumnIdForActiveCount } from "../lib/orderEligibility.js";
+import { getMasterEligibility, getOverdueMasterIds, countActiveMasterOrders, getColumnIdForActiveCount, checkDepositRequirement } from "../lib/orderEligibility.js";
 import multer from "multer";
 import sharp from "sharp";
 import { Readable } from "stream";
@@ -417,6 +417,7 @@ router.get("/home", requireMasterPwa, async (req, res) => {
         dispatchedAt: dispatchByOrder.get(o.id)?.createdAt ?? null,
         competitorCount: competitorsByOrder.get(o.id) ?? 0,
         isRepeatClient: clientPhone ? knownPhones.has(clientPhone) : false,
+        paymentModel: (o as any).paymentModel ?? "commission",
       };
     });
   }
@@ -549,11 +550,11 @@ router.get("/home", requireMasterPwa, async (req, res) => {
   const creditTokensSpent = Number((wallet as any).creditTokensSpent ?? 0);
   const walletBalance = tokensBalance + creditLimitTokens;
 
-  // Enrich availableOrders with tokensCost + explanation
-  const allServiceTypes = [...new Set(availableOrders.map((o: any) => o.serviceType))];
+  // Enrich availableOrders with tokensCost + explanation (token model only)
+  const tokenServiceTypes = [...new Set(availableOrders.filter((o: any) => o.paymentModel === "token").map((o: any) => o.serviceType))];
   const tokenCostMap = new Map<string, { cost: number; explanation: string }>();
-  for (const st of allServiceTypes) {
-    const sampleOrder = availableOrders.find((o: any) => o.serviceType === st);
+  for (const st of tokenServiceTypes) {
+    const sampleOrder = availableOrders.find((o: any) => o.serviceType === st && o.paymentModel === "token");
     tokenCostMap.set(st, await getOrderTokenCost({
       serviceType: st,
       area: sampleOrder?.area ?? null,
@@ -562,10 +563,11 @@ router.get("/home", requireMasterPwa, async (req, res) => {
     }));
   }
   for (const o of availableOrders) {
-    const tc = tokenCostMap.get(o.serviceType) ?? { cost: 1, explanation: "стандартная стоимость" };
-    o.tokensCost = tc.cost;
-    o.tokensCostExplanation = tc.explanation;
-    o.paymentModel = "token";
+    if (o.paymentModel === "token") {
+      const tc = tokenCostMap.get(o.serviceType) ?? { cost: 1, explanation: "стандартная стоимость" };
+      o.tokensCost = tc.cost;
+      o.tokensCostExplanation = tc.explanation;
+    }
   }
 
   res.json({
@@ -966,6 +968,15 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
   // и мастеру в PWA (constrained_success c подсказкой).
   if (myActiveCount >= (master.maxActiveOrders ?? 1)) {
     constraintTags.push("Лимит");
+  }
+
+  // Deposit check for commission orders — tag, don't block yet
+  const isCommissionOrder = (order as any).paymentModel !== "token";
+  if (isCommissionOrder) {
+    const depositCheck = await checkDepositRequirement(masterId);
+    if (!depositCheck.ok) {
+      constraintTags.push("Депозит");
+    }
   }
 
   // Any remaining eligibility block (e.g. test-master unpaid debt) → tag, not block
@@ -1979,6 +1990,67 @@ router.post("/contact-admin", requireMasterPwa, async (req: any, res: any) => {
   } as any).catch(() => {});
 
   return res.json({ success: true });
+});
+
+// ─── DEPOSIT ────────────────────────────────────────────────────────────────
+
+// GET /api/master-pwa/deposit — current deposit balance and history
+router.get("/deposit", requireMasterPwa, async (req, res) => {
+  const masterId = (req.session as any).masterId;
+
+  const rows = await db.select().from(masterDepositsTable).where(eq(masterDepositsTable.masterId, masterId));
+  const txRows = await db.select()
+    .from(masterDepositTransactionsTable)
+    .where(eq(masterDepositTransactionsTable.masterId, masterId))
+    .orderBy(sql`${masterDepositTransactionsTable.createdAt} DESC`);
+
+  const deposit = rows[0];
+  res.json({
+    depositBalance: deposit ? Number(deposit.depositBalance) : 0,
+    recommendedAmount: deposit ? deposit.recommendedAmount : 10000,
+    transactions: txRows.map(t => ({
+      id: t.id,
+      type: t.type,
+      amount: Number(t.amount),
+      balanceBefore: Number(t.balanceBefore),
+      balanceAfter: Number(t.balanceAfter),
+      reason: t.reason,
+      createdAt: t.createdAt,
+    })),
+  });
+});
+
+// POST /api/master-pwa/deposit-request — master requests deposit top-up
+router.post("/deposit-request", requireMasterPwa, async (req, res) => {
+  const masterId = (req.session as any).masterId;
+  const { amount, note } = req.body as { amount?: number; note?: string };
+  if (amount === undefined || isNaN(Number(amount)) || Number(amount) <= 0) {
+    return res.status(400).json({ error: "Укажите сумму пополнения" });
+  }
+
+  const master = await getMasterById(masterId);
+  if (!master) return res.status(404).json({ error: "Мастер не найден" });
+
+  // Log request as a pending transaction (not yet credited)
+  const depositRows = await db.select().from(masterDepositsTable).where(eq(masterDepositsTable.masterId, masterId));
+  const balanceBefore = depositRows[0] ? Number(depositRows[0].depositBalance) : 0;
+
+  await db.insert(masterDepositTransactionsTable).values({
+    masterId,
+    type: "deposit",
+    amount: String(amount),
+    balanceBefore: String(balanceBefore),
+    balanceAfter: String(balanceBefore),
+    reason: `Заявка на пополнение: ${note ? String(note).slice(0, 200) : "—"}`,
+    createdBy: "master",
+  });
+
+  // Notify admin via Max
+  if (master.maxChatId) {
+    sendMaxMessage(master.maxChatId, `💰 Запрос пополнения депозита от ${master.alias}: ${Number(amount).toLocaleString("ru-RU")} ₽`).catch(() => {});
+  }
+
+  res.json({ success: true, requestedAmount: Number(amount) });
 });
 
 export default router;

@@ -114,12 +114,12 @@ function Router() {
       <Route path="/avito" component={AvitoPage} />
       <Route path="/avito-messages" component={AvitoMessagesPage} />
       <Route path="/ai-office" component={AiOfficePage} />
-      <Route path="/token-settings" component={TokenSettingsPage} />
-      <Route path="/token-refunds" component={TokenRefundsPage} />
-      <Route path="/token-purchases" component={TokenPurchasesPage} />
-      <Route path="/token-masters" component={TokenMastersPage} />
-      <Route path="/token-analytics" component={TokenAnalyticsPage} />
-      <Route path="/master-revenue" component={() => <InAppRedirect to="/token-analytics?tab=masters" />} />
+      <Route path="/token-settings" component={() => <InAppRedirect to="/finance" />} />
+      <Route path="/token-refunds" component={() => <InAppRedirect to="/finance" />} />
+      <Route path="/token-purchases" component={() => <InAppRedirect to="/finance" />} />
+      <Route path="/token-masters" component={() => <InAppRedirect to="/finance" />} />
+      <Route path="/token-analytics" component={() => <InAppRedirect to="/finance" />} />
+      <Route path="/master-revenue" component={() => <InAppRedirect to="/finance" />} />
       <Route path="/partners" component={PartnersPage} />
       <Route path="/partner-leads-review" component={PartnerLeadsReviewPage} />
       <Route path="/partner-analytics" component={PartnerAnalyticsPage} />

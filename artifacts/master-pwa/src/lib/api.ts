@@ -52,6 +52,9 @@ export const api = {
   balance: () => req<any>("GET", "/balance"),
   paymentProof: (photoUrl: string) =>
     req<any>("POST", "/balance/payment-proof", { photoUrl }),
+  deposit: () => req<any>("GET", "/deposit"),
+  depositRequest: (amount: number, note?: string) =>
+    req<any>("POST", "/deposit-request", { amount, note }),
   profile: () => req<any>("GET", "/profile"),
   updateProfile: (data: any) => req<any>("PATCH", "/profile", data),
   chat: {

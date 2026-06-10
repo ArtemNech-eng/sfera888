@@ -175,7 +175,7 @@ router.post("/", checkRateLimit, allLeadRoles, async (req, res) => {
     photos: Array.isArray(photos) && photos.length > 0 ? JSON.stringify(photos) : null,
     source: source ?? null,
     status: "new",
-    paymentModel: source === "avito_partner" ? "token" : (paymentModel === "commission" ? "commission" : "token"),
+    paymentModel: source === "avito_partner" ? "token" : (paymentModel === "token" ? "token" : "commission"),
   }).returning();
   const lead = result[0];
 
@@ -274,7 +274,7 @@ router.patch("/:id", checkRateLimit, allLeadRoles, async (req, res) => {
   if (paymentModel !== undefined) {
     const [leadCheck] = await db.select({ source: leadsTable.source, trafficPartnerId: leadsTable.trafficPartnerId }).from(leadsTable).where(eq(leadsTable.id, id)).limit(1);
     const isPartnerLead = leadCheck?.source === "avito_partner" || leadCheck?.trafficPartnerId != null;
-    updates.paymentModel = isPartnerLead ? "token" : (paymentModel === "commission" ? "commission" : "token");
+    updates.paymentModel = isPartnerLead ? "token" : (paymentModel === "token" ? "token" : "commission");
   }
   if (services !== undefined && Array.isArray(services) && services.length > 0) {
     if (!validateServices(services)) return res.status(400).json({ error: "Некорректные данные услуг: проверьте тип, площадь и цену за м²" });
@@ -351,28 +351,36 @@ router.post("/:id/send-to-buffer", checkRateLimit, allLeadRoles, async (req, res
   if (!lead) return res.status(404).json({ error: "Lead not found" });
 
   const { manualTokenCost, maxMasters } = req.body as { manualTokenCost?: number; maxMasters?: number };
-
-  await db.update(leadsTable).set({ status: "sent_to_work", updatedAt: new Date() }).where(eq(leadsTable.id, id));
-  await db.execute(sql`UPDATE leads SET status_updated_at = NOW() WHERE id = ${id}`);
-
   const isPartnerLead = lead.source === "avito_partner" || lead.trafficPartnerId != null;
-  const orderResult = await db.insert(ordersTable).values({
-    leadId: lead.id,
-    city: lead.city,
-    district: lead.district,
-    serviceType: lead.serviceType,
-    area: lead.area,
-    services: lead.services ?? null,
-    scheduledAt: lead.scheduledAt || null,
-    comment: lead.comment,
-    status: "waiting_master",
-    paymentModel: isPartnerLead ? "token" : ((lead as any).paymentModel || "token"),
-    clientName: lead.clientName,
-    clientPhone: lead.clientPhone,
-    manualTokenCost: manualTokenCost != null ? String(manualTokenCost) : null,
-    maxMasters: maxMasters != null && !isNaN(Number(maxMasters)) ? Number(maxMasters) : 3,
-  }).returning();
-  const order = orderResult[0];
+
+  let order: typeof ordersTable.$inferSelect;
+  try {
+    order = await db.transaction(async (tx) => {
+      await tx.update(leadsTable).set({ status: "sent_to_work", updatedAt: new Date() }).where(eq(leadsTable.id, id));
+      await tx.execute(sql`UPDATE leads SET status_updated_at = NOW() WHERE id = ${id}`);
+
+      const orderResult = await tx.insert(ordersTable).values({
+        leadId: lead.id,
+        city: lead.city,
+        district: lead.district,
+        serviceType: lead.serviceType,
+        area: lead.area,
+        services: lead.services ?? null,
+        scheduledAt: lead.scheduledAt || null,
+        comment: lead.comment,
+        status: "waiting_master",
+        paymentModel: isPartnerLead ? "token" : ((lead as any).paymentModel || "commission"),
+        clientName: lead.clientName,
+        clientPhone: lead.clientPhone,
+        manualTokenCost: manualTokenCost != null ? String(manualTokenCost) : null,
+        maxMasters: maxMasters != null && !isNaN(Number(maxMasters)) ? Number(maxMasters) : 3,
+      }).returning();
+      return orderResult[0];
+    });
+  } catch (err: any) {
+    console.error(`[leads/send-to-buffer] transaction failed for lead ${id}:`, err);
+    return res.status(500).json({ error: "Не удалось создать заказ", detail: err.message ?? String(err) });
+  }
 
   const userAlias = (req.session as any)?.user?.name ?? (req.session as any)?.user?.login ?? "оператор";
   await logLeadEvent(id, "sent_to_work", `Заявка отправлена в работу. Создан заказ #${order.leadId ?? order.id}`, userAlias);

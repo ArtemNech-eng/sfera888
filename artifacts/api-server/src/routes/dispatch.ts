@@ -241,7 +241,7 @@ router.post("/test-order", ops, async (req, res) => {
     scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
     source: "test",
     status: "sent_to_work",
-    paymentModel: "token",
+    paymentModel: "commission",
   }).returning();
 
   // Create the order linked to that lead
@@ -255,7 +255,7 @@ router.post("/test-order", ops, async (req, res) => {
     scheduledAt: lead.scheduledAt,
     status: "waiting_master",
     dispatchStatus: "dispatching",
-    paymentModel: "token",
+    paymentModel: "commission",
   }).returning();
 
   // Send only to the specific master (PWA push + Max)

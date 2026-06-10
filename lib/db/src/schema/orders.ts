@@ -57,7 +57,7 @@ export const ordersTable = pgTable("orders", {
   masterComment: text("master_comment"),
   photos: text("photos").array(),
   source: text("source").notNull().default("crm"),
-  paymentModel: varchar("payment_model", { length: 50 }).notNull().default("token"),
+  paymentModel: varchar("payment_model", { length: 50 }).notNull().default("commission"),
   tokensCharged: numeric("tokens_charged", { precision: 10, scale: 2 }).notNull().default("0"),
   manualTokenCost: numeric("manual_token_cost", { precision: 10, scale: 2 }),
   maxMasters: integer("max_masters").notNull().default(3),

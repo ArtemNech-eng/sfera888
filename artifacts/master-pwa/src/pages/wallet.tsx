@@ -347,6 +347,23 @@ export default function WalletPage() {
   const [commissionBalance, setCommissionBalance] = useState<CommissionData | null>(null);
   const [commissionLoading, setCommissionLoading] = useState(false);
 
+  // Deposit state
+  interface DepositData {
+    depositBalance: number;
+    recommendedAmount: number;
+    transactions: Array<{
+      id: number;
+      type: string;
+      amount: number;
+      balanceBefore: number;
+      balanceAfter: number;
+      reason: string | null;
+      createdAt: string;
+    }>;
+  }
+  const [depositData, setDepositData] = useState<DepositData | null>(null);
+  const [depositLoading, setDepositLoading] = useState(false);
+
   const loadWallet = useCallback(async () => {
     try {
       const [w, p] = await Promise.all([
@@ -380,7 +397,16 @@ export default function WalletPage() {
     finally { setTxLoading(false); }
   }, []);
 
-  useEffect(() => { loadWallet(); loadTx(1); loadCommissionBalance(); }, [loadWallet, loadTx, loadCommissionBalance]);
+  const loadDeposit = useCallback(async () => {
+    setDepositLoading(true);
+    try {
+      const r = await fetch("/api/master-pwa/deposit", { credentials: "include" });
+      if (r.ok) setDepositData(await r.json());
+    } catch {}
+    setDepositLoading(false);
+  }, []);
+
+  useEffect(() => { loadWallet(); loadTx(1); loadCommissionBalance(); loadDeposit(); }, [loadWallet, loadTx, loadCommissionBalance, loadDeposit]);
 
   if (loading) {
     return (
@@ -548,6 +574,59 @@ export default function WalletPage() {
           onSuccess={loadWallet}
         />
       )}
+
+      {/* Deposit Section */}
+      <div className="max-w-lg mx-auto px-4 py-5 space-y-6 border-t border-border mt-6">
+        <div className="flex items-center gap-3">
+          <Wallet size={24} className="text-emerald-500" />
+          <div>
+            <h2 className="text-lg font-bold">Депозит</h2>
+            <p className="text-sm text-muted-foreground">Гарантийный взнос</p>
+          </div>
+        </div>
+
+        {depositLoading ? (
+          <div className="flex justify-center py-8">
+            <Loader2 className="animate-spin text-muted-foreground" />
+          </div>
+        ) : depositData ? (
+          <>
+            <div className="bg-emerald-900 rounded-3xl p-6 text-white shadow-lg relative overflow-hidden">
+              <div className="relative">
+                <p className="text-sm font-medium text-emerald-200 mb-1">Баланс депозита</p>
+                <div className="flex items-end gap-2 mb-2">
+                  <span className="text-4xl font-bold tracking-tight">{depositData.depositBalance.toLocaleString("ru-RU")}</span>
+                  <span className="text-xl font-medium text-emerald-300 mb-1">₽</span>
+                </div>
+                <p className="text-xs text-emerald-300">Рекомендуемый: {depositData.recommendedAmount.toLocaleString("ru-RU")} ₽</p>
+              </div>
+            </div>
+
+            {depositData.transactions.length > 0 && (
+              <div className="space-y-3">
+                <h3 className="font-medium text-sm">История операций</h3>
+                {depositData.transactions.slice(0, 5).map((tx: any) => (
+                  <div key={tx.id} className="bg-card border rounded-lg p-3 flex justify-between items-center">
+                    <div>
+                      <div className="font-medium text-sm">{tx.type === "deposit" ? "Зачисление" : "Удержание"}</div>
+                      <div className="text-xs text-muted-foreground">{tx.reason ?? "—"}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className={`font-medium text-sm ${tx.type === "deposit" ? "text-green-600" : "text-red-500"}`}>
+                        {tx.type === "deposit" ? "+" : "−"}{tx.amount.toLocaleString("ru-RU")} ₽
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="text-center py-8 text-muted-foreground">
+            Нет данных о депозите
+          </div>
+        )}
+      </div>
 
       {/* Commission Balance Section */}
       <div className="max-w-lg mx-auto px-4 py-5 space-y-6 border-t border-border mt-6">

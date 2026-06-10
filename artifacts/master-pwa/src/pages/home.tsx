@@ -10,7 +10,7 @@ import {
   MapPin, Calendar, MessageSquare, Clock,
   ChevronRight, X, Images, Wrench, Zap, PauseCircle,
   PlayCircle, Navigation, Users, Heart, ChevronDown, Briefcase,
-  Eye, EyeOff, Lock, FileText, Bot, Coins, Phone, Maximize,
+  Eye, EyeOff, Lock, FileText, Bot, Coins, Phone, Maximize, Wallet,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -1470,11 +1470,7 @@ export default function HomePage() {
       toast.success(`Отклик на заявку #${order.leadId ?? order.id} отправлен!`);
       load();
     } catch (e: any) {
-      if (e.status === 402 || (e.message ?? "").includes("токен")) {
-        toast.error(e.message ?? "Недостаточно токенов для отклика на заявку.", { duration: 4000 });
-      } else {
-        toast.error(e.message ?? "Ошибка");
-      }
+      toast.error(e.message ?? "Ошибка при отправке отклика");
     }
   };
 
@@ -1553,8 +1549,10 @@ export default function HomePage() {
               onClick={() => setLocation("/wallet")}
               className="flex items-center gap-1 bg-white/15 backdrop-blur-md border border-white/20 px-2.5 py-1.5 rounded-xl hover:bg-white/25 transition-colors shrink-0"
             >
-              <Coins size={13} className="shrink-0 text-amber-300" />
-              <span className="font-semibold text-sm leading-none text-white">{walletBalance}</span>
+              <Wallet size={13} className="shrink-0 text-emerald-300" />
+              <span className="font-semibold text-sm leading-none text-white">
+                {master && (master.debt ?? 0) > 0 ? `${(master.debt).toLocaleString("ru-RU")} ₽` : "Баланс"}
+              </span>
             </button>
           </div>
 

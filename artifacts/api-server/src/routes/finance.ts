@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, transactionsTable, mastersTable, ordersTable, receiptsTable, transactionPaymentsTable } from "@workspace/db";
+import { db, transactionsTable, mastersTable, ordersTable, receiptsTable, transactionPaymentsTable, masterDepositsTable, masterDepositTransactionsTable } from "@workspace/db";
 import { eq, and, gte, lte, sql, inArray } from "drizzle-orm";
 import { requirePermission, requireRole } from "../middlewares/requireAuth.js";
 import { sendPushToMaster } from "../lib/push.js";
@@ -1006,6 +1006,135 @@ router.post("/orders/:orderId/recalc-commission", requireRole("admin", "master_o
   }
 
   res.json({ orderId, receiptTotal, updated: results.length, changes: results });
+});
+
+// ─── Deposit routes (admin) ─────────────────────────────────────────────────
+
+// GET /api/finance/deposits — list all master deposit balances
+router.get("/deposits", requireRole("admin", "master_operator"), async (_req, res) => {
+  const rows = await db.select().from(masterDepositsTable);
+  res.json(rows.map(r => ({
+    id: r.id,
+    masterId: r.masterId,
+    depositBalance: Number(r.depositBalance),
+    recommendedAmount: r.recommendedAmount,
+    updatedAt: r.updatedAt,
+  })));
+});
+
+// GET /api/finance/deposits/:masterId — single master deposit
+router.get("/deposits/:masterId", requireRole("admin", "master_operator"), async (req, res) => {
+  const masterId = parseInt(String(req.params.masterId));
+  if (isNaN(masterId)) return res.status(400).json({ error: "Invalid masterId" });
+
+  const rows = await db.select().from(masterDepositsTable).where(eq(masterDepositsTable.masterId, masterId));
+  const txRows = await db.select()
+    .from(masterDepositTransactionsTable)
+    .where(eq(masterDepositTransactionsTable.masterId, masterId))
+    .orderBy(sql`${masterDepositTransactionsTable.createdAt} DESC`);
+
+  res.json({
+    deposit: rows[0] ? {
+      id: rows[0].id,
+      masterId: rows[0].masterId,
+      depositBalance: Number(rows[0].depositBalance),
+      recommendedAmount: rows[0].recommendedAmount,
+      updatedAt: rows[0].updatedAt,
+    } : null,
+    transactions: txRows.map(t => ({
+      id: t.id,
+      type: t.type,
+      amount: Number(t.amount),
+      balanceBefore: Number(t.balanceBefore),
+      balanceAfter: Number(t.balanceAfter),
+      reason: t.reason,
+      createdBy: t.createdBy,
+      createdAt: t.createdAt,
+    })),
+  });
+});
+
+// POST /api/finance/deposits/:masterId — credit deposit (admin)
+router.post("/deposits/:masterId", requireRole("admin", "master_operator"), async (req, res) => {
+  const masterId = parseInt(String(req.params.masterId));
+  if (isNaN(masterId)) return res.status(400).json({ error: "Invalid masterId" });
+  const { amount, reason } = req.body as { amount?: number; reason?: string };
+  if (amount === undefined || isNaN(Number(amount)) || Number(amount) <= 0) {
+    return res.status(400).json({ error: "Укажите положительную сумму зачисления" });
+  }
+
+  const creditAmount = Number(amount);
+  const existing = await db.select().from(masterDepositsTable).where(eq(masterDepositsTable.masterId, masterId));
+  let deposit = existing[0];
+
+  await db.transaction(async (tx) => {
+    const balanceBefore = deposit ? Number(deposit.depositBalance) : 0;
+    const balanceAfter = balanceBefore + creditAmount;
+
+    if (deposit) {
+      await tx.update(masterDepositsTable)
+        .set({ depositBalance: String(balanceAfter), updatedAt: new Date() })
+        .where(eq(masterDepositsTable.id, deposit.id));
+    } else {
+      const [inserted] = await tx.insert(masterDepositsTable).values({
+        masterId,
+        depositBalance: String(balanceAfter),
+      }).returning();
+      deposit = inserted;
+    }
+
+    await tx.insert(masterDepositTransactionsTable).values({
+      masterId,
+      type: "deposit",
+      amount: String(creditAmount),
+      balanceBefore: String(balanceBefore),
+      balanceAfter: String(balanceAfter),
+      reason: reason ? String(reason).slice(0, 500) : "Зачисление администратором",
+      createdBy: (req as any).session?.user?.name ?? (req as any).session?.user?.login ?? "admin",
+    });
+  });
+
+  res.json({ ok: true, masterId, creditAmount, newBalance: deposit ? Number(deposit.depositBalance) + creditAmount : creditAmount });
+});
+
+// POST /api/finance/deposits/:masterId/deduct — deduct from deposit (admin)
+router.post("/deposits/:masterId/deduct", requireRole("admin", "master_operator"), async (req, res) => {
+  const masterId = parseInt(String(req.params.masterId));
+  if (isNaN(masterId)) return res.status(400).json({ error: "Invalid masterId" });
+  const { amount, reason } = req.body as { amount?: number; reason?: string };
+  if (amount === undefined || isNaN(Number(amount)) || Number(amount) <= 0) {
+    return res.status(400).json({ error: "Укажите положительную сумму удержания" });
+  }
+
+  const deductAmount = Number(amount);
+  const existing = await db.select().from(masterDepositsTable).where(eq(masterDepositsTable.masterId, masterId));
+  const deposit = existing[0];
+  if (!deposit) return res.status(400).json({ error: "У мастера нет депозита" });
+
+  const balanceBefore = Number(deposit.depositBalance);
+  if (balanceBefore < deductAmount) {
+    return res.status(400).json({ error: `Недостаточно средств на депозите. Баланс: ${balanceBefore} ₽` });
+  }
+
+  const balanceAfter = balanceBefore - deductAmount;
+
+  await db.transaction(async (tx) => {
+    await tx.update(masterDepositsTable)
+      .set({ depositBalance: String(balanceAfter), updatedAt: new Date() })
+      .where(eq(masterDepositsTable.id, deposit.id));
+
+    await tx.insert(masterDepositTransactionsTable).values({
+      masterId,
+      type: "deduction",
+      amount: String(deductAmount),
+      balanceBefore: String(balanceBefore),
+      balanceAfter: String(balanceAfter),
+      reason: reason ? String(reason).slice(0, 500) : "Удержание администратором",
+      createdBy: (req as any).session?.user?.name ?? (req as any).session?.user?.login ?? "admin",
+    });
+  });
+
+  res.json({ ok: true, masterId, deductAmount, newBalance: balanceAfter });
 });
 
 export default router;
