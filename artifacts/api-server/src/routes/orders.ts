@@ -724,14 +724,6 @@ router.post("/:id/manual-assign/:masterId", allOrderRoles, async (req, res) => {
   if (!masterRows[0]) return res.status(404).json({ error: "Master not found" });
   const master = masterRows[0];
 
-  // Check if master's column allows receiving orders
-  if (master.voronkaColumnId) {
-    const colRows = await db.select().from(voronkaColumnsTable).where(eq(voronkaColumnsTable.id, master.voronkaColumnId));
-    if (colRows[0] && !colRows[0].receivesOrders) {
-      return res.status(400).json({ error: "Мастер не может принимать заказы в текущем статусе" });
-    }
-  }
-
   // Check order eligibility (limit + debt + overdue)
   const activeOrders = await db.select().from(ordersTable)
     .where(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
