@@ -4,6 +4,7 @@ import { eq, inArray, and, ne, isNull, isNotNull, desc, count, sql } from "drizz
 import { requireRole } from "../middlewares/requireAuth.js";
 import { calculateCommission, getCommissionSettings } from "../lib/commission.js";
 import { getMasterEligibility, getOverdueMasterIds, countActiveMasterOrders, getColumnIdForActiveCount } from "../lib/orderEligibility.js";
+import { deductServiceFee } from "../lib/accountBalance.js";
 import { recalcMasterColumn } from "../lib/masterColumn.js";
 import { performBroadcast } from "../lib/broadcastOrder.js";
 import { sendPushToMaster } from "../lib/push.js";
@@ -418,6 +419,7 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
       await db.update(transactionsTable).set({
         orderAmount: o.orderAmount,
         commission: o.commission,
+        serviceFee: "500",
         prepaymentDeducted: String(prepaymentDeducted),
         paymentStatus: fullyPaidByPrepayment ? "paid" : "pending",
         paidAt: fullyPaidByPrepayment ? new Date() : existingTx.paidAt,
@@ -460,6 +462,7 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
         masterId: o.masterId,
         orderAmount: o.orderAmount,
         commission: o.commission,
+        serviceFee: "500",
         prepaymentDeducted: String(prepaymentDeducted),
         paymentStatus: fullyPaidByPrepayment ? "paid" : "pending",
         paidAt: fullyPaidByPrepayment ? new Date() : undefined,
@@ -738,6 +741,14 @@ router.post("/:id/manual-assign/:masterId", allOrderRoles, async (req, res) => {
   if (!orderRows[0]) return res.status(404).json({ error: "Order not found" });
   const order = orderRows[0];
 
+  // Deduct service fee (waived for test orders) — outside transaction for safety
+  const { countTestOrders } = await import("../lib/accountBalance.js");
+  const isTestEligible = await countTestOrders(masterIdNum) < 2;
+  await deductServiceFee(masterIdNum, id, {
+    isTest: master.isTestMaster && isTestEligible,
+    reason: master.isTestMaster && isTestEligible ? "Тестовый заказ — сервисный сбор не списан" : undefined,
+  });
+
   try {
     await db.transaction(async (tx) => {
       // Add master to order_masters
@@ -804,6 +815,7 @@ router.post("/:id/manual-assign/:masterId", allOrderRoles, async (req, res) => {
           masterId: masterIdNum,
           orderAmount: "0",
           commission: "0",
+          serviceFee: "500",
           paymentStatus: "pending",
         });
       }

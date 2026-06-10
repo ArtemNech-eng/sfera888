@@ -1,3 +1,6 @@
+// DEPRECATED: token system removed. This file is kept for reference only.
+// Use lib/accountBalance.ts for the new ruble-based commission model.
+
 import { db, masterWalletTable, walletTransactionsTable, serviceTokenPricesTable, serviceTokenRulesTable, cityTokenMultipliersTable, tokenAuditLogTable } from "@workspace/db";
 import { eq, and, sql, isNull } from "drizzle-orm";
 

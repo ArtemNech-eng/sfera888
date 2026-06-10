@@ -1,9 +1,10 @@
 import { Router } from "express";
-import { db, mastersTable, ordersTable, orderDispatchesTable, transactionsTable, leadsTable, voronkaColumnsTable, masterMessagesTable, pushSubscriptionsTable, masterCheckinsTable, transactionPaymentsTable, walletTransactionsTable, orderMastersTable, masterDepositsTable, masterDepositTransactionsTable } from "@workspace/db";
+import { db, mastersTable, ordersTable, orderDispatchesTable, transactionsTable, leadsTable, voronkaColumnsTable, masterMessagesTable, pushSubscriptionsTable, masterCheckinsTable, transactionPaymentsTable, orderMastersTable, masterDepositsTable, masterDepositTransactionsTable } from "@workspace/db";
 import { maybeEarlyAssign } from "../lib/priorityAssign.js";
 import { eq, and, inArray, isNull, ne, asc, desc, gte, sql } from "drizzle-orm";
 import { verifyPassword, hashPassword } from "../lib/auth.js";
-import { getMasterEligibility, getOverdueMasterIds, countActiveMasterOrders, getColumnIdForActiveCount, checkDepositRequirement } from "../lib/orderEligibility.js";
+import { getMasterEligibility, getOverdueMasterIds, countActiveMasterOrders, getColumnIdForActiveCount, checkServiceFeeRequirement } from "../lib/orderEligibility.js";
+import { deductServiceFee, getBalance, ensureAccountBalance } from "../lib/accountBalance.js";
 import multer from "multer";
 import sharp from "sharp";
 import { Readable } from "stream";
@@ -144,7 +145,7 @@ router.post("/auth/register", registerRateLimit, async (req, res) => {
   }).returning();
 
   (req.session as any).masterId = inserted.id;
-  await ensureWallet(inserted.id);
+  await ensureAccountBalance(inserted.id);
 
   // Log new self-registered master
   console.log(`[auth] self-register: new master ${inserted.id} (${inserted.alias}, ${inserted.city})`);
@@ -748,6 +749,23 @@ router.post("/orders/:id/accept", requireMasterPwa, async (req, res) => {
     return res.status(400).json({ error: acceptEligibility.reason });
   }
 
+  // Check balance for service fee (or test order waiver)
+  const feeCheck = await checkServiceFeeRequirement(masterId);
+  if (!feeCheck.ok) {
+    return res.status(400).json({ error: feeCheck.reason });
+  }
+
+  // Deduct service fee (waived for test orders)
+  const { countTestOrders } = await import("../lib/accountBalance.js");
+  const isTestEligible = await countTestOrders(masterId) < 2;
+  const feeResult = await deductServiceFee(masterId, orderId, {
+    isTest: master.isTestMaster && isTestEligible,
+    reason: master.isTestMaster && isTestEligible ? "Тестовый заказ — сервисный сбор не списан" : undefined,
+  });
+  if (!feeResult.success) {
+    return res.status(400).json({ error: feeResult.error });
+  }
+
   // Check if master already assigned
   const existingAssignment = await db.select().from(orderMastersTable)
     .where(and(eq(orderMastersTable.orderId, orderId), eq(orderMastersTable.masterId, masterId)));
@@ -813,6 +831,7 @@ router.post("/orders/:id/accept", requireMasterPwa, async (req, res) => {
       masterId,
       orderAmount: "0",
       commission: "0",
+      serviceFee: "500",
       paymentStatus: "pending",
     });
   }
@@ -903,12 +922,12 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
     constraintTags.push("Лимит");
   }
 
-  // Deposit check for commission orders — tag, don't block yet
+  // Balance check for commission orders — tag, don't block yet
   const isCommissionOrder = (order as any).paymentModel !== "token";
   if (isCommissionOrder) {
-    const depositCheck = await checkDepositRequirement(masterId);
-    if (!depositCheck.ok) {
-      constraintTags.push("Депозит");
+    const balanceCheck = await checkServiceFeeRequirement(masterId);
+    if (!balanceCheck.ok) {
+      constraintTags.push("Баланс");
     }
   }
 
@@ -1180,8 +1199,14 @@ router.get("/balance", requireMasterPwa, async (req, res) => {
   const pendingCommission = pendingTxs.reduce((s, t) => s + Number(t.commission), 0);
   const pendingEarnings = pendingTxs.reduce((s, t) => s + Number(t.orderAmount), 0);
 
+  const balanceInfo = await getBalance(masterId);
+
   res.json({
     debt: Number(master.debt),
+    balance: balanceInfo.balance,
+    creditLimit: balanceInfo.creditLimit,
+    availableBalance: balanceInfo.available,
+    totalServiceFeesSpent: balanceInfo.totalServiceFeesSpent,
     totalEarned,
     totalPaidCommission,
     pendingCommission,

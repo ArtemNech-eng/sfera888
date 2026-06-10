@@ -1,5 +1,6 @@
-import { db, transactionsTable, mastersTable, voronkaColumnsTable, ordersTable, orderMastersTable, masterDepositsTable } from "@workspace/db";
-import { eq, and, lte, ne, inArray, isNull } from "drizzle-orm";
+import { db, transactionsTable, mastersTable, voronkaColumnsTable, ordersTable, orderMastersTable } from "@workspace/db";
+import { eq, and, lte, inArray, isNull } from "drizzle-orm";
+import { getBalance } from "./accountBalance.js";
 
 /**
  * Count how many active orders a master currently has (excluding a specific orderId if provided).
@@ -57,24 +58,28 @@ export interface EligibilityResult {
   limit: number;
 }
 
-/** Deposit threshold required to receive commission orders. */
-const REQUIRED_DEPOSIT_RUB = 10000;
+/** Service fee required to receive orders. */
+const SERVICE_FEE_RUB = 500;
 
-/** Returns the current deposit balance for a master (0 if no record). */
-export async function getMasterDepositBalance(masterId: number): Promise<number> {
-  const rows = await db.select().from(masterDepositsTable).where(eq(masterDepositsTable.masterId, masterId));
-  return rows[0] ? Number(rows[0].depositBalance) : 0;
-}
-
-/** Checks if master meets the deposit requirement. Returns a tag/reason if not. */
-export async function checkDepositRequirement(masterId: number): Promise<{ ok: boolean; reason: string | null }> {
-  const balance = await getMasterDepositBalance(masterId);
-  if (balance < REQUIRED_DEPOSIT_RUB) {
+/** Checks if master has enough balance to afford the service fee for a new order. */
+export async function checkServiceFeeRequirement(masterId: number): Promise<{ ok: boolean; reason: string | null }> {
+  const { available } = await getBalance(masterId);
+  if (available < SERVICE_FEE_RUB) {
     return {
       ok: false,
-      reason: `Депозит ${balance.toLocaleString("ru-RU")} ₽ из ${REQUIRED_DEPOSIT_RUB.toLocaleString("ru-RU")} ₽. Пополните депозит для получения заказов.`,
+      reason: `Баланс ${available.toLocaleString("ru-RU")} ₽ (требуется ${SERVICE_FEE_RUB.toLocaleString("ru-RU")} ₽ для получения заказа). Пополните баланс.`,
     };
   }
+  return { ok: true, reason: null };
+}
+
+/** DEPRECATED: deposit system removed. Kept for backwards compatibility. */
+export async function getMasterDepositBalance(_masterId: number): Promise<number> {
+  return 0;
+}
+
+/** DEPRECATED: deposit system removed. Always returns ok. */
+export async function checkDepositRequirement(_masterId: number): Promise<{ ok: boolean; reason: string | null }> {
   return { ok: true, reason: null };
 }
 

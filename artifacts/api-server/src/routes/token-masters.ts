@@ -1,3 +1,5 @@
+// DEPRECATED: token system removed. This file is kept for reference only.
+
 import { Router } from "express";
 import { db, mastersTable, masterWalletTable, walletTransactionsTable, ordersTable, tokenPackagesTable } from "@workspace/db";
 import { eq, desc, asc, and, isNull, ilike, or, sql, gte, lte, count } from "drizzle-orm";

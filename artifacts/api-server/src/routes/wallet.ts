@@ -1,3 +1,7 @@
+// DEPRECATED: token system removed. This file is kept for reference only.
+// All token-related routes should return errors or redirects.
+// Use accountBalance.ts for the new ruble-based commission model.
+
 import { Router } from "express";
 import { db, masterWalletTable, walletTransactionsTable, tokenPackagesTable, ordersTable, mastersTable, systemSettingsTable } from "@workspace/db";
 import { eq, desc, and, inArray, sql, count, gt, isNull } from "drizzle-orm";

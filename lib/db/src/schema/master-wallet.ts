@@ -11,9 +11,15 @@ export const masterWalletTable = pgTable("master_wallet", {
   totalTokensSpent: numeric("total_tokens_spent", { precision: 10, scale: 2 }).notNull().default("0"),
   totalTokensRefunded: numeric("total_tokens_refunded", { precision: 10, scale: 2 }).notNull().default("0"),
   totalRubSpent: integer("total_rub_spent").notNull().default(0),
+  // DEPRECATED: token system — поля оставлены для истории
   creditTokensIssued: numeric("credit_tokens_issued", { precision: 10, scale: 2 }).notNull().default("0"),
   creditTokensSpent: numeric("credit_tokens_spent", { precision: 10, scale: 2 }).notNull().default("0"),
   creditLimitTokens: numeric("credit_limit_tokens", { precision: 10, scale: 2 }).notNull().default("0"),
+  // NEW: ruble balance (commission model)
+  balance: numeric("balance", { precision: 10, scale: 2 }).notNull().default("0"),
+  creditLimit: numeric("credit_limit", { precision: 10, scale: 2 }).notNull().default("0"),
+  totalServiceFeesSpent: numeric("total_service_fees_spent", { precision: 10, scale: 2 }).notNull().default("0"),
+  totalTopups: numeric("total_topups", { precision: 10, scale: 2 }).notNull().default("0"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

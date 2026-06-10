@@ -39,21 +39,16 @@ export default function WalletPage() {
   const [commissionBalance, setCommissionBalance] = useState<CommissionData | null>(null);
   const [commissionLoading, setCommissionLoading] = useState(false);
 
-  const [depositData, setDepositData] = useState<DepositData | null>(null);
-  const [depositLoading, setDepositLoading] = useState(false);
+  const [accountBalance, setAccountBalance] = useState<AccountBalanceData | null>(null);
+  const [accountBalanceLoading, setAccountBalanceLoading] = useState(false);
+  const [topupAmount, setTopupAmount] = useState("");
 
-  interface DepositData {
-    depositBalance: number;
-    recommendedAmount: number;
-    transactions: Array<{
-      id: number;
-      type: string;
-      amount: number;
-      balanceBefore: number;
-      balanceAfter: number;
-      reason: string | null;
-      createdAt: string;
-    }>;
+  interface AccountBalanceData {
+    balance: number;
+    creditLimit: number;
+    available: number;
+    totalServiceFeesSpent: number;
+    totalTopups: number;
   }
 
   const loadCommissionBalance = useCallback(async () => {
@@ -65,16 +60,42 @@ export default function WalletPage() {
     setCommissionLoading(false);
   }, []);
 
-  const loadDeposit = useCallback(async () => {
-    setDepositLoading(true);
+  const loadAccountBalance = useCallback(async () => {
+    setAccountBalanceLoading(true);
     try {
-      const r = await fetch("/api/master-pwa/deposit", { credentials: "include" });
-      if (r.ok) setDepositData(await r.json());
+      const r = await fetch("/api/account-balance/my", { credentials: "include" });
+      if (r.ok) setAccountBalance(await r.json());
     } catch {}
-    setDepositLoading(false);
+    setAccountBalanceLoading(false);
   }, []);
 
-  useEffect(() => { loadCommissionBalance(); loadDeposit(); }, [loadCommissionBalance, loadDeposit]);
+  const handleTopup = async () => {
+    const amount = Number(topupAmount);
+    if (!amount || amount <= 0) {
+      toast.error("Укажите сумму пополнения");
+      return;
+    }
+    try {
+      const r = await fetch("/api/account-balance/my/topup-request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ amount }),
+      });
+      if (r.ok) {
+        toast.success("Баланс пополнен");
+        setTopupAmount("");
+        loadAccountBalance();
+      } else {
+        const data = await r.json();
+        toast.error(data.error || "Ошибка пополнения");
+      }
+    } catch {
+      toast.error("Ошибка сети");
+    }
+  };
+
+  useEffect(() => { loadCommissionBalance(); loadAccountBalance(); }, [loadCommissionBalance, loadAccountBalance]);
 
   return (
     <>
@@ -88,55 +109,62 @@ export default function WalletPage() {
         </div>
       </div>
 
-      {/* Deposit Section */}
+      {/* Account Balance Section */}
       <div className="max-w-lg mx-auto px-4 py-5 space-y-6 border-t border-border mt-6">
         <div className="flex items-center gap-3">
           <Wallet size={24} className="text-emerald-500" />
           <div>
-            <h2 className="text-lg font-bold">Депозит</h2>
-            <p className="text-sm text-muted-foreground">Гарантийный взнос</p>
+            <h2 className="text-lg font-bold">Баланс</h2>
+            <p className="text-sm text-muted-foreground">Для получения заказов</p>
           </div>
         </div>
 
-        {depositLoading ? (
+        {accountBalanceLoading ? (
           <div className="flex justify-center py-8">
             <Loader2 className="animate-spin text-muted-foreground" />
           </div>
-        ) : depositData ? (
+        ) : accountBalance ? (
           <>
             <div className="bg-emerald-900 rounded-3xl p-6 text-white shadow-lg relative overflow-hidden">
               <div className="relative">
-                <p className="text-sm font-medium text-emerald-200 mb-1">Баланс депозита</p>
+                <p className="text-sm font-medium text-emerald-200 mb-1">Баланс</p>
                 <div className="flex items-end gap-2 mb-2">
-                  <span className="text-4xl font-bold tracking-tight">{depositData.depositBalance.toLocaleString("ru-RU")}</span>
+                  <span className="text-4xl font-bold tracking-tight">{accountBalance.balance.toLocaleString("ru-RU")}</span>
                   <span className="text-xl font-medium text-emerald-300 mb-1">₽</span>
                 </div>
-                <p className="text-xs text-emerald-300">Рекомендуемый: {depositData.recommendedAmount.toLocaleString("ru-RU")} ₽</p>
+                <p className="text-xs text-emerald-300">
+                  Кредитный лимит: {accountBalance.creditLimit.toLocaleString("ru-RU")} ₽
+                  &nbsp;·&nbsp; Доступно: {accountBalance.available.toLocaleString("ru-RU")} ₽
+                </p>
               </div>
             </div>
 
-            {depositData.transactions.length > 0 && (
-              <div className="space-y-3">
-                <h3 className="font-medium text-sm">История операций</h3>
-                {depositData.transactions.slice(0, 5).map((tx: any) => (
-                  <div key={tx.id} className="bg-card border rounded-lg p-3 flex justify-between items-center">
-                    <div>
-                      <div className="font-medium text-sm">{tx.type === "deposit" ? "Зачисление" : "Удержание"}</div>
-                      <div className="text-xs text-muted-foreground">{tx.reason ?? "—"}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className={`font-medium text-sm ${tx.type === "deposit" ? "text-green-600" : "text-red-500"}`}>
-                        {tx.type === "deposit" ? "+" : "−"}{tx.amount.toLocaleString("ru-RU")} ₽
-                      </div>
-                    </div>
-                  </div>
-                ))}
+            {/* Topup */}
+            <div className="bg-card border rounded-xl p-4 space-y-3">
+              <h3 className="font-medium text-sm">Пополнить баланс</h3>
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  value={topupAmount}
+                  onChange={(e) => setTopupAmount(e.target.value)}
+                  placeholder="Сумма"
+                  className="flex-1 h-10 px-3 rounded-lg border bg-background text-sm"
+                />
+                <button
+                  onClick={handleTopup}
+                  className="h-10 px-4 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700"
+                >
+                  Пополнить
+                </button>
               </div>
-            )}
+              <p className="text-xs text-muted-foreground">
+                Стоимость заказа: 500 ₽. Рекомендуемый минимум: 1 000 ₽.
+              </p>
+            </div>
           </>
         ) : (
           <div className="text-center py-8 text-muted-foreground">
-            Нет данных о депозите
+            Нет данных о балансе
           </div>
         )}
       </div>

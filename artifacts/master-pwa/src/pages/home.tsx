@@ -10,7 +10,7 @@ import {
   MapPin, Calendar, MessageSquare, Clock,
   ChevronRight, X, Images, Wrench, Zap, PauseCircle,
   PlayCircle, Navigation, Users, Heart, ChevronDown, Briefcase,
-  Eye, EyeOff, Lock, FileText, Bot, Phone, Maximize, Wallet,
+  Eye, EyeOff, Lock, FileText, Bot, Phone, Maximize, Wallet, DollarSign,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -1674,6 +1674,12 @@ export default function HomePage() {
                         {formatDate(order.scheduledAt)}
                       </span>
                     )}
+                  </div>
+
+                  {/* Service fee info */}
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground bg-slate-50 dark:bg-slate-900 rounded-lg px-2 py-1">
+                    <DollarSign size={12} className="text-emerald-500" />
+                    <span>Сервисный сбор: 500 ₽</span>
                   </div>
 
                   {/* Bottom row: competition info */}

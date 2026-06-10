@@ -18,7 +18,7 @@ import {
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type StatusFilter  = "all" | "pending" | "overdue" | "paid";
-type PageTab       = "transactions" | "by-master" | "estimates";
+type PageTab       = "transactions" | "by-master" | "estimates" | "service-fees";
 type Period        = "today" | "week" | "month" | "quarter" | "year" | "all" | "custom";
 type EstimateStatus = "all" | "paid" | "pending" | "unpaid" | "no-receipt" | "cancelled";
 
@@ -303,6 +303,26 @@ export default function Finance() {
     queryKey: [`/api/finance/estimates/stats`, estRange.from, estRange.to],
     queryFn: () => fetch(`/api/finance/estimates/stats?${estParams}`, { credentials: "include" }).then(r => r.json()),
     enabled: pageTab === "estimates",
+    staleTime: 30_000,
+  });
+
+  interface ServiceFeeItem {
+    id: number;
+    masterId: number;
+    masterAlias: string;
+    masterCity: string;
+    orderId: number | null;
+    amount: number;
+    type: string;
+    reason: string | null;
+    masterBalance: number;
+    createdAt: string;
+  }
+
+  const { data: serviceFees, isLoading: sfLoading } = useQuery<ServiceFeeItem[]>({
+    queryKey: [`/api/finance/service-fees`],
+    queryFn: () => fetch(`/api/finance/service-fees`, { credentials: "include" }).then(r => r.json()),
+    enabled: pageTab === "service-fees",
     staleTime: 30_000,
   });
 
@@ -673,6 +693,7 @@ export default function Finance() {
               { key: "transactions", label: "Транзакции",  icon: <ReceiptText className="w-4 h-4" /> },
               { key: "by-master",    label: "По мастерам", icon: <BarChart3 className="w-4 h-4" /> },
               { key: "estimates",    label: "Сметы",        icon: <FileText className="w-4 h-4" /> },
+              { key: "service-fees", label: "Сервисные сборы", icon: <Banknote className="w-4 h-4" /> },
             ] as const).map(tab => (
               <button key={tab.key} onClick={() => setPageTab(tab.key)}
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
@@ -1451,6 +1472,49 @@ export default function Finance() {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ══════════════════════════════ TAB 4: SERVICE FEES ══════════════ */}
+          {pageTab === "service-fees" && (
+            <div className="space-y-5">
+              <div className="bg-card border border-border/50 rounded-2xl overflow-hidden shadow-sm">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-slate-50/50 text-muted-foreground font-medium border-b border-border/50 text-xs">
+                    <tr>
+                      <th className="px-3 py-2">Дата</th>
+                      <th className="px-3 py-2">Мастер</th>
+                      <th className="px-3 py-2">Заказ</th>
+                      <th className="px-3 py-2 text-right">Сумма</th>
+                      <th className="px-3 py-2">Тип</th>
+                      <th className="px-3 py-2">Баланс мастера</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/50">
+                    {sfLoading ? (
+                      <tr><td colSpan={6} className="py-12 text-center"><Loader2 className="w-6 h-6 animate-spin text-primary mx-auto" /></td></tr>
+                    ) : !serviceFees || serviceFees.length === 0 ? (
+                      <tr><td colSpan={6} className="py-12 text-center text-muted-foreground text-sm">Нет сервисных сборов</td></tr>
+                    ) : serviceFees.map(fee => (
+                      <tr key={fee.id} className="hover:bg-slate-50/50">
+                        <td className="px-3 py-2 text-xs">{formatDate(fee.createdAt)}</td>
+                        <td className="px-3 py-2">
+                          <div className="font-medium text-xs">{fee.masterAlias}</div>
+                          <div className="text-[10px] text-muted-foreground">{fee.masterCity}</div>
+                        </td>
+                        <td className="px-3 py-2 text-xs">{fee.orderId ? `#${fee.orderId}` : "—"}</td>
+                        <td className="px-3 py-2 text-right font-medium text-xs">
+                          {fee.type === "refund" ? "−" : fee.type === "test_waived" ? "0" : ""}{fee.amount.toLocaleString("ru-RU")} ₽
+                        </td>
+                        <td className="px-3 py-2 text-xs">
+                          {fee.type === "deduct" ? "Списание" : fee.type === "refund" ? "Возврат" : "Тестовый"}
+                        </td>
+                        <td className="px-3 py-2 text-xs">{fee.masterBalance.toLocaleString("ru-RU")} ₽</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>

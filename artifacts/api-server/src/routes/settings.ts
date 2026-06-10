@@ -83,7 +83,7 @@ router.patch("/commission", adminOnly, async (req, res) => {
   res.json(updated);
 });
 
-// ─── Token packages ────────────────────────────────────────────────────────────
+// ─── Token packages (DEPRECATED: token system removed) ──────────────────────
 
 router.get("/token-packages", requireAuth, async (req: any, res: any) => {
   const activeOnly = req.query.active === "true";

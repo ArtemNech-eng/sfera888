@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { db, transactionsTable, mastersTable, ordersTable, receiptsTable, transactionPaymentsTable, masterDepositsTable, masterDepositTransactionsTable } from "@workspace/db";
-import { eq, and, gte, lte, sql, inArray } from "drizzle-orm";
+import { db, transactionsTable, mastersTable, ordersTable, receiptsTable, transactionPaymentsTable, masterDepositsTable, masterDepositTransactionsTable, serviceFeeTransactionsTable, masterWalletTable } from "@workspace/db";
+import { eq, and, gte, lte, sql, inArray, desc } from "drizzle-orm";
 import { requirePermission, requireRole } from "../middlewares/requireAuth.js";
 import { sendPushToMaster } from "../lib/push.js";
 import { checkOverdueTransactions, countActiveMasterOrders, getColumnIdForActiveCount } from "../lib/orderEligibility.js";
@@ -1135,6 +1135,41 @@ router.post("/deposits/:masterId/deduct", requireRole("admin", "master_operator"
   });
 
   res.json({ ok: true, masterId, deductAmount, newBalance: balanceAfter });
+});
+
+// ─── GET /api/finance/service-fees ─────────────────────────────────────────────
+
+router.get("/service-fees", adminOnly, async (_req, res) => {
+  const fees = await db.select()
+    .from(serviceFeeTransactionsTable)
+    .orderBy(desc(serviceFeeTransactionsTable.createdAt))
+    .limit(500);
+
+  const masterIds = [...new Set(fees.map(f => f.masterId))];
+  const masters = masterIds.length > 0
+    ? await db.select({ id: mastersTable.id, alias: mastersTable.alias, city: mastersTable.city })
+        .from(mastersTable).where(inArray(mastersTable.id, masterIds))
+    : [];
+  const masterMap = new Map(masters.map(m => [m.id, m]));
+
+  const wallets = masterIds.length > 0
+    ? await db.select({ masterId: masterWalletTable.masterId, balance: masterWalletTable.balance })
+        .from(masterWalletTable).where(inArray(masterWalletTable.masterId, masterIds))
+    : [];
+  const walletMap = new Map(wallets.map(w => [w.masterId, Number(w.balance)]));
+
+  res.json(fees.map(f => ({
+    id: f.id,
+    masterId: f.masterId,
+    masterAlias: masterMap.get(f.masterId)?.alias ?? "—",
+    masterCity: masterMap.get(f.masterId)?.city ?? "—",
+    orderId: f.orderId,
+    amount: Number(f.amount),
+    type: f.type,
+    reason: f.reason,
+    masterBalance: walletMap.get(f.masterId) ?? 0,
+    createdAt: f.createdAt,
+  })));
 });
 
 export default router;

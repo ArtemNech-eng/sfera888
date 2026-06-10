@@ -5,6 +5,7 @@ import { sql } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { sendPushToMaster } from "../lib/push.js";
 import { getOverdueMasterIds, getMasterEligibility } from "../lib/orderEligibility.js";
+import { deductServiceFee } from "../lib/accountBalance.js";
 import { performBroadcast, performResend } from "../lib/broadcastOrder.js";
 import { sendMaxMessage, sendOnboardingMemo } from "../maxBot.js";
 
@@ -385,6 +386,14 @@ router.post("/:orderId/assign/:masterId", ops, async (req, res) => {
   const lead = leadRows[0];
 
   let respondedDispatches: any[] = [];
+
+  // Deduct service fee (waived for test orders) — outside transaction for safety
+  const { countTestOrders } = await import("../lib/accountBalance.js");
+  const isTestEligible = await countTestOrders(masterId) < 2;
+  await deductServiceFee(masterId, orderId, {
+    isTest: master.isTestMaster && isTestEligible,
+    reason: master.isTestMaster && isTestEligible ? "Тестовый заказ — сервисный сбор не списан" : undefined,
+  });
 
   try {
     await db.transaction(async (tx) => {
