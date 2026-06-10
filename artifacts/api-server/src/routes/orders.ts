@@ -777,7 +777,6 @@ router.post("/:id/manual-assign/:masterId", allOrderRoles, async (req, res) => {
       await tx.insert(orderMastersTable).values({
         orderId: id,
         masterId: masterIdNum,
-        assignedAt: new Date(),
         tokensCharged: tokensCost,
         status: "active",
       });
