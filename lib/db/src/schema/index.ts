@@ -52,6 +52,7 @@ export * from "./master-active-packages";
 export * from "./ml-pricing-decisions";
 export * from "./master-deposits";
 export * from "./service-fee-transactions";
+export * from "./balance-topup-requests";
 export * from "./order-stages";
 export * from "./master-test-orders";
 export * from "./master-deposit-transactions";

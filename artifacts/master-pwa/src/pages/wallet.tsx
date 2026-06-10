@@ -43,6 +43,17 @@ export default function WalletPage() {
   const [accountBalanceLoading, setAccountBalanceLoading] = useState(false);
   const [topupAmount, setTopupAmount] = useState("");
 
+  interface TopupRequest {
+    id: number;
+    amount: number;
+    status: string;
+    note: string | null;
+    createdAt: string;
+    approvedAt: string | null;
+  }
+  const [topupRequests, setTopupRequests] = useState<TopupRequest[]>([]);
+  const [topupRequestsLoading, setTopupRequestsLoading] = useState(false);
+
   interface AccountBalanceData {
     balance: number;
     creditLimit: number;
@@ -69,6 +80,15 @@ export default function WalletPage() {
     setAccountBalanceLoading(false);
   }, []);
 
+  const loadTopupRequests = useCallback(async () => {
+    setTopupRequestsLoading(true);
+    try {
+      const r = await fetch("/api/account-balance/my/topup-requests", { credentials: "include" });
+      if (r.ok) setTopupRequests(await r.json());
+    } catch {}
+    setTopupRequestsLoading(false);
+  }, []);
+
   const handleTopup = async () => {
     const amount = Number(topupAmount);
     if (!amount || amount <= 0) {
@@ -83,9 +103,9 @@ export default function WalletPage() {
         body: JSON.stringify({ amount }),
       });
       if (r.ok) {
-        toast.success("Баланс пополнен");
+        toast.success("Заявка на пополнение отправлена. Ожидайте подтверждения администратора.");
         setTopupAmount("");
-        loadAccountBalance();
+        loadTopupRequests();
       } else {
         const data = await r.json();
         toast.error(data.error || "Ошибка пополнения");
@@ -95,7 +115,7 @@ export default function WalletPage() {
     }
   };
 
-  useEffect(() => { loadCommissionBalance(); loadAccountBalance(); }, [loadCommissionBalance, loadAccountBalance]);
+  useEffect(() => { loadCommissionBalance(); loadAccountBalance(); loadTopupRequests(); }, [loadCommissionBalance, loadAccountBalance, loadTopupRequests]);
 
   return (
     <>
@@ -160,6 +180,32 @@ export default function WalletPage() {
               <p className="text-xs text-muted-foreground">
                 Сервисный сбор за получение заказа: 500 ₽. Комиссия с суммы работ оплачивается отдельно. Рекомендуемый минимум: 1 000 ₽.
               </p>
+            </div>
+
+            {/* Topup requests history */}
+            <div className="space-y-2">
+              <h3 className="font-medium text-sm">Заявки на пополнение</h3>
+              {topupRequestsLoading ? (
+                <div className="flex justify-center py-4"><Loader2 className="animate-spin text-muted-foreground" /></div>
+              ) : topupRequests.length > 0 ? (
+                topupRequests.slice(0, 5).map((req) => (
+                  <div key={req.id} className="bg-card border rounded-lg p-3 flex justify-between items-center">
+                    <div>
+                      <div className="font-medium">{req.amount.toLocaleString("ru-RU")} ₽</div>
+                      <div className="text-xs text-muted-foreground">{new Date(req.createdAt).toLocaleDateString("ru-RU")}</div>
+                    </div>
+                    <div className={`text-xs font-medium px-2 py-1 rounded-full ${
+                      req.status === "approved" ? "bg-green-100 text-green-700" :
+                      req.status === "rejected" ? "bg-red-100 text-red-700" :
+                      "bg-amber-100 text-amber-700"
+                    }`}>
+                      {req.status === "approved" ? "Одобрено" : req.status === "rejected" ? "Отклонено" : "Ожидает"}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">Нет заявок</p>
+              )}
             </div>
           </>
         ) : (

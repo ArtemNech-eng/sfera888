@@ -1,8 +1,9 @@
 import { Router } from "express";
-import { db, masterWalletTable, serviceFeeTransactionsTable } from "@workspace/db";
+import { db, masterWalletTable, serviceFeeTransactionsTable, balanceTopupRequestsTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { requireMasterAuth } from "../middlewares/requireMaster.js";
-import { getBalance, topupBalance } from "../lib/accountBalance.js";
+import { getBalance } from "../lib/accountBalance.js";
+import { getMasterById } from "../lib/masterQueries.js";
 
 const router = Router();
 
@@ -42,19 +43,54 @@ router.get("/my/service-fees", requireMasterAuth, async (req: any, res: any) => 
   })));
 });
 
-// POST /api/account-balance/my/topup-request — запрос на пополнение баланса
+// GET /api/account-balance/my/topup-requests — история заявок на пополнение
+router.get("/my/topup-requests", requireMasterAuth, async (req: any, res: any) => {
+  const masterId: number | undefined = (req.session as any).masterId;
+  if (!masterId) return res.status(401).json({ error: "Не авторизован" });
+
+  const rows = await db.select()
+    .from(balanceTopupRequestsTable)
+    .where(eq(balanceTopupRequestsTable.masterId, masterId))
+    .orderBy(desc(balanceTopupRequestsTable.createdAt))
+    .limit(50);
+
+  return res.json(rows.map(r => ({
+    id: r.id,
+    amount: Number(r.amount),
+    status: r.status,
+    note: r.note,
+    createdAt: r.createdAt,
+    approvedAt: r.approvedAt,
+  })));
+});
+
+// POST /api/account-balance/my/topup-request — запрос на пополнение баланса (pending)
 router.post("/my/topup-request", requireMasterAuth, async (req: any, res: any) => {
   const masterId: number | undefined = (req.session as any).masterId;
   if (!masterId) return res.status(401).json({ error: "Не авторизован" });
 
-  const { amount } = req.body;
+  const { amount, note } = req.body;
   if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
     return res.status(400).json({ error: "Укажите сумму пополнения" });
   }
 
-  // For now: auto-approve topup (admin can change to pending later)
-  const result = await topupBalance(masterId, Number(amount), "Пополнение баланса");
-  return res.json({ success: true, newBalance: result.newBalance });
+  const result = await db.insert(balanceTopupRequestsTable).values({
+    masterId,
+    amount: String(amount),
+    status: "pending",
+    note: note ? String(note).slice(0, 200) : null,
+  }).returning();
+
+  const requestRecord = result[0];
+
+  // Notify admin via Max
+  const master = await getMasterById(masterId);
+  if (master?.maxChatId) {
+    const { sendMaxMessage } = await import("../lib/maxBot.js");
+    sendMaxMessage(master.maxChatId, `💰 Запрос пополнения баланса от ${master.alias}: ${Number(amount).toLocaleString("ru-RU")} ₽`).catch(() => {});
+  }
+
+  return res.json({ success: true, requestId: requestRecord.id, status: "pending" });
 });
 
 export default router;

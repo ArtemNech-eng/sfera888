@@ -18,7 +18,7 @@ import {
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type StatusFilter  = "all" | "pending" | "overdue" | "paid";
-type PageTab       = "transactions" | "by-master" | "estimates" | "service-fees";
+type PageTab       = "transactions" | "by-master" | "estimates" | "service-fees" | "topup-requests";
 type Period        = "today" | "week" | "month" | "quarter" | "year" | "all" | "custom";
 type EstimateStatus = "all" | "paid" | "pending" | "unpaid" | "no-receipt" | "cancelled";
 
@@ -324,6 +324,46 @@ export default function Finance() {
     queryFn: () => fetch(`/api/finance/service-fees`, { credentials: "include" }).then(r => r.json()),
     enabled: pageTab === "service-fees",
     staleTime: 30_000,
+  });
+
+  interface TopupRequestItem {
+    id: number;
+    masterId: number;
+    masterAlias: string;
+    masterCity: string;
+    amount: number;
+    status: string;
+    note: string | null;
+    createdAt: string;
+    approvedAt: string | null;
+    approvedByUserId: number | null;
+  }
+
+  const { data: topupRequests, isLoading: trLoading, refetch: refetchTopup } = useQuery<TopupRequestItem[]>({
+    queryKey: [`/api/finance/topup-requests`],
+    queryFn: () => fetch(`/api/finance/topup-requests`, { credentials: "include" }).then(r => r.json()),
+    enabled: pageTab === "topup-requests",
+    staleTime: 15_000,
+  });
+
+  const approveTopupMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const r = await fetch(`/api/finance/topup-requests/${id}/approve`, { method: "POST", credentials: "include" });
+      if (!r.ok) throw new Error("Ошибка подтверждения");
+      return r.json();
+    },
+    onSuccess: () => { refetchTopup(); toast.success("Пополнение одобрено"); },
+    onError: (e: any) => toast.error(e.message || "Ошибка"),
+  });
+
+  const rejectTopupMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const r = await fetch(`/api/finance/topup-requests/${id}/reject`, { method: "POST", credentials: "include" });
+      if (!r.ok) throw new Error("Ошибка отклонения");
+      return r.json();
+    },
+    onSuccess: () => { refetchTopup(); toast.success("Пополнение отклонено"); },
+    onError: (e: any) => toast.error(e.message || "Ошибка"),
   });
 
   // ─── Derived: transactions ────────────────────────────────────────────────
@@ -694,6 +734,7 @@ export default function Finance() {
               { key: "by-master",    label: "По мастерам", icon: <BarChart3 className="w-4 h-4" /> },
               { key: "estimates",    label: "Сметы",        icon: <FileText className="w-4 h-4" /> },
               { key: "service-fees", label: "Сервисные сборы", icon: <Banknote className="w-4 h-4" /> },
+              { key: "topup-requests", label: "Заявки на пополнение", icon: <Users className="w-4 h-4" /> },
             ] as const).map(tab => (
               <button key={tab.key} onClick={() => setPageTab(tab.key)}
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
@@ -1510,6 +1551,54 @@ export default function Finance() {
                           {fee.type === "deduct" ? "Списание" : fee.type === "refund" ? "Возврат" : "Тестовый"}
                         </td>
                         <td className="px-3 py-2 text-xs">{fee.masterBalance.toLocaleString("ru-RU")} ₽</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ══════════════════════════════ TAB 5: TOPUP REQUESTS ══════════════ */}
+          {pageTab === "topup-requests" && (
+            <div className="space-y-5">
+              <div className="bg-card border border-border/50 rounded-2xl overflow-hidden shadow-sm">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-slate-50/50 text-muted-foreground font-medium border-b border-border/50 text-xs">
+                    <tr>
+                      <th className="px-3 py-2">Дата</th>
+                      <th className="px-3 py-2">Мастер</th>
+                      <th className="px-3 py-2 text-right">Сумма</th>
+                      <th className="px-3 py-2">Статус</th>
+                      <th className="px-3 py-2">Действия</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {trLoading ? (
+                      <tr><td colSpan={5} className="text-center py-8"><Loader2 className="animate-spin inline-block" /></td></tr>
+                    ) : !topupRequests?.length ? (
+                      <tr><td colSpan={5} className="text-center py-8 text-muted-foreground">Нет заявок</td></tr>
+                    ) : topupRequests.map((req) => (
+                      <tr key={req.id} className="hover:bg-slate-50/50">
+                        <td className="px-3 py-2 text-xs">{formatDate(req.createdAt)}</td>
+                        <td className="px-3 py-2">
+                          <div className="font-medium text-xs">{req.masterAlias}</div>
+                          <div className="text-[10px] text-muted-foreground">{req.masterCity}</div>
+                        </td>
+                        <td className="px-3 py-2 text-right font-medium text-xs">{req.amount.toLocaleString("ru-RU")} ₽</td>
+                        <td className="px-3 py-2 text-xs">
+                          {req.status === "approved" ? "Одобрено" : req.status === "rejected" ? "Отклонено" : "Ожидает"}
+                        </td>
+                        <td className="px-3 py-2">
+                          {req.status === "pending" && (
+                            <div className="flex gap-1">
+                              <button onClick={() => approveTopupMutation.mutate(req.id)}
+                                className="px-2 py-1 rounded bg-emerald-500 text-white text-[10px] hover:bg-emerald-600">Одобрить</button>
+                              <button onClick={() => rejectTopupMutation.mutate(req.id)}
+                                className="px-2 py-1 rounded bg-red-500 text-white text-[10px] hover:bg-red-600">Отклонить</button>
+                            </div>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

@@ -1,5 +1,6 @@
 import { Router } from "express";
-import { db, transactionsTable, mastersTable, ordersTable, receiptsTable, transactionPaymentsTable, masterDepositsTable, masterDepositTransactionsTable, serviceFeeTransactionsTable, masterWalletTable } from "@workspace/db";
+import { db, transactionsTable, mastersTable, ordersTable, receiptsTable, transactionPaymentsTable, masterDepositsTable, masterDepositTransactionsTable, serviceFeeTransactionsTable, masterWalletTable, balanceTopupRequestsTable } from "@workspace/db";
+import { topupBalance } from "../lib/accountBalance.js";
 import { eq, and, gte, lte, sql, inArray, desc } from "drizzle-orm";
 import { requirePermission, requireRole } from "../middlewares/requireAuth.js";
 import { sendPushToMaster } from "../lib/push.js";
@@ -1170,6 +1171,75 @@ router.get("/service-fees", adminOnly, async (_req, res) => {
     masterBalance: walletMap.get(f.masterId) ?? 0,
     createdAt: f.createdAt,
   })));
+});
+
+// ─── GET /api/finance/topup-requests ──────────────────────────────────────────
+
+router.get("/topup-requests", adminOnly, async (_req, res) => {
+  const rows = await db.select()
+    .from(balanceTopupRequestsTable)
+    .orderBy(desc(balanceTopupRequestsTable.createdAt))
+    .limit(200);
+
+  const masterIds = [...new Set(rows.map(r => r.masterId))];
+  const masters = masterIds.length > 0
+    ? await db.select({ id: mastersTable.id, alias: mastersTable.alias, city: mastersTable.city })
+        .from(mastersTable).where(inArray(mastersTable.id, masterIds))
+    : [];
+  const masterMap = new Map(masters.map(m => [m.id, m]));
+
+  res.json(rows.map(r => ({
+    id: r.id,
+    masterId: r.masterId,
+    masterAlias: masterMap.get(r.masterId)?.alias ?? "—",
+    masterCity: masterMap.get(r.masterId)?.city ?? "—",
+    amount: Number(r.amount),
+    status: r.status,
+    note: r.note,
+    createdAt: r.createdAt,
+    approvedAt: r.approvedAt,
+    approvedByUserId: r.approvedByUserId,
+  })));
+});
+
+// POST /api/finance/topup-requests/:id/approve
+router.post("/topup-requests/:id/approve", adminOnly, async (req, res) => {
+  const id = parseInt(String(req.params.id));
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid request ID" });
+
+  const [request] = await db.select().from(balanceTopupRequestsTable).where(eq(balanceTopupRequestsTable.id, id)).limit(1);
+  if (!request) return res.status(404).json({ error: "Request not found" });
+  if (request.status !== "pending") return res.status(400).json({ error: "Request already processed" });
+
+  const userId = (req as any).session?.user?.id ?? null;
+
+  // Credit balance
+  const result = await topupBalance(request.masterId, Number(request.amount), request.note || "Пополнение баланса (одобрено админом)");
+
+  // Update request status
+  await db.update(balanceTopupRequestsTable)
+    .set({ status: "approved", approvedAt: new Date(), approvedByUserId: userId })
+    .where(eq(balanceTopupRequestsTable.id, id));
+
+  res.json({ success: true, newBalance: result.newBalance });
+});
+
+// POST /api/finance/topup-requests/:id/reject
+router.post("/topup-requests/:id/reject", adminOnly, async (req, res) => {
+  const id = parseInt(String(req.params.id));
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid request ID" });
+
+  const [request] = await db.select().from(balanceTopupRequestsTable).where(eq(balanceTopupRequestsTable.id, id)).limit(1);
+  if (!request) return res.status(404).json({ error: "Request not found" });
+  if (request.status !== "pending") return res.status(400).json({ error: "Request already processed" });
+
+  const userId = (req as any).session?.user?.id ?? null;
+
+  await db.update(balanceTopupRequestsTable)
+    .set({ status: "rejected", approvedAt: new Date(), approvedByUserId: userId })
+    .where(eq(balanceTopupRequestsTable.id, id));
+
+  res.json({ success: true });
 });
 
 export default router;
