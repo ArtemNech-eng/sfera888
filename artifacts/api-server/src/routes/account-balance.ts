@@ -1,9 +1,14 @@
 import { Router } from "express";
-import { db, masterWalletTable, serviceFeeTransactionsTable, balanceTopupRequestsTable } from "@workspace/db";
+import { db, masterWalletTable, serviceFeeTransactionsTable, balanceTopupRequestsTable, mastersTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { requireMasterAuth } from "../middlewares/requireMaster.js";
 import { getBalance } from "../lib/accountBalance.js";
-import { getMasterById } from "../lib/masterQueries.js";
+import { sendMaxMessage } from "../maxBot.js";
+
+async function getMasterById(id: number) {
+  const rows = await db.select().from(mastersTable).where(eq(mastersTable.id, id));
+  return rows[0] ?? null;
+}
 
 const router = Router();
 
@@ -86,7 +91,6 @@ router.post("/my/topup-request", requireMasterAuth, async (req: any, res: any) =
   // Notify admin via Max
   const master = await getMasterById(masterId);
   if (master?.maxChatId) {
-    const { sendMaxMessage } = await import("../lib/maxBot.js");
     sendMaxMessage(master.maxChatId, `💰 Запрос пополнения баланса от ${master.alias}: ${Number(amount).toLocaleString("ru-RU")} ₽`).catch(() => {});
   }
 
