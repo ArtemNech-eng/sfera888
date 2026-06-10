@@ -777,6 +777,7 @@ router.post("/:id/manual-assign/:masterId", allOrderRoles, async (req, res) => {
       await tx.insert(orderMastersTable).values({
         orderId: id,
         masterId: masterIdNum,
+        assignedAt: new Date(),
         tokensCharged: tokensCost,
         status: "active",
       });
@@ -849,7 +850,8 @@ router.post("/:id/manual-assign/:masterId", allOrderRoles, async (req, res) => {
     if (e instanceof TokenWalletError && e.code === ERR_INSUFFICIENT_TOKENS) {
       return res.status(402).json({ error: e.message, insufficientTokens: true });
     }
-    throw e;
+    console.error("[manual-assign] error:", e);
+    return res.status(500).json({ error: e instanceof Error ? e.message : "Internal server error" });
   }
 
   // Log token deduction to CRM chat
