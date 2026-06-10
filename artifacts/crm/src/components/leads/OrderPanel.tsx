@@ -170,11 +170,11 @@ export default function OrderPanel({
     enabled: showStatusLog,
   });
 
-  const { data: activeMasters } = useQuery<{ id: number; alias: string; city: string | null }[]>({
+  const { data: activeMasters, isLoading: activeMastersLoading, error: activeMastersError } = useQuery<{ id: number; alias: string; city: string | null }[]>({
     queryKey: ["/api/masters"],
     queryFn: async () => {
       const r = await fetch("/api/masters", { credentials: "include" });
-      if (!r.ok) throw new Error("Failed");
+      if (!r.ok) throw new Error("Failed to load masters");
       return r.json();
     },
   });
@@ -948,15 +948,29 @@ export default function OrderPanel({
               ) : (
                 <div className="space-y-2">
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Выбрать мастера</p>
-                  <select value={selectedMasterForAssign} onChange={e => setSelectedMasterForAssign(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30">
-                    <option value="">— Выберите мастера —</option>
-                    {(activeMasters ?? []).map(m => <option key={m.id} value={String(m.id)}>{m.alias}{m.city ? ` (${m.city})` : ""}</option>)}
-                  </select>
-                  {openOrder?.masterId && selectedMasterForAssign && <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">⚠️ Текущий мастер будет заменён</p>}
-                  <div className="flex gap-2">
-                    <button onClick={() => { setShowManualAssign(false); setSelectedMasterForAssign(""); }} className="flex-1 py-2 text-sm font-medium text-muted-foreground border border-border rounded-xl hover:bg-slate-50">Отмена</button>
-                    <button onClick={() => { if (!selectedMasterForAssign) return; manualAssignMutation.mutate({ orderId, masterId: parseInt(selectedMasterForAssign) }); }} disabled={!selectedMasterForAssign || manualAssignMutation.isPending} className="flex-1 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 disabled:opacity-50 flex items-center justify-center gap-2">{manualAssignMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserCheck className="w-3.5 h-3.5" />}Назначить</button>
-                  </div>
+                  {activeMastersLoading && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                      <Loader2 className="w-4 h-4 animate-spin" /> Загрузка мастеров…
+                    </div>
+                  )}
+                  {activeMastersError && (
+                    <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                      Ошибка загрузки мастеров. Попробуйте позже.
+                    </div>
+                  )}
+                  {!activeMastersLoading && !activeMastersError && (
+                    <div className="space-y-2">
+                      <select value={selectedMasterForAssign} onChange={e => setSelectedMasterForAssign(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30">
+                        <option value="">— Выберите мастера —</option>
+                        {(activeMasters ?? []).map(m => <option key={m.id} value={String(m.id)}>{m.alias}{m.city ? ` (${m.city})` : ""}</option>)}
+                      </select>
+                      {openOrder?.masterId && selectedMasterForAssign && <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">⚠️ Текущий мастер будет заменён</p>}
+                      <div className="flex gap-2">
+                        <button onClick={() => { setShowManualAssign(false); setSelectedMasterForAssign(""); }} className="flex-1 py-2 text-sm font-medium text-muted-foreground border border-border rounded-xl hover:bg-slate-50">Отмена</button>
+                        <button onClick={() => { if (!selectedMasterForAssign) return; manualAssignMutation.mutate({ orderId, masterId: parseInt(selectedMasterForAssign) }); }} disabled={!selectedMasterForAssign || manualAssignMutation.isPending} className="flex-1 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 disabled:opacity-50 flex items-center justify-center gap-2">{manualAssignMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserCheck className="w-3.5 h-3.5" />}Назначить</button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
