@@ -40,7 +40,7 @@ export default function CreateLeadModal({
     comment: "",
     scheduledAt: "",
     source: "",
-    paymentModel: "token" as "token" | "commission",
+    paymentModel: "commission" as "token" | "commission",
   });
   const [serviceRows, setServiceRows] = useState<ServiceRow[]>([
     { type: "", area: "", pricePerM2: "" },
@@ -71,7 +71,7 @@ export default function CreateLeadModal({
       comment: "",
       scheduledAt: "",
       source: "",
-      paymentModel: "token",
+      paymentModel: "commission",
     });
     setServiceRows([{ type: "", area: "", pricePerM2: "" }]);
     setPhotosPaths([]);

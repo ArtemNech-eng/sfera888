@@ -636,7 +636,7 @@ export default function Orders() {
 
   const getOrderPaymentModel = (orderId: number) => {
     const o = orders?.find(x => x.id === orderId);
-    return ((o as any)?.paymentModel ?? "token") as string;
+    return ((o as any)?.paymentModel ?? "commission") as string;
   };
   const tokenPendingResponses = pendingResponseOrders.filter(p => getOrderPaymentModel(p.orderId) === "token");
   const commissionPendingResponses = pendingResponseOrders.filter(p => getOrderPaymentModel(p.orderId) === "commission");
@@ -690,14 +690,14 @@ export default function Orders() {
         if (o.status === "cancelled" || o.status === "completed") return false;
       } else if (statusFilter !== "all" && o.status !== statusFilter) return false;
       if (cityFilter !== "all" && o.city !== cityFilter) return false;
-      if (paymentModelFilter !== "all" && ((o as any).paymentModel ?? "token") !== paymentModelFilter) return false;
+      if (paymentModelFilter !== "all" && ((o as any).paymentModel ?? "commission") !== paymentModelFilter) return false;
 
       return true;
     }).sort((a, b) => {
       // When showing all, token orders come first
       if (paymentModelFilter === "all") {
-        const aToken = ((a as any).paymentModel ?? "token") === "token" ? 1 : 0;
-        const bToken = ((b as any).paymentModel ?? "token") === "token" ? 1 : 0;
+        const aToken = ((a as any).paymentModel ?? "commission") === "token" ? 1 : 0;
+        const bToken = ((b as any).paymentModel ?? "commission") === "token" ? 1 : 0;
         if (aToken !== bToken) return bToken - aToken;
       }
       // Within group, sort by createdAt desc (newest first)

@@ -274,7 +274,7 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
     if (!data) return null;
     let rows = data.rows;
     if (paymentModelFilter !== "all") {
-      rows = rows.filter(row => (row.paymentModel || "token") === paymentModelFilter);
+      rows = rows.filter(row => (row.paymentModel || "commission") === paymentModelFilter);
     }
     return {
       ...data,

@@ -201,7 +201,7 @@ router.post("/", checkRateLimit, allLeadRoles, async (req, res) => {
     services: parseServices(lead.services),
     cancellationReason: null,
     orderId: null,
-    paymentModel: lead.paymentModel ?? "token",
+    paymentModel: lead.paymentModel ?? "commission",
   });
 });
 
@@ -238,7 +238,7 @@ router.get("/:id", allLeadRoles, async (req, res) => {
     services: parseServices(l.services),
     cancellationReason: (l as any).cancellation_reason ?? null,
     orderId: orders[0]?.id ?? null,
-    paymentModel: l.paymentModel ?? "token",
+    paymentModel: l.paymentModel ?? "commission",
   });
 });
 
@@ -339,7 +339,7 @@ router.patch("/:id", checkRateLimit, allLeadRoles, async (req, res) => {
     photos: l.photos ? JSON.parse(l.photos) : null,
     cancellationReason: cancellationReason ?? (l as any).cancellation_reason ?? null,
     orderId: orders[0]?.id ?? null,
-    paymentModel: l.paymentModel ?? "token",
+    paymentModel: l.paymentModel ?? "commission",
   });
 });
 
