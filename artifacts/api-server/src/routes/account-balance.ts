@@ -14,10 +14,10 @@ router.get("/my", requireMasterAuth, async (req: any, res: any) => {
   const balance = await getBalance(masterId);
   return res.json({
     balance: balance.balance,
-    credit_limit: balance.creditLimit,
+    creditLimit: balance.creditLimit,
     available: balance.available,
-    total_service_fees_spent: balance.totalServiceFeesSpent,
-    total_topups: balance.totalTopups,
+    totalServiceFeesSpent: balance.totalServiceFeesSpent,
+    totalTopups: balance.totalTopups,
   });
 });
 
