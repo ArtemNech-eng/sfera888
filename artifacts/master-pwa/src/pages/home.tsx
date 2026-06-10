@@ -1679,7 +1679,7 @@ export default function HomePage() {
                   {/* Service fee info */}
                   <div className="flex items-center gap-1 text-xs text-muted-foreground bg-slate-50 dark:bg-slate-900 rounded-lg px-2 py-1">
                     <DollarSign size={12} className="text-emerald-500" />
-                    <span>Сервисный сбор: 500 ₽</span>
+                    <span>Сервисный сбор: 500 ₽. Комиссия с заказа — отдельно.</span>
                   </div>
 
                   {/* Bottom row: competition info */}
