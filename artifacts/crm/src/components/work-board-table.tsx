@@ -141,6 +141,20 @@ const formatTimeCriticality = (ageMs: number): { color: string; label: string } 
   return { color: "text-red-600", label: "очень давно" };
 };
 
+function formatTimeAgo(ms: number): string {
+  if (ms < 60_000) return "<1 мин";
+  const m = Math.floor(ms / 60_000);
+  if (m < 60) return `${m} мин`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}ч ${m % 60}м`;
+  const d = Math.floor(h / 24);
+  const remainingH = h % 24;
+  const remainingM = m % 60;
+  if (remainingH === 0 && remainingM === 0) return `${d}д`;
+  if (remainingH === 0) return `${d}д ${remainingM}м`;
+  return `${d}д ${remainingH}ч`;
+}
+
 // ── Helper components ────────────────────────────────────────────────────────
 
 function StatusBadge({ columnKey }: { columnKey: ColumnKey }) {
@@ -489,7 +503,7 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
           const criticality = formatTimeCriticality(row.original.ageMs);
           return (
             <div className="flex items-center gap-2">
-              <span className={criticality.color}>{row.original.timeInStage}</span>
+              <span className={criticality.color}>{formatTimeAgo(row.original.ageMs)}</span>
               <span className="text-xs text-slate-400">{criticality.label}</span>
             </div>
           );
@@ -760,7 +774,7 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
             <div className="flex items-center justify-between pt-2 border-t border-border/50">
               <div className="flex items-center gap-2 text-sm">
                 <Clock className="h-4 w-4 text-muted-foreground" />
-                <span>{row.timeInStage}</span>
+                <span>{formatTimeAgo(row.ageMs)}</span>
               </div>
               <div className="flex gap-2">
                 {(row.columnKey === "problem" || row.columnKey === "waiting_master") && (
