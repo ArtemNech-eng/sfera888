@@ -119,7 +119,7 @@ export default function WalletPage() {
 
   return (
     <>
-      <div className="max-w-lg mx-auto px-4 py-5 space-y-6 pb-8">
+      <div className="max-w-lg mx-auto px-4 py-5 space-y-6">
         {/* Header */}
         <div className="flex items-center gap-3">
           <button onClick={() => setLocation("/")} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-muted">
@@ -130,7 +130,7 @@ export default function WalletPage() {
       </div>
 
       {/* Account Balance Section */}
-      <div className="max-w-lg mx-auto px-4 py-5 space-y-6 border-t border-border mt-6">
+      <div className="max-w-lg mx-auto px-4 py-5 space-y-6 border-t border-border">
         <div className="flex items-center gap-3">
           <Wallet size={24} className="text-emerald-500" />
           <div>
@@ -216,7 +216,7 @@ export default function WalletPage() {
       </div>
 
       {/* Commission Balance Section */}
-      <div className="max-w-lg mx-auto px-4 py-5 space-y-6 border-t border-border mt-6">
+      <div className="max-w-lg mx-auto px-4 pt-5 pb-24 space-y-6 border-t border-border mt-6">
         <div className="flex items-center gap-3">
           <Wallet size={24} className="text-amber-500" />
           <div>
