@@ -581,9 +581,11 @@ export default function Orders() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dispatch", openDispatchId] });
-      setShowManualAssign(false);
-      setSelectedMasterForAssign("");
-      toast({ title: "Мастер назначен вручную" });
+      setTimeout(() => {
+        setShowManualAssign(false);
+        setSelectedMasterForAssign("");
+        toast({ title: "Мастер назначен вручную" });
+      }, 0);
     },
     onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
   });

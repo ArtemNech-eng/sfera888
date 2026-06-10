@@ -714,15 +714,13 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
   });
 });
 
-router.post("/:id/assign-master", allOrderRoles, async (req, res) => {
+router.post("/:id/manual-assign/:masterId", allOrderRoles, async (req, res) => {
   const id = parseInt(String(req.params.id as string));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid order ID" });
-  const { masterId } = req.body;
-  if (!masterId) return res.status(400).json({ error: "masterId required" });
-  const masterIdNum = Number(masterId);
+  const masterIdNum = parseInt(String(req.params.masterId as string));
   if (isNaN(masterIdNum)) return res.status(400).json({ error: "Invalid master ID" });
 
-  const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
+  const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, masterIdNum));
   if (!masterRows[0]) return res.status(404).json({ error: "Master not found" });
   const master = masterRows[0];
 
@@ -737,7 +735,7 @@ router.post("/:id/assign-master", allOrderRoles, async (req, res) => {
   // Check order eligibility (limit + debt + overdue)
   const activeOrders = await db.select().from(ordersTable)
     .where(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
-  const masterActiveCount = activeOrders.filter(o => o.masterId === masterId).length;
+  const masterActiveCount = activeOrders.filter(o => o.masterId === masterIdNum).length;
   const overdueMasterIds = await getOverdueMasterIds();
   const eligibility = getMasterEligibility(master, masterActiveCount, overdueMasterIds);
   if (!eligibility.canAccept) {

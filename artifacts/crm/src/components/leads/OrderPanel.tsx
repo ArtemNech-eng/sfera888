@@ -319,9 +319,11 @@ export default function OrderPanel({
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dispatch", orderId] });
       broadcastMutation.reset();
-      setShowManualAssign(false);
-      setSelectedMasterForAssign("");
-      toast({ title: "Мастер назначен вручную" });
+      setTimeout(() => {
+        setShowManualAssign(false);
+        setSelectedMasterForAssign("");
+        toast({ title: "Мастер назначен вручную" });
+      }, 0);
     },
     onError: (e: any) => {
       if (e.insufficientTokens || e.status === 402) {
