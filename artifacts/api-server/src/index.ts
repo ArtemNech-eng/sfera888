@@ -45,7 +45,11 @@ async function runMigrations() {
       ADD COLUMN IF NOT EXISTS operator_note TEXT,
       ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMP,
       ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP,
-      ADD COLUMN IF NOT EXISTS cancel_type TEXT
+      ADD COLUMN IF NOT EXISTS cancel_type TEXT,
+      ADD COLUMN IF NOT EXISTS commission_paid BOOLEAN NOT NULL DEFAULT FALSE
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS orders_commission_paid_idx ON orders(commission_paid)
   `);
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS order_status_logs (
