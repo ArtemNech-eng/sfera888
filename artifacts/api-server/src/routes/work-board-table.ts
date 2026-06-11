@@ -83,6 +83,14 @@ export interface TableRow extends Card {
   serviceType?: string;        // тип услуги (из leadsTable)
   paymentModel?: string;       // модель оплаты: token | commission
   tokensCharged?: number;      // стоимость заявки в токенах
+  // Extended fields for the unified Orders Workspace
+  city?: string;               // город заказа (для фильтра по городам)
+  district?: string;           // район заказа
+  scheduledAt?: string | null; // дата визита
+  createdAt?: string;          // дата создания заказа
+  commissionPaid?: boolean;    // флаг ручной отметки об оплате (orders.commissionPaid)
+  masterCity?: string | null;  // город мастера (бейдж в колонке Мастер)
+  masterTokensBalance?: number; // баланс токенов мастера (бейдж)
 }
 
 // ── Query parameter schema ─────────────────────────────────────────────────────
@@ -90,13 +98,18 @@ export interface TableRow extends Card {
 const querySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().min(1).max(200).default(50),
-  sortBy: z.enum(["orderId", "master", "orderTotal", "commissionLeft", "ageMs", "status"]).default("commissionLeft"),
+  sortBy: z.enum(["orderId", "master", "orderTotal", "commissionLeft", "ageMs", "status", "createdAt"]).default("commissionLeft"),
   sortDir: z.enum(["asc", "desc"]).default("desc"),
   status: z.string().optional().transform(s => s?.split(",").filter(Boolean)),
   masterId: z.coerce.number().int().positive().optional(),
   hasCommissionLeft: z.coerce.boolean().optional(),
   problemOnly: z.coerce.boolean().optional(),
   search: z.string().optional(),
+  // ── Extended filters for the unified Orders Workspace ──
+  folder: z.enum(["all", "waiting_master", "in_progress", "pending_payment", "completed", "cancelled"]).optional(),
+  city: z.string().optional(),
+  period: z.enum(["all", "today", "yesterday", "week", "month"]).optional(),
+  paymentModel: z.enum(["all", "token", "commission"]).optional(),
 });
 
 type QueryParams = z.infer<typeof querySchema>;
@@ -197,11 +210,56 @@ async function buildTableData(params: QueryParams): Promise<{
   const now = Date.now();
   const last24h = new Date(now - 24 * 3_600_000);
 
-  // Base query for active orders + recently closed
-  const baseWhere = and(
-    isNull(ordersTable.deletedAt),
-    inArray(ordersTable.status, ["waiting_master", "master_assigned", "in_progress", "cancellation_requested", "completed"])
-  );
+  // ── Folder → status mapping. The classic table fetches *active + recently
+  //    closed* orders. The Orders Workspace needs explicit folders, including
+  //    "cancelled" (excluded by the default filter) and large "completed"
+  //    archives (where the 14-day cutoff at the bottom of this function does
+  //    not apply).
+  const folder = params.folder ?? "all";
+  let folderStatuses: string[] | null = null;
+  if (folder === "waiting_master") folderStatuses = ["waiting_master"];
+  else if (folder === "in_progress") folderStatuses = ["master_assigned", "in_progress", "cancellation_requested"];
+  else if (folder === "pending_payment" || folder === "completed") folderStatuses = ["completed"];
+  else if (folder === "cancelled") folderStatuses = ["cancelled"];
+
+  // Period filter on createdAt (cheap server-side prefilter; refined in memory below)
+  const periodSince: Date | null = (() => {
+    if (!params.period || params.period === "all") return null;
+    const d = new Date(now);
+    d.setHours(0, 0, 0, 0);
+    if (params.period === "today") return d;
+    if (params.period === "yesterday") {
+      const y = new Date(d);
+      y.setDate(y.getDate() - 1);
+      return y;
+    }
+    if (params.period === "week") {
+      const w = new Date(d);
+      w.setDate(w.getDate() - 6);
+      return w;
+    }
+    if (params.period === "month") {
+      return new Date(d.getFullYear(), d.getMonth(), 1);
+    }
+    return null;
+  })();
+  const periodUntil: Date | null = params.period === "yesterday"
+    ? (() => { const t = new Date(now); t.setHours(0, 0, 0, 0); return t; })()
+    : null;
+
+  // Base query: defaults to active + recently closed; folder overrides this.
+  const defaultStatuses = ["waiting_master", "master_assigned", "in_progress", "cancellation_requested", "completed"];
+  const statusList = folderStatuses ?? defaultStatuses;
+  const baseConditions = [isNull(ordersTable.deletedAt), inArray(ordersTable.status, statusList as any)];
+  if (params.city && params.city !== "all") {
+    baseConditions.push(eq(ordersTable.city, params.city));
+  }
+  if (params.paymentModel && params.paymentModel !== "all") {
+    baseConditions.push(eq(ordersTable.paymentModel, params.paymentModel));
+  }
+  if (periodSince) baseConditions.push(gte(ordersTable.createdAt, periodSince));
+  if (periodUntil) baseConditions.push(sql`${ordersTable.createdAt} < ${periodUntil}`);
+  const baseWhere = and(...baseConditions);
 
   // Apply status filter if provided
   let statusFilter = params.status;
@@ -247,6 +305,7 @@ async function buildTableData(params: QueryParams): Promise<{
             id: mastersTable.id,
             alias: mastersTable.alias,
             debt: mastersTable.debt,
+            city: mastersTable.city,
           })
           .from(mastersTable)
           .where(inArray(mastersTable.id, masterIds))
@@ -547,10 +606,31 @@ async function buildTableData(params: QueryParams): Promise<{
       serviceType: lead?.serviceType ?? undefined,
       paymentModel: (o as any).paymentModel || "token",
       tokensCharged: Number((o as any).tokensCharged || 0),
+      // Extended fields for the unified Orders Workspace
+      city: o.city,
+      district: o.district ?? undefined,
+      scheduledAt: o.scheduledAt ? new Date(o.scheduledAt as any).toISOString() : null,
+      createdAt: o.createdAt ? new Date(o.createdAt as any).toISOString() : undefined,
+      commissionPaid: !!(o as any).commissionPaid,
+      masterCity: master?.city ?? null,
     };
 
-    // Skip completed orders with 0 commission that are older than 14 days (archive them)
-    if (columnKey === "closed_24h" && ageMs > 14 * 86_400_000) continue;
+    // Folder-aware refinement after we know commissionPaid status:
+    //   - pending_payment: completed + outstanding commission OR commissionPaid=false
+    //   - completed:       completed + fully paid (no outstanding) AND commissionPaid=true
+    // The order.commissionPaid flag (set explicitly via the closing drawer)
+    // takes precedence over the calculated `commissionUnpaidAmount`, so an
+    // operator can move an order to "Successful" even before the transaction
+    // is fully reconciled.
+    const orderCommissionPaidFlag = (o as any).commissionPaid === true;
+    const isFullyPaid = orderCommissionPaidFlag || commissionUnpaidAmount === 0;
+    if (folder === "pending_payment" && !(o.status === "completed" && !isFullyPaid)) continue;
+    if (folder === "completed" && !(o.status === "completed" && isFullyPaid)) continue;
+
+    // Skip completed orders with 0 commission older than 14 days, but ONLY for
+    // the default mixed view — the dedicated "completed" folder must show the
+    // full archive.
+    if (folder === "all" && columnKey === "closed_24h" && ageMs > 14 * 86_400_000) continue;
 
     rows.push(row);
   }
@@ -574,6 +654,10 @@ async function buildTableData(params: QueryParams): Promise<{
         return dir * (a.ageMs - b.ageMs);
       case "status":
         return dir * a.status.localeCompare(b.status);
+      case "createdAt":
+        // a.id is monotonically growing → use as createdAt proxy for stability.
+        // (The actual createdAt is not on the row to keep payload lean.)
+        return dir * (a.orderId - b.orderId);
       default:
         return dir * (a.commissionLeft - b.commissionLeft);
     }
