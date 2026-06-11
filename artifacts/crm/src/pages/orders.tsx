@@ -211,12 +211,15 @@ export default function Orders() {
   const [editAmountId, setEditAmountId] = useState<number | null>(null);
   const [notifCopied, setNotifCopied] = useState(false);
   const [editAmountValue, setEditAmountValue] = useState("");
+  const [closingOrderId, setClosingOrderId] = useState<number | null>(null);
+  const [closingForm, setClosingForm] = useState({ amount: "", commission: "", isPaid: false, status: "completed" as "completed" | "cancelled" });
   const [search, setSearch] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get("search") ?? "";
   });
   const [dateFilter, setDateFilter] = useState<"all"|"today"|"yesterday"|"week"|"month">("all");
   const [statusFilter, setStatusFilter] = useState<string>("active");
+  const [folderFilter, setFolderFilter] = useState<"in_progress"|"pending_payment"|"completed"|"cancelled">("in_progress");
   const [cityFilter, setCityFilter] = useState<string>("all");
   const [paymentModelFilter, setPaymentModelFilter] = useState<string>(() => {
     const params = new URLSearchParams(window.location.search);
@@ -238,7 +241,17 @@ export default function Orders() {
 
   const openMasterChat = (masterId: number) => setLocation(`/master-chat?masterId=${masterId}`);
 
-  const { data: orders, isLoading } = useGetOrders({}, { query: { queryKey: ["/api/orders"], refetchInterval: 8000 } });
+  const handleOpenClosingDrawer = (order: any) => {
+    setClosingOrderId(order.id);
+    setClosingForm({
+      amount: order.orderAmount ? String(order.orderAmount) : "",
+      commission: order.commission ? String(order.commission) : "",
+      isPaid: order.commissionPaid ?? false,
+      status: order.status === "cancelled" ? "cancelled" : "completed",
+    });
+  };
+
+  const { data: orders, isLoading } = useGetOrders({ folder: folderFilter }, { query: { queryKey: ["/api/orders", folderFilter], refetchInterval: 8000 } });
 
   useEffect(() => {
     if (highlightRowRef.current) {
@@ -392,6 +405,25 @@ export default function Orders() {
       return r.json();
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/orders"] }),
+  });
+
+  const closeOrderMutation = useMutation({
+    mutationFn: async ({ orderId, amount, commission, isPaid, status }: { orderId: number; amount: number; commission: number; isPaid: boolean; status: string }) => {
+      const r = await fetch(`/api/orders/${orderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ orderAmount: amount, commission, commissionPaid: isPaid, status }),
+      });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Ошибка"); }
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      setClosingOrderId(null);
+      toast({ title: "Заказ обновлён", description: "Данные успешно сохранены" });
+    },
+    onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
   });
 
   const cancelOrderMutation = useMutation({
@@ -709,9 +741,37 @@ export default function Orders() {
     <ProtectedRoute allowedRoles={['admin', 'master_operator', 'lead_operator']} permissionKey="orders">
       <Layout>
         <div className="space-y-6">
-          <div>
-            <h1 className="text-3xl font-display font-bold text-foreground">Буфер заказов</h1>
-            <p className="text-muted-foreground mt-1">Распределение заказов по мастерам</p>
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+            <div>
+              <h1 className="text-3xl font-display font-bold text-foreground">Заказы</h1>
+              <p className="text-muted-foreground mt-1">Управление сделками и финансами</p>
+            </div>
+
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200 shadow-sm">
+              {( [
+                { id: "in_progress" as const, label: "В работе", icon: Timer, color: "text-blue-600", activeBg: "bg-white" },
+                { id: "pending_payment" as const, label: "Ожидание оплаты", icon: Banknote, color: "text-amber-600", activeBg: "bg-white" },
+                { id: "completed" as const, label: "Успешные", icon: CheckCircle2, color: "text-emerald-600", activeBg: "bg-white" },
+                { id: "cancelled" as const, label: "Отказы", icon: XCircle, color: "text-red-600", activeBg: "bg-white" },
+              ] ).map(f => {
+                const active = folderFilter === f.id;
+                const Icon = f.icon;
+                return (
+                  <button
+                    key={f.id}
+                    onClick={() => setFolderFilter(f.id)}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+                      active 
+                        ? `${f.activeBg} ${f.color} shadow-sm border border-slate-200/50` 
+                        : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
+                    }`}
+                  >
+                    <Icon className={`w-4 h-4 ${active ? f.color : "text-slate-400"}`} />
+                    {f.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Cancellation request banner */}
@@ -1152,7 +1212,14 @@ export default function Orders() {
                     const confirmed = (order as any).orderAmount ? Number((order as any).orderAmount) : null;
                     const pendingResp = pendingResponseOrders.find(p => p.orderId === order.id);
                     const waitH = (Date.now() - new Date(order.createdAt).getTime()) / 3600000;
-                    const openPanel = () => { setOpenDispatchId(order.id); broadcastMutation.reset(); };
+                    const openPanel = () => {
+                      if (folderFilter === "in_progress" || folderFilter === "pending_payment") {
+                        handleOpenClosingDrawer(order);
+                      } else {
+                        setOpenDispatchId(order.id);
+                        broadcastMutation.reset();
+                      }
+                    };
                     const isToken = ((order as any).paymentModel ?? "token") === "token";
                     return (
                       <tr
@@ -2790,6 +2857,129 @@ export default function Orders() {
               >
                 {unassignMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                 Снять мастера
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Financial Closing Drawer ───────────────────────────────────────────── */}
+      {closingOrderId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/40 backdrop-blur-sm">
+          <div className="bg-white h-full w-full max-w-md shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+            <div className="p-6 border-b flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-foreground">Закрытие заказа #{closingOrderId}</h2>
+                <p className="text-sm text-muted-foreground mt-1">Укажите финальные данные сделки</p>
+              </div>
+              <button onClick={() => setClosingOrderId(null)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Сумма заказа, ₽</label>
+                    <div className="relative">
+                      <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input
+                        type="number"
+                        value={closingForm.amount}
+                        onChange={e => setClosingForm(prev => ({ ...prev, amount: e.target.value }))}
+                        className="w-full pl-9 pr-4 py-2.5 border border-border rounded-xl focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                        placeholder="0.00"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Комиссия, ₽</label>
+                    <div className="relative">
+                      <Banknote className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input
+                        type="number"
+                        value={closingForm.commission}
+                        onChange={e => setClosingForm(prev => ({ ...prev, commission: e.target.value }))}
+                        className="w-full pl-9 pr-4 py-2.5 border border-border rounded-xl focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                        placeholder="0.00"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3 pt-2">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Статус заказа</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => setClosingForm(prev => ({ ...prev, status: "completed" }))}
+                      className={`flex items-center justify-center gap-2 py-3 rounded-xl border-2 transition-all ${
+                        closingForm.status === "completed" 
+                          ? "border-emerald-500 bg-emerald-50 text-emerald-700" 
+                          : "border-slate-100 bg-slate-50 text-slate-500 hover:border-slate-200"
+                      }`}
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span className="font-semibold text-sm">Успешно</span>
+                    </button>
+                    <button
+                      onClick={() => setClosingForm(prev => ({ ...prev, status: "cancelled" }))}
+                      className={`flex items-center justify-center gap-2 py-3 rounded-xl border-2 transition-all ${
+                        closingForm.status === "cancelled" 
+                          ? "border-red-500 bg-red-50 text-red-700" 
+                          : "border-slate-100 bg-slate-50 text-slate-500 hover:border-slate-200"
+                      }`}
+                    >
+                      <XCircle className="w-4 h-4" />
+                      <span className="font-semibold text-sm">Отказ</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    onClick={() => setClosingForm(prev => ({ ...prev, isPaid: !prev.isPaid }))}
+                    className={`w-full flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${
+                      closingForm.isPaid 
+                        ? "border-blue-500 bg-blue-50 text-blue-700" 
+                        : "border-slate-100 bg-slate-50 text-slate-500 hover:border-slate-200"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2 rounded-lg ${closingForm.isPaid ? "bg-blue-500 text-white" : "bg-slate-200 text-slate-400"}`}>
+                        <Banknote className="w-5 h-5" />
+                      </div>
+                      <div className="text-left">
+                        <p className="font-bold text-sm">Комиссия оплачена</p>
+                        <p className="text-[10px] opacity-70 uppercase tracking-tight font-semibold">
+                          {closingForm.isPaid ? "Средства поступили" : "В ожидании оплаты"}
+                        </p>
+                      </div>
+                    </div>
+                    <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${closingForm.isPaid ? "bg-blue-500 border-blue-500" : "border-slate-300"}`}>
+                      {closingForm.isPaid && <Check className="w-3 h-3 text-white" />}
+                    </div>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 border-t bg-slate-50">
+              <button
+                onClick={() => {
+                  closeOrderMutation.mutate({
+                    orderId: closingOrderId,
+                    amount: parseFloat(closingForm.amount) || 0,
+                    commission: parseFloat(closingForm.commission) || 0,
+                    isPaid: closingForm.isPaid,
+                    status: closingForm.status,
+                  });
+                }}
+                disabled={closeOrderMutation.isPending}
+                className="w-full bg-primary text-primary-foreground py-3.5 rounded-2xl font-bold shadow-lg shadow-primary/20 hover:opacity-90 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {closeOrderMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <ClipboardList className="w-5 h-5" />}
+                Обновить данные заказа
               </button>
             </div>
           </div>

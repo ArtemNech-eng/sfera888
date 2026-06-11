@@ -52,6 +52,7 @@ export const ordersTable = pgTable("orders", {
   roomsCount: integer("rooms_count"),
   prepaymentAmount: numeric("prepayment_amount", { precision: 10, scale: 2 }).notNull().default("0"),
   prepaymentDeducted: boolean("prepayment_deducted").notNull().default(false),
+  commissionPaid: boolean("commission_paid").notNull().default(false),
   clientReview: text("client_review"),
   reviewedAt: timestamp("reviewed_at"),
   masterComment: text("master_comment"),

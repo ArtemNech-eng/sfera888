@@ -77,13 +77,25 @@ async function getAwaitingPaymentColumn() {
 }
 
 router.get("/", allOrderRoles, async (req, res) => {
-  const { status, masterId, page, limit } = req.query;
+  const { status, masterId, page, limit, folder } = req.query;
   const pageNum = Math.max(1, parseInt((page as string) || "1", 10));
   const limitNum = Math.min(100, Math.max(1, parseInt((limit as string) || "50", 10)));
   const offset = (pageNum - 1) * limitNum;
 
   const conditions: any[] = [];
-  if (status) conditions.push(eq(ordersTable.status, status as any));
+  if (status) {
+    conditions.push(eq(ordersTable.status, status as any));
+  } else if (folder) {
+    if (folder === "in_progress") {
+      conditions.push(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
+    } else if (folder === "pending_payment") {
+      conditions.push(and(eq(ordersTable.status, "completed"), eq(ordersTable.commissionPaid, false)));
+    } else if (folder === "completed") {
+      conditions.push(and(eq(ordersTable.status, "completed"), eq(ordersTable.commissionPaid, true)));
+    } else if (folder === "cancelled") {
+      conditions.push(eq(ordersTable.status, "cancelled"));
+    }
+  }
   if (masterId) {
     const masterIdNum = parseInt(String(masterId));
     if (!isNaN(masterIdNum)) conditions.push(eq(ordersTable.masterId, masterIdNum));
@@ -149,6 +161,7 @@ router.get("/", allOrderRoles, async (req, res) => {
         proposedAmount: o.proposedAmount ? Number(o.proposedAmount) : null,
         orderAmount: o.orderAmount ? Number(o.orderAmount) : null,
         commission: o.commission ? Number(o.commission) : null,
+        commissionPaid: o.commissionPaid ?? false,
         clientRating: o.clientRating ?? null,
         cancelReason: o.cancelReason ?? null,
         cancelType: (o as any).cancelType ?? null,
@@ -249,7 +262,7 @@ router.get("/:id", allOrderRoles, async (req, res) => {
 router.patch("/:id", allOrderRoles, async (req, res) => {
   const id = parseInt(String(req.params.id as string));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid order ID" });
-  const { status, orderAmount, commission, clientRating, proposedAmount, acceptProposed, approveCancellation, rejectCancellation, restoreOrder, operatorNote, clientCancelReason, manualTokenCost, paymentModel, maxMasters } = req.body;
+  const { status, orderAmount, commission, commissionPaid, clientRating, proposedAmount, acceptProposed, approveCancellation, rejectCancellation, restoreOrder, operatorNote, clientCancelReason, manualTokenCost, paymentModel, maxMasters } = req.body;
 
   // Fetch current order to get masterId before update
   const currentRows = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
@@ -258,6 +271,7 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
 
   const updates: any = { updatedAt: new Date() };
   if (status !== undefined) updates.status = status;
+  if (commissionPaid !== undefined) updates.commissionPaid = !!commissionPaid;
   if (proposedAmount !== undefined) updates.proposedAmount = proposedAmount !== null ? String(proposedAmount) : null;
   if (operatorNote !== undefined) updates.operatorNote = operatorNote !== null ? operatorNote : null;
   if (clientCancelReason !== undefined) updates.operatorNote = clientCancelReason || null;
