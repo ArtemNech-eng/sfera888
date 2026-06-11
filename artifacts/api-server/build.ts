@@ -9,7 +9,14 @@ const __dirname = path.dirname(__filename);
 // Packages that cannot be bundled (e.g. native modules, packages with
 // dynamic require patterns that esbuild can't resolve at build time).
 // Everything in `dependencies` is bundled unless listed here.
-const bundleBlocklist: string[] = [];
+const bundleBlocklist: string[] = [
+  // sharp is a native module: it dispatches at runtime to one of
+  // @img/sharp-<platform> packages depending on os/arch/libc. Bundling it
+  // breaks the path lookup and crashes with "Could not load the sharp module"
+  // on the target platform. Keep it external so Node's require resolves it
+  // from node_modules at runtime.
+  "sharp",
+];
 
 async function buildAll() {
   const distDir = path.resolve(__dirname, "dist");
