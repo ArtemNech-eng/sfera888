@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { eq, inArray, and, lte, isNull } from "drizzle-orm";
 import { hashPassword } from "./lib/auth.js";
 import { bootstrapFirstAdmin } from "./lib/bootstrap-admin.js";
+import { runDrizzleMigrations } from "./lib/migrate.js";
 import { checkOverdueTransactions } from "./lib/orderEligibility.js";
 import { performBroadcast } from "./lib/broadcastOrder.js";
 import { broadcastCheckin, broadcastCheckinReminder } from "./lib/checkinBroadcast.js";
@@ -22,515 +23,22 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${process.env["PORT"]}"`);
 }
 
-// Run safe additive migrations on startup (IF NOT EXISTS — idempotent).
-async function runMigrations() {
-  await db.execute(sql`
-    ALTER TABLE masters
-      ADD COLUMN IF NOT EXISTS contract_signed_at TIMESTAMP,
-      ADD COLUMN IF NOT EXISTS contract_sign_ip TEXT,
-      ADD COLUMN IF NOT EXISTS passport_photo_url TEXT,
-      ADD COLUMN IF NOT EXISTS passport_verified BOOLEAN NOT NULL DEFAULT FALSE,
-      ADD COLUMN IF NOT EXISTS passport_verify_note TEXT,
-      ADD COLUMN IF NOT EXISTS contract_full_name TEXT,
-      ADD COLUMN IF NOT EXISTS contract_passport_number TEXT,
-      ADD COLUMN IF NOT EXISTS contract_passport_date TEXT,
-      ADD COLUMN IF NOT EXISTS contract_passport_issuer TEXT,
-      ADD COLUMN IF NOT EXISTS contract_address TEXT,
-      ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP,
-      ADD COLUMN IF NOT EXISTS passport_reg_photo_url TEXT,
-      ADD COLUMN IF NOT EXISTS max_chat_id TEXT
-  `);
-  await db.execute(sql`
-    ALTER TABLE orders
-      ADD COLUMN IF NOT EXISTS operator_note TEXT,
-      ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMP,
-      ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP,
-      ADD COLUMN IF NOT EXISTS cancel_type TEXT,
-      ADD COLUMN IF NOT EXISTS commission_paid BOOLEAN NOT NULL DEFAULT FALSE
-  `);
-  await db.execute(sql`
-    CREATE INDEX IF NOT EXISTS orders_commission_paid_idx ON orders(commission_paid)
-  `);
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS order_status_logs (
-      id SERIAL PRIMARY KEY,
-      order_id INTEGER NOT NULL REFERENCES orders(id),
-      old_status TEXT,
-      new_status TEXT NOT NULL,
-      user_id INTEGER,
-      user_alias TEXT,
-      note TEXT,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    )
-  `);
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS receipts (
-      id SERIAL PRIMARY KEY,
-      token VARCHAR(64) NOT NULL UNIQUE,
-      order_id INTEGER NOT NULL REFERENCES orders(id),
-      master_id INTEGER NOT NULL REFERENCES masters(id),
-      client_name TEXT NOT NULL,
-      client_phone TEXT NOT NULL,
-      service_type TEXT NOT NULL,
-      city TEXT NOT NULL,
-      district TEXT,
-      prepayment_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
-      total_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
-      line_items JSONB NOT NULL DEFAULT '[]',
-      notes TEXT,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    )
-  `);
-  await db.execute(sql`
-    ALTER TABLE receipts
-      ADD COLUMN IF NOT EXISTS total_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
-      ADD COLUMN IF NOT EXISTS line_items JSONB NOT NULL DEFAULT '[]',
-      ADD COLUMN IF NOT EXISTS client_submitted_name TEXT,
-      ADD COLUMN IF NOT EXISTS prepayment_submitted_at TIMESTAMP,
-      ADD COLUMN IF NOT EXISTS prepayment_screenshot_url TEXT,
-      ADD COLUMN IF NOT EXISTS prepayment_seen_at TIMESTAMP
-  `);
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS master_checkins (
-      id SERIAL PRIMARY KEY,
-      master_id INTEGER NOT NULL REFERENCES masters(id),
-      date DATE NOT NULL,
-      is_available BOOLEAN,
-      responded_at TIMESTAMP,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      UNIQUE (master_id, date)
-    )
-  `);
-  await db.execute(sql`
-    ALTER TABLE master_checkins
-      ADD COLUMN IF NOT EXISTS reason TEXT
-  `);
-  await db.execute(sql`
-    DO $$ BEGIN
-      IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'master_checkins_master_id_date_key'
-          AND conrelid = 'master_checkins'::regclass
-      ) THEN
-        DELETE FROM master_checkins a
-          USING master_checkins b
-          WHERE a.id < b.id
-            AND a.master_id = b.master_id
-            AND a.date = b.date;
-        ALTER TABLE master_checkins
-          ADD CONSTRAINT master_checkins_master_id_date_key UNIQUE (master_id, date);
-      END IF;
-    END $$
-  `);
-  await db.execute(sql`
-    ALTER TABLE masters
-      ADD COLUMN IF NOT EXISTS service_prices JSONB
-  `);
-  await db.execute(sql`
-    ALTER TABLE leads
-      ADD COLUMN IF NOT EXISTS cancellation_reason TEXT,
-      ADD COLUMN IF NOT EXISTS status_updated_at TIMESTAMP
-  `);
-  await db.execute(sql`
-    ALTER TABLE orders
-      ADD COLUMN IF NOT EXISTS broadcast_count INTEGER NOT NULL DEFAULT 0,
-      ADD COLUMN IF NOT EXISTS last_broadcast_at TIMESTAMP
-  `);
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS lead_events (
-      id SERIAL PRIMARY KEY,
-      lead_id INTEGER NOT NULL REFERENCES leads(id),
-      event_type TEXT NOT NULL,
-      description TEXT NOT NULL,
-      user_alias TEXT,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    )
-  `);
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS bot_sessions (
-      id SERIAL PRIMARY KEY,
-      bot_type VARCHAR(20) NOT NULL,
-      user_id BIGINT NOT NULL,
-      session_data JSONB NOT NULL DEFAULT '{}',
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      UNIQUE (bot_type, user_id)
-    )
-  `);
-  await db.execute(sql`
-    ALTER TABLE transactions
-      ADD COLUMN IF NOT EXISTS source_type TEXT
-  `);
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS browser_agent_credentials (
-      id SERIAL PRIMARY KEY,
-      site TEXT NOT NULL UNIQUE,
-      login TEXT NOT NULL,
-      password_enc TEXT NOT NULL,
-      cookies JSONB,
-      last_login_at TIMESTAMP,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-    )
-  `);
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS browser_agent_logs (
-      id SERIAL PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      action_type TEXT NOT NULL,
-      description TEXT NOT NULL,
-      screenshot_b64 TEXT,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    )
-  `);
-  await db.execute(sql`
-    CREATE INDEX IF NOT EXISTS browser_agent_logs_session_idx ON browser_agent_logs(session_id)
-  `);
-  await db.execute(sql`
-    ALTER TABLE avito_settings
-      ADD COLUMN IF NOT EXISTS advance_balance INTEGER DEFAULT 0,
-      ADD COLUMN IF NOT EXISTS advance_balance_updated_at TIMESTAMP
-  `);
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS scenario_runs (
-      id SERIAL PRIMARY KEY,
-      scenario TEXT NOT NULL,
-      run_type TEXT NOT NULL DEFAULT 'manual',
-      status TEXT NOT NULL DEFAULT 'running',
-      summary JSONB,
-      error_text TEXT,
-      duration_ms INTEGER,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    )
-  `);
-  await db.execute(sql`
-    CREATE INDEX IF NOT EXISTS scenario_runs_scenario_idx ON scenario_runs(scenario, created_at DESC)
-  `);
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS scenario_settings (
-      scenario TEXT PRIMARY KEY,
-      auto_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-    )
-  `);
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS scenario_notifications (
-      id SERIAL PRIMARY KEY,
-      scenario_id VARCHAR(64) NOT NULL,
-      order_id INTEGER NOT NULL,
-      master_id INTEGER NOT NULL,
-      tier VARCHAR(32) NOT NULL,
-      sent_at TIMESTAMP NOT NULL DEFAULT NOW()
-    )
-  `);
-  await db.execute(sql`
-    CREATE INDEX IF NOT EXISTS idx_scen_notif_lookup
-      ON scenario_notifications (scenario_id, order_id, master_id, tier, sent_at DESC)
-  `);
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS order_broadcast_waves (
-      id SERIAL PRIMARY KEY,
-      order_id INTEGER NOT NULL UNIQUE,
-      current_wave INTEGER NOT NULL DEFAULT 1,
-      wave_1_sent_at TIMESTAMP,
-      wave_2_sent_at TIMESTAMP,
-      wave_3_sent_at TIMESTAMP,
-      wave_4_sent_at TIMESTAMP,
-      admin_alerted_at TIMESTAMP,
-      wave_1_count INTEGER NOT NULL DEFAULT 0,
-      wave_2_count INTEGER NOT NULL DEFAULT 0,
-      wave_3_count INTEGER NOT NULL DEFAULT 0,
-      wave_4_count INTEGER NOT NULL DEFAULT 0,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-    )
-  `);
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS task_snoozes (
-      id SERIAL PRIMARY KEY,
-      item_id TEXT NOT NULL UNIQUE,
-      snoozed_until TIMESTAMP NOT NULL,
-      snoozed_by TEXT,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    )
-  `);
-  await db.execute(sql`
-    CREATE INDEX IF NOT EXISTS task_snoozes_until_idx ON task_snoozes(snoozed_until)
-  `);
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS operator_push_subscriptions (
-      id SERIAL PRIMARY KEY,
-      operator_id TEXT NOT NULL,
-      endpoint TEXT NOT NULL UNIQUE,
-      p256dh TEXT NOT NULL,
-      auth TEXT NOT NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    )
-  `);
-  // Add refund_requested to order_status enum (safe — IF NOT EXISTS via DO block)
-  await db.execute(sql`
-    DO $$ BEGIN
-      IF NOT EXISTS (
-        SELECT 1 FROM pg_enum
-        WHERE enumlabel = 'refund_requested'
-          AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'order_status')
-      ) THEN
-        ALTER TYPE order_status ADD VALUE 'refund_requested';
-      END IF;
-    END $$
-  `);
-  // Token monetization tables
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS token_packages (
-      id SERIAL PRIMARY KEY,
-      name VARCHAR(255) NOT NULL,
-      tokens_count NUMERIC(10,2) NOT NULL,
-      price_rub INTEGER NOT NULL,
-      price_per_token NUMERIC(10,2) NOT NULL,
-      is_active BOOLEAN NOT NULL DEFAULT TRUE,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-    )
-  `);
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS service_token_prices (
-      id SERIAL PRIMARY KEY,
-      service_name VARCHAR(255) NOT NULL,
-      service_key VARCHAR(100) NOT NULL UNIQUE,
-      tokens_cost NUMERIC(10,2) NOT NULL,
-      is_active BOOLEAN NOT NULL DEFAULT TRUE,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-    )
-  `);
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS master_wallet (
-      id SERIAL PRIMARY KEY,
-      master_id INTEGER NOT NULL UNIQUE REFERENCES masters(id),
-      tokens_balance NUMERIC(10,2) NOT NULL DEFAULT 0,
-      total_tokens_purchased NUMERIC(10,2) NOT NULL DEFAULT 0,
-      total_tokens_spent NUMERIC(10,2) NOT NULL DEFAULT 0,
-      total_tokens_refunded NUMERIC(10,2) NOT NULL DEFAULT 0,
-      total_rub_spent INTEGER NOT NULL DEFAULT 0,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-    )
-  `);
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS wallet_transactions (
-      id SERIAL PRIMARY KEY,
-      master_id INTEGER NOT NULL REFERENCES masters(id),
-      type VARCHAR(50) NOT NULL,
-      tokens_amount NUMERIC(10,2) NOT NULL,
-      rub_amount INTEGER,
-      package_id INTEGER REFERENCES token_packages(id),
-      order_id INTEGER REFERENCES orders(id),
-      reason TEXT,
-      created_by VARCHAR(100) NOT NULL DEFAULT 'system',
-      status VARCHAR(50) NOT NULL DEFAULT 'completed',
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    )
-  `);
-  await db.execute(sql`
-    ALTER TABLE wallet_transactions ADD COLUMN IF NOT EXISTS screenshot_url TEXT
-  `);
-  await db.execute(sql`
-    CREATE INDEX IF NOT EXISTS wallet_transactions_master_idx ON wallet_transactions(master_id, created_at DESC)
-  `);
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS token_price_history (
-      id SERIAL PRIMARY KEY,
-      entity_type VARCHAR(50) NOT NULL,
-      entity_id INTEGER NOT NULL,
-      field_name VARCHAR(100) NOT NULL,
-      old_value TEXT,
-      new_value TEXT,
-      changed_by VARCHAR(100) NOT NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    )
-  `);
-  // Add payment_model and tokens_charged to orders
-  await db.execute(sql`
-    ALTER TABLE orders
-      ADD COLUMN IF NOT EXISTS payment_model VARCHAR(50) NOT NULL DEFAULT 'token',
-      ADD COLUMN IF NOT EXISTS tokens_charged NUMERIC(10,2) NOT NULL DEFAULT 0,
-      ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMP
-  `);
-  // Add credit tracking columns to master_wallet
-  await db.execute(sql`
-    ALTER TABLE master_wallet
-      ADD COLUMN IF NOT EXISTS credit_tokens_issued NUMERIC(10,2) NOT NULL DEFAULT 0,
-      ADD COLUMN IF NOT EXISTS credit_tokens_spent NUMERIC(10,2) NOT NULL DEFAULT 0,
-      ADD COLUMN IF NOT EXISTS credit_limit_tokens NUMERIC(10,2) NOT NULL DEFAULT 0
-  `);
-  // Add manual_token_cost to orders for admin override
-  await db.execute(sql`
-    ALTER TABLE orders
-      ADD COLUMN IF NOT EXISTS manual_token_cost NUMERIC(10,2)
-  `);
-  // Create service_token_rules table for area-based pricing
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS service_token_rules (
-      id          SERIAL PRIMARY KEY,
-      service_key VARCHAR(100) NOT NULL,
-      title       VARCHAR(255) NOT NULL,
-      calc_type   VARCHAR(50)  NOT NULL DEFAULT 'fixed',
-      min_area    NUMERIC(10,2),
-      max_area    NUMERIC(10,2),
-      tokens_cost NUMERIC(10,2) NOT NULL,
-      is_active   BOOLEAN NOT NULL DEFAULT TRUE,
-      sort_order  INTEGER NOT NULL DEFAULT 0,
-      created_at  TIMESTAMP NOT NULL DEFAULT NOW()
-    )
-  `);
-  await db.execute(sql`
-    CREATE INDEX IF NOT EXISTS idx_service_token_rules_key ON service_token_rules(service_key, is_active, sort_order)
-  `);
-  // City token multipliers
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS city_token_multipliers (
-      id          SERIAL PRIMARY KEY,
-      city        VARCHAR(150) NOT NULL UNIQUE,
-      multiplier  NUMERIC(6,4) NOT NULL DEFAULT 1.0000,
-      notes       VARCHAR(255),
-      is_active   BOOLEAN NOT NULL DEFAULT TRUE,
-      created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at  TIMESTAMP NOT NULL DEFAULT NOW()
-    )
-  `);
-  // ── Partner PWA tables ─────────────────────────────────────────────────────
-  // Add 'partner' to user_role enum (idempotent)
-  await db.execute(sql`
-    DO $$ BEGIN
-      IF NOT EXISTS (
-        SELECT 1 FROM pg_enum
-        WHERE enumlabel = 'partner'
-          AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'user_role')
-      ) THEN
-        ALTER TYPE user_role ADD VALUE 'partner';
-      END IF;
-    END $$
-  `);
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS traffic_partners (
-      id            SERIAL PRIMARY KEY,
-      user_id       INTEGER REFERENCES users(id),
-      name          VARCHAR(255) NOT NULL,
-      phone         VARCHAR(50)  NOT NULL,
-      city          VARCHAR(100) NOT NULL,
-      status        VARCHAR(50)  NOT NULL DEFAULT 'active',
-      avito_account_name  VARCHAR(255),
-      avito_account_link  VARCHAR(500),
-      notes         TEXT,
-      registered_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      first_lead_at TIMESTAMP,
-      created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at    TIMESTAMP NOT NULL DEFAULT NOW()
-    )
-  `);
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS partner_billing_periods (
-      id                  SERIAL PRIMARY KEY,
-      partner_id          INTEGER NOT NULL REFERENCES traffic_partners(id),
-      period_start        DATE NOT NULL,
-      period_end          DATE NOT NULL,
-      is_first_period     BOOLEAN NOT NULL DEFAULT FALSE,
-      days_in_period      INTEGER NOT NULL,
-      leads_count         INTEGER NOT NULL DEFAULT 0,
-      valid_leads_count   INTEGER NOT NULL DEFAULT 0,
-      token_spent_count   INTEGER NOT NULL DEFAULT 0,
-      fixed_pct           NUMERIC(5,4) NOT NULL DEFAULT 0,
-      fixed_salary_base   NUMERIC(10,2) NOT NULL DEFAULT 0,
-      fixed_salary_earned NUMERIC(10,2) NOT NULL DEFAULT 0,
-      bonus_per_lead      INTEGER NOT NULL DEFAULT 250,
-      bonus_earned        NUMERIC(10,2) NOT NULL DEFAULT 0,
-      total_earned        NUMERIC(10,2) NOT NULL DEFAULT 0,
-      status              VARCHAR(50) NOT NULL DEFAULT 'calculating',
-      created_at          TIMESTAMP NOT NULL DEFAULT NOW(),
-      paid_at             TIMESTAMP
-    )
-  `);
-  await db.execute(sql`
-    ALTER TABLE leads
-      ADD COLUMN IF NOT EXISTS traffic_partner_id      INTEGER,
-      ADD COLUMN IF NOT EXISTS lead_channel            VARCHAR(100) DEFAULT 'avito_partner',
-      ADD COLUMN IF NOT EXISTS is_possible_duplicate   BOOLEAN DEFAULT FALSE,
-      ADD COLUMN IF NOT EXISTS partner_lead_status     VARCHAR(50),
-      ADD COLUMN IF NOT EXISTS partner_rejection_reason VARCHAR(500)
-  `);
-  // Seed partner system settings (ON CONFLICT DO NOTHING = idempotent)
-  await db.execute(sql`
-    INSERT INTO system_settings (key, value, updated_at) VALUES
-      ('partner_fixed_salary_max',        '15000', NOW()),
-      ('partner_fixed_target_leads',      '30',    NOW()),
-      ('partner_bonus_per_accepted_lead', '250',   NOW()),
-      ('partner_monthly_leads_plan',      '50',    NOW()),
-      ('manual_partner_lead_review',      'true',  NOW()),
-      ('partner_payout_day_start',        '1',     NOW()),
-      ('partner_payout_day_end',          '5',     NOW())
-    ON CONFLICT (key) DO NOTHING
-  `);
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS ai_error_logs (
-      id          SERIAL PRIMARY KEY,
-      error_id    VARCHAR(16)  NOT NULL UNIQUE,
-      first_seen  TIMESTAMPTZ  NOT NULL,
-      last_seen   TIMESTAMPTZ  NOT NULL,
-      level       VARCHAR(20)  NOT NULL,
-      source      VARCHAR(100) NOT NULL,
-      message     TEXT         NOT NULL,
-      count       INTEGER      NOT NULL DEFAULT 1,
-      severity    VARCHAR(20)  NOT NULL,
-      sample_line INTEGER,
-      is_active   BOOLEAN      NOT NULL DEFAULT TRUE,
-      created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-      updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
-    )
-  `);
-  // Landing lead responses — exclusive model (first master to pay gets the lead, lead_id UNIQUE)
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS lead_responses (
-      id            SERIAL PRIMARY KEY,
-      lead_id       INTEGER NOT NULL UNIQUE REFERENCES leads(id),
-      master_id     INTEGER NOT NULL REFERENCES masters(id),
-      tokens_spent  NUMERIC(10,2) NOT NULL DEFAULT 1,
-      created_at    TIMESTAMP NOT NULL DEFAULT NOW()
-    )
-  `);
-  await db.execute(sql`
-    CREATE INDEX IF NOT EXISTS lead_responses_lead_idx ON lead_responses(lead_id)
-  `);
-  await db.execute(sql`
-    CREATE INDEX IF NOT EXISTS lead_responses_master_idx ON lead_responses(master_id)
-  `);
-  // Hold mechanism: status column for 96-hour bonus hold
-  await db.execute(sql`
-    ALTER TABLE lead_responses
-      ADD COLUMN IF NOT EXISTS status VARCHAR(50) NOT NULL DEFAULT 'pending',
-      ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMP
-  `);
-  // ── Active token packages (burning packages model) ─────────────────────────
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS master_active_packages (
-      id            SERIAL PRIMARY KEY,
-      master_id     INTEGER NOT NULL REFERENCES masters(id),
-      package_type  VARCHAR(20) NOT NULL DEFAULT 'paid',
-      tokens_total  NUMERIC(10,2) NOT NULL DEFAULT 0,
-      tokens_remaining NUMERIC(10,2) NOT NULL DEFAULT 0,
-      expires_at    TIMESTAMP NOT NULL,
-      status        VARCHAR(20) NOT NULL DEFAULT 'active',
-      is_debt_paid  BOOLEAN NOT NULL DEFAULT TRUE,
-      transaction_id INTEGER,
-      created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at    TIMESTAMP NOT NULL DEFAULT NOW()
-    )
-  `);
-  await db.execute(sql`
-    CREATE INDEX IF NOT EXISTS idx_master_active_packages_master ON master_active_packages(master_id, status, expires_at)
-  `);
-  // ── Token model guardrails ─────────────────────────────────────────────────
-  // Prevent double-spend: one spend transaction per (master, order)
+// Runtime fixes that aren't expressible in the Drizzle schema and so are not
+// generated by `drizzle-kit`. Everything else — CREATE TABLE, ALTER ADD COLUMN,
+// CREATE TYPE, indexes that ARE in the schema — is owned by the baseline +
+// future migrations under `lib/db/migrations/` and applied by
+// `runDrizzleMigrations()`.
+//
+// Keep this list small. If something here can be expressed in the schema
+// (e.g. via index().where() or .check()), prefer moving it there.
+async function runRuntimeFixes() {
+  // Hand-tuned partial / multi-column performance indexes that aren't in the schema yet.
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_orders_city_status ON orders(city, status) WHERE deleted_at IS NULL`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_wallet_transactions_master_type ON wallet_transactions(master_id, type, order_id)`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_order_dispatches_order_status ON order_dispatches(order_id, status)`);
+
+  // Prevent double-spend: one spend transaction per (master, order). Partial unique
+  // index — drizzle-kit can't yet emit `CREATE UNIQUE INDEX … WHERE` from schema.
   await db.execute(sql`
     DO $$ BEGIN
       IF NOT EXISTS (
@@ -543,13 +51,14 @@ async function runMigrations() {
       END IF;
     END $$
   `);
-  // Fix any existing rows that violate the upcoming check constraint
+
+  // CHECK constraint enforcing wallet credit limit. Not yet expressed in schema.
+  // First clean any rows that would violate it (data fix), then add the constraint.
   await db.execute(sql`
     UPDATE master_wallet
     SET tokens_balance = -credit_limit_tokens
-    WHERE tokens_balance < -credit_limit_tokens;
+    WHERE tokens_balance < -credit_limit_tokens
   `);
-  // Enforce balance >= -credit_limit at DB level
   await db.execute(sql`
     DO $$ BEGIN
       IF NOT EXISTS (
@@ -563,19 +72,30 @@ async function runMigrations() {
       END IF;
     END $$
   `);
-  // Performance indexes
-  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_orders_city_status ON orders(city, status) WHERE deleted_at IS NULL`);
-  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_wallet_transactions_master_type ON wallet_transactions(master_id, type, order_id)`);
-  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_order_dispatches_order_status ON order_dispatches(order_id, status)`);
-  // Fix fomo_events sequence if out of sync (prevents duplicate key errors)
+
+  // Re-sync sequence after legacy data import (prevents duplicate-key errors).
   await db.execute(sql`
     SELECT setval(
       'fomo_events_id_seq',
       COALESCE((SELECT MAX(id) FROM fomo_events), 0) + 1,
       false
-    );
+    )
   `);
-  console.log("[startup] Migrations applied");
+
+  // Seed partner system settings (idempotent via ON CONFLICT).
+  await db.execute(sql`
+    INSERT INTO system_settings (key, value, updated_at) VALUES
+      ('partner_fixed_salary_max',        '15000', NOW()),
+      ('partner_fixed_target_leads',      '30',    NOW()),
+      ('partner_bonus_per_accepted_lead', '250',   NOW()),
+      ('partner_monthly_leads_plan',      '50',    NOW()),
+      ('manual_partner_lead_review',      'true',  NOW()),
+      ('partner_payout_day_start',        '1',     NOW()),
+      ('partner_payout_day_end',          '5',     NOW())
+    ON CONFLICT (key) DO NOTHING
+  `);
+
+  console.log("[startup] Runtime fixes applied");
 }
 
 // Seed default voronka columns if they don't exist yet.
@@ -859,8 +379,11 @@ async function autoReBroadcastNoResponse() {
   }
 }
 
-// Run migrations first, then all other startup tasks that depend on the schema
-runMigrations()
+// Apply pending DB schema changes (drizzle migrations) before any code that
+// queries the schema. Then apply runtime fixes (constraints/indexes/seeds that
+// aren't in the Drizzle schema yet) and kick off the rest of the bootstrap.
+runDrizzleMigrations()
+  .then(() => runRuntimeFixes())
   .then(() => {
     console.log("--- ADMIN AUTH PREPARED ---");
     bootstrapFirstAdmin().catch(console.error);
@@ -877,7 +400,10 @@ runMigrations()
       .then(n => { if (n > 0) console.log(`[backfill] Created ${n} receipt transactions`); })
       .catch(e => console.error("[backfill] Receipt transactions error:", e));
   })
-  .catch(console.error);
+  .catch((err) => {
+    console.error("[startup] Migration/bootstrap failed:", err);
+    process.exit(1);
+  });
 
 // Mark overdue commissions every 6 hours
 setInterval(() => checkOverdueTransactions().catch(console.error), 6 * 60 * 60 * 1000);

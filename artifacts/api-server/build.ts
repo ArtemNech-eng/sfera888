@@ -1,7 +1,7 @@
 import path from "path";
 import { fileURLToPath } from "url";
 import { build as esbuild } from "esbuild";
-import { rm, readFile } from "fs/promises";
+import { rm, readFile, mkdir, cp } from "fs/promises";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -53,6 +53,14 @@ async function buildAll() {
     external: externals,
     logLevel: "info",
   });
+
+  // Copy drizzle migrations next to the bundle so runtime can apply them.
+  // `migrate.ts` looks for `./migrations` relative to __dirname (= dist/).
+  const migrationsSrc = path.resolve(__dirname, "../../lib/db/migrations");
+  const migrationsDest = path.resolve(distDir, "migrations");
+  await mkdir(migrationsDest, { recursive: true });
+  await cp(migrationsSrc, migrationsDest, { recursive: true });
+  console.log(`copied migrations: ${migrationsSrc} -> ${migrationsDest}`);
 }
 
 buildAll().catch((err) => {
