@@ -44,6 +44,7 @@ import NotFound from "@/pages/not-found";
 
 // Pages (lazy)
 const Leads = lazy(() => import("@/pages/leads"));
+const Orders = lazy(() => import("@/pages/orders"));
 const Masters = lazy(() => import("@/pages/masters"));
 const Finance = lazy(() => import("@/pages/finance"));
 const Analytics = lazy(() => import("@/pages/analytics"));
@@ -97,7 +98,7 @@ function Router() {
       <Route path="/" component={RootRedirect} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/leads" component={Leads} />
-      <Route path="/orders" component={() => <InAppRedirect to="/leads?tab=work" />} />
+      <Route path="/orders" component={Orders} />
       <Route path="/masters" component={Masters} />
       <Route path="/finance" component={Finance} />
       <Route path="/analytics" component={Analytics} />

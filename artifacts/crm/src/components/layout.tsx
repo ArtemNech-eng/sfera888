@@ -113,6 +113,7 @@ export function Layout({ children }: LayoutProps) {
     { href: "/dialogs",        label: "Диалоги с клиентами",   icon: MessageCircle,    permKey: "orders",       badge: unreadDialogs > 0 ? unreadDialogs : null },
 
     { href: "/leads",          label: "Заявки",                icon: Inbox,            permKey: "leads",        badge: leadsBadge > 0 ? leadsBadge : null },
+    { href: "/orders",         label: "Заказы",                icon: Briefcase,        permKey: "orders" },
     { href: "/work-monitor",   label: "В работе",             icon: Activity,         permKey: "orders" },
     { href: "/finance",     label: "Финансы",              icon: Wallet,          permKey: "finance" },
     { href: "/masters",         label: "Мастера",              icon: Users,           permKey: "masters" },

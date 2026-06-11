@@ -6,7 +6,7 @@ import {
   useCreateLead, useGetCities, useGetServices,
 } from "@workspace/api-client-react";
 import { ProtectedRoute } from "@/hooks/use-auth";
-import { WorkBoardTable } from "@/components/work-board-table";
+import OrdersWorkspace from "@/components/orders/OrdersWorkspace";
 import LeadList from "@/components/leads/LeadList";
 import ArchiveList from "@/components/leads/ArchiveList";
 import OrderPanel from "@/components/leads/OrderPanel";
@@ -644,8 +644,9 @@ export default function Leads() {
               TAB 2: В РАБОТЕ
           ══════════════════════════════════════════════════════════ */}
           {activeTab === "work" && (
-            <WorkBoardTable
+            <OrdersWorkspace
               onOpenOrder={(id) => { setOpenDispatchId(id); }}
+              initialFolder="waiting_master"
             />
           )}
 
