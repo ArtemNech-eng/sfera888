@@ -2862,11 +2862,12 @@ export default function Orders() {
           </div>
         </div>
       )}
+      </Layout>
 
       {/* ─── Financial Closing Drawer ───────────────────────────────────────────── */}
       {closingOrderId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/40 backdrop-blur-sm">
-          <div className="bg-white h-full w-full max-w-md shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+        <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/40 backdrop-blur-sm pointer-events-auto">
+          <div className="bg-white h-full w-full max-w-md shadow-2xl flex flex-col">
             <div className="p-6 border-b flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold text-foreground">Закрытие заказа #{closingOrderId}</h2>
@@ -2985,7 +2986,6 @@ export default function Orders() {
           </div>
         </div>
       )}
-      </Layout>
     </ProtectedRoute>
   );
 }
