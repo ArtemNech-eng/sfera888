@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { PhotoUploader } from "@/components/photo-uploader";
 import { SOURCE_OPTIONS } from "./LeadDetailPanel";
@@ -8,10 +8,19 @@ import {
 } from "lucide-react";
 
 interface ServiceRow {
+  uid: string;        // stable key — survives reorder/insert/delete (React reconciliation)
   type: string;
   area: string;
   pricePerM2: string;
 }
+
+let __rowSeq = 0;
+const newRow = (): ServiceRow => ({
+  uid: `row-${++__rowSeq}-${Date.now().toString(36)}`,
+  type: "",
+  area: "",
+  pricePerM2: "",
+});
 
 interface CreateLeadModalProps {
   open: boolean;
@@ -42,9 +51,7 @@ export default function CreateLeadModal({
     source: "",
     paymentModel: "commission" as "token" | "commission",
   });
-  const [serviceRows, setServiceRows] = useState<ServiceRow[]>([
-    { type: "", area: "", pricePerM2: "" },
-  ]);
+  const [serviceRows, setServiceRows] = useState<ServiceRow[]>(() => [newRow()]);
   const [photosPaths, setPhotosPaths] = useState<string[]>([]);
 
   const [aiOpen, setAiOpen] = useState(false);
@@ -73,7 +80,7 @@ export default function CreateLeadModal({
       source: "",
       paymentModel: "commission",
     });
-    setServiceRows([{ type: "", area: "", pricePerM2: "" }]);
+    setServiceRows([newRow()]);
     setPhotosPaths([]);
     setPhoneCheckResult(null);
     setAiOpen(false);
@@ -81,6 +88,25 @@ export default function CreateLeadModal({
     setAiDone(false);
     setAiError(null);
   };
+
+  // Reset form when the modal closes — avoids state churn while the modal
+  // is still mounted (the previous flow reset state synchronously inside
+  // handleSubmit, which combined with index-based row keys produced
+  // "removeChild on Node: not a child of this node" reconciliation errors).
+  useEffect(() => {
+    if (!open) {
+      resetForm();
+      if (aiProgressInterval.current) {
+        clearInterval(aiProgressInterval.current);
+        aiProgressInterval.current = null;
+      }
+      if (phoneCheckTimeout.current) {
+        clearTimeout(phoneCheckTimeout.current);
+        phoneCheckTimeout.current = null;
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const checkPhone = (phone: string) => {
     if (phoneCheckTimeout.current) clearTimeout(phoneCheckTimeout.current);
@@ -151,6 +177,7 @@ export default function CreateLeadModal({
       }
       if (data.services && Array.isArray(data.services) && data.services.length > 0) {
         const parsed: ServiceRow[] = data.services.map((s: any) => ({
+          uid: `row-${++__rowSeq}-${Date.now().toString(36)}`,
           type: s.type ?? "",
           area: s.area != null ? String(s.area) : "",
           pricePerM2: s.pricePerM2 != null ? String(s.pricePerM2) : "",
@@ -175,10 +202,10 @@ export default function CreateLeadModal({
   };
 
   const addRow = () =>
-    setServiceRows((r) => [...r, { type: "", area: "", pricePerM2: "" }]);
+    setServiceRows((r) => [...r, newRow()]);
   const removeRow = (i: number) =>
-    setServiceRows((r) => r.filter((_, idx) => idx !== i));
-  const updateRow = (i: number, field: keyof ServiceRow, value: string) =>
+    setServiceRows((r) => (r.length <= 1 ? r : r.filter((_, idx) => idx !== i)));
+  const updateRow = (i: number, field: "type" | "area" | "pricePerM2", value: string) =>
     setServiceRows((r) =>
       r.map((row, idx) => (idx === i ? { ...row, [field]: value } : row))
     );
@@ -211,7 +238,10 @@ export default function CreateLeadModal({
         photos: photosPaths.length > 0 ? photosPaths : undefined,
       },
     });
-    resetForm();
+    // Don't reset here — the parent closes the modal on success and the
+    // open=>false transition triggers resetForm via useEffect. Resetting
+    // synchronously while the modal is still rendered caused React 19
+    // reconciliation errors ("removeChild on Node: not a child of this node").
   };
 
   if (!open) return null;
@@ -637,7 +667,7 @@ export default function CreateLeadModal({
                       (parseFloat(row.pricePerM2) || 0);
                     return (
                       <div
-                        key={i}
+                        key={row.uid}
                         className="group px-3 py-1.5"
                         style={{
                           gridTemplateColumns: "1fr 80px 100px 90px 32px",

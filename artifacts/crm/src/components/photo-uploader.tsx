@@ -30,6 +30,7 @@ async function uploadFile(file: File): Promise<string> {
 export function PhotoUploader({ value, onChange, maxPhotos = 8 }: PhotoUploaderProps) {
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleFiles = async (files: FileList | null) => {
@@ -57,7 +58,7 @@ export function PhotoUploader({ value, onChange, maxPhotos = 8 }: PhotoUploaderP
       {value.length > 0 && (
         <div className="grid grid-cols-4 gap-2">
           {value.map((path, i) => (
-            <div key={i} className="relative group aspect-square rounded-xl overflow-hidden bg-gray-100 border border-gray-200">
+            <div key={path} className="relative group aspect-square rounded-xl overflow-hidden bg-gray-100 border border-gray-200">
               <img
                 src={`${BASE}/storage${path}`}
                 alt={`Фото ${i + 1}`}
@@ -110,14 +111,18 @@ export function PhotoUploader({ value, onChange, maxPhotos = 8 }: PhotoUploaderP
           type="button"
           onClick={() => inputRef.current?.click()}
           disabled={uploading}
-          onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add("border-primary", "bg-primary/5"); }}
-          onDragLeave={e => { e.currentTarget.classList.remove("border-primary", "bg-primary/5"); }}
+          onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
           onDrop={e => {
             e.preventDefault();
-            e.currentTarget.classList.remove("border-primary", "bg-primary/5");
+            setDragOver(false);
             handleFiles(e.dataTransfer.files);
           }}
-          className="w-full py-6 rounded-2xl border-2 border-dashed border-gray-200 hover:border-primary/50 hover:bg-primary/5 transition-all flex flex-col items-center justify-center gap-2 text-gray-400 hover:text-primary"
+          className={`w-full py-6 rounded-2xl border-2 border-dashed transition-all flex flex-col items-center justify-center gap-2 ${
+            dragOver
+              ? "border-primary bg-primary/5 text-primary"
+              : "border-gray-200 hover:border-primary/50 hover:bg-primary/5 text-gray-400 hover:text-primary"
+          }`}
         >
           {uploading ? (
             <>
