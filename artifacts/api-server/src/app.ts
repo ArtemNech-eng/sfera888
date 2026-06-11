@@ -63,6 +63,39 @@ const app: Express = express();
 // secure cookies work correctly behind Railway's proxy.
 app.set("trust proxy", 1);
 
+// ── Security headers ──────────────────────────────────────────────────────────
+// CRM, master-pwa and partner-pwa are served from this same Express instance
+// (see app.use("/crm", express.static(...)) further down). They need to load:
+//   • images from API/uploads/banners (same origin) and external CDNs (data:, blob:, https:)
+//   • fonts from Google Fonts
+//   • inline styles & scripts (Vite + React class-names)
+//   • SSE/WebSocket connections (work-board live stream)
+//   • service workers (PWA install)
+// We set a permissive-but-explicit CSP so that anything proxying these
+// responses (CDN, Railway edge, etc.) doesn't fall back to a strict default
+// like default-src 'none'.
+app.use((_req, res, next) => {
+  res.setHeader(
+    "Content-Security-Policy",
+    [
+      "default-src 'self'",
+      "img-src 'self' data: blob: https:",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' data: https://fonts.gstatic.com",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      "connect-src 'self' https: wss: ws:",
+      "manifest-src 'self'",
+      "worker-src 'self' blob:",
+      "frame-src 'self'",
+      "base-uri 'self'",
+      "form-action 'self'",
+    ].join("; "),
+  );
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  next();
+});
+
 // Redirect www to canonical non-www domain
 app.use((req, res, next) => {
   const host = req.hostname ?? "";
