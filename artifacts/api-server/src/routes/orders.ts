@@ -102,10 +102,10 @@ router.get("/", allOrderRoles, async (req, res) => {
     } else if (statusStr) {
       // Fallback to status filter if no folder specified
       conditions.push(eq(ordersTable.status, statusStr as any));
-  }
-  
-  if (masterId) {
-    const masterIdNum = parseInt(String(masterId));
+    }
+    
+    if (masterId) {
+      const masterIdNum = parseInt(String(masterId));
     if (!isNaN(masterIdNum)) conditions.push(eq(ordersTable.masterId, masterIdNum));
   }
   conditions.push(isNull(ordersTable.deletedAt));
@@ -197,6 +197,10 @@ router.get("/", allOrderRoles, async (req, res) => {
     page: pageNum,
     limit: limitNum,
   });
+  } catch (err) {
+    console.error("[orders GET /] Error:", err);
+    return res.status(500).json({ error: "Internal server error", details: String(err) });
+  }
 });
 
 router.get("/:id", allOrderRoles, async (req, res) => {
@@ -266,10 +270,7 @@ router.get("/:id", allOrderRoles, async (req, res) => {
       paidAt: tx.paidAt ?? null,
     } : null,
   });
-  } catch (err) {
-    console.error("[orders GET /] Error:", err);
-    return res.status(500).json({ error: "Internal server error", details: String(err) });
-  }
+  
 });
 
 router.patch("/:id", allOrderRoles, async (req, res) => {
