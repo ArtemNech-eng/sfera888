@@ -1,7 +1,35 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
-import { AlertCircle, Diamond, Users, UserCheck, MessageSquare, RefreshCw, XCircle, Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { AlertCircle, Diamond, Users, UserCheck, MessageSquare, RefreshCw, XCircle, Loader2, ChevronDown, ChevronRight } from "lucide-react";
+
+// Persist collapsed-state per banner across page loads.
+function useCollapsed(key: string, initial = false): [boolean, (v: boolean) => void] {
+  const fullKey = `crm.banner.collapsed.${key}`;
+  const [collapsed, setCollapsedState] = useState<boolean>(() => {
+    if (typeof window === "undefined") return initial;
+    try {
+      const v = window.localStorage.getItem(fullKey);
+      return v === null ? initial : v === "1";
+    } catch {
+      return initial;
+    }
+  });
+  const setCollapsed = (v: boolean) => {
+    setCollapsedState(v);
+    try { window.localStorage.setItem(fullKey, v ? "1" : "0"); } catch {}
+  };
+  // Sync if localStorage changes in another tab
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === fullKey && e.newValue != null) setCollapsedState(e.newValue === "1");
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [fullKey]);
+  return [collapsed, setCollapsed];
+}
 
 interface PendingDispatch {
   orderId: number;
@@ -119,6 +147,11 @@ export default function OrdersBanners({ onOpenOrder }: Props) {
 
   const openMasterChat = (masterId: number) => setLocation(`/master-chat?masterId=${masterId}`);
 
+  // Collapsed state for each banner — persisted across reloads
+  const [cancelCollapsed, setCancelCollapsed] = useCollapsed("cancellation");
+  const [tokenCollapsed, setTokenCollapsed] = useCollapsed("token-pending");
+  const [commCollapsed, setCommCollapsed] = useCollapsed("commission-pending");
+
   // Hide all banners if everything's clear
   if (cancellationOrders.length === 0 && tokenPending.length === 0 && commissionPending.length === 0) {
     return null;
@@ -129,11 +162,19 @@ export default function OrdersBanners({ onOpenOrder }: Props) {
       {/* Cancellation requests */}
       {cancellationOrders.length > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-2xl p-3 space-y-2">
-          <div className="flex items-center gap-2 text-red-800 font-semibold text-sm">
+          <button
+            type="button"
+            onClick={() => setCancelCollapsed(!cancelCollapsed)}
+            className="w-full flex items-center gap-2 text-red-800 font-semibold text-sm hover:opacity-80 transition-opacity"
+            aria-expanded={!cancelCollapsed}
+          >
+            {cancelCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             <AlertCircle className="w-4 h-4" />
-            {cancellationOrders.length === 1 ? "1 запрос на отмену" : `${cancellationOrders.length} запроса на отмену`}
-          </div>
-          {cancellationOrders.map(order => (
+            <span>
+              {cancellationOrders.length === 1 ? "1 запрос на отмену" : `${cancellationOrders.length} запроса на отмену`}
+            </span>
+          </button>
+          {!cancelCollapsed && cancellationOrders.map(order => (
             <div key={order.id} className="bg-white rounded-xl border border-red-100 px-3 py-2 flex items-center gap-2 flex-wrap">
               <div className="flex-1 min-w-0">
                 <button
@@ -203,6 +244,8 @@ export default function OrdersBanners({ onOpenOrder }: Props) {
           items={tokenPending}
           onOpenOrder={onOpenOrder}
           onOpenMasterChat={openMasterChat}
+          collapsed={tokenCollapsed}
+          onToggleCollapsed={() => setTokenCollapsed(!tokenCollapsed)}
         />
       )}
 
@@ -215,6 +258,8 @@ export default function OrdersBanners({ onOpenOrder }: Props) {
           items={commissionPending}
           onOpenOrder={onOpenOrder}
           onOpenMasterChat={openMasterChat}
+          collapsed={commCollapsed}
+          onToggleCollapsed={() => setCommCollapsed(!commCollapsed)}
         />
       )}
     </div>
@@ -228,19 +273,27 @@ interface ResponsesBannerProps {
   items: PendingDispatch[];
   onOpenOrder: (orderId: number) => void;
   onOpenMasterChat: (masterId: number) => void;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
 }
 
-function ResponsesBanner({ tone, icon, title, items, onOpenOrder, onOpenMasterChat }: ResponsesBannerProps) {
+function ResponsesBanner({ tone, icon, title, items, onOpenOrder, collapsed, onToggleCollapsed }: ResponsesBannerProps) {
   const cls = tone === "emerald"
     ? { wrap: "bg-emerald-50 border-emerald-200", titleC: "text-emerald-800", card: "border-emerald-100", btn: "bg-emerald-500 hover:bg-emerald-600" }
     : { wrap: "bg-blue-50 border-blue-200", titleC: "text-blue-800", card: "border-blue-100", btn: "bg-blue-500 hover:bg-blue-600" };
   return (
     <div className={`${cls.wrap} border rounded-2xl p-3 space-y-2`}>
-      <div className={`flex items-center gap-2 font-semibold text-sm ${cls.titleC}`}>
+      <button
+        type="button"
+        onClick={onToggleCollapsed}
+        className={`w-full flex items-center gap-2 font-semibold text-sm hover:opacity-80 transition-opacity ${cls.titleC}`}
+        aria-expanded={!collapsed}
+      >
+        {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
         {icon}
-        {title}
-      </div>
-      {items.map(item => (
+        <span>{title}</span>
+      </button>
+      {!collapsed && items.map(item => (
         <div key={item.orderId} className={`bg-white rounded-xl border ${cls.card} px-3 py-2 flex items-center gap-2 flex-wrap`}>
           <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
             <button onClick={() => onOpenOrder(item.orderId)} className="font-medium text-foreground hover:underline">
