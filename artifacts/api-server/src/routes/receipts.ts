@@ -71,17 +71,11 @@ function lineTotal(item: { price: number; quantity?: number }) {
 }
 
 // ─── Helper: create/update transaction from confirmed receipt ─────────────────
-
+//
+// Caller is responsible for ensuring `receipt.masterId` references an existing
+// master. The orphan case is handled at the call site of the backfill so we
+// don't spam logs with one warning per orphaned receipt on every restart.
 async function ensureReceiptTransaction(receipt: typeof receiptsTable.$inferSelect): Promise<void> {
-  // Skip orphaned receipts where master no longer exists
-  const [masterExists] = await db.select({ id: mastersTable.id })
-    .from(mastersTable)
-    .where(eq(mastersTable.id, receipt.masterId));
-  if (!masterExists) {
-    console.warn(`[receipts] Skipping receipt ${receipt.id}: master ${receipt.masterId} not found`);
-    return;
-  }
-
   const totalAmount = Number(receipt.totalAmount);
   const prepayAmount = Number(receipt.prepaymentAmount);
   const commSettings = await getCommissionSettings();
@@ -145,25 +139,44 @@ async function ensureReceiptTransaction(receipt: typeof receiptsTable.$inferSele
 // ─── Exported: backfill transactions for old confirmed receipts ───────────────
 
 export async function backfillReceiptTransactions(): Promise<number> {
-  const confirmed = await db.select().from(receiptsTable)
+  // Pull confirmed receipts together with master existence in one query so we
+  // can split orphans out without N round-trips and without stderr noise.
+  const confirmed = await db
+    .select({
+      receipt: receiptsTable,
+      masterPresent: mastersTable.id,
+    })
+    .from(receiptsTable)
+    .leftJoin(mastersTable, eq(mastersTable.id, receiptsTable.masterId))
     .where(isNotNull(receiptsTable.prepaymentSubmittedAt));
 
+  const orphans: number[] = [];
   let created = 0;
-  for (const receipt of confirmed) {
+
+  for (const row of confirmed) {
+    if (row.masterPresent === null) {
+      orphans.push(row.receipt.id);
+      continue;
+    }
     try {
       const existingTxRows = await db.select().from(transactionsTable)
-        .where(eq(transactionsTable.orderId, receipt.orderId));
-      if (existingTxRows.length === 0) {
-        await ensureReceiptTransaction(receipt);
-        created++;
-      } else {
-        // Even if transactions exist, call ensureReceiptTransaction to dedupe and update
-        await ensureReceiptTransaction(receipt);
-      }
+        .where(eq(transactionsTable.orderId, row.receipt.orderId));
+      const isNew = existingTxRows.length === 0;
+      // Always call ensureReceiptTransaction — it dedupes and updates existing rows.
+      await ensureReceiptTransaction(row.receipt);
+      if (isNew) created++;
     } catch (err) {
-      console.error(`[backfill] Receipt ${receipt.id} failed:`, err);
+      console.error(`[backfill] Receipt ${row.receipt.id} failed:`, err);
     }
   }
+
+  if (orphans.length > 0) {
+    // One info-level summary instead of one warning per orphan on every boot.
+    console.log(
+      `[backfill] Skipped ${orphans.length} receipt(s) with deleted masters: [${orphans.join(", ")}]`,
+    );
+  }
+
   return created;
 }
 

@@ -1,5 +1,5 @@
 import app from "./app";
-import { db, usersTable, voronkaColumnsTable, mastersTable, ordersTable, orderDispatchesTable, tokenPackagesTable, serviceTokenPricesTable, serviceTokenRulesTable, masterCheckinsTable } from "@workspace/db";
+import { db, pool, usersTable, voronkaColumnsTable, mastersTable, ordersTable, orderDispatchesTable, tokenPackagesTable, serviceTokenPricesTable, serviceTokenRulesTable, masterCheckinsTable } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { eq, inArray, and, lte, isNull } from "drizzle-orm";
 import { hashPassword } from "./lib/auth.js";
@@ -739,6 +739,39 @@ setInterval(async () => {
 }, 60 * 1000);
 console.log("[scenarios] Template scenario schedulers started");
 
-app.listen(port, "0.0.0.0", () => {
+const server = app.listen(port, "0.0.0.0", () => {
   console.log(`Server listening on port ${port}`);
 });
+
+// Graceful shutdown on Railway rolling-restart (SIGTERM) and Ctrl+C (SIGINT).
+// Stop accepting new connections, drain in-flight requests, then close the
+// PG pool so the new container can start cleanly. Forced exit after 10s
+// guards against hanging connections.
+let shuttingDown = false;
+async function shutdown(signal: NodeJS.Signals) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[shutdown] ${signal} received, draining…`);
+
+  const forceTimer = setTimeout(() => {
+    console.error("[shutdown] grace period exceeded, forcing exit");
+    process.exit(1);
+  }, 10_000);
+  forceTimer.unref();
+
+  server.close((err) => {
+    if (err) console.error("[shutdown] server.close error:", err);
+    pool.end()
+      .then(() => {
+        console.log("[shutdown] clean exit");
+        process.exit(0);
+      })
+      .catch((poolErr) => {
+        console.error("[shutdown] pool.end error:", poolErr);
+        process.exit(1);
+      });
+  });
+}
+
+process.on("SIGTERM", () => { void shutdown("SIGTERM"); });
+process.on("SIGINT",  () => { void shutdown("SIGINT");  });
