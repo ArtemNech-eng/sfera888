@@ -46,6 +46,9 @@ interface Master {
   blockedAt?: string | null;
   blockedReason?: string | null;
   manualUnblocksCount?: number;
+  balance?: number;
+  creditLimit?: number;
+  totalServiceFeesSpent?: number;
 }
 
 interface VoronkaColumn {
@@ -185,6 +188,11 @@ function MasterRow({ master, onOpenDrawer, onDelete, onGoToChat, isFomoBlocked }
           <span className="font-semibold text-[13px] text-gray-800 leading-tight">{master.alias}</span>
           <PriorityBadge master={master} />
           <StatusPill master={master} />
+          {!master.contractSignedAt && master.status !== "suspended" && master.status !== "pending_contract" && (
+            <span title="Договор не подписан" className="text-[10px] bg-rose-50 text-rose-600 border border-rose-200 rounded-full px-1.5 py-0.5 font-semibold flex items-center gap-0.5">
+              <FileSignature className="w-2.5 h-2.5" />нет договора
+            </span>
+          )}
           {master.isTestMaster && <span className="text-[10px] bg-amber-100 text-amber-700 rounded-full px-1.5 py-0.5 font-semibold">ТЕСТ</span>}
           {master.pwaLogin && (
             <span className="text-[10px] bg-emerald-50 text-emerald-600 rounded-full px-1.5 py-0.5 font-semibold flex items-center gap-0.5">
@@ -266,6 +274,12 @@ function MasterRow({ master, onOpenDrawer, onDelete, onGoToChat, isFomoBlocked }
           {master.activeOrders.length === 0 && (master.completedOrders ?? 0) === 0 && (master.cancelledOrders ?? 0) === 0 && (
             <span className="text-[10px] text-gray-300 font-medium">0 зак.</span>
           )}
+        </div>
+        <div className="text-center hidden md:block" title="Баланс кошелька (для сервисных сборов 500 ₽/заявка)">
+          <div className={`font-semibold ${(master.balance ?? 0) < 0 ? "text-red-500" : (master.balance ?? 0) < 500 ? "text-amber-500" : "text-emerald-600"}`}>
+            {(master.balance ?? 0).toLocaleString("ru")} ₽
+          </div>
+          <div className="text-[10px] text-gray-400">баланс</div>
         </div>
         {master.debt > 0 && (
           <div className="text-center hidden md:block">
@@ -758,6 +772,8 @@ export default function Masters() {
   const [masters, setMasters] = useState<Master[]>([]);
   const [columns, setColumns] = useState<VoronkaColumn[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const inFlightRef = useRef(false);
   const [drawerMaster, setDrawerMaster] = useState<Master | null>(null);
   const [fomoBlockedIds, setFomoBlockedIds] = useState<Set<number>>(new Set());
   const [draggingId, setDraggingId] = useState<number | null>(null);
@@ -767,26 +783,40 @@ export default function Masters() {
   const { data: cities } = useGetCities();
 
   const fetchAll = useCallback(async (initial = false) => {
-    const [mR, cR, fR] = await Promise.all([
-      fetch("/api/voronka/masters", { credentials: "include" }),
-      fetch("/api/voronka/columns", { credentials: "include" }),
-      fetch("/api/masters/fomo-blocked", { credentials: "include" }),
-    ]);
-    if (mR.ok) {
+    // Не допускаем параллельных/наслаивающихся запросов: если предыдущий ещё идёт
+    // (например, эндпоинт отвечает дольше интервала polling), пропускаем тик.
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+    try {
+      const [mR, cR, fR] = await Promise.all([
+        fetch("/api/voronka/masters", { credentials: "include" }),
+        fetch("/api/voronka/columns", { credentials: "include" }),
+        fetch("/api/masters/fomo-blocked", { credentials: "include" }),
+      ]);
+      if (!mR.ok) throw new Error(`Не удалось загрузить мастеров (код ${mR.status})`);
       const list: Master[] = await mR.json();
       setMasters(list);
+      setLoadError(null);
       if (initial) {
-        setLoading(false);
         const openId = parseInt(new URLSearchParams(window.location.search).get("openMaster") ?? "");
         if (openId) { const found = list.find(m => m.id === openId); if (found) setDrawerMaster(found); }
       }
-    } else if (initial) setLoading(false);
-    if (cR.ok) setColumns(await cR.json());
-    if (fR.ok) {
-      const blocked: { masterId: number }[] = await fR.json();
-      setFomoBlockedIds(new Set(blocked.map(b => b.masterId)));
+      if (cR.ok) setColumns(await cR.json());
+      if (fR.ok) {
+        const blocked: { masterId: number }[] = await fR.json();
+        setFomoBlockedIds(new Set(blocked.map(b => b.masterId)));
+      }
+    } catch (e: any) {
+      // Любая ошибка (сеть/таймаут/500) больше не приводит к вечному спиннеру —
+      // на initial показываем экран ошибки с кнопкой «Повторить».
+      if (initial) setLoadError(e?.message ?? "Ошибка загрузки. Проверьте соединение.");
+    } finally {
+      if (initial) setLoading(false);
+      inFlightRef.current = false;
     }
   }, []);
+
+  const retryLoad = useCallback(() => { setLoading(true); setLoadError(null); fetchAll(true); }, [fetchAll]);
 
   useEffect(() => { fetchAll(true); const t = setInterval(() => fetchAll(), 8000); return () => clearInterval(t); }, [fetchAll]);
 
@@ -888,9 +918,9 @@ export default function Masters() {
   // ── Filters & sort ───────────────────────────────────────────────────────────
   const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get("search") ?? "");
   const [cityFilter, setCityFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState<"all" | "free" | "onsite" | "suspended" | "pending_contract" | "contract_review" | "debtors">(() => {
+  const [statusFilter, setStatusFilter] = useState<"all" | "free" | "onsite" | "suspended" | "pending_contract" | "contract_review" | "no_contract" | "new" | "debtors">(() => {
     const s = new URLSearchParams(window.location.search).get("status");
-    const valid = ["all","free","onsite","suspended","pending_contract","contract_review","debtors"];
+    const valid = ["all","free","onsite","suspended","pending_contract","contract_review","no_contract","new","debtors"];
     return valid.includes(s ?? "") ? (s as any) : "all";
   });
   const [tagFilter, setTagFilter] = useState<string | null>(null);
@@ -916,6 +946,15 @@ export default function Masters() {
     return [...set].sort();
   }, [masters]);
 
+  // «Новый» мастер — зарегистрирован за последние 14 дней.
+  const NEW_MASTER_MS = 14 * 24 * 60 * 60 * 1000;
+  const isNewMaster = (m: Master) => {
+    const t = new Date(m.createdAt).getTime();
+    return Number.isFinite(t) && Date.now() - t < NEW_MASTER_MS;
+  };
+  // Договор не подписан (исключая отстранённых).
+  const isUnsignedContract = (m: Master) => m.status !== "suspended" && !m.contractSignedAt;
+
   const totalDebt = useMemo(() => masters.reduce((s, m) => s + (m.debt ?? 0), 0), [masters]);
   const counts = useMemo(() => ({
     total: masters.length,
@@ -924,6 +963,8 @@ export default function Masters() {
     suspended: masters.filter(m => m.status === "suspended").length,
     pending: masters.filter(m => m.status === "pending_contract").length,
     contractReview: masters.filter(m => m.status === "pending_contract" && !!m.contractSignedAt).length,
+    noContract: masters.filter(isUnsignedContract).length,
+    newMasters: masters.filter(isNewMaster).length,
     debtors: masters.filter(m => m.debt > 0).length,
     withApp: masters.filter(m => m.pwaLogin).length,
   }), [masters]);
@@ -948,6 +989,8 @@ export default function Masters() {
       if (statusFilter === "suspended" && m.status !== "suspended") return false;
       if (statusFilter === "pending_contract" && m.status !== "pending_contract") return false;
       if (statusFilter === "contract_review" && !(m.status === "pending_contract" && m.contractSignedAt)) return false;
+      if (statusFilter === "no_contract" && !isUnsignedContract(m)) return false;
+      if (statusFilter === "new" && !isNewMaster(m)) return false;
       if (statusFilter === "debtors" && m.debt <= 0) return false;
       // Tag
       if (tagFilter && !(m.tags ?? []).includes(tagFilter)) return false;
@@ -985,10 +1028,12 @@ export default function Masters() {
 
   const STAT_BUTTONS = [
     { key: "all"              as const, label: "Все",        value: counts.total,    icon: Users,         color: "text-gray-600 bg-gray-50 border-gray-100" },
+    { key: "new"              as const, label: "Новые",      value: counts.newMasters,     icon: Plus,          color: "text-violet-600 bg-violet-50 border-violet-100" },
     { key: "free"             as const, label: "Свободны",   value: counts.free,     icon: UserCheck,     color: "text-emerald-600 bg-emerald-50 border-emerald-100" },
     { key: "onsite"           as const, label: "На объекте", value: counts.onsite,   icon: Zap,           color: "text-blue-600 bg-blue-50 border-blue-100" },
     { key: "pending_contract" as const, label: "Договор",      value: counts.pending,        icon: FileSignature, color: "text-amber-600 bg-amber-50 border-amber-100" },
     { key: "contract_review"  as const, label: "На проверке", value: counts.contractReview, icon: FileText,      color: "text-orange-600 bg-orange-50 border-orange-100" },
+    { key: "no_contract"      as const, label: "Без договора", value: counts.noContract,    icon: AlertTriangle, color: "text-rose-600 bg-rose-50 border-rose-100" },
     { key: "debtors"          as const, label: "Должники",    value: counts.debtors,        icon: AlertTriangle, color: "text-red-500 bg-red-50 border-red-100" },
     { key: "suspended"        as const, label: "Блок",       value: counts.suspended,icon: UserX,         color: "text-gray-400 bg-gray-50 border-gray-100" },
   ];
@@ -1331,6 +1376,15 @@ export default function Masters() {
             <div className="flex-1 overflow-y-auto voronka-scroll space-y-1.5">
               {loading ? (
                 <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-blue-400" /></div>
+              ) : loadError && masters.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center">
+                  <AlertCircle className="w-8 h-8 mb-2 text-red-400" />
+                  <p className="text-sm text-gray-600 font-medium">Не удалось загрузить мастеров</p>
+                  <p className="text-xs text-gray-400 mt-1 max-w-xs">{loadError}</p>
+                  <button onClick={retryLoad} className="mt-4 flex items-center gap-1.5 px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-xl hover:bg-blue-600 transition-colors">
+                    <RefreshCw className="w-4 h-4" /> Повторить
+                  </button>
+                </div>
               ) : filtered.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 text-gray-300">
                   <Filter className="w-8 h-8 mb-2" />
@@ -1355,6 +1409,15 @@ export default function Masters() {
             loading ? (
               <div className="flex items-center justify-center flex-1">
                 <div className="w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : loadError && masters.length === 0 ? (
+              <div className="flex flex-col items-center justify-center flex-1 text-center">
+                <AlertCircle className="w-8 h-8 mb-2 text-red-400" />
+                <p className="text-sm text-gray-600 font-medium">Не удалось загрузить мастеров</p>
+                <p className="text-xs text-gray-400 mt-1 max-w-xs">{loadError}</p>
+                <button onClick={retryLoad} className="mt-4 flex items-center gap-1.5 px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-xl hover:bg-blue-600 transition-colors">
+                  <RefreshCw className="w-4 h-4" /> Повторить
+                </button>
               </div>
             ) : (
               <div className="voronka-scroll flex gap-4 overflow-x-auto pb-4 flex-1 min-h-0">

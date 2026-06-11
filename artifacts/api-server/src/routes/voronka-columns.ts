@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, voronkaColumnsTable, mastersTable, ordersTable, leadsTable, telegramChatsTable, transactionsTable } from "@workspace/db";
+import { db, voronkaColumnsTable, mastersTable, ordersTable, leadsTable, telegramChatsTable, transactionsTable, masterWalletTable } from "@workspace/db";
 import { eq, inArray, and, isNull, isNotNull, ne, count, gte, sql } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
 
@@ -96,6 +96,10 @@ router.get("/masters", requireAuth, async (_req, res) => {
     .groupBy(transactionsTable.masterId);
   const paidTxMap = new Map(paidTxRows.map(r => [r.masterId, Number(r.cnt)]));
 
+  // Кошельки мастеров (комиссионная модель): рублёвый баланс + сумма сервисных сборов
+  const wallets = await db.select().from(masterWalletTable);
+  const walletMap = new Map(wallets.map(w => [w.masterId, w]));
+
   // Cancel stats per master (last 30 and 7 days, master-fault only)
   const now = Date.now();
   const thirtyDaysAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
@@ -152,7 +156,9 @@ router.get("/masters", requireAuth, async (_req, res) => {
     });
   }
 
-  res.json(masters.map(m => ({
+  res.json(masters.map(m => {
+    const w = walletMap.get(m.id);
+    return {
     id: m.id,
     alias: m.alias,
     city: m.city,
@@ -197,7 +203,18 @@ router.get("/masters", requireAuth, async (_req, res) => {
     maxChatId: m.maxChatId ?? null,
     servicePrices: m.servicePrices ?? null,
     fomoDisabled: m.fomoDisabled ?? false,
-  })));
+    // Комиссионная модель: рублёвый кошелёк и сервисные сборы
+    balance: w ? Number(w.balance) : 0,
+    creditLimit: w ? Number(w.creditLimit) : 0,
+    totalServiceFeesSpent: w ? Number(w.totalServiceFeesSpent) : 0,
+    // Репутация / автоблок
+    consecutiveCancellations: m.consecutiveCancellations ?? 0,
+    blockedFromOrders: m.blockedFromOrders ?? false,
+    blockedAt: m.blockedAt ?? null,
+    blockedReason: m.blockedReason ?? null,
+    manualUnblocksCount: m.manualUnblocksCount ?? 0,
+    };
+  }));
 });
 
 // PATCH move master to column
