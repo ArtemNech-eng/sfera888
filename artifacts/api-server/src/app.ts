@@ -959,7 +959,11 @@ if (fs.existsSync(crmDistPath)) {
 
 if (fs.existsSync(pwaDistPath)) {
   app.use("/master-pwa", express.static(pwaDistPath));
-  app.use("/master-pwa", (_req, res) => {
+  app.use("/master-pwa", (req, res) => {
+    // Don't fall back to index.html for missing static files (would cause MIME errors).
+    if (req.path.includes(".")) {
+      return res.status(404).send("Not found");
+    }
     res.sendFile(path.join(pwaDistPath, "index.html"));
   });
 }
@@ -969,7 +973,10 @@ if (fs.existsSync(partnerPwaDistPath)) {
   app.use("/partner", express.static(partnerPwaDistPath, { maxAge: 0, setHeaders: (res) => {
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
   }}));
-  app.use("/partner", (_req, res) => {
+  app.use("/partner", (req, res) => {
+    if (req.path.includes(".")) {
+      return res.status(404).send("Not found");
+    }
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
     res.sendFile(path.join(partnerPwaDistPath, "index.html"));
   });

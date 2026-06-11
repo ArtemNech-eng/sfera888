@@ -1,3 +1,12 @@
 # attached_assets contains large image files (PNG, JPG, WebP) tracked in git
 # but not needed for building or running the CRM / API server.
 attached_assets/
+
+# Build output. A few `dist/` paths (artifacts/master-pwa/dist/public/*.html,
+# artifacts/referral-landing/dist/public/*) are tracked in git for historical
+# reasons, but Nixpacks runs `pnpm run build` inside the image. Any pre-existing
+# stale dist files from the build context can override or shadow freshly built
+# assets in unpredictable ways. Excluding all dist/ keeps the build output
+# authoritative.
+dist/
+**/dist/
