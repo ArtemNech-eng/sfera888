@@ -77,25 +77,33 @@ async function getAwaitingPaymentColumn() {
 }
 
 router.get("/", allOrderRoles, async (req, res) => {
-  const { status, masterId, page, limit, folder } = req.query;
-  const pageNum = Math.max(1, parseInt((page as string) || "1", 10));
-  const limitNum = Math.min(100, Math.max(1, parseInt((limit as string) || "50", 10)));
-  const offset = (pageNum - 1) * limitNum;
+  try {
+    const { status, masterId, page, limit, folder } = req.query;
+    const pageNum = Math.max(1, parseInt((page as string) || "1", 10));
+    const limitNum = Math.min(100, Math.max(1, parseInt((limit as string) || "50", 10)));
+    const offset = (pageNum - 1) * limitNum;
 
-  const conditions: any[] = [];
-  if (status) {
-    conditions.push(eq(ordersTable.status, status as any));
-  } else if (folder) {
-    if (folder === "in_progress") {
-      conditions.push(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
-    } else if (folder === "pending_payment") {
-      conditions.push(and(eq(ordersTable.status, "completed"), eq(ordersTable.commissionPaid, false)));
-    } else if (folder === "completed") {
-      conditions.push(and(eq(ordersTable.status, "completed"), eq(ordersTable.commissionPaid, true)));
-    } else if (folder === "cancelled") {
-      conditions.push(eq(ordersTable.status, "cancelled"));
-    }
+    const conditions: any[] = [];
+    
+    // Folder-based filtering (has priority over status)
+    const folderStr = typeof folder === "string" ? folder : undefined;
+    const statusStr = typeof status === "string" ? status : undefined;
+    
+    if (folderStr) {
+      if (folderStr === "in_progress") {
+        conditions.push(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
+      } else if (folderStr === "pending_payment") {
+        conditions.push(and(eq(ordersTable.status, "completed"), eq(ordersTable.commissionPaid, false)));
+      } else if (folderStr === "completed") {
+        conditions.push(and(eq(ordersTable.status, "completed"), eq(ordersTable.commissionPaid, true)));
+      } else if (folderStr === "cancelled") {
+        conditions.push(eq(ordersTable.status, "cancelled"));
+      }
+    } else if (statusStr) {
+      // Fallback to status filter if no folder specified
+      conditions.push(eq(ordersTable.status, statusStr as any));
   }
+  
   if (masterId) {
     const masterIdNum = parseInt(String(masterId));
     if (!isNaN(masterIdNum)) conditions.push(eq(ordersTable.masterId, masterIdNum));
@@ -232,6 +240,7 @@ router.get("/:id", allOrderRoles, async (req, res) => {
     proposedAmount: o.proposedAmount ? Number(o.proposedAmount) : null,
     orderAmount: o.orderAmount ? Number(o.orderAmount) : null,
     commission: o.commission ? Number(o.commission) : null,
+    commissionPaid: o.commissionPaid ?? false,
     clientRating: o.clientRating ?? null,
     cancelReason: o.cancelReason ?? null,
     cancelType: (o as any).cancelType ?? null,
@@ -257,6 +266,10 @@ router.get("/:id", allOrderRoles, async (req, res) => {
       paidAt: tx.paidAt ?? null,
     } : null,
   });
+  } catch (err) {
+    console.error("[orders GET /] Error:", err);
+    return res.status(500).json({ error: "Internal server error", details: String(err) });
+  }
 });
 
 router.patch("/:id", allOrderRoles, async (req, res) => {
