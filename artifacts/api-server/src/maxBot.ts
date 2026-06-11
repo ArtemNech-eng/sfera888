@@ -130,6 +130,25 @@ export async function getBotLink(): Promise<string | null> {
 // Max Bot API: recipient must be a query-param (?user_id= or ?chat_id=),
 // the body carries only the message payload.
 
+/**
+ * "User-side" failures — recipient blocked the bot, deleted the dialog or had
+ * their account suspended. Not a bug in our code, just a business event we
+ * should surface at warn-level so it doesn't drown the actual errors in red.
+ */
+function isUserUnreachable(status: number, body: string): boolean {
+  if (status === 403 || status === 404 || status === 410) return true;
+  return /chat\.denied|dialog\.suspended|user_not_found|bot_blocked|access_denied/i.test(body);
+}
+
+function logSendFailure(label: string, status: number, body: string): void {
+  if (isUserUnreachable(status, body)) {
+    // Recipient blocked the bot or closed the dialog — expected, not an error.
+    console.warn(`[maxBot] ${label} unreachable (${status}): ${body}`);
+  } else {
+    console.error(`[maxBot] ${label} failed:`, status, body);
+  }
+}
+
 async function maxPost(
   recipientParam: "user_id" | "chat_id",
   recipientId: number,
@@ -155,7 +174,7 @@ async function maxPost(
     clearTimeout(timer);
     if (!res.ok) {
       const err = await res.text();
-      console.error(`[maxBot] POST ${recipientParam}=${recipientId} failed:`, res.status, err);
+      logSendFailure(`POST ${recipientParam}=${recipientId}`, res.status, err);
       recordCircuitFailure("max_api");
     } else {
       console.log(`[maxBot] message sent OK to ${recipientParam}=${recipientId}`);
@@ -327,7 +346,7 @@ export async function sendMaxWithButtons(
     clearTimeout(timer);
     if (!res.ok) {
       const err = await res.text();
-      console.error("[maxBot] sendWithButtons failed:", res.status, err);
+      logSendFailure(`sendWithButtons user_id=${Number(chatId)}`, res.status, err);
     } else {
       console.log(`[maxBot] sendWithButtons OK to user_id=${Number(chatId)}`);
     }
@@ -369,7 +388,7 @@ async function sendMaxWithButtonsToChat(
       signal: ctrl.signal,
     });
     clearTimeout(timer);
-    if (!res.ok) console.error("[maxBot] sendWithButtonsToChat failed:", res.status, await res.text());
+    if (!res.ok) logSendFailure(`sendWithButtonsToChat chat_id=${chatId}`, res.status, await res.text());
   } catch (e: any) {
     if (e.name === "AbortError") {
       console.error(`[maxBot] sendWithButtonsToChat to chat_id=${chatId} timed out after 15s`);
