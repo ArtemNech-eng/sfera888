@@ -106,11 +106,11 @@ router.get("/", allOrderRoles, async (req, res) => {
     
     if (masterId) {
       const masterIdNum = parseInt(String(masterId));
-    if (!isNaN(masterIdNum)) conditions.push(eq(ordersTable.masterId, masterIdNum));
-  }
-  conditions.push(isNull(ordersTable.deletedAt));
+      if (!isNaN(masterIdNum)) conditions.push(eq(ordersTable.masterId, masterIdNum));
+    }
+    conditions.push(isNull(ordersTable.deletedAt));
 
-  const [{ total }] = await db.select({ total: count() }).from(ordersTable).where(and(...conditions));
+    const [{ total }] = await db.select({ total: count() }).from(ordersTable).where(and(...conditions));
   const orders = await db.select().from(ordersTable).where(and(...conditions)).orderBy(desc(ordersTable.createdAt)).limit(limitNum).offset(offset);
 
   const masters = await db.select().from(mastersTable);
