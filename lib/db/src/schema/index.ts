@@ -16,6 +16,7 @@ export * from "./tasks";
 export * from "./push-subscriptions";
 export * from "./client-push-subscriptions";
 export * from "./order-status-logs";
+export * from "./order-amount-audit";
 export * from "./receipts";
 export * from "./client-support-messages";
 export * from "./general-support-messages";

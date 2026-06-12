@@ -63,6 +63,17 @@ export const ordersTable = pgTable("orders", {
   manualTokenCost: numeric("manual_token_cost", { precision: 10, scale: 2 }),
   maxMasters: integer("max_masters").notNull().default(3),
   assignedMasterCount: integer("assigned_master_count").notNull().default(0),
+  // ── Payment_State engine (см. .kiro/specs/estimate-optional-flow) ──────────
+  // Отметка КАК сумма заказа была установлена. Влияет на правила conflict-detection
+  // между Agreement_Path (оператор фиксирует со слов мастера) и Receipt_Path
+  // (мастер создаёт смету). Phase 1 — все исторические заказы получают `unknown`
+  // через backfill.
+  agreementAmountSource: varchar("agreement_amount_source", { length: 32 }),
+  // Время последнего перехода Payment_State. Используется для KPI (TTR — time to
+  // agreed / time to paid).
+  paymentStateChangedAt: timestamp("payment_state_changed_at"),
+  // Свободный комментарий при фиксации Agreement_Amount (опционально).
+  agreementNote: text("agreement_note"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   deletedAt: timestamp("deleted_at"),
