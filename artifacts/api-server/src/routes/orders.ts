@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from "express";
-import { db, ordersTable, mastersTable, transactionsTable, voronkaColumnsTable, orderDispatchesTable, leadsTable, masterMessagesTable, orderStatusLogsTable, usersTable, receiptsTable, fomoEventsTable, orderMastersTable, mlPricingDecisionsTable, orderStagesTable } from "@workspace/db";
+import { db, ordersTable, mastersTable, transactionsTable, voronkaColumnsTable, orderDispatchesTable, leadsTable, masterMessagesTable, orderStatusLogsTable, orderAmountAuditTable, usersTable, receiptsTable, fomoEventsTable, orderMastersTable, mlPricingDecisionsTable, orderStagesTable } from "@workspace/db";
 import { eq, inArray, and, ne, isNull, isNotNull, desc, count, sql } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { calculateCommission, getCommissionSettings } from "../lib/commission.js";
@@ -17,6 +17,15 @@ import { recordAmountAudit, resolveAuditActor, closeOpenEstimateTasksForOrder } 
 import { notifyWorkBoardChanged } from "./work-board.js";
 
 // Telegram-бот удалён.
+
+/** Internal: structured 4xx error from inside a `db.transaction` callback,
+ * caught by the route handler and translated to an HTTP response. */
+class HttpError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+    this.name = "HttpError";
+  }
+}
 
 function buildOrderCard(order: any, orderId: number): string {
   const formatDate = (d: Date | null | undefined) => {
@@ -311,109 +320,370 @@ router.get("/:id", allOrderRoles, async (req, res) => {
 router.patch("/:id", allOrderRoles, async (req, res) => {
   const id = parseInt(String(req.params.id as string));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid order ID" });
-  const { status, orderAmount, commission, commissionPaid, clientRating, proposedAmount, acceptProposed, approveCancellation, rejectCancellation, restoreOrder, operatorNote, clientCancelReason, manualTokenCost, paymentModel, maxMasters } = req.body;
 
-  // Fetch current order to get masterId before update
+  const body = req.body ?? {};
+  const {
+    status, orderAmount, commission, commissionPaid, clientRating, proposedAmount,
+    acceptProposed, approveCancellation, rejectCancellation, restoreOrder,
+    operatorNote, clientCancelReason, manualTokenCost, paymentModel, maxMasters,
+    // T14 — Phase 2 reconcile / force-paid actions
+    acceptReceiptAmount, keepAgreementAmount, force, reason,
+  } = body;
+
+  // ── Pre-fetch ─────────────────────────────────────────────────────────────
   const currentRows = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
   if (!currentRows[0]) return res.status(404).json({ error: "Order not found" });
   const current = currentRows[0];
 
-  const updates: any = { updatedAt: new Date() };
-  if (status !== undefined) updates.status = status;
-  if (commissionPaid !== undefined) updates.commissionPaid = !!commissionPaid;
-  if (proposedAmount !== undefined) updates.proposedAmount = proposedAmount !== null ? String(proposedAmount) : null;
-  if (operatorNote !== undefined) updates.operatorNote = operatorNote !== null ? operatorNote : null;
-  if (clientCancelReason !== undefined) updates.operatorNote = clientCancelReason || null;
-  if (manualTokenCost !== undefined) updates.manualTokenCost = manualTokenCost !== null ? String(manualTokenCost) : null;
-  if (maxMasters !== undefined && !isNaN(Number(maxMasters)) && Number(maxMasters) >= 1) {
-    updates.maxMasters = Number(maxMasters);
+  const sessionUser = (req as any).session?.userId ?? null;
+  const actor = await resolveAuditActor(sessionUser, "operator");
+
+  // ── Validate manager-only / new actions before opening a transaction ──────
+  if (force === true && actor.role !== "admin") {
+    return res.status(403).json({ error: "Force-paid доступен только администратору" });
   }
+  if (force === true && (typeof reason !== "string" || !reason.trim())) {
+    return res.status(400).json({ error: "Укажите причину для force-paid" });
+  }
+  if (keepAgreementAmount === true && (typeof reason !== "string" || !reason.trim())) {
+    return res.status(400).json({ error: "Укажите причину отклонения суммы из сметы" });
+  }
+
+  // Pre-load commission settings (sync, cacheable read).
+  const commSettings = await getCommissionSettings();
+
+  // Resolve paymentModel update before transaction (requires lead lookup)
+  let paymentModelUpdate: string | undefined;
   if (paymentModel !== undefined) {
-    const [leadCheck] = await db.select({ source: leadsTable.source, trafficPartnerId: leadsTable.trafficPartnerId }).from(leadsTable).where(eq(leadsTable.id, current.leadId ?? 0)).limit(1);
+    const [leadCheck] = await db.select({ source: leadsTable.source, trafficPartnerId: leadsTable.trafficPartnerId })
+      .from(leadsTable).where(eq(leadsTable.id, current.leadId ?? 0)).limit(1);
     const isPartnerOrder = leadCheck?.source === "avito_partner" || leadCheck?.trafficPartnerId != null;
-    updates.paymentModel = isPartnerOrder ? "token" : (paymentModel === "commission" ? "commission" : "token");
+    paymentModelUpdate = isPartnerOrder ? "token" : (paymentModel === "commission" ? "commission" : "token");
   }
 
-  // When operator directly cancels — close dispatches and reset dispatchStatus
-  if (status === "cancelled" && current.status !== "cancelled") {
-    updates.dispatchStatus = "none";
-  }
-
-  // Track status transition for timestamps and logging
+  // ── Transaction-scoped result state (set inside, used after commit) ───────
+  let updatedOrder: typeof ordersTable.$inferSelect | null = null;
   let newStatus: string | null = null;
+  let autoCompleteHappened = false;
+  let pushBodyForMaster: string | null = null;
+  let placeholderDeleted = false;
 
-  // Approve cancellation → set status cancelled
-  if (approveCancellation) {
-    updates.status = "cancelled";
-    newStatus = "cancelled";
-  }
-  // Reject cancellation → detach master, reset order for re-broadcast, clear reason
-  if (rejectCancellation) {
-    updates.status = "waiting_master";
-    newStatus = "waiting_master";
-    updates.masterId = null;
-    updates.cancelReason = null;
-    updates.dispatchStatus = "none";
-  }
+  // ── Atomic DB write block ─────────────────────────────────────────────────
+  // Everything that mutates DB state for THIS request goes inside the transaction.
+  // Side effects (push, max-bot, performBroadcast, async analysis, voronka and
+  // reputation library calls) live below — they're best-effort and external.
+  try {
+    await db.transaction(async (tx) => {
+      // ── Build updates from body ──────────────────────────────────────────
+      const updates: any = { updatedAt: new Date() };
+      if (status !== undefined) updates.status = status;
+      if (commissionPaid !== undefined) updates.commissionPaid = !!commissionPaid;
+      if (proposedAmount !== undefined) updates.proposedAmount = proposedAmount !== null ? String(proposedAmount) : null;
+      if (operatorNote !== undefined) updates.operatorNote = operatorNote !== null ? operatorNote : null;
+      if (clientCancelReason !== undefined) updates.operatorNote = clientCancelReason || null;
+      if (manualTokenCost !== undefined) updates.manualTokenCost = manualTokenCost !== null ? String(manualTokenCost) : null;
+      if (maxMasters !== undefined && !isNaN(Number(maxMasters)) && Number(maxMasters) >= 1) {
+        updates.maxMasters = Number(maxMasters);
+      }
+      if (paymentModelUpdate !== undefined) updates.paymentModel = paymentModelUpdate;
 
-  // Restore cancelled order — smart: keep master if was assigned, otherwise clear for re-broadcast
-  if (restoreOrder && current.status === "cancelled") {
-    updates.cancelReason = null;
-    updates.cancelType = null;
-    if (current.masterId) {
-      // Master was assigned before cancellation — restore to assigned state, keep master
-      updates.status = "master_assigned";
-      newStatus = "master_assigned";
-      updates.dispatchStatus = "assigned";
-      updates.assignedAt = (current as any).assignedAt ?? new Date();
-    } else {
-      // No master — restore to waiting, ready for re-broadcast
-      updates.status = "waiting_master";
-      newStatus = "waiting_master";
-      updates.dispatchStatus = "none";
+      if (status === "cancelled" && current.status !== "cancelled") {
+        updates.dispatchStatus = "none";
+      }
+
+      // Approve / reject / restore branches
+      if (approveCancellation) {
+        updates.status = "cancelled"; newStatus = "cancelled";
+      }
+      if (rejectCancellation) {
+        updates.status = "waiting_master"; newStatus = "waiting_master";
+        updates.masterId = null;
+        updates.cancelReason = null;
+        updates.dispatchStatus = "none";
+      }
+      if (restoreOrder && current.status === "cancelled") {
+        updates.cancelReason = null;
+        updates.cancelType = null;
+        if (current.masterId) {
+          updates.status = "master_assigned"; newStatus = "master_assigned";
+          updates.dispatchStatus = "assigned";
+          updates.assignedAt = (current as any).assignedAt ?? new Date();
+        } else {
+          updates.status = "waiting_master"; newStatus = "waiting_master";
+          updates.dispatchStatus = "none";
+        }
+      }
+
+      // Status timestamps
+      if (status === "master_assigned" && current.status !== "master_assigned") {
+        updates.assignedAt = new Date(); newStatus = "master_assigned";
+      }
+      if (status === "completed" && current.status !== "completed") {
+        updates.completedAt = new Date(); newStatus = "completed";
+      }
+      if (status && !newStatus) newStatus = status;
+
+      // ── Money fields handling — Agreement_Path-aware ─────────────────────
+      // Sources of orderAmount changes (in priority order):
+      //   1. acceptReceiptAmount → take latest receipt.prepaymentAmount (Phase 3 reconcile)
+      //   2. acceptProposed      → copy proposedAmount (legacy "accept master proposal")
+      //   3. orderAmount provided → manual entry (operator types in)
+      //   4. commission provided alone → manual override of computed commission
+      let agreementSourceUpdate: string | undefined;
+
+      if (acceptReceiptAmount === true) {
+        const [latestReceipt] = await tx
+          .select()
+          .from(receiptsTable)
+          .where(eq(receiptsTable.orderId, id))
+          .orderBy(desc(receiptsTable.createdAt))
+          .limit(1);
+        if (!latestReceipt) {
+          throw new HttpError(400, "Нет смет по этому заказу для принятия");
+        }
+        const amt = Number(latestReceipt.prepaymentAmount);
+        updates.orderAmount = String(amt);
+        updates.proposedAmount = String(amt);
+        agreementSourceUpdate = "reconcile_use_receipt";
+        if (current.paymentModel !== "token") {
+          updates.commission = String(calculateCommission(amt, commSettings));
+        }
+      } else if (acceptProposed && current.proposedAmount) {
+        const amt = Number(current.proposedAmount);
+        updates.orderAmount = String(amt);
+        agreementSourceUpdate = "master_proposal";
+        if (current.paymentModel !== "token") {
+          updates.commission = String(calculateCommission(amt, commSettings));
+        }
+      } else if (orderAmount !== undefined) {
+        updates.orderAmount = orderAmount !== null ? String(orderAmount) : null;
+        if (orderAmount !== null) {
+          // Manager force-edit (after Payment_State = paid) → manager_correction
+          // Otherwise — operator_edit
+          agreementSourceUpdate = force === true ? "manager_correction" : "operator_edit";
+        }
+        if (commission !== undefined) {
+          updates.commission = commission !== null ? String(commission) : null;
+        } else if (orderAmount !== null && current.paymentModel !== "token") {
+          updates.commission = String(calculateCommission(Number(orderAmount), commSettings));
+        }
+      } else if (commission !== undefined && current.paymentModel !== "token") {
+        updates.commission = commission !== null ? String(commission) : null;
+      }
+      if (clientRating !== undefined) updates.clientRating = clientRating;
+
+      if (agreementSourceUpdate !== undefined) {
+        updates.agreementAmountSource = agreementSourceUpdate;
+        updates.paymentStateChangedAt = new Date();
+      }
+
+      // ── Apply order update ──────────────────────────────────────────────
+      const [u] = await tx.update(ordersTable).set(updates).where(eq(ordersTable.id, id)).returning();
+      if (!u) throw new HttpError(404, "Order not found");
+      updatedOrder = u;
+
+      // ── Audit money-field changes ────────────────────────────────────────
+      const reasonText = typeof reason === "string" && reason.trim() ? reason.trim() : null;
+
+      if (updates.orderAmount !== undefined && String(current.orderAmount ?? "") !== String(updates.orderAmount ?? "")) {
+        await recordAmountAudit(tx as any, {
+          orderId: id, actorUserId: actor.id, actorRole: actor.role, actorAlias: actor.alias,
+          field: "orderAmount",
+          previousValue: current.orderAmount,
+          newValue: String(updates.orderAmount ?? ""),
+          source: (agreementSourceUpdate as any) ?? "operator_edit",
+          reason: reasonText,
+        });
+      }
+      if (updates.commission !== undefined && String(current.commission ?? "") !== String(updates.commission ?? "")) {
+        await recordAmountAudit(tx as any, {
+          orderId: id, actorUserId: actor.id, actorRole: actor.role, actorAlias: actor.alias,
+          field: "commission",
+          previousValue: current.commission,
+          newValue: String(updates.commission ?? ""),
+          source: "system_recalc",
+        });
+      }
+      if (updates.commissionPaid !== undefined && current.commissionPaid !== !!updates.commissionPaid) {
+        await recordAmountAudit(tx as any, {
+          orderId: id, actorUserId: actor.id, actorRole: actor.role, actorAlias: actor.alias,
+          field: "commissionPaid",
+          previousValue: String(current.commissionPaid),
+          newValue: String(!!updates.commissionPaid),
+          source: force === true ? "manager_force_paid" : "operator_edit",
+          reason: reasonText,
+        });
+      }
+
+      // keepAgreementAmount: explicit "operator rejects receipt amount, keeps agreement"
+      // — write an audit-only row even though no field changed (for reconcile task closure).
+      if (keepAgreementAmount === true) {
+        await tx.insert(orderAmountAuditTable).values({
+          orderId: id,
+          actorUserId: actor.id,
+          actorRole: actor.role,
+          actorAlias: actor.alias,
+          field: "orderAmount",
+          previousValue: current.orderAmount,
+          newValue: current.orderAmount ?? "",
+          source: "reconcile_keep_agreement",
+          reason: reasonText,
+        });
+      }
+
+      // ── Status log ──────────────────────────────────────────────────────
+      if (newStatus && newStatus !== current.status) {
+        await tx.insert(orderStatusLogsTable).values({
+          orderId: id,
+          oldStatus: current.status,
+          newStatus,
+          userId: sessionUser,
+          userAlias: actor.alias ?? "система",
+        });
+      }
+
+      // ── Transaction sync (commission orders only) ───────────────────────
+      // Mirror of legacy behavior: when operator confirms commission via
+      // acceptProposed / orderAmount / acceptReceiptAmount — reconcile the
+      // `transactions` row, update master.debt, optionally auto-complete.
+      const commissionConfirmed =
+        (acceptProposed && current.proposedAmount) ||
+        (orderAmount !== undefined && orderAmount !== null) ||
+        (acceptReceiptAmount === true);
+
+      if (current.paymentModel !== "token" && commissionConfirmed && u.masterId && u.orderAmount && u.commission) {
+        const existingTxRows = await tx.select().from(transactionsTable).where(eq(transactionsTable.orderId, id));
+        const existingTx = existingTxRows[0];
+        const commissionValue = Number(u.commission);
+
+        const paidReceiptRows = await tx.select().from(receiptsTable).where(
+          and(eq(receiptsTable.orderId, id), isNotNull(receiptsTable.prepaymentSubmittedAt))
+        );
+        const totalPrepaid = paidReceiptRows.reduce((sum, r) => sum + Number(r.prepaymentAmount), 0);
+        const prepaymentDeducted = Math.min(totalPrepaid, commissionValue);
+        const netPayable = Math.max(0, commissionValue - prepaymentDeducted);
+        const fullyPaidByPrepayment = netPayable === 0;
+        const triggersAutoComplete = (acceptProposed || acceptReceiptAmount) && fullyPaidByPrepayment;
+
+        const fmtPushBody = () =>
+          fullyPaidByPrepayment
+            ? `Сумма ${Number(u.orderAmount).toLocaleString("ru-RU")} ₽. Комиссия ${commissionValue.toLocaleString("ru-RU")} ₽ покрыта предоплатой клиента.`
+            : prepaymentDeducted > 0
+              ? `Сумма ${Number(u.orderAmount).toLocaleString("ru-RU")} ₽. К оплате: ${netPayable.toLocaleString("ru-RU")} ₽ (предоплата ${prepaymentDeducted.toLocaleString("ru-RU")} ₽ зачтена).`
+              : `Сумма ${Number(u.orderAmount).toLocaleString("ru-RU")} ₽. Комиссия к оплате: ${commissionValue.toLocaleString("ru-RU")} ₽.`;
+
+        if (existingTx) {
+          const wasPlaceholder = Number(existingTx.commission) === 0;
+          const prevCommission = Number(existingTx.commission);
+          const prevPrepaymentDeducted = Number(existingTx.prepaymentDeducted ?? 0);
+          const prevNetPayable = Math.max(0, prevCommission - prevPrepaymentDeducted);
+
+          await tx.update(transactionsTable).set({
+            orderAmount: u.orderAmount,
+            commission: u.commission,
+            serviceFee: "500",
+            prepaymentDeducted: String(prepaymentDeducted),
+            paymentStatus: fullyPaidByPrepayment ? "paid" : "pending",
+            paidAt: fullyPaidByPrepayment ? new Date() : existingTx.paidAt,
+          }).where(eq(transactionsTable.id, existingTx.id));
+
+          const [m] = await tx.select().from(mastersTable).where(eq(mastersTable.id, u.masterId));
+          if (m) {
+            if (wasPlaceholder) {
+              if (netPayable > 0) {
+                const newDebt = Number(m.debt) + netPayable;
+                await tx.update(mastersTable).set({ debt: String(newDebt) }).where(eq(mastersTable.id, u.masterId));
+              }
+              pushBodyForMaster = fmtPushBody();
+            } else if (commissionValue !== prevCommission || prepaymentDeducted !== prevPrepaymentDeducted) {
+              const delta = netPayable - prevNetPayable;
+              const newDebt = Math.max(0, Number(m.debt) + delta);
+              await tx.update(mastersTable).set({ debt: String(newDebt) }).where(eq(mastersTable.id, u.masterId));
+            }
+          }
+        } else {
+          await tx.insert(transactionsTable).values({
+            orderId: id,
+            masterId: u.masterId,
+            orderAmount: u.orderAmount,
+            commission: u.commission,
+            serviceFee: "500",
+            prepaymentDeducted: String(prepaymentDeducted),
+            paymentStatus: fullyPaidByPrepayment ? "paid" : "pending",
+            paidAt: fullyPaidByPrepayment ? new Date() : undefined,
+          });
+          const [m] = await tx.select().from(mastersTable).where(eq(mastersTable.id, u.masterId));
+          if (m && netPayable > 0) {
+            const newDebt = Number(m.debt) + netPayable;
+            await tx.update(mastersTable).set({ debt: String(newDebt) }).where(eq(mastersTable.id, u.masterId));
+          }
+          pushBodyForMaster = fmtPushBody();
+        }
+
+        // Auto-complete if commission fully covered by client prepayment.
+        if (triggersAutoComplete && u.status !== "completed") {
+          await tx.update(ordersTable)
+            .set({ status: "completed", completedAt: new Date(), updatedAt: new Date() })
+            .where(eq(ordersTable.id, id));
+          await tx.insert(orderStatusLogsTable).values({
+            orderId: id,
+            oldStatus: u.status,
+            newStatus: "completed",
+            userId: sessionUser,
+            userAlias: actor.alias ?? "система",
+            note: "auto-complete after commission confirmation",
+          });
+          await tx.update(transactionsTable)
+            .set({ paymentStatus: "paid", paidAt: new Date() })
+            .where(and(eq(transactionsTable.orderId, id), eq(transactionsTable.paymentStatus as any, "pending")));
+          autoCompleteHappened = true;
+        }
+      }
+
+      // ── Delete placeholder transaction on cancellation ─────────────────
+      const isBeingCancelled = approveCancellation || rejectCancellation || updates.status === "cancelled";
+      if (current.paymentModel !== "token" && isBeingCancelled && current.masterId) {
+        const txRows = await tx.select().from(transactionsTable).where(eq(transactionsTable.orderId, id));
+        const placeholder = txRows[0];
+        if (placeholder && Number(placeholder.commission) === 0) {
+          await tx.delete(transactionsTable).where(eq(transactionsTable.id, placeholder.id));
+          placeholderDeleted = true;
+        }
+      }
+
+      // ── Decrement master counters on actual cancellation ──────────────
+      if ((approveCancellation || updates.status === "cancelled") && current.masterId && !rejectCancellation) {
+        await tx.update(mastersTable)
+          .set({
+            totalOrders: sql`${mastersTable.totalOrders} - 1`,
+            acceptedOrders: sql`${mastersTable.acceptedOrders} - 1`,
+          })
+          .where(eq(mastersTable.id, current.masterId));
+      }
+
+      // ── Close dispatch records when operator directly cancels ─────────
+      if (status === "cancelled" && current.status !== "cancelled") {
+        await tx.update(orderDispatchesTable)
+          .set({ status: "cancelled" } as any)
+          .where(eq(orderDispatchesTable.orderId, id));
+      }
+    });
+  } catch (err: any) {
+    if (err instanceof HttpError) {
+      return res.status(err.status).json({ error: err.message });
     }
+    console.error("[orders PATCH /:id] transaction failed:", err);
+    return res.status(500).json({ error: "Не удалось сохранить изменения, попробуйте снова" });
   }
 
-  // Set timestamps on status transitions
-  if (status === "master_assigned" && current.status !== "master_assigned") {
-    updates.assignedAt = new Date();
-    newStatus = "master_assigned";
-  }
-  if (status === "completed" && current.status !== "completed") {
-    updates.completedAt = new Date();
-    newStatus = "completed";
-  }
-  if (status && !newStatus) newStatus = status;
+  // ─────────────────────────────────────────────────────────────────────────
+  // Post-commit side effects: notifications, async analysis, library calls
+  // with their own DB logic. Best-effort; failures here log but don't roll back.
+  // ─────────────────────────────────────────────────────────────────────────
+  const o = updatedOrder!;
+  void placeholderDeleted; // reserved for future analytics
 
-  // "Accept proposed" — copy proposedAmount → orderAmount and auto-calc commission (commission only for non-token orders)
-  if (acceptProposed && current.proposedAmount) {
-    const amt = Number(current.proposedAmount);
-    updates.orderAmount = String(amt);
-    if (current.paymentModel !== "token") {
-      const commSettings = await getCommissionSettings();
-      updates.commission = String(calculateCommission(amt, commSettings));
-    }
-  } else if (orderAmount !== undefined) {
-    updates.orderAmount = orderAmount !== null ? String(orderAmount) : null;
-    if (commission !== undefined) {
-      updates.commission = commission !== null ? String(commission) : null;
-    } else if (orderAmount !== null && current.paymentModel !== "token") {
-      const commSettings = await getCommissionSettings();
-      updates.commission = String(calculateCommission(Number(orderAmount), commSettings));
-    }
-  } else if (commission !== undefined && current.paymentModel !== "token") {
-    updates.commission = commission !== null ? String(commission) : null;
-  }
-  if (clientRating !== undefined) updates.clientRating = clientRating;
-
-  const result = await db.update(ordersTable).set(updates).where(eq(ordersTable.id, id)).returning();
-  if (!result[0]) return res.status(404).json({ error: "Order not found" });
-  const o = result[0];
-
-  // ── Репутация мастера: счётчик подряд отменённых заказов ───────────────────
-  // Завершённый заказ сбрасывает счётчик. Отменённый — увеличивает; на 2-м подряд
-  // мастер автоблокируется (см. lib/masterReputation.ts). rejectCancellation
-  // не считается отменой — мастер сохраняет заказ.
+  // ── Master reputation ──────────────────────────────────────────────────
   if (current.masterId && newStatus === "completed" && current.status !== "completed") {
     await recordOrderCompleted(current.masterId).catch(e =>
       console.error("[orders] recordOrderCompleted error:", e),
@@ -429,241 +699,65 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
       console.error("[orders] recordOrderCancelled error:", e),
     );
   }
-  // Восстановление ошибочно отменённого заказа — откатываем штраф
   if (restoreOrder && current.status === "cancelled" && current.masterId) {
     await revertOrderCancellation(current.masterId).catch(e =>
       console.error("[orders] revertOrderCancellation error:", e),
     );
   }
-
-  // ── Log status change ─────────────────────────────────────────────────────
-  if (newStatus && newStatus !== current.status) {
-    const sessionUser = (req as any).session?.userId ?? null;
-    let userAlias = "система";
-    if (sessionUser) {
-      const userRows = await db.select().from(usersTable).where(eq(usersTable.id, sessionUser));
-      userAlias = userRows[0]?.name ?? userRows[0]?.login ?? "система";
-    }
-    await db.insert(orderStatusLogsTable).values({
-      orderId: id,
-      oldStatus: current.status,
-      newStatus,
-      userId: sessionUser,
-      userAlias,
-    }).catch(() => {});
-  }
-
-  // ── Update/create transaction when commission is confirmed ──────────────────
-  const commissionConfirmed = (acceptProposed && current.proposedAmount) ||
-    (orderAmount !== undefined && orderAmount !== null);
-  let autoCompleteOrder = false;
-  if (current.paymentModel !== "token" && commissionConfirmed && o.masterId && o.orderAmount && o.commission) {
-    const existingTxRows = await db.select().from(transactionsTable).where(eq(transactionsTable.orderId, id));
-    const existingTx = existingTxRows[0];
-    const commissionValue = Number(o.commission);
-
-    // Sum prepayments already confirmed by client for this order
-    const paidReceiptRows = await db.select().from(receiptsTable).where(
-      and(eq(receiptsTable.orderId, id), isNotNull(receiptsTable.prepaymentSubmittedAt))
+  if (autoCompleteHappened && current.masterId) {
+    await recordOrderCompleted(current.masterId).catch(e =>
+      console.error("[orders] recordOrderCompleted (auto) error:", e),
     );
-    const totalPrepaid = paidReceiptRows.reduce((sum, r) => sum + Number(r.prepaymentAmount), 0);
-    const prepaymentDeducted = Math.min(totalPrepaid, commissionValue);
-    const netPayable = Math.max(0, commissionValue - prepaymentDeducted);
-    const fullyPaidByPrepayment = netPayable === 0;
-    if (acceptProposed && fullyPaidByPrepayment) autoCompleteOrder = true;
-
-    if (existingTx) {
-      const wasPlaceholder = Number(existingTx.commission) === 0;
-      const prevCommission = Number(existingTx.commission);
-      const prevPrepaymentDeducted = Number(existingTx.prepaymentDeducted ?? 0);
-      const prevNetPayable = Math.max(0, prevCommission - prevPrepaymentDeducted);
-
-      // Update the transaction with real amounts and prepayment info
-      await db.update(transactionsTable).set({
-        orderAmount: o.orderAmount,
-        commission: o.commission,
-        serviceFee: "500",
-        prepaymentDeducted: String(prepaymentDeducted),
-        paymentStatus: fullyPaidByPrepayment ? "paid" : "pending",
-        paidAt: fullyPaidByPrepayment ? new Date() : existingTx.paidAt,
-      }).where(eq(transactionsTable.id, existingTx.id));
-
-      const mRows = await db.select().from(mastersTable).where(eq(mastersTable.id, o.masterId));
-      const m = mRows[0];
-      if (m) {
-        if (wasPlaceholder) {
-          // First confirmation: add net payable (commission minus prepayment) to debt
-          if (netPayable > 0) {
-            const newDebt = Number(m.debt) + netPayable;
-            await db.update(mastersTable).set({ debt: String(newDebt) }).where(eq(mastersTable.id, o.masterId));
-          }
-          // PWA push — primary notification channel
-          {
-            const pushBody = fullyPaidByPrepayment
-              ? `Сумма ${Number(o.orderAmount).toLocaleString("ru-RU")} ₽. Комиссия ${commissionValue.toLocaleString("ru-RU")} ₽ покрыта предоплатой клиента.`
-              : prepaymentDeducted > 0
-                ? `Сумма ${Number(o.orderAmount).toLocaleString("ru-RU")} ₽. К оплате: ${netPayable.toLocaleString("ru-RU")} ₽ (предоплата ${prepaymentDeducted.toLocaleString("ru-RU")} ₽ зачтена).`
-                : `Сумма ${Number(o.orderAmount).toLocaleString("ru-RU")} ₽. Комиссия к оплате: ${commissionValue.toLocaleString("ru-RU")} ₽.`;
-            sendPushToMaster(o.masterId, {
-              title: "✅ Сумма по заказу подтверждена",
-              body: pushBody,
-              url: "/balance",
-}).catch((err) => console.error("[orders] log status change failed:", err));
-          }
-          // Telegram удалён — мастер видит детали комиссии в PWA push + балансе.
-        } else if (commissionValue !== prevCommission || prepaymentDeducted !== prevPrepaymentDeducted) {
-          // Commission re-adjusted: recalculate delta based on net payable difference
-          const delta = netPayable - prevNetPayable;
-          const newDebt = Math.max(0, Number(m.debt) + delta);
-          await db.update(mastersTable).set({ debt: String(newDebt) }).where(eq(mastersTable.id, o.masterId));
-        }
-      }
-    } else {
-      // No placeholder exists (legacy order) — create transaction
-      await db.insert(transactionsTable).values({
-        orderId: id,
-        masterId: o.masterId,
-        orderAmount: o.orderAmount,
-        commission: o.commission,
-        serviceFee: "500",
-        prepaymentDeducted: String(prepaymentDeducted),
-        paymentStatus: fullyPaidByPrepayment ? "paid" : "pending",
-        paidAt: fullyPaidByPrepayment ? new Date() : undefined,
-      });
-      const mRows = await db.select().from(mastersTable).where(eq(mastersTable.id, o.masterId));
-      const m = mRows[0];
-      if (m) {
-        if (netPayable > 0) {
-          const newDebt = Number(m.debt) + netPayable;
-          await db.update(mastersTable).set({ debt: String(newDebt) }).where(eq(mastersTable.id, o.masterId));
-        }
-        // PWA push — primary notification channel
-        {
-          const pushBody = fullyPaidByPrepayment
-            ? `Сумма ${Number(o.orderAmount).toLocaleString("ru-RU")} ₽. Комиссия ${commissionValue.toLocaleString("ru-RU")} ₽ покрыта предоплатой клиента.`
-            : prepaymentDeducted > 0
-              ? `Сумма ${Number(o.orderAmount).toLocaleString("ru-RU")} ₽. К оплате: ${netPayable.toLocaleString("ru-RU")} ₽ (предоплата ${prepaymentDeducted.toLocaleString("ru-RU")} ₽ зачтена).`
-              : `Сумма ${Number(o.orderAmount).toLocaleString("ru-RU")} ₽. Комиссия к оплате: ${commissionValue.toLocaleString("ru-RU")} ₽.`;
-          sendPushToMaster(o.masterId, {
-            title: "✅ Сумма по заказу подтверждена",
-            body: pushBody,
-            url: "/balance",
-          }).catch(() => {});
-        }
-        // Telegram удалён — мастер видит детали комиссии в PWA push + балансе.
-      }
-    }
   }
 
-  // ── Auto-complete order if commission fully covered by prepayment ─────────────
-  if (current.paymentModel !== "token" && autoCompleteOrder && o.status !== "completed") {
-    await db.update(ordersTable)
-      .set({ status: "completed", updatedAt: new Date() })
-      .where(eq(ordersTable.id, id));
-    // Репутация: автозавершение тоже сбрасывает счётчик подряд отменённых
-    if (current.masterId) {
-      await recordOrderCompleted(current.masterId).catch(e =>
-        console.error("[orders] recordOrderCompleted (auto) error:", e),
-      );
-    }
-    const sessionUser = (req as any).session?.userId ?? null;
-    let userAlias = "система";
-    if (sessionUser) {
-      const userRows = await db.select().from(usersTable).where(eq(usersTable.id, sessionUser));
-      userAlias = userRows[0]?.name ?? userRows[0]?.login ?? "система";
-    }
-    await db.insert(orderStatusLogsTable).values({
-      orderId: id,
-      oldStatus: o.status,
-      newStatus: "completed",
-      userId: sessionUser,
-      userAlias,
-    }).catch(() => {});
-    // Also mark transaction as paid
-    await db.update(transactionsTable)
-      .set({ paymentStatus: "paid", paidAt: new Date() })
-      .where(and(eq(transactionsTable.orderId, id), eq(transactionsTable.paymentStatus as any, "pending")))
-      .catch(() => {});
+  // ── PWA push when commission was confirmed ─────────────────────────────
+  if (pushBodyForMaster && o.masterId) {
+    sendPushToMaster(o.masterId, {
+      title: "✅ Сумма по заказу подтверждена",
+      body: pushBodyForMaster,
+      url: "/balance",
+    }).catch((err) => console.error("[orders] push send failed:", err));
   }
 
-  // ── Delete placeholder transaction when order is cancelled ───────────────────
-  const isBeingCancelled = approveCancellation || rejectCancellation || updates.status === "cancelled";
-  if (current.paymentModel !== "token" && isBeingCancelled && current.masterId) {
-    const txRows = await db.select().from(transactionsTable).where(eq(transactionsTable.orderId, id));
-    const tx = txRows[0];
-    if (tx && Number(tx.commission) === 0) {
-      // Placeholder — safe to delete, no debt was added
-      await db.delete(transactionsTable).where(eq(transactionsTable.id, tx.id));
-    }
-  }
-
-  // ── Decrement master order counters on cancellation (not on reject) ─────────
-  if ((approveCancellation || updates.status === "cancelled") && current.masterId && !rejectCancellation) {
-    await db.update(mastersTable)
-      .set({
-        totalOrders: sql`${mastersTable.totalOrders} - 1`,
-        acceptedOrders: sql`${mastersTable.acceptedOrders} - 1`,
-      })
-      .where(eq(mastersTable.id, current.masterId));
-  }
-
-  // ── Close dispatch records when operator directly cancels ────────────────────
-  if (status === "cancelled" && current.status !== "cancelled") {
-    await db.update(orderDispatchesTable)
-      .set({ status: "cancelled" } as any)
-      .where(eq(orderDispatchesTable.orderId, id))
-      .catch(() => {});
-  }
-
-  // Auto-move master between voronka columns based on status change
+  // ── Auto-move master between voronka columns based on status change ───
   if ((status !== undefined || approveCancellation) && current.masterId) {
     const masterId = current.masterId;
     const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, masterId));
     const master = masterRows[0];
     if (master) {
       if (status === "master_assigned" || status === "in_progress") {
-        // Count all active orders for this master (including this one), move to correct column
         const activeCount = await countActiveMasterOrders(masterId);
         const colId = await getColumnIdForActiveCount(activeCount);
         if (colId) {
           await db.update(mastersTable).set({ voronkaColumnId: colId }).where(eq(mastersTable.id, masterId));
         }
       } else if (status === "completed") {
-        // Count REMAINING active orders (excluding this order)
         const remainingCount = await countActiveMasterOrders(masterId, id);
         if (remainingCount > 0) {
-          // Still has other active orders — keep them in the appropriate column
           const colId = await getColumnIdForActiveCount(remainingCount);
           if (colId) {
             await db.update(mastersTable).set({ voronkaColumnId: colId }).where(eq(mastersTable.id, masterId));
           }
         } else {
-          // Last active order completed — move to "Ожидает оплаты"
           const awaitingCol = await getAwaitingPaymentColumn();
           if (awaitingCol) {
             await db.update(mastersTable).set({ voronkaColumnId: awaitingCol.id }).where(eq(mastersTable.id, masterId));
           }
         }
-
-        // Feedback request removed — proactive messaging now focused on balance/debt only
       } else if (status === "cancelled" || approveCancellation) {
-        // Count REMAINING active orders (excluding this order)
         const remainingCount = await countActiveMasterOrders(masterId, id);
         const colId = await getColumnIdForActiveCount(remainingCount);
         if (colId) {
           await db.update(mastersTable).set({ voronkaColumnId: colId }).where(eq(mastersTable.id, masterId));
         }
-      } else if (rejectCancellation) {
-        // Master stays in current voronka column (operator must free them manually)
-        // Nothing to move — intentionally left empty
       }
+      // rejectCancellation: master stays in current voronka column (operator frees manually)
     }
   }
 
-  // ── Re-broadcast after rejection ─────────────────────────────────────────
+  // ── Re-broadcast after rejection ──────────────────────────────────────
   if (rejectCancellation && current.masterId) {
     const rejectedMasterId = current.masterId;
-
     const rejectedMasterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, rejectedMasterId));
     const rejectedMaster = rejectedMasterRows[0];
     const rejectionMsg =
@@ -680,10 +774,7 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
       } as any).catch(() => {});
     }
 
-    // Delete old dispatch records so we can re-broadcast
     await db.delete(orderDispatchesTable).where(eq(orderDispatchesTable.orderId, id));
-
-    // Permanently block the cancelling master from receiving this order again
     await db.insert(orderDispatchesTable).values({
       orderId: id,
       masterId: rejectedMasterId,
@@ -693,12 +784,11 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
     });
     void buildOrderCard;
 
-    // Re-broadcast to all eligible masters via standard pipeline (PWA push + Max).
     await performBroadcast(id).catch(e => console.error("[orders] re-broadcast error:", e));
   }
 
-  // Async analysis of suspicious cancellations — fire and forget
-  if ((approveCancellation || updates.status === "cancelled") && current.masterId) {
+  // ── Async analysis of suspicious cancellations — fire and forget ──────
+  if ((approveCancellation || (status === "cancelled" && current.status !== "cancelled")) && current.masterId) {
     const cancelledMasterId = current.masterId;
     db.select({ alias: mastersTable.alias }).from(mastersTable)
       .where(eq(mastersTable.id, cancelledMasterId))
@@ -710,16 +800,14 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
       }).catch(() => {});
   }
 
-  // Notify master when admin approves a cancellation request
+  // ── Notify master when admin approves a cancellation request ──────────
   if (approveCancellation && current.masterId) {
     const cancelNotifyText =
       `❌ Заказ #${id} отменён\n\n` +
       `Отмена подтверждена. Обратите внимание: частые отмены снижают ваш рейтинг и количество поступающих вам заявок. Берите только те заказы, в которых уверены.`;
-
     const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, current.masterId));
     const cancelledMaster = masterRows[0];
     if (cancelledMaster) {
-      // Save to CRM chat (visible in CRM and master's app)
       await db.insert(masterMessagesTable).values({
         masterId: cancelledMaster.id,
         telegramChatId: `pwa_${cancelledMaster.id}`,
@@ -728,8 +816,6 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
         senderName: "system",
         isRead: false,
       }).catch(e => console.error("[orders] Failed to insert cancellation message:", e));
-
-      // Send via Max if connected
       if (cancelledMaster.maxChatId) {
         sendMaxMessage(cancelledMaster.maxChatId, cancelNotifyText)
           .catch(e => console.error("[orders] Failed to send Max cancellation message:", e));
@@ -737,12 +823,20 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
     }
   }
 
+  // ── Notify work-board listeners (CRM SSE) ─────────────────────────────
+  notifyWorkBoardChanged("order_patch");
+
+  // ── Cache invalidation when order moves out of "no_amount" ────────────
+  if (updatedOrder!.orderAmount && !current.orderAmount) {
+    closeOpenEstimateTasksForOrder(id, "сумма зафиксирована").catch(() => {});
+  }
+
+  // ── Build response ────────────────────────────────────────────────────
   let masterName: string | null = null;
   if (o.masterId) {
     const m = await db.select().from(mastersTable).where(eq(mastersTable.id, o.masterId));
     masterName = m[0]?.alias ?? null;
   }
-  // Fetch transaction info for this order
   const patchTxRows = await db.select().from(transactionsTable).where(eq(transactionsTable.orderId, id));
   const patchTx = patchTxRows[0] ?? null;
   res.json({
@@ -760,6 +854,8 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
     proposedAmount: o.proposedAmount ? Number(o.proposedAmount) : null,
     orderAmount: o.orderAmount ? Number(o.orderAmount) : null,
     commission: o.commission ? Number(o.commission) : null,
+    commissionPaid: o.commissionPaid ?? false,
+    agreementAmountSource: (o as any).agreementAmountSource ?? null,
     clientRating: o.clientRating ?? null,
     cancelReason: o.cancelReason ?? null,
     cancelType: (o as any).cancelType ?? null,
@@ -768,7 +864,6 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
     completedAt: (o as any).completedAt ?? null,
     createdAt: o.createdAt,
     updatedAt: o.updatedAt,
-    // Transaction info from finance
     transactionInfo: patchTx ? {
       orderAmount: Number(patchTx.orderAmount),
       commission: Number(patchTx.commission),
