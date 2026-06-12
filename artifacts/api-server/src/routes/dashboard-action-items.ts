@@ -8,6 +8,8 @@ import { recordOrderCancelled } from "../lib/masterReputation.js";
 import { recordOrderCompleted } from "../lib/masterReputation.js";
 import { recordOrderMasterHistory } from "../lib/orderMasterHistory.js";
 import { calculateCommission, getCommissionSettings, DEFAULT_COMMISSION } from "../lib/commission.js";
+import { computePaymentStateBatch } from "../lib/paymentState.js";
+import { isPaymentStateEngineEnabled } from "../lib/paymentStateGuard.js";
 import OpenAI from "openai";
 
 declare const console: any;
@@ -163,7 +165,7 @@ async function buildItems(): Promise<Item[]> {
   // Load commission settings once for amountAtRisk calculations
   const commSettings = await getCommissionSettings().catch(() => DEFAULT_COMMISSION);
   const [orders, masters, allMastersForNames, leads, receipts, manualTasks, txRows, masterWallets] = await Promise.all([
-    db.select({ id: ordersTable.id, leadId: ordersTable.leadId, masterId: ordersTable.masterId, city: ordersTable.city, status: ordersTable.status, proposedAmount: ordersTable.proposedAmount, orderAmount: ordersTable.orderAmount, createdAt: ordersTable.createdAt, updatedAt: ordersTable.updatedAt, assignedAt: ordersTable.assignedAt, cancelReason: ordersTable.cancelReason }).from(ordersTable).where(and(isNull(ordersTable.deletedAt), not(inArray(ordersTable.status, ["completed", "cancelled"])))),
+    db.select({ id: ordersTable.id, leadId: ordersTable.leadId, masterId: ordersTable.masterId, city: ordersTable.city, status: ordersTable.status, proposedAmount: ordersTable.proposedAmount, orderAmount: ordersTable.orderAmount, commissionPaid: ordersTable.commissionPaid, createdAt: ordersTable.createdAt, updatedAt: ordersTable.updatedAt, assignedAt: ordersTable.assignedAt, cancelReason: ordersTable.cancelReason }).from(ordersTable).where(and(isNull(ordersTable.deletedAt), not(inArray(ordersTable.status, ["completed", "cancelled"])))),
     db.select({ id: mastersTable.id, alias: mastersTable.alias, city: mastersTable.city, status: mastersTable.status, createdAt: mastersTable.createdAt, blockedAt: (mastersTable as any).blockedAt }).from(mastersTable).where(and(isNull(mastersTable.deletedAt), sql`${mastersTable.status}::text ilike '%blocked%' or ${mastersTable.status}::text ilike '%fomo%'`)),
     db.select({ id: mastersTable.id, alias: mastersTable.alias, city: mastersTable.city }).from(mastersTable).where(isNull(mastersTable.deletedAt)),
     db.select({ id: leadsTable.id, clientName: leadsTable.clientName, clientPhone: leadsTable.clientPhone, city: leadsTable.city, createdAt: leadsTable.createdAt }).from(leadsTable).where(isNull(leadsTable.deletedAt)),
@@ -186,6 +188,21 @@ async function buildItems(): Promise<Item[]> {
   // Orders that have at least one partial payment in transaction_payments — work is in progress, don't flag as "no estimate"
   const txIdsWithPayments = new Set((await db.select({ transactionId: transactionPaymentsTable.transactionId }).from(transactionPaymentsTable).limit(5000)).map((p: any) => p.transactionId));
   const txOrderIdsWithPayments = new Set(txRows.filter((t: any) => txIdsWithPayments.has(t.id)).map((t: any) => Number(t.orderId)).filter(Boolean));
+
+  // ── Payment_State engine guard (Phase 2) ───────────────────────────────
+  // При включённом флаге задача no_estimate генерируется только для заказов
+  // в paymentState=no_amount (нет orderAmount, нет receipt с amount, не paid).
+  // Это подавляет дубли когда оператор зафиксировал сумму через Agreement_Path
+  // без создания сметы. При выключенном флаге — старая проверка hasEstimate.
+  const paymentStateEngineOn = await isPaymentStateEngineEnabled();
+  const receiptsByOrderForState = new Map<number, typeof receipts>();
+  for (const r of receipts) {
+    const arr = receiptsByOrderForState.get(Number(r.orderId)) ?? [];
+    arr.push(r);
+    receiptsByOrderForState.set(Number(r.orderId), arr);
+  }
+  const paymentStateMap = computePaymentStateBatch(orders as any, receiptsByOrderForState as any);
+
   for (const o of orders) {
     const ageH = (now.getTime() - new Date(o.createdAt).getTime()) / 3600000;
     // For no_estimate: show the REAL age of the problem (from order creation),
@@ -203,7 +220,12 @@ async function buildItems(): Promise<Item[]> {
       || receiptOrderIds.has(Number(o.id))
       || txOrderIds.has(Number(o.id))
       || txOrderIdsWithPayments.has(Number(o.id));
-    if (!hasEstimate && estimateAgeH >= 24) {
+    // Payment_State guard (Phase 2): при включённом флаге решающее условие —
+    // paymentState===no_amount; иначе — старая проверка hasEstimate.
+    const shouldShowNoEstimate = paymentStateEngineOn
+      ? paymentStateMap.get(Number(o.id)) === "no_amount"
+      : !hasEstimate;
+    if (shouldShowNoEstimate && estimateAgeH >= 24) {
       // Show real order age + context about current master assignment time
       const descParts = [`У заказа нет сметы уже ${fmtAge(estimateAgeH)}.`];
       if (o.masterId && currentMasterAgeH < estimateAgeH - 24) {

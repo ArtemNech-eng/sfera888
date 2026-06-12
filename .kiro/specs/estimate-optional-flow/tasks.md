@@ -124,7 +124,7 @@
   - Аналогично `runPaymentReminders` — добавляет `AND o.commission_paid = false`.
   - _Validates: Requirements 6.1, 6.5, 6.6._
 
-- [ ] 16. **Channel 2: `dashboard-action-items.ts no_estimate` через guard** (M)
+- [x] 16. **Channel 2: `dashboard-action-items.ts no_estimate` через guard** (M)
   - В `buildItems()`: pre-compute `paymentState` для всех загруженных orders.
   - Условие `if (!hasEstimate && estimateAgeH >= 24)` заменить на:
     ```
