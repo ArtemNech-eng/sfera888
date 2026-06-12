@@ -328,7 +328,7 @@
   - Конфликтный: после Agreement_Amount мастер делает Receipt с другой суммой → появляется reconcile_amount → Manager выбирает разрешение.
   - _Validates: All Phase 1, 2, 3 acceptance criteria._
 
-- [ ] 42. **Документация**
+- [x] 42. **Документация**
   - Обновить `replit.md` или README — описать Payment_State и feature flags.
   - Краткая инструкция для оператора: "Что делать если заказ висит в 'no_amount'".
   - _Validates: разработческая поддержка._

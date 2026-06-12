@@ -186,3 +186,77 @@ React PWA for masters to manage their orders independently.
 - **Startup migration**: `receipts` table created via `runMigrations()` on server startup (idempotent CREATE TABLE IF NOT EXISTS)
 - **API**: `POST /api/receipts` (master auth), `GET /api/receipts/order/:orderId` (admin/operator), `GET /api/receipts/public/:token` (public JSON)
 
+
+
+## Payment_State Engine (estimate-optional-flow)
+
+Спека `.kiro/specs/estimate-optional-flow/`. В проде с 12.06.2026 (commit `fb068ff9` Phase 2, `83cc43bc` Phase 3).
+
+### Зачем
+
+Раньше всё было завязано на смете мастера: пока мастер не создал receipt, система слала ему напоминания и блокировала через FOMO. Реальность: часть мастеров просто звонит и говорит "договорились на 8000". Оператор фиксирует сумму, считается комиссия — но цикл уведомлений о смете продолжает работать. Это создавало шум и путаницу.
+
+Решение: derived поле `paymentState` (`no_amount | agreed | paid | cancelled`), pure-функция от `(order, receipts)`. Все 5 каналов уведомлений теперь фильтруются через `paymentState`.
+
+### Что изменилось
+
+| Было | Стало |
+|---|---|
+| `master_assigned + нет receipt` → задача "нет сметы", FOMO_BLOCK 48ч | `paymentState = no_amount` → задача, FOMO. Сумма зафиксирована (Agreement_Path) → ничего не шлётся. |
+| Оператор вводил сумму через PATCH `/api/orders/:id` (без audit) | `POST /api/orders/:id/agreement` с audit-row, source, optional note. PATCH тоже теперь в `db.transaction` + audit. |
+| Кнопка "Принять" в OrderPanel меняла только локально | Одна кнопка "Принять предложение мастера" → POST /agreement с `source=master_proposal`, push мастеру. |
+| Конфликт сумм (мастер сделал смету ≠ Agreement) — игнорировался | Появляется задача `reconcile_amount` (SLA 30 мин) + `<ReconcileBanner>` в OrderPanel; Manager выбирает "Использовать сумму из сметы" / "Оставить согласованную". |
+| Истории изменений суммы не было | `order_amount_audit` таблица + `GET /api/orders/:id/audit` + `<AmountAuditHistory>` collapsible в ClosingDrawer (Manager only). |
+
+### Ключевые поля и таблицы
+
+- `orders.agreement_amount_source` — `'agreement' | 'master_proposal' | 'manager_correction' | 'manager_force_paid' | 'reconcile_use_receipt' | 'reconcile_keep_agreement' | 'system_recalc' | 'operator_edit' | 'unknown'` или NULL (Receipt_Path).
+- `orders.payment_state_changed_at` — timestamp последней смены paymentState. Для KPI.
+- `orders.agreement_note` — текст с пометкой источника ("со слов мастера: 80м²").
+- `order_amount_audit` (id, orderId, field, prevValue, newValue, source, reason, actorUserId, actorRole, actorAlias, createdAt). Запись в одной транзакции с изменением поля.
+
+### Feature flags
+
+`GET /api/system/feature-flags` возвращает 3 флага из `system_settings` (whitelisted):
+
+| Ключ | Default | Управляет |
+|---|---|---|
+| `payment_state_engine_enabled` | `false` | Фильтрация 5 каналов уведомлений (cron, dashboard, work-board×2, fomoBlock). Сейчас `true` в проде. |
+| `payment_state_audit_ui_enabled` | `false` | `<AmountAuditHistory>` в ClosingDrawer + блок "Источник суммы заказа" в /analytics. Сейчас `true` в проде. |
+| `payment_state_master_proposal_oneclick` | `true` | Кнопка "Принять предложение мастера" в OrderPanel. |
+
+Кеш TTL 60с в каждом инстансе (`paymentStateGuard.ts`). Toggle через SQL — изменение применяется без редеплоя:
+
+```sql
+INSERT INTO system_settings (key, value, updated_at)
+VALUES ('<flag>', 'true', NOW())
+ON CONFLICT (key) DO UPDATE SET value = 'true', updated_at = NOW();
+```
+
+Rollback — тот же SQL с `'false'`.
+
+### Новые API endpoints
+
+- `POST /api/orders/:id/agreement` — Operator фиксирует Agreement_Amount. Body: `{ amount, source?, noteSource?, note? }`. Источник `agreement` (default) или `master_proposal`. Создаёт audit, шлёт push/MAX мастеру, закрывает estimate-tasks.
+- `GET /api/orders/:id/audit` — admin only. Лента изменений суммы.
+- `GET /api/orders/stats/payment-state?state=no_amount&staleHours=48` — Для баннера "Сумма не зафиксирована >48ч".
+- `GET /api/analytics/payment-state-mix?from=&to=&groupBy=day|week|month` — Распределение по источникам суммы.
+- `PATCH /api/orders/:id { acceptReceiptAmount: true }` — Reconcile: принять сумму из сметы.
+- `PATCH /api/orders/:id { keepAgreementAmount: true, reason: "..." }` — Reconcile: оставить согласованную (reason обязателен).
+
+### Что делать оператору если заказ висит в `no_amount`
+
+1. Открыть OrderPanel заказа в CRM.
+2. Если есть `proposedAmount` от мастера — нажать "Принять предложение мастера" (кнопка под суммой).
+3. Иначе — открыть Closing Drawer (зелёная кнопка "Закрыть заказ" → "Финальные данные сделки"). В заказах с `no_amount` форма "Зафиксировать согласованную сумму" будет первой. Ввести сумму, выбрать источник ("Со слов мастера" / "По чату с клиентом"), submit.
+4. Заказ переходит в `agreed`, мастеру летит push/MAX, no_estimate-уведомления молчат.
+
+### Phase 3.5 (опционально)
+
+`scripts/src/recompute-master-debt.ts` — пересчёт `masters.debt` через сумму pending/overdue transactions. Не блокирует основную фичу, делается отдельным релизом при необходимости.
+
+### Тестирование
+
+- 14 unit-тестов `__tests__/paymentState.test.ts` (pure compute).
+- 26 unit-тестов `__tests__/agreementValidation.test.ts` (request body validation).
+- Запуск: `pnpm --filter @workspace/api-server test` → 40/40 pass.
