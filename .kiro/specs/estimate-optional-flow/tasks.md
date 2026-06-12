@@ -134,7 +134,7 @@
     ```
   - _Validates: Requirements 6.1, 6.2._
 
-- [ ] 17. **Channel 3: `work-board.ts` проблема "Без сметы" + колонка `no_estimate`** (M)
+- [x] 17. **Channel 3: `work-board.ts` проблема "Без сметы" + колонка `no_estimate`** (M)
   - В `buildBoard()` — pre-compute `paymentState` для каждого order.
   - Условие проблемы: `paymentState === "no_amount" && assignedAt > 48h` вместо `!receipt && ...`.
   - Колонка `no_estimate` фильтруется через `paymentState === "no_amount"`.
@@ -142,11 +142,11 @@
   - При выключенном флаге — старая логика.
   - _Validates: Requirements 6.3._
 
-- [ ] 18. **Channel 3b: `work-board-table.ts` тоже самое** (M)
+- [x] 18. **Channel 3b: `work-board-table.ts` тоже самое** (M)
   - Те же правила, что в работе-board, применить к табличному API.
   - _Validates: Requirements 6.3._
 
-- [ ] 19. **Channel 4: auto-close estimate tasks при переходе в agreed/paid/cancelled** (S)
+- [x] 19. **Channel 4: auto-close estimate tasks при переходе в agreed/paid/cancelled** (S)
   - В `POST /agreement` (T13) и в `PATCH /:id` (T14) после commit транзакции — вызвать `closeOpenEstimateTasksForOrder()` (cache invalidate).
   - В `lib/operatorTasks.ts` `getOperatorTasks()` — это уже работает корректно для `price_proposal` (требует `proposedAmount && !orderAmount`); никаких изменений на этом узле не требуется.
   - _Validates: Requirements 6.2, 12.5._

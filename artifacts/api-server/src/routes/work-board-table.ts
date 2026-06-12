@@ -28,6 +28,7 @@ import { workBoardBus, notifyWorkBoardChanged } from "./work-board.js";
 import { z } from "zod";
 import { ZodError } from "zod";
 import { computePaymentStateBatch, type PaymentState } from "../lib/paymentState.js";
+import { isPaymentStateEngineEnabled } from "../lib/paymentStateGuard.js";
 
 // ── Reuse types and helpers from work-board.ts ─────────────────────────────────
 
@@ -166,7 +167,9 @@ function determineColumnKey(
   orderAmount: number,
   commissionUnpaidAmount: number,
   problem: string | null,
-  now: number
+  now: number,
+  paymentState: PaymentState,
+  paymentStateEngineOn: boolean,
 ): ColumnKey {
   // Problem detection (highest priority)
   if (problem) return "problem";
@@ -186,8 +189,14 @@ function determineColumnKey(
   // estimate_unpaid: receipt exists, prepayment not confirmed
   if (receipt) return "estimate_unpaid";
 
-  // no_estimate: master assigned but no receipt
-  if (order.status === "master_assigned" || order.status === "in_progress") return "no_estimate";
+  // no_estimate vs estimate_paid for active orders
+  // При включённом payment-state engine: только paymentState=no_amount → no_estimate.
+  // Заказы с зафиксированной суммой (agreed/paid) без receipt — направляем
+  // в estimate_paid (Agreement_Path / Manager force-paid → визуально «в работе»).
+  if (order.status === "master_assigned" || order.status === "in_progress") {
+    if (paymentStateEngineOn && paymentState !== "no_amount") return "estimate_paid";
+    return "no_estimate";
+  }
 
   // waiting_master vs new
   const isFreshlyCreated = !order.lastBroadcastAt && order.broadcastCount === 0;
@@ -390,6 +399,9 @@ async function buildTableData(params: QueryParams): Promise<{
   }
   const paymentStateMap = computePaymentStateBatch(orders as any, receiptsByOrderForState);
 
+  // Payment_State engine guard (Phase 2). См. paymentStateGuard.ts.
+  const paymentStateEngineOn = await isPaymentStateEngineEnabled();
+
   const txByOrder = new Map<number, typeof transactions>();
   for (const tx of transactions) {
     const arr = txByOrder.get(tx.orderId) ?? [];
@@ -470,14 +482,28 @@ async function buildTableData(params: QueryParams): Promise<{
     let problem: string | null = null;
     if (o.status === "cancellation_requested") problem = "Запрос на отмену от мастера";
     else if (opNote && !isAiNote && commLeft > 0) problem = "Помечена оператором: " + opNote.slice(0, 60);
-    else if (!receipt && o.assignedAt && now - new Date(o.assignedAt).getTime() > 48 * 3_600_000) problem = "Без сметы более 48 часов";
+    else if (
+      paymentStateEngineOn
+        ? paymentStateMap.get(o.id) === "no_amount" && o.assignedAt && now - new Date(o.assignedAt).getTime() > 48 * 3_600_000
+        : !receipt && o.assignedAt && now - new Date(o.assignedAt).getTime() > 48 * 3_600_000
+    ) problem = paymentStateEngineOn ? "Сумма не зафиксирована более 48 часов" : "Без сметы более 48 часов";
     else if (receipt && !(receipt as any).prepaymentSeenAt && now - new Date(receipt.createdAt).getTime() > 48 * 3_600_000) problem = "Оплата не подтверждена > 48ч";
     else if (commissionUnpaidAmount > 0 && o.status === "completed" && o.completedAt && now - new Date(o.completedAt).getTime() > 7 * 86_400_000) problem = "Комиссия не оплачена > 7 дней";
 
     const isProblem = !!problem;
     if (isProblem) problemCount++;
 
-    const columnKey = determineColumnKey(o, receipt, total, orderAmount, commissionUnpaidAmount, problem, now);
+    const columnKey = determineColumnKey(
+      o,
+      receipt,
+      total,
+      orderAmount,
+      commissionUnpaidAmount,
+      problem,
+      now,
+      paymentStateMap.get(o.id) ?? "no_amount",
+      paymentStateEngineOn,
+    );
 
     // Skip if filtered by problemOnly and not a problem
     if (params.problemOnly && !isProblem) continue;

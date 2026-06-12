@@ -23,6 +23,7 @@ import { recordOrderMasterHistory } from "../lib/orderMasterHistory.js";
 import { sendMaxMessage } from "../maxBot.js";
 import { sendPushToMaster } from "../lib/push.js";
 import { computePaymentStateBatch, type PaymentState } from "../lib/paymentState.js";
+import { isPaymentStateEngineEnabled } from "../lib/paymentStateGuard.js";
 
 // Только эти роли могут менять статус заявок (эскалировать/возвращать в пул).
 const operatorRoles = requireRole("admin", "lead_operator", "master_operator");
@@ -254,6 +255,11 @@ async function buildBoard() {
   }
   const paymentStateMap = computePaymentStateBatch(orders as any, receiptsByOrderForState);
 
+  // Payment_State engine guard (Phase 2). При выключенном флаге логика
+  // problem-detection и колонка no_estimate работают как раньше (по наличию
+  // receipt). При включённом — переключаются на paymentState === "no_amount".
+  const paymentStateEngineOn = await isPaymentStateEngineEnabled();
+
   const txByOrder = new Map<number, typeof transactions>();
   for (const tx of transactions) {
     const arr = txByOrder.get(tx.orderId) ?? [];
@@ -348,7 +354,11 @@ async function buildBoard() {
     let problem: string | null = null;
     if (o.status === "cancellation_requested") problem = "Запрос на отмену от мастера";
     else if (opNote && !isAiNote && commLeftForProblem > 0) problem = "Помечена оператором: " + opNote.slice(0, 60);
-    else if (!receipt && o.assignedAt && now - new Date(o.assignedAt).getTime() > 48 * 3_600_000) problem = "Без сметы более 48 часов";
+    else if (
+      paymentStateEngineOn
+        ? paymentStateMap.get(o.id) === "no_amount" && o.assignedAt && now - new Date(o.assignedAt).getTime() > 48 * 3_600_000
+        : !receipt && o.assignedAt && now - new Date(o.assignedAt).getTime() > 48 * 3_600_000
+    ) problem = paymentStateEngineOn ? "Сумма не зафиксирована более 48 часов" : "Без сметы более 48 часов";
     else if (receipt && !(receipt as any).prepaymentSeenAt && now - new Date(receipt.createdAt).getTime() > 48 * 3_600_000) problem = "Оплата не подтверждена > 48ч";
     else if (commissionUnpaidAmount > 0 && o.status === "completed" && o.completedAt && now - new Date(o.completedAt).getTime() > 7 * 86_400_000) problem = "Комиссия не оплачена > 7 дней";
 
@@ -544,7 +554,21 @@ async function buildBoard() {
     }
 
     // no_estimate: master assigned but no receipt
+    // При включённом payment-state engine колонка no_estimate показывает только
+    // заказы в no_amount. Заказы с зафиксированной суммой (agreed/paid) без
+    // receipt — типичный кейс Agreement_Path / Manager force-paid — направляем
+    // в estimate_paid: для оператора это «в работе», а не «без сметы».
     if (o.status === "master_assigned" || o.status === "in_progress") {
+      const ps = paymentStateMap.get(o.id);
+      if (paymentStateEngineOn && ps !== "no_amount") {
+        const card: Card = {
+          ...baseCard,
+          bot: { action: "ждём отчёт мастера", eta: "норма", tone: "ok" },
+        };
+        columns.estimate_paid.cards.push(card);
+        columns.estimate_paid.count++;
+        continue;
+      }
       const hoursAssigned = o.assignedAt ? Math.max(0, (now - new Date(o.assignedAt).getTime()) / 3_600_000) : 0;
       const tone: BotTone = hoursAssigned > 24 ? "bad" : hoursAssigned > 6 ? "warn" : "ok";
       const action = hoursAssigned > 24 ? "эскалация в Проблему через" : hoursAssigned > 6 ? "напомню мастеру" : "ждём смету";
