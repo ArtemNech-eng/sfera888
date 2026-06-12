@@ -30,7 +30,7 @@
   - Логика — точно как в `design.md` § Architecture / State diagram.
   - _Validates: Requirements 1.1, 1.5._
 
-- [ ] 3. **Unit-тесты для `computePaymentState`** (M)
+- [x] 3. **Unit-тесты для `computePaymentState`** (M)
   - Создать `artifacts/api-server/__tests__/paymentState.test.ts` (или адекватный путь под существующий test runner — проверить что в проекте уже есть).
   - 12 примерных кейсов из `design.md` § Testing Strategy.
   - Проверить запуск: тесты должны падать если функция случайно регрессирует.
@@ -43,34 +43,34 @@
   - В Phase 1 этот guard ещё никем не используется — мы его готовим заранее.
   - _Validates: Requirements 6.9 (старое поведение когда флаг false)._
 
-- [ ] 5. **Добавить `paymentState` и `agreementAmountSource` в JSON ответов order endpoints** (M)
+- [x] 5. **Добавить `paymentState` и `agreementAmountSource` в JSON ответов order endpoints** (M)
   - `routes/orders.ts GET /api/orders` (список) — после загрузки orders+receipts вызвать `computePaymentStateBatch`, в каждом row добавить поля.
   - `routes/orders.ts GET /api/orders/:id` (одиночный) — то же на одном объекте.
   - Также: `routes/leads.ts` (если на этом эндпоинте отдаются orders).
   - Никаких других изменений — только дополнение JSON.
   - _Validates: Requirements 1.2._
 
-- [ ] 6. **Добавить `paymentState` в work-board кадры** (M)
+- [x] 6. **Добавить `paymentState` в work-board кадры** (M)
   - `routes/work-board.ts` `buildBoard()` — для каждой card вычислить и добавить `paymentState`.
   - `routes/work-board-table.ts` — то же для табличного формата.
   - `routes/work-monitor.ts` — то же.
   - Производительность: использовать `computePaymentStateBatch` (один проход по уже загруженным receipts/orders).
   - _Validates: Requirements 1.2._
 
-- [ ] 7. **Создать `GET /api/system/feature-flags` endpoint** (S)
+- [x] 7. **Создать `GET /api/system/feature-flags` endpoint** (S)
   - Новый файл `artifacts/api-server/src/routes/system.ts` (если нет похожего) или extend существующий.
   - Возвращает 3 флага: `payment_state_engine_enabled`, `payment_state_audit_ui_enabled`, `payment_state_master_proposal_oneclick`.
   - Auth: `requireAuth` (любая роль).
   - Регистрация роута в `routes/index.ts`.
   - _Validates: Requirements 6.9 (управление флагами через UI)._
 
-- [ ] 8. **CRM компонент `<PaymentStateBadge>`** (S)
+- [x] 8. **CRM компонент `<PaymentStateBadge>`** (S)
   - Создать `artifacts/crm/src/components/orders/PaymentStateBadge.tsx`.
   - Принимает `state: PaymentState`. Лейблы: "Сумма не зафиксирована" / "Сумма согласована" / "Оплачено" / "Отменён".
   - Tailwind стили — нейтральный/желтый/зелёный/красный.
   - _Validates: Requirements 1.4._
 
-- [ ] 9. **Интегрировать `<PaymentStateBadge>` в CRM** (M)
+- [x] 9. **Интегрировать `<PaymentStateBadge>` в CRM** (M)
   - `OrderPanel.tsx` — рядом с заголовком, показывать `paymentState` из ответа API.
   - `OrdersWorkspace.tsx` — добавить столбец/бейдж в строке таблицы.
   - `work-board-table.tsx` (CRM) — бейдж в колонке Money.
@@ -78,7 +78,7 @@
   - Старые индикаторы НЕ удаляем — Phase 1 only adds.
   - _Validates: Requirements 1.4, 10.3._
 
-- [ ] 10. **Smoke test на dev DB + готовность Phase 1 к деплою** (S)
+- [x] 10. **Smoke test на dev DB + готовность Phase 1 к деплою** (S)
   - Запустить локально → проверить что миграция прошла, в БД есть новые колонки, в `GET /api/orders/:id` есть `paymentState`.
   - Открыть CRM → увидеть бейджи.
   - Прогнать unit-тесты.
