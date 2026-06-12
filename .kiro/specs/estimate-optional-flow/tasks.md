@@ -151,7 +151,7 @@
   - В `lib/operatorTasks.ts` `getOperatorTasks()` — это уже работает корректно для `price_proposal` (требует `proposedAmount && !orderAmount`); никаких изменений на этом узле не требуется.
   - _Validates: Requirements 6.2, 12.5._
 
-- [ ] 20. **Channel 5: `fomoBlock.ts` priorities 1+3 через `paymentState`** (M)
+- [x] 20. **Channel 5: `fomoBlock.ts` priorities 1+3 через `paymentState`** (M)
   - В `getFomoBlock()`:
     - Priority 1: `paymentState === "no_amount" && assignedAt > 48h` (вместо `!proposedAmount`).
     - Priority 3: `paymentState === "agreed" && нет paid receipt && updatedAt > 72h`.

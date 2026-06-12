@@ -12,6 +12,8 @@
 import { db, ordersTable, fomoEventsTable, mastersTable, receiptsTable } from "@workspace/db";
 import { eq, and, inArray, isNull, isNotNull } from "drizzle-orm";
 import { sendMaxMessage } from "../maxBot.js";
+import { computePaymentState, type PaymentState } from "./paymentState.js";
+import { isPaymentStateEngineEnabled } from "./paymentStateGuard.js";
 
 export interface FomoBlockResult {
   isBlocked: boolean;
@@ -38,6 +40,11 @@ export async function getFomoBlock(masterId: number, _isTestMaster: boolean): Pr
 
   const now = new Date();
 
+  // Payment_State engine guard (Phase 2). См. paymentStateGuard.ts.
+  // При флаге off — старое поведение (по proposedAmount + наличию payment).
+  // При флаге on — фильтрация по derived paymentState через computePaymentState.
+  const paymentStateEngineOn = await isPaymentStateEngineEnabled();
+
   // Fetch all active orders for this master
   const activeOrders = await db
     .select()
@@ -50,11 +57,32 @@ export async function getFomoBlock(masterId: number, _isTestMaster: boolean): Pr
       )
     );
 
+  // Загружаем receipts мастера один раз для (a) priority 3 проверки paid receipt
+  // и (b) computePaymentState (если флаг включён). Используем существующий
+  // запрос ниже как источник, но если включён флаг — нужно знать prepaymentAmount
+  // и prepaymentSeenAt по каждому receipt, а не только prepaymentSubmittedAt.
+  const masterReceipts = paymentStateEngineOn
+    ? await db.select().from(receiptsTable).where(eq(receiptsTable.masterId, masterId))
+    : [];
+  const receiptsByOrder = new Map<number, typeof masterReceipts>();
+  for (const r of masterReceipts) {
+    const arr = receiptsByOrder.get(r.orderId) ?? [];
+    arr.push(r);
+    receiptsByOrder.set(r.orderId, arr);
+  }
+
   // Priority 1: no estimate 48h+ (status = master_assigned, assignedAt > 48h, no proposedAmount)
   for (const order of activeOrders) {
     if (order.status !== "master_assigned") continue;
-    const hasEstimate = order.proposedAmount != null && Number(order.proposedAmount) > 0;
-    if (hasEstimate) continue;
+    let isNoAmount: boolean;
+    if (paymentStateEngineOn) {
+      const ps: PaymentState = computePaymentState(order as any, (receiptsByOrder.get(order.id) ?? []) as any);
+      isNoAmount = ps === "no_amount";
+    } else {
+      const hasEstimate = order.proposedAmount != null && Number(order.proposedAmount) > 0;
+      isNoAmount = !hasEstimate;
+    }
+    if (!isNoAmount) continue;
     const assignedAt = order.assignedAt ?? order.createdAt;
     const ageMs = now.getTime() - new Date(assignedAt).getTime();
     if (ageMs >= FORTY_EIGHT_HOURS) {
@@ -62,7 +90,9 @@ export async function getFomoBlock(masterId: number, _isTestMaster: boolean): Pr
       return {
         isBlocked: true,
         type: "no_estimate",
-        reason: `По заказу #${order.id} смета не отправлена более 48 часов.`,
+        reason: paymentStateEngineOn
+          ? `По заказу #${order.id} сумма не зафиксирована более 48 часов.`
+          : `По заказу #${order.id} смета не отправлена более 48 часов.`,
         orderId: order.id,
         hoursElapsed,
       };
@@ -83,10 +113,19 @@ export async function getFomoBlock(masterId: number, _isTestMaster: boolean): Pr
   );
 
   for (const order of activeOrders) {
-    const hasEstimate = order.proposedAmount != null && Number(order.proposedAmount) > 0;
-    const hasPayment = (order.orderAmount != null && Number(order.orderAmount) > 0)
-      || paidReceiptOrderIds.has(order.id);
-    if (!hasEstimate || hasPayment) continue;
+    let shouldFlag: boolean;
+    if (paymentStateEngineOn) {
+      const ps: PaymentState = computePaymentState(order as any, (receiptsByOrder.get(order.id) ?? []) as any);
+      // Сумма зафиксирована (agreed), но клиент пока не оплатил (нет
+      // submitted receipt). Если paymentState уже paid — не блокируем.
+      shouldFlag = ps === "agreed" && !paidReceiptOrderIds.has(order.id);
+    } else {
+      const hasEstimate = order.proposedAmount != null && Number(order.proposedAmount) > 0;
+      const hasPayment = (order.orderAmount != null && Number(order.orderAmount) > 0)
+        || paidReceiptOrderIds.has(order.id);
+      shouldFlag = hasEstimate && !hasPayment;
+    }
+    if (!shouldFlag) continue;
     // Approximate when estimate was sent: use updatedAt as proxy
     const estimateSentAt = order.updatedAt ?? order.createdAt;
     const ageMs = now.getTime() - new Date(estimateSentAt).getTime();
