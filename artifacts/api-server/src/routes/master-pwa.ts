@@ -1,10 +1,11 @@
 import { Router } from "express";
-import { db, mastersTable, ordersTable, orderDispatchesTable, transactionsTable, leadsTable, voronkaColumnsTable, masterMessagesTable, pushSubscriptionsTable, masterCheckinsTable, transactionPaymentsTable, orderMastersTable, masterDepositsTable, masterDepositTransactionsTable } from "@workspace/db";
+import { db, mastersTable, ordersTable, orderDispatchesTable, transactionsTable, leadsTable, voronkaColumnsTable, masterMessagesTable, pushSubscriptionsTable, masterCheckinsTable, transactionPaymentsTable, orderMastersTable, masterDepositsTable, masterDepositTransactionsTable, receiptsTable } from "@workspace/db";
 import { maybeEarlyAssign } from "../lib/priorityAssign.js";
 import { eq, and, inArray, isNull, ne, asc, desc, gte, sql } from "drizzle-orm";
 import { verifyPassword, hashPassword } from "../lib/auth.js";
 import { getMasterEligibility, getOverdueMasterIds, countActiveMasterOrders, getColumnIdForActiveCount, checkServiceFeeRequirement } from "../lib/orderEligibility.js";
 import { deductServiceFee, getBalance, ensureAccountBalance } from "../lib/accountBalance.js";
+import { computePaymentStateBatch, groupReceiptsByOrder } from "../lib/paymentState.js";
 import multer from "multer";
 import sharp from "sharp";
 import { Readable } from "stream";
@@ -664,6 +665,27 @@ router.get("/orders/my", requireMasterPwa, async (req, res) => {
     }
   }
 
+  // Payment_State engine — Phase 2 of estimate-optional-flow.
+  // Загружаем receipts ПО ВСЕМ orders (не только этого мастера) — чтобы не
+  // упустить чужие receipts если они есть. На практике receipts привязаны
+  // к одному мастеру, но это безопасный default для computePaymentState.
+  const receiptsForState = orderIds.length > 0
+    ? await db.select({
+        orderId: receiptsTable.orderId,
+        prepaymentAmount: receiptsTable.prepaymentAmount,
+        prepaymentSeenAt: receiptsTable.prepaymentSeenAt,
+        prepaymentSubmittedAt: receiptsTable.prepaymentSubmittedAt,
+        masterId: receiptsTable.masterId,
+      }).from(receiptsTable).where(inArray(receiptsTable.orderId, orderIds))
+    : [];
+  const receiptsByOrder = groupReceiptsByOrder(receiptsForState);
+  const paymentStateMap = computePaymentStateBatch(orders as any, receiptsByOrder);
+  // Master видит свои собственные receipts, чтобы решить показывать ли ему
+  // подсказку "оператор зафиксировал сумму, смета не нужна".
+  const masterReceiptOrderIds = new Set(
+    receiptsForState.filter(r => r.masterId === masterId).map(r => r.orderId)
+  );
+
   res.json(orders.map(o => {
     const lead = leadMap.get(o.leadId);
     const tx = txMap.get(o.id);
@@ -691,6 +713,10 @@ router.get("/orders/my", requireMasterPwa, async (req, res) => {
       paymentModel: (o as any).paymentModel ?? "commission",
       tokensCharged: (o as any).tokensCharged ? Number((o as any).tokensCharged) : null,
       assignedAt: (o as any).assignedAt ?? null,
+      // Payment_State engine fields — для подсказки "Оператор зафиксировал сумму".
+      paymentState: paymentStateMap.get(o.id) ?? "no_amount",
+      agreementAmountSource: (o as any).agreementAmountSource ?? null,
+      hasOwnReceipt: masterReceiptOrderIds.has(o.id),
       transactionInfo: tx ? {
         orderAmount: Number(tx.orderAmount),
         commission: Number(tx.commission),

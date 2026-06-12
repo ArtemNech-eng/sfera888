@@ -183,15 +183,16 @@
   - Текст: "N заказов с незафиксированной суммой более 48 часов" + клик → переход к `OrdersWorkspace` с фильтром.
   - _Validates: Requirements 10.1, 10.4._
 
-- [ ] 25. **Master_PWA: подсказка "Оператор зафиксировал сумму"** (S)
+- [x] 25. **Master_PWA: подсказка "Оператор зафиксировал сумму"** (S)
   - В `master-pwa/src/pages/orders.tsx` карточка заказа — если `paymentState === "agreed" && agreementAmountSource ∈ ['agreement', 'master_proposal']` AND нет своего receipt — показать зелёную подсказку.
   - Backend: в response `master-pwa.ts` GET orders — добавить `paymentState` и `agreementAmountSource` (использовать те же helpers).
   - _Validates: Requirements 14.1, 10 (Q10 — что видит мастер)._
 
-- [ ] 26. **Notifications: MAX/push мастеру при Agreement** (S)
+- [x] 26. **Notifications: MAX/push мастеру при Agreement** (S)
   - В `POST /agreement` (T13) после commit транзакции — `sendMaxAgreementNotice()` + `sendPushToMaster()`.
   - Текст: "✅ Оператор зафиксировал согласованную сумму N ₽ по заказу #ID. Дополнительно создавать смету не нужно."
   - Errors не валят запрос (catch + log).
+  - _Note_: реализовано в составе T13 (см. routes/orders.ts:1019-1033). Здесь только отметка.
   - _Validates: Requirements 14.1._
 
 - [ ] 27. **Integration tests для `POST /agreement`** (M)

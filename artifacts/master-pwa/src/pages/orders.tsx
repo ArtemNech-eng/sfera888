@@ -135,6 +135,12 @@ interface Order {
   paymentModel?: string;
   tokensCharged?: number | null;
   assignedAt?: string | null;
+  // Payment_State engine fields (Phase 2 of estimate-optional-flow):
+  // оператор зафиксировал сумму через Agreement_Path → мастеру не нужно
+  // создавать смету. См. также hasOwnReceipt: уже создал свою смету.
+  paymentState?: "no_amount" | "agreed" | "paid" | "cancelled";
+  agreementAmountSource?: string | null;
+  hasOwnReceipt?: boolean;
   transactionInfo?: {
     orderAmount: number;
     commission: number;
@@ -900,8 +906,27 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
         {expanded && (
           <div className="border-t border-border p-3.5 space-y-4">
 
+            {/* ── Hint: оператор зафиксировал сумму, смета не нужна ─ */}
+            {isActive && receiptsFetched && orderReceipts.length === 0 &&
+              order.paymentState === "agreed" &&
+              (order.agreementAmountSource === "agreement" || order.agreementAmountSource === "master_proposal") && (
+              <div className="flex items-start gap-3 bg-card rounded-xl p-3 border-l-4 border-l-emerald-500 shadow-sm">
+                <CheckCircle2 size={18} className="text-emerald-600 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-sm text-emerald-700 mb-0.5">
+                    Оператор зафиксировал согласованную сумму
+                  </p>
+                  <p className="text-xs text-muted-foreground leading-snug">
+                    {order.orderAmount ? `${order.orderAmount.toLocaleString("ru-RU")} ₽. ` : ""}
+                    Дополнительно создавать смету не нужно. Если хочешь — можешь распечатать и отдать клиенту.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* ── Alert: смета не создана ─────────────────────── */}
-            {isActive && receiptsFetched && orderReceipts.length === 0 && (
+            {isActive && receiptsFetched && orderReceipts.length === 0 &&
+              order.paymentState !== "agreed" && order.paymentState !== "paid" && (
               <div className="flex items-start gap-3 bg-card rounded-xl p-3 border-l-4 border-l-destructive shadow-sm">
                 <AlertTriangle size={18} className="text-destructive shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">
