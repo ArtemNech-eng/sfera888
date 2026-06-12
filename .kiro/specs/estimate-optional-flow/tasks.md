@@ -99,27 +99,27 @@
   - **Связь**: будет полностью устранено в отдельной фиче `.kiro/specs/remove-token-payment-model/` — переход на единую commission модель.
   - _Validates: Requirements 8.1, 8.2 (Q4 уточнён в decisions, см. requirements.md)._
 
-- [ ] 12. **Audit-helper `lib/orderAudit.ts`** (M)
+- [x] 12. **Audit-helper `lib/orderAudit.ts`** (M)
   - Экспорт: `recordAmountAudit(tx, params)`, `getAmountAudit(orderId, limit)`, `closeOpenEstimateTasksForOrder(orderId, reason)`.
   - `recordAmountAudit` — insert в `order_amount_audit`.
   - `closeOpenEstimateTasksForOrder` — invalidate cache в `dashboard-action-items.ts` (existing `invalidateBuildItemsCache`).
   - _Validates: Requirements 5.1, 6.2._
 
-- [ ] 13. **Новый endpoint `POST /api/orders/:id/agreement`** (L)
+- [x] 13. **Новый endpoint `POST /api/orders/:id/agreement`** (L)
   - Добавить в `routes/orders.ts` рядом с PATCH.
   - Auth: `requireRole("admin", "lead_operator", "master_operator")`.
   - Полный flow: `db.transaction` с `forUpdate` lock → validate `amount > 0` → check status ≠ cancelled/completed → update orders → recalculate commission (если paymentModel ≠ token) → audit → token charging (если paymentModel = token и первый раз) → ensure transaction (если paymentModel = commission) → close open estimate tasks → notifyWorkBoardChanged → MAX/push мастеру.
   - Псевдокод полностью в `design.md` § API Contracts.
   - _Validates: Requirements 2.1–2.6, 4.4, 8.2, 14.1._
 
-- [ ] 14. **Обернуть существующий `PATCH /api/orders/:id` в audit** (L)
+- [x] 14. **Обернуть существующий `PATCH /api/orders/:id` в audit** (L)
   - В `routes/orders.ts PATCH /:id` все изменения `orderAmount`, `commission`, `commissionPaid` теперь идут через `db.transaction` + `recordAmountAudit`.
   - `pickSource` helper для выбора `source`: `master_proposal` / `manager_correction` / `manager_force_paid` / `system_recalc` / `operator_edit` / `reconcile_*`.
   - Поддержать новые actions в body: `force: true` (Manager force-paid с обязательным `reason`), `acceptReceiptAmount: true`, `keepAgreementAmount: true`.
   - Сохранить полную backward-compat: всё старое поведение работает.
   - _Validates: Requirements 5.1, 5.4, 11.2 (Manager force-paid), 4.2, 4.3._
 
-- [ ] 15. **Channel 1: `runOrdersWithoutReceipts` SQL-фильтр через guard** (M)
+- [x] 15. **Channel 1: `runOrdersWithoutReceipts` SQL-фильтр через guard** (M)
   - В `routes/ai-office.ts` функция `runOrdersWithoutReceipts` проверяет `await isPaymentStateEngineEnabled()`. Если true — добавляет в SQL `AND COALESCE(o.order_amount, '0')::numeric = 0 AND o.commission_paid = false`. Если false — старая логика.
   - Аналогично `runPaymentReminders` — добавляет `AND o.commission_paid = false`.
   - _Validates: Requirements 6.1, 6.5, 6.6._

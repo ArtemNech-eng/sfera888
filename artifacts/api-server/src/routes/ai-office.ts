@@ -5,6 +5,7 @@ import { mastersTable, ordersTable, masterMessagesTable, orderDispatchesTable } 
 import { sendMaxMessage } from "../maxBot.js";
 import { sendPushToMaster } from "../lib/push.js";
 import { calculateCommission, getCommissionSettings } from "../lib/commission.js";
+import { isPaymentStateEngineEnabled } from "../lib/paymentStateGuard.js";
 
 const router = Router();
 
@@ -470,6 +471,15 @@ async function runPaymentReminders(runType: "manual" | "auto" = "auto") {
   const h24ago = new Date(now.getTime() - 24 * 3600_000).toISOString();
   const commissionSettings = await getCommissionSettings();
 
+  // Payment_State engine guard (Phase 2):
+  // Когда флаг включён, не напоминаем мастеру об оплате если оператор уже
+  // отметил комиссию оплаченной через Agreement_Path / Manager force-paid.
+  // Без флага — старое поведение (default fail-closed).
+  const paymentStateEngineOn = await isPaymentStateEngineEnabled();
+  const commissionPaidFilter = paymentStateEngineOn
+    ? sql`AND o.commission_paid = false`
+    : sql``;
+
   const rows = await db.execute(sql`
     SELECT r.order_id, o.lead_id, o.payment_model, r.created_at AS receipt_created_at,
            r.service_type, r.district, r.city, r.client_name, r.client_phone,
@@ -482,6 +492,7 @@ async function runPaymentReminders(runType: "manual" | "auto" = "auto") {
       AND r.created_at < ${h24ago}
       AND o.status NOT IN ('completed', 'cancelled', 'cancellation_requested', 'waiting_master')
       AND o.deleted_at IS NULL
+      ${commissionPaidFilter}
     ORDER BY r.created_at ASC
   `);
 
@@ -846,6 +857,16 @@ async function runOrdersWithoutReceipts(runType: "manual" | "auto" = "auto"): Pr
   const now = new Date();
   const h24ago = new Date(now.getTime() - 24 * 3600_000).toISOString();
 
+  // Payment_State engine guard (Phase 2):
+  // Когда флаг включён, рассматриваем как "без сметы" только заказы в состоянии
+  // no_amount (нет orderAmount, комиссия не оплачена). Это исключает заказы,
+  // где оператор зафиксировал сумму через Agreement_Path или Manager force-paid.
+  // Без флага — старое поведение (только LEFT JOIN на receipts).
+  const paymentStateEngineOn = await isPaymentStateEngineEnabled();
+  const paymentStateFilter = paymentStateEngineOn
+    ? sql`AND COALESCE(o.order_amount, '0')::numeric = 0 AND o.commission_paid = false`
+    : sql``;
+
   const rows = await db.execute(sql`
     SELECT o.id, o.lead_id, o.city, o.district, o.service_type,
            COALESCE(o.assigned_at, o.created_at) AS ref_time,
@@ -858,6 +879,7 @@ async function runOrdersWithoutReceipts(runType: "manual" | "auto" = "auto"): Pr
       AND o.deleted_at IS NULL
       AND COALESCE(o.assigned_at, o.created_at) < ${h24ago}
       AND r.id IS NULL
+      ${paymentStateFilter}
     ORDER BY COALESCE(o.assigned_at, o.created_at) ASC
   `);
 
