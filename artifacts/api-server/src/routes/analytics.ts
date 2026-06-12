@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db, leadsTable, ordersTable, mastersTable, transactionsTable, transactionPaymentsTable, receiptsTable, avitoSettingsTable, walletTransactionsTable, masterWalletTable, tokenPackagesTable } from "@workspace/db";
 import { requirePermission } from "../middlewares/requireAuth.js";
-import { isNull, isNotNull, inArray, eq } from "drizzle-orm";
+import { isNull, isNotNull, inArray, eq, sql } from "drizzle-orm";
 
 const router = Router();
 const adminOnly = requirePermission("analytics");
@@ -1149,6 +1149,84 @@ router.get("/city-list", adminOnly, async (req, res) => {
     const cities = [...new Set([...leads.map(l => l.city), ...orders.map(o => o.city)])].filter(Boolean).sort();
     res.json(cities);
   } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── PAYMENT-STATE MIX ────────────────────────────────────────────────────────
+//
+// Phase 3 of estimate-optional-flow. Распределение заказов по `agreementAmountSource`
+// за период. Используется в CRM Analytics для оценки доли Agreement_Path vs
+// Receipt_Path и доли исторических unknown.
+//
+// Query params:
+//   • from — YYYY-MM-DD (default: начало текущего месяца)
+//   • to   — YYYY-MM-DD (default: сегодня + 1 день)
+//   • groupBy — day | week | month (default: day)
+//
+// Bucket mapping:
+//   • agreement_amount_source = 'agreement'        → agreement
+//   • agreement_amount_source = 'master_proposal'  → masterProposal
+//   • agreement_amount_source = 'unknown'          → unknown (historical backfill)
+//   • NULL OR everything else                      → receipt (Receipt_Path)
+//
+// Учитываются только заказы с зафиксированной суммой (orderAmount IS NOT NULL).
+router.get("/payment-state-mix", adminOnly, async (req, res) => {
+  try {
+    const { from, to } = req.query as Record<string, string>;
+    const groupByParam = (req.query.groupBy as string) ?? "day";
+    const groupBy = ["day", "week", "month"].includes(groupByParam) ? groupByParam : "day";
+    const { start, end } = parsePeriod(from, to);
+
+    // date_trunc с динамическим параметром через sql.raw — значение
+    // whitelist'ed выше, инъекция невозможна.
+    const periodExpr = sql.raw(`DATE_TRUNC('${groupBy}', o.created_at)`);
+
+    const rows = await db.execute(sql`
+      SELECT
+        ${periodExpr} AS period,
+        COUNT(*) FILTER (WHERE o.agreement_amount_source = 'agreement')::int AS agreement,
+        COUNT(*) FILTER (WHERE o.agreement_amount_source = 'master_proposal')::int AS master_proposal,
+        COUNT(*) FILTER (WHERE o.agreement_amount_source = 'unknown')::int AS unknown,
+        COUNT(*) FILTER (
+          WHERE o.agreement_amount_source IS NULL
+             OR o.agreement_amount_source NOT IN ('agreement','master_proposal','unknown')
+        )::int AS receipt,
+        COUNT(*)::int AS total
+      FROM orders o
+      WHERE o.deleted_at IS NULL
+        AND o.order_amount IS NOT NULL
+        AND CAST(o.order_amount AS NUMERIC) > 0
+        AND o.created_at >= ${start}
+        AND o.created_at < ${end}
+      GROUP BY ${periodExpr}
+      ORDER BY ${periodExpr} ASC
+    `);
+
+    // Period stored as timestamp by Postgres — converting to YYYY-MM-DD.
+    const formattedRows = (rows.rows as any[]).map((r) => ({
+      period: new Date(r.period).toISOString().slice(0, 10),
+      agreement: Number(r.agreement),
+      masterProposal: Number(r.master_proposal),
+      receipt: Number(r.receipt),
+      unknown: Number(r.unknown),
+      total: Number(r.total),
+    }));
+
+    const totals = formattedRows.reduce(
+      (acc, r) => ({
+        agreement: acc.agreement + r.agreement,
+        masterProposal: acc.masterProposal + r.masterProposal,
+        receipt: acc.receipt + r.receipt,
+        unknown: acc.unknown + r.unknown,
+        total: acc.total + r.total,
+      }),
+      { agreement: 0, masterProposal: 0, receipt: 0, unknown: 0, total: 0 },
+    );
+
+    res.json({ rows: formattedRows, totals, groupBy });
+  } catch (e: any) {
+    console.error("[analytics/payment-state-mix] error:", e);
     res.status(500).json({ error: e.message });
   }
 });

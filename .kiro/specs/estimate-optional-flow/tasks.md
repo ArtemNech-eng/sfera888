@@ -233,14 +233,14 @@
 
 Цель: дать Manager инструменты для разбора конфликтов и просмотра истории. Управляется флагом `payment_state_audit_ui_enabled`.
 
-- [ ] 30. **Новый тип task `reconcile_amount` в `operatorTasks.ts`** (M)
+- [x] 30. **Новый тип task `reconcile_amount` в `operatorTasks.ts`** (M)
   - Добавить в `TaskType` union.
   - SLA: 30 минут (`TASK_SLA.reconcile = 30`).
   - SQL обнаружения — точно как в `design.md` § LLD § 3.1.
   - В `getOperatorTasks()` — шестой блок task-loading.
   - _Validates: Requirements 4.1, 15 (Q15)._
 
-- [ ] 31. **Новый endpoint `GET /api/orders/:id/audit`** (S)
+- [x] 31. **Новый endpoint `GET /api/orders/:id/audit`** (S)
   - Добавить в `routes/orders.ts`.
   - Auth: `requireRole("admin")`.
   - Возвращает rows из `order_amount_audit` orderBy createdAt DESC, limit 100.
@@ -265,7 +265,7 @@
   - Показывается только для роли admin AND флаг `payment_state_audit_ui_enabled === true`.
   - _Validates: Requirements 5.5._
 
-- [ ] 35. **KPI endpoint `GET /api/analytics/payment-state-mix`** (M)
+- [x] 35. **KPI endpoint `GET /api/analytics/payment-state-mix`** (M)
   - Запросы по `agreement_amount_source` за период.
   - Auth: `requireRole("admin")`.
   - Response — структура из `design.md` § LLD § 3.5.

@@ -13,7 +13,7 @@ import { sendMaxMessage } from "../maxBot.js";
 import { analyseOrderCancellation } from "../lib/dispatcherAI.js";
 import { recordOrderCancelled, recordOrderCompleted, revertOrderCancellation } from "../lib/masterReputation.js";
 import { computePaymentState, computePaymentStateBatch, groupReceiptsByOrder } from "../lib/paymentState.js";
-import { recordAmountAudit, resolveAuditActor, closeOpenEstimateTasksForOrder } from "../lib/orderAudit.js";
+import { recordAmountAudit, resolveAuditActor, closeOpenEstimateTasksForOrder, getAmountAudit } from "../lib/orderAudit.js";
 import { validateAgreementBody } from "../lib/agreementValidation.js";
 import { notifyWorkBoardChanged } from "./work-board.js";
 
@@ -1755,6 +1755,28 @@ router.get("/:id/status-log", allOrderRoles, async (req, res) => {
     .orderBy(desc(orderStatusLogsTable.createdAt));
 
   res.json(logs);
+});
+
+// ─── GET /api/orders/:id/audit ────────────────────────────────────────────────
+//
+// Phase 3 of estimate-optional-flow. Возвращает историю изменений суммы
+// (orderAmount, commission, commissionPaid) с denormalized actor/snapshot
+// и source. Используется в CRM <AmountAuditHistory> внутри ClosingDrawer
+// для Manager-only под флагом `payment_state_audit_ui_enabled`.
+//
+// Auth: admin only. Operator (lead_operator/master_operator) пока сюда не
+// допущен — добавим в Phase 3.5 при необходимости с фильтрацией actorAlias.
+router.get("/:id/audit", requireRole("admin"), async (req, res) => {
+  const id = parseInt(String(req.params.id as string));
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid order id" });
+
+  try {
+    const rows = await getAmountAudit(id, 100);
+    res.json(rows);
+  } catch (err) {
+    console.error("[orders/:id/audit] error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 // GET /api/orders/:id/fomo-presses — FOMO button press events for an order

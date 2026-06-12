@@ -6,7 +6,8 @@ export type TaskType =
   | "no_master_response"
   | "cancel_request"
   | "price_proposal"
-  | "confirm_prepayment";
+  | "confirm_prepayment"
+  | "reconcile_amount";
 
 export type TaskPriority = "critical" | "high" | "normal";
 
@@ -29,6 +30,7 @@ export const TASK_SLA = {
   cancelDecision: 60,
   priceDecision: 60,
   prepaymentConfirm: 30,
+  reconcile: 30,
 } as const;
 
 function priorityFor(overdueMin: number, slaMin: number): TaskPriority {
@@ -207,6 +209,52 @@ export async function getOperatorTasks(): Promise<OperatorTask[]> {
       orderId: r.orderId,
       ageMinutes: ageMin,
       slaMinutes: TASK_SLA.prepaymentConfirm,
+      overdueMinutes: overdue,
+    });
+  }
+
+  // 6. Reconcile_amount (Phase 3 of estimate-optional-flow):
+  // Заказ имеет зафиксированную сумму через Agreement_Path/master_proposal/manager_correction,
+  // НО мастер потом создал смету с другой суммой. Конфликт нужно разрешить вручную:
+  // принять сумму из сметы (acceptReceiptAmount) или оставить согласованную (keepAgreementAmount).
+  // Условие выхода из конфликта — последняя audit-запись с source IN (reconcile_use_receipt | reconcile_keep_agreement).
+  const reconcileOrders = await db.execute(sql`
+    SELECT o.id AS order_id, o.lead_id, o.city, o.service_type,
+           o.order_amount, o.updated_at,
+           r.prepayment_amount AS receipt_amount,
+           r.created_at AS receipt_created_at
+    FROM orders o
+    JOIN receipts r ON r.order_id = o.id
+    WHERE o.deleted_at IS NULL
+      AND o.status NOT IN ('cancelled', 'completed')
+      AND o.agreement_amount_source IN ('agreement', 'master_proposal', 'manager_correction')
+      AND o.order_amount IS NOT NULL
+      AND CAST(o.order_amount AS NUMERIC) <> CAST(r.prepayment_amount AS NUMERIC)
+      AND r.created_at > NOW() - INTERVAL '7 days'
+      AND NOT EXISTS (
+        SELECT 1 FROM order_amount_audit a
+        WHERE a.order_id = o.id
+          AND a.created_at > r.created_at
+          AND a.source IN ('reconcile_use_receipt', 'reconcile_keep_agreement')
+      )
+    ORDER BY r.created_at DESC
+  `);
+  for (const row of reconcileOrders.rows as any[]) {
+    const refTime = new Date(row.receipt_created_at);
+    const ageMin = Math.floor((now - refTime.getTime()) / 60000);
+    const overdue = ageMin - TASK_SLA.reconcile;
+    const orderAmt = Number(row.order_amount).toLocaleString("ru-RU");
+    const receiptAmt = Number(row.receipt_amount).toLocaleString("ru-RU");
+    tasks.push({
+      id: `reconcile-${row.order_id}`,
+      type: "reconcile_amount",
+      priority: priorityFor(overdue, TASK_SLA.reconcile),
+      title: `Заказ #${row.lead_id ?? row.order_id} — расхождение сумм: согласованная ${orderAmt} ₽, в смете ${receiptAmt} ₽`,
+      subtitle: `${row.city ?? "?"} · ${row.service_type ?? "?"}`,
+      leadId: row.lead_id ?? null,
+      orderId: row.order_id,
+      ageMinutes: ageMin,
+      slaMinutes: TASK_SLA.reconcile,
       overdueMinutes: overdue,
     });
   }
