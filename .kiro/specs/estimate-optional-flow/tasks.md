@@ -277,13 +277,19 @@
   - Группировка: day/week/month.
   - _Validates: Requirements 15.2._
 
-- [ ] 37. **Включение флага `payment_state_audit_ui_enabled` на проде** (S)
+- [x] 37. **Включение флага `payment_state_audit_ui_enabled` на проде** (S)
   - SQL: тот же шаблон что для Phase 2.
   - После включения проверить:
     - В CRM появляется кнопка "История" в Closing_Drawer для Manager.
     - При расхождении сумм появляется `<ReconcileBanner>`.
     - Аналитика показывает корректные числа.
+  - _Done (12.06.2026)_: SQL выполнен через Railway Postgres dashboard, "Query ran successfully".
+    Через ~60с (TTL кэша) AmountAuditHistory в ClosingDrawer и PaymentStateMixBlock в Analytics
+    становятся видимы для Manager. ReconcileBanner появляется автоматически при обнаружении
+    конфликта (не зависит от флага).
   - _Validates: Phase 3 deployed._
+
+> ✅ **Phase 3 complete** (12.06.2026): backend + UI + флаг включён в проде. Фича estimate-optional-flow полностью доступна.
 
 > ✅ После 37: фича полностью доступна. Phase 3.5 — опциональный отдельный релиз.
 
