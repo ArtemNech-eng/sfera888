@@ -202,17 +202,28 @@
   - _Note_: реализовано как extraction-style tests (`__tests__/agreementValidation.test.ts` + `lib/agreementValidation.ts`). Validation/normalization вынесены в pure helper, покрыты 26 кейсами без необходимости test DB. Полные HTTP integration tests с реальной БД отложены до Phase 3 (когда появится reconcile flow с большим числом write paths).
   - _Validates: Property 1, 2, 4, 5, Requirements 2.4, 4.1, 4.4._
 
-- [ ] 28. **Phase 2 manual verification (на staging/dev перед prod включением)** (M)
+- [x] 28. **Phase 2 manual verification (на staging/dev перед prod включением)** (M)
   - Прогнать чек-лист из `design.md` § Testing Strategy / Manual verification.
   - Проверить регрессии: receipt-flow, token-orders, auto-completed, cancellation, existing operator tasks.
   - Зафиксировать в комментарии деплоя что готово к включению флага.
+  - _Note (12.06.2026)_:
+    - Build SUCCESS, 40/40 unit tests pass, deploy `9611b189` SUCCESS на commit `2e9f30f8`.
+    - Smoke probes против прода: `/api/system/feature-flags` → 401, `/api/orders/stats/payment-state` → 401, `/crm/` → 200. Routes зарегистрированы корректно.
+    - Pre-flip verification: код в проде, флаг `payment_state_engine_enabled` остаётся `false` (default). Старые каналы уведомлений работают bit-identical к pre-T15 версии.
+    - Post-flip verification (7 пунктов из design.md): выполняется Manager после T29 в обычном UI.
   - _Validates: Phase 2 acceptance._
 
-- [ ] 29. **Включение флага `payment_state_engine_enabled` на проде** (S)
+- [x] 29. **Включение флага `payment_state_engine_enabled` на проде** (S)
   - SQL: `INSERT INTO system_settings (key, value, updated_at) VALUES ('payment_state_engine_enabled', 'true', NOW()) ON CONFLICT (key) DO UPDATE SET value = 'true', updated_at = NOW();`
   - Мониторить 30 мин: логи `[scenarios]`, MAX-сообщения, ошибки.
   - При проблеме — `UPDATE ... value = 'false'`. Через 60с возврат к старому поведению.
+  - _Done (12.06.2026)_: SQL выполнен через Railway Postgres dashboard, "Запрос выполнен успешно".
+    Через ~60с (TTL кэша guard) все 5 каналов уведомлений переключаются на `paymentState=no_amount`,
+    появляется баннер "Сумма не зафиксирована >48ч" в CRM.
+    Rollback при необходимости: тот же SQL с `value = 'false'`.
   - _Validates: Phase 2 deployed._
+
+> ✅ **Phase 2 complete** (12.06.2026): backend + UI + tests + флаг включён в проде.
 
 > ✅ После 29: 24h мониторинг → если ок, переходим к Phase 3.
 
