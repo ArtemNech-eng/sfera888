@@ -1,11 +1,17 @@
 import { useState, useEffect } from "react";
-import { X, DollarSign, Banknote, CheckCircle2, XCircle, Check, Loader2, ClipboardList } from "lucide-react";
+import { X, DollarSign, Banknote, CheckCircle2, XCircle, Check, Loader2, ClipboardList, Pencil } from "lucide-react";
+import { AgreementForm } from "./AgreementForm";
+import { PaymentStateBadge, type PaymentState } from "./PaymentStateBadge";
 
 interface OrderRow {
   orderId: number;
   commission?: { orderTotal: number; total: number; paid: number; left: number };
   commissionPaid?: boolean;
   status: string;
+  /** Payment_State (Phase 2 of estimate-optional-flow) — управляет видом формы. */
+  paymentState?: PaymentState;
+  /** Источник зафиксированной суммы — нужен для подсказки оператору. */
+  agreementAmountSource?: string | null;
 }
 
 interface FormValues {
@@ -47,6 +53,15 @@ export default function ClosingDrawer({ order, onClose, onSubmit, isPending }: P
   const [commissionTouched, setCommissionTouched] = useState(false);
   const [isPaid, setIsPaid] = useState(!!order.commissionPaid);
   const [status, setStatus] = useState<"completed" | "cancelled">(order.status === "cancelled" ? "cancelled" : "completed");
+  const [showEditAmount, setShowEditAmount] = useState(false);
+
+  // Payment_State (Phase 2 of estimate-optional-flow):
+  // • no_amount → показываем AgreementForm как первичное действие.
+  // • agreed/paid/cancelled → стандартный закрывающий flow + опциональный
+  //   collapsible "Изменить сумму" поверх AgreementForm для коррекции.
+  const paymentState = order.paymentState ?? null;
+  const showAgreementFirst = paymentState === "no_amount";
+  const showEditAmountToggle = paymentState === "agreed" || paymentState === "paid";
 
   // Recalculate commission when amount changes (unless operator typed it manually)
   useEffect(() => {
@@ -78,6 +93,48 @@ export default function ClosingDrawer({ order, onClose, onSubmit, isPending }: P
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
+          {paymentState && (
+            <div className="flex items-center justify-between -mt-1">
+              <PaymentStateBadge state={paymentState} />
+              {showAgreementFirst && (
+                <span className="text-xs text-muted-foreground">
+                  Сначала зафиксируй сумму
+                </span>
+              )}
+            </div>
+          )}
+
+          {showAgreementFirst && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+              <AgreementForm
+                orderId={order.orderId}
+                title="Зафиксировать согласованную сумму"
+                onSuccess={onClose}
+              />
+            </div>
+          )}
+
+          {showEditAmountToggle && (
+            <details
+              open={showEditAmount}
+              onToggle={(e) => setShowEditAmount((e.target as HTMLDetailsElement).open)}
+              className="bg-slate-50 border border-slate-200 rounded-xl"
+            >
+              <summary className="cursor-pointer px-4 py-2.5 text-sm font-medium text-slate-700 flex items-center gap-2 select-none">
+                <Pencil className="w-4 h-4" />
+                Изменить согласованную сумму
+              </summary>
+              <div className="px-4 pb-4 pt-1">
+                <AgreementForm
+                  orderId={order.orderId}
+                  defaultAmount={initialAmount > 0 ? initialAmount : undefined}
+                  title="Новая сумма"
+                  onSuccess={() => setShowEditAmount(false)}
+                />
+              </div>
+            </details>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <Field label="Сумма заказа, ₽" icon={<DollarSign className="w-4 h-4 text-slate-400" />}>
               <input

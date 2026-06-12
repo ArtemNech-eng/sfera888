@@ -159,20 +159,20 @@
   - Запустить unit-тест `checkFomoTransition` для проверки что unblock notification работает корректно.
   - _Validates: Requirements 6.7._
 
-- [ ] 21. **CRM: `<AgreementForm>` компонент** (M)
+- [x] 21. **CRM: `<AgreementForm>` компонент** (M)
   - Создать `components/orders/AgreementForm.tsx`.
   - Поля: `amount` (number input), `noteSource` (select: `from_master | from_chat | other`), `note` (text optional).
   - Submit → `POST /api/orders/:id/agreement`.
   - Обработка ошибок (400/401/403/500) через toast.
   - _Validates: Requirements 2.1, 9.3, 12 (Q12 — опциональный комментарий)._
 
-- [ ] 22. **CRM: интегрировать `<AgreementForm>` в `ClosingDrawer`** (M)
+- [x] 22. **CRM: интегрировать `<AgreementForm>` в `ClosingDrawer`** (M)
   - Если `paymentState === "no_amount"` — показывать AgreementForm как первичное действие.
   - Если `paymentState === "agreed"` — показывать существующий submit + опция "Изменить сумму" (тоже AgreementForm).
   - Если `paymentState === "paid"` — для Manager оставить редактирование (force-correction); для Operator — read-only.
   - _Validates: Requirements 9.1, 9.2, 9.3, 9.4, 9.5, 5.2, 5.3._
 
-- [ ] 23. **CRM: кнопка "Принять предложение мастера"** (S)
+- [x] 23. **CRM: кнопка "Принять предложение мастера"** (S)
   - В `OrderPanel.tsx` — если `proposedAmount > 0 && paymentState === "no_amount"` AND флаг `payment_state_master_proposal_oneclick` включён — показать кнопку.
   - Клик → `POST /api/orders/:id/agreement { amount: proposedAmount, source: "master_proposal" }`.
   - _Validates: Requirements 13 (Q13)._

@@ -2,6 +2,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { PaymentStateBadge, type PaymentState } from "@/components/orders/PaymentStateBadge";
 import { formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import {
   Loader2, Plus, X, Pencil, AlertTriangle, Send, UserCheck, Clock,
@@ -137,7 +138,7 @@ export default function OrderPanel({
 }: OrderPanelProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-
+  const { flags } = useFeatureFlags();
   // ── Queries ────────────────────────────────────────────────────────────────
   const { data: dispatchData, isLoading: dispatchLoading } = useQuery<DispatchInfo>({
     queryKey: ["/api/dispatch", orderId],
@@ -238,6 +239,35 @@ export default function OrderPanel({
       return r.json();
     },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/orders"] }); setEditAmountId(null); setEditAmountValue(""); },
+  });
+
+  // Phase 2 of estimate-optional-flow: одна кнопка "Принять предложение мастера".
+  // Вызывает POST /api/orders/:id/agreement с source=master_proposal — создаёт
+  // audit-row, шлёт push/MAX мастеру, переводит order в agreed.
+  const acceptProposalMutation = useMutation({
+    mutationFn: async ({ orderId: oid, amount }: { orderId: number; amount: number }) => {
+      const r = await fetch(`/api/orders/${oid}/agreement`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ amount, source: "master_proposal" }),
+      });
+      if (!r.ok) {
+        const text = await r.text();
+        let msg = "Не удалось принять предложение";
+        try { msg = JSON.parse(text).error ?? msg; } catch {}
+        throw new Error(msg);
+      }
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/work-board"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/work-board/table"] });
+      toast({ title: "Сумма зафиксирована", description: "Мастеру отправлено уведомление" });
+    },
+    onError: (e: Error) =>
+      toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
   });
 
   const broadcastMutation = useMutation({
@@ -603,6 +633,21 @@ export default function OrderPanel({
                         <span className="font-semibold text-amber-700">{fmtMoney(proposed)}</span>
                         <button onClick={() => { setEditAmountId(orderId); setEditAmountValue(String(proposed)); }} className="text-amber-400 hover:text-amber-700"><Pencil className="w-3 h-3" /></button>
                       </div>
+                      {(openOrder as any).paymentState === "no_amount" && flags.payment_state_master_proposal_oneclick && (
+                        <button
+                          onClick={() => acceptProposalMutation.mutate({ orderId, amount: proposed })}
+                          disabled={acceptProposalMutation.isPending}
+                          title="Зафиксировать сумму = предложение мастера и уведомить его"
+                          className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-md text-[10px] font-semibold text-emerald-700 disabled:opacity-50 transition-colors"
+                        >
+                          {acceptProposalMutation.isPending ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Check className="w-3 h-3" />
+                          )}
+                          Принять предложение мастера
+                        </button>
+                      )}
                       {openOrder.transactionInfo?.paymentStatus === "paid" ? <p className="text-[10px] text-green-600 font-medium">✅ комиссия оплачена</p> : openOrder.transactionInfo?.paymentStatus && Number(openOrder.transactionInfo.commission) > 0 ? <p className="text-[10px] text-amber-600">⏳ комиссия не оплачена</p> : null}
                     </div>
                   );
