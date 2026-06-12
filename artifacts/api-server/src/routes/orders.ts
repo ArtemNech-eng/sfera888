@@ -13,6 +13,8 @@ import { sendMaxMessage } from "../maxBot.js";
 import { analyseOrderCancellation } from "../lib/dispatcherAI.js";
 import { recordOrderCancelled, recordOrderCompleted, revertOrderCancellation } from "../lib/masterReputation.js";
 import { computePaymentState, computePaymentStateBatch, groupReceiptsByOrder } from "../lib/paymentState.js";
+import { recordAmountAudit, resolveAuditActor, closeOpenEstimateTasksForOrder } from "../lib/orderAudit.js";
+import { notifyWorkBoardChanged } from "./work-board.js";
 
 // Telegram-бот удалён.
 
@@ -776,6 +778,310 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
     } : null,
   });
 });
+
+// ─── POST /:id/agreement — Agreement_Path (Phase 2 of estimate-optional-flow) ──
+//
+// Operator fixes the agreed amount on an order ("master called and we agreed
+// on N rubles with the client"). This is the alternative to creating a Receipt
+// in the master-PWA. After this call the order has Payment_State = "agreed".
+//
+// Mirror of the legacy `PATCH /:id { acceptProposed }` flow but:
+//   • does NOT require a pre-existing proposedAmount (operator types it in)
+//   • records audit event with explicit source ("agreement" | "master_proposal")
+//   • atomically updates orderAmount + commission (commission orders) + audit
+//   • mirrors the same transaction-sync + master.debt update + push notify
+//   • skips token charging for token-model orders (those are charged at the
+//     master-pwa response stage; see remove-token-payment-model spec for the
+//     full removal of the dual-model architecture)
+//
+// Reads of paymentState (Phase 1) and notification suppression (Phase 2 T15-T20)
+// will treat this Order as `agreed` immediately. The notification engine is
+// already prepared to suppress no_estimate signals once the engine flag is on.
+router.post("/:id/agreement", allOrderRoles, async (req, res) => {
+  const id = parseInt(String(req.params.id as string));
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid order ID" });
+
+  const { amount, source, note, noteSource } = req.body ?? {};
+
+  // ── Validate ────────────────────────────────────────────────────────────────
+  const amountNum = Number(amount);
+  if (!isFinite(amountNum) || amountNum <= 0) {
+    return res.status(400).json({ error: "Сумма должна быть больше 0" });
+  }
+  // Soft warning above 1М ₽ — UI shows it, server still accepts (Q2 decision).
+  // Source whitelist — "agreement" is operator-typed, "master_proposal" is one-click.
+  const allowedSources = ["agreement", "master_proposal"] as const;
+  const sourceVal: "agreement" | "master_proposal" =
+    typeof source === "string" && (allowedSources as readonly string[]).includes(source)
+      ? (source as "agreement" | "master_proposal")
+      : "agreement";
+
+  // Compose human-readable note from selector + free text. Stored in
+  // orders.agreementNote AND used as audit reason. Optional in v1 (Q12).
+  const noteText = (() => {
+    const parts: string[] = [];
+    if (noteSource && typeof noteSource === "string") {
+      const labels: Record<string, string> = {
+        from_master: "со слов мастера",
+        from_chat: "по чату с клиентом",
+        other: "другое",
+      };
+      parts.push(labels[noteSource] ?? noteSource);
+    }
+    if (note && typeof note === "string" && note.trim()) {
+      parts.push(note.trim());
+    }
+    return parts.length > 0 ? parts.join(": ").slice(0, 1000) : null;
+  })();
+
+  // ── Resolve actor (audit denormalization) ───────────────────────────────────
+  const sessionUserId = (req as any).session?.userId ?? null;
+  const actor = await resolveAuditActor(sessionUserId, "operator");
+
+  // ── Fetch and validate current state ────────────────────────────────────────
+  const currentRows = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
+  const current = currentRows[0];
+  if (!current) return res.status(404).json({ error: "Order not found" });
+  if (current.deletedAt) return res.status(404).json({ error: "Order deleted" });
+  if (current.status === "cancelled" || current.status === "completed") {
+    return res.status(400).json({
+      error: "Нельзя зафиксировать сумму на закрытом заказе",
+      orderStatus: current.status,
+    });
+  }
+
+  const isTokenModel = current.paymentModel === "token";
+
+  // Commission settings — read once outside transaction (cached, deterministic)
+  const commSettings = await getCommissionSettings();
+  const newCommission = isTokenModel
+    ? null
+    : String(calculateCommission(amountNum, commSettings));
+
+  // ── Atomic update: order fields + audit, single transaction ─────────────────
+  const updated = await db.transaction(async (tx) => {
+    const [u] = await tx
+      .update(ordersTable)
+      .set({
+        orderAmount: String(amountNum),
+        agreementAmountSource: sourceVal,
+        agreementNote: noteText,
+        paymentStateChangedAt: new Date(),
+        ...(isTokenModel ? {} : { commission: newCommission! }),
+        // Mirror legacy: keep proposedAmount in sync so existing PATCH paths
+        // and FOMO-block logic see a non-null proposedAmount.
+        proposedAmount: String(amountNum),
+        updatedAt: new Date(),
+      })
+      .where(eq(ordersTable.id, id))
+      .returning();
+
+    await recordAmountAudit(tx as any, {
+      orderId: id,
+      actorUserId: actor.id,
+      actorRole: actor.role,
+      actorAlias: actor.alias,
+      field: "orderAmount",
+      previousValue: current.orderAmount,
+      newValue: String(amountNum),
+      source: sourceVal,
+      reason: noteText,
+    });
+    if (!isTokenModel) {
+      await recordAmountAudit(tx as any, {
+        orderId: id,
+        actorUserId: actor.id,
+        actorRole: actor.role,
+        actorAlias: actor.alias,
+        field: "commission",
+        previousValue: current.commission,
+        newValue: newCommission!,
+        source: "system_recalc",
+      });
+    }
+    return u;
+  });
+
+  // ── Sync transaction record (commission orders only) ────────────────────────
+  // Mirror of the existing acceptProposed branch in PATCH /:id.
+  // Side effects: master.debt updated, transaction row created/updated, optional
+  // auto-complete if commission fully covered by receipt prepayment.
+  let autoCompleted = false;
+  if (!isTokenModel && updated.masterId) {
+    autoCompleted = await syncTransactionForAgreement(
+      updated,
+      amountNum,
+      Number(newCommission ?? 0),
+    );
+  }
+
+  // ── Notify (best-effort, post-commit) ───────────────────────────────────────
+  notifyWorkBoardChanged("agreement_set");
+
+  if (updated.masterId) {
+    const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, updated.masterId));
+    const master = masterRows[0];
+    const amountStr = amountNum.toLocaleString("ru-RU");
+
+    sendPushToMaster(updated.masterId, {
+      title: "✅ Оператор зафиксировал согласованную сумму",
+      body: `Заказ #${id}: ${amountStr} ₽. Дополнительно создавать смету не нужно.`,
+      url: "/orders",
+    }).catch((err) => console.error("[orders/agreement] push error:", err));
+
+    if (master?.maxChatId) {
+      const text = `✅ Оператор зафиксировал согласованную сумму ${amountStr} ₽ по заказу #${id}.\n\nДополнительно создавать смету не нужно.`;
+      sendMaxMessage(master.maxChatId, text).catch((err) =>
+        console.error("[orders/agreement] max error:", err),
+      );
+    }
+  }
+
+  // Cache invalidation — Phase 2 helper drops dashboard-action-items cache so
+  // the no_estimate task disappears from the operator UI immediately. The
+  // SQL-level filtering for the engine flag is added in T16.
+  closeOpenEstimateTasksForOrder(id, "сумма зафиксирована").catch(() => {});
+
+  // ── Response ────────────────────────────────────────────────────────────────
+  // If transaction sync triggered auto-complete, reload to reflect status change.
+  const finalRows = autoCompleted
+    ? await db.select().from(ordersTable).where(eq(ordersTable.id, id))
+    : [updated];
+  const final = finalRows[0];
+
+  // Include paymentState — same shape as Phase 1 read endpoints.
+  const allReceiptsForOrder = await db
+    .select({
+      prepaymentAmount: receiptsTable.prepaymentAmount,
+      prepaymentSeenAt: receiptsTable.prepaymentSeenAt,
+      prepaymentSubmittedAt: receiptsTable.prepaymentSubmittedAt,
+    })
+    .from(receiptsTable)
+    .where(eq(receiptsTable.orderId, id));
+
+  res.json({
+    ok: true,
+    autoCompleted,
+    order: {
+      id: final.id,
+      status: final.status,
+      orderAmount: final.orderAmount ? Number(final.orderAmount) : null,
+      proposedAmount: final.proposedAmount ? Number(final.proposedAmount) : null,
+      commission: final.commission ? Number(final.commission) : null,
+      commissionPaid: final.commissionPaid ?? false,
+      agreementAmountSource: (final as any).agreementAmountSource ?? null,
+      agreementNote: (final as any).agreementNote ?? null,
+      paymentState: computePaymentState(final, allReceiptsForOrder),
+      paymentModel: final.paymentModel,
+    },
+  });
+});
+
+// Helper for POST /:id/agreement above. Mirrors the existing acceptProposed
+// transaction-sync branch in PATCH /:id (lines ~458-553) but extracted into
+// a function so the new endpoint can call it without duplicating the entire
+// PATCH handler. Returns true if commission was fully covered by receipt
+// prepayment and the order auto-completed.
+async function syncTransactionForAgreement(
+  o: typeof ordersTable.$inferSelect,
+  _amountNum: number,
+  commissionValue: number,
+): Promise<boolean> {
+  if (!o.masterId || !o.orderAmount || !o.commission) return false;
+
+  const id = o.id;
+  const existingTxRows = await db
+    .select()
+    .from(transactionsTable)
+    .where(eq(transactionsTable.orderId, id));
+  const existingTx = existingTxRows[0];
+
+  const paidReceiptRows = await db
+    .select()
+    .from(receiptsTable)
+    .where(and(eq(receiptsTable.orderId, id), isNotNull(receiptsTable.prepaymentSubmittedAt)));
+  const totalPrepaid = paidReceiptRows.reduce((sum, r) => sum + Number(r.prepaymentAmount), 0);
+  const prepaymentDeducted = Math.min(totalPrepaid, commissionValue);
+  const netPayable = Math.max(0, commissionValue - prepaymentDeducted);
+  const fullyPaidByPrepayment = netPayable === 0;
+
+  if (existingTx) {
+    const wasPlaceholder = Number(existingTx.commission) === 0;
+    const prevCommission = Number(existingTx.commission);
+    const prevPrepaymentDeducted = Number(existingTx.prepaymentDeducted ?? 0);
+    const prevNetPayable = Math.max(0, prevCommission - prevPrepaymentDeducted);
+
+    await db
+      .update(transactionsTable)
+      .set({
+        orderAmount: o.orderAmount,
+        commission: o.commission,
+        serviceFee: "500",
+        prepaymentDeducted: String(prepaymentDeducted),
+        paymentStatus: fullyPaidByPrepayment ? "paid" : "pending",
+        paidAt: fullyPaidByPrepayment ? new Date() : existingTx.paidAt,
+      })
+      .where(eq(transactionsTable.id, existingTx.id));
+
+    const [m] = await db.select().from(mastersTable).where(eq(mastersTable.id, o.masterId));
+    if (m) {
+      if (wasPlaceholder) {
+        if (netPayable > 0) {
+          const newDebt = Number(m.debt) + netPayable;
+          await db
+            .update(mastersTable)
+            .set({ debt: String(newDebt) })
+            .where(eq(mastersTable.id, o.masterId));
+        }
+      } else if (commissionValue !== prevCommission || prepaymentDeducted !== prevPrepaymentDeducted) {
+        const delta = netPayable - prevNetPayable;
+        const newDebt = Math.max(0, Number(m.debt) + delta);
+        await db
+          .update(mastersTable)
+          .set({ debt: String(newDebt) })
+          .where(eq(mastersTable.id, o.masterId));
+      }
+    }
+  } else {
+    await db.insert(transactionsTable).values({
+      orderId: id,
+      masterId: o.masterId,
+      orderAmount: o.orderAmount,
+      commission: o.commission,
+      serviceFee: "500",
+      prepaymentDeducted: String(prepaymentDeducted),
+      paymentStatus: fullyPaidByPrepayment ? "paid" : "pending",
+      paidAt: fullyPaidByPrepayment ? new Date() : undefined,
+    });
+    const [m] = await db.select().from(mastersTable).where(eq(mastersTable.id, o.masterId));
+    if (m && netPayable > 0) {
+      const newDebt = Number(m.debt) + netPayable;
+      await db
+        .update(mastersTable)
+        .set({ debt: String(newDebt) })
+        .where(eq(mastersTable.id, o.masterId));
+    }
+  }
+
+  if (fullyPaidByPrepayment && o.status !== "completed") {
+    await db
+      .update(ordersTable)
+      .set({ status: "completed", completedAt: new Date(), updatedAt: new Date() })
+      .where(eq(ordersTable.id, id));
+    await db
+      .insert(orderStatusLogsTable)
+      .values({
+        orderId: id,
+        oldStatus: o.status,
+        newStatus: "completed",
+        userId: null,
+        userAlias: "система (auto-complete after agreement)",
+      })
+      .catch(() => {});
+    return true;
+  }
+  return false;
+}
 
 router.post("/:id/manual-assign/:masterId", allOrderRoles, async (req, res) => {
   const id = parseInt(String(req.params.id as string));
