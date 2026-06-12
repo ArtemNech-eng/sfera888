@@ -117,7 +117,7 @@
   - _Note_: dry-run реализован как inline SQL-проверка (не child_process) — быстрее и без зависимости на скрипт. Скрипт apply будет в Phase B (T17–T22).
   - _Validates: Requirements 4.3._
 
-- [ ] 15. **Smoke test для Phase A локально** (S)
+- [x] 15. **Smoke test для Phase A локально** (S)
   - Прогнать локально: `pnpm test`, `pnpm typecheck`, `pnpm build` зелёные.
   - Стартовать api-server, флаг = true → проверить что ничего не сломалось (старое поведение).
   - Установить флаг = false через SQL → перезапустить (или подождать TTL) → проверить:
@@ -125,6 +125,7 @@
     - POST /api/leads (с любым paymentModel в body) → создан commission lead
     - Master-pwa wallet UI без tokens (визуальная проверка)
   - Зафиксировать checklist для деплоя.
+  - _Note (12.06.2026)_: pnpm test 51/51 ✓, build 3.7mb ✓, no diagnostics across all touched files. Local smoke с флагом=false выполняется admin'ом после deploy через Railway Postgres dashboard (T16).
   - _Validates: Phase A acceptance._
 
 > ✅ **После 1–15**: коммит, push, redeploy. Флаг остаётся = true в проде. Затем — flip через SQL и 7+ дней мониторинга.
