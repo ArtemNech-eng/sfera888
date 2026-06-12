@@ -14,7 +14,7 @@
 
 Цель: при флаге `token_model_enabled = false` система ведёт себя как будто токенов нет. Open token-orders продолжают работать в legacy-режиме до закрытия.
 
-- [ ] 1. **Schema migration: новая таблица `master_balance_grants`** (S)
+- [x] 1. **Schema migration: новая таблица `master_balance_grants`** (S)
   - Создать `lib/db/src/schema/master-balance-grants.ts` по дизайну (см. design.md § Data Models / Новая таблица).
   - Добавить export в `lib/db/src/schema/index.ts`.
   - Сгенерить миграцию: `pnpm --filter @workspace/db exec drizzle-kit generate --name=token_migration_grants`.
@@ -22,20 +22,20 @@
   - Локально стартовать api-server, проверить лог `[migrate] drizzle migrations up to date`.
   - _Validates: Requirements 4.1._
 
-- [ ] 2. **`lib/tokenModelGuard.ts` — feature-flag guard** (S)
+- [x] 2. **`lib/tokenModelGuard.ts` — feature-flag guard** (S)
   - Создать `artifacts/api-server/src/lib/tokenModelGuard.ts` точно по шаблону `paymentStateGuard.ts`.
   - Экспорт: `isTokenModelEnabled()`, `clearTokenModelFlagCache()`.
   - TTL 60с. Default = `true` (token-model on). `'false'` явно для выключения.
   - На ошибку БД — fail-safe возврат `true` (не делаем массовых изменений).
   - _Validates: Requirements 2.1, 2.2._
 
-- [ ] 3. **Unit-тесты для `tokenModelGuard`** (S)
+- [x] 3. **Unit-тесты для `tokenModelGuard`** (S)
   - Создать `__tests__/tokenModelGuard.test.ts`.
   - Кейсы: default = true; explicit 'true'; explicit 'false'; пустой row; БД-ошибка; кеш TTL; clearCache().
   - 6-7 тестов по шаблону `paymentStateGuard` (если есть) или `paymentState.test.ts`.
   - _Validates: Property 7._
 
-- [ ] 4. **Расширить `system.ts:GET /feature-flags` + `useFeatureFlags`** (S)
+- [x] 4. **Расширить `system.ts:GET /feature-flags` + `useFeatureFlags`** (S)
   - В `routes/system.ts` добавить `'token_model_enabled'` в whitelist `PAYMENT_STATE_FLAGS` (или переименовать в `WHITELISTED_FLAGS`).
   - Default = `true` в `FLAG_DEFAULTS`.
   - В `artifacts/crm/src/hooks/useFeatureFlags.ts` добавить `token_model_enabled: boolean` в interface, default `true` в FALLBACK.

@@ -18,16 +18,20 @@ const router = Router();
 
 // Фиксированный whitelist — чтобы клиент не мог вычитать произвольные
 // значения из system_settings (там лежат пароли/токены/секреты).
-const PAYMENT_STATE_FLAGS = [
+const WHITELISTED_FLAGS = [
   "payment_state_engine_enabled",
   "payment_state_audit_ui_enabled",
   "payment_state_master_proposal_oneclick",
+  "token_model_enabled",
 ] as const;
 
-const FLAG_DEFAULTS: Record<typeof PAYMENT_STATE_FLAGS[number], boolean> = {
+const FLAG_DEFAULTS: Record<typeof WHITELISTED_FLAGS[number], boolean> = {
   payment_state_engine_enabled: false,
   payment_state_audit_ui_enabled: false,
   payment_state_master_proposal_oneclick: true,
+  // Default = true. См. .kiro/specs/remove-token-payment-model/.
+  // Phase A flip ставит value='false' через SQL.
+  token_model_enabled: true,
 };
 
 router.get("/feature-flags", requireAuth, async (_req, res) => {
@@ -35,12 +39,12 @@ router.get("/feature-flags", requireAuth, async (_req, res) => {
     const rows = await db
       .select()
       .from(systemSettingsTable)
-      .where(inArray(systemSettingsTable.key, [...PAYMENT_STATE_FLAGS]));
+      .where(inArray(systemSettingsTable.key, [...WHITELISTED_FLAGS]));
 
     const map = new Map(rows.map((r) => [r.key, r.value]));
 
     const result: Record<string, boolean> = {};
-    for (const key of PAYMENT_STATE_FLAGS) {
+    for (const key of WHITELISTED_FLAGS) {
       const stored = map.get(key);
       result[key] = stored != null ? stored === "true" : FLAG_DEFAULTS[key];
     }

@@ -15,6 +15,13 @@
       "when": 1781240374207,
       "tag": "0001_payment_state_engine",
       "breakpoints": false
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781294798175,
+      "tag": "0002_token_migration_grants",
+      "breakpoints": false
     }
   ]
 }
