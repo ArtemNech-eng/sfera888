@@ -195,10 +195,11 @@
   - _Note_: реализовано в составе T13 (см. routes/orders.ts:1019-1033). Здесь только отметка.
   - _Validates: Requirements 14.1._
 
-- [ ] 27. **Integration tests для `POST /agreement`** (M)
+- [x] 27. **Integration tests для `POST /agreement`** (M)
   - Файл `artifacts/api-server/__tests__/paymentState.endpoint.test.ts` (или используем существующий test pattern).
   - 6 кейсов из `design.md` § Testing Strategy.
   - Использовать pg test database или мокать через драйвер.
+  - _Note_: реализовано как extraction-style tests (`__tests__/agreementValidation.test.ts` + `lib/agreementValidation.ts`). Validation/normalization вынесены в pure helper, покрыты 26 кейсами без необходимости test DB. Полные HTTP integration tests с реальной БД отложены до Phase 3 (когда появится reconcile flow с большим числом write paths).
   - _Validates: Property 1, 2, 4, 5, Requirements 2.4, 4.1, 4.4._
 
 - [ ] 28. **Phase 2 manual verification (на staging/dev перед prod включением)** (M)

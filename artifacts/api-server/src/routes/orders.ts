@@ -14,6 +14,7 @@ import { analyseOrderCancellation } from "../lib/dispatcherAI.js";
 import { recordOrderCancelled, recordOrderCompleted, revertOrderCancellation } from "../lib/masterReputation.js";
 import { computePaymentState, computePaymentStateBatch, groupReceiptsByOrder } from "../lib/paymentState.js";
 import { recordAmountAudit, resolveAuditActor, closeOpenEstimateTasksForOrder } from "../lib/orderAudit.js";
+import { validateAgreementBody } from "../lib/agreementValidation.js";
 import { notifyWorkBoardChanged } from "./work-board.js";
 
 // Telegram-бот удалён.
@@ -979,38 +980,13 @@ router.post("/:id/agreement", allOrderRoles, async (req, res) => {
   const id = parseInt(String(req.params.id as string));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid order ID" });
 
-  const { amount, source, note, noteSource } = req.body ?? {};
-
-  // ── Validate ────────────────────────────────────────────────────────────────
-  const amountNum = Number(amount);
-  if (!isFinite(amountNum) || amountNum <= 0) {
-    return res.status(400).json({ error: "Сумма должна быть больше 0" });
+  // ── Validate + normalize request body via pure helper (covered by unit tests
+  //    in __tests__/agreementValidation.test.ts) ──────────────────────────────
+  const validated = validateAgreementBody(req.body);
+  if (!validated.ok) {
+    return res.status(400).json({ error: validated.error });
   }
-  // Soft warning above 1М ₽ — UI shows it, server still accepts (Q2 decision).
-  // Source whitelist — "agreement" is operator-typed, "master_proposal" is one-click.
-  const allowedSources = ["agreement", "master_proposal"] as const;
-  const sourceVal: "agreement" | "master_proposal" =
-    typeof source === "string" && (allowedSources as readonly string[]).includes(source)
-      ? (source as "agreement" | "master_proposal")
-      : "agreement";
-
-  // Compose human-readable note from selector + free text. Stored in
-  // orders.agreementNote AND used as audit reason. Optional in v1 (Q12).
-  const noteText = (() => {
-    const parts: string[] = [];
-    if (noteSource && typeof noteSource === "string") {
-      const labels: Record<string, string> = {
-        from_master: "со слов мастера",
-        from_chat: "по чату с клиентом",
-        other: "другое",
-      };
-      parts.push(labels[noteSource] ?? noteSource);
-    }
-    if (note && typeof note === "string" && note.trim()) {
-      parts.push(note.trim());
-    }
-    return parts.length > 0 ? parts.join(": ").slice(0, 1000) : null;
-  })();
+  const { amount: amountNum, source: sourceVal, noteText } = validated;
 
   // ── Resolve actor (audit denormalization) ───────────────────────────────────
   const sessionUserId = (req as any).session?.userId ?? null;
