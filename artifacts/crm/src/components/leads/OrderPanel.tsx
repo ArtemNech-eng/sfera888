@@ -1,4 +1,5 @@
 import { StatusBadge } from "@/components/status-badge";
+import { PaymentStateBadge, type PaymentState } from "@/components/orders/PaymentStateBadge";
 import { formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
@@ -501,6 +502,9 @@ export default function OrderPanel({
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-lg font-display font-bold text-foreground">Заказ #{orderId}</h2>
               <StatusBadge status={openOrder.status} type="order" />
+              {(openOrder as any).paymentState && (
+                <PaymentStateBadge state={(openOrder as any).paymentState as PaymentState} size="sm" />
+              )}
               <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 border border-slate-200">
                 Комиссия
               </span>

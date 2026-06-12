@@ -38,6 +38,7 @@ import OrdersBanners from "./OrdersBanners";
 import ClosingDrawer from "./ClosingDrawer";
 import MasterPickerPanel from "./MasterPickerPanel";
 import UnassignDialog from "./UnassignDialog";
+import { PaymentStateBadge, type PaymentState } from "./PaymentStateBadge";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -86,6 +87,9 @@ interface TableRow {
   commissionLeft: number;
   commissionPaid?: boolean;
   money?: { kind: string; amount: number };
+  // Payment_State engine — Phase 1 read-only fields
+  paymentState?: PaymentState;
+  agreementAmountSource?: string | null;
 }
 
 interface TableResponse {
@@ -789,6 +793,11 @@ function OrderRowDesktop({ row, folder, onOpenOrder, onClose, onPickMaster, onUn
       <td className="px-3 py-2.5">
         <div className="font-mono font-bold text-foreground">#{row.orderId}</div>
         <div className="text-[10px] text-muted-foreground">{dateLabel}</div>
+        {row.paymentState && (
+          <div className="mt-0.5">
+            <PaymentStateBadge state={row.paymentState} size="sm" />
+          </div>
+        )}
         {isToken ? (
           <span className="inline-flex items-center gap-0.5 px-1 py-0.5 mt-0.5 rounded text-[9px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
             <Diamond className="w-2 h-2" /> {row.tokensCharged ?? 0}т
@@ -978,6 +987,11 @@ function OrderCardMobile({ row, folder, onOpenOrder, onClose, onPickMaster, onUn
         <div>
           <div className="font-mono font-bold text-foreground">#{row.orderId}</div>
           <div className="text-xs text-muted-foreground mt-0.5">{row.serviceType} · {row.city}</div>
+          {row.paymentState && (
+            <div className="mt-1">
+              <PaymentStateBadge state={row.paymentState} size="sm" />
+            </div>
+          )}
         </div>
         {row.isProblem && (
           <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-100 text-red-700 border border-red-200">

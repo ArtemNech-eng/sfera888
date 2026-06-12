@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { X, Search, Star, MapPin, Wallet, Diamond, Loader2, UserPlus } from "lucide-react";
+import { PaymentStateBadge, type PaymentState } from "./PaymentStateBadge";
 
 interface OrderRow {
   orderId: number;
@@ -9,6 +10,8 @@ interface OrderRow {
   master: string | null;
   masterId: number | null;
   paymentModel?: string;
+  paymentState?: PaymentState;
+  agreementAmountSource?: string | null;
 }
 
 interface Master {
@@ -111,6 +114,11 @@ export default function MasterPickerPanel({ order, onClose, onAssign, isPending 
               <p className="text-xs text-muted-foreground mt-0.5">
                 Заказ #{order.orderId} · {order.serviceType ?? "—"} · {order.city ?? "—"}
               </p>
+              {order.paymentState && (
+                <div className="mt-1.5">
+                  <PaymentStateBadge state={order.paymentState} size="sm" />
+                </div>
+              )}
             </div>
             <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
               <X className="w-5 h-5" />
