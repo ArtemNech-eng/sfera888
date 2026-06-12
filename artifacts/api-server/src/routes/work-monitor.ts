@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db, ordersTable, mastersTable, leadsTable, receiptsTable, transactionsTable, masterMessagesTable } from "@workspace/db";
 import { inArray, isNull, eq, and } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
+import { computePaymentStateBatch } from "../lib/paymentState.js";
 
 const router = Router();
 
@@ -121,6 +122,15 @@ router.get("/", requireAuth, async (_req, res) => {
       }
     }
 
+    // Payment_State (Phase 1, read-only) — group all receipts for batch compute
+    const receiptsByOrderForState = new Map<number, typeof receipts>();
+    for (const r of receipts) {
+      const arr = receiptsByOrderForState.get(r.orderId) ?? [];
+      arr.push(r);
+      receiptsByOrderForState.set(r.orderId, arr);
+    }
+    const paymentStateMap = computePaymentStateBatch(orders as any, receiptsByOrderForState);
+
     const result: WorkOrder[] = orders.map(o => {
       const master = o.masterId ? masterMap.get(o.masterId) : null;
       const lead = leadMap.get(o.leadId);
@@ -222,6 +232,9 @@ router.get("/", requireAuth, async (_req, res) => {
         problemReasons,
         commissionPaid,
         transactionInfo,
+        // Payment_State engine — Phase 1 read-only fields
+        paymentState: paymentStateMap.get(o.id) ?? "no_amount",
+        agreementAmountSource: (o as any).agreementAmountSource ?? null,
       };
     });
 

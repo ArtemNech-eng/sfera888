@@ -22,6 +22,7 @@ import { recordOrderCancelled } from "../lib/masterReputation.js";
 import { recordOrderMasterHistory } from "../lib/orderMasterHistory.js";
 import { sendMaxMessage } from "../maxBot.js";
 import { sendPushToMaster } from "../lib/push.js";
+import { computePaymentStateBatch, type PaymentState } from "../lib/paymentState.js";
 
 // Только эти роли могут менять статус заявок (эскалировать/возвращать в пул).
 const operatorRoles = requireRole("admin", "lead_operator", "master_operator");
@@ -95,6 +96,9 @@ interface Card {
   masterId: number | null;
   timeInStage: string;
   ageMs: number;
+  // Payment_State engine — Phase 1 read-only fields (see lib/paymentState.ts)
+  paymentState: PaymentState;
+  agreementAmountSource: string | null;
   money?: { kind: "estimate" | "paid" | "commission"; amount: number; tier?: "fixed" | "percent" };
   // Detailed commission progress for "estimate_paid" and "commission_left" cards.
   // Lets the operator see at a glance how much commission has already been collected
@@ -237,8 +241,18 @@ async function buildBoard() {
     const existing = receiptMap.get(r.orderId);
     if (!existing || new Date(r.createdAt) > new Date(existing.createdAt)) {
       receiptMap.set(r.orderId, r);
-    }
+    }  }
+
+  // ── Payment_State (Phase 1, read-only) ───────────────────────────────────
+  // Группируем все receipts (не только latest) по orderId — pure-функция
+  // computePaymentState проверяет правило "все receipts с prepaymentSeenAt".
+  const receiptsByOrderForState = new Map<number, typeof receipts>();
+  for (const r of receipts) {
+    const arr = receiptsByOrderForState.get(r.orderId) ?? [];
+    arr.push(r);
+    receiptsByOrderForState.set(r.orderId, arr);
   }
+  const paymentStateMap = computePaymentStateBatch(orders as any, receiptsByOrderForState);
 
   const txByOrder = new Map<number, typeof transactions>();
   for (const tx of transactions) {
@@ -321,6 +335,8 @@ async function buildBoard() {
       timeInStage: stageLabel,
       ageMs,
       status: o.status,
+      paymentState: paymentStateMap.get(o.id) ?? "no_amount",
+      agreementAmountSource: (o as any).agreementAmountSource ?? null,
     };
 
     // Determine column

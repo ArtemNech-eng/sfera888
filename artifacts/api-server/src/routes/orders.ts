@@ -12,6 +12,7 @@ import { sendPushToClient } from "../lib/clientPush.js";
 import { sendMaxMessage } from "../maxBot.js";
 import { analyseOrderCancellation } from "../lib/dispatcherAI.js";
 import { recordOrderCancelled, recordOrderCompleted, revertOrderCancellation } from "../lib/masterReputation.js";
+import { computePaymentState, computePaymentStateBatch, groupReceiptsByOrder } from "../lib/paymentState.js";
 
 // Telegram-бот удалён.
 
@@ -148,6 +149,20 @@ router.get("/", allOrderRoles, async (req, res) => {
     }
   }
 
+  // ── Payment_State derivation (Phase 1, read-only) ────────────────────────
+  // Грузим receipts для batch-вычисления paymentState. Cтоимость одного запроса
+  // в пределах загруженной страницы заказов — пренебрежимо.
+  const receiptsForState = orderIds.length > 0
+    ? await db.select({
+        orderId: receiptsTable.orderId,
+        prepaymentAmount: receiptsTable.prepaymentAmount,
+        prepaymentSeenAt: receiptsTable.prepaymentSeenAt,
+        prepaymentSubmittedAt: receiptsTable.prepaymentSubmittedAt,
+      }).from(receiptsTable).where(inArray(receiptsTable.orderId, orderIds))
+    : [];
+  const receiptsByOrder = groupReceiptsByOrder(receiptsForState);
+  const paymentStateMap = computePaymentStateBatch(orders as any, receiptsByOrder);
+
   res.json({
     rows: orders.map((o) => {
       const tx = txMap.get(o.id);
@@ -182,6 +197,9 @@ router.get("/", allOrderRoles, async (req, res) => {
         paymentModel: o.paymentModel ?? "token",
         maxMasters: (o as any).maxMasters ?? 3,
         assignedMasterCount: (o as any).assignedMasterCount ?? 0,
+        // Payment_State engine — Phase 1 read-only fields
+        paymentState: paymentStateMap.get(o.id) ?? "no_amount",
+        agreementAmountSource: (o as any).agreementAmountSource ?? null,
         createdAt: o.createdAt,
         updatedAt: o.updatedAt,
         transactionInfo: tx ? {
@@ -226,6 +244,18 @@ router.get("/:id", allOrderRoles, async (req, res) => {
   const txRows = await db.select().from(transactionsTable).where(eq(transactionsTable.orderId, id));
   const realTxRows = txRows.filter(t => Number(t.commission) > 0);
   const tx = realTxRows.length > 0 ? realTxRows[0] : (txRows[0] ?? null);
+
+  // Payment_State engine — Phase 1 read-only derivation
+  const allReceiptsForOrder = await db
+    .select({
+      prepaymentAmount: receiptsTable.prepaymentAmount,
+      prepaymentSeenAt: receiptsTable.prepaymentSeenAt,
+      prepaymentSubmittedAt: receiptsTable.prepaymentSubmittedAt,
+    })
+    .from(receiptsTable)
+    .where(eq(receiptsTable.orderId, id));
+  const paymentState = computePaymentState(o, allReceiptsForOrder);
+
   res.json({
     id: o.id,
     leadId: o.leadId,
@@ -245,6 +275,9 @@ router.get("/:id", allOrderRoles, async (req, res) => {
     orderAmount: o.orderAmount ? Number(o.orderAmount) : null,
     commission: o.commission ? Number(o.commission) : null,
     commissionPaid: o.commissionPaid ?? false,
+    // Payment_State engine — Phase 1 read-only fields
+    paymentState,
+    agreementAmountSource: (o as any).agreementAmountSource ?? null,
     clientRating: o.clientRating ?? null,
     cancelReason: o.cancelReason ?? null,
     cancelType: (o as any).cancelType ?? null,

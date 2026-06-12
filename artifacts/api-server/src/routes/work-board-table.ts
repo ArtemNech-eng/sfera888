@@ -27,6 +27,7 @@ import { requireAuth } from "../middlewares/requireAuth.js";
 import { workBoardBus, notifyWorkBoardChanged } from "./work-board.js";
 import { z } from "zod";
 import { ZodError } from "zod";
+import { computePaymentStateBatch, type PaymentState } from "../lib/paymentState.js";
 
 // ── Reuse types and helpers from work-board.ts ─────────────────────────────────
 
@@ -53,6 +54,9 @@ interface Card {
   masterId: number | null;
   timeInStage: string;
   ageMs: number;
+  // Payment_State engine — Phase 1 read-only fields
+  paymentState: PaymentState;
+  agreementAmountSource: string | null;
   money?: { kind: "estimate" | "paid" | "commission"; amount: number; tier?: "fixed" | "percent" };
   commission?: {
     orderTotal: number;
@@ -377,6 +381,15 @@ async function buildTableData(params: QueryParams): Promise<{
     }
   }
 
+  // Payment_State (Phase 1, read-only) — group all receipts by order
+  const receiptsByOrderForState = new Map<number, typeof receipts>();
+  for (const r of receipts) {
+    const arr = receiptsByOrderForState.get(r.orderId) ?? [];
+    arr.push(r);
+    receiptsByOrderForState.set(r.orderId, arr);
+  }
+  const paymentStateMap = computePaymentStateBatch(orders as any, receiptsByOrderForState);
+
   const txByOrder = new Map<number, typeof transactions>();
   for (const tx of transactions) {
     const arr = txByOrder.get(tx.orderId) ?? [];
@@ -525,6 +538,8 @@ async function buildTableData(params: QueryParams): Promise<{
       timeInStage: stageLabel,
       ageMs,
       status: o.status,
+      paymentState: paymentStateMap.get(o.id) ?? "no_amount",
+      agreementAmountSource: (o as any).agreementAmountSource ?? null,
     };
 
     // Add money, bot, badge based on columnKey (simplified)
