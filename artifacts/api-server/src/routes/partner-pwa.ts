@@ -10,6 +10,7 @@ import { db, usersTable, trafficPartnersTable, partnerBillingPeriodsTable, leads
 import { eq, and, gte, lt, lte, desc, ilike, or, isNull, inArray, count, sql } from "drizzle-orm";
 import { requirePartner } from "../middlewares/requirePartner.js";
 import { sendPushToPartner } from "../lib/partnerPush.js";
+import { isTokenModelEnabled } from "../lib/tokenModelGuard.js";
 import { z } from "zod";
 
 const router = Router();
@@ -930,7 +931,9 @@ router.post("/leads", requirePartner, async (req: Request, res: Response) => {
         leadChannel: "avito_partner",
         isPossibleDuplicate,
         partnerLeadStatus,
-        paymentModel: "token",
+        // Phase A of remove-token-payment-model: при флаге=false avito_partner
+        // тоже создаётся как commission. При флаге=true — старая логика (token).
+        paymentModel: (await isTokenModelEnabled()) ? "token" : "commission",
       })
       .returning();
 

@@ -10,6 +10,7 @@ import { recordOrderMasterHistory } from "../lib/orderMasterHistory.js";
 import { calculateCommission, getCommissionSettings, DEFAULT_COMMISSION } from "../lib/commission.js";
 import { computePaymentStateBatch } from "../lib/paymentState.js";
 import { isPaymentStateEngineEnabled } from "../lib/paymentStateGuard.js";
+import { isTokenModelEnabled } from "../lib/tokenModelGuard.js";
 import OpenAI from "openai";
 
 declare const console: any;
@@ -195,6 +196,9 @@ async function buildItems(): Promise<Item[]> {
   // Это подавляет дубли когда оператор зафиксировал сумму через Agreement_Path
   // без создания сметы. При выключенном флаге — старая проверка hasEstimate.
   const paymentStateEngineOn = await isPaymentStateEngineEnabled();
+  // Phase A of remove-token-payment-model: при флаге=false 4 token-task типа
+  // не генерируются. См. .kiro/specs/remove-token-payment-model/.
+  const tokenModelOn = await isTokenModelEnabled();
   const receiptsByOrderForState = new Map<number, typeof receipts>();
   for (const r of receipts) {
     const arr = receiptsByOrderForState.get(Number(r.orderId)) ?? [];
@@ -254,13 +258,16 @@ async function buildItems(): Promise<Item[]> {
       items.push({ id: `no_progress-${o.id}`, type: "no_progress", priority: progressPriority, title: `Заказ #${o.id} — нет движения`, shortDescription: `${fmtAge(progressAgeH)} без обновлений`, fullDescription: `Заказ без движения уже ${fmtAge(progressAgeH)}.`, createdAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterNameMap.get(Number(o.masterId)) ?? null) : null, amountAtRisk: o.orderAmount ? calculateCommission(Number(o.orderAmount), commSettings) : null, actions: actionSet("no_progress") });
     }
     // order_stalled_token: заказ завис >24ч, assigned master имеет tokensBalance <= 0
-    const stalledAgeH = o.updatedAt
-      ? (now.getTime() - new Date(o.updatedAt).getTime()) / 3600000
-      : ageH;
-    const masterWallet = masterWallets.find((w: any) => Number(w.masterId) === Number(o.masterId));
-    const masterTokens = masterWallet ? Number(masterWallet.tokensBalance ?? 0) : null;
-    if (["waiting_master", "master_assigned"].includes(String(o.status ?? "")) && stalledAgeH >= 24 && masterTokens !== null && masterTokens <= 0) {
-      items.push({ id: `order_stalled_token-${o.id}`, type: "order_stalled_token", priority: "high", title: `Заказ #${o.id} — завис, у мастера нет токенов`, shortDescription: clientLabel.trim(), fullDescription: `Заказ завис ${fmtAge(stalledAgeH)}. У назначенного мастера нет токенов (${masterTokens}).`, createdAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterNameMap.get(Number(o.masterId)) ?? null) : null, amountAtRisk: null, actions: actionSet("order_stalled_token") });
+    // Phase A of remove-token-payment-model: при флаге=false этот task-тип не генерируется.
+    if (tokenModelOn) {
+      const stalledAgeH = o.updatedAt
+        ? (now.getTime() - new Date(o.updatedAt).getTime()) / 3600000
+        : ageH;
+      const masterWallet = masterWallets.find((w: any) => Number(w.masterId) === Number(o.masterId));
+      const masterTokens = masterWallet ? Number(masterWallet.tokensBalance ?? 0) : null;
+      if (["waiting_master", "master_assigned"].includes(String(o.status ?? "")) && stalledAgeH >= 24 && masterTokens !== null && masterTokens <= 0) {
+        items.push({ id: `order_stalled_token-${o.id}`, type: "order_stalled_token", priority: "high", title: `Заказ #${o.id} — завис, у мастера нет токенов`, shortDescription: clientLabel.trim(), fullDescription: `Заказ завис ${fmtAge(stalledAgeH)}. У назначенного мастера нет токенов (${masterTokens}).`, createdAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), updatedAt: new Date(o.updatedAt ?? o.createdAt).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "order", entityId: o.id, orderId: o.id, masterId: o.masterId ?? null, clientId: o.leadId ?? null, city: o.city ?? null, masterName: o.masterId != null ? (masterNameMap.get(Number(o.masterId)) ?? null) : null, amountAtRisk: null, actions: actionSet("order_stalled_token") });
+      }
     }
     // possible_bypass из cancelReason убран — заказы с cancelReason уже cancelled и не попадают в выборку
   }
@@ -275,68 +282,77 @@ async function buildItems(): Promise<Item[]> {
       items.push({ id: `blocked_master-${m.id}`, type: "blocked_master", priority: blockedPriority, title: `Мастер ${m.alias} заблокирован`, shortDescription: `${m.city ?? ""} · ${ageStr} в блокировке`.trim(), fullDescription: `Мастер в блокировке / FOMO_BLOCKED уже ${ageStr}. Требует проверки.`, createdAt: (blockedAt ?? new Date(m.createdAt)).toISOString(), updatedAt: (blockedAt ?? new Date(m.createdAt)).toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "master", entityId: m.id, orderId: null, masterId: m.id, clientId: null, city: m.city ?? null, amountAtRisk: null, actions: actionSet("blocked_master") });
     }
   }
-  // Token refunds pending — оператор должен решить одобрить или отклонить
-  const pendingRefunds = await db.select()
-    .from(walletTransactionsTable)
-    .where(and(eq(walletTransactionsTable.type, "refund"), eq(walletTransactionsTable.status, "pending")));
-  for (const refund of pendingRefunds) {
-    const ageH = (now.getTime() - new Date(refund.createdAt!).getTime()) / 3600000;
-    const refundPriority: Priority = ageH >= 24 ? "critical" : "high";
-    const masterId = Number(refund.masterId);
-    items.push({
-      id: `token_refund_pending-${refund.id}`,
-      type: "token_refund_pending",
-      priority: refundPriority,
-      title: `Возврат токена по заказу #${refund.orderId}`,
-      shortDescription: `Мастер #${masterId}`,
-      fullDescription: `Мастер запросил возврат ${Math.abs(Number(refund.tokensAmount))} токенов. Заявка висит ${fmtAge(ageH)}.`,
-      createdAt: new Date(refund.createdAt!).toISOString(),
-      updatedAt: new Date(refund.createdAt!).toISOString(),
-      lastActionBy: null,
-      deadline: null,
-      status: "open",
-      entityType: "finance",
-      entityId: refund.id,
-      orderId: refund.orderId,
-      masterId,
-      clientId: null,
-      city: null,
-      masterName: masterNameMap.get(masterId) ?? null,
-      amountAtRisk: Math.abs(Number(refund.tokensAmount)),
-      actions: actionSet("token_refund_pending"),
-    });
+  // Token refunds pending — оператор должен решить одобрить или отклонить.
+  // Phase A of remove-token-payment-model: при флаге=false skip полностью.
+  if (tokenModelOn) {
+    const pendingRefunds = await db.select()
+      .from(walletTransactionsTable)
+      .where(and(eq(walletTransactionsTable.type, "refund"), eq(walletTransactionsTable.status, "pending")));
+    for (const refund of pendingRefunds) {
+      const ageH = (now.getTime() - new Date(refund.createdAt!).getTime()) / 3600000;
+      const refundPriority: Priority = ageH >= 24 ? "critical" : "high";
+      const masterId = Number(refund.masterId);
+      items.push({
+        id: `token_refund_pending-${refund.id}`,
+        type: "token_refund_pending",
+        priority: refundPriority,
+        title: `Возврат токена по заказу #${refund.orderId}`,
+        shortDescription: `Мастер #${masterId}`,
+        fullDescription: `Мастер запросил возврат ${Math.abs(Number(refund.tokensAmount))} токенов. Заявка висит ${fmtAge(ageH)}.`,
+        createdAt: new Date(refund.createdAt!).toISOString(),
+        updatedAt: new Date(refund.createdAt!).toISOString(),
+        lastActionBy: null,
+        deadline: null,
+        status: "open",
+        entityType: "finance",
+        entityId: refund.id,
+        orderId: refund.orderId,
+        masterId,
+        clientId: null,
+        city: null,
+        masterName: masterNameMap.get(masterId) ?? null,
+        amountAtRisk: Math.abs(Number(refund.tokensAmount)),
+        actions: actionSet("token_refund_pending"),
+      });
+    }
   }
-  // Master zero balance: мастеры без токенов, но с активными заказами
+  // Master zero balance: мастеры без токенов, но с активными заказами.
+  // Phase A: при флаге=false skip.
   const activeOrderMasterIds = new Set(orders.map((o: any) => Number(o.masterId)).filter(Boolean));
   const masterWalletMap = new Map(masterWallets.map((w: any) => [Number(w.masterId), w]));
-  for (const [masterId, wallet] of masterWalletMap) {
-    const tokensBalance = Number((wallet as any).tokensBalance ?? 0);
-    if (tokensBalance <= 0 && activeOrderMasterIds.has(masterId)) {
-      const master = allMastersForNames.find((m: any) => m.id === masterId);
-      if (master) {
-        items.push({ id: `master_zero_balance-${masterId}`, type: "master_zero_balance", priority: "high", title: `Мастер ${master.alias} — нулевой баланс`, shortDescription: `${master.city ?? ""}`.trim(), fullDescription: `У мастера ${master.alias} закончились токены (баланс: ${tokensBalance}). Он не сможет принимать новые заказы.`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "master", entityId: masterId, orderId: null, masterId, clientId: null, city: master.city ?? null, masterName: master.alias ?? null, amountAtRisk: 0, actions: actionSet("master_zero_balance") });
+  if (tokenModelOn) {
+    for (const [masterId, wallet] of masterWalletMap) {
+      const tokensBalance = Number((wallet as any).tokensBalance ?? 0);
+      if (tokensBalance <= 0 && activeOrderMasterIds.has(masterId)) {
+        const master = allMastersForNames.find((m: any) => m.id === masterId);
+        if (master) {
+          items.push({ id: `master_zero_balance-${masterId}`, type: "master_zero_balance", priority: "high", title: `Мастер ${master.alias} — нулевой баланс`, shortDescription: `${master.city ?? ""}`.trim(), fullDescription: `У мастера ${master.alias} закончились токены (баланс: ${tokensBalance}). Он не сможет принимать новые заказы.`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "master", entityId: masterId, orderId: null, masterId, clientId: null, city: master.city ?? null, masterName: master.alias ?? null, amountAtRisk: 0, actions: actionSet("master_zero_balance") });
+        }
       }
     }
   }
-  // Master churn risk: мастеры с токенами, но не покупали >30 дней
-  const purchaseRows = await db.select({ masterId: walletTransactionsTable.masterId, createdAt: walletTransactionsTable.createdAt })
-    .from(walletTransactionsTable)
-    .where(and(eq(walletTransactionsTable.type, "purchase"), gt(walletTransactionsTable.createdAt, new Date(Date.now() - 60 * 24 * 60 * 60 * 1000))));
-  const lastPurchaseMap = new Map<number, Date>();
-  for (const p of purchaseRows) {
-    const d = new Date(p.createdAt!);
-    const existing = lastPurchaseMap.get(p.masterId);
-    if (!existing || d > existing) lastPurchaseMap.set(p.masterId, d);
-  }
-  for (const [masterId, lastPurchase] of lastPurchaseMap) {
-    const daysSince = (now.getTime() - lastPurchase.getTime()) / (24 * 3600000);
-    if (daysSince > 30) {
-      const wallet = masterWalletMap.get(masterId);
-      const tokensBalance = wallet ? Number((wallet as any).tokensBalance ?? 0) : 0;
-      if (tokensBalance > 0) {
-        const master = allMastersForNames.find((m: any) => m.id === masterId);
-        if (master) {
-          items.push({ id: `master_churn_risk-${masterId}`, type: "master_churn_risk", priority: "medium", title: `Мастер ${master.alias} — риск оттока`, shortDescription: `Последняя покупка ${Math.round(daysSince)} дн. назад`, fullDescription: `Мастер ${master.alias} не покупал токены уже ${Math.round(daysSince)} дней. Остаток: ${tokensBalance} токенов.`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "master", entityId: masterId, orderId: null, masterId, clientId: null, city: master.city ?? null, masterName: master.alias ?? null, amountAtRisk: tokensBalance, actions: actionSet("master_churn_risk") });
+  // Master churn risk: мастеры с токенами, но не покупали >30 дней.
+  // Phase A: при флаге=false skip.
+  if (tokenModelOn) {
+    const purchaseRows = await db.select({ masterId: walletTransactionsTable.masterId, createdAt: walletTransactionsTable.createdAt })
+      .from(walletTransactionsTable)
+      .where(and(eq(walletTransactionsTable.type, "purchase"), gt(walletTransactionsTable.createdAt, new Date(Date.now() - 60 * 24 * 60 * 60 * 1000))));
+    const lastPurchaseMap = new Map<number, Date>();
+    for (const p of purchaseRows) {
+      const d = new Date(p.createdAt!);
+      const existing = lastPurchaseMap.get(p.masterId);
+      if (!existing || d > existing) lastPurchaseMap.set(p.masterId, d);
+    }
+    for (const [masterId, lastPurchase] of lastPurchaseMap) {
+      const daysSince = (now.getTime() - lastPurchase.getTime()) / (24 * 3600000);
+      if (daysSince > 30) {
+        const wallet = masterWalletMap.get(masterId);
+        const tokensBalance = wallet ? Number((wallet as any).tokensBalance ?? 0) : 0;
+        if (tokensBalance > 0) {
+          const master = allMastersForNames.find((m: any) => m.id === masterId);
+          if (master) {
+            items.push({ id: `master_churn_risk-${masterId}`, type: "master_churn_risk", priority: "medium", title: `Мастер ${master.alias} — риск оттока`, shortDescription: `Последняя покупка ${Math.round(daysSince)} дн. назад`, fullDescription: `Мастер ${master.alias} не покупал токены уже ${Math.round(daysSince)} дней. Остаток: ${tokensBalance} токенов.`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), lastActionBy: null, deadline: null, status: "open", entityType: "master", entityId: masterId, orderId: null, masterId, clientId: null, city: master.city ?? null, masterName: master.alias ?? null, amountAtRisk: tokensBalance, actions: actionSet("master_churn_risk") });
+          }
         }
       }
     }

@@ -41,7 +41,7 @@
   - В `artifacts/crm/src/hooks/useFeatureFlags.ts` добавить `token_model_enabled: boolean` в interface, default `true` в FALLBACK.
   - _Validates: Requirements 2.6._
 
-- [ ] 5. **Хардкод `paymentModel = "commission"` на write paths** (M)
+- [x] 5. **Хардкод `paymentModel = "commission"` на write paths** (M)
   - `routes/leads.ts:POST /` — игнорировать `body.paymentModel`, всегда commission.
   - `routes/leads.ts:POST /:id/send-to-buffer` — `order.paymentModel = "commission"`.
   - `routes/orders.ts createOrderFromLead` (вызывается из leads) — убрать `if (avito_partner) → "token"` под guard. При флаге=true — старая логика.
@@ -51,25 +51,25 @@
   - При флаге=false — все 4 entry points создают только commission orders.
   - _Validates: Requirements 1.1–1.6, Property 1._
 
-- [ ] 6. **`master-pwa.ts:respond` — всегда service fee при флаге=false** (M)
+- [x] 6. **`master-pwa.ts:respond` — всегда service fee при флаге=false** (M)
   - В `routes/master-pwa.ts:respond` (около строки 950) — обернуть `isCommissionOrder` ветку в guard.
   - При флаге=false: `isCommissionOrder = true` всегда.
   - При флаге=true: legacy логика (существующая).
   - Также убрать из respond ветку `if (paymentModel === "token")` если есть refund-related код.
   - _Validates: Requirements 2.3, Property 2._
 
-- [ ] 7. **`master-pwa.ts:request-token-refund` — 404 при флаге=false** (S)
+- [x] 7. **`master-pwa.ts:request-token-refund` — 404 при флаге=false** (S)
   - В endpoint `POST /api/master-pwa/orders/:id/request-token-refund` (около строки 1022).
   - При флаге=false: `return res.status(404).json({ error: "Token refund removed" })`.
   - При флаге=true: existing logic.
   - _Validates: Requirements 2.5._
 
-- [ ] 8. **`routes/wallet.ts` — middleware-gate для всех endpoints** (S)
+- [x] 8. **`routes/wallet.ts` — middleware-gate для всех endpoints** (S)
   - Добавить в начало router'а: `router.use(async (_req, res, next) => { if (!await isTokenModelEnabled()) return res.status(404).json({ error: "Wallet API removed" }); next(); });`.
   - Все 25+ endpoints автоматически блокированы при флаге=false.
   - _Validates: Requirements 2.5._
 
-- [ ] 9. **`dashboard-action-items.ts` — skip 4 token-tasks при флаге=false** (M)
+- [x] 9. **`dashboard-action-items.ts` — skip 4 token-tasks при флаге=false** (M)
   - Pre-check: `const tokenModelOn = await isTokenModelEnabled();`
   - В `buildItems()` обернуть генерацию tasks `token_refund_pending`, `master_zero_balance`, `master_churn_risk`, `order_stalled_token` в `if (tokenModelOn) { ... }`.
   - При флаге=false эти 4 типа задач не появляются.

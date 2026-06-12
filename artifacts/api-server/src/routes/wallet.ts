@@ -8,6 +8,7 @@ import { eq, desc, and, inArray, sql, count, gt, isNull } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
 import { requireMasterAuth } from "../middlewares/requireMaster.js";
 import { refundTokens, checkTokenBalance } from "../lib/tokenWallet.js";
+import { isTokenModelEnabled } from "../lib/tokenModelGuard.js";
 import multer from "multer";
 import sharp from "sharp";
 import { objectStorageClient, s3Client } from "../lib/objectStorage.js";
@@ -17,6 +18,16 @@ import { randomUUID } from "crypto";
 const router = Router();
 const adminOnly = requireRole("admin");
 const ops = requireRole("admin", "master_operator", "lead_operator");
+
+// Phase A of remove-token-payment-model: middleware-gate. При флаге=false
+// все wallet endpoints возвращают 404 — token-функционал отключён.
+// При флаге=true (default) — старое поведение.
+router.use(async (_req, res, next) => {
+  if (!(await isTokenModelEnabled())) {
+    return res.status(404).json({ error: "Wallet API removed (token model disabled)" });
+  }
+  next();
+});
 
 const screenshotUpload = multer({
   storage: multer.memoryStorage(),

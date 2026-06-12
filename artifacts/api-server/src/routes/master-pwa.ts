@@ -5,6 +5,7 @@ import { eq, and, inArray, isNull, ne, asc, desc, gte, sql } from "drizzle-orm";
 import { verifyPassword, hashPassword } from "../lib/auth.js";
 import { getMasterEligibility, getOverdueMasterIds, countActiveMasterOrders, getColumnIdForActiveCount, checkServiceFeeRequirement } from "../lib/orderEligibility.js";
 import { deductServiceFee, getBalance, ensureAccountBalance } from "../lib/accountBalance.js";
+import { isTokenModelEnabled } from "../lib/tokenModelGuard.js";
 import { computePaymentStateBatch, groupReceiptsByOrder } from "../lib/paymentState.js";
 import multer from "multer";
 import sharp from "sharp";
@@ -948,8 +949,12 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
     constraintTags.push("Лимит");
   }
 
-  // Balance check for commission orders — tag, don't block yet
-  const isCommissionOrder = (order as any).paymentModel !== "token";
+  // Balance check for commission orders — tag, don't block yet.
+  // Phase A of remove-token-payment-model: при флаге=false все orders
+  // считаются commission и проверяются balance. При флаге=true — старая
+  // логика (token-orders не проверяются по рублёвому балансу).
+  const tokenModelOn = await isTokenModelEnabled();
+  const isCommissionOrder = !tokenModelOn || (order as any).paymentModel !== "token";
   if (isCommissionOrder) {
     const balanceCheck = await checkServiceFeeRequirement(masterId);
     if (!balanceCheck.ok) {
@@ -1004,6 +1009,13 @@ router.post("/orders/:id/respond", requireMasterPwa, async (req, res) => {
 
 // ─── Token refund request (master PWA) ───────────────────────────────────────
 router.post("/orders/:id/refund-request", requireMasterPwa, async (req: any, res: any) => {
+  // Phase A of remove-token-payment-model: при флаге=false token-refund
+  // отключён — нет токенов, нечего возвращать. Master_PWA UI кнопку скрывает,
+  // backend защищается на случай прямого вызова.
+  if (!(await isTokenModelEnabled())) {
+    return res.status(404).json({ error: "Token refund removed (token model disabled)" });
+  }
+
   const masterId = (req.session as any).masterId;
   const orderId = parseInt(String(req.params.id));
   if (isNaN(orderId)) return res.status(400).json({ error: "Неверный orderId" });
