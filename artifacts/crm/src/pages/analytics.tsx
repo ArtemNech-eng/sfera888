@@ -1,5 +1,6 @@
 import { Layout } from "@/components/layout";
 import { ProtectedRoute } from "@/hooks/use-auth";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
 import {
@@ -900,6 +901,151 @@ function CitySelect({ value, onChange, cities }: { value: string; onChange: (c: 
   );
 }
 
+// ─── PAYMENT-STATE MIX (Phase 3 of estimate-optional-flow) ───────────────────
+
+interface PaymentStateMixRow {
+  period: string;
+  agreement: number;
+  masterProposal: number;
+  receipt: number;
+  unknown: number;
+  total: number;
+}
+
+interface PaymentStateMixResponse {
+  rows: PaymentStateMixRow[];
+  totals: { agreement: number; masterProposal: number; receipt: number; unknown: number; total: number };
+  groupBy: "day" | "week" | "month";
+}
+
+function PaymentStateMixBlock() {
+  const [period, setPeriod] = useState<Period>("month");
+  const [groupBy, setGroupBy] = useState<"day" | "week" | "month">("day");
+  const dates = getPeriodDates(period, { from: "", to: "" });
+
+  const { data, isLoading } = useQuery<PaymentStateMixResponse>({
+    queryKey: ["/api/analytics/payment-state-mix", dates.from, dates.to, groupBy],
+    queryFn: () =>
+      fetch(
+        `/api/analytics/payment-state-mix?from=${dates.from}&to=${dates.to}&groupBy=${groupBy}`,
+        { credentials: "include" },
+      ).then(r => r.json()),
+  });
+
+  const rows = data?.rows ?? [];
+  const totals = data?.totals;
+  const chartData = rows.map(r => ({
+    period: r.period,
+    "Agreement_Path": r.agreement,
+    "Принято у мастера": r.masterProposal,
+    "Из сметы": r.receipt,
+    "Историч.": r.unknown,
+  }));
+
+  return (
+    <div>
+      <SectionHeader
+        icon={BarChart2}
+        title="Источник суммы заказа"
+        subtitle="Agreement_Path / Receipt_Path / историческое"
+        action={
+          <select
+            value={groupBy}
+            onChange={e => setGroupBy(e.target.value as "day" | "week" | "month")}
+            className="h-8 px-3 text-xs rounded-lg border border-border bg-card"
+          >
+            <option value="day">по дням</option>
+            <option value="week">по неделям</option>
+            <option value="month">по месяцам</option>
+          </select>
+        }
+      />
+      <div className="mb-4">
+        <PeriodFilter value={period} onChange={setPeriod} />
+      </div>
+
+      {isLoading ? (
+        <BlockLoader />
+      ) : !totals || totals.total === 0 ? (
+        <p className="text-sm text-muted-foreground py-4">Нет данных за выбранный период.</p>
+      ) : (
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <KpiCard label="Всего заказов" value={totals.total} color="slate" />
+            <KpiCard label="Agreement_Path" value={totals.agreement} color="blue" />
+            <KpiCard label="У мастера" value={totals.masterProposal} color="emerald" />
+            <KpiCard label="Из сметы" value={totals.receipt} color="violet" />
+            <KpiCard label="Историч." value={totals.unknown} color="amber" />
+          </div>
+
+          <ChartCard title="Динамика по источнику">
+            <div style={{ width: "100%", height: 280 }}>
+              <ResponsiveContainer>
+                <BarChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="period" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Bar dataKey="Agreement_Path" stackId="a" fill="#3b82f6" />
+                  <Bar dataKey="Принято у мастера" stackId="a" fill="#10b981" />
+                  <Bar dataKey="Из сметы" stackId="a" fill="#8b5cf6" />
+                  <Bar dataKey="Историч." stackId="a" fill="#f59e0b" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </ChartCard>
+
+          <ChartCard title="Детализация">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="px-3 py-2 text-left font-semibold text-muted-foreground text-xs uppercase">Период</th>
+                    <th className="px-3 py-2 text-right font-semibold text-muted-foreground text-xs uppercase">Agreement</th>
+                    <th className="px-3 py-2 text-right font-semibold text-muted-foreground text-xs uppercase">У мастера</th>
+                    <th className="px-3 py-2 text-right font-semibold text-muted-foreground text-xs uppercase">Из сметы</th>
+                    <th className="px-3 py-2 text-right font-semibold text-muted-foreground text-xs uppercase">Историч.</th>
+                    <th className="px-3 py-2 text-right font-semibold text-muted-foreground text-xs uppercase">Всего</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(r => (
+                    <tr key={r.period} className="border-b border-border/30">
+                      <td className="px-3 py-2 font-medium">{r.period}</td>
+                      <td className="px-3 py-2 text-right text-blue-700">{r.agreement}</td>
+                      <td className="px-3 py-2 text-right text-emerald-700">{r.masterProposal}</td>
+                      <td className="px-3 py-2 text-right text-violet-700">{r.receipt}</td>
+                      <td className="px-3 py-2 text-right text-amber-700">{r.unknown}</td>
+                      <td className="px-3 py-2 text-right font-semibold">{r.total}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </ChartCard>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function KpiCard({ label, value, color }: { label: string; value: number; color: "slate" | "blue" | "emerald" | "violet" | "amber" }) {
+  const colorClasses: Record<string, string> = {
+    slate: "bg-slate-50 border-slate-200 text-slate-900",
+    blue: "bg-blue-50 border-blue-200 text-blue-900",
+    emerald: "bg-emerald-50 border-emerald-200 text-emerald-900",
+    violet: "bg-violet-50 border-violet-200 text-violet-900",
+    amber: "bg-amber-50 border-amber-200 text-amber-900",
+  };
+  return (
+    <div className={`rounded-xl border p-3 ${colorClasses[color]}`}>
+      <p className="text-xs uppercase tracking-wide opacity-70">{label}</p>
+      <p className="text-2xl font-bold mt-1">{value.toLocaleString("ru-RU")}</p>
+    </div>
+  );
+}
+
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 
 export default function Analytics() {
@@ -907,6 +1053,7 @@ export default function Analytics() {
     queryKey: ["/api/analytics/city-list"],
     queryFn: () => fetch("/api/analytics/city-list", { credentials: "include" }).then(r => r.json()),
   });
+  const { flags } = useFeatureFlags();
 
   return (
     <ProtectedRoute allowedRoles={["admin"]} permissionKey="analytics">
@@ -930,6 +1077,12 @@ export default function Analytics() {
           <AvitoAdsBlock cities={cities} />
           <div className="border-t border-border/30" />
           <DynamicsBlock />
+          {flags.payment_state_audit_ui_enabled && (
+            <>
+              <div className="border-t border-border/30" />
+              <PaymentStateMixBlock />
+            </>
+          )}
         </div>
       </Layout>
     </ProtectedRoute>

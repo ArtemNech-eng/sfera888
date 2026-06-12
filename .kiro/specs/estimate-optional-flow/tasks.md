@@ -246,19 +246,20 @@
   - Возвращает rows из `order_amount_audit` orderBy createdAt DESC, limit 100.
   - _Validates: Requirements 5.5._
 
-- [ ] 32. **CRM: `<ReconcileBanner>` component** (M)
+- [x] 32. **CRM: `<ReconcileBanner>` component** (M)
   - Создать `components/orders/ReconcileBanner.tsx`.
   - Принимает `order` + `receipts` (последняя). Показывает обе суммы и две кнопки: "Использовать сумму из сметы" / "Оставить согласованную сумму".
   - Submit → `PATCH /api/orders/:id { acceptReceiptAmount: true }` или `{ keepAgreementAmount: true, reason: "..." }` (reason обязателен для keepAgreement).
   - _Validates: Requirements 4.2, 4.3._
 
-- [ ] 33. **CRM: интегрировать `<ReconcileBanner>` в OrderPanel + OrdersWorkspace** (M)
+- [x] 33. **CRM: интегрировать `<ReconcileBanner>` в OrderPanel + OrdersWorkspace** (M)
   - Detect: для каждого order проверить если есть active reconcile_task (через `operator_tasks_state` или передавать в order JSON).
   - Лучший подход: добавить в response `routes/orders.ts` поле `hasReconcileConflict: bool` + `conflictReceiptAmount: number | null`.
   - Banner показывается только если `hasReconcileConflict === true`.
+  - _Note_: реализована детекция через `detectReconcileConflict()` helper в `lib/orderAudit.ts`. GET /api/orders/:id отдаёт `hasReconcileConflict` и `conflictReceiptAmount`. OrderPanel показывает `<ReconcileBanner>` под условием.
   - _Validates: Requirements 4.2._
 
-- [ ] 34. **CRM: `<AmountAuditHistory>` collapsible в ClosingDrawer (Manager only)** (M)
+- [x] 34. **CRM: `<AmountAuditHistory>` collapsible в ClosingDrawer (Manager only)** (M)
   - Создать `components/orders/AmountAuditHistory.tsx`.
   - Запрос: `GET /api/orders/:id/audit`.
   - Render: collapsible `<details>` с таблицей timestamp / actor / field / prev → new / source / reason.
@@ -271,7 +272,7 @@
   - Response — структура из `design.md` § LLD § 3.5.
   - _Validates: Requirements 15.2, 15.3._
 
-- [ ] 36. **CRM: страница analytics — добавить блок payment-state mix** (M)
+- [x] 36. **CRM: страница analytics — добавить блок payment-state mix** (M)
   - В существующий analytics page добавить таблицу + bar chart за выбранный период.
   - Группировка: day/week/month.
   - _Validates: Requirements 15.2._

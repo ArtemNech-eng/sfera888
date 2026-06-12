@@ -162,3 +162,68 @@ export async function closeOpenEstimateTasksForOrder(
   // вернёт `no_estimate` для заказов с paymentState != no_amount (Phase 2 T16).
   void orderId; void reason; // params kept for future extensibility (audit log of closures)
 }
+
+
+/**
+ * Detect whether an order has an unresolved reconcile_amount conflict.
+ *
+ * Конфликт означает: оператор зафиксировал `orderAmount` через Agreement_Path /
+ * master_proposal / manager_correction; мастер потом создал смету с другой
+ * суммой; решение оператора (reconcile_use_receipt | reconcile_keep_agreement)
+ * пока не записано в audit.
+ *
+ * Возвращает `null` если конфликта нет, иначе сумму из последней receipt'ы
+ * чтобы UI мог показать обе суммы в `<ReconcileBanner>`.
+ *
+ * Используется в GET /api/orders/:id (Phase 3 T33). Делает 2 коротких запроса
+ * (последний receipt + последний reconcile audit), без full сканов.
+ */
+export async function detectReconcileConflict(
+  orderId: number,
+  order: { orderAmount: string | number | null; agreementAmountSource: string | null },
+): Promise<number | null> {
+  // Только для заказов с зафиксированной operator-driven суммой.
+  const operatorSources = ["agreement", "master_proposal", "manager_correction"];
+  if (!order.agreementAmountSource || !operatorSources.includes(order.agreementAmountSource)) {
+    return null;
+  }
+  const orderAmt = Number(order.orderAmount ?? 0);
+  if (orderAmt <= 0) return null;
+
+  // Импорт лениво чтобы избежать circular deps на receiptsTable.
+  const { receiptsTable } = await import("@workspace/db");
+  const [latestReceipt] = await db
+    .select({
+      prepaymentAmount: receiptsTable.prepaymentAmount,
+      createdAt: receiptsTable.createdAt,
+    })
+    .from(receiptsTable)
+    .where(eq(receiptsTable.orderId, orderId))
+    .orderBy(desc(receiptsTable.createdAt))
+    .limit(1);
+
+  if (!latestReceipt) return null;
+  const receiptAmt = Number(latestReceipt.prepaymentAmount ?? 0);
+  if (receiptAmt <= 0) return null;
+  if (receiptAmt === orderAmt) return null; // amounts agree — no conflict
+
+  // Если последняя audit-запись после создания receipt — это reconcile decision,
+  // конфликт уже разрешён.
+  const reconcileSources = ["reconcile_use_receipt", "reconcile_keep_agreement"];
+  const [latestAudit] = await db
+    .select({ source: orderAmountAuditTable.source, createdAt: orderAmountAuditTable.createdAt })
+    .from(orderAmountAuditTable)
+    .where(eq(orderAmountAuditTable.orderId, orderId))
+    .orderBy(desc(orderAmountAuditTable.createdAt))
+    .limit(1);
+
+  if (
+    latestAudit &&
+    reconcileSources.includes(latestAudit.source) &&
+    new Date(latestAudit.createdAt) > new Date(latestReceipt.createdAt)
+  ) {
+    return null; // resolved
+  }
+
+  return receiptAmt;
+}

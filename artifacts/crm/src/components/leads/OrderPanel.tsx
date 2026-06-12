@@ -1,5 +1,6 @@
 import { StatusBadge } from "@/components/status-badge";
 import { PaymentStateBadge, type PaymentState } from "@/components/orders/PaymentStateBadge";
+import { ReconcileBanner } from "@/components/orders/ReconcileBanner";
 import { formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
@@ -610,6 +611,16 @@ export default function OrderPanel({
                 {openOrder.masterId && receipts && receipts.length === 0 && ["master_assigned","in_progress"].includes(openOrder.status) && (
                   <div className="col-span-2 flex items-center gap-2 bg-red-50 border border-red-300 rounded-xl px-3 py-2 text-xs font-semibold text-red-700">
                     <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />Смета не создана — клиент не может внести предоплату
+                  </div>
+                )}
+                {(openOrder as any).hasReconcileConflict && (openOrder as any).conflictReceiptAmount && openOrder.orderAmount && (
+                  <div className="col-span-2">
+                    <ReconcileBanner
+                      orderId={orderId}
+                      agreementAmount={Number(openOrder.orderAmount)}
+                      receiptAmount={Number((openOrder as any).conflictReceiptAmount)}
+                      onResolved={() => queryClient.invalidateQueries({ queryKey: ["/api/orders", orderId] })}
+                    />
                   </div>
                 )}
                 {(() => {

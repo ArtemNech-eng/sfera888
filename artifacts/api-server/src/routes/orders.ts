@@ -13,7 +13,7 @@ import { sendMaxMessage } from "../maxBot.js";
 import { analyseOrderCancellation } from "../lib/dispatcherAI.js";
 import { recordOrderCancelled, recordOrderCompleted, revertOrderCancellation } from "../lib/masterReputation.js";
 import { computePaymentState, computePaymentStateBatch, groupReceiptsByOrder } from "../lib/paymentState.js";
-import { recordAmountAudit, resolveAuditActor, closeOpenEstimateTasksForOrder, getAmountAudit } from "../lib/orderAudit.js";
+import { recordAmountAudit, resolveAuditActor, closeOpenEstimateTasksForOrder, getAmountAudit, detectReconcileConflict } from "../lib/orderAudit.js";
 import { validateAgreementBody } from "../lib/agreementValidation.js";
 import { notifyWorkBoardChanged } from "./work-board.js";
 
@@ -351,6 +351,14 @@ router.get("/:id", allOrderRoles, async (req, res) => {
     .where(eq(receiptsTable.orderId, id));
   const paymentState = computePaymentState(o, allReceiptsForOrder);
 
+  // Phase 3 of estimate-optional-flow: detect reconcile_amount conflict for the
+  // <ReconcileBanner> in CRM. Returns the receipt amount that disagrees with
+  // orderAmount, or null if no unresolved conflict.
+  const conflictReceiptAmount = await detectReconcileConflict(id, {
+    orderAmount: o.orderAmount,
+    agreementAmountSource: (o as any).agreementAmountSource ?? null,
+  });
+
   res.json({
     id: o.id,
     leadId: o.leadId,
@@ -373,6 +381,10 @@ router.get("/:id", allOrderRoles, async (req, res) => {
     // Payment_State engine — Phase 1 read-only fields
     paymentState,
     agreementAmountSource: (o as any).agreementAmountSource ?? null,
+    // Phase 3 reconcile UI signal — non-null receipt amount means there's a
+    // conflict to resolve via <ReconcileBanner>.
+    hasReconcileConflict: conflictReceiptAmount != null,
+    conflictReceiptAmount,
     clientRating: o.clientRating ?? null,
     cancelReason: o.cancelReason ?? null,
     cancelType: (o as any).cancelType ?? null,

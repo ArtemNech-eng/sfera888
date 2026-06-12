@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { X, DollarSign, Banknote, CheckCircle2, XCircle, Check, Loader2, ClipboardList, Pencil } from "lucide-react";
 import { AgreementForm } from "./AgreementForm";
+import { AmountAuditHistory } from "./AmountAuditHistory";
 import { PaymentStateBadge, type PaymentState } from "./PaymentStateBadge";
 
 interface OrderRow {
@@ -200,6 +201,11 @@ export default function ClosingDrawer({ order, onClose, onSubmit, isPending }: P
               {isPaid && <Check className="w-3 h-3 text-white" />}
             </div>
           </button>
+
+          {/* Phase 3 of estimate-optional-flow: история изменений суммы для Manager.
+              AmountAuditHistory сам проверяет флаг payment_state_audit_ui_enabled
+              и тихо скрывается при недостаточных правах (admin only). */}
+          <AmountAuditHistory orderId={order.orderId} />
         </div>
 
         <div className="p-4 border-t bg-slate-50">
