@@ -67,6 +67,7 @@ const PartnerLeadsReviewPage = lazy(() => import("@/pages/partner-leads-review")
 const PartnerAnalyticsPage = lazy(() => import("@/pages/partner-analytics"));
 const TokenMastersPage = lazy(() => import("@/pages/token-masters"));
 const TokenAnalyticsPage = lazy(() => import("@/pages/token-analytics"));
+const TokenMigrationAdminPage = lazy(() => import("@/pages/admin/token-migration"));
 
 const queryClient = new QueryClient();
 
@@ -118,6 +119,7 @@ function Router() {
       <Route path="/partners" component={PartnersPage} />
       <Route path="/partner-leads-review" component={PartnerLeadsReviewPage} />
       <Route path="/partner-analytics" component={PartnerAnalyticsPage} />
+      <Route path="/admin/token-migration" component={TokenMigrationAdminPage} />
       <Route path="/work-monitor">{() => <Redirect to="/leads?tab=work" />}</Route>
       <Route component={NotFound} />
     </Switch>

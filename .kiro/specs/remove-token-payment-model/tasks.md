@@ -100,20 +100,21 @@
   - _Note_: Создан `hooks/useFeatureFlags.ts` для master-pwa (lightweight без tanstack/react-query). В `home.tsx` OrderDetailSheet использует `isTokenOrder = flags.token_model_enabled && order.paymentModel === "token"` — все 4 ветки рендера react на этот флаг (стоимость, недостаток баланса, кнопка "Откликнуться (X т.)"). В `orders.tsx` — `canRequestRefund` теперь требует флаг = true. UI деградирует чисто при флаге off. Полная очистка — Phase C T32.
   - _Validates: Requirements 2.8._
 
-- [ ] 13. **CRM: страница `/admin/token-migration` для управления grants** (L)
+- [x] 13. **CRM: страница `/admin/token-migration` для управления grants** (L)
   - Создать `artifacts/crm/src/pages/admin/token-migration.tsx`.
   - Список мастеров с `tokensBalance > 0`. Для каждого — кнопка "Создать grant" с amount + reason.
   - Кнопка "Запустить dry-run" → POST /admin/token-migration/dry-run → показать `preflight` + `willApply`.
   - Read-only после Phase B (показывать `appliedAt` для каждого grant).
   - _Validates: Requirements 4.2._
 
-- [ ] 14. **API: admin endpoints для grants** (M)
+- [x] 14. **API: admin endpoints для grants** (M)
   - Новый файл `routes/admin-token-migration.ts` (или extend `orders.ts`).
   - `GET /api/admin/token-migration/masters-with-balance` — список с tokensBalance > 0.
   - `POST /api/admin/token-migration/grants` — create/update grant.
   - `DELETE /api/admin/token-migration/grants/:id` — удалить если `appliedAt IS NULL`.
   - `POST /api/admin/token-migration/dry-run` — child_process запуск migration script с `dry-run`, парсинг json log, return.
   - Auth: `requireRole("admin")`.
+  - _Note_: dry-run реализован как inline SQL-проверка (не child_process) — быстрее и без зависимости на скрипт. Скрипт apply будет в Phase B (T17–T22).
   - _Validates: Requirements 4.3._
 
 - [ ] 15. **Smoke test для Phase A локально** (S)
