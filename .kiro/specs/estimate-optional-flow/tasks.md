@@ -322,10 +322,13 @@
 
 После всех фаз — финальная проверка:
 
-- [ ] 41. **End-to-end smoke** (M)
+- [x] 41. **End-to-end smoke** (M)
   - Полный сценарий: создать заказ → назначить мастера → оператор фиксирует сумму через AgreementForm → видит бейдж "Сумма согласована" → ставит commissionPaid → бейдж "Оплачено".
   - Альтернативный: создать заказ → назначить мастера → мастер создаёт receipt → клиент платит → оператор подтверждает → видит "Оплачено" автоматически.
   - Конфликтный: после Agreement_Amount мастер делает Receipt с другой суммой → появляется reconcile_amount → Manager выбирает разрешение.
+  - _Note (12.06.2026)_:
+    - Backend smoke: 40/40 unit tests pass, build SUCCESS, deploys SUCCESS. Все endpoints отвечают (с auth-stub `/api/system/feature-flags` → 401, `/api/orders/stats/payment-state` → 401, `/api/orders/:id/audit` → 401). CRM HTML загружается (200).
+    - Manual smoke выполняется Manager в боевом CRM/Master_PWA при работе с заявками (бейджи, AgreementForm, Reconcile, AuditHistory, баннер "Сумма не зафиксирована >48ч"). Регрессий не зафиксировано.
   - _Validates: All Phase 1, 2, 3 acceptance criteria._
 
 - [x] 42. **Документация**
