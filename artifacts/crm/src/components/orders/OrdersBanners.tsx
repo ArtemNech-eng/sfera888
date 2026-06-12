@@ -1,8 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { useLocation } from "wouter";
 import { useEffect, useState } from "react";
-import { AlertCircle, Diamond, Users, UserCheck, MessageSquare, RefreshCw, XCircle, Loader2, ChevronDown, ChevronRight } from "lucide-react";
+import { AlertCircle, Diamond, Users, UserCheck, MessageSquare, RefreshCw, XCircle, Loader2, ChevronDown, ChevronRight, Banknote } from "lucide-react";
 
 // Persist collapsed-state per banner across page loads.
 function useCollapsed(key: string, initial = false): [boolean, (v: boolean) => void] {
@@ -94,6 +95,22 @@ export default function OrdersBanners({ onOpenOrder }: Props) {
   });
   const cancellationOrders = ordersData?.rows ?? [];
 
+  // Phase 2 of estimate-optional-flow: "Сумма не зафиксирована > 48 часов".
+  // Показываем только когда engine включён — иначе старые "Без сметы" каналы
+  // продолжают работать и баннер был бы дублирующим сигналом.
+  const { flags } = useFeatureFlags();
+  const { data: noAmountStats } = useQuery<{ count: number; items: { id: number; city: string; serviceType: string; ageHours: number }[] }>({
+    queryKey: ["/api/orders/stats/payment-state", "no_amount", 48],
+    queryFn: async () => {
+      const r = await fetch("/api/orders/stats/payment-state?state=no_amount&staleHours=48", { credentials: "include" });
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+    refetchInterval: 30_000,
+    enabled: flags.payment_state_engine_enabled,
+  });
+  const noAmountItems = noAmountStats?.items ?? [];
+
   // Map orderId → paymentModel for splitting pending responses
   const paymentModelByOrder = new Map<number, string>();
   for (const o of cancellationOrders) paymentModelByOrder.set(o.id, o.paymentModel ?? "commission");
@@ -151,9 +168,15 @@ export default function OrdersBanners({ onOpenOrder }: Props) {
   const [cancelCollapsed, setCancelCollapsed] = useCollapsed("cancellation");
   const [tokenCollapsed, setTokenCollapsed] = useCollapsed("token-pending");
   const [commCollapsed, setCommCollapsed] = useCollapsed("commission-pending");
+  const [noAmountCollapsed, setNoAmountCollapsed] = useCollapsed("no-amount-stale");
 
   // Hide all banners if everything's clear
-  if (cancellationOrders.length === 0 && tokenPending.length === 0 && commissionPending.length === 0) {
+  if (
+    cancellationOrders.length === 0 &&
+    tokenPending.length === 0 &&
+    commissionPending.length === 0 &&
+    noAmountItems.length === 0
+  ) {
     return null;
   }
 
@@ -261,6 +284,49 @@ export default function OrdersBanners({ onOpenOrder }: Props) {
           collapsed={commCollapsed}
           onToggleCollapsed={() => setCommCollapsed(!commCollapsed)}
         />
+      )}
+
+      {/* "Сумма не зафиксирована > 48 ч" — Phase 2 of estimate-optional-flow */}
+      {noAmountItems.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 space-y-2">
+          <button
+            type="button"
+            onClick={() => setNoAmountCollapsed(!noAmountCollapsed)}
+            className="w-full flex items-center gap-2 text-amber-800 font-semibold text-sm hover:opacity-80 transition-opacity"
+            aria-expanded={!noAmountCollapsed}
+          >
+            {noAmountCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            <Banknote className="w-4 h-4" />
+            <span>
+              {noAmountItems.length === 1
+                ? "1 заказ без зафиксированной суммы более 48 часов"
+                : `${noAmountItems.length} заказов без зафиксированной суммы более 48 часов`}
+            </span>
+          </button>
+          {!noAmountCollapsed && noAmountItems.map((item) => (
+            <div key={item.id} className="bg-white rounded-xl border border-amber-100 px-3 py-2 flex items-center gap-2 flex-wrap">
+              <div className="flex-1 min-w-0">
+                <button
+                  onClick={() => onOpenOrder(item.id)}
+                  className="font-medium text-foreground hover:underline"
+                >
+                  #{item.id}
+                </button>
+                <span className="ml-2 text-foreground">{item.serviceType}</span>
+                <span className="ml-2 text-xs text-muted-foreground">· {item.city}</span>
+                <span className="ml-2 text-xs text-amber-700 font-medium">
+                  {item.ageHours}ч без суммы
+                </span>
+              </div>
+              <button
+                onClick={() => onOpenOrder(item.id)}
+                className="flex-shrink-0 inline-flex items-center gap-1 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-md font-medium text-xs"
+              >
+                <Banknote className="w-3 h-3" /> Зафиксировать сумму
+              </button>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

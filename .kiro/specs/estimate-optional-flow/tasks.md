@@ -177,7 +177,7 @@
   - Клик → `POST /api/orders/:id/agreement { amount: proposedAmount, source: "master_proposal" }`.
   - _Validates: Requirements 13 (Q13)._
 
-- [ ] 24. **CRM: новый баннер "Сумма не зафиксирована более 48ч"** (M)
+- [x] 24. **CRM: новый баннер "Сумма не зафиксирована более 48ч"** (M)
   - В `OrdersBanners.tsx` добавить четвёртый баннер: запрос `GET /api/orders?paymentState=no_amount&staleHours=48` (новый query-param на `routes/orders.ts GET /`).
   - Бэкенд изменения: parse `paymentState` query-param + `staleHours` в `routes/orders.ts GET /`.
   - Текст: "N заказов с незафиксированной суммой более 48 часов" + клик → переход к `OrdersWorkspace` с фильтром.

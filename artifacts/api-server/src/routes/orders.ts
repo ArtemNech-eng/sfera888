@@ -232,6 +232,89 @@ router.get("/", allOrderRoles, async (req, res) => {
   }
 });
 
+// ─── GET /api/orders/stats/payment-state ──────────────────────────────────────
+//
+// Returns the count and a small list of orders matching a given Payment_State
+// + staleness threshold. Used by CRM banners to surface "Сумма не зафиксирована
+// >48ч" without loading the full /api/orders feed.
+//
+// Query params:
+//   • state (required): currently only "no_amount" is supported.
+//   • staleHours (optional, default 0): order is considered stale when
+//     COALESCE(assignedAt, createdAt) < NOW() - staleHours.
+//
+// SQL pre-filter narrows candidates to "looks like no_amount" using cheap
+// columns (commissionPaid, orderAmount, status, age). The precise check
+// (computePaymentState) refines results based on receipts. Pagination is
+// not applied — the upper SQL limit is 200 candidates which is plenty for
+// banners; if the count ever exceeds that, switch to a count-only SQL.
+router.get("/stats/payment-state", allOrderRoles, async (req, res) => {
+  try {
+    const stateParam = typeof req.query.state === "string" ? req.query.state : "no_amount";
+    if (stateParam !== "no_amount") {
+      return res.status(400).json({ error: "Only state=no_amount is supported" });
+    }
+    const staleHoursRaw = Number(req.query.staleHours ?? 0);
+    const staleHours = Number.isFinite(staleHoursRaw) && staleHoursRaw > 0 ? staleHoursRaw : 0;
+    const cutoff = staleHours > 0 ? new Date(Date.now() - staleHours * 3_600_000) : null;
+
+    // SQL pre-filter — cheap columns only.
+    const conditions: any[] = [
+      isNull(ordersTable.deletedAt),
+      inArray(ordersTable.status, ["master_assigned", "in_progress"] as any),
+      eq(ordersTable.commissionPaid, false),
+      sql`COALESCE(${ordersTable.orderAmount}, '0')::numeric = 0`,
+    ];
+    if (cutoff) {
+      conditions.push(sql`COALESCE(${ordersTable.assignedAt}, ${ordersTable.createdAt}) < ${cutoff}`);
+    }
+
+    const candidates = await db
+      .select()
+      .from(ordersTable)
+      .where(and(...conditions))
+      .orderBy(desc(ordersTable.assignedAt))
+      .limit(200);
+
+    if (candidates.length === 0) {
+      return res.json({ count: 0, items: [] });
+    }
+
+    // Refine via computePaymentState — needs receipts for any of these orders.
+    const orderIds = candidates.map((o) => o.id);
+    const receiptsForState = await db
+      .select({
+        orderId: receiptsTable.orderId,
+        prepaymentAmount: receiptsTable.prepaymentAmount,
+        prepaymentSeenAt: receiptsTable.prepaymentSeenAt,
+        prepaymentSubmittedAt: receiptsTable.prepaymentSubmittedAt,
+      })
+      .from(receiptsTable)
+      .where(inArray(receiptsTable.orderId, orderIds));
+    const receiptsByOrder = groupReceiptsByOrder(receiptsForState);
+    const stateMap = computePaymentStateBatch(candidates as any, receiptsByOrder);
+
+    const now = Date.now();
+    const items = candidates
+      .filter((o) => stateMap.get(o.id) === "no_amount")
+      .map((o) => {
+        const ref = o.assignedAt ?? o.createdAt ?? new Date();
+        const ageHours = Math.floor((now - new Date(ref).getTime()) / 3_600_000);
+        return {
+          id: o.id,
+          city: o.city,
+          serviceType: o.serviceType,
+          ageHours,
+        };
+      });
+
+    res.json({ count: items.length, items });
+  } catch (err) {
+    console.error("[orders/stats/payment-state] error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.get("/:id", allOrderRoles, async (req, res) => {
   const id = parseInt(String(req.params.id as string));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid order ID" });
