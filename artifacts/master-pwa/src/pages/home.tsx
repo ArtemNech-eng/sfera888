@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { api, resolvePhotoUrl } from "@/lib/api";
 import { toast } from "sonner";
 import { usePushNotifications } from "@/lib/usePushNotifications";
@@ -744,6 +745,11 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock, wall
   order: OrderCard; onRespond: () => void; onReject: () => void; onClose: () => void;
   fomoBlock?: FomoBlock | null; walletBalance?: number; tokensBalance?: number; creditLimitTokens?: number;
 }) {
+  const { flags } = useFeatureFlags();
+  // Phase A of remove-token-payment-model: при флаге=false token UI скрывается,
+  // все orders ведут себя как commission (отклик через service fee).
+  const tokenModelOn = flags.token_model_enabled;
+  const isTokenOrder = tokenModelOn && order.paymentModel === "token";
   const [state, setState] = useState<"idle" | "loading" | "success" | "constrained_success" | "fomo_blocked" | "needs_contract" | "insufficient_tokens" | "rejecting">("idle");
   const [contractFlags, setContractFlags] = useState<{ contractSigned: boolean; passportVerified: boolean }>({ contractSigned: false, passportVerified: false });
   const [constraintTags, setConstraintTags] = useState<string[]>([]);
@@ -1059,7 +1065,7 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock, wall
 
       {state !== "success" && state !== "fomo_blocked" && state !== "needs_contract" && state !== "insufficient_tokens" && (
         <div className="shrink-0 bg-card border-t border-border px-4 py-4 space-y-2">
-          {order.paymentModel === "token" && order.tokensCost != null && (
+          {isTokenOrder && order.tokensCost != null && (
             <div className="flex items-center justify-between text-sm px-0.5 mb-0.5">
               <span className="text-muted-foreground">Стоимость заявки</span>
               <span className="flex items-center gap-1 font-semibold text-amber-600">
@@ -1073,7 +1079,7 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock, wall
               <Lock size={20} />
               Отклик заблокирован
             </button>
-          ) : order.paymentModel === "token" && (order.tokensCost ?? 1) > (walletBalance ?? 0) ? (
+          ) : isTokenOrder && (order.tokensCost ?? 1) > (walletBalance ?? 0) ? (
             <>
               <button disabled
                 className="w-full h-14 rounded-2xl bg-slate-200 text-slate-400 font-bold text-base flex items-center justify-center gap-2 cursor-not-allowed">
@@ -1089,10 +1095,10 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock, wall
               className="w-full h-14 rounded-2xl bg-primary text-primary-foreground font-bold text-base flex items-center justify-center gap-2 disabled:opacity-60">
               {state === "loading"
                 ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                : order.paymentModel === "token"
+                : isTokenOrder
                   ? <Coins size={22} />
                   : <CheckCircle2 size={22} />}
-              {order.paymentModel === "token"
+              {isTokenOrder
                 ? `Откликнуться (${order.tokensCost ?? 1} т.)`
                 : `Откликнуться${priceNote.trim() ? " с предложением" : ""}`}
             </button>

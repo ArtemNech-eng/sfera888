@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { PhotoUploader } from "@/components/photo-uploader";
 import { SOURCE_OPTIONS } from "./LeadDetailPanel";
 import {
@@ -40,7 +41,7 @@ export default function CreateLeadModal({
   services,
 }: CreateLeadModalProps) {
   const { toast } = useToast();
-
+  const { flags } = useFeatureFlags();
   const [formData, setFormData] = useState({
     clientName: "",
     clientPhone: "",
@@ -595,7 +596,8 @@ export default function CreateLeadModal({
                 </div>
               </div>
 
-              {/* Payment model toggle */}
+              {/* Payment model toggle. Hidden when token model is disabled. */}
+              {flags.token_model_enabled && (
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-gray-700">
                   Модель оплаты
@@ -625,6 +627,7 @@ export default function CreateLeadModal({
                   </button>
                 </div>
               </div>
+              )}
             </div>
 
             {/* Services table */}

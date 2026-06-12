@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, uploadPhoto, resolvePhotoUrl } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -744,6 +745,7 @@ function ReceiptModal({
 
 function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefresh: () => void; initialExpanded?: boolean }) {
   const { master } = useAuth();
+  const { flags } = useFeatureFlags();
   const [expanded, setExpanded] = useState(initialExpanded ?? false);
   const [loadingStatus, setLoadingStatus] = useState<string | null>(null);
   const [loadingPhoto, setLoadingPhoto] = useState<string | null>(null);
@@ -770,7 +772,10 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
     "Другое",
   ];
 
-  const canRequestRefund = order.paymentModel === "token" &&
+  // Phase A of remove-token-payment-model: refund button скрыт когда
+  // token-model отключена. Backend возвращает 404, но прячем заранее.
+  const canRequestRefund = flags.token_model_enabled &&
+    order.paymentModel === "token" &&
     order.tokensCharged && order.tokensCharged > 0 &&
     !isRefundRequested &&
     order.status !== "completed" && order.status !== "cancelled" &&

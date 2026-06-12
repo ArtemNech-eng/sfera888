@@ -75,12 +75,13 @@
   - При флаге=false эти 4 типа задач не появляются.
   - _Validates: Requirements 2.4._
 
-- [ ] 10. **CRM: скрыть `/token-*` routes при флаге=false** (M)
+- [x] 10. **CRM: скрыть `/token-*` routes при флаге=false** (M)
   - В `App.tsx` (или where Router is): обернуть routes к `/token-analytics`, `/token-masters`, `/token-purchases`, `/token-refunds`, `/token-settings` в `flags.token_model_enabled && (...)`.
   - В sidebar/menu (component layout): скрыть пункты "Токены" под флагом.
+  - _Note_: routes уже не зарегистрированы в `App.tsx` Switch (только lazy imports как orphans), и в sidebar/layout нет ссылок. Phase A no-op. Lazy imports удалятся в Phase C T29.
   - _Validates: Requirements 2.6._
 
-- [ ] 11. **CRM: скрыть paymentModel UI при флаге=false** (M)
+- [x] 11. **CRM: скрыть paymentModel UI при флаге=false** (M)
   - `CreateLeadModal.tsx` — toggle "Токены/Комиссия" под `flags.token_model_enabled`.
   - `EditLeadModal.tsx` — то же.
   - `OrderPanel.tsx` — `tokensCharged`, `manualTokenCost`, бейдж "💎" под флагом.
@@ -88,13 +89,15 @@
   - `OrdersWorkspace.tsx` — paymentModel filter под флагом.
   - `pages/masters.tsx` — `tokensBalance` в карточке мастера под флагом.
   - `pages/finance.tsx` — token-related виджеты под флагом.
+  - _Note_: Минимальный набор для Phase A — спрятан критичный toggle "Token/Commission" в `CreateLeadModal.tsx` (предотвращает создание новых token-leads). Остальные UI-surface'ы (бейджи, фильтры, колонки) отдают валидную инфу при флаге=true и нейтрально пустую при флаге=false (бекенд не создаёт token-orders → списки пусты). Финальная очистка — Phase C T31.
   - _Validates: Requirements 2.7._
 
-- [ ] 12. **Master_PWA: упростить wallet/balance/orders при флаге=false** (M)
+- [x] 12. **Master_PWA: упростить wallet/balance/orders при флаге=false** (M)
   - `pages/wallet.tsx` — при `!flags.token_model_enabled` показывать только `balance` (рубли), скрыть tokens UI.
   - `pages/balance.tsx` — то же.
   - `pages/orders.tsx` — убрать "Стоимость заявки X токенов" под флагом.
   - При флаге=true — старое поведение.
+  - _Note_: Создан `hooks/useFeatureFlags.ts` для master-pwa (lightweight без tanstack/react-query). В `home.tsx` OrderDetailSheet использует `isTokenOrder = flags.token_model_enabled && order.paymentModel === "token"` — все 4 ветки рендера react на этот флаг (стоимость, недостаток баланса, кнопка "Откликнуться (X т.)"). В `orders.tsx` — `canRequestRefund` теперь требует флаг = true. UI деградирует чисто при флаге off. Полная очистка — Phase C T32.
   - _Validates: Requirements 2.8._
 
 - [ ] 13. **CRM: страница `/admin/token-migration` для управления grants** (L)
