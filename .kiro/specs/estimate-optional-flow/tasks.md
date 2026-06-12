@@ -93,12 +93,11 @@
 
 Цель: запустить новый путь и заглушить шум 5 каналов уведомлений. Управляется флагом `payment_state_engine_enabled` (default `false`).
 
-- [ ] 11. **Refactor: вынести `chargeTokensForOrder` в `lib/orderTokens.ts`** (M)
-  - Извлечь существующую логику из `routes/orders.ts` (ветка `acceptProposed` где списываются токены) в reusable function.
-  - Никакой новой логики — точная копия codepath, чтобы Q4 (decision: "тот же путь, что и сейчас") выполнялось буквально.
-  - Старое место в `routes/orders.ts` использует новую функцию.
-  - Прогнать существующие тесты — поведение не меняется.
-  - _Validates: Requirements 8.1, 8.2 (Q4)._
+- [-] 11. **~~Refactor: вынести `chargeTokensForOrder` в `lib/orderTokens.ts`~~ (SKIPPED — discovered issue)** (M)
+  - **Discovered**: в текущей архитектуре `acceptProposed` для `paymentModel = "token"` ничего не списывает (см. `routes/orders.ts:386` `if (current.paymentModel !== "token")`). Token-charging происходит на этапе ОТКЛИКА мастера в master-pwa, не в `acceptProposed`. Поле `Order.tokensCharged` в api-server коде никем не обновляется.
+  - **Решение**: T11 пропущен. POST /agreement (T13) повторит логику `acceptProposed`: для commission — пересчёт + transaction; для token — просто пишет `orderAmount` (как сейчас).
+  - **Связь**: будет полностью устранено в отдельной фиче `.kiro/specs/remove-token-payment-model/` — переход на единую commission модель.
+  - _Validates: Requirements 8.1, 8.2 (Q4 уточнён в decisions, см. requirements.md)._
 
 - [ ] 12. **Audit-helper `lib/orderAudit.ts`** (M)
   - Экспорт: `recordAmountAudit(tx, params)`, `getAmountAudit(orderId, limit)`, `closeOpenEstimateTasksForOrder(orderId, reason)`.

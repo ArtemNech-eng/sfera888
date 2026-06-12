@@ -231,7 +231,7 @@
 48 часов (как сейчас). Триггер — `Payment_State = no_amount AND age(order) > 48h`. Применяется во всех 5 каналах (см. секцию problems в исследовании).
 
 **Q4. Правило списания токенов в Agreement_Path.**
-Используется существующая логика, которая уже работает в `routes/orders.ts` при `acceptProposed`/прямом установлении `orderAmount`: списание из кошелька мастера происходит при первом переходе в `Payment_State = agreed`, объём — `Order.manualTokenCost` если задан, иначе авто-расчёт по текущей формуле. Никакой новой формулы Agreement_Path не вводит — он использует тот же codepath, просто триггерится из новой кнопки.
+**Уточнено в ходе реализации Phase 2 (discovered issue):** в текущей архитектуре `paymentModel = "token"` НЕ списывает токены в `acceptProposed` или `POST /agreement` — токены списываются раньше, при отклике мастера на заявку (master-pwa). Поле `Order.tokensCharged` в коде api-server никем не пишется (только читается для отображения). Поэтому Agreement_Path для token-заказов **не делает ничего особого** — просто пишет `orderAmount` (как сейчас делает `acceptProposed`). Никакого нового codepath не вводится. См. `.kiro/specs/remove-token-payment-model/` — отдельная фича на полное удаление token-модели в пользу единой commission + service fee 500₽.
 
 **Q5. Пересчёт токенов при изменении Agreement_Amount.**
 Не делается автоматически. Manager может скорректировать кошелёк мастера вручную через существующие инструменты `accountBalance.ts`, если бизнес считает нужным.
