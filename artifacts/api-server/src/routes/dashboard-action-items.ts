@@ -152,7 +152,7 @@ function actionSet(type: TaskType) {
 const BUILD_ITEMS_TTL_MS = 30_000;
 let buildItemsCache: { data: Item[]; ts: number } | null = null;
 
-function invalidateBuildItemsCache() { buildItemsCache = null; }
+export function invalidateBuildItemsCache() { buildItemsCache = null; }
 
 async function buildItems(): Promise<Item[]> {
   if (buildItemsCache && Date.now() - buildItemsCache.ts < BUILD_ITEMS_TTL_MS) {
