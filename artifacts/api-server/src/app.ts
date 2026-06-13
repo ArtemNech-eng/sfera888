@@ -129,6 +129,63 @@ app.use((req, res, next) => {
   next();
 });
 
+// ── robots.txt for sfera-master.ru ────────────────────────────────────────────
+// Internal SPAs (CRM, master-pwa, partner) and API are blocked from indexing.
+// Public master-recruitment landings (/, /master-landing/*, /masteram, /partners,
+// /r/:slug) remain crawlable. Sitemap is intentionally not advertised here —
+// it will live on the future marketplace domain (chestnye-mastera.ru).
+// Must be registered BEFORE the noindex middleware so the robots.txt response
+// itself is not tagged with X-Robots-Tag: noindex.
+app.get("/robots.txt", (_req, res) => {
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Cache-Control", "public, max-age=3600");
+  res.send([
+    "User-agent: *",
+    "Disallow: /crm",
+    "Disallow: /crm/",
+    "Disallow: /master-pwa",
+    "Disallow: /master-pwa/",
+    "Disallow: /partner",
+    "Disallow: /partner/",
+    "Disallow: /api",
+    "Disallow: /api/",
+    "Disallow: /receipt",
+    "Disallow: /receipt/",
+    "Disallow: /smeta",
+    "Disallow: /smeta/",
+    "Disallow: /my-orders",
+    "Disallow: /support",
+    "Disallow: /zayavka",
+    "Disallow: /zayavka/",
+    "Allow: /",
+    "",
+    "Host: sfera-master.ru",
+    "",
+  ].join("\n"));
+});
+
+// ── X-Robots-Tag noindex for internal SPAs and API ────────────────────────────
+// Defence-in-depth on top of robots.txt: even if a crawler ignores robots.txt,
+// the HTTP header tells it not to index the response. Applied path-prefix-based
+// so /partners (recruitment landing) and / (root landing) stay indexable.
+const NOINDEX_PATH_PATTERNS: RegExp[] = [
+  /^\/crm(\/|$)/,
+  /^\/master-pwa(\/|$)/,
+  /^\/partner(\/|$)/,        // matches /partner and /partner/ but NOT /partners
+  /^\/api(\/|$)/,
+  /^\/receipt(\/|$)/,
+  /^\/smeta(\/|$)/,
+  /^\/my-orders(\/|$)/,
+  /^\/support(\/|$)/,
+  /^\/zayavka(\/|$)/,
+];
+app.use((req, res, next) => {
+  if (NOINDEX_PATH_PATTERNS.some((rx) => rx.test(req.path))) {
+    res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
+  }
+  next();
+});
+
 async function getDatabaseStatus(): Promise<boolean> {
   try {
     await db.execute(sql`SELECT 1`);
