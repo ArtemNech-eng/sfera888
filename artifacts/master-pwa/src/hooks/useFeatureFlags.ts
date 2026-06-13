@@ -15,14 +15,12 @@ export interface FeatureFlags {
   payment_state_engine_enabled: boolean;
   payment_state_audit_ui_enabled: boolean;
   payment_state_master_proposal_oneclick: boolean;
-  token_model_enabled: boolean;
 }
 
 const FALLBACK: FeatureFlags = {
   payment_state_engine_enabled: false,
   payment_state_audit_ui_enabled: false,
   payment_state_master_proposal_oneclick: true,
-  token_model_enabled: true,
 };
 
 const REFETCH_INTERVAL_MS = 5 * 60 * 1000;

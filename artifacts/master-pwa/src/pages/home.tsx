@@ -746,10 +746,9 @@ function OrderDetailSheet({ order, onRespond, onReject, onClose, fomoBlock, wall
   fomoBlock?: FomoBlock | null; walletBalance?: number; tokensBalance?: number; creditLimitTokens?: number;
 }) {
   const { flags } = useFeatureFlags();
-  // Phase A of remove-token-payment-model: при флаге=false token UI скрывается,
-  // все orders ведут себя как commission (отклик через service fee).
-  const tokenModelOn = flags.token_model_enabled;
-  const isTokenOrder = tokenModelOn && order.paymentModel === "token";
+  // Token model removed: all orders are commission. Variables retained for
+  // existing code paths (legacy token-orders rendered as commission UI).
+  const isTokenOrder = false;
   const [state, setState] = useState<"idle" | "loading" | "success" | "constrained_success" | "fomo_blocked" | "needs_contract" | "insufficient_tokens" | "rejecting">("idle");
   const [contractFlags, setContractFlags] = useState<{ contractSigned: boolean; passportVerified: boolean }>({ contractSigned: false, passportVerified: false });
   const [constraintTags, setConstraintTags] = useState<string[]>([]);

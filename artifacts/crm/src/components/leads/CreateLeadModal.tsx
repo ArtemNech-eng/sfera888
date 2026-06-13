@@ -596,38 +596,7 @@ export default function CreateLeadModal({
                 </div>
               </div>
 
-              {/* Payment model toggle. Hidden when token model is disabled. */}
-              {flags.token_model_enabled && (
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium text-gray-700">
-                  Модель оплаты
-                </label>
-                <div className="flex rounded-xl border border-gray-200 bg-white p-1 gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setFormData({ ...formData, paymentModel: "token" })}
-                    className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                      formData.paymentModel === "token"
-                        ? "bg-primary text-white shadow-sm"
-                        : "text-gray-500 hover:bg-gray-50"
-                    }`}
-                  >
-                    По токенам
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFormData({ ...formData, paymentModel: "commission" })}
-                    className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                      formData.paymentModel === "commission"
-                        ? "bg-primary text-white shadow-sm"
-                        : "text-gray-500 hover:bg-gray-50"
-                    }`}
-                  >
-                    Обычная комиссия
-                  </button>
-                </div>
-              </div>
-              )}
+              {/* Payment model removed: all leads/orders are commission. */}
             </div>
 
             {/* Services table */}

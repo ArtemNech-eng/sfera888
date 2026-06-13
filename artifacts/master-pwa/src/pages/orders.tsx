@@ -772,15 +772,8 @@ function OrderCard({ order, onRefresh, initialExpanded }: { order: Order; onRefr
     "Другое",
   ];
 
-  // Phase A of remove-token-payment-model: refund button скрыт когда
-  // token-model отключена. Backend возвращает 404, но прячем заранее.
-  const canRequestRefund = flags.token_model_enabled &&
-    order.paymentModel === "token" &&
-    order.tokensCharged && order.tokensCharged > 0 &&
-    !isRefundRequested &&
-    order.status !== "completed" && order.status !== "cancelled" &&
-    !!order.assignedAt &&
-    (Date.now() - new Date(order.assignedAt).getTime()) < 48 * 60 * 60 * 1000;
+  // Token model removed: refund button is no longer shown.
+  const canRequestRefund = false;
 
   const handleRefundSubmit = async () => {
     const finalReason = refundReason === "Другое" && refundCustom.trim()
