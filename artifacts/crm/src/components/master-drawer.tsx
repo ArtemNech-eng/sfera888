@@ -198,7 +198,7 @@ interface HistoryOrder { id: number; status: string; serviceType: string; distri
 interface ChatMessage { id: number; text: string; photoUrl: string | null; fromMaster: boolean; senderName: string | null; isRead: boolean; createdAt: string; }
 interface PendingTx { id: number; orderId: number; orderAmount: number; commission: number; prepaymentDeducted?: number; netPayable?: number; }
 interface MasterReview { id: number; masterId: number; orderId: number | null; sentiment: string; text: string; createdBy: string | null; createdAt: string; }
-type DrawerTab = "profile" | "chat" | "orders" | "tasks" | "reviews" | "wallet";
+type DrawerTab = "profile" | "chat" | "orders" | "tasks" | "reviews";
 
 // ─── Avatar ───────────────────────────────────────────────────────────────────
 
@@ -368,58 +368,7 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
   const paymentProofUrl = paymentProofMsg?.photoUrl ?? null;
 
 
-  // Wallet state
-  const qc = useQueryClient();
-  const walletQuery = useQuery<{
-    tokens_balance: number;
-    total_purchased: number;
-    total_spent: number;
-    total_refunded: number;
-    total_rub_spent: number;
-  }>({
-    queryKey: [`/api/wallet/${master.id}`],
-    queryFn: () => fetch(`/api/wallet/${master.id}`, { credentials: "include" }).then(r => r.json()),
-    enabled: tab === "wallet",
-  });
-  const walletTxQuery = useQuery<any[]>({
-    queryKey: [`/api/wallet/${master.id}/transactions`],
-    queryFn: () => fetch(`/api/wallet/${master.id}/transactions?limit=50`, { credentials: "include" }).then(r => r.json()),
-    enabled: tab === "wallet",
-  });
-  const [walletModal, setWalletModal] = useState<null | "bonus" | "adjustment" | "credit">(null);
-  const [walletTokenInput, setWalletTokenInput] = useState("");
-  const [walletReasonInput, setWalletReasonInput] = useState("");
-  const [walletSaving, setWalletSaving] = useState(false);
-  const [walletTxFilter, setWalletTxFilter] = useState("");
-
-  const invalidateWallet = () => {
-    qc.invalidateQueries({ queryKey: [`/api/wallet/${master.id}`] });
-    qc.invalidateQueries({ queryKey: [`/api/wallet/${master.id}/transactions`] });
-  };
-
-  const doWalletAction = async () => {
-    if (!walletTokenInput || isNaN(Number(walletTokenInput))) return;
-    if (!walletReasonInput.trim()) return;
-    setWalletSaving(true);
-    try {
-      const endpoint = walletModal === "bonus" ? "bonus" : walletModal === "credit" ? "credit" : "adjustment";
-      const tokens = walletModal === "adjustment" ? Number(walletTokenInput) : Math.abs(Number(walletTokenInput));
-      const r = await fetch(`/api/wallet/${master.id}/${endpoint}`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tokens, reason: walletReasonInput }),
-      });
-      if (r.ok) {
-        setWalletModal(null);
-        setWalletTokenInput("");
-        setWalletReasonInput("");
-        invalidateWallet();
-      }
-    } finally {
-      setWalletSaving(false);
-    }
-  };
+  // Wallet UI removed — token model is gone, balance adjustments are now done via direct SQL.
 
   const [reviews, setReviews] = useState<MasterReview[]>([]);
   const [reviewsLoaded, setReviewsLoaded] = useState(false);
@@ -900,7 +849,6 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
     { id: "orders",  label: "Заказы",    icon: History },
     { id: "tasks",   label: "Задачи",    icon: CheckSquare },
     { id: "reviews", label: "Отзывы",   icon: MessageCircle },
-    { id: "wallet",  label: "Кошелёк",  icon: Coins },
   ];
 
   const colName = columns.find(c => c.id === master.voronkaColumnId)?.name ?? (master.voronkaColumnId ? "Колонка" : "Без колонки");
@@ -2082,207 +2030,7 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
               </div>
             </div>
           )}
-          {/* WALLET */}
-          {tab === "wallet" && (
-            <div className="p-4 space-y-4">
-
-              {/* Summary */}
-              <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 space-y-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <Coins className="w-4 h-4 text-amber-500" />
-                  <span className="text-[11px] font-semibold text-amber-700 uppercase tracking-wide">Баланс токенов</span>
-                </div>
-                {walletQuery.isLoading ? (
-                  <div className="flex justify-center py-3"><Loader2 className="w-5 h-5 animate-spin text-amber-400" /></div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="bg-white rounded-xl p-3 border border-amber-100">
-                      <p className="text-[10px] text-gray-400 uppercase tracking-wide">Баланс</p>
-                      <p className="text-2xl font-bold text-amber-600">{walletQuery.data?.tokens_balance ?? 0}</p>
-                      <p className="text-[10px] text-gray-400">токен(а)</p>
-                    </div>
-                    <div className="bg-white rounded-xl p-3 border border-amber-100">
-                      <p className="text-[10px] text-gray-400 uppercase tracking-wide">Потрачено ₽</p>
-                      <p className="text-lg font-bold text-gray-700">{(walletQuery.data?.total_rub_spent ?? 0).toLocaleString("ru-RU")} ₽</p>
-                      <p className="text-[10px] text-gray-400">за всё время</p>
-                    </div>
-                    <div className="bg-white rounded-xl p-3 border border-slate-100">
-                      <p className="text-[10px] text-gray-400 uppercase tracking-wide">Куплено</p>
-                      <p className="text-base font-semibold text-gray-700">{walletQuery.data?.total_purchased ?? 0}</p>
-                      <p className="text-[10px] text-gray-400">токен(а) всего</p>
-                    </div>
-                    <div className="bg-white rounded-xl p-3 border border-slate-100">
-                      <p className="text-[10px] text-gray-400 uppercase tracking-wide">Списано</p>
-                      <p className="text-base font-semibold text-gray-700">{walletQuery.data?.total_spent ?? 0}</p>
-                      <p className="text-[10px] text-gray-400">токен(а) всего</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Admin actions (admin only) */}
-              {user?.role === "admin" && (
-                <div className="space-y-2">
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => { setWalletModal("bonus"); setWalletTokenInput(""); setWalletReasonInput(""); }}
-                      className="flex-1 py-2 text-[11px] font-semibold rounded-xl bg-emerald-500 text-white hover:bg-emerald-600 transition-colors flex items-center justify-center gap-1"
-                    >
-                      <Plus className="w-3.5 h-3.5" /> Начислить бонус
-                    </button>
-                    <button
-                      onClick={() => { setWalletModal("adjustment"); setWalletTokenInput(""); setWalletReasonInput(""); }}
-                      className="flex-1 py-2 text-[11px] font-semibold rounded-xl bg-slate-200 text-slate-700 hover:bg-slate-300 transition-colors flex items-center justify-center gap-1"
-                    >
-                      <Pencil className="w-3.5 h-3.5" /> Корректировка
-                    </button>
-                  </div>
-                  <button
-                    onClick={() => { setWalletModal("credit"); setWalletTokenInput("1"); setWalletReasonInput("Тестовый заказ"); }}
-                    className="w-full py-2 text-[11px] font-semibold rounded-xl bg-blue-500 text-white hover:bg-blue-600 transition-colors flex items-center justify-center gap-1"
-                  >
-                    <Gift className="w-3.5 h-3.5" /> Выдать тестовый токен в долг
-                  </button>
-                </div>
-              )}
-
-              {/* Credit / transition period block */}
-              {(((walletQuery.data as any)?.credit_tokens_issued ?? 0) > 0 || true) && (
-                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-2xl p-4 space-y-3">
-                  <p className="text-[11px] font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wide">Переходный период</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="bg-white dark:bg-blue-900/30 rounded-xl p-2.5 border border-blue-100 dark:border-blue-700">
-                      <p className="text-[10px] text-gray-400">Выдано в долг</p>
-                      <p className="text-lg font-bold text-blue-600">{(walletQuery.data as any)?.credit_tokens_issued ?? 0} т.</p>
-                    </div>
-                    <div className="bg-white dark:bg-blue-900/30 rounded-xl p-2.5 border border-blue-100 dark:border-blue-700">
-                      <p className="text-[10px] text-gray-400">Использовано</p>
-                      <p className="text-lg font-bold text-blue-600">{(walletQuery.data as any)?.credit_tokens_spent ?? 0} т.</p>
-                    </div>
-                  </div>
-                  {(() => {
-                    const issued = (walletQuery.data as any)?.credit_tokens_issued ?? 0;
-                    const spent = (walletQuery.data as any)?.credit_tokens_spent ?? 0;
-                    const remaining = issued - spent;
-                    if (remaining > 0) {
-                      return <p className="text-[11px] text-blue-600 dark:text-blue-400">Остаток тестового лимита: <strong>{remaining} т.</strong></p>;
-                    }
-                    if (issued > 0 && remaining <= 0) {
-                      return <p className="text-[11px] text-emerald-600">Тестовые токены использованы. Перешёл на оплату?</p>;
-                    }
-                    return <p className="text-[11px] text-gray-400">Тестовых токенов не выдавалось</p>;
-                  })()}
-                </div>
-              )}
-
-              {/* Transaction history */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">История операций</p>
-                  <select
-                    value={walletTxFilter}
-                    onChange={e => setWalletTxFilter(e.target.value)}
-                    className="text-[11px] border border-gray-200 rounded-lg px-2 py-1 text-gray-600 bg-white"
-                  >
-                    <option value="">Все типы</option>
-                    <option value="purchase">Покупка</option>
-                    <option value="spend">Списание</option>
-                    <option value="refund">Возврат</option>
-                    <option value="bonus">Бонус</option>
-                    <option value="adjustment">Корректировка</option>
-                    <option value="credit">Тестовый токен</option>
-                  </select>
-                </div>
-
-                {walletTxQuery.isLoading ? (
-                  <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin text-gray-300" /></div>
-                ) : (
-                  <div className="space-y-2">
-                    {(walletTxQuery.data ?? []).filter(tx => !walletTxFilter || tx.type === walletTxFilter).map((tx: any) => {
-                      const typeConfig: Record<string, { label: string; color: string; bg: string }> = {
-                        purchase:   { label: "Покупка",         color: "text-blue-600",   bg: "bg-blue-50" },
-                        spend:      { label: "Списание",        color: "text-red-500",    bg: "bg-red-50" },
-                        refund:     { label: "Возврат",         color: "text-emerald-600",bg: "bg-emerald-50" },
-                        bonus:      { label: "Бонус",           color: "text-amber-600",  bg: "bg-amber-50" },
-                        adjustment: { label: "Корректировка",   color: "text-purple-600", bg: "bg-purple-50" },
-                        credit:     { label: "Тест. токен",      color: "text-blue-700",   bg: "bg-blue-100" },
-                      };
-                      const cfg = typeConfig[tx.type] ?? { label: tx.type, color: "text-gray-600", bg: "bg-gray-50" };
-                      const sign = ["purchase", "refund", "bonus"].includes(tx.type) ? "+" : tx.tokens_amount < 0 ? "" : (tx.type === "spend" ? "-" : "+");
-                      return (
-                        <div key={tx.id} className={`rounded-xl p-3 border border-transparent ${cfg.bg} flex items-start justify-between gap-2`}>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5 mb-0.5">
-                              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-white/60 ${cfg.color}`}>{cfg.label}</span>
-                              {tx.package_name && <span className="text-[10px] text-gray-400">{tx.package_name}</span>}
-                              {tx.order_id && <span className="text-[10px] text-gray-400">Заказ #{tx.order_id}</span>}
-                            </div>
-                            {tx.reason && <p className="text-[11px] text-gray-500 truncate">{tx.reason}</p>}
-                            <p className="text-[10px] text-gray-300 mt-0.5">{new Date(tx.created_at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })} · {tx.created_by}</p>
-                          </div>
-                          <div className="text-right flex-shrink-0">
-                            <p className={`text-sm font-bold ${cfg.color}`}>{sign}{Math.abs(tx.tokens_amount)} т.</p>
-                            {tx.rub_amount ? <p className="text-[10px] text-gray-400">{tx.rub_amount.toLocaleString("ru-RU")} ₽</p> : null}
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {(walletTxQuery.data ?? []).filter(tx => !walletTxFilter || tx.type === walletTxFilter).length === 0 && (
-                      <p className="text-center text-sm text-gray-300 py-6">Операций нет</p>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Modal for bonus / adjustment */}
-              {walletModal && (
-                <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-                  <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xs p-5 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <p className="font-semibold text-gray-800 text-sm">
-                        {walletModal === "bonus" ? "Начислить бонус" : walletModal === "credit" ? "Выдать тестовый токен" : "Корректировка баланса"}
-                      </p>
-                      <button onClick={() => setWalletModal(null)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4 text-gray-400" /></button>
-                    </div>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="text-[11px] text-gray-500 font-medium">Токены {walletModal === "adjustment" && "(+/-)"}{ walletModal === "credit" && "(1–10)"}</label>
-                        <input
-                          type="number"
-                          step="1"
-                          min={walletModal === "credit" ? 1 : undefined}
-                          max={walletModal === "credit" ? 10 : undefined}
-                          className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-100"
-                          placeholder={walletModal === "adjustment" ? "Например: -1 или +2" : walletModal === "credit" ? "1 или 2" : "Например: 3"}
-                          value={walletTokenInput}
-                          onChange={e => setWalletTokenInput(e.target.value)}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[11px] text-gray-500 font-medium">Причина *</label>
-                        <textarea
-                          rows={2}
-                          className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-100 resize-none"
-                          placeholder="Укажите причину операции"
-                          value={walletReasonInput}
-                          onChange={e => setWalletReasonInput(e.target.value)}
-                        />
-                      </div>
-                    </div>
-                    <button
-                      onClick={doWalletAction}
-                      disabled={walletSaving || !walletTokenInput || !walletReasonInput.trim()}
-                      className="w-full py-2.5 rounded-xl bg-blue-500 text-white text-sm font-semibold hover:bg-blue-600 disabled:opacity-40 flex items-center justify-center gap-2 transition-colors"
-                    >
-                      {walletSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                      Применить
-                    </button>
-                  </div>
-                </div>
-              )}
-
-            </div>
-          )}
+          {/* WALLET tab removed — Phase D-3 */}
 
           {/* REVIEWS */}
           {tab === "reviews" && (
