@@ -130,76 +130,64 @@
 
 > ✅ **После 1–15**: коммит, push, redeploy. Флаг остаётся = true в проде. Затем — flip через SQL и 7+ дней мониторинга.
 
-- [ ] 16. **Phase A flip в проде** (S)
+- [x] 16. **Phase A flip в проде** (S)
   - SQL: `INSERT INTO system_settings (key, value, updated_at) VALUES ('token_model_enabled', 'false', NOW()) ON CONFLICT (key) DO UPDATE SET value = 'false', updated_at = NOW();`
   - Подождать 60с (TTL).
   - Smoke check: `GET /api/wallet/my` → 404. Создание lead works.
   - Мониторить **минимум 7 дней** (D9): логи, ошибки, реакция операторов.
   - Зафиксировать в комментарии деплоя что Phase A работает.
+  - _Note (13.06.2026)_: Перед flip админ выполнил прямой SQL `UPDATE master_wallet SET tokens_balance = 0, credit_tokens_issued = 0, credit_tokens_spent = 0, credit_limit_tokens = 0` — все 4 мастера с балансом обнулены (D1 пересмотрен — балансы посчитаны некорректно, конверсия в рубли отменена). Затем flip `token_model_enabled = false`. Phase B упрощается: grants/credit limits/balance conversion пропускаются (см. waves 8–11).
   - _Validates: Requirements 5 (rollback), D9._
 
 ---
 
-### Phase B — Migration script (после Phase A стабилен 7+ дней)
+### Phase B — Cleanup pending refunds + open token-orders (после Phase A стабилен 7+ дней)
 
-Цель: подготовить БД к финальному cleanup. Закрыть pending refunds, проставить credit limits, применить admin's grants.
+> **Пересмотрено 13.06.2026 (D1 update)**: балансы 4 мастеров обнулены напрямую SQL вместо конвертации в рубли (см. T16 _Note_). Поэтому migration script со steps `approveRefunds → setCreditLimits → applyBalanceGrants` больше не нужен. Остаются только две задачи: проверить, нет ли висящих pending refunds, и решить что делать с открытыми token-orders. Если их нет — Phase B = no-op, сразу к Phase C.
 
-- [ ] 17. **Migration script `scripts/src/migrate-remove-tokens.ts` — структура + preflight** (M)
-  - Создать файл по структуре из design.md § Migration Script.
-  - Реализовать `preflight(ctx)`: проверка флага, 7-day window, pending refunds count, masters with balance, masters without grant, open token-orders.
-  - Поддержка `--force` override для `flagDisabledForDays` check.
-  - НЕ обходит `mastersWithoutGrant` через --force (риск потерять баланс).
+Цель: убедиться, что нет висящих token-related операций до final cleanup.
+
+- [ ] 17. **Phase B preflight: SQL audit** (S)
+  - Запросы в Railway Postgres dashboard:
+    1. `SELECT COUNT(*) FROM wallet_transactions WHERE type = 'refund' AND status = 'pending';` — pending refunds.
+    2. `SELECT COUNT(*) FROM orders WHERE payment_model = 'token' AND status NOT IN ('completed','cancelled') AND deleted_at IS NULL;` — open token-orders.
+    3. `SELECT key, value FROM system_settings WHERE key = 'token_model_enabled';` — флаг должен быть 'false' и `updated_at < NOW() - interval '7 days'`.
+  - Если все три = 0 → Phase B полностью no-op, идти на Phase C.
+  - Если есть pending refunds → T18. Если open orders → T19.
   - _Validates: Requirements 3.3 step 1-2._
 
-- [ ] 18. **Migration script: `approveRefunds(ctx)`** (M)
-  - Для каждого pending `wallet_transactions { type: 'refund', status: 'pending' }`:
-    - В транзакции: `tokensBalance += |tokensAmount|`, `tx.status = 'completed'`.
-    - Если `tx.orderId IS NOT NULL`: `orders.masterId = NULL`, `orders.status = 'waiting_master'`.
-  - dry-run: только лог, без изменений.
-  - _Validates: Requirements 3.3 step 3, Property 3, D4._
+- [ ] 18. **Закрыть pending refunds (если есть)** (S)
+  - SQL для каждого pending refund:
+    - `UPDATE wallet_transactions SET status = 'completed', updated_at = NOW() WHERE type = 'refund' AND status = 'pending';` — формальное закрытие без возврата токенов (т.к. балансы уже = 0).
+  - В логе зафиксировать ID transactions для аудита.
+  - _Note_: refund "теряется" в смысле возврата — но это согласовано с пользователем (D1 update: балансы посчитаны некорректно, отдельно мастерам admin начислит вручную через wallet `balance` поле).
+  - _Validates: Requirements 3.3 step 3._
 
-- [ ] 19. **Migration script: `setCreditLimits(ctx)`** (S)
-  - SQL: `UPDATE master_wallet SET credit_limit = 1500 WHERE credit_tokens_issued > 0 AND credit_limit < 1500`.
-  - Лог количества затронутых строк.
-  - _Validates: Requirements 3.3 step 4, Property 4, D6._
-
-- [ ] 20. **Migration script: `applyBalanceGrants(ctx)`** (M)
-  - SELECT всех `master_balance_grants WHERE applied_at IS NULL`.
-  - Для каждого — в транзакции:
-    - `master_wallet.balance += grant.amount`
-    - `master_wallet.totalTopups += grant.amount`
-    - `master_wallet.tokensBalance = 0` (обнуление после grant)
-    - `grant.appliedAt = NOW()`
-  - _Validates: Requirements 3.3 step 5, Property 5, D1._
-
-- [ ] 21. **Migration script: `cancelOpenTokenOrders(ctx)`** (S)
-  - SELECT `orders WHERE paymentModel = 'token' AND status NOT IN ('completed','cancelled','cancellation_requested') AND deleted_at IS NULL`.
-  - Каждый — `status = 'cancelled'`, refund уже обработан в step 3.
+- [ ] 19. **Cancel open token-orders (если есть)** (S)
+  - SQL: `UPDATE orders SET status = 'cancelled', updated_at = NOW() WHERE payment_model = 'token' AND status NOT IN ('completed','cancelled','cancellation_requested') AND deleted_at IS NULL;`
+  - Альтернативный путь: оставить открытые orders как есть, мастера их доделают. После закрытия orders order.status = 'completed', и они больше не попадают под Phase C drop checks.
+  - Решение принимает админ перед запуском.
   - _Validates: Requirements 3.3 step 6, Property 6._
 
-- [ ] 22. **Migration script: финализация + log file** (S)
-  - `markCompleted(ctx)`: `INSERT INTO system_settings (key, value) VALUES ('token_migration_completed_at', NOW()::text)`.
-  - Запись финального лога в `scripts/logs/migrate-remove-tokens-<timestamp>.json`.
-  - Exit code = 0 при success, 1 при errors.
+- [ ] 20. ~~**Migration script: applyBalanceGrants**~~ (S) — **отменено**
+  - D1 update: master_balance_grants больше не используется. Балансы обнулены напрямую SQL в T16. Будущие начисления — точечные через прямой UPDATE master_wallet.balance + master_wallet.totalTopups (admin запрашивает у DevOps по имени+ID мастера).
+
+- [ ] 21. ~~**Migration script: cancelOpenTokenOrders**~~ — **переехало в T19** (см. выше).
+
+- [ ] 22. ~~**Migration script: финализация**~~ (S) — **упрощено**
+  - SQL: `INSERT INTO system_settings (key, value) VALUES ('token_migration_completed_at', NOW()::text) ON CONFLICT (key) DO UPDATE SET value = NOW()::text, updated_at = NOW();` — выполнить вручную после T17–T19.
   - _Validates: Requirements 7.1._
 
-- [ ] 23. **Unit-тесты для migration script preflight** (S)
-  - `__tests__/migrateRemoveTokens.test.ts` — проверки preflight без БД (через mock или pure-helpers).
-  - Кейсы: flag не выключен, flag выключен <7 дней, masters без grant, --force override.
-  - _Validates: Property 5._
+- [ ] 23. ~~**Unit-тесты для migration script preflight**~~ — **отменено**
+  - Migration script больше не существует, тестировать нечего.
 
-- [ ] 24. **Phase B prep: admin создаёт grants для 2 мастеров** (S)
-  - Открыть CRM `/admin/token-migration`.
-  - Для каждого мастера с `tokensBalance > 0` — создать grant с amount и reason.
-  - Запустить dry-run, проверить `preflight.errors = []`, `willApply` числа корректны.
-  - _Validates: Requirements 4.2, D1, D10._
+- [ ] 24. ~~**Phase B prep: admin создаёт grants**~~ — **отменено**
+  - D1 update: grants не нужны.
 
 - [ ] 25. **Phase B apply** (S)
   - Backup БД через Railway Postgres dashboard (manual backup).
-  - Запустить: `pnpm --filter @workspace/scripts exec tsx scripts/src/migrate-remove-tokens.ts apply`.
-  - Проверить exit code = 0.
+  - Выполнить T17 (audit) → T18/T19 при необходимости → T22 (mark completed).
   - Проверить `system_settings.token_migration_completed_at` установлен.
-  - Проверить Properties 3, 4, 5, 6 через SQL.
   - Мониторить **7 дней** (D9).
   - _Validates: Phase B acceptance._
 
@@ -384,7 +372,7 @@ Final:
 - **Не реализуем код до явного подтверждения пользователя.** После tasks.md — следующий шаг = "ОК, поехали Phase A".
 - **Между фазами** — обязательная продакшн-проверка (7 дней минимум).
 - **Тесты**: используем существующий `node:test` runner (paymentState/agreementValidation паттерн).
-- **Балансы 2 мастеров (D1)**: admin создаёт `master_balance_grants` через CRM admin UI ДО Phase B apply.
+- **Балансы 4 мастеров (D1 update 13.06.2026)**: вместо конвертации в рубли через `master_balance_grants` — обнулены прямым SQL UPDATE в T16 (балансы оказались некорректными). Будущие точечные начисления — admin запрашивает у DevOps по имени+ID мастера, выполняется прямой `UPDATE master_wallet SET balance = balance + N WHERE master_id = X`.
 - **Уведомления мастерам (D10)**: user-side. После Phase B admin сам пишет 2 мастерам в push/MAX о новых балансах.
 - **Avito API (D2)**: контракт не меняется. Backend перестаёт форсить token при `source = "avito_partner"`.
 - **`tokenWallet.ts` уже deprecated** — никем не импортируется, физически файл удаляется в Phase C (T28).
