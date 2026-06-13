@@ -394,9 +394,7 @@ router.get("/:id", allOrderRoles, async (req, res) => {
     photosBefore: (o as any).photosBefore ?? [],
     photosAfter: (o as any).photosAfter ?? [],
     photoAct: (o as any).photoAct ?? null,
-    paymentModel: o.paymentModel ?? "token",
-    tokensCharged: o.tokensCharged ? Number(o.tokensCharged) : 0,
-    manualTokenCost: o.manualTokenCost ? Number(o.manualTokenCost) : null,
+    paymentModel: o.paymentModel ?? "commission",
     maxMasters: (o as any).maxMasters ?? 3,
     assignedMasterCount: (o as any).assignedMasterCount ?? 0,
     createdAt: o.createdAt,
@@ -421,7 +419,7 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
   const {
     status, orderAmount, commission, commissionPaid, clientRating, proposedAmount,
     acceptProposed, approveCancellation, rejectCancellation, restoreOrder,
-    operatorNote, clientCancelReason, manualTokenCost, paymentModel, maxMasters,
+    operatorNote, clientCancelReason, paymentModel, maxMasters,
     // T14 — Phase 2 reconcile / force-paid actions
     acceptReceiptAmount, keepAgreementAmount, force, reason,
   } = body;
@@ -475,7 +473,6 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
       if (proposedAmount !== undefined) updates.proposedAmount = proposedAmount !== null ? String(proposedAmount) : null;
       if (operatorNote !== undefined) updates.operatorNote = operatorNote !== null ? operatorNote : null;
       if (clientCancelReason !== undefined) updates.operatorNote = clientCancelReason || null;
-      if (manualTokenCost !== undefined) updates.manualTokenCost = manualTokenCost !== null ? String(manualTokenCost) : null;
       if (maxMasters !== undefined && !isNaN(Number(maxMasters)) && Number(maxMasters) >= 1) {
         updates.maxMasters = Number(maxMasters);
       }

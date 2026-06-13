@@ -349,7 +349,7 @@ router.post("/:id/send-to-buffer", checkRateLimit, allLeadRoles, async (req, res
   const lead = rows[0];
   if (!lead) return res.status(404).json({ error: "Lead not found" });
 
-  const { manualTokenCost, maxMasters } = req.body as { manualTokenCost?: number; maxMasters?: number };
+  const { maxMasters } = req.body as { maxMasters?: number };
   // Token model removed: all orders from leads are commission.
   const orderPaymentModel = "commission";
 
@@ -372,7 +372,6 @@ router.post("/:id/send-to-buffer", checkRateLimit, allLeadRoles, async (req, res
         paymentModel: orderPaymentModel,
         clientName: lead.clientName,
         clientPhone: lead.clientPhone,
-        manualTokenCost: manualTokenCost != null ? String(manualTokenCost) : null,
         maxMasters: maxMasters != null && !isNaN(Number(maxMasters)) ? Number(maxMasters) : 3,
       }).returning();
       return orderResult[0];

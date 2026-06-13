@@ -38,23 +38,16 @@ async function runRuntimeFixes() {
 
   // wallet_transactions indexes/constraints removed — table dropped (Phase C cleanup)
 
-  // CHECK constraint enforcing wallet credit limit. Not yet expressed in schema.
-  // First clean any rows that would violate it (data fix), then add the constraint.
-  await db.execute(sql`
-    UPDATE master_wallet
-    SET tokens_balance = -credit_limit_tokens
-    WHERE tokens_balance < -credit_limit_tokens
-  `);
+  // master_wallet token-balance constraint removed in Phase D — token model is closed.
+  // Drop the legacy CHECK constraint if it still exists from older deploys.
   await db.execute(sql`
     DO $$ BEGIN
-      IF NOT EXISTS (
+      IF EXISTS (
         SELECT 1 FROM pg_constraint
         WHERE conname = 'master_wallet_balance_check'
           AND conrelid = 'master_wallet'::regclass
       ) THEN
-        ALTER TABLE master_wallet
-          ADD CONSTRAINT master_wallet_balance_check
-          CHECK (tokens_balance >= -credit_limit_tokens);
+        ALTER TABLE master_wallet DROP CONSTRAINT master_wallet_balance_check;
       END IF;
     END $$
   `);
