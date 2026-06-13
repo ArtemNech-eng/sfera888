@@ -8,7 +8,6 @@ export const mlPricingDecisionsTable = pgTable("ml_pricing_decisions", {
   id: serial("id").primaryKey(),
   orderId: integer("order_id").notNull().references(() => ordersTable.id),
   masterId: integer("master_id").references(() => mastersTable.id),
-  tokensCharged: numeric("tokens_charged", { precision: 10, scale: 2 }).notNull(),
   maxMasters: integer("max_masters").notNull(),
   assignedCount: integer("assigned_count").notNull(),
   serviceType: text("service_type"),

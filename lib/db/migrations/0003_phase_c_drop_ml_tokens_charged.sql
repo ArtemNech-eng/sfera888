@@ -1,0 +1,1 @@
+ALTER TABLE "ml_pricing_decisions" DROP COLUMN "tokens_charged";

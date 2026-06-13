@@ -529,7 +529,6 @@ router.post("/:orderId/assign/:masterId", ops, async (req, res) => {
     await db.insert(mlPricingDecisionsTable).values({
       orderId,
       masterId,
-      tokensCharged: "0",
       maxMasters: order.maxMasters ?? 3,
       assignedCount: (order.assignedMasterCount ?? 0) + 1,
       serviceType: order.serviceType,
