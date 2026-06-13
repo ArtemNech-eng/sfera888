@@ -33,7 +33,6 @@ import {
 import { eq, and, isNull, desc, gte, sql, inArray, lte, or, ilike } from "drizzle-orm";
 import { performBroadcast } from "./lib/broadcastOrder.js";
 import { getMasterTrustScore } from "./lib/dispatcherAI.js";
-import { isTokenModelEnabled } from "./lib/tokenModelGuard.js";
 import { execFile } from "child_process";
 import { writeFile, readFile, unlink } from "fs/promises";
 import { tmpdir } from "os";
@@ -1818,8 +1817,8 @@ async function toolCreateLeadAndOrder(args: {
     source: "manager_bot",
     status: "sent_to_work",
     scheduledAt: args.scheduledAt ? new Date(args.scheduledAt) : null,
-    // Phase A of remove-token-payment-model: при флаге=false → commission.
-    paymentModel: (await isTokenModelEnabled()) ? "token" : "commission",
+    // Token model removed: always commission.
+    paymentModel: "commission",
   }).returning();
 
   const [order] = await db.insert(ordersTable).values({

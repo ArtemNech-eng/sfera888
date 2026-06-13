@@ -15,7 +15,6 @@ import { recordOrderCancelled, recordOrderCompleted, revertOrderCancellation } f
 import { computePaymentState, computePaymentStateBatch, groupReceiptsByOrder } from "../lib/paymentState.js";
 import { recordAmountAudit, resolveAuditActor, closeOpenEstimateTasksForOrder, getAmountAudit, detectReconcileConflict } from "../lib/orderAudit.js";
 import { validateAgreementBody } from "../lib/agreementValidation.js";
-import { isTokenModelEnabled } from "../lib/tokenModelGuard.js";
 import { notifyWorkBoardChanged } from "./work-board.js";
 
 // Telegram-бот удалён.
@@ -449,19 +448,11 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
   // Pre-load commission settings (sync, cacheable read).
   const commSettings = await getCommissionSettings();
 
-  // Resolve paymentModel update before transaction (requires lead lookup)
-  // Phase A of remove-token-payment-model: при флаге=false body.paymentModel
-  // игнорируется и всегда commission. При флаге=true — старая логика.
+  // Resolve paymentModel update before transaction.
+  // Token model removed: any incoming paymentModel is forced to 'commission'.
   let paymentModelUpdate: string | undefined;
   if (paymentModel !== undefined) {
-    if (await isTokenModelEnabled()) {
-      const [leadCheck] = await db.select({ source: leadsTable.source, trafficPartnerId: leadsTable.trafficPartnerId })
-        .from(leadsTable).where(eq(leadsTable.id, current.leadId ?? 0)).limit(1);
-      const isPartnerOrder = leadCheck?.source === "avito_partner" || leadCheck?.trafficPartnerId != null;
-      paymentModelUpdate = isPartnerOrder ? "token" : (paymentModel === "commission" ? "commission" : "token");
-    } else {
-      paymentModelUpdate = "commission";
-    }
+    paymentModelUpdate = "commission";
   }
 
   // ── Transaction-scoped result state (set inside, used after commit) ───────

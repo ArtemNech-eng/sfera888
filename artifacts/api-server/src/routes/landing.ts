@@ -6,7 +6,6 @@ import { db, leadsTable, trafficPartnersTable } from "@workspace/db";
 import { eq, and, isNull, gte } from "drizzle-orm";
 import { z } from "zod";
 import { notifyManagerNewLead } from "../managerBot.js";
-import { isTokenModelEnabled } from "../lib/tokenModelGuard.js";
 
 const router = Router();
 
@@ -100,8 +99,8 @@ router.post("/leads", async (req: Request, res: Response) => {
         trafficPartnerId: partnerId,
         partnerLeadStatus: partnerId ? "waiting_master" : null,
         isPossibleDuplicate,
-        // Phase A of remove-token-payment-model: при флаге=false → commission.
-        paymentModel: (await isTokenModelEnabled()) ? "token" : "commission",
+        // Token model removed: always commission.
+        paymentModel: "commission",
       })
       .returning();
 

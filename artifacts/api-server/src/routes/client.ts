@@ -8,7 +8,6 @@ import { Readable } from "stream";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client } from "../lib/objectStorage.js";
 import { sendPushToClient } from "../lib/clientPush.js";
-import { isTokenModelEnabled } from "../lib/tokenModelGuard.js";
 import { requireRole } from "../middlewares/requireAuth.js";
 import OpenAI from "openai";
 
@@ -440,8 +439,8 @@ router.post("/estimate/submit", async (req, res) => {
     comment: description?.trim() || null,
     photos: photoUrl ? JSON.stringify([photoUrl]) : null,
     source: "ai_estimate",
-    // Phase A of remove-token-payment-model: при флаге=false → commission.
-    paymentModel: (await isTokenModelEnabled()) ? "token" : "commission",
+    // Token model removed: always commission.
+    paymentModel: "commission",
   }).returning();
 
   const [order] = await db.insert(ordersTable).values({
@@ -837,8 +836,8 @@ router.post("/orders", async (req, res) => {
       clientName: clientName.trim(),
       clientPhone: normalizedPhone,
       source: "client_site",
-      // Phase A of remove-token-payment-model: при флаге=false → commission.
-      paymentModel: (await isTokenModelEnabled()) ? "token" : "commission",
+      // Token model removed: always commission.
+      paymentModel: "commission",
     }).returning();
 
     // 3. Broadcast to masters

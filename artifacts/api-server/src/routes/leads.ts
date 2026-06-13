@@ -5,7 +5,6 @@ import { requireRole } from "../middlewares/requireAuth.js";
 import { notifyManagerNewLead } from "../managerBot.js";
 import { performBroadcast } from "../lib/broadcastOrder.js";
 import { getOperatorTasks } from "../lib/operatorTasks.js";
-import { isTokenModelEnabled } from "../lib/tokenModelGuard.js";
 import OpenAI from "openai";
 
 const router = Router();
@@ -176,13 +175,7 @@ router.post("/", checkRateLimit, allLeadRoles, async (req, res) => {
     photos: Array.isArray(photos) && photos.length > 0 ? JSON.stringify(photos) : null,
     source: source ?? null,
     status: "new",
-    // Phase A of remove-token-payment-model: при флаге=false все leads
-    // создаются как commission, независимо от source/body. При флаге=true
-    // (default) — старая логика (avito_partner → token, body.paymentModel
-    // выбираемое).
-    paymentModel: (await isTokenModelEnabled())
-      ? (source === "avito_partner" ? "token" : (paymentModel === "token" ? "token" : "commission"))
-      : "commission",
+    paymentModel: "commission",
   }).returning();
   const lead = result[0];
 
@@ -279,15 +272,8 @@ router.patch("/:id", checkRateLimit, allLeadRoles, async (req, res) => {
     updates.photos = Array.isArray(photos) && photos.length > 0 ? JSON.stringify(photos) : null;
   }
   if (paymentModel !== undefined) {
-    // Phase A of remove-token-payment-model: при флаге=false body.paymentModel
-    // игнорируется и всегда commission. При флаге=true — старая логика.
-    if (await isTokenModelEnabled()) {
-      const [leadCheck] = await db.select({ source: leadsTable.source, trafficPartnerId: leadsTable.trafficPartnerId }).from(leadsTable).where(eq(leadsTable.id, id)).limit(1);
-      const isPartnerLead = leadCheck?.source === "avito_partner" || leadCheck?.trafficPartnerId != null;
-      updates.paymentModel = isPartnerLead ? "token" : (paymentModel === "token" ? "token" : "commission");
-    } else {
-      updates.paymentModel = "commission";
-    }
+    // Token model removed: paymentModel always 'commission' regardless of body input.
+    updates.paymentModel = "commission";
   }
   if (services !== undefined && Array.isArray(services) && services.length > 0) {
     if (!validateServices(services)) return res.status(400).json({ error: "Некорректные данные услуг: проверьте тип, площадь и цену за м²" });
@@ -364,13 +350,8 @@ router.post("/:id/send-to-buffer", checkRateLimit, allLeadRoles, async (req, res
   if (!lead) return res.status(404).json({ error: "Lead not found" });
 
   const { manualTokenCost, maxMasters } = req.body as { manualTokenCost?: number; maxMasters?: number };
-  const isPartnerLead = lead.source === "avito_partner" || lead.trafficPartnerId != null;
-  // Phase A of remove-token-payment-model: при флаге=false все orders из leads
-  // создаются как commission. При флаге=true — старая логика (avito_partner → token).
-  const tokenModelOn = await isTokenModelEnabled();
-  const orderPaymentModel = tokenModelOn
-    ? (isPartnerLead ? "token" : ((lead as any).paymentModel || "commission"))
-    : "commission";
+  // Token model removed: all orders from leads are commission.
+  const orderPaymentModel = "commission";
 
   let order: typeof ordersTable.$inferSelect;
   try {

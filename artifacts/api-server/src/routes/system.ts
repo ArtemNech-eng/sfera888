@@ -22,16 +22,12 @@ const WHITELISTED_FLAGS = [
   "payment_state_engine_enabled",
   "payment_state_audit_ui_enabled",
   "payment_state_master_proposal_oneclick",
-  "token_model_enabled",
 ] as const;
 
 const FLAG_DEFAULTS: Record<typeof WHITELISTED_FLAGS[number], boolean> = {
   payment_state_engine_enabled: false,
   payment_state_audit_ui_enabled: false,
   payment_state_master_proposal_oneclick: true,
-  // Default = true. См. .kiro/specs/remove-token-payment-model/.
-  // Phase A flip ставит value='false' через SQL.
-  token_model_enabled: true,
 };
 
 router.get("/feature-flags", requireAuth, async (_req, res) => {
