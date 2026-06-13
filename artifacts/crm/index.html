@@ -1,12 +1,47 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru" translate="no">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <meta name="google" content="notranslate" />
+    <meta name="yandex" content="notranslate" />
+    <meta http-equiv="content-language" content="ru" />
     <title>CRM Ремонтные заказы</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+      // Patch Node.prototype.removeChild / insertBefore to prevent NotFoundError
+      // crashes when browser auto-translators (Yandex / Google) inject <font>
+      // wrappers into React-managed DOM. The translator removes/wraps text
+      // nodes between renders; React then tries removeChild on a node that's
+      // no longer the original child. We swallow the specific NotFoundError
+      // so React can recover instead of throwing into the ErrorBoundary.
+      // See: https://github.com/facebook/react/issues/11538
+      (function () {
+        if (typeof Node === "undefined" || !Node.prototype) return;
+        var origRemoveChild = Node.prototype.removeChild;
+        Node.prototype.removeChild = function (child) {
+          if (child.parentNode !== this) {
+            if (typeof console !== "undefined" && console.warn) {
+              console.warn("[translate-safety] removeChild target not a child, ignoring", child);
+            }
+            return child;
+          }
+          return origRemoveChild.apply(this, arguments);
+        };
+        var origInsertBefore = Node.prototype.insertBefore;
+        Node.prototype.insertBefore = function (newNode, referenceNode) {
+          if (referenceNode && referenceNode.parentNode !== this) {
+            if (typeof console !== "undefined" && console.warn) {
+              console.warn("[translate-safety] insertBefore reference not a child, appending", newNode);
+            }
+            return this.appendChild(newNode);
+          }
+          return origInsertBefore.apply(this, arguments);
+        };
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

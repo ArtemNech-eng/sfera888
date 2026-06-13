@@ -783,10 +783,22 @@ router.delete("/:id/tasks/:taskId", allMasterRoles, async (req, res) => {
 });
 
 // GET /api/masters/avatar/:filename — serve avatar from R2
+// On miss returns a 1x1 transparent PNG with 200 instead of 404 — keeps the
+// browser console clean while letting the <img> resolve. CRM/Master_PWA
+// avatar components show initials/fallback when the image renders empty.
+const TRANSPARENT_PIXEL = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEX///+nxBvIAAAAC0lEQVQI12NgAAIAAAUAAeImBZsAAAAASUVORK5CYII=",
+  "base64",
+);
+
 router.get("/avatar/:filename", async (req, res) => {
   try {
     const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
-    if (!bucketId) return res.status(500).json({ error: "Storage not configured" });
+    if (!bucketId) {
+      res.setHeader("Content-Type", "image/png");
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      return res.status(200).send(TRANSPARENT_PIXEL);
+    }
     const key = `${GCS_AVATAR_PREFIX}${req.params.filename}`;
     const response = await s3Client.send(
       new GetObjectCommand({ Bucket: bucketId, Key: key })
@@ -802,10 +814,15 @@ router.get("/avatar/:filename", async (req, res) => {
     }
   } catch (err: any) {
     if (err?.Code === "NoSuchKey" || err?.name === "NoSuchKey") {
-      return res.status(404).end();
+      // Silent fallback — no console noise, no broken-image icon in browser.
+      res.setHeader("Content-Type", "image/png");
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      return res.status(200).send(TRANSPARENT_PIXEL);
     }
     console.error("[avatar proxy] error:", err);
-    res.status(404).json({ error: "Not found" });
+    res.setHeader("Content-Type", "image/png");
+    res.setHeader("Cache-Control", "public, max-age=60");
+    res.status(200).send(TRANSPARENT_PIXEL);
   }
 });
 
