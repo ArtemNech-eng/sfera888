@@ -5,7 +5,6 @@ import { Layout } from "@/components/layout";
 import { ProtectedRoute } from "@/hooks/use-auth";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { KPICards } from "../components/dashboard/KPICards";
-import { TokenFlowChart } from "../components/dashboard/TokenFlowChart";
 import { LiveFeed } from "../components/dashboard/LiveFeed";
 import { CitiesCard } from "../components/dashboard/CitiesCard";
 import { TopMasters } from "../components/dashboard/TopMasters";
@@ -78,7 +77,6 @@ function DashboardPage() {
   const cities = data?.cities ?? [];
   const topMasters = data?.topMasters ?? [];
   const recentOrders = data?.recentOrders ?? [];
-  const tokenFlow = data?.tokenFlow;
 
   if (error) {
     return (
@@ -153,18 +151,13 @@ function DashboardPage() {
           <LeadSourcesCard data={leadSources} isLoading={isLoading} />
         </div>
 
-        {/* ROW 2: Token Flow Chart */}
-        <div className="mb-4">
-          <TokenFlowChart data={tokenFlow} isLoading={isLoading} />
-        </div>
-
-        {/* ROW 3: Live Feed + Cities */}
+        {/* ROW 2: Live Feed + Cities */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
           <LiveFeed data={liveFeed.length > 0 ? liveFeed : undefined} isLoading={isLoading} />
           <CitiesCard data={cities.length > 0 ? cities : undefined} isLoading={isLoading} />
         </div>
 
-        {/* ROW 4: Top Masters + Recent Orders */}
+        {/* ROW 3: Top Masters + Recent Orders */}
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
           <div className="lg:col-span-2">
             <TopMasters data={topMasters.length > 0 ? topMasters : undefined} isLoading={isLoading} />

@@ -7,7 +7,7 @@ interface CityData {
   masters_total: number;
   masters_active: number;
   conversion: number;
-  token_revenue: number;
+  revenue: number;
   free_masters: number;
   waiting_orders: number;
   ratio: number;
@@ -36,7 +36,7 @@ export function CitiesCard({ data, isLoading }: Props) {
     );
   }
 
-  const maxRevenue = Math.max(...data.map(c => c.token_revenue), 1);
+  const maxRevenue = Math.max(...data.map(c => c.revenue), 1);
 
   return (
     <div className="bg-white border border-[#E5E7EB] rounded-2xl p-6 transition-all duration-200
@@ -55,7 +55,7 @@ export function CitiesCard({ data, isLoading }: Props) {
           </div>
         ) : data.map(city => {
           const status = cityStatus(city.ratio);
-          const widthPct = (city.token_revenue / maxRevenue) * 100;
+          const widthPct = (city.revenue / maxRevenue) * 100;
           return (
             <div
               key={city.city}
@@ -83,7 +83,7 @@ export function CitiesCard({ data, isLoading }: Props) {
                 <span>·</span>
                 <span>Ratio: {city.ratio}</span>
                 <span>·</span>
-                <span>{formatCurrency(city.token_revenue)}</span>
+                <span>{formatCurrency(city.revenue)}</span>
               </div>
             </div>
           );

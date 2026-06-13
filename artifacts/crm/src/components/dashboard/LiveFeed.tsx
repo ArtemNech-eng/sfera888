@@ -1,9 +1,9 @@
-import { Activity, Coins, UserPlus, UserCheck, CheckCircle } from 'lucide-react';
+import { Activity, UserPlus, UserCheck, CheckCircle } from 'lucide-react';
 import { formatRelativeTime } from '../../utils/format';
 
 interface FeedItem {
   id: number;
-  type: 'token_purchase' | 'new_lead' | 'assigned' | 'completed' | 'new_master';
+  type: 'new_lead' | 'assigned' | 'completed' | 'new_master';
   timestamp: Date | string;
   text: string;
   city: string;
@@ -17,8 +17,6 @@ interface Props {
 
 function getEventConfig(type: FeedItem['type']) {
   switch (type) {
-    case 'token_purchase':
-      return { icon: <Coins size={15} color="#F59E0B" />, bg: 'bg-[#FFFBEB]' };
     case 'new_lead':
       return { icon: <UserPlus size={15} color="#3B82F6" />, bg: 'bg-[#EFF6FF]' };
     case 'assigned':

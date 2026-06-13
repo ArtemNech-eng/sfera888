@@ -64,16 +64,12 @@ export const TYPE_LEFT_BORDER: Record<string, string> = {
   low_avito_balance: "border-l-pink-500", blocked_master: "border-l-violet-500",
   possible_bypass: "border-l-red-600", conflict: "border-l-rose-500",
   no_manager_id: "border-l-slate-400", custom_manual: "border-l-slate-400",
-  token_refund_pending: "border-l-red-500", master_zero_balance: "border-l-orange-400",
-  master_churn_risk: "border-l-amber-400", order_stalled_token: "border-l-rose-400",
 };
 
 export const TYPE_LABEL: Record<string, string> = {
   no_estimate: "Нет сметы", no_payment: "Нет оплаты", no_master_response: "Нет отклика",
   no_progress: "Нет движения", low_avito_balance: "Avito баланс", blocked_master: "Заблокирован",
   possible_bypass: "Обход", conflict: "Конфликт", no_manager_id: "Нет менеджера", custom_manual: "Ручная",
-  token_refund_pending: "Возврат токена", master_zero_balance: "Нулевой баланс",
-  master_churn_risk: "Риск оттока", order_stalled_token: "Заказ завис (токены)",
 };
 
 /** Общие маппинги приоритетов — единый источник истины */

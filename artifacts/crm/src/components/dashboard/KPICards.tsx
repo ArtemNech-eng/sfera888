@@ -1,12 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  DollarSign,
-  UserPlus,
-  Coins, Users, Clock,
-  TrendingUp, TrendingDown
+  UserPlus, Users, Clock, TrendingUp, TrendingDown
 } from 'lucide-react';
 import { useCountUp } from '../../hooks/useCountUp';
-import { formatCurrency, formatChange } from '../../utils/format';
+import { formatChange } from '../../utils/format';
 
 interface KPIData {
   // Leads
@@ -20,20 +17,8 @@ interface KPIData {
   masters_total: number;
   masters_new_today: number;
   masters_new_today_prev: number;
-  // Token economy
-  token_revenue_today: number;
-  token_revenue_yesterday: number;
-  token_revenue_month: number;
-  tokens_sold_today: number;
-  tokens_sold_yesterday: number;
-  new_buyers_today: number;
-  new_buyers_yesterday: number;
+  // Orders
   orders_pending: number;
-  masters_at_zero: number;
-  masters_low_balance: number;
-  debtors_count: number;
-  avg_token_balance: number;
-  token_refunds_today: number;
   avito_balance: number;
 }
 
@@ -140,8 +125,8 @@ interface Props {
 export function KPICards({ data, isLoading }: Props) {
   if (isLoading || !data) {
     return (
-      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-4">
-        {Array.from({ length: 7 }).map((_, i) => (
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {Array.from({ length: 4 }).map((_, i) => (
           <div key={i} className="bg-white border border-[#E5E7EB] rounded-2xl p-5 space-y-3">
             <div className="flex items-center justify-between">
               <div className="shimmer h-3 w-20 rounded" />
@@ -156,7 +141,7 @@ export function KPICards({ data, isLoading }: Props) {
   }
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-7 gap-4">
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
       <KPICard
         index={0}
         title="Заявки сегодня"
@@ -176,23 +161,6 @@ export function KPICards({ data, isLoading }: Props) {
       />
       <KPICard
         index={2}
-        title="Выручка от токенов"
-        value={data.token_revenue_today ?? 0}
-        prevValue={data.token_revenue_yesterday ?? 0}
-        icon={<DollarSign size={18} color="#34C759" />}
-        iconBg="bg-[#E8F9EE]"
-        formatValue={formatCurrency}
-      />
-      <KPICard
-        index={3}
-        title="Токенов продано"
-        value={data.tokens_sold_today ?? 0}
-        prevValue={data.tokens_sold_yesterday ?? 0}
-        icon={<Coins size={18} color="#F59E0B" />}
-        iconBg="bg-[#FFFBEB]"
-      />
-      <KPICard
-        index={4}
         title="Новых мастеров"
         value={data.masters_new_today ?? 0}
         prevValue={data.masters_new_today_prev ?? 0}
@@ -202,15 +170,7 @@ export function KPICards({ data, isLoading }: Props) {
         subValue={String(data.masters_total ?? 0)}
       />
       <KPICard
-        index={5}
-        title="Средний баланс"
-        value={data.avg_token_balance ?? 0}
-        icon={<Coins size={18} color="#3B82F6" />}
-        iconBg="bg-[#EFF6FF]"
-        formatValue={(v) => `${v.toFixed(1)}`}
-      />
-      <KPICard
-        index={6}
+        index={3}
         title="В ожидании"
         value={data.orders_pending ?? 0}
         icon={<Clock size={18} color="#EF4444" />}

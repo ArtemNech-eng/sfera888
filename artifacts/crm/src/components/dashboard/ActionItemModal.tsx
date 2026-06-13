@@ -58,10 +58,6 @@ const TYPE_ICON: Record<string, ReactNode> = {
   conflict: <BadgeAlert className="w-5 h-5" />,
   no_manager_id: <UserRoundPen className="w-5 h-5" />,
   custom_manual: <Settings className="w-5 h-5" />,
-  token_refund_pending: <RefreshCw className="w-5 h-5" />,
-  master_zero_balance: <Banknote className="w-5 h-5" />,
-  master_churn_risk: <Clock className="w-5 h-5" />,
-  order_stalled_token: <AlertTriangle className="w-5 h-5" />,
 };
 const PRIORITY_LEFT: Record<string, string> = {
   critical: "bg-red-500",
@@ -499,16 +495,6 @@ export function ActionItemModal({ id, open, onOpenChange }: {
           ? "⚠️ Заказ отменён (другая причина мастера). Рейтинг мастера обновлён, уведомление отправлено."
           : "⚠️ Заказ отменён (обход платформы). Рейтинг мастера обновлён, уведомление отправлено.";
         showToast(msg);
-        onOpenChange(false);
-        return;
-      }
-      if (action === "approve_refund") {
-        showToast(`✅ Возврат одобрен. ${orchestration?.tokensRefunded ?? ""} токенов возвращены мастеру. Заказ возвращён в пул.`);
-        onOpenChange(false);
-        return;
-      }
-      if (action === "reject_refund") {
-        showToast(`❌ Возврат отклонён. Заказ остаётся у мастера.`);
         onOpenChange(false);
         return;
       }
@@ -1241,114 +1227,6 @@ export function ActionItemModal({ id, open, onOpenChange }: {
                   <Clock className="w-4 h-4" /> Отложить
                 </Button>
               </div>
-            </div>
-          </SectionBox>
-        );
-
-      // ─── Возврат токена на рассмотрении ───────────────────────────
-      case "token_refund_pending":
-        return (
-          <SectionBox title="Ситуация: заявка на возврат токена">
-            <NextActionBanner
-              text={`Мастер ${ctx.master?.name ?? `#${item.masterId}`} запросил возврат ${Number(item.amountAtRisk ?? 0)} токенов по заказу #${item.orderId}. Заявка висит уже ${fmtAge((Date.now() - new Date(item.createdAt).getTime()) / 3600000)}.`}
-            />
-            <OrderInfoBlock ctx={ctx} />
-            <div className="border-t pt-3 space-y-3">
-              <div className="text-sm font-semibold">Решение по возврату</div>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  onClick={() => fire("approve_refund")}
-                  disabled={busy === "approve_refund"}
-                  className="bg-emerald-600 hover:bg-emerald-700"
-                >
-                  <CheckCircle2 className="w-4 h-4" /> Одобрить возврат
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => fire("resolve")} disabled={busy === "resolve"}>
-                  <CheckCircle2 className="w-4 h-4" /> Пометить как проверено
-                </Button>
-              </div>
-              <div className="space-y-2">
-                <div className="text-xs text-muted-foreground">Причина отклонения (обязательно):</div>
-                <Textarea
-                  value={messageText}
-                  onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setMessageText(e.target.value)}
-                  placeholder="Например: мастер уже приступил к работе, возврат невозможен"
-                  className="min-h-[60px] bg-white"
-                />
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  disabled={busy === "reject_refund" || !messageText.trim()}
-                  onClick={() => fire("reject_refund", { reason: messageText.trim() })}
-                >
-                  <X className="w-4 h-4" /> Отклонить возврат
-                </Button>
-              </div>
-            </div>
-          </SectionBox>
-        );
-
-      // ─── Мастер с нулевым балансом ─────────────────────────────
-      case "master_zero_balance":
-        return (
-          <SectionBox title="Ситуация: у мастера закончились токены">
-            <NextActionBanner
-              text={`Мастер ${ctx.master?.name ?? `#${item.masterId}`} имеет нулевой баланс токенов. Он не сможет принимать новые заказы. Напишите мастеру и предложите купить токены.`}
-              phone={ctx.master?.phone}
-              callLabel="Позвонить мастеру"
-            />
-            <OrderInfoBlock ctx={ctx} />
-            <div className="border-t pt-3 flex flex-wrap gap-2">
-              <Button size="sm" onClick={() => fire("message_master", { message: messageText || "Добрый день! У вас закончились токены. Купите пакет, чтобы продолжать принимать заказы." })} disabled={busy === "message_master"}>
-                <MessageSquare className="w-4 h-4" /> Написать мастеру
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => fire("resolve")} disabled={busy === "resolve"}>
-                <CheckCircle2 className="w-4 h-4" /> Пометить выполненной
-              </Button>
-            </div>
-          </SectionBox>
-        );
-
-      // ─── Риск оттока мастера ─────────────────────────────────────
-      case "master_churn_risk":
-        return (
-          <SectionBox title="Ситуация: риск оттока мастера">
-            <NextActionBanner
-              text={`Мастер ${ctx.master?.name ?? `#${item.masterId}`} не покупал токены уже давно. Остаток: ${Number(item.amountAtRisk ?? 0)} токенов. Свяжитесь и предложите акцию или бонус.`}
-              phone={ctx.master?.phone}
-              callLabel="Позвонить мастеру"
-            />
-            <OrderInfoBlock ctx={ctx} />
-            <div className="border-t pt-3 flex flex-wrap gap-2">
-              <Button size="sm" onClick={() => fire("message_master", { message: messageText || "Добрый день! Давно не видели ваших покупок токенов. Есть спецпредложение — напишите, расскажем!" })} disabled={busy === "message_master"}>
-                <MessageSquare className="w-4 h-4" /> Написать мастеру
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => fire("resolve")} disabled={busy === "resolve"}>
-                <CheckCircle2 className="w-4 h-4" /> Пометить выполненной
-              </Button>
-            </div>
-          </SectionBox>
-        );
-
-      // ─── Заказ завис (токены) ────────────────────────────────────
-      case "order_stalled_token":
-        return (
-          <SectionBox title="Ситуация: заказ завис, у мастера нет токенов">
-            <NextActionBanner
-              text={`Заказ #${item.orderId} завис. У назначенного мастера нет токенов. Нужно переназначить или отменить заказ.`}
-            />
-            <OrderInfoBlock ctx={ctx} ageLabel="Возраст заказа" />
-            <div className="border-t pt-3 flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" onClick={() => fire("reassign")} disabled={busy === "reassign"}>
-                <RefreshCw className="w-4 h-4" /> Переназначить
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => fire("message_master", { message: messageText || "Добрый день! Заказ завис. У вас нет токенов. Купите пакет или заказ будет передан другому мастеру." })} disabled={busy === "message_master"}>
-                <MessageSquare className="w-4 h-4" /> Написать мастеру
-              </Button>
-              <Button size="sm" variant="destructive" onClick={() => fire("cancel_order")} disabled={busy === "cancel_order"}>
-                <X className="w-4 h-4" /> Отменить заказ
-              </Button>
             </div>
           </SectionBox>
         );

@@ -1,4 +1,4 @@
-import { Clock, Wrench, Banknote, MessageSquare, TriangleAlert, UserX, ShieldAlert, BadgeAlert, Settings, Phone, MessageCircle, Sparkles, Loader2, CheckCircle2, Timer, UserPlus, RefreshCw, AlertTriangle } from "lucide-react";
+import { Clock, Wrench, Banknote, MessageSquare, TriangleAlert, UserX, ShieldAlert, BadgeAlert, Settings, Phone, MessageCircle, Sparkles, Loader2, CheckCircle2, Timer, UserPlus } from "lucide-react";
 import { useState } from "react";
 import { type Priority, type ActionItemCardData, pluralRu, isBurning, TYPE_LEFT_BORDER, TYPE_LABEL, PRIORITY_RU, PRIORITY_PILL, PRIORITY_LEFT_BORDER } from "./types";
 
@@ -13,8 +13,6 @@ const TYPE_ICON: Record<string, React.ReactNode> = {
   low_avito_balance: <TriangleAlert className="w-3.5 h-3.5" />, blocked_master: <UserX className="w-3.5 h-3.5" />,
   possible_bypass: <ShieldAlert className="w-3.5 h-3.5" />, conflict: <BadgeAlert className="w-3.5 h-3.5" />,
   no_manager_id: <Settings className="w-3.5 h-3.5" />, custom_manual: <Settings className="w-3.5 h-3.5" />,
-  token_refund_pending: <RefreshCw className="w-3.5 h-3.5" />, master_zero_balance: <Banknote className="w-3.5 h-3.5" />,
-  master_churn_risk: <Clock className="w-3.5 h-3.5" />, order_stalled_token: <AlertTriangle className="w-3.5 h-3.5" />,
 };
 
 function AgeIndicator({ createdAt }: { createdAt: string }) {
@@ -97,11 +95,6 @@ export function ActionItemCard({ item, onOpen, onToggleSelect, onQuickCall, onQu
           {item.deadline && <OverdueIndicator deadline={item.deadline} />}
           <button onClick={() => onOpen(item.id)} className="flex-1 text-left min-w-0 text-xs font-medium text-foreground truncate">{item.title}</button>
           {(item.masterName || item.masterId != null) && <span className="text-[10px] text-violet-700 font-medium shrink-0">{item.masterName ?? `#${item.masterId}`}</span>}
-          {item.amountAtRisk != null && Number(item.amountAtRisk) > 0 && item.type === "token_refund_pending" && (
-            <span className="text-[10px] font-semibold text-red-700 shrink-0">
-              {`${Number(item.amountAtRisk).toLocaleString("ru-RU")} ток.`}
-            </span>
-          )}
           {hovered && <QuickActions item={item} onQuickCall={onQuickCall} onQuickMessage={onQuickMessage} onQuickResolve={onQuickResolve} onQuickSnooze={onQuickSnooze} onAssignSelf={onAssignSelf} />}
         </div>
         {showHint && aiHintText && (
@@ -138,11 +131,6 @@ export function ActionItemCard({ item, onOpen, onToggleSelect, onQuickCall, onQu
           <div className="text-xs text-muted-foreground mt-1 line-clamp-1">{item.shortDescription}</div>
           <div className="flex items-center gap-3 mt-1.5 flex-wrap">
             {(item.masterName || item.masterId != null) && <div className="text-xs text-violet-700 font-medium">Мастер: {item.masterName ?? `#${item.masterId}`}</div>}
-            {item.amountAtRisk != null && Number(item.amountAtRisk) > 0 && item.type === "token_refund_pending" && (
-              <div className="text-xs font-semibold text-red-700">
-                {`Токенов: ${Number(item.amountAtRisk).toLocaleString("ru-RU")} ток.`}
-              </div>
-            )}
           </div>
         </button>
         <div className="flex flex-col items-end gap-1 shrink-0">

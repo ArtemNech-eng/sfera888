@@ -10,9 +10,6 @@ interface Order {
   service: string;
   amount: number | null;
   status: string;
-  tokens_charged: number;
-  payment_model: string;
-  master_balance_after: number | null;
 }
 
 interface Props {
@@ -79,7 +76,7 @@ export function RecentOrders({ data, isLoading }: Props) {
         <table className="w-full">
           <thead>
             <tr>
-              {['Номер', 'Время', 'Город', 'Клиент', 'Мастер', 'Услуга', 'Сумма', 'Токены', 'Модель', 'Статус'].map(h => (
+              {['Номер', 'Время', 'Город', 'Клиент', 'Мастер', 'Услуга', 'Сумма', 'Статус'].map(h => (
                 <th key={h} className="text-left text-[10px] font-semibold uppercase tracking-wider text-[#9CA3AF] pb-3 pr-3 whitespace-nowrap">
                   {h}
                 </th>
@@ -122,21 +119,6 @@ export function RecentOrders({ data, isLoading }: Props) {
                 <td className="py-2.5 pr-3">
                   <span className="text-[13px] font-bold text-[#111827] whitespace-nowrap">
                     {order.amount ? formatCurrencyFull(order.amount) : <span className="text-[#9CA3AF] font-normal">—</span>}
-                  </span>
-                </td>
-                <td className="py-2.5 pr-3">
-                  <div className="flex flex-col whitespace-nowrap">
-                    <span className="text-[12px] font-bold text-[#F59E0B]">{order.tokens_charged}</span>
-                    {order.master_balance_after != null && (
-                      <span className="text-[10px] text-[#9CA3AF]">баланс: {order.master_balance_after}</span>
-                    )}
-                  </div>
-                </td>
-                <td className="py-2.5 pr-3">
-                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap ${
-                    order.payment_model === 'token' ? 'bg-[#E8F9EE] text-[#34C759]' : 'bg-[#EFF6FF] text-[#3B82F6]'
-                  }`}>
-                    {order.payment_model === 'token' ? 'Токен' : 'Комиссия'}
                   </span>
                 </td>
                 <td className="py-2.5">
