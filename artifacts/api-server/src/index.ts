@@ -1,5 +1,5 @@
 import app from "./app";
-import { db, pool, usersTable, voronkaColumnsTable, mastersTable, ordersTable, orderDispatchesTable, tokenPackagesTable, serviceTokenPricesTable, serviceTokenRulesTable, masterCheckinsTable } from "@workspace/db";
+import { db, pool, usersTable, voronkaColumnsTable, mastersTable, ordersTable, orderDispatchesTable, masterCheckinsTable } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { eq, inArray, and, lte, isNull } from "drizzle-orm";
 import { hashPassword } from "./lib/auth.js";
@@ -157,69 +157,7 @@ async function seedVoronkaColumns() {
   }
 }
 
-// Seed default token packages and service prices if they don't exist yet.
-async function seedTokenData() {
-  const existingPackages = await db.select().from(tokenPackagesTable);
-  if (existingPackages.length === 0) {
-    await db.insert(tokenPackagesTable).values([
-      { name: "Старт",   tokensCount: "1", priceRub: 5000,  pricePerToken: "5000.00", sortOrder: 1 },
-      { name: "Оптима",  tokensCount: "3", priceRub: 12000, pricePerToken: "4000.00", sortOrder: 2 },
-      { name: "Профи",   tokensCount: "5", priceRub: 15000, pricePerToken: "3000.00", sortOrder: 3 },
-    ]);
-    console.log("[startup] Seeded default token packages");
-  }
-
-  const existingPrices = await db.select().from(serviceTokenPricesTable);
-  if (existingPrices.length === 0) {
-    await db.insert(serviceTokenPricesTable).values([
-      { serviceName: "Обои",                serviceKey: "oboi",      tokensCost: "1", sortOrder: 1 },
-      { serviceName: "Шпаклёвка",           serviceKey: "shpaklevka",tokensCost: "1", sortOrder: 2 },
-      { serviceName: "Покраска",            serviceKey: "pokraska",  tokensCost: "1", sortOrder: 3 },
-      { serviceName: "Плитка",              serviceKey: "plitka",    tokensCost: "2", sortOrder: 4 },
-      { serviceName: "Санузел под ключ",    serviceKey: "sanuzul",   tokensCost: "3", sortOrder: 5 },
-      { serviceName: "Ремонт квартиры",     serviceKey: "remont",    tokensCost: "5", sortOrder: 6 },
-      { serviceName: "Другое",              serviceKey: "other",     tokensCost: "1", sortOrder: 7 },
-    ]);
-    console.log("[startup] Seeded default service token prices");
-  }
-}
-
-// Seed default service token rules for area-based pricing.
-async function seedServiceTokenRules() {
-  const existing = await db.select().from(serviceTokenRulesTable);
-  if (existing.length > 0) return;
-
-  const rules = [
-    // Обои
-    { serviceKey: "oboi", title: "Обои 0–20 м²", calcType: "area_range", minArea: "0", maxArea: "20", tokensCost: "0.5", sortOrder: 1 },
-    { serviceKey: "oboi", title: "Обои 20–50 м²", calcType: "area_range", minArea: "20", maxArea: "50", tokensCost: "1", sortOrder: 2 },
-    { serviceKey: "oboi", title: "Обои 50–100 м²", calcType: "area_range", minArea: "50", maxArea: "100", tokensCost: "1.5", sortOrder: 3 },
-    { serviceKey: "oboi", title: "Обои 100+ м²", calcType: "area_range", minArea: "100", tokensCost: "2", sortOrder: 4 },
-    // Шпаклёвка
-    { serviceKey: "shpaklevka", title: "Шпаклёвка 0–20 м²", calcType: "area_range", minArea: "0", maxArea: "20", tokensCost: "0.5", sortOrder: 1 },
-    { serviceKey: "shpaklevka", title: "Шпаклёвка 20–50 м²", calcType: "area_range", minArea: "20", maxArea: "50", tokensCost: "1", sortOrder: 2 },
-    { serviceKey: "shpaklevka", title: "Шпаклёвка 50–100 м²", calcType: "area_range", minArea: "50", maxArea: "100", tokensCost: "1.5", sortOrder: 3 },
-    { serviceKey: "shpaklevka", title: "Шпаклёвка 100+ м²", calcType: "area_range", minArea: "100", tokensCost: "2", sortOrder: 4 },
-    // Покраска
-    { serviceKey: "pokraska", title: "Покраска 0–30 м²", calcType: "area_range", minArea: "0", maxArea: "30", tokensCost: "0.5", sortOrder: 1 },
-    { serviceKey: "pokraska", title: "Покраска 30–70 м²", calcType: "area_range", minArea: "30", maxArea: "70", tokensCost: "1", sortOrder: 2 },
-    { serviceKey: "pokraska", title: "Покраска 70–120 м²", calcType: "area_range", minArea: "70", maxArea: "120", tokensCost: "1.5", sortOrder: 3 },
-    { serviceKey: "pokraska", title: "Покраска 120+ м²", calcType: "area_range", minArea: "120", tokensCost: "2", sortOrder: 4 },
-    // Плитка
-    { serviceKey: "plitka", title: "Плитка 0–10 м²", calcType: "area_range", minArea: "0", maxArea: "10", tokensCost: "1", sortOrder: 1 },
-    { serviceKey: "plitka", title: "Плитка 10–20 м²", calcType: "area_range", minArea: "10", maxArea: "20", tokensCost: "1.5", sortOrder: 2 },
-    { serviceKey: "plitka", title: "Плитка 20–40 м²", calcType: "area_range", minArea: "20", maxArea: "40", tokensCost: "2", sortOrder: 3 },
-    { serviceKey: "plitka", title: "Плитка 40+ м²", calcType: "area_range", minArea: "40", tokensCost: "3", sortOrder: 4 },
-    // Fixed
-    { serviceKey: "sanuzul", title: "Санузел под ключ", calcType: "fixed", tokensCost: "3", sortOrder: 1 },
-    { serviceKey: "remont", title: "Квартира под ключ", calcType: "fixed", tokensCost: "5", sortOrder: 1 },
-    { serviceKey: "other", title: "Другое", calcType: "fixed", tokensCost: "1", sortOrder: 1 },
-  ];
-
-  await db.insert(serviceTokenRulesTable).values(rules as any);
-  console.log("[startup] Seeded default service token rules");
-}
-
+// Token packages, service prices and rules seeders removed — token model dropped (Phase C cleanup).
 // One-time migration: active masters who existed before the admin-confirmation requirement
 // should be granted passportVerified=true so they are not blocked retroactively.
 async function grantPassportVerifiedToActiveMasters() {
@@ -390,8 +328,6 @@ runDrizzleMigrations()
     seedVoronkaColumns().catch(console.error);
     grantPassportVerifiedToActiveMasters().catch(console.error);
     recalculateMasterVoronkaColumns().catch(console.error);
-    seedTokenData().catch(console.error);
-    seedServiceTokenRules().catch(console.error);
     checkOverdueTransactions().catch(console.error);
     autoExpireDispatches().catch(console.error);
     autoCloseNoMasterOrders().catch(console.error);

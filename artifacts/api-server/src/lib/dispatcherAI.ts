@@ -10,7 +10,7 @@
  */
 
 import OpenAI from "openai";
-import { db, ordersTable, mastersTable, leadsTable, receiptsTable, masterMessagesTable, dispatcherFollowupsTable, botMemoryTable, orderDispatchesTable, systemSettingsTable, walletTransactionsTable } from "@workspace/db";
+import { db, ordersTable, mastersTable, leadsTable, receiptsTable, masterMessagesTable, dispatcherFollowupsTable, botMemoryTable, orderDispatchesTable, systemSettingsTable } from "@workspace/db";
 import { eq, and, isNull, inArray, lte, desc, gte, ilike, sql } from "drizzle-orm";
 import { sendMaxMessage } from "../maxBot.js";
 import { sendMsg as sendManagerMsg, getManagerUserId, injectNotification } from "../managerBot.js";
@@ -1294,47 +1294,14 @@ export async function runProactiveChecks(): Promise<void> {
       .from(mastersTable)
       .where(and(isNull(mastersTable.deletedAt), gte(mastersTable.maxChatId, "")));
 
-    const masterIds = allMaxMasters.map(m => m.id);
-
-    // Token balance check (negative balances)
-    let negativeBalanceMap = new Map<number, number>();
-    if (masterIds.length > 0) {
-      try {
-        const rows = await db.select({
-          masterId: walletTransactionsTable.masterId,
-          balance: sql<number>`SUM(${walletTransactionsTable.tokensAmount})`.as("balance"),
-        })
-          .from(walletTransactionsTable)
-          .where(inArray(walletTransactionsTable.masterId, masterIds))
-          .groupBy(walletTransactionsTable.masterId)
-          .having(sql`SUM(${walletTransactionsTable.tokensAmount}) < 0`);
-        for (const r of rows) negativeBalanceMap.set(r.masterId, r.balance);
-      } catch (e) {
-        console.error("[dispatcherAI] Token balance query error:", e);
-      }
-    }
+    // Token balance reminders removed — token model dropped (Phase C cleanup).
+    // Only commission debt reminders remain below.
 
     for (const master of allMaxMasters) {
       if (!master.maxChatId) continue;
       if (isQuietHours(master.city)) continue;
 
-      // 1. Negative token balance
-      if (negativeBalanceMap.has(master.id)) {
-        if (!(await proactiveAlreadySent(master.id, "balance_negative", master.id, 72))) {
-          const msg = "Привет! Твой баланс токенов сейчас отрицательный. Чтобы иметь приоритет в ленте и не потерять доступ к новым заказам, пополни кошелёк в приложении. Удачной работы!";
-          try {
-            // Dedup FIRST: if this fails, we skip sending entirely
-            await markProactiveSent(master.id, "balance_negative", master.id);
-            await sendMaxMessage(master.maxChatId, msg);
-            await saveBotReply(master.id, master.maxChatId, msg);
-            console.log(`[dispatcherAI] Sent negative balance reminder to ${master.alias}`);
-          } catch (e) {
-            console.error(`[dispatcherAI] Failed to send balance reminder to ${master.alias}:`, e);
-          }
-        }
-      }
-
-      // 2. Commission debt (old orders)
+      // Commission debt (old orders)
       const debtAmount = Number(master.debt ?? 0);
       if (debtAmount > 0) {
         if (!(await proactiveAlreadySent(master.id, "commission_debt", master.id, 72))) {

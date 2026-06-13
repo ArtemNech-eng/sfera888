@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, ordersTable, mastersTable, leadsTable, receiptsTable, avitoSettingsTable, systemTasksTable, masterMessagesTable, transactionsTable, transactionPaymentsTable, taskSnoozesTable, orderDispatchesTable, walletTransactionsTable, masterWalletTable } from "@workspace/db";
+import { db, ordersTable, mastersTable, leadsTable, receiptsTable, avitoSettingsTable, systemTasksTable, masterMessagesTable, transactionsTable, transactionPaymentsTable, taskSnoozesTable, orderDispatchesTable } from "@workspace/db";
 import { desc, isNull, eq, and, sql, not, inArray, lte, gt } from "drizzle-orm";
 import { sendMaxMessage } from "../maxBot.js";
 import { sendPushToMaster } from "../lib/push.js";
@@ -164,7 +164,7 @@ async function buildItems(): Promise<Item[]> {
   const now = new Date();
   // Load commission settings once for amountAtRisk calculations
   const commSettings = await getCommissionSettings().catch(() => DEFAULT_COMMISSION);
-  const [orders, masters, allMastersForNames, leads, receipts, manualTasks, txRows, masterWallets] = await Promise.all([
+  const [orders, masters, allMastersForNames, leads, receipts, manualTasks, txRows] = await Promise.all([
     db.select({ id: ordersTable.id, leadId: ordersTable.leadId, masterId: ordersTable.masterId, city: ordersTable.city, status: ordersTable.status, proposedAmount: ordersTable.proposedAmount, orderAmount: ordersTable.orderAmount, commissionPaid: ordersTable.commissionPaid, createdAt: ordersTable.createdAt, updatedAt: ordersTable.updatedAt, assignedAt: ordersTable.assignedAt, cancelReason: ordersTable.cancelReason }).from(ordersTable).where(and(isNull(ordersTable.deletedAt), not(inArray(ordersTable.status, ["completed", "cancelled"])))),
     db.select({ id: mastersTable.id, alias: mastersTable.alias, city: mastersTable.city, status: mastersTable.status, createdAt: mastersTable.createdAt, blockedAt: (mastersTable as any).blockedAt }).from(mastersTable).where(and(isNull(mastersTable.deletedAt), sql`${mastersTable.status}::text ilike '%blocked%' or ${mastersTable.status}::text ilike '%fomo%'`)),
     db.select({ id: mastersTable.id, alias: mastersTable.alias, city: mastersTable.city }).from(mastersTable).where(isNull(mastersTable.deletedAt)),
@@ -172,7 +172,6 @@ async function buildItems(): Promise<Item[]> {
     db.select({ id: receiptsTable.id, orderId: receiptsTable.orderId, masterId: receiptsTable.masterId, city: receiptsTable.city, prepaymentSubmittedAt: receiptsTable.prepaymentSubmittedAt, prepaymentSeenAt: receiptsTable.prepaymentSeenAt, prepaymentAmount: receiptsTable.prepaymentAmount }).from(receiptsTable),
     db.select().from(systemTasksTable).orderBy(desc(systemTasksTable.createdAt)).limit(50),
     db.select({ id: transactionsTable.id, orderId: transactionsTable.orderId, orderAmount: transactionsTable.orderAmount }).from(transactionsTable),
-    db.select({ masterId: masterWalletTable.masterId, tokensBalance: masterWalletTable.tokensBalance }).from(masterWalletTable),
   ]);
   const leadMap = new Map(leads.map((l: any) => [l.id, l]));
   const orderMap = new Map(orders.map((o: any) => [o.id, o]));
@@ -269,8 +268,6 @@ async function buildItems(): Promise<Item[]> {
   }
   // Token refunds, master_zero_balance, master_churn_risk: token model removed,
   // these task types no longer generated.
-  const activeOrderMasterIds = new Set(orders.map((o: any) => Number(o.masterId)).filter(Boolean));
-  const masterWalletMap = new Map(masterWallets.map((w: any) => [Number(w.masterId), w]));
   // (token-related task generators removed — see .kiro/specs/remove-token-payment-model/)
   for (const t of manualTasks) if ((t as any).status !== "done" && (t as any).status !== "dismissed") items.push({ id: `manual-${(t as any).id}`, type: "custom_manual", priority: "low", title: String((t as any).title ?? "Ручная задача"), shortDescription: String((t as any).description ?? ""), fullDescription: String((t as any).description ?? ""), createdAt: new Date((t as any).createdAt ?? now).toISOString(), updatedAt: new Date((t as any).updatedAt ?? t.createdAt ?? now).toISOString(), lastActionBy: (t as any).lastActionBy ?? null, deadline: (t as any).dueAt ? new Date((t as any).dueAt).toISOString() : null, status: (t as any).status ?? "open", entityType: "system", entityId: (t as any).id, orderId: (t as any).relatedOrderId ?? null, masterId: (t as any).relatedMasterId ?? null, clientId: null, city: null, amountAtRisk: null, actions: actionSet("custom_manual") });
   items.sort((a,b)=>({critical:0,high:1,medium:2,low:3}[a.priority]-({critical:0,high:1,medium:2,low:3}[b.priority])) || ((a.deadline?new Date(a.deadline).getTime():Number.MAX_SAFE_INTEGER)-(b.deadline?new Date(b.deadline).getTime():Number.MAX_SAFE_INTEGER)) || (new Date(a.createdAt).getTime()-new Date(b.createdAt).getTime()));
@@ -280,57 +277,7 @@ async function buildItems(): Promise<Item[]> {
 async function orchestrateDashboardAction(action: string, item: Item, payload: any, operatorName = "Оператор", operatorRole = "operator") {
   const route = actionToRoute[action as keyof typeof actionToRoute] ?? "/tasks";
 
-  if (action === "approve_refund" && item.entityId != null) {
-    const transactionId = Number(item.entityId);
-    const txRows = await db.select().from(walletTransactionsTable)
-      .where(and(
-        eq(walletTransactionsTable.id, transactionId),
-        eq(walletTransactionsTable.type, "refund"),
-        eq(walletTransactionsTable.status, "pending"),
-      )).limit(1);
-    if (!txRows.length) throw Object.assign(new Error("Заявка не найдена или уже обработана"), { status: 404 });
-    const tx = txRows[0];
-    const tokensCost = Math.abs(Number(tx.tokensAmount));
-    const [wallet] = await db.select().from(masterWalletTable).where(eq(masterWalletTable.masterId, tx.masterId)).limit(1);
-    if (wallet) {
-      const newBalance = Number(wallet.tokensBalance) + tokensCost;
-      await db.update(masterWalletTable)
-        .set({ tokensBalance: String(newBalance), totalTokensRefunded: String(Number(wallet.totalTokensRefunded) + tokensCost), updatedAt: new Date() })
-        .where(eq(masterWalletTable.masterId, tx.masterId));
-    }
-    await db.update(walletTransactionsTable).set({ status: "completed" }).where(eq(walletTransactionsTable.id, transactionId));
-    if (tx.orderId != null) {
-      await db.update(ordersTable)
-        .set({ masterId: null, status: "waiting_master" as any, dispatchStatus: "none", assignedAt: null, updatedAt: new Date() })
-        .where(eq(ordersTable.id, tx.orderId!));
-    }
-    invalidateBuildItemsCache();
-    return { routedTo: "/wallet", applied: true, action, payload, itemId: item.id, tokensRefunded: tokensCost };
-  }
-
-  if (action === "reject_refund" && item.entityId != null) {
-    const transactionId = Number(item.entityId);
-    const rejectReason = String(payload?.reason ?? "").trim();
-    if (!rejectReason) throw Object.assign(new Error("Укажите причину отклонения"), { status: 400 });
-    const txRows = await db.select().from(walletTransactionsTable)
-      .where(and(
-        eq(walletTransactionsTable.id, transactionId),
-        eq(walletTransactionsTable.type, "refund"),
-        eq(walletTransactionsTable.status, "pending"),
-      )).limit(1);
-    if (!txRows.length) throw Object.assign(new Error("Заявка не найдена или уже обработана"), { status: 404 });
-    const tx = txRows[0];
-    await db.update(walletTransactionsTable)
-      .set({ status: "cancelled", reason: `${tx.reason ?? ""} | Отклонено: ${rejectReason}` })
-      .where(eq(walletTransactionsTable.id, transactionId));
-    if (tx.orderId != null) {
-      await db.update(ordersTable)
-        .set({ status: "master_assigned" as any, updatedAt: new Date() })
-        .where(eq(ordersTable.id, tx.orderId!));
-    }
-    invalidateBuildItemsCache();
-    return { routedTo: "/wallet", applied: true, action, payload, itemId: item.id };
-  }
+  // approve_refund / reject_refund actions removed — token model dropped (Phase C)
 
   if (action === "update_balance" && payload.balance != null) {
     const rows = await db.select().from(avitoSettingsTable).limit(1);
@@ -442,14 +389,8 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
       } as any).where(eq(ordersTable.id, orderId));
       console.log(`[complete_as_master] order #${orderId} marked completed, amount=${amount}, commission=${commission}`);
 
-      // Check if order is token-based (has token spend transaction)
-      const spendRows = await db.select({ id: walletTransactionsTable.id })
-        .from(walletTransactionsTable)
-        .where(and(eq(walletTransactionsTable.orderId, orderId), eq(walletTransactionsTable.type, "spend")))
-        .limit(1);
-      const isTokenBased = spendRows.length > 0;
-
-      if (!isTokenBased) {
+      // Token model removed — all completed orders go through commission flow.
+      {
         // Determine commission accounting based on mode
         // - no_debt: commission forced to 0, no transaction money flow, master debt unchanged
         // - as_debt: commission = pending, master debt += commission (master must pay later)
@@ -495,8 +436,6 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
             }
           }
         }
-      } else {
-        console.log(`[complete_as_master] token-based order #${orderId} — skipping commission transaction`);
       }
 
       await recordOrderCompleted(masterId).catch(() => {});
@@ -504,13 +443,12 @@ async function orchestrateDashboardAction(action: string, item: Item, payload: a
 
       const effectiveCommission = commissionMode === "no_debt" ? 0 : commission;
       const commFmt = effectiveCommission > 0 ? `${Math.round(effectiveCommission).toLocaleString("ru-RU")} ₽` : "0 ₽";
-      const notifyText = isTokenBased
-        ? `✅ Заказ #${orderId} отмечен как выполненный оператором. Спасибо за работу!`
-        : commissionMode === "as_debt"
-        ? `✅ Заказ #${orderId} отмечен как выполненный оператором. К оплате комиссия ${commFmt} — она добавлена к вашему долгу. Пожалуйста, погасите задолженность.`
-        : commissionMode === "no_debt"
-        ? `✅ Заказ #${orderId} отмечен как выполненный оператором. Комиссия по этому заказу не начисляется. Спасибо за работу!`
-        : `✅ Заказ #${orderId} отмечен как выполненный оператором. Комиссия ${commFmt} засчитана как оплаченная. Спасибо за работу!`;
+      const notifyText =
+        commissionMode === "as_debt"
+          ? `✅ Заказ #${orderId} отмечен как выполненный оператором. К оплате комиссия ${commFmt} — она добавлена к вашему долгу. Пожалуйста, погасите задолженность.`
+          : commissionMode === "no_debt"
+          ? `✅ Заказ #${orderId} отмечен как выполненный оператором. Комиссия по этому заказу не начисляется. Спасибо за работу!`
+          : `✅ Заказ #${orderId} отмечен как выполненный оператором. Комиссия ${commFmt} засчитана как оплаченная. Спасибо за работу!`;
       const [master] = await db.select({ id: mastersTable.id, maxChatId: mastersTable.maxChatId }).from(mastersTable).where(eq(mastersTable.id, masterId)).limit(1);
       // Send to BOTH channels: Max (if connected) AND PWA push
       if (master?.maxChatId) {
