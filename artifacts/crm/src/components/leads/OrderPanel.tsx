@@ -115,9 +115,6 @@ interface Order {
   photosBefore?: string[];
   photosAfter?: string[];
   photoAct?: string | null;
-  manualTokenCost?: number | null;
-  paymentModel?: "token" | "commission" | string;
-  tokensCharged?: number;
   maxMasters?: number;
   assignedMasterCount?: number;
 }
@@ -220,7 +217,6 @@ export default function OrderPanel({
   const [partialNote, setPartialNote] = useState("");
 
   const [operatorNoteEdit, setOperatorNoteEdit] = useState<string | null>(null);
-  const [manualTokenCostEdit, setManualTokenCostEdit] = useState<string | null>(null);
   const [maxMastersEdit, setMaxMastersEdit] = useState<string | null>(null);
 
   const [showReceipts, setShowReceipts] = useState(false);
@@ -305,27 +301,16 @@ export default function OrderPanel({
       if (!r.ok) {
         const text = await r.text();
         let msg = "Ошибка";
-        let insufficientTokens = false;
         try {
           const parsed = JSON.parse(text);
           msg = parsed.error ?? msg;
-          if (parsed.insufficientTokens) insufficientTokens = true;
         } catch {}
-        const err = new Error(msg) as any;
-        err.insufficientTokens = insufficientTokens;
-        err.status = r.status;
-        throw err;
+        throw new Error(msg);
       }
       return r.json();
     },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/orders"] }); queryClient.invalidateQueries({ queryKey: ["/api/dispatch", orderId] }); broadcastMutation.reset(); toast({ title: "Мастер назначен" }); },
-    onError: (e: any) => {
-      if (e.insufficientTokens || e.status === 402) {
-        toast({ title: "Недостаточно токенов", description: e.message, variant: "destructive" });
-      } else {
-        toast({ title: "Ошибка", description: e.message, variant: "destructive" });
-      }
-    },
+    onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
   });
 
   const manualAssignMutation = useMutation({
@@ -334,16 +319,11 @@ export default function OrderPanel({
       if (!r.ok) {
         const text = await r.text();
         let msg = "Ошибка";
-        let insufficientTokens = false;
         try {
           const parsed = JSON.parse(text);
           msg = parsed.error ?? msg;
-          if (parsed.insufficientTokens) insufficientTokens = true;
         } catch {}
-        const err = new Error(msg) as any;
-        err.insufficientTokens = insufficientTokens;
-        err.status = r.status;
-        throw err;
+        throw new Error(msg);
       }
       return r.json();
     },
@@ -357,13 +337,7 @@ export default function OrderPanel({
         toast({ title: "Мастер назначен вручную" });
       }, 0);
     },
-    onError: (e: any) => {
-      if (e.insufficientTokens || e.status === 402) {
-        toast({ title: "Недостаточно токенов", description: e.message, variant: "destructive" });
-      } else {
-        toast({ title: "Ошибка", description: e.message, variant: "destructive" });
-      }
-    },
+    onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
   });
 
   const unassignMutation = useMutation({
@@ -442,16 +416,6 @@ export default function OrderPanel({
       return r.json();
     },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/orders"] }); setOperatorNoteEdit(null); toast({ title: "Заметка сохранена" }); },
-    onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
-  });
-
-  const saveManualTokenCostMutation = useMutation({
-    mutationFn: async ({ orderId: oid, cost }: { orderId: number; cost: number | null }) => {
-      const r = await fetch(`/api/orders/${oid}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ manualTokenCost: cost }) });
-      if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Ошибка"); }
-      return r.json();
-    },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/orders"] }); setManualTokenCostEdit(null); toast({ title: "Стоимость в токенах обновлена" }); },
     onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
   });
 

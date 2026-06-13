@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { X, Search, Star, MapPin, Wallet, Diamond, Loader2, UserPlus } from "lucide-react";
+import { X, Search, Star, MapPin, Wallet, Loader2, UserPlus } from "lucide-react";
 import { PaymentStateBadge, type PaymentState } from "./PaymentStateBadge";
 
 interface OrderRow {
@@ -9,7 +9,6 @@ interface OrderRow {
   serviceType?: string;
   master: string | null;
   masterId: number | null;
-  paymentModel?: string;
   paymentState?: PaymentState;
   agreementAmountSource?: string | null;
 }
@@ -24,8 +23,6 @@ interface Master {
   acceptedOrders: number;
   totalOrders: number;
   paidOrdersCount?: number;
-  tokensBalance?: number;
-  creditLimitTokens?: number;
   specialization?: string;
   specializations?: string[];
 }
@@ -99,8 +96,6 @@ export default function MasterPickerPanel({ order, onClose, onAssign, isPending 
       return (b.paidOrdersCount ?? 0) - (a.paidOrdersCount ?? 0);
     });
   }, [masters, query, cityFilter, onlyAvailable, order.masterId, order.serviceType]);
-
-  const isToken = (order.paymentModel ?? "commission") === "token";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/40 backdrop-blur-sm" onClick={onClose}>
@@ -209,11 +204,6 @@ export default function MasterPickerPanel({ order, onClose, onAssign, isPending 
                       ) : (
                         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
                           <Wallet className="w-2.5 h-2.5" /> без долга
-                        </span>
-                      )}
-                      {isToken && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          <Diamond className="w-2.5 h-2.5" /> {Number(m.tokensBalance ?? 0).toFixed(0)} т
                         </span>
                       )}
                     </div>

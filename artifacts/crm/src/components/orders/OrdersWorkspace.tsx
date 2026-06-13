@@ -28,7 +28,7 @@ import {
   Search, Loader2, X, Filter, AlertCircle, AlertTriangle,
   CalendarDays, ChevronDown, Banknote, CheckCircle2, XCircle, Timer,
   Inbox, RefreshCw, MessageSquare, UserCheck, UserMinus, UserPlus,
-  Diamond, Wallet, MapPin, TrendingUp, Radio, Check, Clock, Pencil,
+  Wallet, MapPin, TrendingUp, Radio, Check, Clock, Pencil,
   ArrowUpDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -74,8 +74,6 @@ interface TableRow {
   timeInStage: string;
   isProblem: boolean;
   problemReason?: string;
-  paymentModel?: string;
-  tokensCharged?: number;
   commission?: {
     orderTotal: number;
     total: number;
@@ -141,7 +139,6 @@ export default function OrdersWorkspace({ onOpenOrder, initialFolder = "waiting_
   const [search, setSearch] = useState("");
   const [period, setPeriod] = useState<"all" | "today" | "yesterday" | "week" | "month">("all");
   const [city, setCity] = useState<string>("all");
-  const [paymentModel, setPaymentModel] = useState<"all" | "token" | "commission">("all");
   const [problemOnly, setProblemOnly] = useState(false);
   const [hasCommissionLeft, setHasCommissionLeft] = useState(false);
   const [sortBy, setSortBy] = useState<"createdAt" | "ageMs" | "orderTotal" | "commissionLeft">(
@@ -152,7 +149,7 @@ export default function OrdersWorkspace({ onOpenOrder, initialFolder = "waiting_
   const limit = 50;
 
   // Reset page when filters change
-  useEffect(() => { setPage(1); }, [folder, search, period, city, paymentModel, problemOnly, hasCommissionLeft]);
+  useEffect(() => { setPage(1); }, [folder, search, period, city, problemOnly, hasCommissionLeft]);
 
   // Smart default sort when switching folders
   useEffect(() => {
@@ -178,11 +175,10 @@ export default function OrdersWorkspace({ onOpenOrder, initialFolder = "waiting_
     if (search.trim()) qp.set("search", search.trim());
     if (period !== "all") qp.set("period", period);
     if (city !== "all") qp.set("city", city);
-    if (paymentModel !== "all") qp.set("paymentModel", paymentModel);
     if (problemOnly) qp.set("problemOnly", "true");
     if (hasCommissionLeft) qp.set("hasCommissionLeft", "true");
     return qp.toString();
-  }, [page, limit, sortBy, sortDir, folder, search, period, city, paymentModel, problemOnly, hasCommissionLeft]);
+  }, [page, limit, sortBy, sortDir, folder, search, period, city, problemOnly, hasCommissionLeft]);
 
   const { data, isLoading, error, refetch, dataUpdatedAt } = useQuery<TableResponse>({
     queryKey: ["/api/work-board/table", queryString],
@@ -376,14 +372,12 @@ export default function OrdersWorkspace({ onOpenOrder, initialFolder = "waiting_
   const activeFilterCount =
     (period !== "all" ? 1 : 0) +
     (city !== "all" ? 1 : 0) +
-    (paymentModel !== "all" ? 1 : 0) +
     (problemOnly ? 1 : 0) +
     (hasCommissionLeft ? 1 : 0);
 
   const resetFilters = () => {
     setPeriod("all");
     setCity("all");
-    setPaymentModel("all");
     setProblemOnly(false);
     setHasCommissionLeft(false);
   };
@@ -499,26 +493,7 @@ export default function OrdersWorkspace({ onOpenOrder, initialFolder = "waiting_
             )}
 
             <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5">
-              {([
-                { key: "all" as const, label: "Все", icon: undefined },
-                { key: "token" as const, label: "Токены", icon: Diamond },
-                { key: "commission" as const, label: "Комиссия", icon: Banknote },
-              ]).map(t => {
-                const isActive = paymentModel === t.key;
-                const Icon = t.icon;
-                return (
-                  <button
-                    key={t.key}
-                    onClick={() => setPaymentModel(t.key)}
-                    className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-all ${
-                      isActive ? "bg-white text-foreground shadow-sm ring-1 ring-black/5" : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {Icon && <Icon className="w-3 h-3" />}
-                    {t.label}
-                  </button>
-                );
-              })}
+              {/* payment-model filter removed — single commission model */}
             </div>
 
             <button
@@ -760,7 +735,6 @@ interface RowProps {
 }
 
 function OrderRowDesktop({ row, folder, onOpenOrder, onClose, onPickMaster, onUnassign, onTogglePaid, onPartialPayment, onReturnToPool }: RowProps) {
-  const isToken = (row.paymentModel ?? "commission") === "token";
   const dt = row.createdAt ? new Date(row.createdAt) : null;
   const dateLabel = dt ? dt.toLocaleDateString("ru-RU", { day: "2-digit", month: "short" }) : "";
   const isCompleted = row.status === "completed";
@@ -771,9 +745,7 @@ function OrderRowDesktop({ row, folder, onOpenOrder, onClose, onPickMaster, onUn
     <tr
       onClick={() => onOpenOrder(row.orderId)}
       className={`cursor-pointer transition-colors ${
-        row.isProblem ? "bg-red-50/40 hover:bg-red-50/60"
-        : isToken ? "bg-emerald-50/20 hover:bg-emerald-50/40"
-        : "hover:bg-slate-50/60"
+        row.isProblem ? "bg-red-50/40 hover:bg-red-50/60" : "hover:bg-slate-50/60"
       }`}
     >
       {/* Color stripe */}
@@ -798,11 +770,6 @@ function OrderRowDesktop({ row, folder, onOpenOrder, onClose, onPickMaster, onUn
             <PaymentStateBadge state={row.paymentState} size="sm" />
           </div>
         )}
-        {isToken ? (
-          <span className="inline-flex items-center gap-0.5 px-1 py-0.5 mt-0.5 rounded text-[9px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-            <Diamond className="w-2 h-2" /> {row.tokensCharged ?? 0}т
-          </span>
-        ) : null}
       </td>
 
       {/* Service + Location */}
@@ -881,8 +848,6 @@ function OrderRowDesktop({ row, folder, onOpenOrder, onClose, onPickMaster, onUn
               </label>
             )}
           </div>
-        ) : isToken ? (
-          <span className="text-[11px] text-emerald-700 font-medium">токены списаны</span>
         ) : (
           <span className="text-xs text-muted-foreground">—</span>
         )}
@@ -973,15 +938,12 @@ function OrderRowDesktop({ row, folder, onOpenOrder, onClose, onPickMaster, onUn
 // ─── Mobile card ─────────────────────────────────────────────────────────────
 
 function OrderCardMobile({ row, folder, onOpenOrder, onClose, onPickMaster, onUnassign, onTogglePaid, onPartialPayment, onReturnToPool }: RowProps) {
-  const isToken = (row.paymentModel ?? "commission") === "token";
   const isActive = row.status !== "completed" && row.status !== "cancelled";
 
   return (
     <div
       onClick={() => onOpenOrder(row.orderId)}
-      className={`p-4 cursor-pointer ${
-        row.isProblem ? "bg-red-50/40" : isToken ? "bg-emerald-50/20" : ""
-      }`}
+      className={`p-4 cursor-pointer ${row.isProblem ? "bg-red-50/40" : ""}`}
     >
       <div className="flex items-start justify-between gap-2 mb-2">
         <div>
@@ -1012,7 +974,7 @@ function OrderCardMobile({ row, folder, onOpenOrder, onClose, onPickMaster, onUn
         {row.masterDebt > 0 && <span className="ml-1.5 text-xs text-red-600">долг {fmtMoney(row.masterDebt)}</span>}
       </div>
 
-      {row.commission && row.commission.total > 0 && !isToken && (
+      {row.commission && row.commission.total > 0 && (
         <div className="mt-2 bg-slate-50 rounded-lg p-2">
           <div className="flex justify-between text-xs">
             <span className="font-medium">{fmtMoney(row.commission.orderTotal)}</span>

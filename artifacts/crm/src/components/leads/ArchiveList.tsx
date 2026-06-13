@@ -1,8 +1,7 @@
-import { useState } from "react";
 import { StatusBadge } from "@/components/status-badge";
 import { formatDate } from "@/lib/utils";
 import {
-  Loader2, Search, Filter, MapPin, ChevronLeft, ChevronRight, Diamond, Banknote,
+  Loader2, Search, Filter, MapPin, ChevronLeft, ChevronRight,
 } from "lucide-react";
 
 interface Order {
@@ -19,7 +18,6 @@ interface Order {
   commission?: number | null;
   clientRating?: number;
   updatedAt?: string;
-  paymentModel?: string;
 }
 
 function fmtMoney(n: number) { return n.toLocaleString("ru-RU") + " ₽"; }
@@ -61,9 +59,7 @@ export default function ArchiveList({
   onPageChange,
   onOpenOrder,
 }: ArchiveListProps) {
-  const [paymentModelFilter, setPaymentModelFilter] = useState<string>("all");
-  const filteredOrders = paymentModelFilter === "all" ? orders : orders.filter(o => (o.paymentModel ?? "token") === paymentModelFilter);
-  const totalPages = Math.ceil(filteredOrders.length / limit);
+  const totalPages = Math.ceil(orders.length / limit);
 
   return (
     <div className="space-y-3">
@@ -119,36 +115,7 @@ export default function ArchiveList({
             );
           })}
         </div>
-        {/* Payment model tabs */}
-        <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-0.5 w-fit">
-          {([
-            { key: "all" as string, label: "Все", icon: undefined },
-            { key: "token" as string, label: "Токены", icon: Diamond },
-            { key: "commission" as string, label: "Комиссия", icon: Banknote },
-          ]).map(t => {
-            const isActive = paymentModelFilter === t.key;
-            const count = t.key === "all" ? orders.length
-              : orders.filter(o => (o.paymentModel ?? "token") === t.key).length;
-            const Icon = t.icon;
-            return (
-              <button
-                key={t.key}
-                onClick={() => setPaymentModelFilter(t.key)}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
-                  isActive
-                    ? "bg-white text-foreground shadow-sm ring-1 ring-black/5"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {Icon && <Icon className="w-3 h-3" />}
-                <span>{t.label}</span>
-                <span className={`ml-0.5 text-[10px] ${isActive ? "text-muted-foreground" : "text-muted-foreground/60"}`}>
-                  {count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+        {/* Payment model filter removed — single commission model */}
       </div>
 
       {/* Table */}
@@ -171,28 +138,16 @@ export default function ArchiveList({
             <tbody className="divide-y divide-border/50">
               {loading ? (
                 <tr><td colSpan={9} className="px-4 py-12 text-center"><Loader2 className="w-6 h-6 animate-spin text-primary mx-auto" /></td></tr>
-              ) : filteredOrders.length === 0 ? (
+              ) : orders.length === 0 ? (
                 <tr><td colSpan={9} className="px-4 py-12 text-center text-muted-foreground">Архив пуст</td></tr>
-              ) : filteredOrders.map(order => {
+              ) : orders.map(order => {
                 const amount = order.orderAmount ? Number(order.orderAmount) : null;
                 const commission = order.commission ? Number(order.commission) : null;
                 const rating = order.clientRating;
-                const isToken = (order.paymentModel ?? "token") === "token";
                 return (
-                  <tr key={order.id} onClick={() => onOpenOrder(order.id)} className={`cursor-pointer hover:bg-slate-50 transition-colors opacity-90 ${isToken ? "border-l-4 border-l-emerald-400" : ""}`}>
+                  <tr key={order.id} onClick={() => onOpenOrder(order.id)} className="cursor-pointer hover:bg-slate-50 transition-colors opacity-90">
                     <td className="px-3 py-2.5 pl-4 whitespace-nowrap">
                       <span className="font-semibold text-foreground">#{order.id}</span>
-                      <div className="mt-0.5">
-                        {isToken ? (
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            <Diamond className="w-2.5 h-2.5 mr-0.5" /> Токены
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-50 text-slate-600 border border-slate-200">
-                            <Banknote className="w-2.5 h-2.5 mr-0.5" /> Комиссия
-                          </span>
-                        )}
-                      </div>
                     </td>
                     <td className="px-3 py-2.5 whitespace-nowrap">
                       <p className="text-xs text-foreground">{formatDate(order.updatedAt ?? order.createdAt)}</p>
@@ -233,7 +188,7 @@ export default function ArchiveList({
       </div>
 
       {/* Pagination */}
-      {filteredOrders.length > limit && (
+      {orders.length > limit && (
         <div className="flex items-center justify-between bg-card p-3 rounded-2xl border border-border/50 shadow-sm mt-2">
           <button
             onClick={() => onPageChange(Math.max(1, page - 1))}
@@ -243,7 +198,7 @@ export default function ArchiveList({
             <ChevronLeft className="w-4 h-4" />Назад
           </button>
           <span className="text-sm text-muted-foreground">
-            Страница <span className="font-semibold text-foreground">{page}</span> из {totalPages} <span className="text-muted-foreground/60">({filteredOrders.length} всего)</span>
+            Страница <span className="font-semibold text-foreground">{page}</span> из {totalPages} <span className="text-muted-foreground/60">({orders.length} всего)</span>
           </span>
           <button
             onClick={() => onPageChange(page + 1)}

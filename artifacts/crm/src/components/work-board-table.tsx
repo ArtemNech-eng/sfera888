@@ -17,7 +17,7 @@ import {
   AlertTriangle, Bell, Bot, CheckCircle2, ChevronDown, ChevronUp,
   Clock, Filter, Inbox, MapPin, Radio, RefreshCw, Search,
   TrendingUp, User, Wallet, ArrowUpDown, MoreHorizontal,
-  Circle, CircleDot, ArrowRight, Diamond, Banknote,
+  Circle, CircleDot, ArrowRight, Banknote,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -75,7 +75,6 @@ interface Card {
   status: string;
   problemReason?: string;
   responseCount?: number;
-  paymentModel?: string;
 }
 
 export interface TableRowData extends Card {
@@ -87,8 +86,6 @@ export interface TableRowData extends Card {
   clientPhone?: string;
   clientDistrict?: string;
   serviceType?: string;
-  paymentModel?: string;
-  tokensCharged?: number;
 }
 
 interface TableResponse {
@@ -222,7 +219,6 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [globalFilter, setGlobalFilter] = useState("");
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 50 });
-  const [paymentModelFilter, setPaymentModelFilter] = useState<string>("all");
   const [columnVisibility, setColumnVisibility] = useState({ problemReason: false });
   
   // Query params
@@ -272,16 +268,8 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
 
   const enrichedData = useMemo(() => {
     if (!data) return null;
-    let rows = data.rows;
-    if (paymentModelFilter !== "all") {
-      rows = rows.filter(row => (row.paymentModel || "commission") === paymentModelFilter);
-    }
-    return {
-      ...data,
-      rows,
-      total: rows.length,
-    };
-  }, [data, paymentModelFilter]);
+    return data;
+  }, [data]);
 
   // SSE for live updates
   useEffect(() => {
@@ -374,20 +362,9 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
           </Button>
         ),
         cell: ({ row }) => (
-          <div className="flex flex-col gap-0.5">
-            <Button variant="link" className="font-mono font-bold p-0 h-auto" onClick={() => onOpenOrder(row.original.orderId)}>
-              #{row.original.orderId}
-            </Button>
-            {(row.original.paymentModel || "token") === "token" ? (
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 w-fit">
-                <Diamond className="w-2.5 h-2.5 mr-0.5" /> Токены
-              </span>
-            ) : (
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-50 text-slate-600 border border-slate-200 w-fit">
-                <Banknote className="w-2.5 h-2.5 mr-0.5" /> Комиссия
-              </span>
-            )}
-          </div>
+          <Button variant="link" className="font-mono font-bold p-0 h-auto" onClick={() => onOpenOrder(row.original.orderId)}>
+            #{row.original.orderId}
+          </Button>
         ),
         size: 80,
       },
@@ -444,15 +421,6 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
           </Button>
         ),
         cell: ({ row }) => {
-          const isToken = (row.original.paymentModel || "token") === "token";
-          if (isToken) {
-            return (
-              <div className="font-bold flex items-center gap-1 text-emerald-700">
-                <Diamond className="w-3 h-3" />
-                {row.original.tokensCharged ?? 0} т
-              </div>
-            );
-          }
           const total = row.original.commission?.orderTotal || row.original.money?.amount || 0;
           return <div className="font-bold">{fmtMoney(total)}</div>;
         },
@@ -468,14 +436,6 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
           </Button>
         ),
         cell: ({ row }) => {
-          const isToken = (row.original.paymentModel || "token") === "token";
-          if (isToken) {
-            return (
-              <div className="text-emerald-600 font-bold">
-                0 т
-              </div>
-            );
-          }
           const left = row.original.commissionLeft;
           return (
             <div className={left === 0 ? "text-emerald-600 font-bold" : "text-red-600 font-bold"}>
@@ -648,37 +608,6 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
           />
         </div>
         <div className="flex gap-2 overflow-x-auto pb-2">
-          {/* Payment model tabs mobile */}
-          <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-0.5 flex-shrink-0">
-            {([
-              { key: "all" as string, label: "Все", icon: undefined },
-              { key: "token" as string, label: "Токены", icon: Diamond },
-              { key: "commission" as string, label: "Комиссия", icon: Banknote },
-            ]).map(t => {
-              const isActive = paymentModelFilter === t.key;
-              const count = t.key === "all" ? (enrichedData?.rows.length ?? data?.total ?? 0)
-                : enrichedData?.rows.filter(r => (r.paymentModel || "token") === t.key).length ?? 0;
-              const Icon = t.icon;
-              return (
-                <button
-                  key={t.key}
-                  onClick={() => setPaymentModelFilter(t.key)}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
-                    isActive
-                      ? "bg-white text-foreground shadow-sm ring-1 ring-black/5"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {Icon && <Icon className="w-3 h-3" />}
-                  <span>{t.label}</span>
-                  <span className={`ml-0.5 text-[10px] ${isActive ? "text-muted-foreground" : "text-muted-foreground/60"}`}>
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
           <Button variant="outline" size="sm" onClick={() => {
             setColumnFilters(prev => prev.filter(f => f.id !== "hasCommissionLeft"));
             setColumnFilters(prev => [...prev, { id: "hasCommissionLeft", value: true }]);
@@ -691,7 +620,7 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
           }}>
             Проблемы
           </Button>
-          <Button variant="outline" size="sm" onClick={() => { setColumnFilters([]); setPaymentModelFilter("all"); }}>
+          <Button variant="outline" size="sm" onClick={() => { setColumnFilters([]); }}>
             Сбросить
           </Button>
         </div>
@@ -711,22 +640,11 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
           </div>
         )}
         {enrichedData?.rows.map(row => (
-          <div key={row.id} className={`bg-card border ${(row.paymentModel || "token") === "token" ? "border-l-4 border-l-emerald-400 border-emerald-200" : "border-border"} rounded-xl p-4 space-y-3`}>
+          <div key={row.id} className="bg-card border border-border rounded-xl p-4 space-y-3">
             <div className="flex items-start justify-between">
-              <div className="flex flex-col gap-0.5">
-                <Button variant="link" className="p-0 font-bold h-auto" onClick={() => onOpenOrder(row.orderId)}>
-                  #{row.orderId}
-                </Button>
-                {(row.paymentModel || "token") === "token" ? (
-                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 w-fit">
-                    <Diamond className="w-2.5 h-2.5 mr-0.5" /> Токены
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-50 text-slate-600 border border-slate-200 w-fit">
-                    <Banknote className="w-2.5 h-2.5 mr-0.5" /> Комиссия
-                  </span>
-                )}
-              </div>
+              <Button variant="link" className="p-0 font-bold h-auto" onClick={() => onOpenOrder(row.orderId)}>
+                #{row.orderId}
+              </Button>
               <StatusBadge columnKey={row.columnKey} />
             </div>
             <div className="space-y-2">
@@ -748,16 +666,7 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
                 )}
               </div>
             </div>
-            {(row.paymentModel || "token") === "token" ? (
-              <div className="bg-emerald-50 rounded-lg p-3">
-                <div className="flex justify-between text-sm font-bold text-emerald-800">
-                  <span className="flex items-center gap-1">
-                    <Diamond className="w-3 h-3" /> Стоимость: {row.tokensCharged ?? 0} т
-                  </span>
-                  <span>Списано</span>
-                </div>
-              </div>
-            ) : row.commission && (
+            {row.commission && (
               <div className="bg-slate-50 rounded-lg p-3">
                 <div className="flex justify-between text-sm font-bold">
                   <span>Сумма: {fmtMoney(row.commission.orderTotal)}</span>
@@ -782,7 +691,7 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
                     ↩️ Вернуть
                   </Button>
                 )}
-                {(row.paymentModel || "token") !== "token" && row.commissionLeft > 0 && (
+                {row.commissionLeft > 0 && (
                   <Button variant="default" size="sm" onClick={() => {
                     const input = window.prompt(`Сумма оплаты (остаток ${fmtMoney(row.commissionLeft)}):`, String(row.commissionLeft));
                     if (input === null) return;
@@ -880,39 +789,6 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
           />
         </div>
         <div className="flex items-center gap-2">
-          {/* Payment model tabs */}
-          <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-0.5">
-            {([
-              { key: "all" as string, label: "Все", icon: undefined },
-              { key: "token" as string, label: "Токены", icon: Diamond },
-              { key: "commission" as string, label: "Комиссия", icon: Banknote },
-            ]).map(t => {
-              const isActive = paymentModelFilter === t.key;
-              const count = t.key === "all" ? (enrichedData?.rows.length ?? data?.total ?? 0)
-                : enrichedData?.rows.filter(r => (r.paymentModel || "token") === t.key).length ?? 0;
-              const Icon = t.icon;
-              return (
-                <button
-                  key={t.key}
-                  onClick={() => setPaymentModelFilter(t.key)}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
-                    isActive
-                      ? "bg-white text-foreground shadow-sm ring-1 ring-black/5"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {Icon && <Icon className="w-3 h-3" />}
-                  <span>{t.label}</span>
-                  <span className={`ml-0.5 text-[10px] ${isActive ? "text-muted-foreground" : "text-muted-foreground/60"}`}>
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="h-4 w-px bg-border/50" />
-
           <Filter className="h-4 w-4 text-muted-foreground" />
           <select
             className="bg-background border border-input rounded-md px-3 py-1 text-sm"
@@ -1018,19 +894,16 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
                   </TableCell>
                 </TableRow>
               ) : (
-                table.getRowModel().rows.map(row => {
-                  const isToken = (row.original.paymentModel || "token") === "token";
-                  return (
-                    <TableRow key={row.id} data-state={row.getIsSelected() && "selected"}
-                             className={`${row.original.isProblem ? "bg-red-50/60 hover:bg-red-50/80" : isToken ? "bg-emerald-50/20 hover:bg-emerald-50/40" : ""}`}>
-                      {row.getVisibleCells().map(cell => (
-                        <TableCell key={cell.id}>
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  );
-                })
+                table.getRowModel().rows.map(row => (
+                  <TableRow key={row.id} data-state={row.getIsSelected() && "selected"}
+                           className={row.original.isProblem ? "bg-red-50/60 hover:bg-red-50/80" : ""}>
+                    {row.getVisibleCells().map(cell => (
+                      <TableCell key={cell.id}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
               )}
             </TableBody>
           </Table>

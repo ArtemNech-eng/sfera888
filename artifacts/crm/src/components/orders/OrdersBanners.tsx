@@ -3,7 +3,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { useLocation } from "wouter";
 import { useEffect, useState } from "react";
-import { AlertCircle, Diamond, Users, UserCheck, MessageSquare, RefreshCw, XCircle, Loader2, ChevronDown, ChevronRight, Banknote } from "lucide-react";
+import { AlertCircle, Users, UserCheck, MessageSquare, RefreshCw, XCircle, Loader2, ChevronDown, ChevronRight, Banknote } from "lucide-react";
 
 // Persist collapsed-state per banner across page loads.
 function useCollapsed(key: string, initial = false): [boolean, (v: boolean) => void] {
@@ -47,7 +47,6 @@ interface OrderRow {
   serviceType: string;
   city: string;
   status: string;
-  paymentModel?: string;
   cancelType?: string | null;
   cancelReason?: string | null;
   masterId?: number | null;
@@ -61,8 +60,8 @@ interface Props {
 /**
  * Top-of-page alert banners for the Orders Workspace:
  *   - Cancellation requests from masters (red)
- *   - Pending responses on token leads (emerald)
- *   - Pending responses on commission leads (blue)
+ *   - Pending master responses on dispatched leads (blue)
+ *   - "Сумма не зафиксирована > 48ч" warnings (amber)
  *
  * Each banner is data-driven via a small dedicated query and disappears
  * automatically when there's nothing to show.
@@ -111,11 +110,8 @@ export default function OrdersBanners({ onOpenOrder }: Props) {
   });
   const noAmountItems = noAmountStats?.items ?? [];
 
-  // Map orderId → paymentModel for splitting pending responses
-  const paymentModelByOrder = new Map<number, string>();
-  for (const o of cancellationOrders) paymentModelByOrder.set(o.id, o.paymentModel ?? "commission");
-  const tokenPending = (pendingDispatches ?? []).filter(p => paymentModelByOrder.get(p.orderId) === "token");
-  const commissionPending = (pendingDispatches ?? []).filter(p => paymentModelByOrder.get(p.orderId) !== "token");
+  // All pending dispatches in a single banner — token model removed.
+  const allPending = pendingDispatches ?? [];
 
   // ── Mutations ─────────────────────────────────────────────────────────────
   const approveCancellationMutation = useMutation({
@@ -166,15 +162,13 @@ export default function OrdersBanners({ onOpenOrder }: Props) {
 
   // Collapsed state for each banner — persisted across reloads
   const [cancelCollapsed, setCancelCollapsed] = useCollapsed("cancellation");
-  const [tokenCollapsed, setTokenCollapsed] = useCollapsed("token-pending");
-  const [commCollapsed, setCommCollapsed] = useCollapsed("commission-pending");
+  const [pendingCollapsed, setPendingCollapsed] = useCollapsed("commission-pending");
   const [noAmountCollapsed, setNoAmountCollapsed] = useCollapsed("no-amount-stale");
 
   // Hide all banners if everything's clear
   if (
     cancellationOrders.length === 0 &&
-    tokenPending.length === 0 &&
-    commissionPending.length === 0 &&
+    allPending.length === 0 &&
     noAmountItems.length === 0
   ) {
     return null;
@@ -258,31 +252,17 @@ export default function OrdersBanners({ onOpenOrder }: Props) {
         </div>
       )}
 
-      {/* Token pending responses */}
-      {tokenPending.length > 0 && (
-        <ResponsesBanner
-          tone="emerald"
-          icon={<Diamond className="w-4 h-4" />}
-          title={tokenPending.length === 1 ? "1 токеновая заявка ждёт назначения" : `${tokenPending.length} токеновых заявок ждут назначения`}
-          items={tokenPending}
-          onOpenOrder={onOpenOrder}
-          onOpenMasterChat={openMasterChat}
-          collapsed={tokenCollapsed}
-          onToggleCollapsed={() => setTokenCollapsed(!tokenCollapsed)}
-        />
-      )}
-
-      {/* Commission pending responses */}
-      {commissionPending.length > 0 && (
+      {/* Pending master responses */}
+      {allPending.length > 0 && (
         <ResponsesBanner
           tone="blue"
           icon={<Users className="w-4 h-4" />}
-          title={commissionPending.length === 1 ? "1 заявка ждёт назначения" : `${commissionPending.length} заявок ждут назначения`}
-          items={commissionPending}
+          title={allPending.length === 1 ? "1 заявка ждёт назначения" : `${allPending.length} заявок ждут назначения`}
+          items={allPending}
           onOpenOrder={onOpenOrder}
           onOpenMasterChat={openMasterChat}
-          collapsed={commCollapsed}
-          onToggleCollapsed={() => setCommCollapsed(!commCollapsed)}
+          collapsed={pendingCollapsed}
+          onToggleCollapsed={() => setPendingCollapsed(!pendingCollapsed)}
         />
       )}
 
