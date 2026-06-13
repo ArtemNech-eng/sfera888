@@ -34,23 +34,9 @@ if (Number.isNaN(port) || port <= 0) {
 async function runRuntimeFixes() {
   // Hand-tuned partial / multi-column performance indexes that aren't in the schema yet.
   await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_orders_city_status ON orders(city, status) WHERE deleted_at IS NULL`);
-  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_wallet_transactions_master_type ON wallet_transactions(master_id, type, order_id)`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_order_dispatches_order_status ON order_dispatches(order_id, status)`);
 
-  // Prevent double-spend: one spend transaction per (master, order). Partial unique
-  // index — drizzle-kit can't yet emit `CREATE UNIQUE INDEX … WHERE` from schema.
-  await db.execute(sql`
-    DO $$ BEGIN
-      IF NOT EXISTS (
-        SELECT 1 FROM pg_indexes
-        WHERE indexname = 'wallet_transactions_master_order_spend_unique'
-      ) THEN
-        CREATE UNIQUE INDEX wallet_transactions_master_order_spend_unique
-          ON wallet_transactions (master_id, order_id)
-          WHERE type = 'spend';
-      END IF;
-    END $$
-  `);
+  // wallet_transactions indexes/constraints removed — table dropped (Phase C cleanup)
 
   // CHECK constraint enforcing wallet credit limit. Not yet expressed in schema.
   // First clean any rows that would violate it (data fix), then add the constraint.
