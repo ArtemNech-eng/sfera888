@@ -943,41 +943,52 @@ app.use("/api/master-pwa", masterPwaRouter);
 
 const crmDistPath = path.join(__dirname, "../../crm/dist/public");
 const pwaDistPath = path.join(__dirname, "../../master-pwa/dist/public");
+const partnerPwaDistPath = path.join(__dirname, "../../partner-pwa/dist/public");
+
+// Vite emits hashed filenames into /assets/* — those can be cached forever.
+// Everything else (index.html, sw.js, manifest.json, root files) must always
+// revalidate so users never see stale HTML referencing deleted chunk hashes.
+const spaStaticHeaders = (res: import("express").Response, filePath: string) => {
+  if (/[\\/]assets[\\/]/.test(filePath)) {
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  } else {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  }
+};
+
+const spaIndexHeaders = (res: import("express").Response) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+};
 
 if (fs.existsSync(crmDistPath)) {
-  // Serve static files first
-  app.use("/crm", express.static(crmDistPath));
-  // SPA fallback: only for non-file paths (routes)
+  app.use("/crm", express.static(crmDistPath, { setHeaders: spaStaticHeaders }));
   app.use("/crm", (req, res) => {
-    // If request looks like a file (has extension), don't send index.html
     if (req.path.includes(".")) {
       return res.status(404).send("Not found");
     }
+    spaIndexHeaders(res);
     res.sendFile(path.join(crmDistPath, "index.html"));
   });
 }
 
 if (fs.existsSync(pwaDistPath)) {
-  app.use("/master-pwa", express.static(pwaDistPath));
+  app.use("/master-pwa", express.static(pwaDistPath, { setHeaders: spaStaticHeaders }));
   app.use("/master-pwa", (req, res) => {
-    // Don't fall back to index.html for missing static files (would cause MIME errors).
     if (req.path.includes(".")) {
       return res.status(404).send("Not found");
     }
+    spaIndexHeaders(res);
     res.sendFile(path.join(pwaDistPath, "index.html"));
   });
 }
 
-const partnerPwaDistPath = path.join(__dirname, "../../partner-pwa/dist/public");
 if (fs.existsSync(partnerPwaDistPath)) {
-  app.use("/partner", express.static(partnerPwaDistPath, { maxAge: 0, setHeaders: (res) => {
-    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
-  }}));
+  app.use("/partner", express.static(partnerPwaDistPath, { setHeaders: spaStaticHeaders }));
   app.use("/partner", (req, res) => {
     if (req.path.includes(".")) {
       return res.status(404).send("Not found");
     }
-    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+    spaIndexHeaders(res);
     res.sendFile(path.join(partnerPwaDistPath, "index.html"));
   });
 }
