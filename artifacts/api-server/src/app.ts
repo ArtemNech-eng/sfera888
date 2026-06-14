@@ -1061,6 +1061,24 @@ if (fs.existsSync(landingV2DistPath)) {
 }
 
 // ── Short URL alias for honest master landing ─────────────────────────────────
+// Both /masters and /masteram redirect to the canonical /master-landing/v3/honest
+// page. This frees us to use /mastera as the public marketplace catalog later
+// (on chestnye-mastera.ru, different domain).
+//
+// /masters stays for backwards compatibility with existing visiting cards and
+// Telegram links — it will be migrated to /masteram in a future task once
+// /masteram has been live and indexed for a while.
+//
+// /masteram is the new canonical short URL for the masters-recruitment landing.
+// Redirect (not direct serve) because master-landing is built with a fixed Vite
+// base="/master-landing/v3/" — serving the same index.html under /masteram would
+// load assets correctly but break the SPA client router (wouter), causing the
+// LegacyLanding fallback to render instead of HonestLanding. A 301 keeps the
+// canonical URL clean and gives us room to replace this redirect with proper
+// SSR rendering on the future marketplace artifact.
+app.get(["/masteram", "/masteram/"], (_req, res) =>
+  res.redirect(301, "/master-landing/v3/honest"),
+);
 app.get("/masters", (_req, res) => res.redirect(301, "/master-landing/v3/honest"));
 
 // ── Serve master-landing-v3 (honest + legacy SPA) ────────────────────────────
