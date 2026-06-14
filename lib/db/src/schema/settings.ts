@@ -1,15 +1,49 @@
-import { pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, timestamp, varchar, integer, boolean, numeric, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
+// ── cities ───────────────────────────────────────────────────────────────────
+// Existing minimal table (id, name) used by master-pwa city picker and CRM
+// settings → extended with marketplace SEO fields. All new columns are nullable
+// (or have safe defaults) so the existing CRM/PWA code keeps working unchanged.
 export const citiesTable = pgTable("cities", {
   id: serial("id").primaryKey(),
   name: text("name").notNull().unique(),
+  // ── Marketplace fields (added in 0005_marketplace_baseline) ────────────────
+  slug: varchar("slug", { length: 100 }).unique("cities_slug_key"),
+  nameIn: varchar("name_in", { length: 100 }),
+  region: varchar("region", { length: 100 }),
+  timezone: varchar("timezone", { length: 50 }).default("Europe/Moscow"),
+  lat: numeric("lat", { precision: 9, scale: 6 }),
+  lng: numeric("lng", { precision: 9, scale: 6 }),
+  population: integer("population"),
+  seoTitle: varchar("seo_title", { length: 70 }),
+  seoDescription: varchar("seo_description", { length: 180 }),
+  h1: varchar("h1", { length: 100 }),
+  bodyMd: text("body_md"),
+  isActive: boolean("is_active").notNull().default(true),
 });
 
+// ── service_types ────────────────────────────────────────────────────────────
+// Existing minimal table (id, name) → extended with marketplace SEO fields and
+// optional self-referencing parent_id for category tree (e.g. Electrics →
+// Sockets and switches). All new columns are nullable / safe-default.
 export const serviceTypesTable = pgTable("service_types", {
   id: serial("id").primaryKey(),
   name: text("name").notNull().unique(),
+  // ── Marketplace fields (added in 0005_marketplace_baseline) ────────────────
+  slug: varchar("slug", { length: 100 }).unique("service_types_slug_key"),
+  nameGenitive: varchar("name_genitive", { length: 255 }),
+  parentId: integer("parent_id").references((): AnyPgColumn => serviceTypesTable.id, { onDelete: "set null" }),
+  icon: varchar("icon", { length: 50 }),
+  description: text("description"),
+  bodyMd: text("body_md"),
+  seoTitle: varchar("seo_title", { length: 70 }),
+  seoDescription: varchar("seo_description", { length: 180 }),
+  h1: varchar("h1", { length: 100 }),
+  priceFrom: integer("price_from"),
+  isActive: boolean("is_active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
 });
 
 export const insertCitySchema = createInsertSchema(citiesTable).omit({ id: true });

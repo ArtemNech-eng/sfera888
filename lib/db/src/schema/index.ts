@@ -51,3 +51,8 @@ export * from "./balance-topup-requests";
 export * from "./order-stages";
 export * from "./master-test-orders";
 export * from "./master-deposit-transactions";
+
+// ── Marketplace foundation (added in 0005_marketplace_baseline) ────────────
+export * from "./master-portfolio";
+export * from "./master-reviews-public";
+export * from "./seo-redirects";

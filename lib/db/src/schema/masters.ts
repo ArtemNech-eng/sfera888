@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, numeric, integer, boolean, pgEnum, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, timestamp, numeric, integer, boolean, pgEnum, jsonb, varchar } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -62,6 +62,20 @@ export const mastersTable = pgTable("masters", {
   // unblockMaster(). Если значение >=2 — рецидивист, оператор должен подумать,
   // прежде чем снимать блок снова.
   manualUnblocksCount: integer("manual_unblocks_count").notNull().default(0),
+
+  // ── Marketplace publication fields (added in 0005_marketplace_baseline) ────
+  // Все nullable / safe-default чтобы существующий CRM/PWA-код не сломался.
+  // slug генерируется при публикации мастера через CRM, не на старте.
+  slug: varchar("slug", { length: 100 }).unique("masters_slug_key"),
+  isPublished: boolean("is_published").notNull().default(false),
+  publishedAt: timestamp("published_at"),
+  publicTitle: varchar("public_title", { length: 150 }),
+  publicBio: text("public_bio"),
+  seoTitle: varchar("seo_title", { length: 70 }),
+  seoDescription: varchar("seo_description", { length: 180 }),
+  yearsExperience: integer("years_experience"),
+  publicRating: numeric("public_rating", { precision: 3, scale: 2 }),
+  publicReviewsCount: integer("public_reviews_count").notNull().default(0),
 });
 
 export const REPUTATION_BLOCK_THRESHOLD = 2;
