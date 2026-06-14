@@ -35,6 +35,7 @@ import dashboardActionItemsRouter from "./dashboard-action-items.js";
 import accountBalanceRouter from "./account-balance.js";
 import contractRouter from "./contract.js";
 import systemRouter from "./system.js";
+import marketplaceRouter from "./marketplace.js";
 import { sendPushToAllOperators } from "../lib/operatorPush.js";
 import { buildItems } from "./dashboard-action-items.js";
 import { requireRole } from "../middlewares/requireAuth.js";
@@ -78,6 +79,7 @@ router.use("/dashboard", dashboardActionItemsRouter);
 router.use("/account-balance", accountBalanceRouter);
 router.use("/contract", contractRouter);
 router.use("/system", systemRouter);
+router.use("/marketplace", marketplaceRouter);
 // Push subscription endpoint for operators (CRM)
 router.post("/push/operator-subscribe", ops, async (req: any, res: any) => {
   const { endpoint, p256dh, auth } = req.body ?? {};
