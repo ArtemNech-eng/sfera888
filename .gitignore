@@ -62,3 +62,22 @@ railway-logs.txt
 
 # AI Log Agent secrets
 ai/.env
+
+# Local-only debug files (never commit)
+*.local
+_run*.bat
+_*.bat
+_*.ps1
+_*.out
+*-out.txt
+
+# One-off DB import/debug scripts that historically hardcoded credentials.
+# Keep tracked utilities under scripts/src/ — these patterns target only the
+# loose root-level *.cjs scripts that have been removed in this commit.
+check-db.*
+check-import.cjs
+fix-arrays.cjs
+fix-receipts.cjs
+import-*.cjs
+tmp-*.js
+tmp-*.ts
