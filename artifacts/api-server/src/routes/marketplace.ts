@@ -23,9 +23,12 @@ import {
   citiesTable,
   serviceTypesTable,
   mastersTable,
+  leadsTable,
 } from "@workspace/db";
-import { and, asc, desc, eq, isNotNull, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { timingSafeEqual } from "node:crypto";
+import { z } from "zod";
+import { notifyManagerNewLead } from "../managerBot.js";
 
 declare const console: { error: (...args: unknown[]) => void };
 
@@ -365,6 +368,235 @@ router.get("/master/:slug", async (req, res) => {
     });
   } catch (e: unknown) {
     console.error("[marketplace/master]", e instanceof Error ? e.message : e);
+    res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/marketplace/leads — Lead intake from marketplace frontend.
+//
+// Mirrors the patterns of /api/landing/leads:
+//   • zod-validated input
+//   • duplicate-by-phone check over the last 30 days
+//   • sets `is_possible_duplicate` flag (lead is still created, as in landing)
+//   • notifies the manager bot non-blocking
+//
+// Differences from landing:
+//   • source = 'marketplace' (already a free-form text in `leads.source`)
+//   • additional marketplace fields (utm, marketplace_context, attached_master_id, …)
+//     all of which were added in 0005_marketplace_baseline migration
+//   • requires explicit consent (consentGiven = true) and writes consent_given_at
+//
+// Strict no-side-effects beyond the lead row:
+//   • does NOT create an order
+//   • does NOT call performBroadcast / dispatch
+//   • does NOT charge anything to a master / partner
+//
+// Auth: inherited from `requireMarketplaceAuth` (Bearer token) at router level.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const marketplaceLeadSchema = z.object({
+  name: z.string().trim().min(1).max(100).optional(),
+  phone: z.string().trim().min(5).max(30),
+  citySlug: z.string().trim().min(1).max(100),
+  serviceSlug: z.string().trim().min(1).max(100),
+  comment: z.string().max(2000).optional(),
+  // Area is free-form on marketplace forms (sometimes "до 50", sometimes "10").
+  // We coerce to numeric only when it looks like a number; otherwise store "0".
+  area: z.union([z.string().max(50), z.number()]).optional(),
+  sourcePageUrl: z.string().max(1000).optional(),
+  sourcePageType: z.string().max(40).optional(),
+  attachedMasterId: z.number().int().positive().optional(),
+  marketplaceContext: z.record(z.string(), z.unknown()).optional(),
+  utm: z.object({
+    source: z.string().max(200).optional(),
+    medium: z.string().max(200).optional(),
+    campaign: z.string().max(200).optional(),
+    term: z.string().max(200).optional(),
+    content: z.string().max(200).optional(),
+  }).optional(),
+  referrer: z.string().max(1000).optional(),
+  clientIp: z.string().max(45).optional(),
+  clientUserAgent: z.string().max(500).optional(),
+  // Marketplace forms must include an explicit consent checkbox; we only
+  // accept literal `true`. Any other value triggers a standard zod literal
+  // error which the client can surface as "Требуется согласие".
+  consentGiven: z.literal(true),
+  captchaScore: z.number().min(0).max(1).optional(),
+});
+
+function normalizeArea(area: unknown): string {
+  // leads.area is numeric NOT NULL — never insert null.
+  if (typeof area === "number" && Number.isFinite(area)) return String(area);
+  if (typeof area === "string") {
+    const n = parseFloat(area.replace(",", "."));
+    if (Number.isFinite(n) && n >= 0) return String(n);
+  }
+  return "0";
+}
+
+/**
+ * Normalize a free-form Russian phone string to canonical "7XXXXXXXXXX" form.
+ *   "+7 (999) 123-45-67"  → "79991234567"
+ *   "8 999 123 45 67"     → "79991234567"
+ *   "9991234567"          → "79991234567"
+ *   "+7 999 123-45-67abc" → "79991234567"
+ * Falls back to digits-only if the input doesn't match a known length —
+ * we don't want to accidentally drop foreign numbers.
+ *
+ * Same algorithm as `normalizePhoneForPush` in routes/client.ts and
+ * `normalizePhoneForLogin` in routes/masters.ts. Existing CRM phone-search
+ * and master-mapping flows already do `.replace(/\D/g, "").slice(-10)`
+ * on-the-fly, so storing the normalized form here does NOT break them
+ * (it actually makes duplicate-detection by phone more reliable).
+ *
+ * Note: /api/landing/leads currently stores the raw phone. Marketplace
+ * deliberately diverges because anonymous public form input is much more
+ * variable than the partner-landing form, and we want consistent dedup.
+ */
+function normalizePhone(input: string): string {
+  const digits = input.replace(/\D/g, "");
+  if (digits.length === 10) return "7" + digits;
+  if (digits.length === 11 && digits[0] === "8") return "7" + digits.slice(1);
+  return digits;
+}
+
+router.post("/leads", async (req: Request, res: Response) => {
+  res.setHeader("Cache-Control", "no-store");
+
+  const parsed = marketplaceLeadSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({
+      error: "validation_error",
+      details: parsed.error.flatten(),
+    });
+    return;
+  }
+  const body = parsed.data;
+  const normalizedPhone = normalizePhone(body.phone);
+
+  try {
+    // 1. Resolve citySlug → city.name (must be active).
+    const [city] = await db
+      .select({ name: citiesTable.name, isActive: citiesTable.isActive })
+      .from(citiesTable)
+      .where(eq(citiesTable.slug, body.citySlug))
+      .limit(1);
+    if (!city || city.isActive !== true) {
+      res.status(404).json({ error: "city_not_found" });
+      return;
+    }
+
+    // 2. Resolve serviceSlug → service_types.name (must be active).
+    const [service] = await db
+      .select({ name: serviceTypesTable.name, isActive: serviceTypesTable.isActive })
+      .from(serviceTypesTable)
+      .where(eq(serviceTypesTable.slug, body.serviceSlug))
+      .limit(1);
+    if (!service || service.isActive !== true) {
+      res.status(404).json({ error: "service_not_found" });
+      return;
+    }
+
+    // 3. Validate attachedMasterId (if provided). The public form may only
+    //    arrive from a published master's card, so we require is_published=true
+    //    and slug IS NOT NULL. This also prevents FK violations from the
+    //    leads.attached_master_id → masters.id constraint added in 0005.
+    if (body.attachedMasterId != null) {
+      const [master] = await db
+        .select({ id: mastersTable.id })
+        .from(mastersTable)
+        .where(and(
+          eq(mastersTable.id, body.attachedMasterId),
+          eq(mastersTable.isPublished, true),
+          isNotNull(mastersTable.slug),
+        ))
+        .limit(1);
+      if (!master) {
+        res.status(404).json({ error: "attached_master_not_found" });
+        return;
+      }
+    }
+
+    // 4. Duplicate check — same client phone within last 30 days, not deleted.
+    //    Mirrors /api/landing/leads. The lead is still created (as in landing),
+    //    but flagged for the operator's attention. Uses the normalized phone
+    //    so "+7 999 123-45-67" and "89991234567" are recognized as duplicates.
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const [duplicate] = await db
+      .select({ id: leadsTable.id })
+      .from(leadsTable)
+      .where(and(
+        eq(leadsTable.clientPhone, normalizedPhone),
+        isNull(leadsTable.deletedAt),
+        gte(leadsTable.createdAt, thirtyDaysAgo),
+      ))
+      .limit(1);
+    const isPossibleDuplicate = duplicate != null;
+
+    // 5. Insert the lead. We never create an order or trigger dispatch here.
+    const [newLead] = await db
+      .insert(leadsTable)
+      .values({
+        clientName: body.name ?? "Клиент marketplace",
+        clientPhone: normalizedPhone,
+        city: city.name,
+        // leads.district is NOT NULL — marketplace forms don't ask for it.
+        // Use empty string so existing CRM filters keep working.
+        district: "",
+        serviceType: service.name,
+        area: normalizeArea(body.area),
+        services: JSON.stringify([service.name]),
+        comment: body.comment ?? null,
+        source: "marketplace",
+        status: "new",
+        paymentModel: "commission",
+        isPossibleDuplicate,
+        // ── 0005_marketplace_baseline columns ─────────────────────────────
+        sourcePageUrl: body.sourcePageUrl ?? null,
+        sourcePageType: body.sourcePageType ?? null,
+        serviceSlug: body.serviceSlug,
+        citySlug: body.citySlug,
+        marketplaceContext: body.marketplaceContext ?? null,
+        referrer: body.referrer ?? null,
+        utmSource: body.utm?.source ?? null,
+        utmMedium: body.utm?.medium ?? null,
+        utmCampaign: body.utm?.campaign ?? null,
+        utmTerm: body.utm?.term ?? null,
+        utmContent: body.utm?.content ?? null,
+        attachedMasterId: body.attachedMasterId ?? null,
+        clientIp: body.clientIp ?? (req.ip ?? null),
+        clientUserAgent: body.clientUserAgent ?? null,
+        consentGivenAt: new Date(),
+        captchaScore: body.captchaScore != null ? String(body.captchaScore) : null,
+      })
+      .returning();
+
+    if (!newLead) {
+      console.error("[marketplace/leads] insert returned no row");
+      res.status(500).json({ error: "internal_error" });
+      return;
+    }
+
+    // 6. Notify manager bot (non-blocking — never fails the request).
+    notifyManagerNewLead({
+      id: newLead.id,
+      clientName: newLead.clientName,
+      clientPhone: newLead.clientPhone,
+      city: newLead.city,
+      serviceType: newLead.serviceType,
+      source: newLead.source,
+    }).catch((err: unknown) =>
+      console.error("[marketplace/leads] notifyManagerNewLead failed:",
+        err instanceof Error ? err.message : err));
+
+    res.status(201).json({
+      ok: true,
+      leadId: newLead.id,
+      duplicate: isPossibleDuplicate,
+    });
+  } catch (e: unknown) {
+    console.error("[marketplace/leads]", e instanceof Error ? e.message : e);
     res.status(500).json({ error: "internal_error" });
   }
 });
