@@ -1,0 +1,26 @@
+import Link from "next/link";
+
+export function Footer() {
+  return (
+    <footer className="mt-auto border-t border-[var(--color-border)] bg-[var(--color-surface)]">
+      <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-8 text-sm text-[var(--color-muted)] sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        <div>
+          <div className="font-medium text-[var(--color-text)]">Честные мастера</div>
+          <div className="mt-1">Подбор проверенных мастеров для ремонта и быта</div>
+        </div>
+        <nav className="flex flex-wrap gap-4">
+          <Link href="/uslugi" className="hover:text-[var(--color-primary)]">Услуги</Link>
+          <a
+            href="https://sfera-master.ru/masteram"
+            className="hover:text-[var(--color-primary)]"
+            rel="noopener noreferrer"
+          >
+            Для мастеров
+          </a>
+          <span aria-hidden>·</span>
+          <span>Политика и контакты — скоро</span>
+        </nav>
+      </div>
+    </footer>
+  );
+}
