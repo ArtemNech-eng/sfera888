@@ -41,6 +41,43 @@ function friendlyError(label: string | undefined): string {
   return ERROR_MESSAGES[label] ?? "Не удалось отправить заявку, попробуйте позже";
 }
 
+/* ──────────────────────────────────────────────────────────────────────── */
+/* Yandex.Metrika reachGoal helper                                          */
+/* ──────────────────────────────────────────────────────────────────────── */
+
+type YmFn = (
+  counterId: number,
+  action: string,
+  ...args: unknown[]
+) => void;
+
+declare global {
+  interface Window {
+    ym?: YmFn;
+  }
+}
+
+/**
+ * Send a Metrika goal if the counter is configured and loaded. No-op
+ * otherwise (no env, no script tag, ad blocker). Never carries PII —
+ * callers pass only safe identifiers (serviceSlug, citySlug, error label).
+ */
+function reachGoal(goal: string, params?: Record<string, unknown>): void {
+  if (typeof window === "undefined") return;
+  const id = process.env.NEXT_PUBLIC_YANDEX_METRIKA_ID;
+  if (!id) return;
+  const numId = Number(id);
+  if (!Number.isFinite(numId)) return;
+  const ym = window.ym;
+  if (typeof ym !== "function") return;
+  try {
+    if (params) ym(numId, "reachGoal", goal, params);
+    else ym(numId, "reachGoal", goal);
+  } catch {
+    // Metrika failures must never break the form.
+  }
+}
+
 /**
  * Client-side lead form. Submits a JSON POST to the marketplace's own
  * `/api/leads` route handler (NOT directly to the api-server), so the
@@ -86,6 +123,11 @@ export function LeadForm({ citySlug, serviceSlug, sourcePageUrl }: Props) {
 
     let res: Response;
     try {
+      // Track only AFTER the body is built (so we know phoneless / honeypot
+      // rejections still count as attempts), but BEFORE the network call.
+      // Only safe metadata leaves the page — never the user's phone, name,
+      // comment, or anything PII-shaped.
+      reachGoal("lead_form_submit_attempt", { serviceSlug, citySlug });
       res = await fetch("/api/leads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -94,6 +136,11 @@ export function LeadForm({ citySlug, serviceSlug, sourcePageUrl }: Props) {
     } catch {
       // Real network failure — DNS, offline, TLS, aborted. Anything that
       // never produced an HTTP response.
+      reachGoal("lead_form_submit_error", {
+        serviceSlug,
+        citySlug,
+        error: "network_error",
+      });
       setErrMessage("Сетевая ошибка. Проверьте интернет-соединение");
       setStatus("error");
       return;
@@ -125,12 +172,18 @@ export function LeadForm({ citySlug, serviceSlug, sourcePageUrl }: Props) {
         parsed && parsed.ok === false && typeof parsed.error === "string"
           ? parsed.error
           : undefined;
+      reachGoal("lead_form_submit_error", {
+        serviceSlug,
+        citySlug,
+        error: label ?? `http_${res.status}`,
+      });
       setErrMessage(friendlyError(label));
       setStatus("error");
       return;
     }
 
     if (typeof parsed.redirectTo === "string" && parsed.redirectTo.startsWith("/")) {
+      reachGoal("lead_form_submit_success", { serviceSlug, citySlug });
       window.location.assign(parsed.redirectTo);
       return;
     }
