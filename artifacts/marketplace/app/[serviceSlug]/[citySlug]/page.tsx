@@ -3,6 +3,12 @@ import type { Metadata } from "next";
 import { fetchServiceCity } from "../../../lib/api";
 import { publicUrl } from "../../../lib/env";
 import { LeadForm } from "../../../components/LeadForm";
+import {
+  breadcrumbJsonLd,
+  faqJsonLd,
+  serviceJsonLd,
+  toJsonLdScript,
+} from "../../../lib/jsonLd";
 
 // Dynamic [params] route — Next won't prerender these at build anyway, but we
 // declare it explicitly so generateMetadata + fetch can use server-only env.
@@ -92,8 +98,46 @@ export default async function ServiceCityPage(
   const sourcePageUrl = `${publicUrl()}/${serviceSlug}/${citySlug}`;
   const hasPrice = data.service.priceFrom != null;
 
+  // Description that mirrors generateMetadata so the schema.org block,
+  // <meta description>, and the visible body all tell the same story.
+  const seoDescription =
+    `Оставьте заявку на услугу «${data.service.name}» в ${cityPrepositional}. ` +
+    `Подберём проверенного мастера.`;
+
+  // schema.org payloads. Built only from trusted server-side data
+  // (api-server response + env), never from request body or query string.
+  const breadcrumbsLd = breadcrumbJsonLd([
+    { name: "Главная", url: `${publicUrl()}/` },
+    { name: "Услуги", url: `${publicUrl()}/uslugi` },
+    { name: pageH1, url: sourcePageUrl },
+  ]);
+  const serviceLd = serviceJsonLd({
+    serviceName: data.service.name,
+    cityName: data.city.name,
+    cityNameIn: data.city.nameIn,
+    description: seoDescription,
+    url: sourcePageUrl,
+    siteUrl: publicUrl(),
+    minPrice: data.stats.minPrice,
+  });
+  const faqLd = faqJsonLd(FAQ);
+
   return (
     <>
+      {/* schema.org JSON-LD — emitted server-side, never built from user input. */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: toJsonLdScript(breadcrumbsLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: toJsonLdScript(serviceLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: toJsonLdScript(faqLd) }}
+      />
+
       {/* Hero */}
       <section className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
         <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-16">
