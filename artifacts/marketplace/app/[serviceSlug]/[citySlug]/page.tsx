@@ -19,10 +19,12 @@ export async function generateMetadata(
   const { serviceSlug, citySlug } = await params;
   const data = await fetchServiceCity(serviceSlug, citySlug);
   if (!data) return { robots: { index: false, follow: false } };
+  const cityPrepositional = data.city.nameIn ?? data.city.name;
+  const pageH1 = `${data.service.name} в ${cityPrepositional}`;
   const path = `/${serviceSlug}/${citySlug}`;
   return {
-    title: data.seo.title,
-    description: data.seo.description,
+    title: `${pageH1} — Честные мастера`,
+    description: `Оставьте заявку на услугу «${data.service.name}» в ${cityPrepositional}. Подберём проверенного мастера.`,
     alternates: { canonical: `${publicUrl()}${path}` },
   };
 }
@@ -53,7 +55,8 @@ export default async function ServiceCityPage(
   const data = await fetchServiceCity(serviceSlug, citySlug);
   if (!data) notFound();
 
-  const cityForUrl = data.city.nameIn ?? data.city.name;
+  const cityPrepositional = data.city.nameIn ?? data.city.name;
+  const pageH1 = `${data.service.name} в ${cityPrepositional}`;
   const sourcePageUrl = `${publicUrl()}/${serviceSlug}/${citySlug}`;
 
   return (
@@ -62,7 +65,7 @@ export default async function ServiceCityPage(
       <section className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
         <div className="mx-auto max-w-3xl px-4 py-10 sm:py-16">
           <h1 className="text-3xl font-semibold text-[var(--color-text)] sm:text-5xl">
-            {data.seo.h1}
+            {pageH1}
           </h1>
           <p className="mt-3 text-base text-[var(--color-muted)] sm:text-lg">
             Подбираем проверенных мастеров под вашу задачу. Выезд бесплатный.
@@ -110,7 +113,7 @@ export default async function ServiceCityPage(
           <h2 className="text-2xl font-semibold text-[var(--color-text)]">Как мы подбираем мастера</h2>
           <ol className="mt-6 grid gap-4 sm:grid-cols-3">
             {[
-              { n: "1", t: "Принимаем заявку", d: `Передаём её мастерам, работающим в ${cityForUrl}` },
+              { n: "1", t: "Принимаем заявку", d: `Передаём её мастерам, работающим в ${cityPrepositional}` },
               { n: "2", t: "Подбираем подходящего", d: "Учитываем район, время и тип работ" },
               { n: "3", t: "Согласуем визит", d: "Мастер связывается с вами для уточнения деталей" },
             ].map((s) => (
