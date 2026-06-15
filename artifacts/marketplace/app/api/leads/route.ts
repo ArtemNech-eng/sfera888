@@ -8,8 +8,14 @@ import { internalApiBase, internalApiToken } from "../../../lib/env";
  * `INTERNAL_API_BASE_URL/marketplace/leads` with the Bearer token. The
  * shared token stays on the server.
  *
- * On 201 we redirect the browser to /zayavka/spasibo. Other statuses are
- * surfaced to the client as plain-text error messages.
+ * Response contract (always JSON, always Cache-Control: no-store):
+ *   • 201  { ok: true,  redirectTo: "/zayavka/spasibo" }
+ *   • 4xx  { ok: false, error: <label>, details?: ... }
+ *   • 5xx  { ok: false, error: "upstream_unreachable" | "upstream_error" }
+ *
+ * Why no HTTP redirect: cross-origin fetch + 303 chain proved unreliable in
+ * the browser (some clients fall into the catch block on the redirected HTML
+ * response). A plain JSON contract makes the client straightforward.
  */
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,12 +37,20 @@ function asString(v: unknown, max: number): string | undefined {
   return trimmed.length > max ? trimmed.slice(0, max) : trimmed;
 }
 
+const NO_STORE = { "Cache-Control": "no-store" } as const;
+
+function jsonError(status: number, error: string, details?: unknown) {
+  const body: Record<string, unknown> = { ok: false, error };
+  if (details !== undefined) body.details = details;
+  return NextResponse.json(body, { status, headers: NO_STORE });
+}
+
 export async function POST(req: NextRequest) {
   let payload: ClientPayload;
   try {
     payload = (await req.json()) as ClientPayload;
   } catch {
-    return new NextResponse("invalid_json", { status: 400 });
+    return jsonError(400, "invalid_json");
   }
 
   const phone = asString(payload.phone, 30);
@@ -45,7 +59,7 @@ export async function POST(req: NextRequest) {
   const consent = payload.consent === true;
 
   if (!phone || !citySlug || !serviceSlug || !consent) {
-    return new NextResponse("validation_error", { status: 400 });
+    return jsonError(400, "validation_error");
   }
 
   const headers = req.headers;
@@ -82,17 +96,34 @@ export async function POST(req: NextRequest) {
       cache: "no-store",
     });
   } catch {
-    return new NextResponse("upstream_unreachable", { status: 502 });
+    return jsonError(502, "upstream_unreachable");
   }
 
+  // Successful intake from api-server.
   if (res.status === 201) {
-    // 303 See Other so a POST → GET redirect is correct per RFC 7231.
-    const url = new URL("/zayavka/spasibo", req.url);
-    return NextResponse.redirect(url, 303);
+    return NextResponse.json(
+      { ok: true, redirectTo: "/zayavka/spasibo" },
+      { status: 201, headers: NO_STORE },
+    );
   }
 
-  // Pass back upstream error labels (validation_error / city_not_found / …)
-  // without echoing internal details. Body is plain text for the client.
-  const text = await res.text().catch(() => "");
-  return new NextResponse(text || "upstream_error", { status: res.status });
+  // Non-201 — try to extract a structured error label from the upstream
+  // response. Always return JSON so the client has a stable contract.
+  let upstreamLabel = "upstream_error";
+  let upstreamDetails: unknown = undefined;
+  const ct = res.headers.get("content-type") ?? "";
+  try {
+    if (ct.includes("application/json")) {
+      const body = (await res.json()) as { error?: unknown; details?: unknown };
+      if (typeof body.error === "string") upstreamLabel = body.error;
+      if (body.details !== undefined) upstreamDetails = body.details;
+    } else {
+      const text = (await res.text()).trim();
+      if (text.length > 0 && text.length <= 100) upstreamLabel = text;
+    }
+  } catch {
+    // Keep default upstreamLabel.
+  }
+
+  return jsonError(res.status, upstreamLabel, upstreamDetails);
 }

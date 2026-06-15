@@ -10,10 +10,43 @@ interface Props {
 
 type Status = "idle" | "submitting" | "error";
 
+interface SuccessEnvelope {
+  ok: true;
+  redirectTo: string;
+}
+interface ErrorEnvelope {
+  ok: false;
+  error: string;
+  details?: unknown;
+}
+type Envelope = SuccessEnvelope | ErrorEnvelope;
+
+/** User-friendly Russian error messages keyed by upstream/route error label. */
+const ERROR_MESSAGES: Record<string, string> = {
+  validation_error: "Проверьте телефон и согласие на обработку данных",
+  invalid_json: "Не удалось обработать данные формы. Перезагрузите страницу и попробуйте ещё раз",
+  city_not_found: "Город временно недоступен",
+  service_not_found: "Услуга временно недоступна",
+  attached_master_not_found: "Карточка мастера временно недоступна",
+  upstream_unreachable: "Сервис временно недоступен, попробуйте позже",
+  upstream_error: "Не удалось отправить заявку, попробуйте позже",
+  unauthorized: "Сервис временно недоступен, попробуйте позже",
+};
+
+function friendlyError(label: string | undefined): string {
+  if (!label) return "Не удалось отправить заявку, попробуйте позже";
+  return ERROR_MESSAGES[label] ?? "Не удалось отправить заявку, попробуйте позже";
+}
+
 /**
  * Client-side lead form. Submits a JSON POST to the marketplace's own
  * `/api/leads` route handler (NOT directly to the api-server), so the
  * internal Bearer token never reaches the browser.
+ *
+ * The route handler responds with a stable JSON envelope:
+ *   { ok: true,  redirectTo: "/zayavka/spasibo" }
+ *   { ok: false, error: "<label>", details?: ... }
+ * No HTTP redirect — the client controls navigation explicitly.
  */
 export function LeadForm({ citySlug, serviceSlug, sourcePageUrl }: Props) {
   const [status, setStatus] = useState<Status>("idle");
@@ -36,28 +69,61 @@ export function LeadForm({ citySlug, serviceSlug, sourcePageUrl }: Props) {
       sourcePageUrl,
     };
 
+    let res: Response;
     try {
-      const res = await fetch("/api/leads", {
+      res = await fetch("/api/leads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (res.redirected) {
-        window.location.href = res.url;
-        return;
-      }
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        setErrMessage(text || "Не получилось отправить заявку. Попробуйте ещё раз.");
-        setStatus("error");
-        return;
-      }
-      // Fallback if the route returns JSON instead of a redirect.
-      window.location.href = "/zayavka/spasibo";
     } catch {
-      setErrMessage("Сетевая ошибка. Проверьте интернет-соединение.");
+      // Real network failure — DNS, offline, TLS, aborted. Anything that
+      // never produced an HTTP response.
+      setErrMessage("Сетевая ошибка. Проверьте интернет-соединение");
       setStatus("error");
+      return;
     }
+
+    // We have an HTTP response. Parse the envelope without touching .redirected
+    // (the route handler now never redirects).
+    const contentType = res.headers.get("content-type") ?? "";
+    let parsed: Envelope | null = null;
+    if (contentType.includes("application/json")) {
+      try {
+        parsed = (await res.json()) as Envelope;
+      } catch {
+        parsed = null;
+      }
+    } else {
+      // Not JSON — keep the raw text but cap it so a giant HTML body never
+      // ends up in the alert box.
+      try {
+        const txt = (await res.text()).trim().slice(0, 200);
+        parsed = { ok: false, error: txt || "upstream_error" };
+      } catch {
+        parsed = { ok: false, error: "upstream_error" };
+      }
+    }
+
+    if (!res.ok || !parsed || parsed.ok !== true) {
+      const label =
+        parsed && parsed.ok === false && typeof parsed.error === "string"
+          ? parsed.error
+          : undefined;
+      setErrMessage(friendlyError(label));
+      setStatus("error");
+      return;
+    }
+
+    if (typeof parsed.redirectTo === "string" && parsed.redirectTo.startsWith("/")) {
+      window.location.assign(parsed.redirectTo);
+      return;
+    }
+
+    // Success but no redirectTo — shouldn't happen with our contract, but be
+    // defensive so the user sees a meaningful state.
+    setErrMessage("Заявка отправлена, но не пришёл адрес для перехода. Перезагрузите страницу");
+    setStatus("error");
   }
 
   const submitting = status === "submitting";
