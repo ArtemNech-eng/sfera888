@@ -1,5 +1,5 @@
 "use client";
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 interface Props {
   citySlug: string;
@@ -31,6 +31,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   upstream_unreachable: "Сервис временно недоступен, попробуйте позже",
   upstream_error: "Не удалось отправить заявку, попробуйте позже",
   unauthorized: "Сервис временно недоступен, попробуйте позже",
+  too_fast: "Проверьте форму и попробуйте ещё раз",
+  rate_limited: "Слишком много заявок. Попробуйте позже",
 };
 
 function friendlyError(label: string | undefined): string {
@@ -51,6 +53,12 @@ function friendlyError(label: string | undefined): string {
 export function LeadForm({ citySlug, serviceSlug, sourcePageUrl }: Props) {
   const [status, setStatus] = useState<Status>("idle");
   const [errMessage, setErrMessage] = useState<string | null>(null);
+  // Captured on mount so the route handler can reject submissions filled in
+  // under MIN_FILL_MS — typical bot behaviour. `null` until effect runs (SSR).
+  const formStartedAtRef = useRef<number | null>(null);
+  useEffect(() => {
+    formStartedAtRef.current = Date.now();
+  }, []);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -64,6 +72,12 @@ export function LeadForm({ citySlug, serviceSlug, sourcePageUrl }: Props) {
       phone: String(fd.get("phone") ?? "").trim(),
       comment: String(fd.get("comment") ?? "").trim(),
       consent: fd.get("consent") === "on",
+      // Honeypot — must stay empty. Real users never see the field.
+      website: String(fd.get("website") ?? "").trim(),
+      // May be null if the user submitted before the mount-effect ran (very
+      // unlikely in practice). Server treats absent value as "no info" and
+      // doesn't reject for it.
+      formStartedAt: formStartedAtRef.current,
       citySlug,
       serviceSlug,
       sourcePageUrl,
@@ -130,6 +144,31 @@ export function LeadForm({ citySlug, serviceSlug, sourcePageUrl }: Props) {
 
   return (
     <form onSubmit={onSubmit} className="grid gap-4">
+      {/* Honeypot — visually hidden but not display:none (some bots skip those).
+          Real users will never tab into or see this field. */}
+      <div
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          left: "-9999px",
+          top: "auto",
+          width: "1px",
+          height: "1px",
+          overflow: "hidden",
+        }}
+      >
+        <label>
+          Website (do not fill)
+          <input
+            type="text"
+            name="website"
+            tabIndex={-1}
+            autoComplete="off"
+            defaultValue=""
+          />
+        </label>
+      </div>
+
       <label className="grid gap-1 text-sm">
         <span className="text-[var(--color-text)]">Как к вам обращаться</span>
         <input

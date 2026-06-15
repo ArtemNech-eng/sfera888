@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { internalApiBase, internalApiToken } from "../../../lib/env";
+import { checkLeadRateLimit, recordLeadAttempt } from "../../../lib/rateLimit";
 
 /**
  * Marketplace front-end → backend leads bridge.
@@ -12,6 +13,11 @@ import { internalApiBase, internalApiToken } from "../../../lib/env";
  *   • 201  { ok: true,  redirectTo: "/zayavka/spasibo" }
  *   • 4xx  { ok: false, error: <label>, details?: ... }
  *   • 5xx  { ok: false, error: "upstream_unreachable" | "upstream_error" }
+ *
+ * Anti-spam (basic, no captcha yet):
+ *   1. Honeypot field `website` — if filled, fake-success and skip upstream.
+ *   2. Minimum form fill time `formStartedAt` — reject if user is too fast.
+ *   3. Per-IP / per-phone in-memory rate limit (lib/rateLimit).
  *
  * Why no HTTP redirect: cross-origin fetch + 303 chain proved unreliable in
  * the browser (some clients fall into the catch block on the redirected HTML
@@ -28,6 +34,10 @@ interface ClientPayload {
   citySlug?: unknown;
   serviceSlug?: unknown;
   sourcePageUrl?: unknown;
+  /** Honeypot: must be empty for real users. */
+  website?: unknown;
+  /** Client-side Date.now() captured on form mount. */
+  formStartedAt?: unknown;
 }
 
 function asString(v: unknown, max: number): string | undefined {
@@ -38,11 +48,29 @@ function asString(v: unknown, max: number): string | undefined {
 }
 
 const NO_STORE = { "Cache-Control": "no-store" } as const;
+const MIN_FILL_MS = 2_000;
 
-function jsonError(status: number, error: string, details?: unknown) {
+function jsonError(
+  status: number,
+  error: string,
+  details?: unknown,
+  extraHeaders?: Record<string, string>,
+) {
   const body: Record<string, unknown> = { ok: false, error };
   if (details !== undefined) body.details = details;
-  return NextResponse.json(body, { status, headers: NO_STORE });
+  return NextResponse.json(body, {
+    status,
+    headers: { ...NO_STORE, ...(extraHeaders ?? {}) },
+  });
+}
+
+function fakeSuccess() {
+  // Returned for honeypot trips. The same shape a real success uses, so a
+  // bot can't tell its submission was discarded.
+  return NextResponse.json(
+    { ok: true, redirectTo: "/zayavka/spasibo" },
+    { status: 201, headers: NO_STORE },
+  );
 }
 
 export async function POST(req: NextRequest) {
@@ -53,7 +81,40 @@ export async function POST(req: NextRequest) {
     return jsonError(400, "invalid_json");
   }
 
-  const phone = asString(payload.phone, 30);
+  // 1. Honeypot — reject silently. Bots that auto-fill all inputs will set
+  // `website` to a URL or some keyword; real users never see the field.
+  // Honeypot trips do NOT consume a rate-limit slot — the bot mustn't be
+  // able to feel that it's locked out.
+  const honey = typeof payload.website === "string" ? payload.website.trim() : "";
+  if (honey.length > 0) {
+    return fakeSuccess();
+  }
+
+  // 2. Rate limit — applied BEFORE validation/too_fast/upstream so that a
+  // bot spraying invalid bodies still burns its IP burst budget. The phone
+  // key is best-effort: extracted up front, used if present, ignored otherwise.
+  const headers = req.headers;
+  const xff = headers.get("x-forwarded-for") ?? "";
+  const clientIp = xff.split(",")[0]?.trim() || undefined;
+  const rawPhone = asString(payload.phone, 30);
+
+  const rl = checkLeadRateLimit({ ip: clientIp, phone: rawPhone });
+  if (!rl.allowed) {
+    return jsonError(
+      429,
+      "rate_limited",
+      undefined,
+      rl.retryAfterSec !== undefined ? { "Retry-After": String(rl.retryAfterSec) } : undefined,
+    );
+  }
+  // Count this attempt as soon as the gate is passed. Validation /
+  // too-fast / upstream errors below do not retroactively un-record.
+  // `recordLeadAttempt` only writes the phone bucket when `rawPhone` was
+  // present, so legit users without a phone still consume only the IP slot.
+  recordLeadAttempt({ ip: clientIp, phone: rawPhone });
+
+  // 3. Body validation.
+  const phone = rawPhone;
   const citySlug = asString(payload.citySlug, 100);
   const serviceSlug = asString(payload.serviceSlug, 100);
   const consent = payload.consent === true;
@@ -62,12 +123,19 @@ export async function POST(req: NextRequest) {
     return jsonError(400, "validation_error");
   }
 
-  const headers = req.headers;
+  // 4. Minimum fill time — only enforced when the client provided a sane
+  // numeric `formStartedAt`. We don't reject for missing it (legacy clients,
+  // strict CSP that broke our useEffect, etc.) — only for "too fast".
+  if (typeof payload.formStartedAt === "number" && Number.isFinite(payload.formStartedAt)) {
+    const elapsed = Date.now() - payload.formStartedAt;
+    // `elapsed < 0` means the client clock is ahead — treat as "too fast" too,
+    // because a bot could send a future timestamp to bypass the check.
+    if (elapsed >= 0 && elapsed < MIN_FILL_MS) {
+      return jsonError(400, "too_fast");
+    }
+  }
+
   const ua = headers.get("user-agent") ?? undefined;
-  // Best-effort client IP. Marketplace is behind Railway edge / Cloudflare,
-  // so x-forwarded-for is the canonical place.
-  const xff = headers.get("x-forwarded-for") ?? "";
-  const clientIp = xff.split(",")[0]?.trim() || undefined;
 
   const upstream = {
     name: asString(payload.name, 100),
