@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 interface Props {
@@ -207,7 +208,21 @@ export function LeadForm({ citySlug, serviceSlug, sourcePageUrl }: Props) {
       <label className="flex items-start gap-2 text-sm text-[var(--color-muted)]">
         <input type="checkbox" name="consent" required className="mt-1" />
         <span>
-          Я согласен на обработку персональных данных и условия обработки заявки.
+          Отправляя заявку, я соглашаюсь с{" "}
+          <Link
+            href="/policy/privacy"
+            className="underline hover:text-[var(--color-primary)]"
+          >
+            Политикой конфиденциальности
+          </Link>{" "}
+          и принимаю{" "}
+          <Link
+            href="/policy/terms"
+            className="underline hover:text-[var(--color-primary)]"
+          >
+            Пользовательское соглашение
+          </Link>
+          .
         </span>
       </label>
 

@@ -17,8 +17,18 @@ export function Footer() {
           >
             Для мастеров
           </a>
-          <span aria-hidden>·</span>
-          <span>Политика и контакты — скоро</span>
+          <Link
+            href="/policy/privacy"
+            className="hover:text-[var(--color-primary)]"
+          >
+            Политика конфиденциальности
+          </Link>
+          <Link
+            href="/policy/terms"
+            className="hover:text-[var(--color-primary)]"
+          >
+            Пользовательское соглашение
+          </Link>
         </nav>
       </div>
     </footer>
