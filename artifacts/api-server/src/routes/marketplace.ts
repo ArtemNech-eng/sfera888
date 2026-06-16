@@ -794,4 +794,339 @@ router.post("/leads", async (req: Request, res: Response) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/marketplace/raboty — paginated public list of portfolio cases.
+// (Houzz-model, see plan §11.7) Each published case = an indexed page on
+// /raboty/[slug]. This list endpoint powers `/raboty` (full feed) and
+// `/raboty/[serviceSlug]` / `/raboty/[serviceSlug]/[citySlug]` filtered feeds.
+//
+// Query: serviceSlug?, citySlug?, page (default 1), limit (default 20, max 50).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const RABOTY_DEFAULT_LIMIT = 20;
+const RABOTY_MAX_LIMIT = 50;
+
+router.get("/raboty", async (req, res) => {
+  const pageRaw = Number(req.query["page"] ?? 1);
+  const limitRaw = Number(req.query["limit"] ?? RABOTY_DEFAULT_LIMIT);
+  const page = Number.isInteger(pageRaw) && pageRaw > 0 ? pageRaw : 1;
+  const limit = Number.isInteger(limitRaw) && limitRaw > 0
+    ? Math.min(limitRaw, RABOTY_MAX_LIMIT)
+    : RABOTY_DEFAULT_LIMIT;
+  const offset = (page - 1) * limit;
+
+  const serviceSlugParam = req.query["serviceSlug"];
+  const citySlugParam = req.query["citySlug"];
+  const serviceSlug = typeof serviceSlugParam === "string" && serviceSlugParam.length > 0 ? serviceSlugParam : undefined;
+  const citySlug = typeof citySlugParam === "string" && citySlugParam.length > 0 ? citySlugParam : undefined;
+
+  try {
+    // Resolve filter slugs to FK ids.
+    let serviceId: number | undefined;
+    let serviceName: string | undefined;
+    let serviceSlugResolved: string | undefined;
+    if (serviceSlug) {
+      const [s] = await db
+        .select({ id: serviceTypesTable.id, name: serviceTypesTable.name, slug: serviceTypesTable.slug })
+        .from(serviceTypesTable)
+        .where(and(eq(serviceTypesTable.slug, serviceSlug), eq(serviceTypesTable.isActive, true)))
+        .limit(1);
+      if (!s) {
+        setOkCache(res);
+        res.json({ items: [], page, limit, total: 0 });
+        return;
+      }
+      serviceId = s.id;
+      serviceName = s.name;
+      serviceSlugResolved = s.slug ?? undefined;
+    }
+    let cityId: number | undefined;
+    let cityName: string | undefined;
+    let citySlugResolved: string | undefined;
+    if (citySlug) {
+      const [c] = await db
+        .select({ id: citiesTable.id, name: citiesTable.name, slug: citiesTable.slug })
+        .from(citiesTable)
+        .where(and(eq(citiesTable.slug, citySlug), eq(citiesTable.isActive, true)))
+        .limit(1);
+      if (!c) {
+        setOkCache(res);
+        res.json({ items: [], page, limit, total: 0 });
+        return;
+      }
+      cityId = c.id;
+      cityName = c.name;
+      citySlugResolved = c.slug ?? undefined;
+    }
+
+    const conds = [
+      eq(masterPortfolioTable.isPublished, true),
+      isNotNull(masterPortfolioTable.slug),
+      ne(masterPortfolioTable.slug, ""),
+      // Master must be published too; otherwise the case page would link
+      // to a 404 master profile.
+      eq(mastersTable.isPublished, true),
+      isNotNull(mastersTable.slug),
+    ];
+    if (serviceId != null) conds.push(eq(masterPortfolioTable.serviceTypeId, serviceId));
+    if (cityId != null) conds.push(eq(masterPortfolioTable.cityId, cityId));
+
+    const rows = await db
+      .select({
+        portfolio: masterPortfolioTable,
+        service: { name: serviceTypesTable.name, slug: serviceTypesTable.slug },
+        city: { name: citiesTable.name, slug: citiesTable.slug },
+        master: {
+          id: mastersTable.id,
+          slug: mastersTable.slug,
+          alias: mastersTable.alias,
+          publicTitle: mastersTable.publicTitle,
+          avatarUrl: mastersTable.customAvatarUrl,
+          publicRating: mastersTable.publicRating,
+          publicReviewsCount: mastersTable.publicReviewsCount,
+          city: mastersTable.city,
+        },
+      })
+      .from(masterPortfolioTable)
+      .innerJoin(mastersTable, eq(masterPortfolioTable.masterId, mastersTable.id))
+      .leftJoin(serviceTypesTable, eq(masterPortfolioTable.serviceTypeId, serviceTypesTable.id))
+      .leftJoin(citiesTable, eq(masterPortfolioTable.cityId, citiesTable.id))
+      .where(and(...conds))
+      .orderBy(
+        desc(masterPortfolioTable.isFeatured),
+        sql`${masterPortfolioTable.completedAt} DESC NULLS LAST`,
+        desc(masterPortfolioTable.createdAt),
+        desc(masterPortfolioTable.id),
+      )
+      .limit(limit)
+      .offset(offset);
+
+    const totalRows = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(masterPortfolioTable)
+      .innerJoin(mastersTable, eq(masterPortfolioTable.masterId, mastersTable.id))
+      .where(and(...conds));
+    const total = Number(totalRows[0]?.n ?? 0);
+
+    setOkCache(res);
+    res.json({
+      items: rows.map((r) => ({
+        id: r.portfolio.id,
+        slug: r.portfolio.slug,
+        title: r.portfolio.title,
+        description: r.portfolio.description,
+        beforePhotos: r.portfolio.beforePhotos,
+        afterPhotos: r.portfolio.afterPhotos,
+        priceFrom: r.portfolio.priceFrom,
+        priceTo: r.portfolio.priceTo,
+        area: r.portfolio.area,
+        completedAt: r.portfolio.completedAt,
+        clientReviewText: r.portfolio.clientReviewText,
+        clientRating: r.portfolio.clientRating,
+        isFeatured: r.portfolio.isFeatured,
+        service: r.service ? { name: r.service.name, slug: r.service.slug } : null,
+        city: r.city ? { name: r.city.name, slug: r.city.slug } : null,
+        master: {
+          id: r.master.id,
+          slug: r.master.slug,
+          alias: r.master.alias,
+          publicTitle: r.master.publicTitle,
+          avatarUrl: r.master.avatarUrl,
+          publicRating: r.master.publicRating,
+          publicReviewsCount: r.master.publicReviewsCount ?? 0,
+          city: r.master.city,
+        },
+      })),
+      page,
+      limit,
+      total,
+      // Filter context — handy for the UI breadcrumbs and SEO meta.
+      filter: {
+        service: serviceName && serviceSlugResolved
+          ? { name: serviceName, slug: serviceSlugResolved }
+          : null,
+        city: cityName && citySlugResolved
+          ? { name: cityName, slug: citySlugResolved }
+          : null,
+      },
+    });
+  } catch (e: unknown) {
+    console.error("[marketplace/raboty]", e instanceof Error ? e.message : e);
+    res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/marketplace/raboty/:slug — single portfolio case.
+//
+// Returns: case fields + service+city labels + master mini-DTO + up to 6
+// "similar works" picked by same service+city (then loosened to same service
+// only if not enough). Used by the public page /raboty/[slug].
+// ─────────────────────────────────────────────────────────────────────────────
+
+const RABOTY_SIMILAR_LIMIT = 6;
+
+router.get("/raboty/:slug", async (req, res) => {
+  const { slug } = req.params as { slug?: string };
+  if (!slug) {
+    set404Cache(res);
+    res.status(404).json({ error: "not_found" });
+    return;
+  }
+  try {
+    const [row] = await db
+      .select({
+        portfolio: masterPortfolioTable,
+        service: { name: serviceTypesTable.name, slug: serviceTypesTable.slug },
+        city: { name: citiesTable.name, slug: citiesTable.slug },
+        master: mastersTable,
+      })
+      .from(masterPortfolioTable)
+      .innerJoin(mastersTable, eq(masterPortfolioTable.masterId, mastersTable.id))
+      .leftJoin(serviceTypesTable, eq(masterPortfolioTable.serviceTypeId, serviceTypesTable.id))
+      .leftJoin(citiesTable, eq(masterPortfolioTable.cityId, citiesTable.id))
+      .where(and(
+        eq(masterPortfolioTable.slug, slug),
+        eq(masterPortfolioTable.isPublished, true),
+        eq(mastersTable.isPublished, true),
+        isNotNull(mastersTable.slug),
+      ))
+      .limit(1);
+
+    if (!row) {
+      set404Cache(res);
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    // Similar cases: same service+city → fall back to same service only.
+    let similar: Array<{
+      id: number;
+      slug: string | null;
+      title: string;
+      beforePhotos: string[];
+      afterPhotos: string[];
+      priceFrom: string | null;
+      area: string | null;
+      service: { name: string; slug: string | null } | null;
+      city: { name: string; slug: string | null } | null;
+    }> = [];
+
+    if (row.portfolio.serviceTypeId != null) {
+      const sameSvcCity = await db
+        .select({
+          portfolio: masterPortfolioTable,
+          service: { name: serviceTypesTable.name, slug: serviceTypesTable.slug },
+          city: { name: citiesTable.name, slug: citiesTable.slug },
+        })
+        .from(masterPortfolioTable)
+        .innerJoin(mastersTable, eq(masterPortfolioTable.masterId, mastersTable.id))
+        .leftJoin(serviceTypesTable, eq(masterPortfolioTable.serviceTypeId, serviceTypesTable.id))
+        .leftJoin(citiesTable, eq(masterPortfolioTable.cityId, citiesTable.id))
+        .where(and(
+          eq(masterPortfolioTable.isPublished, true),
+          isNotNull(masterPortfolioTable.slug),
+          ne(masterPortfolioTable.id, row.portfolio.id),
+          eq(masterPortfolioTable.serviceTypeId, row.portfolio.serviceTypeId),
+          row.portfolio.cityId != null
+            ? eq(masterPortfolioTable.cityId, row.portfolio.cityId)
+            : sql`TRUE`,
+          eq(mastersTable.isPublished, true),
+          isNotNull(mastersTable.slug),
+        ))
+        .orderBy(
+          desc(masterPortfolioTable.isFeatured),
+          sql`${masterPortfolioTable.completedAt} DESC NULLS LAST`,
+          desc(masterPortfolioTable.id),
+        )
+        .limit(RABOTY_SIMILAR_LIMIT);
+
+      similar = sameSvcCity.map((s) => ({
+        id: s.portfolio.id,
+        slug: s.portfolio.slug,
+        title: s.portfolio.title,
+        beforePhotos: s.portfolio.beforePhotos,
+        afterPhotos: s.portfolio.afterPhotos,
+        priceFrom: s.portfolio.priceFrom,
+        area: s.portfolio.area,
+        service: s.service ? { name: s.service.name, slug: s.service.slug } : null,
+        city: s.city ? { name: s.city.name, slug: s.city.slug } : null,
+      }));
+
+      // If not enough with city match, top up with same-service-only.
+      if (similar.length < RABOTY_SIMILAR_LIMIT) {
+        const need = RABOTY_SIMILAR_LIMIT - similar.length;
+        const seen = new Set<number>(similar.map((s) => s.id));
+        seen.add(row.portfolio.id);
+        const sameSvc = await db
+          .select({
+            portfolio: masterPortfolioTable,
+            service: { name: serviceTypesTable.name, slug: serviceTypesTable.slug },
+            city: { name: citiesTable.name, slug: citiesTable.slug },
+          })
+          .from(masterPortfolioTable)
+          .innerJoin(mastersTable, eq(masterPortfolioTable.masterId, mastersTable.id))
+          .leftJoin(serviceTypesTable, eq(masterPortfolioTable.serviceTypeId, serviceTypesTable.id))
+          .leftJoin(citiesTable, eq(masterPortfolioTable.cityId, citiesTable.id))
+          .where(and(
+            eq(masterPortfolioTable.isPublished, true),
+            isNotNull(masterPortfolioTable.slug),
+            eq(masterPortfolioTable.serviceTypeId, row.portfolio.serviceTypeId),
+            eq(mastersTable.isPublished, true),
+            isNotNull(mastersTable.slug),
+          ))
+          .orderBy(
+            desc(masterPortfolioTable.isFeatured),
+            sql`${masterPortfolioTable.completedAt} DESC NULLS LAST`,
+            desc(masterPortfolioTable.id),
+          )
+          .limit(need + similar.length + 1);
+
+        for (const s of sameSvc) {
+          if (similar.length >= RABOTY_SIMILAR_LIMIT) break;
+          if (seen.has(s.portfolio.id)) continue;
+          seen.add(s.portfolio.id);
+          similar.push({
+            id: s.portfolio.id,
+            slug: s.portfolio.slug,
+            title: s.portfolio.title,
+            beforePhotos: s.portfolio.beforePhotos,
+            afterPhotos: s.portfolio.afterPhotos,
+            priceFrom: s.portfolio.priceFrom,
+            area: s.portfolio.area,
+            service: s.service ? { name: s.service.name, slug: s.service.slug } : null,
+            city: s.city ? { name: s.city.name, slug: s.city.slug } : null,
+          });
+        }
+      }
+    }
+
+    setOkCache(res);
+    res.json({
+      portfolio: {
+        id: row.portfolio.id,
+        slug: row.portfolio.slug,
+        title: row.portfolio.title,
+        description: row.portfolio.description,
+        beforePhotos: row.portfolio.beforePhotos,
+        afterPhotos: row.portfolio.afterPhotos,
+        priceFrom: row.portfolio.priceFrom,
+        priceTo: row.portfolio.priceTo,
+        area: row.portfolio.area,
+        completedAt: row.portfolio.completedAt,
+        clientReviewText: row.portfolio.clientReviewText,
+        clientRating: row.portfolio.clientRating,
+        isFeatured: row.portfolio.isFeatured,
+        service: row.service ? { name: row.service.name, slug: row.service.slug } : null,
+        city: row.city ? { name: row.city.name, slug: row.city.slug } : null,
+      },
+      master: toMasterDto(row.master),
+      similar,
+    });
+  } catch (e: unknown) {
+    console.error("[marketplace/raboty/:slug]", e instanceof Error ? e.message : e);
+    res.status(500).json({ error: "internal_error" });
+  }
+});
+
 export default router;

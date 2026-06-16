@@ -1740,6 +1740,7 @@ function toPortfolioPwaDto(p: typeof masterPortfolioTable.$inferSelect) {
   return {
     id: p.id,
     title: p.title,
+    slug: p.slug,
     description: p.description,
     serviceTypeId: p.serviceTypeId,
     cityId: p.cityId,
@@ -1790,6 +1791,63 @@ function evaluatePortfolioReadiness(input: {
     errors.push({ field: "photos", code: "MISSING_PHOTOS", message: "Загрузите хотя бы одно фото — до или после." });
   }
   return { errors, canPublish: errors.length === 0 };
+}
+
+/**
+ * Build a stable, SEO-friendly slug for a portfolio case. Format:
+ *   `{slugify(title)}-{caseId}` — e.g. "remont-vannoy-pod-klyuch-42".
+ *
+ * The numeric `caseId` suffix is what makes the slug deterministic and
+ * guaranteed unique across the whole `master_portfolio` table (same id can
+ * never repeat). It also keeps URLs short and humans-readable.
+ *
+ * Falls back to `case-{caseId}` if the title is empty/non-slugifiable.
+ *
+ * Length-capped at 150 chars (matching `master_portfolio.slug` varchar(150)).
+ * Slug is generated ONCE when the case becomes ready and then preserved
+ * forever — even if the master later renames the case, the URL stays stable
+ * (SEO-critical: a changed slug breaks search engine ranking).
+ */
+function buildPortfolioSlug(title: string | null | undefined, caseId: number): string {
+  const titlePart = (title ?? "").trim();
+  const base = titlePart.length > 0 ? slugify(titlePart) : "";
+  const idSuffix = `-${caseId}`;
+  const maxLen = 150;
+  const baseMax = maxLen - idSuffix.length;
+  const trimmedBase = base.length > 0 ? base.slice(0, baseMax) : `case`;
+  // Strip trailing hyphens after slice
+  const cleaned = trimmedBase.replace(/-+$/g, "") || "case";
+  return `${cleaned}${idSuffix}`;
+}
+
+/**
+ * If the portfolio row has no slug yet, generate one from its title and
+ * persist it. Idempotent — never overwrites an existing slug (URL stability).
+ *
+ * Best-effort: any DB error is swallowed (slug is a nice-to-have for /raboty
+ * URLs, the case still works on the master profile page without it).
+ */
+async function ensurePortfolioSlug(
+  caseId: number,
+  currentSlug: string | null | undefined,
+  title: string | null | undefined,
+): Promise<string | null> {
+  if (currentSlug && currentSlug.length > 0) return currentSlug;
+  const slug = buildPortfolioSlug(title, caseId);
+  try {
+    await db.update(masterPortfolioTable)
+      .set({ slug })
+      .where(and(
+        eq(masterPortfolioTable.id, caseId),
+        isNull(masterPortfolioTable.slug),
+      ));
+    return slug;
+  } catch {
+    // Unique-violation on slug is highly unlikely (id suffix guarantees uniqueness)
+    // but if some other code path inserted the same slug concurrently, we just
+    // leave the row without a slug. Background backfill task can fix it later.
+    return null;
+  }
 }
 
 // GET /portfolio — list mine (master sees own drafts and published cases)
@@ -1876,7 +1934,10 @@ router.post("/portfolio", requireMasterPwa, async (req, res) => {
       isPublished: false, // can't publish without photos yet
     })
     .returning();
-  res.json({ ok: true, item: toPortfolioPwaDto(created) });
+  // Eager slug generation if the master typed a real title up-front. Slug is
+  // a stable URL handle (`/raboty/{slug}`) and is preserved forever once set.
+  const finalSlug = await ensurePortfolioSlug(created.id, created.slug, created.title);
+  res.json({ ok: true, item: toPortfolioPwaDto({ ...created, slug: finalSlug ?? created.slug }) });
 });
 
 // PATCH /portfolio/:id — update fields. Re-evaluates publishability on each
@@ -1967,6 +2028,11 @@ router.patch("/portfolio/:id", requireMasterPwa, async (req, res) => {
     .where(eq(masterPortfolioTable.id, id))
     .returning();
 
+  // Generate slug on first save with a real title. Idempotent — never
+  // overwrites an existing slug, so updates here are safe even if the master
+  // changes the title later.
+  const finalSlug = await ensurePortfolioSlug(updated.id, updated.slug, updated.title);
+
   // Refresh public master page if portfolio visibility changed
   if (existing.isPublished !== updated.isPublished) {
     const [m] = await db.select({ slug: mastersTable.slug, isPublished: mastersTable.isPublished })
@@ -1977,6 +2043,8 @@ router.patch("/portfolio/:id", requireMasterPwa, async (req, res) => {
       revalidateMarketplacePaths(masterPublicationPaths(m.slug)).catch(() => {});
     }
   }
+
+  res.json({ ok: true, item: toPortfolioPwaDto({ ...updated, slug: finalSlug ?? updated.slug }) });
 
   res.json({ ok: true, item: toPortfolioPwaDto(updated) });
 });
@@ -2080,7 +2148,11 @@ router.post("/portfolio/:id/photos", requireMasterPwa, portfolioPhotoUpload.sing
     }
   }
 
-  res.json({ ok: true, url, item: toPortfolioPwaDto(updated) });
+  // Adding a photo can flip canPublish to true; ensure we have a slug for
+  // the case so /raboty/{slug} can be linked from the master profile.
+  const finalSlug = await ensurePortfolioSlug(updated.id, updated.slug, updated.title);
+
+  res.json({ ok: true, url, item: toPortfolioPwaDto({ ...updated, slug: finalSlug ?? updated.slug }) });
 });
 
 // DELETE /portfolio/:id/photos — remove one URL from before/after arrays.

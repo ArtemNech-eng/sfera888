@@ -461,8 +461,11 @@ function PortfolioCard({ item }: { item: MasterPortfolioItem }) {
   const area = formatArea(item.area);
   const completedAt = formatDate(item.completedAt);
 
-  return (
-    <li className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+  // When the case has its own slug, the whole card becomes a link to the
+  // standalone /raboty/[slug] page (Houzz-model). Without a slug we render
+  // the static card (legacy cases backfilled later).
+  const cardContent = (
+    <>
       {(before || after) ? (
         <div className="grid grid-cols-2 gap-1 bg-[var(--color-background)]">
           <PortfolioPhoto src={before} label="До" />
@@ -472,16 +475,13 @@ function PortfolioCard({ item }: { item: MasterPortfolioItem }) {
       <div className="p-5">
         <div className="text-base font-medium text-[var(--color-text)]">{item.title}</div>
         {item.description ? (
-          <p className="mt-1 text-sm text-[var(--color-muted)]">{item.description}</p>
+          <p className="mt-1 line-clamp-3 text-sm text-[var(--color-muted)]">{item.description}</p>
         ) : null}
         <div className="mt-3 flex flex-wrap gap-2 text-xs text-[var(--color-muted)]">
           {item.service?.slug && item.city?.slug ? (
-            <Link
-              href={`/${item.service.slug}/${item.city.slug}`}
-              className="rounded-full border border-[var(--color-border)] bg-[var(--color-background)] px-2 py-1 text-[var(--color-text)] hover:border-[var(--color-primary)]"
-            >
+            <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-background)] px-2 py-1 text-[var(--color-text)]">
               {item.service.name}, {item.city.name}
-            </Link>
+            </span>
           ) : item.service?.name ? (
             <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-background)] px-2 py-1 text-[var(--color-text)]">
               {item.service.name}
@@ -500,6 +500,22 @@ function PortfolioCard({ item }: { item: MasterPortfolioItem }) {
           {completedAt ? <span>{completedAt}</span> : null}
         </div>
       </div>
+    </>
+  );
+
+  if (item.slug) {
+    return (
+      <li className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-primary)]">
+        <Link href={`/raboty/${item.slug}`} className="block">
+          {cardContent}
+        </Link>
+      </li>
+    );
+  }
+
+  return (
+    <li className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+      {cardContent}
     </li>
   );
 }

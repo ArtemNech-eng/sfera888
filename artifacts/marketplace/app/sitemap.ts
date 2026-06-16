@@ -1,5 +1,5 @@
 import type { MetadataRoute } from "next";
-import { fetchCities, fetchPublishedMasterSlugs, fetchServices } from "../lib/api";
+import { fetchCities, fetchPublishedCaseSlugs, fetchPublishedMasterSlugs, fetchServices } from "../lib/api";
 import { publicUrl } from "../lib/env";
 
 // Generated at runtime, not at build time:
@@ -17,6 +17,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${base}/`, lastModified: now, changeFrequency: "weekly", priority: 1 },
     { url: `${base}/mastera`, lastModified: now, changeFrequency: "daily", priority: 0.9 },
     { url: `${base}/uslugi`, lastModified: now, changeFrequency: "weekly", priority: 0.8 },
+    { url: `${base}/raboty`, lastModified: now, changeFrequency: "daily", priority: 0.85 },
     { url: `${base}/dizajn`, lastModified: now, changeFrequency: "weekly", priority: 0.7 },
     { url: `${base}/o-nas`, lastModified: now, changeFrequency: "monthly", priority: 0.5 },
     { url: `${base}/kontakty`, lastModified: now, changeFrequency: "monthly", priority: 0.5 },
@@ -27,11 +28,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   let services: Awaited<ReturnType<typeof fetchServices>> = [];
   let cities: Awaited<ReturnType<typeof fetchCities>> = [];
   let masterSlugs: string[] = [];
+  let caseSlugs: string[] = [];
   try {
-    [services, cities, masterSlugs] = await Promise.all([
+    [services, cities, masterSlugs, caseSlugs] = await Promise.all([
       fetchServices(),
       fetchCities(),
       fetchPublishedMasterSlugs(),
+      fetchPublishedCaseSlugs(),
     ]);
   } catch {
     return top;
@@ -56,5 +59,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.7,
   }));
 
-  return [...top, ...masters, ...pairs];
+  // /raboty/[slug] — Houzz-model main long-tail SEO asset (plan §11.7).
+  // Higher priority than service-city pairs because cases carry unique
+  // user-generated content (photos, custom descriptions, prices) and we
+  // want crawlers to pick them up quickly after publication.
+  const raboty: MetadataRoute.Sitemap = caseSlugs.map((slug) => ({
+    url: `${base}/raboty/${slug}`,
+    lastModified: now,
+    changeFrequency: "monthly",
+    priority: 0.75,
+  }));
+
+  return [...top, ...masters, ...raboty, ...pairs];
 }

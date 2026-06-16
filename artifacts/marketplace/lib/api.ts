@@ -6,6 +6,8 @@ import type {
   ServiceCityResponse,
   MasterDetailResponse,
   MasterListResponse,
+  RabotyListResponse,
+  RabotyDetailResponse,
 } from "./types";
 
 /**
@@ -203,6 +205,83 @@ export async function fetchMaster(slug: string): Promise<MasterDetailResponse | 
           .map((u) => absolutizeApiUrl(u))
           .filter((u): u is string => !!u);
       }
+    }
+    return data;
+  } catch (e) {
+    if (e instanceof MarketplaceApiError && e.status === 404) return null;
+    throw e;
+  }
+}
+
+/**
+ * Paginated list of published portfolio cases (Houzz-model, /raboty fid).
+ * Both filters are optional; when both are absent returns the global feed.
+ *
+ * Cached for 5 min by default. Revalidation triggered by the
+ * `/api/revalidate` webhook from CRM when a case is published/unpublished.
+ */
+export async function fetchRabotyList(opts: {
+  serviceSlug?: string;
+  citySlug?: string;
+  page?: number;
+  limit?: number;
+} = {}): Promise<RabotyListResponse> {
+  const params = new URLSearchParams();
+  if (opts.serviceSlug) params.set("serviceSlug", opts.serviceSlug);
+  if (opts.citySlug) params.set("citySlug", opts.citySlug);
+  if (opts.page && opts.page > 0) params.set("page", String(opts.page));
+  if (opts.limit && opts.limit > 0) params.set("limit", String(Math.min(opts.limit, 50)));
+  const qs = params.toString();
+  const data = await call<RabotyListResponse>(`/raboty${qs ? `?${qs}` : ""}`);
+  for (const item of data.items ?? []) {
+    item.beforePhotos = (item.beforePhotos ?? []).map((u) => absolutizeApiUrl(u)).filter((u): u is string => !!u);
+    item.afterPhotos = (item.afterPhotos ?? []).map((u) => absolutizeApiUrl(u)).filter((u): u is string => !!u);
+    if (item.master) {
+      item.master.avatarUrl = absolutizeApiUrl(item.master.avatarUrl);
+    }
+  }
+  return data;
+}
+
+/**
+ * Returns slugs of every published portfolio case. Used by /sitemap-raboty.xml
+ * to enumerate /raboty/[slug] URLs. Paginates through /raboty (which caps
+ * limit=50). Same safety ceiling as fetchPublishedMasterSlugs.
+ */
+export async function fetchPublishedCaseSlugs(): Promise<string[]> {
+  const out: string[] = [];
+  const limit = 50;
+  const SAFETY_PAGE_CAP = 100;
+  for (let page = 1; page <= SAFETY_PAGE_CAP; page++) {
+    const r = await call<RabotyListResponse>(`/raboty?page=${page}&limit=${limit}`);
+    for (const item of r.items) {
+      if (typeof item.slug === "string" && item.slug.length > 0) out.push(item.slug);
+    }
+    const pagesNeeded = Math.ceil((r.total ?? 0) / limit);
+    if (page >= pagesNeeded) break;
+    if (r.items.length === 0) break;
+  }
+  return out;
+}
+
+/**
+ * Returns a single published portfolio case by slug, with master profile
+ * and similar cases. Returns null on 404.
+ *
+ * Used by `/raboty/[slug]` page. Photo URLs are absolutized so <img> works
+ * from the marketplace domain.
+ */
+export async function fetchRabotyCase(slug: string): Promise<RabotyDetailResponse | null> {
+  try {
+    const data = await call<RabotyDetailResponse>(`/raboty/${encodeURIComponent(slug)}`);
+    data.portfolio.beforePhotos = (data.portfolio.beforePhotos ?? [])
+      .map((u) => absolutizeApiUrl(u)).filter((u): u is string => !!u);
+    data.portfolio.afterPhotos = (data.portfolio.afterPhotos ?? [])
+      .map((u) => absolutizeApiUrl(u)).filter((u): u is string => !!u);
+    data.master.avatarUrl = absolutizeApiUrl(data.master.avatarUrl);
+    for (const s of data.similar ?? []) {
+      s.beforePhotos = (s.beforePhotos ?? []).map((u) => absolutizeApiUrl(u)).filter((u): u is string => !!u);
+      s.afterPhotos = (s.afterPhotos ?? []).map((u) => absolutizeApiUrl(u)).filter((u): u is string => !!u);
     }
     return data;
   } catch (e) {

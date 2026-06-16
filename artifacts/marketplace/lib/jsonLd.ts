@@ -234,6 +234,144 @@ export function masterProfileJsonLd(input: MasterProfileJsonLdInput): Record<str
 }
 
 /* ──────────────────────────────────────────────────────────────────────── */
+/* Portfolio case (CreativeWork + Service+Offer + ImageObject + Review)     */
+/* ──────────────────────────────────────────────────────────────────────── */
+
+export interface CaseJsonLdInput {
+  /** Public URL of the case page. Absolute. */
+  url: string;
+  /** Headline / H1 of the case page. */
+  title: string;
+  /** Plain-text description, used for `description`. */
+  description: string | null;
+  /** Absolute URL of the cover image (typically first afterPhotos). */
+  coverImageUrl: string | null;
+  /** Additional photo URLs (before + after). Already absolute. */
+  imageUrls: string[];
+  /** ISO date string from the DB (`completed_at`). */
+  completedAt: string | null;
+  /** Numeric area in m² (parsed from string). */
+  areaSqm: number | null;
+  /** Numeric price (parsed from `priceFrom`). */
+  priceTotal: number | null;
+  /** Service info — used both for `serviceType` and the `Service+Offer` graph. */
+  service: { name: string; slug: string | null } | null;
+  /** City info — used for `locationCreated` and `areaServed`. */
+  city: { name: string; slug: string | null } | null;
+  /** Master id + slug to build the absolute `/master/{slug}` author URL. */
+  master: {
+    id: number;
+    slug: string | null;
+    name: string;
+    avatarUrl: string | null;
+  };
+  /** Marketplace base URL (no trailing slash) for relative→absolute. */
+  siteUrl: string;
+  /** If the case has a public client review. */
+  clientReview: { rating: number; text: string } | null;
+}
+
+/**
+ * Build the schema.org graph for /raboty/[slug]: a `CreativeWork` describing
+ * the visual case (gallery + description) plus a parallel `Service+Offer`
+ * describing the commercial side (provider, price, area). The `Person`
+ * (master) is referenced by `@id` so search engines can correlate cases
+ * across the same author.
+ *
+ * Returns an array of nodes ready to be wrapped in a single `@graph`.
+ */
+export function caseJsonLd(input: CaseJsonLdInput): Record<string, unknown> {
+  const masterUrl = input.master.slug
+    ? `${input.siteUrl}/master/${input.master.slug}`
+    : input.siteUrl;
+  const masterId = `${masterUrl}#person`;
+  const caseId = `${input.url}#case`;
+  const serviceId = `${input.url}#service`;
+
+  const allImages: string[] = [];
+  if (input.coverImageUrl) allImages.push(input.coverImageUrl);
+  for (const u of input.imageUrls) {
+    if (u && !allImages.includes(u)) allImages.push(u);
+  }
+
+  const creativeWork: Record<string, unknown> = {
+    "@type": "CreativeWork",
+    "@id": caseId,
+    name: input.title,
+    headline: input.title,
+    url: input.url,
+    creator: {
+      "@type": "Person",
+      "@id": masterId,
+      name: input.master.name,
+      url: masterUrl,
+      ...(input.master.avatarUrl ? { image: input.master.avatarUrl } : {}),
+    },
+  };
+  if (input.description) creativeWork.description = input.description;
+  if (allImages.length > 0) creativeWork.image = allImages;
+  if (input.completedAt) creativeWork.dateCreated = input.completedAt;
+  if (input.city) {
+    creativeWork.locationCreated = {
+      "@type": "Place",
+      name: input.city.name,
+      address: {
+        "@type": "PostalAddress",
+        addressLocality: input.city.name,
+        addressCountry: "RU",
+      },
+    };
+  }
+  if (input.service) {
+    creativeWork.about = { "@type": "Service", name: input.service.name };
+  }
+
+  const nodes: Record<string, unknown>[] = [creativeWork];
+
+  if (input.service) {
+    const serviceNode: Record<string, unknown> = {
+      "@type": "Service",
+      "@id": serviceId,
+      serviceType: input.service.name,
+      name: input.title,
+      provider: { "@id": masterId },
+      ...(input.city
+        ? { areaServed: { "@type": "City", name: input.city.name } }
+        : {}),
+    };
+    if (input.priceTotal != null && input.priceTotal > 0) {
+      serviceNode.offers = {
+        "@type": "Offer",
+        price: input.priceTotal,
+        priceCurrency: "RUB",
+        availability: "https://schema.org/InStock",
+      };
+    }
+    nodes.push(serviceNode);
+  }
+
+  if (input.clientReview) {
+    nodes.push({
+      "@type": "Review",
+      itemReviewed: { "@id": serviceId },
+      reviewRating: {
+        "@type": "Rating",
+        ratingValue: String(input.clientReview.rating),
+        bestRating: "5",
+        worstRating: "1",
+      },
+      author: { "@type": "Person", name: "Клиент" },
+      reviewBody: input.clientReview.text,
+    });
+  }
+
+  return {
+    "@context": "https://schema.org",
+    "@graph": nodes,
+  };
+}
+
+/* ──────────────────────────────────────────────────────────────────────── */
 /* Inline-safe serialisation                                                */
 /* ──────────────────────────────────────────────────────────────────────── */
 

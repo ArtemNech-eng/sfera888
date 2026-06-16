@@ -142,3 +142,84 @@ export interface MasterDetailResponse {
   portfolio: MasterPortfolioItem[];
   reviews: MasterPublicReview[];
 }
+
+// ── Standalone portfolio case page (Houzz-model, /raboty/[slug]) ────────────
+
+/** Compact master info embedded into a case-list item. */
+export interface RabotyMasterRef {
+  id: number;
+  slug: string | null;
+  alias: string | null;
+  publicTitle: string | null;
+  avatarUrl: string | null;
+  publicRating: string | null;
+  publicReviewsCount: number;
+  city: string | null;
+}
+
+/** A single case in the /raboty list response. */
+export interface RabotyListItem {
+  id: number;
+  slug: string | null;
+  title: string;
+  description: string | null;
+  beforePhotos: string[];
+  afterPhotos: string[];
+  priceFrom: string | null;
+  priceTo: string | null;
+  area: string | null;
+  completedAt: string | null;
+  clientReviewText: string | null;
+  clientRating: number | null;
+  isFeatured: boolean;
+  service: { name: string; slug: string | null } | null;
+  city: { name: string; slug: string | null } | null;
+  master: RabotyMasterRef;
+}
+
+export interface RabotyListResponse {
+  items: RabotyListItem[];
+  page: number;
+  limit: number;
+  total: number;
+  /** Active filter context, present when serviceSlug / citySlug were provided. */
+  filter: {
+    service: { name: string; slug: string } | null;
+    city: { name: string; slug: string } | null;
+  };
+}
+
+/** Trimmed similar-case used in the "Похожие работы" rail on a case page. */
+export interface RabotySimilarItem {
+  id: number;
+  slug: string | null;
+  title: string;
+  beforePhotos: string[];
+  afterPhotos: string[];
+  priceFrom: string | null;
+  area: string | null;
+  service: { name: string; slug: string | null } | null;
+  city: { name: string; slug: string | null } | null;
+}
+
+export interface RabotyDetailResponse {
+  portfolio: {
+    id: number;
+    slug: string | null;
+    title: string;
+    description: string | null;
+    beforePhotos: string[];
+    afterPhotos: string[];
+    priceFrom: string | null;
+    priceTo: string | null;
+    area: string | null;
+    completedAt: string | null;
+    clientReviewText: string | null;
+    clientRating: number | null;
+    isFeatured: boolean;
+    service: { name: string; slug: string | null } | null;
+    city: { name: string; slug: string | null } | null;
+  };
+  master: Master;
+  similar: RabotySimilarItem[];
+}
