@@ -71,12 +71,30 @@ export interface Master {
   specialization: string | null;
   /** Array of service NAMES the master self-declared. */
   specializations: string[] | null;
+  /**
+   * Service prices set by the master in PWA. Backend filters out invalid
+   * entries (price ≤ 0, missing service). Used both for SEO (priceRange in
+   * JSON-LD) and for the on-page «Цены на услуги» block.
+   */
+  servicePrices: { service: string; priceFrom: number }[];
   rating: string | null;
   publicRating: string | null;
   publicReviewsCount: number;
   yearsExperience: number | null;
   avatarUrl: string | null;
   hasContract: boolean;
+  /** ISO timestamp of master's first sign-up. Used for «На платформе X лет». */
+  createdAt: string;
+}
+
+/**
+ * Aggregate counts from the orders table, computed on every request and cached
+ * at the SSR layer. Cancelled count is intentionally absent — see backend
+ * comment in routes/marketplace.ts.
+ */
+export interface MasterStats {
+  totalOrders: number;
+  completedOrders: number;
 }
 
 export interface MasterPortfolioItem {
@@ -112,6 +130,7 @@ export interface MasterPublicReview {
 
 export interface MasterDetailResponse {
   master: Master;
+  stats: MasterStats;
   portfolio: MasterPortfolioItem[];
   reviews: MasterPublicReview[];
 }

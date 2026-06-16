@@ -26,6 +26,7 @@ import {
   leadsTable,
   masterPortfolioTable,
   masterReviewsPublicTable,
+  ordersTable,
 } from "@workspace/db";
 import { and, asc, desc, eq, gte, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { timingSafeEqual } from "node:crypto";
@@ -123,8 +124,10 @@ function toMasterDto(m: MasterRow) {
   // Strict allow-list: NO phone, telegram_id, max_chat_id, pwa_login,
   // pwa_password_hash, passport_*, contract_*, debt, wallet fields,
   // suspension fields, blocked_* fields, manualUnblocksCount, tags,
-  // service_prices, voronka_column_id, working_hours, preferred_districts,
+  // voronka_column_id, working_hours, preferred_districts,
   // min_area, last_seen_at, last_cancel_at, etc.
+  //
+  // Public fields per MARKETPLACE_PRODUCTION_PLAN.md §11.5 / §13:
   return {
     id: m.id,
     slug: m.slug,
@@ -134,12 +137,21 @@ function toMasterDto(m: MasterRow) {
     city: m.city,
     specialization: m.specialization,
     specializations: m.specializations,
+    // servicePrices ARE public — they're meant to help clients estimate cost.
+    // Filtered to entries with valid `service` and `priceFrom > 0` so the UI
+    // can trust the data without re-validating.
+    servicePrices: Array.isArray(m.servicePrices)
+      ? m.servicePrices.filter(p => p?.service && typeof p?.priceFrom === "number" && p.priceFrom > 0)
+      : [],
     rating: m.rating,
     publicRating: m.publicRating,
     publicReviewsCount: m.publicReviewsCount,
     yearsExperience: m.yearsExperience,
     avatarUrl: m.customAvatarUrl,
     hasContract: m.contractSignedAt != null,
+    // createdAt is the master's first sign-up date — used by the public page
+    // to compute «на платформе X лет/месяцев». Time-only, no PII.
+    createdAt: m.createdAt,
   };
 }
 
@@ -473,9 +485,34 @@ router.get("/master/:slug", async (req, res) => {
       )
       .limit(REVIEWS_LIMIT);
 
+    // Public stats: aggregate counts from `orders`. Cancelled is intentionally
+    // omitted from the public payload — it's a negative signal we don't expose
+    // in V1 (see MARKETPLACE_PRODUCTION_PLAN.md §11.5 / privacy review).
+    const statsRows = await db
+      .select({
+        status: ordersTable.status,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(ordersTable)
+      .where(and(
+        eq(ordersTable.masterId, master.id),
+        isNull(ordersTable.deletedAt),
+      ))
+      .groupBy(ordersTable.status);
+    let totalOrders = 0;
+    let completedOrders = 0;
+    for (const r of statsRows) {
+      totalOrders += Number(r.count) || 0;
+      if (r.status === "completed") completedOrders = Number(r.count) || 0;
+    }
+
     setOkCache(res);
     res.json({
       master: toMasterDto(master),
+      stats: {
+        totalOrders,
+        completedOrders,
+      },
       portfolio: portfolioRows.map(toMasterPortfolioDto),
       reviews: reviewRows.map(toMasterPublicReviewDto),
     });

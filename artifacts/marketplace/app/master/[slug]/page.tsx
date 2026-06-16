@@ -74,6 +74,43 @@ function formatRating(value: string | null): string | null {
   return n.toFixed(1);
 }
 
+/**
+ * Build «На платформе 1 год 3 мес.» / «На платформе 5 лет» / «менее месяца».
+ * Used to surface the master's tenure as an E-E-A-T signal in the hero meta-line.
+ */
+function formatPlatformTenure(createdAt: string | null | undefined): string | null {
+  if (!createdAt) return null;
+  const start = new Date(createdAt);
+  if (Number.isNaN(start.getTime())) return null;
+  const now = new Date();
+  let years = now.getFullYear() - start.getFullYear();
+  let months = now.getMonth() - start.getMonth();
+  if (now.getDate() < start.getDate()) months -= 1;
+  if (months < 0) { years -= 1; months += 12; }
+  if (years <= 0 && months <= 0) return "менее месяца";
+  if (years === 0) return `${months} мес.`;
+  if (months === 0) return `${years} ${pluralYears(years)}`;
+  return `${years} ${pluralYears(years)} ${months} мес.`;
+}
+
+function pluralYears(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return "лет";
+  if (mod10 === 1) return "год";
+  if (mod10 >= 2 && mod10 <= 4) return "года";
+  return "лет";
+}
+
+function pluralCompleted(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return "заказов";
+  if (mod10 === 1) return "заказ";
+  if (mod10 >= 2 && mod10 <= 4) return "заказа";
+  return "заказов";
+}
+
 function formatPrice(from: string | null, to: string | null): string | null {
   const a = from ? parseFloat(from) : NaN;
   const b = to ? parseFloat(to) : NaN;
@@ -115,7 +152,7 @@ export default async function MasterPage(
   ]);
   if (!data) notFound();
 
-  const { master, portfolio, reviews } = data;
+  const { master, stats, portfolio, reviews } = data;
   const displayName = pickDisplayName(master);
   const sourcePageUrl = `${publicUrl()}/master/${slug}`;
 
@@ -130,6 +167,16 @@ export default async function MasterPage(
   const reviewsCount = master.publicReviewsCount;
   const yearsExperience = master.yearsExperience;
   const visibleSpecs = (master.specializations ?? []).slice(0, 8);
+  const tenure = formatPlatformTenure(master.createdAt);
+
+  // Build a name → slug map of services for clickable specialization chips.
+  // Falls back to a non-clickable badge when the master self-declared a
+  // specialization that doesn't match the curated catalog.
+  const serviceSlugByName = new Map<string, string>();
+  for (const s of services) {
+    serviceSlugByName.set(s.name.trim().toLowerCase(), s.slug);
+  }
+  const masterCitySlug = cityMatch?.slug ?? null;
 
   // ── schema.org JSON-LD ─────────────────────────────────────────────────
   // Built only from trusted server-side data. Reviews come from the
@@ -146,6 +193,7 @@ export default async function MasterPage(
     image: master.avatarUrl ?? null,
     cityName: master.city ?? null,
     knowsAbout: master.specializations ?? [],
+    servicePrices: master.servicePrices,
     rating: rating != null && reviewsCount > 0
       ? { ratingValue: rating, reviewCount: reviewsCount }
       : null,
@@ -181,7 +229,19 @@ export default async function MasterPage(
                 {yearsExperience != null && yearsExperience > 0 ? (
                   <>
                     {master.city ? <span aria-hidden>·</span> : null}
-                    <span>опыт {yearsExperience} лет</span>
+                    <span>опыт {yearsExperience} {pluralYears(yearsExperience)}</span>
+                  </>
+                ) : null}
+                {stats.completedOrders > 0 ? (
+                  <>
+                    <span aria-hidden>·</span>
+                    <span>выполнено {stats.completedOrders} {pluralCompleted(stats.completedOrders)}</span>
+                  </>
+                ) : null}
+                {tenure ? (
+                  <>
+                    <span aria-hidden>·</span>
+                    <span>на платформе {tenure}</span>
                   </>
                 ) : null}
                 {master.hasContract ? (
@@ -216,14 +276,30 @@ export default async function MasterPage(
               ) : null}
               {visibleSpecs.length > 0 ? (
                 <ul className="mt-5 flex flex-wrap gap-2">
-                  {visibleSpecs.map((s) => (
-                    <li
-                      key={s}
-                      className="rounded-full border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-1 text-sm text-[var(--color-text)]"
-                    >
-                      {s}
-                    </li>
-                  ))}
+                  {visibleSpecs.map((s) => {
+                    const slug = serviceSlugByName.get(s.trim().toLowerCase());
+                    const linkable = slug && masterCitySlug;
+                    if (linkable) {
+                      return (
+                        <li key={s}>
+                          <Link
+                            href={`/${slug}/${masterCitySlug}`}
+                            className="block rounded-full border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-1 text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+                          >
+                            {s}
+                          </Link>
+                        </li>
+                      );
+                    }
+                    return (
+                      <li
+                        key={s}
+                        className="rounded-full border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-1 text-sm text-[var(--color-text)]"
+                      >
+                        {s}
+                      </li>
+                    );
+                  })}
                 </ul>
               ) : null}
             </div>
@@ -236,6 +312,42 @@ export default async function MasterPage(
         <div className="grid gap-8 lg:grid-cols-[1.3fr,1fr]">
           {/* Portfolio + reviews — main column */}
           <div className="grid gap-10 lg:order-1">
+            {/* Service prices */}
+            {master.servicePrices.length > 0 ? (
+              <div>
+                <h2 className="text-2xl font-semibold text-[var(--color-text)]">Цены на услуги</h2>
+                <p className="mt-1 text-sm text-[var(--color-muted)]">
+                  Финальная стоимость зависит от задачи. Уточните при заявке.
+                </p>
+                <ul className="mt-6 divide-y divide-[var(--color-border)] overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+                  {master.servicePrices.map((p, i) => {
+                    const slug = serviceSlugByName.get(p.service.trim().toLowerCase());
+                    const linkable = slug && masterCitySlug;
+                    const inner = (
+                      <div className="flex items-center justify-between gap-4 p-4">
+                        <span className="text-[var(--color-text)]">{p.service}</span>
+                        <span className="font-semibold text-[var(--color-text)] whitespace-nowrap">
+                          от {formatNumber(p.priceFrom)} ₽
+                        </span>
+                      </div>
+                    );
+                    return (
+                      <li key={`${p.service}-${i}`}>
+                        {linkable ? (
+                          <Link
+                            href={`/${slug}/${masterCitySlug}`}
+                            className="block hover:bg-[var(--color-background)]"
+                          >
+                            {inner}
+                          </Link>
+                        ) : inner}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ) : null}
+
             {/* Portfolio */}
             {portfolio.length > 0 ? (
               <div>

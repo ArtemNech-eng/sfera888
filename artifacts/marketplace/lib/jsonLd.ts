@@ -144,6 +144,12 @@ export interface MasterProfileJsonLdInput {
   cityName?: string | null;
   /** List of service NAMES the master offers ("Сантехника", "Электромонтаж"). */
   knowsAbout: string[];
+  /**
+   * Per-service price list. Used to compute `priceRange` for the snippet and
+   * to emit individual `Offer`+`Service` items via `makesOffer`. Optional —
+   * masters with no prices won't surface a price-related snippet.
+   */
+  servicePrices?: { service: string; priceFrom: number }[];
   /** Aggregated rating values from `masters.public_rating` + count. */
   rating?: {
     /** Already a string "4.9" or null when no reviews yet. */
@@ -179,6 +185,27 @@ export function masterProfileJsonLd(input: MasterProfileJsonLdInput): Record<str
   }
   if (input.knowsAbout.length > 0) {
     node.knowsAbout = input.knowsAbout;
+  }
+  // Price range — both as `priceRange` (legacy) and as `makesOffer[]` per service
+  // for richer snippets. Yandex picks up `priceRange` for the SERP price label.
+  const validPrices = (input.servicePrices ?? []).filter(
+    (p) => p?.service && typeof p?.priceFrom === "number" && p.priceFrom > 0,
+  );
+  if (validPrices.length > 0) {
+    const min = Math.min(...validPrices.map((p) => p.priceFrom));
+    const max = Math.max(...validPrices.map((p) => p.priceFrom));
+    node.priceRange = min === max ? `от ${min} ₽` : `${min}–${max} ₽`;
+    node.makesOffer = validPrices.map((p) => ({
+      "@type": "Offer",
+      itemOffered: {
+        "@type": "Service",
+        name: p.service,
+        ...(input.cityName ? { areaServed: { "@type": "City", name: input.cityName } } : {}),
+      },
+      price: p.priceFrom,
+      priceCurrency: "RUB",
+      availability: "https://schema.org/InStock",
+    }));
   }
   if (input.rating && input.rating.reviewCount > 0) {
     node.aggregateRating = {
