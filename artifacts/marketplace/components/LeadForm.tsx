@@ -20,6 +20,20 @@ interface Props {
    * Only rendered when `attachedMasterId` is also set.
    */
   attachedMasterTitle?: string;
+  /**
+   * Optional. Prepended to the user's comment before submission. Use it
+   * when the form lives on a page that needs structured context inside
+   * the lead's comment field (e.g. "Хочу AI-дизайн: ванная, скандинавский").
+   * If the user wrote their own comment, the prefix and comment are joined
+   * with a period.
+   */
+  commentPrefix?: string;
+  /**
+   * Optional. Override the source-page-type label sent upstream. Defaults
+   * to "master" when `attachedMasterId` is set, otherwise "service-city".
+   * Allowed values are constrained on the route handler's whitelist.
+   */
+  sourcePageType?: "service-city" | "master" | "design_waitlist";
 }
 
 type Status = "idle" | "submitting" | "error";
@@ -107,6 +121,8 @@ export function LeadForm({
   sourcePageUrl,
   attachedMasterId,
   attachedMasterTitle,
+  commentPrefix,
+  sourcePageType,
 }: Props) {
   const [status, setStatus] = useState<Status>("idle");
   const [errMessage, setErrMessage] = useState<string | null>(null);
@@ -124,10 +140,16 @@ export function LeadForm({
     setErrMessage(null);
 
     const fd = new FormData(event.currentTarget);
+    const userComment = String(fd.get("comment") ?? "").trim();
+    const finalComment = commentPrefix && commentPrefix.length > 0
+      ? userComment.length > 0
+        ? `${commentPrefix}. ${userComment}`
+        : commentPrefix
+      : userComment;
     const body = {
       name: String(fd.get("name") ?? "").trim(),
       phone: String(fd.get("phone") ?? "").trim(),
-      comment: String(fd.get("comment") ?? "").trim(),
+      comment: finalComment,
       consent: fd.get("consent") === "on",
       // Honeypot — must stay empty. Real users never see the field.
       website: String(fd.get("website") ?? "").trim(),
@@ -140,6 +162,9 @@ export function LeadForm({
       sourcePageUrl,
       // Pre-set on master profile pages; absent everywhere else.
       attachedMasterId: attachedMasterId ?? null,
+      // Optional override for pages that aren't service-city or master
+      // (currently used by /dizajn/new for "design_waitlist" leads).
+      sourcePageType: sourcePageType ?? null,
     };
 
     let res: Response;

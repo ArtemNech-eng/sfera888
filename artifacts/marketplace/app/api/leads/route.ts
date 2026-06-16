@@ -40,6 +40,12 @@ interface ClientPayload {
   formStartedAt?: unknown;
   /** Optional — set when the form lives on a master's profile page. */
   attachedMasterId?: unknown;
+  /**
+   * Optional override for the source-page label sent upstream. Validated
+   * against an in-route whitelist before forwarding (no arbitrary strings
+   * pass through from the client).
+   */
+  sourcePageType?: unknown;
 }
 
 function asString(v: unknown, max: number): string | undefined {
@@ -150,6 +156,22 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Resolve sourcePageType. Strict whitelist — never pass through arbitrary
+  // strings from the client (the upstream column is varchar(40), but we don't
+  // want to pollute it with malicious values). Default behaviour matches the
+  // pre-waitlist contract: "master" when attached, otherwise "service-city".
+  const allowedPageTypes: ReadonlySet<string> = new Set([
+    "service-city",
+    "master",
+    "design_waitlist",
+  ]);
+  let sourcePageType: "service-city" | "master" | "design_waitlist";
+  if (typeof payload.sourcePageType === "string" && allowedPageTypes.has(payload.sourcePageType)) {
+    sourcePageType = payload.sourcePageType as "service-city" | "master" | "design_waitlist";
+  } else {
+    sourcePageType = attachedMasterId !== undefined ? "master" : "service-city";
+  }
+
   const upstream = {
     name: asString(payload.name, 100),
     phone,
@@ -157,12 +179,7 @@ export async function POST(req: NextRequest) {
     serviceSlug,
     comment: asString(payload.comment, 2000),
     sourcePageUrl: asString(payload.sourcePageUrl, 1000),
-    // When the lead is attached to a specific master we mark the page type
-    // accordingly so the CRM filter can distinguish service-city leads from
-    // master-card leads. Same `marketplace` source either way.
-    sourcePageType: (attachedMasterId !== undefined ? "master" : "service-city") as
-      | "master"
-      | "service-city",
+    sourcePageType,
     referrer: headers.get("referer") ?? undefined,
     clientIp,
     clientUserAgent: ua ? ua.slice(0, 500) : undefined,
