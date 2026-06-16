@@ -5,6 +5,7 @@ import type {
   Service,
   ServiceCityResponse,
   MasterDetailResponse,
+  MasterListResponse,
 } from "./types";
 
 /**
@@ -127,13 +128,43 @@ export async function fetchServiceCity(
   citySlug: string,
 ): Promise<ServiceCityResponse | null> {
   try {
-    return await call<ServiceCityResponse>(
+    const data = await call<ServiceCityResponse>(
       `/service-city/${encodeURIComponent(serviceSlug)}/${encodeURIComponent(citySlug)}`,
     );
+    // Absolutize avatar URLs for each master card so <img src> works
+    // from the marketplace domain (api-server proxy lives on sfera-master.ru).
+    for (const m of data.masters ?? []) {
+      m.avatarUrl = absolutizeApiUrl(m.avatarUrl);
+    }
+    return data;
   } catch (e) {
     if (e instanceof MarketplaceApiError && e.status === 404) return null;
     throw e;
   }
+}
+
+/**
+ * Paginated list of published masters with optional filters by city / service.
+ * Used by the public catalog `/mastera` and by SEO pages that want to surface
+ * a "Top masters in X" section.
+ */
+export async function fetchMasters(opts: {
+  citySlug?: string;
+  serviceSlug?: string;
+  page?: number;
+  limit?: number;
+} = {}): Promise<MasterListResponse> {
+  const params = new URLSearchParams();
+  if (opts.citySlug) params.set("citySlug", opts.citySlug);
+  if (opts.serviceSlug) params.set("serviceSlug", opts.serviceSlug);
+  if (opts.page && opts.page > 0) params.set("page", String(opts.page));
+  if (opts.limit && opts.limit > 0) params.set("limit", String(Math.min(opts.limit, 50)));
+  const qs = params.toString();
+  const data = await call<MasterListResponse>(`/masters${qs ? `?${qs}` : ""}`);
+  for (const m of data.items ?? []) {
+    m.avatarUrl = absolutizeApiUrl(m.avatarUrl);
+  }
+  return data;
 }
 
 /**

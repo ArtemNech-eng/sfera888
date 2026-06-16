@@ -290,19 +290,62 @@ router.get("/service-city/:serviceSlug/:citySlug", async (req, res) => {
       return;
     }
 
-    // Phase 1 skeleton: no masters published yet — empty list.
-    // When portfolio/publication flow lands, this is where we'll filter
-    // mastersTable by city.name AND service.name in `specializations`.
-    const masters: ReturnType<typeof toMasterDto>[] = [];
+    // Filter masters: published, in this city, has this specialization in their list.
+    // masters.specializations is text[] of service NAMES (free-form), so we match by
+    // the service.name exact string, same algorithm as `/marketplace/masters`.
+    const masterRows = await db
+      .select()
+      .from(mastersTable)
+      .where(and(
+        eq(mastersTable.isPublished, true),
+        isNotNull(mastersTable.slug),
+        eq(mastersTable.city, city.name),
+        sql`${service.name} = ANY(${mastersTable.specializations})`,
+      ))
+      .orderBy(
+        desc(mastersTable.publicRating),
+        desc(mastersTable.publicReviewsCount),
+        asc(mastersTable.id),
+      )
+      .limit(30);
 
-    const serviceDto = toServiceDto(service);
-    const cityDto = toCityDto(city);
+    const masters = masterRows.map(toMasterDto);
+
+    // Aggregate stats — computed from the same master set so the numbers
+    // match the visible cards.
+    const ratings = masterRows
+      .map((m) => (m.publicRating != null ? Number(m.publicRating) : null))
+      .filter((n): n is number => n != null && Number.isFinite(n) && n > 0);
+    const avgRating = ratings.length > 0
+      ? ratings.reduce((a, b) => a + b, 0) / ratings.length
+      : null;
+    const reviewsCount = masterRows.reduce(
+      (s, m) => s + (m.publicReviewsCount ?? 0),
+      0,
+    );
+
+    // minPrice — lowest `priceFrom` among master service-prices that match THIS service.
+    // Falls back to service.priceFrom (catalog default) if no master priced it yet.
+    const minPrices: number[] = [];
+    for (const m of masterRows) {
+      const sp = m.servicePrices;
+      if (Array.isArray(sp)) {
+        for (const p of sp) {
+          if (p?.service === service.name && typeof p?.priceFrom === "number" && p.priceFrom > 0) {
+            minPrices.push(p.priceFrom);
+          }
+        }
+      }
+    }
+    const minPrice = minPrices.length > 0
+      ? Math.min(...minPrices)
+      : (service.priceFrom ?? null);
 
     const stats = {
       mastersCount: masters.length,
-      minPrice: service.priceFrom ?? null,
-      avgRating: null as number | null,
-      reviewsCount: 0,
+      minPrice,
+      avgRating,
+      reviewsCount,
     };
 
     const cityForUrl = city.nameIn ?? city.name;
@@ -314,7 +357,7 @@ router.get("/service-city/:serviceSlug/:citySlug", async (req, res) => {
     };
 
     setOkCache(res);
-    res.json({ service: serviceDto, city: cityDto, masters, stats, seo });
+    res.json({ service: toServiceDto(service), city: toCityDto(city), masters, stats, seo });
   } catch (e: unknown) {
     console.error("[marketplace/service-city]", e instanceof Error ? e.message : e);
     res.status(500).json({ error: "internal_error" });

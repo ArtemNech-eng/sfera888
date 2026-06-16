@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { fetchServiceCity } from "../../../lib/api";
 import { publicUrl } from "../../../lib/env";
 import { LeadForm } from "../../../components/LeadForm";
+import { MasterCard } from "../../../components/MasterCard";
 import {
   breadcrumbJsonLd,
   faqJsonLd,
@@ -228,6 +229,29 @@ export default async function ServiceCityPage(
           </div>
         </div>
       </section>
+
+      {/* Masters list — top published in this city offering this service */}
+      {data.masters.length > 0 ? (
+        <section className="border-t border-[var(--color-border)] bg-[var(--color-background)]">
+          <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <h2 className="text-2xl font-semibold text-[var(--color-text)]">
+                Мастера: {data.service.name} в {cityPrepositional}
+              </h2>
+              <span className="text-sm text-[var(--color-muted)]">
+                Найдено: {data.masters.length}
+              </span>
+            </div>
+            <ul className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {data.masters.map((m) => (
+                <li key={m.id}>
+                  <MasterCard master={m} />
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      ) : null}
 
       {/* How it works */}
       <section className="border-y border-[var(--color-border)] bg-[var(--color-surface)]">

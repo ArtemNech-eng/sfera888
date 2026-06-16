@@ -9,6 +9,7 @@ export function Footer() {
           <div className="mt-1">Подбор проверенных мастеров для ремонта и быта</div>
         </div>
         <nav className="flex flex-wrap gap-4">
+          <Link href="/mastera" className="hover:text-[var(--color-primary)]">Мастера</Link>
           <Link href="/uslugi" className="hover:text-[var(--color-primary)]">Услуги</Link>
           <Link href="/dizajn" className="hover:text-[var(--color-primary)]">AI-дизайнер</Link>
           <Link href="/o-nas" className="hover:text-[var(--color-primary)]">О сервисе</Link>

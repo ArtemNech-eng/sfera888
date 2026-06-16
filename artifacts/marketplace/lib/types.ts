@@ -47,10 +47,18 @@ export interface ServiceCitySeo {
 export interface ServiceCityResponse {
   service: Service;
   city: City;
-  // master cards are intentionally empty in Phase 1 — see backend skeleton.
-  masters: unknown[];
+  /** Top published masters in this city offering this service (up to 30). */
+  masters: Master[];
   stats: ServiceCityStats;
   seo: ServiceCitySeo;
+}
+
+/** Response of GET /api/marketplace/masters. Used by the catalog `/mastera`. */
+export interface MasterListResponse {
+  items: Master[];
+  page: number;
+  limit: number;
+  total: number;
 }
 
 // ── Master profile DTOs ──────────────────────────────────────────────────────

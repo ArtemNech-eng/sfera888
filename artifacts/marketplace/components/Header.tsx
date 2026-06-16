@@ -9,6 +9,7 @@ export function Header() {
           <span>Честные мастера</span>
         </Link>
         <nav className="hidden items-center gap-6 text-sm text-[var(--color-text)] sm:flex">
+          <Link href="/mastera" className="hover:text-[var(--color-primary)]">Мастера</Link>
           <Link href="/uslugi" className="hover:text-[var(--color-primary)]">Услуги</Link>
           <Link href="/dizajn" className="hover:text-[var(--color-primary)]">AI-дизайнер</Link>
           <a
