@@ -344,6 +344,68 @@ function RatingEditor({ masterId, rating, onSaved }: { masterId: number; rating:
 
 const MARKETPLACE_PUBLIC_BASE = "https://chestnye-mastera.ru";
 
+interface PortfolioCase {
+  id: number;
+  masterId: number;
+  serviceTypeId: number | null;
+  cityId: number | null;
+  title: string;
+  slug: string | null;
+  description: string | null;
+  beforePhotos: string[];
+  afterPhotos: string[];
+  priceFrom: string | null;
+  priceTo: string | null;
+  area: string | null;
+  completedAt: string | null;
+  clientReviewText: string | null;
+  clientRating: number | null;
+  isPublished: boolean;
+  isFeatured: boolean;
+  sortOrder: number;
+  viewCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface PublicationLogEntry {
+  id: number;
+  masterId: number;
+  actor: "master" | "operator" | string;
+  actorId: number | null;
+  action:
+    | "publish"
+    | "unpublish"
+    | "publish_override"
+    | "unpublish_complaint"
+    | "edit_public_fields"
+    | "automoderation_block"
+    | string;
+  reason: string | null;
+  changes: Record<string, unknown> | null;
+  ip: string | null;
+  createdAt: string;
+}
+
+const ACTION_LABELS: Record<string, { label: string; tone: "success" | "warn" | "danger" | "info" | "neutral" }> = {
+  publish:               { label: "Опубликован",                tone: "success" },
+  unpublish:             { label: "Снят с публикации",          tone: "neutral" },
+  publish_override:      { label: "Опубликован (override)",     tone: "info" },
+  unpublish_complaint:   { label: "Снят по жалобе",              tone: "danger" },
+  edit_public_fields:    { label: "Изменены публичные поля",     tone: "info" },
+  automoderation_block:  { label: "Заблокировано модерацией",    tone: "warn" },
+  portfolio_unpublish:   { label: "Кейс снят",                   tone: "neutral" },
+  portfolio_delete:      { label: "Кейс удалён",                 tone: "danger" },
+};
+
+const TONE_CLASSES: Record<string, string> = {
+  success: "bg-emerald-50 border-emerald-200 text-emerald-700",
+  warn:    "bg-amber-50 border-amber-200 text-amber-700",
+  danger:  "bg-red-50 border-red-200 text-red-700",
+  info:    "bg-blue-50 border-blue-200 text-blue-700",
+  neutral: "bg-gray-50 border-gray-200 text-gray-700",
+};
+
 function MarketplacePublicationTab({
   master,
   onMasterUpdate,
@@ -364,6 +426,103 @@ function MarketplacePublicationTab({
   const [unpublishing, setUnpublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
+
+  // Portfolio (V1.5)
+  const [portfolio, setPortfolio] = useState<PortfolioCase[] | null>(null);
+  const [portfolioLoading, setPortfolioLoading] = useState(false);
+  const [portfolioBusy, setPortfolioBusy] = useState<number | null>(null); // case id currently being acted upon
+  const [showAllPortfolio, setShowAllPortfolio] = useState(false);
+
+  // Audit log (V1.5)
+  const [auditLog, setAuditLog] = useState<PublicationLogEntry[] | null>(null);
+  const [logLoading, setLogLoading] = useState(false);
+  const [showAllLog, setShowAllLog] = useState(false);
+
+  async function loadPortfolio() {
+    setPortfolioLoading(true);
+    try {
+      const r = await fetch(`/api/masters/${master.id}/marketplace/portfolio`, { credentials: "include" });
+      const data = await r.json().catch(() => ({}));
+      if (r.ok && Array.isArray(data?.items)) setPortfolio(data.items as PortfolioCase[]);
+      else setPortfolio([]);
+    } catch {
+      setPortfolio([]);
+    } finally {
+      setPortfolioLoading(false);
+    }
+  }
+
+  async function loadAuditLog() {
+    setLogLoading(true);
+    try {
+      const r = await fetch(`/api/masters/${master.id}/marketplace/log?limit=50`, { credentials: "include" });
+      const data = await r.json().catch(() => ({}));
+      if (r.ok && Array.isArray(data?.items)) setAuditLog(data.items as PublicationLogEntry[]);
+      else setAuditLog([]);
+    } catch {
+      setAuditLog([]);
+    } finally {
+      setLogLoading(false);
+    }
+  }
+
+  // Lazy load on mount / when master changes
+  useEffect(() => {
+    setPortfolio(null);
+    setAuditLog(null);
+    setShowAllPortfolio(false);
+    setShowAllLog(false);
+    loadPortfolio();
+    loadAuditLog();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [master.id]);
+
+  async function unpublishCase(caseId: number) {
+    const reason = window.prompt("Причина снятия кейса с публикации (жалоба / нарушение):");
+    if (!reason || !reason.trim()) return;
+    setPortfolioBusy(caseId);
+    try {
+      const r = await fetch(`/api/masters/${master.id}/marketplace/portfolio/${caseId}/unpublish`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: reason.trim() }),
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        alert(`Не удалось снять кейс: ${d?.error ?? r.statusText}`);
+        return;
+      }
+      await loadPortfolio();
+      await loadAuditLog();
+    } finally {
+      setPortfolioBusy(null);
+    }
+  }
+
+  async function deleteCase(caseId: number, caseTitle: string) {
+    if (!window.confirm(`Удалить кейс «${caseTitle}»? Действие необратимо.`)) return;
+    const reason = window.prompt("Причина удаления (для audit log):");
+    if (!reason || !reason.trim()) return;
+    setPortfolioBusy(caseId);
+    try {
+      const r = await fetch(`/api/masters/${master.id}/marketplace/portfolio/${caseId}`, {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: reason.trim() }),
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        alert(`Не удалось удалить кейс: ${d?.error ?? r.statusText}`);
+        return;
+      }
+      await loadPortfolio();
+      await loadAuditLog();
+    } finally {
+      setPortfolioBusy(null);
+    }
+  }
 
   // Reset form when switching masters
   useEffect(() => {
@@ -411,6 +570,7 @@ function MarketplacePublicationTab({
         seoTitle: seoTitle.trim() || null,
         seoDescription: seoDescription.trim() || null,
       });
+      loadAuditLog();
       setSavedFlash(true);
       setTimeout(() => setSavedFlash(false), 1800);
     } catch (e: any) {
@@ -439,6 +599,7 @@ function MarketplacePublicationTab({
         slug: data.slug ?? master.slug ?? null,
         publishedAt: data.publishedAt ?? master.publishedAt ?? new Date().toISOString(),
       });
+      loadAuditLog();
     } catch (e: any) {
       setError(e?.message ?? "Ошибка публикации");
     } finally {
@@ -461,6 +622,7 @@ function MarketplacePublicationTab({
       const data = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(data?.error ?? "Не удалось снять с публикации");
       onMasterUpdate(master.id, { isPublished: false });
+      loadAuditLog();
     } catch (e: any) {
       setError(e?.message ?? "Ошибка");
     } finally {
@@ -664,6 +826,216 @@ function MarketplacePublicationTab({
           Поля редактируются за мастера (override). Каждое изменение записывается в audit log.
           На публичной странице обновление подхватывается через ISR (≈30 сек).
         </p>
+      </div>
+
+      {/* Portfolio mini-list (V1.5) */}
+      <div className="space-y-2 bg-white border border-gray-100 rounded-xl p-3.5">
+        <div className="flex items-center justify-between">
+          <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+            Портфолио {portfolio ? `(${portfolio.length})` : ""}
+          </p>
+          {portfolioLoading && <Loader2 className="w-3 h-3 animate-spin text-gray-300" />}
+        </div>
+
+        {portfolio && portfolio.length === 0 && (
+          <p className="text-[11px] text-gray-400 py-2">Кейсов нет. Мастер сам добавляет их в PWA.</p>
+        )}
+
+        {portfolio && portfolio.length > 0 && (
+          <div className="space-y-2">
+            {(showAllPortfolio ? portfolio : portfolio.slice(0, 5)).map((c) => {
+              const cover =
+                (c.afterPhotos && c.afterPhotos[0]) ||
+                (c.beforePhotos && c.beforePhotos[0]) ||
+                null;
+              const busy = portfolioBusy === c.id;
+              return (
+                <div
+                  key={c.id}
+                  className="flex items-start gap-2.5 rounded-lg border border-gray-100 p-2 hover:border-gray-200 transition-colors"
+                >
+                  {cover ? (
+                    <img
+                      src={resolvePhotoUrl(cover)}
+                      alt=""
+                      className="w-12 h-12 rounded-lg object-cover flex-shrink-0 bg-gray-100"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
+                      <Briefcase className="w-4 h-4 text-gray-300" />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-xs font-medium text-gray-700 truncate">{c.title}</p>
+                      {c.isFeatured && (
+                        <span className="text-[9px] px-1 py-0.5 rounded bg-amber-100 text-amber-700 font-semibold uppercase">
+                          Featured
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span
+                        className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${
+                          c.isPublished
+                            ? "bg-emerald-50 text-emerald-700"
+                            : "bg-gray-100 text-gray-400"
+                        }`}
+                      >
+                        {c.isPublished ? "Опубликован" : "Черновик"}
+                      </span>
+                      {c.priceFrom && (
+                        <span className="text-[10px] text-gray-400">
+                          от {Number(c.priceFrom).toLocaleString("ru-RU")} ₽
+                        </span>
+                      )}
+                      {c.area && (
+                        <span className="text-[10px] text-gray-400">{c.area} м²</span>
+                      )}
+                      {c.completedAt && (
+                        <span className="text-[10px] text-gray-400">
+                          {format(parseISO(c.completedAt), "MMM yyyy", { locale: ru })}
+                        </span>
+                      )}
+                    </div>
+                    {c.viewCount > 0 && (
+                      <p className="text-[10px] text-gray-300 mt-0.5">
+                        Просмотров: {c.viewCount}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-1 flex-shrink-0">
+                    {c.isPublished && (
+                      <button
+                        type="button"
+                        onClick={() => unpublishCase(c.id)}
+                        disabled={busy}
+                        title="Снять с публикации"
+                        className="p-1 rounded hover:bg-amber-50 transition-colors disabled:opacity-40"
+                      >
+                        {busy ? (
+                          <Loader2 className="w-3 h-3 animate-spin text-amber-500" />
+                        ) : (
+                          <ShieldBan className="w-3 h-3 text-amber-500" />
+                        )}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => deleteCase(c.id, c.title)}
+                      disabled={busy}
+                      title="Удалить кейс"
+                      className="p-1 rounded hover:bg-red-50 transition-colors disabled:opacity-40"
+                    >
+                      <Trash2 className="w-3 h-3 text-red-500" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+
+            {portfolio.length > 5 && (
+              <button
+                type="button"
+                onClick={() => setShowAllPortfolio((v) => !v)}
+                className="w-full text-[11px] text-blue-600 hover:text-blue-800 font-medium py-1"
+              >
+                {showAllPortfolio ? "Свернуть" : `Показать все (${portfolio.length})`}
+              </button>
+            )}
+          </div>
+        )}
+
+        <p className="text-[10px] text-gray-400 leading-relaxed pt-1">
+          Кейсы создаются мастером в PWA. Здесь вы можете снять отдельный кейс с публикации
+          (по жалобе) или удалить его. Все действия пишутся в audit log.
+        </p>
+      </div>
+
+      {/* Audit log timeline (V1.5) */}
+      <div className="space-y-2 bg-white border border-gray-100 rounded-xl p-3.5">
+        <div className="flex items-center justify-between">
+          <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+            История публикаций
+          </p>
+          {logLoading && <Loader2 className="w-3 h-3 animate-spin text-gray-300" />}
+        </div>
+
+        {auditLog && auditLog.length === 0 && (
+          <p className="text-[11px] text-gray-400 py-2">События ещё не происходили.</p>
+        )}
+
+        {auditLog && auditLog.length > 0 && (
+          <div className="space-y-1.5">
+            {(showAllLog ? auditLog : auditLog.slice(0, 8)).map((e) => {
+              const cfg = ACTION_LABELS[e.action] ?? { label: e.action, tone: "neutral" as const };
+              const toneClass = TONE_CLASSES[cfg.tone] ?? TONE_CLASSES.neutral;
+              return (
+                <div key={e.id} className="rounded-lg border border-gray-100 p-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <span
+                      className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${toneClass}`}
+                    >
+                      {cfg.label}
+                    </span>
+                    <span className="text-[10px] text-gray-400 whitespace-nowrap">
+                      {formatDistanceToNow(parseISO(e.createdAt), { addSuffix: true, locale: ru })}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-1 text-[10px] text-gray-400">
+                    <span className="font-medium">
+                      {e.actor === "operator" ? "Оператор" : e.actor === "master" ? "Мастер" : e.actor}
+                    </span>
+                    {e.actorId != null && <span>#{e.actorId}</span>}
+                    {e.ip && <span className="font-mono">{e.ip}</span>}
+                  </div>
+                  {e.reason && (
+                    <p className="text-[11px] text-gray-700 mt-1 leading-relaxed">
+                      <span className="text-gray-400">Причина: </span>
+                      {e.reason}
+                    </p>
+                  )}
+                  {e.changes && e.action === "edit_public_fields" && (
+                    <div className="mt-1 space-y-0.5">
+                      {Object.entries(e.changes as Record<string, { from: unknown; to: unknown }>).map(([field, diff]) => (
+                        <div key={field} className="text-[10px] text-gray-500 leading-relaxed">
+                          <span className="font-mono text-gray-400">{field}:</span>{" "}
+                          <span className="text-red-500 line-through">
+                            {String(diff?.from ?? "—").slice(0, 40)}
+                          </span>{" "}
+                          →{" "}
+                          <span className="text-emerald-600">
+                            {String(diff?.to ?? "—").slice(0, 40)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {e.changes && e.action === "automoderation_block" && Array.isArray((e.changes as any)?.errors) && (
+                    <div className="mt-1 space-y-0.5">
+                      {((e.changes as any).errors as Array<{ code?: string; message?: string; field?: string }>).map((err, idx) => (
+                        <p key={idx} className="text-[10px] text-amber-700">
+                          • {err.field ? `${err.field}: ` : ""}
+                          {err.message ?? err.code}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {auditLog.length > 8 && (
+              <button
+                type="button"
+                onClick={() => setShowAllLog((v) => !v)}
+                className="w-full text-[11px] text-blue-600 hover:text-blue-800 font-medium py-1"
+              >
+                {showAllLog ? "Свернуть" : `Показать все (${auditLog.length})`}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
