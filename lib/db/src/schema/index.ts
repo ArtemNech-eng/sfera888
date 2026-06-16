@@ -56,3 +56,9 @@ export * from "./master-deposit-transactions";
 export * from "./master-portfolio";
 export * from "./master-reviews-public";
 export * from "./seo-redirects";
+
+// ── AI-designer foundation (added in 0006_designs_baseline) ────────────────
+export * from "./designs";
+export * from "./design-images";
+export * from "./design-generations";
+export * from "./user-design-limits";

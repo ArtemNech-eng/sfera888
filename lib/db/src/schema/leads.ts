@@ -1,7 +1,8 @@
-import { pgTable, serial, text, timestamp, numeric, pgEnum, index, integer, boolean, varchar, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, timestamp, numeric, pgEnum, index, integer, boolean, varchar, jsonb, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { mastersTable } from "./masters";
+import { designsTable } from "./designs";
 
 export const leadStatusEnum = pgEnum("lead_status", [
   "new",
@@ -59,6 +60,12 @@ export const leadsTable = pgTable("leads", {
   clientUserAgent: text("client_user_agent"),
   consentGivenAt: timestamp("consent_given_at"),
   captchaScore: numeric("captcha_score", { precision: 3, scale: 2 }),
+
+  // ── AI-designer foundation (added in 0006_designs_baseline) ───────────────
+  // FK with ON DELETE SET NULL — leads survive when their originating design
+  // is removed, but the link is dropped. Lambda reference breaks the
+  // leads ⇄ designs import cycle.
+  designId: integer("design_id").references((): AnyPgColumn => designsTable.id, { onDelete: "set null" }),
 }, (t) => ({
   // Поддержка частых выборок: задачи "Что делать сейчас", лента активных заявок,
   // быстрый поиск по телефону при создании заявки.
