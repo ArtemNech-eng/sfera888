@@ -68,6 +68,36 @@ export async function fetchServices(): Promise<Service[]> {
 }
 
 /**
+ * Returns slugs of every published master in the catalog. Paginates through
+ * `/marketplace/masters` (which caps `limit=50`) until exhausted.
+ *
+ * Used by `app/sitemap.ts` to emit `/master/[slug]` URLs. Heavy enough to
+ * be cached aggressively — 1 hour TTL on the sitemap covers it. Stops at a
+ * safety ceiling of 50 pages × 50 masters = 2500 to avoid runaway loops if
+ * the upstream returns an inconsistent `total`.
+ */
+export async function fetchPublishedMasterSlugs(): Promise<string[]> {
+  const out: string[] = [];
+  const limit = 50;
+  const SAFETY_PAGE_CAP = 50;
+  for (let page = 1; page <= SAFETY_PAGE_CAP; page++) {
+    const r = await call<{
+      items: Array<{ slug: string | null }>;
+      page: number;
+      limit: number;
+      total: number;
+    }>(`/masters?page=${page}&limit=${limit}`);
+    for (const m of r.items) {
+      if (typeof m.slug === "string" && m.slug.length > 0) out.push(m.slug);
+    }
+    const pagesNeeded = Math.ceil((r.total ?? 0) / limit);
+    if (page >= pagesNeeded) break;
+    if (r.items.length === 0) break;
+  }
+  return out;
+}
+
+/**
  * Returns the aggregate for a single (service, city) pair.
  * Returns null on 404 so the caller can call `notFound()`.
  */

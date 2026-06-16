@@ -1,5 +1,5 @@
 import type { MetadataRoute } from "next";
-import { fetchCities, fetchServices } from "../lib/api";
+import { fetchCities, fetchPublishedMasterSlugs, fetchServices } from "../lib/api";
 import { publicUrl } from "../lib/env";
 
 // Generated at runtime, not at build time:
@@ -23,8 +23,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // valid sitemap with at least the static entries — better than a 500.
   let services: Awaited<ReturnType<typeof fetchServices>> = [];
   let cities: Awaited<ReturnType<typeof fetchCities>> = [];
+  let masterSlugs: string[] = [];
   try {
-    [services, cities] = await Promise.all([fetchServices(), fetchCities()]);
+    [services, cities, masterSlugs] = await Promise.all([
+      fetchServices(),
+      fetchCities(),
+      fetchPublishedMasterSlugs(),
+    ]);
   } catch {
     return top;
   }
@@ -40,5 +45,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       });
     }
   }
-  return [...top, ...pairs];
+
+  const masters: MetadataRoute.Sitemap = masterSlugs.map((slug) => ({
+    url: `${base}/master/${slug}`,
+    lastModified: now,
+    changeFrequency: "weekly",
+    priority: 0.7,
+  }));
+
+  return [...top, ...masters, ...pairs];
 }
