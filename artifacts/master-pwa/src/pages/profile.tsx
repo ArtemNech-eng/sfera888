@@ -8,7 +8,7 @@ import {
   TrendingUp, ShieldCheck, LogOut, ExternalLink,
   BadgeCheck, Camera, Pencil, Check, X, Loader2,
   BarChart2, Clock, Filter, ChevronDown, Plus, Download, FileText,
-  DollarSign, ChevronRight, BookOpen, FileSignature, Globe,
+  DollarSign, ChevronRight, BookOpen, FileSignature, Globe, Image as ImageIcon, Trash2,
 } from "lucide-react";
 import { useInstallPrompt } from "@/lib/useInstallPrompt";
 
@@ -939,6 +939,583 @@ function MarketplaceProfileSection({
   );
 }
 
+// ─── Portfolio Section ─────────────────────────────────────────────────────
+//
+// Self-service portfolio CRUD for master-pwa. Each case is a before/after
+// photo set + description + price/area/date metadata. Master adds, edits,
+// or deletes their own cases. Cases auto-publish when title + description
+// pass moderation AND ≥1 photo is uploaded (backend evaluates on every save).
+//
+// Plan: see MARKETPLACE_PRODUCTION_PLAN.md §11.5 → "Портфолио в V1".
+
+interface PortfolioItem {
+  id: number;
+  title: string;
+  description: string | null;
+  serviceTypeId: number | null;
+  cityId: number | null;
+  beforePhotos: string[];
+  afterPhotos: string[];
+  priceFrom: string | null;
+  priceTo: string | null;
+  area: string | null;
+  completedAt: string | null;
+  isPublished: boolean;
+  isFeatured: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface ServiceOption { id: number; name: string }
+
+function PortfolioSection({ data }: { data: ProfileData }) {
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState<PortfolioItem[] | null>(null);
+  const [limit, setLimit] = useState(30);
+  const [editing, setEditing] = useState<{ item: PortfolioItem | null } | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await api.portfolio.list();
+      setItems(res.items ?? []);
+      setLimit(res.limit ?? 30);
+    } catch (e: any) {
+      toast.error(e.message ?? "Ошибка загрузки");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (open && items === null) load();
+  }, [open]);
+
+  const upsertItem = (item: PortfolioItem) => {
+    setItems((prev) => {
+      if (!prev) return [item];
+      const idx = prev.findIndex((p) => p.id === item.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = item;
+        return next;
+      }
+      return [item, ...prev];
+    });
+  };
+  const removeItem = (id: number) => {
+    setItems((prev) => prev?.filter((p) => p.id !== id) ?? null);
+  };
+
+  const used = items?.length ?? 0;
+  const canAdd = items !== null && used < limit;
+
+  return (
+    <div className="bg-card border border-border rounded-2xl overflow-hidden">
+      <button onClick={() => setOpen((p) => !p)}
+        className="w-full flex items-center justify-between px-4 py-3.5">
+        <div className="flex items-center gap-2 font-semibold text-sm">
+          <Briefcase size={15} className="text-primary" />
+          <span>Мои работы</span>
+          {items !== null && (
+            <span className="text-xs text-muted-foreground font-normal">{used}/{limit}</span>
+          )}
+        </div>
+        <ChevronDown size={16} className={`text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 border-t border-border pt-3 space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Покажите свои работы клиентам. Фото «до/после» — самое важное:
+            на них смотрят в первую очередь. Кейсы появятся на вашей странице
+            сайта <strong>chestnye-mastera.ru</strong> сразу после сохранения.
+          </p>
+
+          {loading && items === null ? (
+            <div className="flex items-center justify-center h-20">
+              <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : null}
+
+          {items && items.length === 0 ? (
+            <div className="bg-muted/40 rounded-xl p-6 text-center text-xs text-muted-foreground">
+              Кейсов пока нет. Добавьте первый — это поднимет вашу карточку в Яндексе.
+            </div>
+          ) : null}
+
+          {items && items.length > 0 ? (
+            <div className="grid grid-cols-2 gap-2">
+              {items.map((item) => (
+                <PortfolioCard key={item.id} item={item} onEdit={() => setEditing({ item })} />
+              ))}
+            </div>
+          ) : null}
+
+          {canAdd ? (
+            <button
+              onClick={() => setEditing({ item: null })}
+              className="w-full h-11 rounded-xl border border-dashed border-primary/50 text-primary text-sm font-semibold hover:bg-primary/5 flex items-center justify-center gap-2"
+            >
+              <Plus size={15} /> Добавить кейс
+            </button>
+          ) : items && used >= limit ? (
+            <p className="text-xs text-muted-foreground text-center">
+              Достигнут лимит {limit} кейсов. Удалите старые перед добавлением новых.
+            </p>
+          ) : null}
+        </div>
+      )}
+
+      {editing && (
+        <PortfolioEditor
+          masterCity={data.city}
+          existingItem={editing.item}
+          onSaved={(item) => { upsertItem(item); setEditing(null); }}
+          onDeleted={(id) => { removeItem(id); setEditing(null); }}
+          onClose={() => setEditing(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function PortfolioCard({ item, onEdit }: { item: PortfolioItem; onEdit: () => void }) {
+  const cover = item.afterPhotos[0] ?? item.beforePhotos[0] ?? null;
+  return (
+    <button
+      onClick={onEdit}
+      className="text-left rounded-xl overflow-hidden border border-border bg-muted/30 hover:border-primary/40 transition-colors"
+    >
+      <div className="aspect-square bg-muted relative">
+        {cover ? (
+          <img src={cover} alt={item.title} className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+            <ImageIcon size={28} />
+          </div>
+        )}
+        <span
+          className={`absolute top-1.5 left-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+            item.isPublished
+              ? "bg-green-100 text-green-700"
+              : "bg-amber-100 text-amber-800"
+          }`}
+        >
+          {item.isPublished ? "На сайте" : "Черновик"}
+        </span>
+      </div>
+      <div className="p-2">
+        <p className="text-xs font-semibold text-foreground line-clamp-2 leading-tight min-h-[2.4em]">
+          {item.title}
+        </p>
+      </div>
+    </button>
+  );
+}
+
+function PortfolioEditor({
+  masterCity,
+  existingItem,
+  onSaved,
+  onDeleted,
+  onClose,
+}: {
+  masterCity: string;
+  existingItem: PortfolioItem | null;
+  onSaved: (item: PortfolioItem) => void;
+  onDeleted: (id: number) => void;
+  onClose: () => void;
+}) {
+  const [currentId, setCurrentId] = useState<number | null>(existingItem?.id ?? null);
+  const [title, setTitle] = useState(existingItem?.title ?? "");
+  const [description, setDescription] = useState(existingItem?.description ?? "");
+  const [serviceTypeId, setServiceTypeId] = useState<number | null>(existingItem?.serviceTypeId ?? null);
+  const [priceFrom, setPriceFrom] = useState(existingItem?.priceFrom ?? "");
+  const [priceTo, setPriceTo] = useState(existingItem?.priceTo ?? "");
+  const [area, setArea] = useState(existingItem?.area ?? "");
+  const [completedAt, setCompletedAt] = useState(
+    existingItem?.completedAt ? new Date(existingItem.completedAt).toISOString().slice(0, 10) : "",
+  );
+  const [beforePhotos, setBeforePhotos] = useState<string[]>(existingItem?.beforePhotos ?? []);
+  const [afterPhotos, setAfterPhotos] = useState<string[]>(existingItem?.afterPhotos ?? []);
+  const [errors, setErrors] = useState<PublicationError[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [services, setServices] = useState<ServiceOption[]>([]);
+  const beforeInputRef = useRef<HTMLInputElement>(null);
+  const afterInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    fetch("/api/settings/services")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d: ServiceOption[]) => setServices(d ?? []))
+      .catch(() => {});
+  }, []);
+
+  const errorsByField = (field: string) => errors.filter((e) => e.field === field);
+  const titleLen = title.trim().length;
+  const descLen = description.trim().length;
+  const totalPhotos = beforePhotos.length + afterPhotos.length;
+
+  // Photos can only be uploaded after a draft case exists in DB. Auto-create
+  // the draft on first photo upload (or first save).
+  const ensureCaseId = async (): Promise<number> => {
+    if (currentId) return currentId;
+    const res = await api.portfolio.create({
+      title: title.trim() || undefined,
+      description: description.trim() || undefined,
+      serviceTypeId,
+      priceFrom: priceFrom || undefined,
+      priceTo: priceTo || undefined,
+      area: area || undefined,
+      completedAt: completedAt || undefined,
+    });
+    setCurrentId(res.item.id);
+    return res.item.id;
+  };
+
+  const handleAddPhoto = async (type: "before" | "after", file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast.error("Выберите изображение");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error("Файл больше 8 МБ — слишком большой");
+      return;
+    }
+    setBusy(true);
+    try {
+      const id = await ensureCaseId();
+      const res = await api.portfolio.uploadPhoto(id, type, file);
+      if (type === "before") setBeforePhotos((p) => [...p, res.url]);
+      else setAfterPhotos((p) => [...p, res.url]);
+    } catch (e: any) {
+      const data = e.data;
+      const msg = data?.errors?.[0]?.message ?? e.message ?? "Ошибка загрузки фото";
+      toast.error(msg);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRemovePhoto = async (type: "before" | "after", url: string) => {
+    if (!currentId) return;
+    setBusy(true);
+    try {
+      await api.portfolio.removePhoto(currentId, type, url);
+      if (type === "before") setBeforePhotos((p) => p.filter((u) => u !== url));
+      else setAfterPhotos((p) => p.filter((u) => u !== url));
+    } catch (e: any) {
+      toast.error(e.message ?? "Ошибка");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSave = async () => {
+    setBusy(true);
+    setErrors([]);
+    try {
+      const id = await ensureCaseId();
+      const res = await api.portfolio.update(id, {
+        title: title.trim() || null,
+        description: description.trim() || null,
+        serviceTypeId,
+        priceFrom: priceFrom || null,
+        priceTo: priceTo || null,
+        area: area || null,
+        completedAt: completedAt || null,
+      });
+      onSaved(res.item);
+      toast.success(res.item.isPublished
+        ? "Кейс сохранён и опубликован на сайте 🎉"
+        : "Сохранено. Добавьте фото для публикации.");
+    } catch (e: any) {
+      const data = e.data;
+      if (data?.errors && Array.isArray(data.errors)) {
+        setErrors(data.errors);
+        toast.error("Исправьте ошибки в полях.");
+      } else {
+        toast.error(e.message ?? "Ошибка сохранения");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!currentId) { onClose(); return; }
+    if (!confirm("Удалить кейс? Действие не отменить.")) return;
+    setBusy(true);
+    try {
+      await api.portfolio.remove(currentId);
+      onDeleted(currentId);
+      toast.success("Кейс удалён");
+    } catch (e: any) {
+      toast.error(e.message ?? "Ошибка");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-end justify-center" onClick={onClose}>
+      <div
+        className="w-full max-w-[480px] bg-card rounded-t-2xl flex flex-col"
+        style={{ height: "94dvh", maxHeight: "94dvh" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex justify-center pt-2.5 pb-1 flex-shrink-0">
+          <div className="w-10 h-1 rounded-full bg-border" />
+        </div>
+
+        <div className="px-4 pt-1 pb-3 flex items-center gap-2 flex-shrink-0">
+          <button
+            onClick={onClose}
+            className="text-muted-foreground h-9 w-9 flex items-center justify-center rounded-xl active:bg-muted"
+          >
+            <X size={20} />
+          </button>
+          <h3 className="font-bold text-base flex-1 text-center">
+            {existingItem ? "Редактировать кейс" : "Новый кейс"}
+          </h3>
+          <button
+            onClick={handleSave}
+            disabled={busy}
+            className="h-9 px-4 bg-primary text-primary-foreground font-semibold rounded-xl text-sm active:opacity-80 disabled:opacity-50 flex items-center gap-1.5"
+          >
+            {busy ? <Loader2 size={15} className="animate-spin" /> : null}
+            Готово
+          </button>
+        </div>
+
+        <div className="overflow-y-auto overscroll-contain flex-1 min-h-0 basis-0 px-4 pb-4 space-y-4">
+          {/* Title */}
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-foreground flex items-center justify-between">
+              <span>Название кейса <span className="text-destructive">*</span></span>
+              <span className={`font-normal ${titleLen < 5 || titleLen > 200 ? "text-destructive" : "text-muted-foreground"}`}>
+                {titleLen}/200 (мин. 5)
+              </span>
+            </label>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value.slice(0, 200))}
+              placeholder="Например, «Ремонт ванной 4 м² за 7 дней»"
+              className="w-full h-10 px-3 rounded-xl border border-border bg-muted/40 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+            {errorsByField("title").map((e, i) => (
+              <p key={i} className="text-xs text-destructive">{e.message}</p>
+            ))}
+          </div>
+
+          {/* Description */}
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-foreground flex items-center justify-between">
+              <span>Описание работы <span className="text-destructive">*</span></span>
+              <span className={`font-normal ${descLen < 50 ? "text-destructive" : "text-muted-foreground"}`}>
+                {descLen}/2000 (мин. 50)
+              </span>
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value.slice(0, 2000))}
+              rows={5}
+              placeholder="Что делали, какие материалы, сложности, результат. Без телефонов и ссылок."
+              className="w-full px-3 py-2 rounded-xl border border-border bg-muted/40 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-y leading-relaxed"
+            />
+            {errorsByField("description").map((e, i) => (
+              <p key={i} className="text-xs text-destructive">{e.message}</p>
+            ))}
+          </div>
+
+          {/* Service */}
+          {services.length > 0 ? (
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-foreground">Категория услуги</label>
+              <select
+                value={serviceTypeId ?? ""}
+                onChange={(e) => setServiceTypeId(e.target.value ? Number(e.target.value) : null)}
+                className="w-full h-10 px-3 rounded-xl border border-border bg-muted/40 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+              >
+                <option value="">— не выбрана —</option>
+                {services.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+          ) : null}
+
+          {/* Price + Area */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-foreground">Цена от ₽</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={priceFrom}
+                onChange={(e) => setPriceFrom(e.target.value.replace(/[^\d]/g, ""))}
+                placeholder="20000"
+                className="w-full h-10 px-3 rounded-xl border border-border bg-muted/40 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-foreground">Цена до ₽</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={priceTo}
+                onChange={(e) => setPriceTo(e.target.value.replace(/[^\d]/g, ""))}
+                placeholder="35000"
+                className="w-full h-10 px-3 rounded-xl border border-border bg-muted/40 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-foreground">Площадь, м²</label>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={area}
+                onChange={(e) => setArea(e.target.value.replace(/[^\d.,]/g, "").replace(",", "."))}
+                placeholder="4.5"
+                className="w-full h-10 px-3 rounded-xl border border-border bg-muted/40 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-foreground">Дата завершения</label>
+              <input
+                type="date"
+                value={completedAt}
+                onChange={(e) => setCompletedAt(e.target.value)}
+                className="w-full h-10 px-3 rounded-xl border border-border bg-muted/40 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Город — {masterCity || "не указан"} (берётся из профиля).
+          </p>
+
+          {/* Photos */}
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-foreground">
+              Фото <span className="text-destructive">*</span>
+              <span className="text-muted-foreground font-normal"> — хотя бы одно</span>
+            </p>
+            {errorsByField("photos").map((e, i) => (
+              <p key={i} className="text-xs text-destructive">{e.message}</p>
+            ))}
+            <PhotoGrid
+              label="До"
+              photos={beforePhotos}
+              busy={busy}
+              limit={10}
+              inputRef={beforeInputRef}
+              onAdd={(file) => handleAddPhoto("before", file)}
+              onRemove={(url) => handleRemovePhoto("before", url)}
+            />
+            <PhotoGrid
+              label="После"
+              photos={afterPhotos}
+              busy={busy}
+              limit={10}
+              inputRef={afterInputRef}
+              onAdd={(file) => handleAddPhoto("after", file)}
+              onRemove={(url) => handleRemovePhoto("after", url)}
+            />
+          </div>
+
+          {/* Status preview */}
+          <div className="bg-muted/40 rounded-xl p-3 text-xs space-y-1">
+            <p className="text-muted-foreground">
+              Кейс {totalPhotos === 0 || titleLen < 5 || descLen < 50
+                ? "будет сохранён как черновик."
+                : "опубликуется на сайте после сохранения."}
+            </p>
+          </div>
+
+          {/* Delete (only for existing items) */}
+          {currentId ? (
+            <button
+              onClick={handleDelete}
+              disabled={busy}
+              className="w-full h-11 rounded-xl border border-destructive/40 text-destructive text-sm font-semibold disabled:opacity-60 flex items-center justify-center gap-2"
+            >
+              <Trash2 size={14} /> Удалить кейс
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PhotoGrid({
+  label,
+  photos,
+  busy,
+  limit,
+  inputRef,
+  onAdd,
+  onRemove,
+}: {
+  label: string;
+  photos: string[];
+  busy: boolean;
+  limit: number;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  onAdd: (file: File) => void;
+  onRemove: (url: string) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{label}</p>
+      <div className="grid grid-cols-3 gap-2">
+        {photos.map((url) => (
+          <div key={url} className="relative aspect-square rounded-lg overflow-hidden bg-muted">
+            <img src={url} alt="" className="w-full h-full object-cover" />
+            <button
+              onClick={() => onRemove(url)}
+              disabled={busy}
+              className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center disabled:opacity-50"
+              aria-label="Удалить фото"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        ))}
+        {photos.length < limit ? (
+          <button
+            onClick={() => inputRef.current?.click()}
+            disabled={busy}
+            className="aspect-square rounded-lg border-2 border-dashed border-border bg-muted/30 hover:border-primary/40 flex items-center justify-center disabled:opacity-50"
+          >
+            {busy ? (
+              <Loader2 size={18} className="animate-spin text-muted-foreground" />
+            ) : (
+              <Plus size={20} className="text-muted-foreground" />
+            )}
+          </button>
+        ) : null}
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) onAdd(f);
+          if (inputRef.current) inputRef.current.value = "";
+        }}
+      />
+    </div>
+  );
+}
+
 export default function ProfilePage() {
   const { logout } = useAuth();
   const [, navigate] = useLocation();
@@ -1176,6 +1753,9 @@ export default function ProfilePage() {
 
       {/* Marketplace publication — chestnye-mastera.ru */}
       <MarketplaceProfileSection data={data} onSave={updated => setData(d => d ? { ...d, ...updated } : d)} />
+
+      {/* Portfolio — public cases on chestnye-mastera.ru/master/<slug> */}
+      <PortfolioSection data={data} />
 
       {/* Service prices — read-only, edit via profile modal */}
       {(data.servicePrices ?? []).length > 0 && (

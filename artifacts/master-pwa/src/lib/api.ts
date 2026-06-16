@@ -57,6 +57,42 @@ export const api = {
     req<any>("POST", "/deposit-request", { amount, note }),
   profile: () => req<any>("GET", "/profile"),
   updateProfile: (data: any) => req<any>("PATCH", "/profile", data),
+  portfolio: {
+    list: () => req<any>("GET", "/portfolio"),
+    create: (data: {
+      title?: string;
+      description?: string;
+      serviceTypeId?: number | null;
+      cityId?: number | null;
+      priceFrom?: number | string | null;
+      priceTo?: number | string | null;
+      area?: number | string | null;
+      completedAt?: string | null;
+    }) => req<any>("POST", "/portfolio", data),
+    update: (id: number, data: any) =>
+      req<any>("PATCH", `/portfolio/${id}`, data),
+    remove: (id: number) =>
+      req<any>("DELETE", `/portfolio/${id}`),
+    removePhoto: (id: number, type: "before" | "after", url: string) =>
+      req<any>("DELETE", `/portfolio/${id}/photos`, { type, url }),
+    uploadPhoto: async (id: number, type: "before" | "after", file: File) => {
+      const fd = new FormData();
+      fd.append("photo", file);
+      const res = await fetch(`${BASE}/portfolio/${id}/photos?type=${type}`, {
+        method: "POST",
+        credentials: "include",
+        body: fd,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        const e: any = new Error(err.message ?? err.error ?? "Ошибка загрузки фото");
+        e.data = err;
+        e.status = res.status;
+        throw e;
+      }
+      return res.json();
+    },
+  },
   chat: {
     messages: () => req<any>("GET", "/chat"),
     send: (text: string, photoUrl?: string) => req<any>("POST", "/chat", { text, photoUrl }),

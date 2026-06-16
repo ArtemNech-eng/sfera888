@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, mastersTable, ordersTable, orderDispatchesTable, transactionsTable, leadsTable, voronkaColumnsTable, masterMessagesTable, pushSubscriptionsTable, masterCheckinsTable, transactionPaymentsTable, orderMastersTable, masterDepositsTable, masterDepositTransactionsTable, receiptsTable, masterPublicationLogTable } from "@workspace/db";
+import { db, mastersTable, ordersTable, orderDispatchesTable, transactionsTable, leadsTable, voronkaColumnsTable, masterMessagesTable, pushSubscriptionsTable, masterCheckinsTable, transactionPaymentsTable, orderMastersTable, masterDepositsTable, masterDepositTransactionsTable, receiptsTable, masterPublicationLogTable, masterPortfolioTable } from "@workspace/db";
 import { maybeEarlyAssign } from "../lib/priorityAssign.js";
 import { eq, and, inArray, isNull, ne, asc, desc, gte, sql } from "drizzle-orm";
 import { verifyPassword, hashPassword } from "../lib/auth.js";
@@ -22,6 +22,8 @@ import { slugify, pickUniqueSlug } from "../lib/slug.js";
 import {
   validatePublicBio,
   validatePublicTitle,
+  validatePortfolioTitle,
+  validatePortfolioDescription,
   checkMasterPublishReadiness,
   type ValidationError,
 } from "../lib/marketplaceModeration.js";
@@ -58,6 +60,54 @@ async function uploadPwaAvatarToGCS(masterId: number, buffer: Buffer, mimetype: 
   await bucket.file(key).save(jpegBuffer, { contentType: "image/jpeg", resumable: false });
   // Return server proxy URL (same pattern as CRM) for reliable loading
   return `/api/masters/avatar/${filename}`;
+}
+
+// ─── Portfolio photo storage ────────────────────────────────────────────────
+// Photos go through this server (multer + sharp) so we can normalize EXIF,
+// resize, recompress and re-encode to JPEG. This protects R2 / future CDN from
+// huge phone-original files (40MP HEIC = 6MB+) and gives the master a
+// predictable URL pattern.
+//
+// Stored under `portfolio/` prefix to keep the bucket organised. Served via
+// public proxy GET /api/master-pwa/portfolio-photo/:filename below.
+
+const PORTFOLIO_PHOTO_PREFIX = "portfolio/";
+const PORTFOLIO_PHOTO_MAX_SIDE = 1600;
+const PORTFOLIO_PHOTO_QUALITY = 82;
+
+const portfolioPhotoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024 }, // raw input up to 8MB; we re-encode after
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith("image/")) cb(null, true);
+    else cb(new Error("Only images allowed"));
+  },
+});
+
+async function uploadPortfolioPhotoToGCS(
+  masterId: number,
+  buffer: Buffer,
+  type: "before" | "after",
+): Promise<string> {
+  const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+  if (!bucketId) throw new Error("Object storage not configured");
+  const ts = Date.now();
+  const rand = Math.random().toString(36).slice(2, 10);
+  const filename = `pwa-master-${masterId}-${type}-${ts}-${rand}.jpg`;
+  const key = `${PORTFOLIO_PHOTO_PREFIX}${filename}`;
+
+  const jpegBuffer = await sharp(buffer)
+    .rotate()
+    .resize(PORTFOLIO_PHOTO_MAX_SIDE, PORTFOLIO_PHOTO_MAX_SIDE, {
+      fit: "inside",
+      withoutEnlargement: true,
+    })
+    .jpeg({ quality: PORTFOLIO_PHOTO_QUALITY, progressive: true, mozjpeg: true })
+    .toBuffer();
+
+  const bucket = objectStorageClient.bucket(bucketId);
+  await bucket.file(key).save(jpegBuffer, { contentType: "image/jpeg", resumable: false });
+  return `/api/master-pwa/portfolio-photo/${filename}`;
 }
 
 const router = Router();
@@ -1616,6 +1666,482 @@ router.post("/profile/avatar", requireMasterPwa, avatarUpload.single("avatar"), 
     console.error("[avatar upload] failed:", err);
     res.status(500).json({ error: err.message ?? "Upload failed" });
   }
+});
+
+// ─── PORTFOLIO ────────────────────────────────────────────────────────────────
+//
+// Self-service portfolio for master-pwa (see MARKETPLACE_PRODUCTION_PLAN.md §11.5).
+// Master adds before/after cases that appear on /master/[slug] on the marketplace.
+//
+//   GET    /portfolio                — list mine (drafts + published)
+//   POST   /portfolio                — create new case (no photos yet)
+//   PATCH  /portfolio/:id            — update case fields
+//   DELETE /portfolio/:id            — hard-delete case (V1; soft-delete later)
+//   POST   /portfolio/:id/photos     — upload one photo (type=before|after)
+//   DELETE /portfolio/:id/photos     — remove one photo URL from arrays
+//
+// Auto-moderation rules:
+//   - title    5–200 chars, full text moderation
+//   - description 50–2000 chars, full text moderation
+//   - case is published only if both texts pass moderation AND ≥1 photo present
+//
+// Limits:
+//   - max 30 cases per master (count check on POST)
+//   - max 10 photos per type per case
+
+const PORTFOLIO_CASES_PER_MASTER_LIMIT = 30;
+const PORTFOLIO_PHOTOS_PER_TYPE_LIMIT = 10;
+
+// Public proxy for serving stored photos. Matches the avatar pattern in
+// routes/masters.ts. No auth — these are publicly displayed on chestnye-mastera.ru.
+const TRANSPARENT_PIXEL_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEX///+nxBvIAAAAC0lEQVQI12NgAAIAAAUAAeImBZsAAAAASUVORK5CYII=",
+  "base64",
+);
+
+router.get("/portfolio-photo/:filename", async (req, res) => {
+  try {
+    const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+    if (!bucketId) {
+      res.setHeader("Content-Type", "image/png");
+      res.setHeader("Cache-Control", "public, max-age=300");
+      return res.status(200).send(TRANSPARENT_PIXEL_PNG);
+    }
+    // Defensive: only allow filenames matching our generated pattern.
+    if (!/^[a-zA-Z0-9._-]+\.jpg$/i.test(req.params.filename)) {
+      return res.status(400).json({ error: "Bad filename" });
+    }
+    const key = `${PORTFOLIO_PHOTO_PREFIX}${req.params.filename}`;
+    const response = await s3Client.send(new GetObjectCommand({ Bucket: bucketId, Key: key }));
+    res.setHeader("Content-Type", response.ContentType || "image/jpeg");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    if (response.Body) {
+      const stream = response.Body as unknown as NodeJS.ReadableStream;
+      stream.pipe(res);
+    } else {
+      res.end();
+    }
+  } catch (err: any) {
+    if (err?.Code === "NoSuchKey" || err?.name === "NoSuchKey") {
+      res.setHeader("Content-Type", "image/png");
+      res.setHeader("Cache-Control", "public, max-age=300");
+      return res.status(200).send(TRANSPARENT_PIXEL_PNG);
+    }
+    console.error("[portfolio photo proxy] error:", err);
+    res.setHeader("Content-Type", "image/png");
+    res.setHeader("Cache-Control", "public, max-age=60");
+    res.status(200).send(TRANSPARENT_PIXEL_PNG);
+  }
+});
+
+// DTO mapper — mirrors the public marketplace DTO so the master sees what the
+// public sees. Includes draft fields (isPublished=false) too.
+function toPortfolioPwaDto(p: typeof masterPortfolioTable.$inferSelect) {
+  return {
+    id: p.id,
+    title: p.title,
+    description: p.description,
+    serviceTypeId: p.serviceTypeId,
+    cityId: p.cityId,
+    beforePhotos: p.beforePhotos ?? [],
+    afterPhotos: p.afterPhotos ?? [],
+    priceFrom: p.priceFrom,
+    priceTo: p.priceTo,
+    area: p.area,
+    completedAt: p.completedAt,
+    clientReviewText: p.clientReviewText,
+    clientRating: p.clientRating,
+    isPublished: p.isPublished,
+    isFeatured: p.isFeatured,
+    sortOrder: p.sortOrder,
+    createdAt: p.createdAt,
+    updatedAt: p.updatedAt,
+  };
+}
+
+/**
+ * Validate text fields and decide whether the case can be auto-published.
+ * Caller passes the merged "post-update" snapshot (existing record + incoming
+ * patch) so we can check independently of order of saves.
+ */
+function evaluatePortfolioReadiness(input: {
+  title: string | null;
+  description: string | null;
+  beforePhotos: string[];
+  afterPhotos: string[];
+}): { errors: ValidationError[]; canPublish: boolean } {
+  const errors: ValidationError[] = [];
+  const title = input.title?.trim() ?? "";
+  if (title.length === 0) {
+    errors.push({ field: "title", code: "MISSING_TITLE", message: "Заполните название кейса." });
+  } else {
+    const r = validatePortfolioTitle(title);
+    if (!r.ok) errors.push(...r.errors);
+  }
+  const desc = input.description?.trim() ?? "";
+  if (desc.length === 0) {
+    errors.push({ field: "description", code: "MISSING_DESCRIPTION", message: "Опишите работу — что делали, что получилось." });
+  } else {
+    const r = validatePortfolioDescription(desc);
+    if (!r.ok) errors.push(...r.errors);
+  }
+  const totalPhotos = input.beforePhotos.length + input.afterPhotos.length;
+  if (totalPhotos === 0) {
+    errors.push({ field: "photos", code: "MISSING_PHOTOS", message: "Загрузите хотя бы одно фото — до или после." });
+  }
+  return { errors, canPublish: errors.length === 0 };
+}
+
+// GET /portfolio — list mine (master sees own drafts and published cases)
+router.get("/portfolio", requireMasterPwa, async (req, res) => {
+  const masterId = (req.session as any).masterId;
+  const rows = await db
+    .select()
+    .from(masterPortfolioTable)
+    .where(eq(masterPortfolioTable.masterId, masterId))
+    .orderBy(
+      desc(masterPortfolioTable.isFeatured),
+      asc(masterPortfolioTable.sortOrder),
+      desc(masterPortfolioTable.createdAt),
+    );
+  res.json({
+    items: rows.map(toPortfolioPwaDto),
+    limit: PORTFOLIO_CASES_PER_MASTER_LIMIT,
+    used: rows.length,
+  });
+});
+
+// POST /portfolio — create a new case (no photos yet, isPublished stays false
+// until photos are added and texts pass moderation).
+router.post("/portfolio", requireMasterPwa, async (req, res) => {
+  const masterId = (req.session as any).masterId;
+  const { title, description, serviceTypeId, cityId, priceFrom, priceTo, area, completedAt } = req.body ?? {};
+
+  // Limit check
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(masterPortfolioTable)
+    .where(eq(masterPortfolioTable.masterId, masterId));
+  if (Number(count) >= PORTFOLIO_CASES_PER_MASTER_LIMIT) {
+    return res.status(400).json({
+      ok: false,
+      errors: [{
+        code: "LIMIT_REACHED",
+        message: `Достигнут лимит ${PORTFOLIO_CASES_PER_MASTER_LIMIT} кейсов. Удалите старые перед добавлением новых.`,
+      }],
+    });
+  }
+
+  // Pre-flight moderation on incoming texts (caller can still save partial drafts —
+  // empty title/description are accepted as "draft", but if filled they must pass).
+  const moderationErrors: ValidationError[] = [];
+  const titleStr = typeof title === "string" ? title.trim() : "";
+  const descStr = typeof description === "string" ? description.trim() : "";
+  if (titleStr.length > 0) {
+    const r = validatePortfolioTitle(titleStr);
+    if (!r.ok) moderationErrors.push(...r.errors);
+  }
+  if (descStr.length > 0) {
+    const r = validatePortfolioDescription(descStr);
+    if (!r.ok) moderationErrors.push(...r.errors);
+  }
+  if (moderationErrors.length > 0) {
+    return res.status(400).json({ ok: false, errors: moderationErrors });
+  }
+
+  // Validate optional FK references
+  let serviceTypeIdValue: number | null = null;
+  if (serviceTypeId != null) {
+    const id = parseInt(String(serviceTypeId), 10);
+    if (Number.isFinite(id) && id > 0) serviceTypeIdValue = id;
+  }
+  let cityIdValue: number | null = null;
+  if (cityId != null) {
+    const id = parseInt(String(cityId), 10);
+    if (Number.isFinite(id) && id > 0) cityIdValue = id;
+  }
+
+  const [created] = await db
+    .insert(masterPortfolioTable)
+    .values({
+      masterId,
+      title: titleStr || "Без названия",
+      description: descStr || null,
+      serviceTypeId: serviceTypeIdValue,
+      cityId: cityIdValue,
+      priceFrom: priceFrom != null && priceFrom !== "" ? String(priceFrom) : null,
+      priceTo: priceTo != null && priceTo !== "" ? String(priceTo) : null,
+      area: area != null && area !== "" ? String(area) : null,
+      completedAt: completedAt ? new Date(completedAt) : null,
+      isPublished: false, // can't publish without photos yet
+    })
+    .returning();
+  res.json({ ok: true, item: toPortfolioPwaDto(created) });
+});
+
+// PATCH /portfolio/:id — update fields. Re-evaluates publishability on each
+// save so adding the last required photo (or fixing bio) auto-publishes.
+router.patch("/portfolio/:id", requireMasterPwa, async (req, res) => {
+  const masterId = (req.session as any).masterId;
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: "Bad id" });
+
+  const [existing] = await db
+    .select()
+    .from(masterPortfolioTable)
+    .where(and(eq(masterPortfolioTable.id, id), eq(masterPortfolioTable.masterId, masterId)));
+  if (!existing) return res.status(404).json({ error: "Кейс не найден" });
+
+  const { title, description, serviceTypeId, cityId, priceFrom, priceTo, area, completedAt } = req.body ?? {};
+
+  const moderationErrors: ValidationError[] = [];
+  const updates: Partial<typeof masterPortfolioTable.$inferInsert> = {};
+
+  if (title !== undefined) {
+    const value = String(title ?? "").trim();
+    if (value.length > 200) {
+      moderationErrors.push({ field: "title", code: "TOO_LONG", message: `Максимум 200 символов, у вас ${value.length}.` });
+    } else if (value.length > 0) {
+      const r = validatePortfolioTitle(value);
+      if (!r.ok) moderationErrors.push(...r.errors);
+    }
+    updates.title = value || "Без названия";
+  }
+  if (description !== undefined) {
+    const value = String(description ?? "").trim();
+    if (value.length > 2000) {
+      moderationErrors.push({ field: "description", code: "TOO_LONG", message: `Максимум 2000 символов, у вас ${value.length}.` });
+    } else if (value.length > 0) {
+      const r = validatePortfolioDescription(value);
+      if (!r.ok) moderationErrors.push(...r.errors);
+    }
+    updates.description = value || null;
+  }
+  if (serviceTypeId !== undefined) {
+    if (serviceTypeId === null || serviceTypeId === "") {
+      updates.serviceTypeId = null;
+    } else {
+      const n = parseInt(String(serviceTypeId), 10);
+      if (Number.isFinite(n) && n > 0) updates.serviceTypeId = n;
+    }
+  }
+  if (cityId !== undefined) {
+    if (cityId === null || cityId === "") {
+      updates.cityId = null;
+    } else {
+      const n = parseInt(String(cityId), 10);
+      if (Number.isFinite(n) && n > 0) updates.cityId = n;
+    }
+  }
+  if (priceFrom !== undefined) {
+    updates.priceFrom = priceFrom == null || priceFrom === "" ? null : String(priceFrom);
+  }
+  if (priceTo !== undefined) {
+    updates.priceTo = priceTo == null || priceTo === "" ? null : String(priceTo);
+  }
+  if (area !== undefined) {
+    updates.area = area == null || area === "" ? null : String(area);
+  }
+  if (completedAt !== undefined) {
+    updates.completedAt = completedAt ? new Date(completedAt) : null;
+  }
+
+  if (moderationErrors.length > 0) {
+    return res.status(400).json({ ok: false, errors: moderationErrors });
+  }
+
+  // Always recompute isPublished based on the merged state.
+  const merged = { ...existing, ...updates };
+  const readiness = evaluatePortfolioReadiness({
+    title: merged.title ?? null,
+    description: merged.description ?? null,
+    beforePhotos: merged.beforePhotos ?? [],
+    afterPhotos: merged.afterPhotos ?? [],
+  });
+  updates.isPublished = readiness.canPublish;
+  updates.updatedAt = new Date();
+
+  const [updated] = await db
+    .update(masterPortfolioTable)
+    .set(updates)
+    .where(eq(masterPortfolioTable.id, id))
+    .returning();
+
+  // Refresh public master page if portfolio visibility changed
+  if (existing.isPublished !== updated.isPublished) {
+    const [m] = await db.select({ slug: mastersTable.slug, isPublished: mastersTable.isPublished })
+      .from(mastersTable)
+      .where(eq(mastersTable.id, masterId))
+      .limit(1);
+    if (m?.isPublished && m.slug) {
+      revalidateMarketplacePaths(masterPublicationPaths(m.slug)).catch(() => {});
+    }
+  }
+
+  res.json({ ok: true, item: toPortfolioPwaDto(updated) });
+});
+
+// DELETE /portfolio/:id — hard-delete (V1; can switch to soft-delete later).
+router.delete("/portfolio/:id", requireMasterPwa, async (req, res) => {
+  const masterId = (req.session as any).masterId;
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: "Bad id" });
+
+  const [existing] = await db
+    .select({ id: masterPortfolioTable.id, wasPublished: masterPortfolioTable.isPublished })
+    .from(masterPortfolioTable)
+    .where(and(eq(masterPortfolioTable.id, id), eq(masterPortfolioTable.masterId, masterId)));
+  if (!existing) return res.status(404).json({ error: "Кейс не найден" });
+
+  await db
+    .delete(masterPortfolioTable)
+    .where(and(eq(masterPortfolioTable.id, id), eq(masterPortfolioTable.masterId, masterId)));
+
+  if (existing.wasPublished) {
+    const [m] = await db.select({ slug: mastersTable.slug, isPublished: mastersTable.isPublished })
+      .from(mastersTable)
+      .where(eq(mastersTable.id, masterId))
+      .limit(1);
+    if (m?.isPublished && m.slug) {
+      revalidateMarketplacePaths(masterPublicationPaths(m.slug)).catch(() => {});
+    }
+  }
+
+  res.json({ ok: true });
+});
+
+// POST /portfolio/:id/photos?type=before|after — upload one photo
+router.post("/portfolio/:id/photos", requireMasterPwa, portfolioPhotoUpload.single("photo"), async (req, res) => {
+  const masterId = (req.session as any).masterId;
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: "Bad id" });
+
+  const type = String(req.query["type"] ?? req.body?.type ?? "").toLowerCase();
+  if (type !== "before" && type !== "after") {
+    return res.status(400).json({ error: "type=before|after is required" });
+  }
+  if (!req.file) return res.status(400).json({ error: "Файл не получен" });
+
+  const [existing] = await db
+    .select()
+    .from(masterPortfolioTable)
+    .where(and(eq(masterPortfolioTable.id, id), eq(masterPortfolioTable.masterId, masterId)));
+  if (!existing) return res.status(404).json({ error: "Кейс не найден" });
+
+  const currentPhotos = type === "before" ? (existing.beforePhotos ?? []) : (existing.afterPhotos ?? []);
+  if (currentPhotos.length >= PORTFOLIO_PHOTOS_PER_TYPE_LIMIT) {
+    return res.status(400).json({
+      ok: false,
+      errors: [{
+        code: "PHOTO_LIMIT_REACHED",
+        message: `Максимум ${PORTFOLIO_PHOTOS_PER_TYPE_LIMIT} фото на каждый тип (до/после).`,
+      }],
+    });
+  }
+
+  let url: string;
+  try {
+    url = await uploadPortfolioPhotoToGCS(masterId, req.file.buffer, type);
+  } catch (err: any) {
+    console.error("[portfolio upload]", err);
+    return res.status(500).json({ error: err?.message ?? "Upload failed" });
+  }
+
+  const newPhotos = [...currentPhotos, url];
+  const updates: Partial<typeof masterPortfolioTable.$inferInsert> = {
+    [type === "before" ? "beforePhotos" : "afterPhotos"]: newPhotos,
+    updatedAt: new Date(),
+  };
+
+  // Recompute isPublished
+  const mergedBefore = type === "before" ? newPhotos : (existing.beforePhotos ?? []);
+  const mergedAfter = type === "after" ? newPhotos : (existing.afterPhotos ?? []);
+  const readiness = evaluatePortfolioReadiness({
+    title: existing.title,
+    description: existing.description,
+    beforePhotos: mergedBefore,
+    afterPhotos: mergedAfter,
+  });
+  updates.isPublished = readiness.canPublish;
+
+  const [updated] = await db
+    .update(masterPortfolioTable)
+    .set(updates)
+    .where(eq(masterPortfolioTable.id, id))
+    .returning();
+
+  if (existing.isPublished !== updated.isPublished) {
+    const [m] = await db.select({ slug: mastersTable.slug, isPublished: mastersTable.isPublished })
+      .from(mastersTable)
+      .where(eq(mastersTable.id, masterId))
+      .limit(1);
+    if (m?.isPublished && m.slug) {
+      revalidateMarketplacePaths(masterPublicationPaths(m.slug)).catch(() => {});
+    }
+  }
+
+  res.json({ ok: true, url, item: toPortfolioPwaDto(updated) });
+});
+
+// DELETE /portfolio/:id/photos — remove one URL from before/after arrays.
+// Body: { type: 'before' | 'after', url: string }
+router.delete("/portfolio/:id/photos", requireMasterPwa, async (req, res) => {
+  const masterId = (req.session as any).masterId;
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: "Bad id" });
+
+  const type = String(req.body?.type ?? "").toLowerCase();
+  const url = typeof req.body?.url === "string" ? req.body.url : "";
+  if (type !== "before" && type !== "after") {
+    return res.status(400).json({ error: "type=before|after is required" });
+  }
+  if (!url) return res.status(400).json({ error: "url is required" });
+
+  const [existing] = await db
+    .select()
+    .from(masterPortfolioTable)
+    .where(and(eq(masterPortfolioTable.id, id), eq(masterPortfolioTable.masterId, masterId)));
+  if (!existing) return res.status(404).json({ error: "Кейс не найден" });
+
+  const currentPhotos = type === "before" ? (existing.beforePhotos ?? []) : (existing.afterPhotos ?? []);
+  const newPhotos = currentPhotos.filter((p) => p !== url);
+  if (newPhotos.length === currentPhotos.length) {
+    // Already gone — idempotent: 200 with current state.
+    return res.json({ ok: true, item: toPortfolioPwaDto(existing) });
+  }
+
+  const updates: Partial<typeof masterPortfolioTable.$inferInsert> = {
+    [type === "before" ? "beforePhotos" : "afterPhotos"]: newPhotos,
+    updatedAt: new Date(),
+  };
+
+  const mergedBefore = type === "before" ? newPhotos : (existing.beforePhotos ?? []);
+  const mergedAfter = type === "after" ? newPhotos : (existing.afterPhotos ?? []);
+  const readiness = evaluatePortfolioReadiness({
+    title: existing.title,
+    description: existing.description,
+    beforePhotos: mergedBefore,
+    afterPhotos: mergedAfter,
+  });
+  updates.isPublished = readiness.canPublish;
+
+  const [updated] = await db
+    .update(masterPortfolioTable)
+    .set(updates)
+    .where(eq(masterPortfolioTable.id, id))
+    .returning();
+
+  if (existing.isPublished !== updated.isPublished) {
+    const [m] = await db.select({ slug: mastersTable.slug, isPublished: mastersTable.isPublished })
+      .from(mastersTable)
+      .where(eq(mastersTable.id, masterId))
+      .limit(1);
+    if (m?.isPublished && m.slug) {
+      revalidateMarketplacePaths(masterPublicationPaths(m.slug)).catch(() => {});
+    }
+  }
+
+  res.json({ ok: true, item: toPortfolioPwaDto(updated) });
 });
 
 // ─── REGISTRATION ─────────────────────────────────────────────────────────────
