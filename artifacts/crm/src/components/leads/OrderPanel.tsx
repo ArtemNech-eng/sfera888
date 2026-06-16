@@ -121,7 +121,8 @@ interface Order {
 
 interface OrderPanelProps {
   orderId: number;
-  order: Order | undefined;
+  /** Optional preloaded order. When omitted, the panel fetches it via /api/orders/:id. */
+  order?: Order;
   onClose: () => void;
   onOpenMasterChat: (masterId: number) => void;
   onNavigateToTasks: (orderId: number) => void;
