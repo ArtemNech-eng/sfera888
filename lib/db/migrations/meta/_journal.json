@@ -50,6 +50,13 @@
       "when": 1781587277443,
       "tag": "0006_designs_baseline",
       "breakpoints": false
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1781609790240,
+      "tag": "0007_master_publication_log",
+      "breakpoints": false
     }
   ]
 }

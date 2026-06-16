@@ -62,3 +62,6 @@ export * from "./designs";
 export * from "./design-images";
 export * from "./design-generations";
 export * from "./user-design-limits";
+
+// ── Master publication audit log (added in 0007_master_publication_log) ────
+export * from "./master-publication-log";
