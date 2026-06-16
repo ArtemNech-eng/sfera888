@@ -1,6 +1,11 @@
 import "server-only";
 import { internalApiBase, internalApiToken } from "./env";
-import type { City, Service, ServiceCityResponse } from "./types";
+import type {
+  City,
+  Service,
+  ServiceCityResponse,
+  MasterDetailResponse,
+} from "./types";
 
 /**
  * Server-only marketplace API client.
@@ -74,6 +79,22 @@ export async function fetchServiceCity(
     return await call<ServiceCityResponse>(
       `/service-city/${encodeURIComponent(serviceSlug)}/${encodeURIComponent(citySlug)}`,
     );
+  } catch (e) {
+    if (e instanceof MarketplaceApiError && e.status === 404) return null;
+    throw e;
+  }
+}
+
+/**
+ * Returns a single published master profile with portfolio + approved reviews.
+ * Returns null on 404 so the caller can call `notFound()`.
+ *
+ * Cached for 5 min by default. Revalidation will be triggered by the
+ * `/api/revalidate` webhook from CRM when this is wired up.
+ */
+export async function fetchMaster(slug: string): Promise<MasterDetailResponse | null> {
+  try {
+    return await call<MasterDetailResponse>(`/master/${encodeURIComponent(slug)}`);
   } catch (e) {
     if (e instanceof MarketplaceApiError && e.status === 404) return null;
     throw e;

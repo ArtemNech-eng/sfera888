@@ -38,6 +38,8 @@ interface ClientPayload {
   website?: unknown;
   /** Client-side Date.now() captured on form mount. */
   formStartedAt?: unknown;
+  /** Optional — set when the form lives on a master's profile page. */
+  attachedMasterId?: unknown;
 }
 
 function asString(v: unknown, max: number): string | undefined {
@@ -137,6 +139,17 @@ export async function POST(req: NextRequest) {
 
   const ua = headers.get("user-agent") ?? undefined;
 
+  // Validate optional attachedMasterId. Must be a positive safe integer if
+  // present — anything else is dropped silently (the upstream would 400 on
+  // garbage anyway). Validity of the master id (published, slug-ready) is
+  // re-checked server-side on api-server with FK + filter.
+  let attachedMasterId: number | undefined;
+  if (typeof payload.attachedMasterId === "number" && Number.isFinite(payload.attachedMasterId)) {
+    if (Number.isInteger(payload.attachedMasterId) && payload.attachedMasterId > 0) {
+      attachedMasterId = payload.attachedMasterId;
+    }
+  }
+
   const upstream = {
     name: asString(payload.name, 100),
     phone,
@@ -144,11 +157,17 @@ export async function POST(req: NextRequest) {
     serviceSlug,
     comment: asString(payload.comment, 2000),
     sourcePageUrl: asString(payload.sourcePageUrl, 1000),
-    sourcePageType: "service-city" as const,
+    // When the lead is attached to a specific master we mark the page type
+    // accordingly so the CRM filter can distinguish service-city leads from
+    // master-card leads. Same `marketplace` source either way.
+    sourcePageType: (attachedMasterId !== undefined ? "master" : "service-city") as
+      | "master"
+      | "service-city",
     referrer: headers.get("referer") ?? undefined,
     clientIp,
     clientUserAgent: ua ? ua.slice(0, 500) : undefined,
     consentGiven: true as const,
+    ...(attachedMasterId !== undefined ? { attachedMasterId } : {}),
   };
 
   let res: Response;

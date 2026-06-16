@@ -7,6 +7,19 @@ interface Props {
   serviceSlug: string;
   /** Used as `sourcePageUrl` in the lead row for analytics. */
   sourcePageUrl: string;
+  /**
+   * Optional — when the form is rendered on a master's profile page,
+   * the lead is attached to that master via FK. The id is sent to the
+   * route handler in body.attachedMasterId; the api-server validates that
+   * the master is published (not just any positive integer).
+   */
+  attachedMasterId?: number;
+  /**
+   * Optional human-readable label shown above the form so the user knows
+   * the lead is going to a specific master ("Заявка для мастера: <name>").
+   * Only rendered when `attachedMasterId` is also set.
+   */
+  attachedMasterTitle?: string;
 }
 
 type Status = "idle" | "submitting" | "error";
@@ -88,7 +101,13 @@ function reachGoal(goal: string, params?: Record<string, unknown>): void {
  *   { ok: false, error: "<label>", details?: ... }
  * No HTTP redirect — the client controls navigation explicitly.
  */
-export function LeadForm({ citySlug, serviceSlug, sourcePageUrl }: Props) {
+export function LeadForm({
+  citySlug,
+  serviceSlug,
+  sourcePageUrl,
+  attachedMasterId,
+  attachedMasterTitle,
+}: Props) {
   const [status, setStatus] = useState<Status>("idle");
   const [errMessage, setErrMessage] = useState<string | null>(null);
   // Captured on mount so the route handler can reject submissions filled in
@@ -119,6 +138,8 @@ export function LeadForm({ citySlug, serviceSlug, sourcePageUrl }: Props) {
       citySlug,
       serviceSlug,
       sourcePageUrl,
+      // Pre-set on master profile pages; absent everywhere else.
+      attachedMasterId: attachedMasterId ?? null,
     };
 
     let res: Response;
@@ -198,6 +219,12 @@ export function LeadForm({ citySlug, serviceSlug, sourcePageUrl }: Props) {
 
   return (
     <form onSubmit={onSubmit} className="grid gap-4">
+      {attachedMasterId != null && attachedMasterTitle ? (
+        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm text-[var(--color-text)]">
+          Заявка для мастера: <span className="font-medium">{attachedMasterTitle}</span>
+        </div>
+      ) : null}
+
       {/* Honeypot — visually hidden but not display:none (some bots skip those).
           Real users will never tab into or see this field. */}
       <div
