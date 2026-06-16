@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, mastersTable, ordersTable, orderDispatchesTable, transactionsTable, leadsTable, voronkaColumnsTable, masterMessagesTable, pushSubscriptionsTable, masterCheckinsTable, transactionPaymentsTable, orderMastersTable, masterDepositsTable, masterDepositTransactionsTable, receiptsTable } from "@workspace/db";
+import { db, mastersTable, ordersTable, orderDispatchesTable, transactionsTable, leadsTable, voronkaColumnsTable, masterMessagesTable, pushSubscriptionsTable, masterCheckinsTable, transactionPaymentsTable, orderMastersTable, masterDepositsTable, masterDepositTransactionsTable, receiptsTable, masterPublicationLogTable } from "@workspace/db";
 import { maybeEarlyAssign } from "../lib/priorityAssign.js";
 import { eq, and, inArray, isNull, ne, asc, desc, gte, sql } from "drizzle-orm";
 import { verifyPassword, hashPassword } from "../lib/auth.js";
@@ -18,6 +18,14 @@ import { sendPushToMaster } from "../lib/push.js";
 import { sendPushToClient } from "../lib/clientPush.js";
 import { performBroadcast } from "../lib/broadcastOrder.js";
 import { createRateLimiter } from "../lib/rateLimit.js";
+import { slugify, pickUniqueSlug } from "../lib/slug.js";
+import {
+  validatePublicBio,
+  validatePublicTitle,
+  checkMasterPublishReadiness,
+  type ValidationError,
+} from "../lib/marketplaceModeration.js";
+import { revalidateMarketplacePaths, masterPublicationPaths } from "../lib/marketplaceRevalidate.js";
 
 const authRateLimit = createRateLimiter({ windowMs: 60_000, maxAttempts: 5 });
 const registerRateLimit = createRateLimiter({ windowMs: 60_000, maxAttempts: 3 });
@@ -1312,10 +1320,35 @@ router.post("/balance/payment-proof", requireMasterPwa, async (req, res) => {
   res.json({ success: true });
 });
 
-// Update profile
+// Update profile (PATCH)
+//
+// Single endpoint for everything master changes about themselves. Auto-publishes
+// to chestnye-mastera.ru on the first save where all readiness conditions are
+// met (see lib/marketplaceModeration.ts → checkMasterPublishReadiness).
+// MARKETPLACE_PRODUCTION_PLAN.md §11.5: marketplace is a public portal, so a
+// filled profile = a public profile. There is no master-side «hide» — that's
+// reserved for operator override via CRM (later iteration).
+//
+// Behaviour summary:
+//   • Always saves valid drafts. Max-length cap is enforced; full text
+//     auto-moderation runs only on already-published profiles or before the
+//     auto-publish moment (so masters can save partial bios).
+//   • Already-published master + change to publicBio/publicTitle: re-runs
+//     auto-moderation, blocks save on violation (atomic 400, nothing saved).
+//   • Never-published master, all conditions met after this save: auto-publish
+//     (slug-gen + log + revalidate). publishedAt is set once and stays.
+//   • publishedAt set + isPublished=false (operator hid via CRM): just save,
+//     no auto-republish — the operator's decision wins.
 router.patch("/profile", requireMasterPwa, async (req, res) => {
   const masterId = (req.session as any).masterId;
-  const { alias, city, phone, specializations, workingHours, preferredDistricts, minArea, servicePrices } = req.body;
+  const {
+    alias, city, phone, specializations, workingHours, preferredDistricts,
+    minArea, servicePrices,
+    publicTitle, publicBio, yearsExperience,
+  } = req.body;
+
+  const master = await getMasterById(masterId);
+  if (!master) return res.status(404).json({ error: "Мастер не найден" });
 
   const updates: any = {};
   if (alias?.trim()) updates.alias = alias.trim();
@@ -1332,8 +1365,142 @@ router.patch("/profile", requireMasterPwa, async (req, res) => {
     ? servicePrices.filter((p: any) => p.service && typeof p.priceFrom === "number" && p.priceFrom > 0)
     : null;
 
-  await db.update(mastersTable).set(updates).where(eq(mastersTable.id, masterId));
-  res.json({ success: true });
+  // ── Marketplace draft fields ────────────────────────────────────────────
+  // For published masters: re-run automoderation on each change to public text.
+  // For unpublished masters: only enforce max-length so partial drafts are OK.
+  const moderationErrors: ValidationError[] = [];
+
+  if (publicTitle !== undefined) {
+    const value = String(publicTitle ?? "").trim();
+    if (value.length > 150) {
+      moderationErrors.push({
+        field: "publicTitle",
+        code: "TOO_LONG",
+        message: `Максимум 150 символов, у вас ${value.length}.`,
+      });
+    } else if (value.length > 0 && master.isPublished) {
+      const r = validatePublicTitle(value);
+      if (!r.ok) moderationErrors.push(...r.errors);
+    }
+    updates.publicTitle = value || null;
+  }
+
+  if (publicBio !== undefined) {
+    const value = String(publicBio ?? "").trim();
+    if (value.length > 2000) {
+      moderationErrors.push({
+        field: "publicBio",
+        code: "TOO_LONG",
+        message: `Максимум 2000 символов, у вас ${value.length}.`,
+      });
+    } else if (value.length > 0 && master.isPublished) {
+      const r = validatePublicBio(value);
+      if (!r.ok) moderationErrors.push(...r.errors);
+    }
+    updates.publicBio = value || null;
+  }
+
+  if (yearsExperience !== undefined) {
+    const raw = yearsExperience;
+    if (raw === null || raw === "") {
+      updates.yearsExperience = null;
+    } else {
+      const n = parseInt(String(raw), 10);
+      if (!Number.isFinite(n) || n < 0 || n > 70) {
+        moderationErrors.push({
+          field: "yearsExperience",
+          code: "INVALID_YEARS_EXPERIENCE",
+          message: "Опыт работы должен быть числом от 0 до 70.",
+        });
+      } else {
+        updates.yearsExperience = n;
+      }
+    }
+  }
+
+  if (moderationErrors.length > 0) {
+    if (master.isPublished) {
+      await db.insert(masterPublicationLogTable).values({
+        masterId,
+        actor: "master",
+        actorId: masterId,
+        action: "automoderation_block",
+        changes: { errors: moderationErrors, source: "patch_profile" },
+        ip: req.ip ?? null,
+      }).catch(() => {});
+    }
+    return res.status(400).json({ ok: false, errors: moderationErrors });
+  }
+
+  if (Object.keys(updates).length > 0) {
+    await db.update(mastersTable).set(updates).where(eq(mastersTable.id, masterId));
+  }
+
+  // ── Auto-publish gate ──────────────────────────────────────────────────
+  // Only on first publish. Operator-hidden state is respected — if publishedAt
+  // is already set, master can't auto-republish themselves (CRM controls that).
+  let autoPublishedSlug: string | null = null;
+  let readinessErrors: ValidationError[] = [];
+
+  if (!master.publishedAt) {
+    // Build post-update master snapshot for readiness check.
+    const merged = { ...master, ...updates };
+    readinessErrors = checkMasterPublishReadiness(merged);
+
+    if (readinessErrors.length === 0) {
+      const base = slugify(String(merged.alias ?? "").trim());
+      const isTaken = async (cand: string): Promise<boolean> => {
+        const rows = await db.select({ id: mastersTable.id })
+          .from(mastersTable)
+          .where(and(eq(mastersTable.slug, cand), ne(mastersTable.id, masterId)))
+          .limit(1);
+        return rows.length > 0;
+      };
+      const slug = await pickUniqueSlug(base, isTaken);
+      const now = new Date();
+
+      await db.update(mastersTable).set({
+        isPublished: true,
+        slug,
+        publishedAt: now,
+      }).where(eq(mastersTable.id, masterId));
+
+      await db.insert(masterPublicationLogTable).values({
+        masterId,
+        actor: "master",
+        actorId: masterId,
+        action: "publish",
+        changes: { source: "auto_on_save" },
+        ip: req.ip ?? null,
+      }).catch(() => {});
+
+      revalidateMarketplacePaths(masterPublicationPaths(slug)).catch(() => {});
+      autoPublishedSlug = slug;
+    }
+  } else if (master.isPublished && master.slug && (
+    "publicBio" in updates || "publicTitle" in updates || "yearsExperience" in updates
+  )) {
+    // Already published — refresh public page after content edit.
+    revalidateMarketplacePaths(masterPublicationPaths(master.slug)).catch(() => {});
+  }
+
+  const baseUrl = process.env["MARKETPLACE_PUBLIC_URL"]?.replace(/\/$/, "") ?? "";
+  const finalSlug = autoPublishedSlug ?? master.slug ?? null;
+  const finalIsPublished = autoPublishedSlug !== null || master.isPublished;
+  const profileUrl = finalIsPublished && finalSlug && baseUrl
+    ? `${baseUrl}/master/${finalSlug}`
+    : null;
+
+  res.json({
+    ok: true,
+    success: true,
+    autoPublished: autoPublishedSlug !== null,
+    isPublished: finalIsPublished,
+    slug: finalSlug,
+    publishedAt: autoPublishedSlug ? new Date() : (master.publishedAt ?? null),
+    profileUrl,
+    readinessErrors,
+  });
 });
 
 // ─── PROFILE ──────────────────────────────────────────────────────────────────
@@ -1417,6 +1584,16 @@ router.get("/profile", requireMasterPwa, async (req, res) => {
     maxChatId: master.maxChatId ?? null,
     maxBotLink: maxBotLink ?? null,
     createdAt: master.createdAt,
+    // ── Marketplace publication state ──────────────────────────────────────
+    slug: master.slug ?? null,
+    isPublished: master.isPublished,
+    publishedAt: master.publishedAt ?? null,
+    publicTitle: master.publicTitle ?? null,
+    publicBio: master.publicBio ?? null,
+    yearsExperience: master.yearsExperience ?? null,
+    profileUrl: master.isPublished && master.slug && process.env["MARKETPLACE_PUBLIC_URL"]
+      ? `${process.env["MARKETPLACE_PUBLIC_URL"].replace(/\/$/, "")}/master/${master.slug}`
+      : null,
   });
 });
 

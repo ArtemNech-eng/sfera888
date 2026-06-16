@@ -12,6 +12,7 @@ import {
   ChevronRight, X, Images, Wrench, Zap, PauseCircle,
   PlayCircle, Navigation, Users, Heart, ChevronDown, Briefcase,
   Eye, EyeOff, Lock, FileText, Bot, Phone, Maximize, Wallet, DollarSign,
+  Coins,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";

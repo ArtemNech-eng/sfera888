@@ -250,3 +250,108 @@ export function combineResults(...results: ValidationResult[]): ValidationResult
   const errors = results.flatMap(r => r.errors);
   return { ok: errors.length === 0, errors };
 }
+
+// ─── Master publish-readiness gate ───────────────────────────────────────────
+// Used by:
+//   - PATCH /profile to decide whether to auto-publish on first ready save;
+//   - POST /profile/publish to validate before manual publish (re-publish after
+//     a manual hide, or operator-side override-publish).
+//
+// The shape passed in is intentionally narrow (structural typing) so this
+// module doesn't depend on `@workspace/db`. Caller can pass either a Drizzle
+// row or any plain object with the same fields.
+
+export interface MasterPublishReadinessInput {
+  alias: string | null | undefined;
+  city: string | null | undefined;
+  phone: string | null | undefined;
+  specializations: ReadonlyArray<string> | null | undefined;
+  servicePrices: ReadonlyArray<{ service: string; priceFrom: number }> | null | undefined;
+  customAvatarUrl: string | null | undefined;
+  publicBio: string | null | undefined;
+  publicTitle: string | null | undefined;
+  yearsExperience: number | null | undefined;
+}
+
+/**
+ * Check that all marketplace publication requirements are satisfied.
+ *
+ * Returns an array of errors; empty array means «ready to publish».
+ *
+ * Rules — see MARKETPLACE_PRODUCTION_PLAN.md §11.5.
+ *
+ * Note: this DOES run text auto-moderation on publicBio / publicTitle, so
+ * profanity / phones / URLs in those fields will block publication. The
+ * caller must use the same helper to ensure consistent rules between
+ * auto-publish (PATCH) and manual publish (POST /publish).
+ */
+export function checkMasterPublishReadiness(
+  master: MasterPublishReadinessInput,
+): ValidationError[] {
+  const errors: ValidationError[] = [];
+  const push = (field: string, code: string, message: string) =>
+    errors.push({ field, code, message });
+
+  if (!master.alias?.trim()) push("alias", "MISSING_ALIAS", "Заполните имя в профиле.");
+  if (!master.city?.trim()) push("city", "MISSING_CITY", "Укажите город в профиле.");
+  if (!master.phone?.trim()) {
+    push(
+      "phone",
+      "MISSING_PHONE",
+      "Укажите телефон в профиле (для оператора; публично не показывается).",
+    );
+  }
+  if (!Array.isArray(master.specializations) || master.specializations.length === 0) {
+    push("specializations", "MISSING_SPECIALIZATIONS", "Выберите хотя бы одну специализацию.");
+  }
+  const validPrices = Array.isArray(master.servicePrices)
+    ? master.servicePrices.filter(
+        (p) => p?.service && typeof p?.priceFrom === "number" && p.priceFrom > 0,
+      )
+    : [];
+  if (validPrices.length < 2) {
+    push(
+      "servicePrices",
+      "INSUFFICIENT_PRICES",
+      `Укажите цены минимум на 2 услуги (сейчас ${validPrices.length}).`,
+    );
+  }
+  if (!master.customAvatarUrl) {
+    push(
+      "customAvatarUrl",
+      "MISSING_AVATAR",
+      "Загрузите фото профиля — без фото карточку нельзя опубликовать.",
+    );
+  }
+
+  // yearsExperience: required (0 allowed, null/undefined not).
+  const yRaw = master.yearsExperience;
+  const years = yRaw === null || yRaw === undefined ? null : Number(yRaw);
+  if (years === null) {
+    push(
+      "yearsExperience",
+      "MISSING_YEARS_EXPERIENCE",
+      "Укажите ваш опыт работы (можно 0 для новичков).",
+    );
+  } else if (!Number.isFinite(years) || !Number.isInteger(years) || years < 0 || years > 70) {
+    push("yearsExperience", "INVALID_YEARS_EXPERIENCE", "Опыт работы должен быть целым числом от 0 до 70.");
+  }
+
+  // publicBio: required + auto-moderation.
+  const bio = master.publicBio?.trim() ?? "";
+  if (!bio) {
+    push("publicBio", "MISSING_BIO", "Заполните описание о себе (минимум 300 символов).");
+  } else {
+    const r = validatePublicBio(bio);
+    if (!r.ok) errors.push(...r.errors);
+  }
+
+  // publicTitle: optional. If present — must pass moderation.
+  const title = master.publicTitle?.trim() ?? "";
+  if (title) {
+    const r = validatePublicTitle(title);
+    if (!r.ok) errors.push(...r.errors);
+  }
+
+  return errors;
+}

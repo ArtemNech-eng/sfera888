@@ -8,7 +8,7 @@ import {
   TrendingUp, ShieldCheck, LogOut, ExternalLink,
   BadgeCheck, Camera, Pencil, Check, X, Loader2,
   BarChart2, Clock, Filter, ChevronDown, Plus, Download, FileText,
-  DollarSign, ChevronRight, BookOpen, FileSignature,
+  DollarSign, ChevronRight, BookOpen, FileSignature, Globe,
 } from "lucide-react";
 import { useInstallPrompt } from "@/lib/useInstallPrompt";
 
@@ -45,6 +45,20 @@ interface ProfileData {
   createdAt: string;
   maxChatId: string | null;
   maxBotLink: string | null;
+  // ── Marketplace publication state ───────────────────────────────────────
+  slug: string | null;
+  isPublished: boolean;
+  publishedAt: string | null;
+  publicTitle: string | null;
+  publicBio: string | null;
+  yearsExperience: number | null;
+  profileUrl: string | null;
+}
+
+interface PublicationError {
+  field?: string;
+  code: string;
+  message: string;
 }
 
 
@@ -674,6 +688,257 @@ function WorkingHoursSection({ data, onSave }: { data: ProfileData; onSave: (u: 
   );
 }
 
+// ─── Marketplace Publication Section ─────────────────────────────────────────
+//
+// Self-service publication of master profile to chestnye-mastera.ru.
+// Plan: see MARKETPLACE_PRODUCTION_PLAN.md §11.5
+//
+// Behaviour: fill the public fields → click «Сохранить». Backend's PATCH /profile
+// auto-publishes the profile as soon as all readiness conditions are met for
+// the first time (so the public marketplace fills up automatically and the
+// master never has to think about a separate "publish" step). After the first
+// auto-publish, the profile stays public — only an operator can hide it via
+// CRM if there's a complaint.
+
+function MarketplaceProfileSection({
+  data,
+  onSave,
+}: {
+  data: ProfileData;
+  onSave: (u: Partial<ProfileData>) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [publicTitle, setPublicTitle] = useState(data.publicTitle ?? "");
+  const [publicBio, setPublicBio] = useState(data.publicBio ?? "");
+  const [yearsExperience, setYearsExperience] = useState(
+    data.yearsExperience !== null ? String(data.yearsExperience) : "",
+  );
+  const [errors, setErrors] = useState<PublicationError[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  const errorsByField = (field: string) => errors.filter(e => e.field === field);
+  const generalErrors = errors.filter(e => !e.field);
+
+  const yearsNum = yearsExperience === "" ? null : Number(yearsExperience);
+  const yearsValid = yearsNum !== null && Number.isInteger(yearsNum) && yearsNum >= 0 && yearsNum <= 70;
+
+  const checklist: { ok: boolean; label: string }[] = [
+    { ok: !!data.alias, label: "Имя в профиле" },
+    { ok: !!data.city, label: "Город" },
+    { ok: !!data.phone, label: "Телефон (для оператора, не публикуется)" },
+    { ok: data.specializations.length > 0, label: "Специализация" },
+    { ok: data.servicePrices.length >= 2, label: `Цены минимум на 2 услуги (сейчас ${data.servicePrices.length})` },
+    { ok: !!data.customAvatarUrl, label: "Фото профиля" },
+    { ok: publicBio.trim().length >= 300, label: `Описание о себе ≥ 300 символов (сейчас ${publicBio.trim().length})` },
+    { ok: yearsValid, label: "Опыт работы (0–70 лет)" },
+  ];
+  const allFilled = checklist.every(c => c.ok);
+
+  const handleSave = async () => {
+    setBusy(true);
+    setErrors([]);
+    try {
+      const payload = {
+        publicTitle: publicTitle.trim() || null,
+        publicBio: publicBio.trim() || null,
+        yearsExperience: yearsValid ? yearsNum : null,
+      };
+      const res: any = await api.updateProfile(payload);
+
+      // Update local state from backend response (source of truth)
+      onSave({
+        ...payload as Partial<ProfileData>,
+        slug: res.slug ?? data.slug,
+        isPublished: res.isPublished ?? data.isPublished,
+        publishedAt: res.publishedAt ?? data.publishedAt,
+        profileUrl: res.profileUrl ?? null,
+      });
+
+      // Toast based on auto-publish outcome
+      if (res.autoPublished) {
+        toast.success("Профиль обновлён и опубликован на сайте 🎉");
+      } else if (res.isPublished) {
+        toast.success("Сохранено и обновлено на сайте");
+      } else if (res.readinessErrors && res.readinessErrors.length > 0) {
+        toast.success("Сохранено. Заполните оставшиеся поля для публикации.");
+      } else {
+        toast.success("Сохранено");
+      }
+    } catch (e: any) {
+      const errData = e.data;
+      if (errData?.errors && Array.isArray(errData.errors)) {
+        setErrors(errData.errors);
+        toast.error("Не удалось сохранить — проверьте поля.");
+      } else {
+        toast.error(e.message ?? "Ошибка сохранения");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Banner state — drives header and call-to-action wording
+  type BannerState = "complete-published" | "complete-ready" | "incomplete";
+  const banner: BannerState = data.isPublished
+    ? "complete-published"
+    : allFilled
+      ? "complete-ready"
+      : "incomplete";
+
+  const saveBtnLabel =
+    banner === "complete-ready"
+      ? "Сохранить и опубликовать"
+      : banner === "complete-published"
+        ? "Сохранить"
+        : "Сохранить";
+
+  return (
+    <div className="bg-card border border-border rounded-2xl overflow-hidden">
+      <button onClick={() => setOpen(p => !p)}
+        className="w-full flex items-center justify-between px-4 py-3.5">
+        <div className="flex items-center gap-2 font-semibold text-sm">
+          <Globe size={15} className="text-primary" />
+          <span>Публичный профиль на сайте</span>
+          {data.isPublished
+            ? <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-semibold">Опубликован</span>
+            : <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">Заполните для публикации</span>}
+        </div>
+        <ChevronDown size={16} className={`text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 border-t border-border pt-3 space-y-4">
+          {/* Status banner */}
+          {banner === "complete-published" && data.profileUrl && (
+            <a
+              href={data.profileUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300 text-xs font-medium"
+            >
+              <span className="truncate">Открыть карточку: {data.profileUrl.replace(/^https?:\/\//, "")}</span>
+              <ExternalLink size={14} className="flex-shrink-0" />
+            </a>
+          )}
+
+          {banner === "complete-ready" && (
+            <div className="px-3 py-2.5 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-900 dark:text-amber-200 text-xs">
+              Готово к публикации. После сохранения карточка появится на сайте автоматически.
+            </div>
+          )}
+
+          {banner === "incomplete" && (
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Заполните поля ниже — карточка появится в каталоге <strong>chestnye-mastera.ru</strong> автоматически,
+              как только все пункты будут готовы. Клиенты находят мастеров в Яндексе по услугам и городу.
+            </p>
+          )}
+
+          {/* Readiness checklist (helpful for both states) */}
+          <div className="bg-muted/40 rounded-xl p-3 space-y-1.5">
+            <p className="text-xs font-semibold text-muted-foreground">
+              {data.isPublished ? "Чек-лист профиля:" : "Готовность:"}
+            </p>
+            {checklist.map((c, i) => (
+              <div key={i} className="flex items-center gap-2 text-xs">
+                <span className={`w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 ${c.ok ? "bg-green-500" : "bg-muted-foreground/30"}`}>
+                  {c.ok && <Check size={10} className="text-white" strokeWidth={3} />}
+                </span>
+                <span className={c.ok ? "text-foreground" : "text-muted-foreground"}>{c.label}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* publicTitle */}
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-foreground flex items-center justify-between">
+              <span>Заголовок карточки <span className="text-muted-foreground font-normal">(опц.)</span></span>
+              <span className="text-muted-foreground font-normal">{publicTitle.length}/150</span>
+            </label>
+            <input
+              value={publicTitle}
+              onChange={e => setPublicTitle(e.target.value.slice(0, 150))}
+              placeholder={`${data.alias}, ${data.specializations[0] ?? "мастер"} в ${data.city}`}
+              className="w-full h-10 px-3 rounded-xl border border-border bg-muted/40 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+            {errorsByField("publicTitle").map((e, i) => (
+              <p key={i} className="text-xs text-destructive">{e.message}</p>
+            ))}
+            <p className="text-[11px] text-muted-foreground">
+              Если оставить пустым — будет «{data.alias}, {data.specializations[0] ?? "мастер"} в {data.city}».
+            </p>
+          </div>
+
+          {/* publicBio */}
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-foreground flex items-center justify-between">
+              <span>О себе <span className="text-destructive">*</span></span>
+              <span className={`font-normal ${publicBio.trim().length < 300 ? "text-destructive" : "text-muted-foreground"}`}>
+                {publicBio.trim().length}/2000 (мин. 300)
+              </span>
+            </label>
+            <textarea
+              value={publicBio}
+              onChange={e => setPublicBio(e.target.value.slice(0, 2000))}
+              rows={6}
+              placeholder="Расскажите о своём опыте, любимых видах работ, подходе к клиентам. Без телефонов, email и ссылок — связь идёт через сайт."
+              className="w-full px-3 py-2 rounded-xl border border-border bg-muted/40 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-y leading-relaxed"
+            />
+            {errorsByField("publicBio").map((e, i) => (
+              <p key={i} className="text-xs text-destructive">{e.message}</p>
+            ))}
+          </div>
+
+          {/* yearsExperience */}
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-foreground">
+              Опыт работы (лет) <span className="text-destructive">*</span>
+            </label>
+            <input
+              type="number"
+              min={0}
+              max={70}
+              value={yearsExperience}
+              onChange={e => setYearsExperience(e.target.value)}
+              placeholder="Например, 5"
+              className="w-32 h-10 px-3 rounded-xl border border-border bg-muted/40 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+            {errorsByField("yearsExperience").map((e, i) => (
+              <p key={i} className="text-xs text-destructive">{e.message}</p>
+            ))}
+            <p className="text-[11px] text-muted-foreground">Можно указать 0, если только начинаете.</p>
+          </div>
+
+          {/* General (no field) errors */}
+          {generalErrors.length > 0 && (
+            <div className="bg-destructive/10 rounded-xl p-3 space-y-1">
+              {generalErrors.map((e, i) => (
+                <p key={i} className="text-xs text-destructive">{e.message}</p>
+              ))}
+            </div>
+          )}
+
+          {/* Single Save button */}
+          <button
+            onClick={handleSave}
+            disabled={busy}
+            className={`w-full h-11 rounded-xl text-sm font-semibold disabled:opacity-60 flex items-center justify-center gap-2 ${
+              banner === "complete-ready"
+                ? "bg-primary text-primary-foreground"
+                : "bg-primary/10 text-primary"
+            }`}
+          >
+            {busy
+              ? <div className={`w-4 h-4 border-2 border-t-transparent rounded-full animate-spin ${banner === "complete-ready" ? "border-primary-foreground" : "border-primary"}`} />
+              : banner === "complete-ready" ? <Globe size={14} /> : <Check size={14} />}
+            {saveBtnLabel}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ProfilePage() {
   const { logout } = useAuth();
   const [, navigate] = useLocation();
@@ -908,6 +1173,9 @@ export default function ProfilePage() {
 
       {/* Working hours */}
       <WorkingHoursSection data={data} onSave={updated => setData(d => d ? { ...d, ...updated } : d)} />
+
+      {/* Marketplace publication — chestnye-mastera.ru */}
+      <MarketplaceProfileSection data={data} onSave={updated => setData(d => d ? { ...d, ...updated } : d)} />
 
       {/* Service prices — read-only, edit via profile modal */}
       {(data.servicePrices ?? []).length > 0 && (
