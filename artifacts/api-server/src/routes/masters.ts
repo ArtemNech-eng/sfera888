@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, mastersTable, masterTasksTable, ordersTable, leadsTable, telegramChatsTable, voronkaColumnsTable, transactionsTable, transactionPaymentsTable, maxBotLogsTable, masterCheckinsTable, systemSettingsTable, usersTable, masterWalletTable } from "@workspace/db";
+import { db, mastersTable, masterTasksTable, ordersTable, leadsTable, telegramChatsTable, voronkaColumnsTable, transactionsTable, transactionPaymentsTable, maxBotLogsTable, masterCheckinsTable, systemSettingsTable, usersTable, masterWalletTable, masterPortfolioTable, masterPublicationLogTable } from "@workspace/db";
 import { eq, desc, inArray, isNull, isNotNull, ne, count, gte, avg, sql, and } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { logMaxEvent } from "../maxBot.js";
@@ -9,6 +9,8 @@ import multer from "multer";
 import { Readable } from "stream";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { objectStorageClient, s3Client, ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage.js";
+import { slugify, pickUniqueSlug } from "../lib/slug.js";
+import { revalidateMarketplacePaths, masterPublicationPaths } from "../lib/marketplaceRevalidate.js";
 
 const objectStorage = new ObjectStorageService();
 
@@ -135,6 +137,17 @@ function formatMaster(m: any) {
     lastCancelAt: m.lastCancelAt ?? null,
     lastCompletedAt: m.lastCompletedAt ?? null,
     manualUnblocksCount: m.manualUnblocksCount ?? 0,
+    // ── Marketplace publication state (added in 11.5) ──────────────────────
+    slug: m.slug ?? null,
+    isPublished: m.isPublished ?? false,
+    publishedAt: m.publishedAt ?? null,
+    publicTitle: m.publicTitle ?? null,
+    publicBio: m.publicBio ?? null,
+    seoTitle: m.seoTitle ?? null,
+    seoDescription: m.seoDescription ?? null,
+    yearsExperience: m.yearsExperience ?? null,
+    publicRating: m.publicRating ? Number(m.publicRating) : null,
+    publicReviewsCount: m.publicReviewsCount ?? 0,
   };
 }
 
@@ -1248,6 +1261,304 @@ router.get("/:id/debug-transactions", requireRole("admin", "master_operator"), a
   });
 
   res.json(result);
+});
+
+// ─── MARKETPLACE OVERRIDE (CRM) ───────────────────────────────────────────────
+//
+// Operator-side endpoints for managing master publication on chestnye-mastera.ru.
+// Plan: see MARKETPLACE_PRODUCTION_PLAN.md §11.5 → "CRM-override".
+//
+// Why CRM-side actions exist while master can self-publish from PWA:
+//   • complaint received → operator must unpublish the profile fast (V1 safety net);
+//   • operator wants to edit publicTitle / publicBio for a master who isn't responding;
+//   • portfolio case violates rules → operator hides individual case;
+//   • VIP-publish — operator publishes a master bypassing automoderation
+//     (rarely used; logged with reason in master_publication_log).
+//
+// Every override action is recorded in master_publication_log with actor='operator'.
+
+// GET /:id/marketplace/log — paginated audit log entries for this master.
+router.get("/:id/marketplace/log", allMasterRoles, async (req, res) => {
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: "Bad id" });
+
+  const limitRaw = Number(req.query["limit"] ?? 50);
+  const limit = Number.isInteger(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 200) : 50;
+
+  const rows = await db
+    .select()
+    .from(masterPublicationLogTable)
+    .where(eq(masterPublicationLogTable.masterId, id))
+    .orderBy(desc(masterPublicationLogTable.createdAt))
+    .limit(limit);
+
+  res.json({ items: rows });
+});
+
+// POST /:id/marketplace/unpublish — pull the profile off the catalog.
+// Body: { reason: string }  (required for unpublish_complaint)
+// Slug is preserved so re-publishing returns the same URL.
+router.post("/:id/marketplace/unpublish", allMasterRoles, async (req, res) => {
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: "Bad id" });
+
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim().slice(0, 1000) : "";
+  if (!reason) return res.status(400).json({ error: "reason is required" });
+
+  const [master] = await db
+    .select()
+    .from(mastersTable)
+    .where(eq(mastersTable.id, id));
+  if (!master) return res.status(404).json({ error: "Мастер не найден" });
+
+  if (!master.isPublished) {
+    return res.json({ ok: true, isPublished: false, alreadyHidden: true });
+  }
+
+  await db.update(mastersTable).set({ isPublished: false }).where(eq(mastersTable.id, id));
+
+  await db.insert(masterPublicationLogTable).values({
+    masterId: id,
+    actor: "operator",
+    actorId: (req as any).user?.id ?? null,
+    action: "unpublish_complaint",
+    reason,
+    ip: req.ip ?? null,
+  }).catch(() => {});
+
+  revalidateMarketplacePaths(masterPublicationPaths(master.slug)).catch(() => {});
+
+  res.json({ ok: true, isPublished: false });
+});
+
+// POST /:id/marketplace/publish — operator-side publish (override).
+// Bypasses automoderation. Used for VIP masters or restoring after complaint review.
+// Body: { reason: string }  — explanation of why operator is overriding.
+router.post("/:id/marketplace/publish", allMasterRoles, async (req, res) => {
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: "Bad id" });
+
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim().slice(0, 1000) : "";
+  if (!reason) return res.status(400).json({ error: "reason is required" });
+
+  const [master] = await db
+    .select()
+    .from(mastersTable)
+    .where(eq(mastersTable.id, id));
+  if (!master) return res.status(404).json({ error: "Мастер не найден" });
+
+  // Bare minimum sanity — alias and city must exist; we don't run text moderation.
+  if (!master.alias?.trim() || !master.city?.trim()) {
+    return res.status(400).json({ error: "У мастера должны быть заполнены имя и город" });
+  }
+
+  let slug = master.slug ?? "";
+  if (!slug) {
+    const base = slugify(master.alias.trim());
+    const isTaken = async (cand: string): Promise<boolean> => {
+      const rows = await db
+        .select({ id: mastersTable.id })
+        .from(mastersTable)
+        .where(and(eq(mastersTable.slug, cand), ne(mastersTable.id, id)))
+        .limit(1);
+      return rows.length > 0;
+    };
+    slug = await pickUniqueSlug(base, isTaken);
+  }
+
+  const now = new Date();
+  await db.update(mastersTable)
+    .set({
+      isPublished: true,
+      slug,
+      publishedAt: master.publishedAt ?? now,
+    })
+    .where(eq(mastersTable.id, id));
+
+  await db.insert(masterPublicationLogTable).values({
+    masterId: id,
+    actor: "operator",
+    actorId: (req as any).user?.id ?? null,
+    action: "publish_override",
+    reason,
+    ip: req.ip ?? null,
+  }).catch(() => {});
+
+  revalidateMarketplacePaths(masterPublicationPaths(slug)).catch(() => {});
+
+  const baseUrl = process.env["MARKETPLACE_PUBLIC_URL"]?.replace(/\/$/, "") ?? "";
+  res.json({
+    ok: true,
+    isPublished: true,
+    slug,
+    publishedAt: master.publishedAt ?? now,
+    profileUrl: baseUrl ? `${baseUrl}/master/${slug}` : null,
+  });
+});
+
+// PATCH /:id/marketplace/profile — edit publicTitle / publicBio / yearsExperience.
+// No automoderation here — operator's word is final. Logs a diff.
+router.patch("/:id/marketplace/profile", allMasterRoles, async (req, res) => {
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: "Bad id" });
+
+  const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, id));
+  if (!master) return res.status(404).json({ error: "Мастер не найден" });
+
+  const { publicTitle, publicBio, yearsExperience, seoTitle, seoDescription } = req.body ?? {};
+
+  const updates: Record<string, unknown> = {};
+  const changes: Record<string, { from: unknown; to: unknown }> = {};
+
+  if (publicTitle !== undefined) {
+    const v = publicTitle === null || publicTitle === "" ? null : String(publicTitle).trim().slice(0, 150);
+    if (v !== master.publicTitle) { updates.publicTitle = v; changes.publicTitle = { from: master.publicTitle, to: v }; }
+  }
+  if (publicBio !== undefined) {
+    const v = publicBio === null || publicBio === "" ? null : String(publicBio).trim().slice(0, 2000);
+    if (v !== master.publicBio) { updates.publicBio = v; changes.publicBio = { from: master.publicBio, to: v }; }
+  }
+  if (yearsExperience !== undefined) {
+    let v: number | null = null;
+    if (yearsExperience === null || yearsExperience === "") {
+      v = null;
+    } else {
+      const n = parseInt(String(yearsExperience), 10);
+      if (Number.isFinite(n) && n >= 0 && n <= 70) v = n;
+      else return res.status(400).json({ error: "yearsExperience must be 0..70" });
+    }
+    if (v !== master.yearsExperience) { updates.yearsExperience = v; changes.yearsExperience = { from: master.yearsExperience, to: v }; }
+  }
+  if (seoTitle !== undefined) {
+    const v = seoTitle === null || seoTitle === "" ? null : String(seoTitle).trim().slice(0, 70);
+    if (v !== master.seoTitle) { updates.seoTitle = v; changes.seoTitle = { from: master.seoTitle, to: v }; }
+  }
+  if (seoDescription !== undefined) {
+    const v = seoDescription === null || seoDescription === "" ? null : String(seoDescription).trim().slice(0, 180);
+    if (v !== master.seoDescription) { updates.seoDescription = v; changes.seoDescription = { from: master.seoDescription, to: v }; }
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return res.json({ ok: true, changed: false });
+  }
+
+  await db.update(mastersTable).set(updates).where(eq(mastersTable.id, id));
+
+  await db.insert(masterPublicationLogTable).values({
+    masterId: id,
+    actor: "operator",
+    actorId: (req as any).user?.id ?? null,
+    action: "edit_public_fields",
+    changes,
+    ip: req.ip ?? null,
+  }).catch(() => {});
+
+  if (master.isPublished && master.slug) {
+    revalidateMarketplacePaths(masterPublicationPaths(master.slug)).catch(() => {});
+  }
+
+  res.json({ ok: true, changed: true, fields: Object.keys(updates) });
+});
+
+// GET /:id/marketplace/portfolio — list ALL portfolio cases (drafts + published)
+// from operator perspective. Used by CRM master drawer "Публикация" tab.
+router.get("/:id/marketplace/portfolio", allMasterRoles, async (req, res) => {
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: "Bad id" });
+
+  const rows = await db
+    .select()
+    .from(masterPortfolioTable)
+    .where(eq(masterPortfolioTable.masterId, id))
+    .orderBy(
+      desc(masterPortfolioTable.isFeatured),
+      desc(masterPortfolioTable.createdAt),
+    );
+  res.json({ items: rows });
+});
+
+// POST /:id/marketplace/portfolio/:caseId/unpublish — hide a single case.
+// Body: { reason: string }
+router.post("/:id/marketplace/portfolio/:caseId/unpublish", allMasterRoles, async (req, res) => {
+  const id = parseInt(String(req.params.id), 10);
+  const caseId = parseInt(String(req.params.caseId), 10);
+  if (!Number.isFinite(id) || id <= 0 || !Number.isFinite(caseId) || caseId <= 0) {
+    return res.status(400).json({ error: "Bad id" });
+  }
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim().slice(0, 1000) : "";
+  if (!reason) return res.status(400).json({ error: "reason is required" });
+
+  const [existing] = await db
+    .select()
+    .from(masterPortfolioTable)
+    .where(and(eq(masterPortfolioTable.id, caseId), eq(masterPortfolioTable.masterId, id)));
+  if (!existing) return res.status(404).json({ error: "Кейс не найден" });
+
+  if (existing.isPublished) {
+    await db.update(masterPortfolioTable)
+      .set({ isPublished: false, updatedAt: new Date() })
+      .where(eq(masterPortfolioTable.id, caseId));
+  }
+
+  await db.insert(masterPublicationLogTable).values({
+    masterId: id,
+    actor: "operator",
+    actorId: (req as any).user?.id ?? null,
+    action: "unpublish_complaint",
+    reason,
+    changes: { source: "portfolio", caseId, caseTitle: existing.title },
+    ip: req.ip ?? null,
+  }).catch(() => {});
+
+  const [m] = await db.select({ slug: mastersTable.slug, isPublished: mastersTable.isPublished })
+    .from(mastersTable).where(eq(mastersTable.id, id));
+  if (m?.isPublished && m.slug) {
+    revalidateMarketplacePaths(masterPublicationPaths(m.slug)).catch(() => {});
+  }
+
+  res.json({ ok: true });
+});
+
+// DELETE /:id/marketplace/portfolio/:caseId — hard-delete a case (operator).
+// Body: { reason: string }
+router.delete("/:id/marketplace/portfolio/:caseId", allMasterRoles, async (req, res) => {
+  const id = parseInt(String(req.params.id), 10);
+  const caseId = parseInt(String(req.params.caseId), 10);
+  if (!Number.isFinite(id) || id <= 0 || !Number.isFinite(caseId) || caseId <= 0) {
+    return res.status(400).json({ error: "Bad id" });
+  }
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim().slice(0, 1000) : "";
+  if (!reason) return res.status(400).json({ error: "reason is required" });
+
+  const [existing] = await db
+    .select()
+    .from(masterPortfolioTable)
+    .where(and(eq(masterPortfolioTable.id, caseId), eq(masterPortfolioTable.masterId, id)));
+  if (!existing) return res.status(404).json({ error: "Кейс не найден" });
+
+  await db
+    .delete(masterPortfolioTable)
+    .where(and(eq(masterPortfolioTable.id, caseId), eq(masterPortfolioTable.masterId, id)));
+
+  await db.insert(masterPublicationLogTable).values({
+    masterId: id,
+    actor: "operator",
+    actorId: (req as any).user?.id ?? null,
+    action: "unpublish_complaint",
+    reason,
+    changes: { source: "portfolio_delete", caseId, caseTitle: existing.title },
+    ip: req.ip ?? null,
+  }).catch(() => {});
+
+  if (existing.isPublished) {
+    const [m] = await db.select({ slug: mastersTable.slug, isPublished: mastersTable.isPublished })
+      .from(mastersTable).where(eq(mastersTable.id, id));
+    if (m?.isPublished && m.slug) {
+      revalidateMarketplacePaths(masterPublicationPaths(m.slug)).catch(() => {});
+    }
+  }
+
+  res.json({ ok: true });
 });
 
 export default router;

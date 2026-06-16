@@ -8,7 +8,7 @@ import {
   Send, Paperclip, Check, CheckCheck, Calendar, DollarSign, Loader2, CheckCircle2,
   ClipboardList, ExternalLink, ThumbsUp, ThumbsDown, Minus, Sparkles, MessageCircle,
   Smartphone, KeyRound, Eye, EyeOff, FlaskConical, ShieldCheck, ShieldAlert, FileSignature,
-  ShieldBan, ShieldOff, CalendarCheck, XCircle, Pencil, Lock, Unlock, Coins, Gift,
+  ShieldBan, ShieldOff, CalendarCheck, XCircle, Pencil, Lock, Unlock, Coins, Gift, Globe,
 } from "lucide-react";
 import { format, formatDistanceToNow, parseISO } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -191,6 +191,17 @@ export interface DrawerMaster {
   servicePrices?: { service: string; priceFrom: number }[] | null;
   fomoDisabled?: boolean;
   maxActiveOrders?: number;
+  // ── Marketplace publication state (11.5) ──────────────────────────────────
+  slug?: string | null;
+  isPublished?: boolean;
+  publishedAt?: string | null;
+  publicTitle?: string | null;
+  publicBio?: string | null;
+  seoTitle?: string | null;
+  seoDescription?: string | null;
+  yearsExperience?: number | null;
+  publicRating?: number | null;
+  publicReviewsCount?: number;
 }
 
 interface MasterTask { id: number; masterId: number; text: string; dueAt: string | null; isCompleted: boolean; createdBy: string | null; createdAt: string; }
@@ -198,7 +209,7 @@ interface HistoryOrder { id: number; status: string; serviceType: string; distri
 interface ChatMessage { id: number; text: string; photoUrl: string | null; fromMaster: boolean; senderName: string | null; isRead: boolean; createdAt: string; }
 interface PendingTx { id: number; orderId: number; orderAmount: number; commission: number; prepaymentDeducted?: number; netPayable?: number; }
 interface MasterReview { id: number; masterId: number; orderId: number | null; sentiment: string; text: string; createdBy: string | null; createdAt: string; }
-type DrawerTab = "profile" | "chat" | "orders" | "tasks" | "reviews";
+type DrawerTab = "profile" | "chat" | "orders" | "tasks" | "reviews" | "marketplace";
 
 // ─── Avatar ───────────────────────────────────────────────────────────────────
 
@@ -325,6 +336,335 @@ function RatingEditor({ masterId, rating, onSaved }: { masterId: number; rating:
       </div>
       <span className="text-sm text-gray-600 font-medium">{rating.toFixed(1)}</span>
       {saving && <span className="text-xs text-muted-foreground">...</span>}
+    </div>
+  );
+}
+
+// ─── Marketplace Publication Tab (11.5 — operator override) ──────────────────
+
+const MARKETPLACE_PUBLIC_BASE = "https://chestnye-mastera.ru";
+
+function MarketplacePublicationTab({
+  master,
+  onMasterUpdate,
+}: {
+  master: DrawerMaster;
+  onMasterUpdate: (id: number, data: Partial<DrawerMaster>) => void;
+}) {
+  const [publicTitle, setPublicTitle] = useState<string>(master.publicTitle ?? "");
+  const [publicBio, setPublicBio] = useState<string>(master.publicBio ?? "");
+  const [yearsExperience, setYearsExperience] = useState<string>(
+    master.yearsExperience != null ? String(master.yearsExperience) : ""
+  );
+  const [seoTitle, setSeoTitle] = useState<string>(master.seoTitle ?? "");
+  const [seoDescription, setSeoDescription] = useState<string>(master.seoDescription ?? "");
+
+  const [saving, setSaving] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [unpublishing, setUnpublishing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [savedFlash, setSavedFlash] = useState(false);
+
+  // Reset form when switching masters
+  useEffect(() => {
+    setPublicTitle(master.publicTitle ?? "");
+    setPublicBio(master.publicBio ?? "");
+    setYearsExperience(master.yearsExperience != null ? String(master.yearsExperience) : "");
+    setSeoTitle(master.seoTitle ?? "");
+    setSeoDescription(master.seoDescription ?? "");
+    setError(null);
+  }, [master.id, master.publicTitle, master.publicBio, master.yearsExperience, master.seoTitle, master.seoDescription]);
+
+  const profileUrl =
+    master.isPublished && master.slug
+      ? `${MARKETPLACE_PUBLIC_BASE}/master/${master.slug}`
+      : null;
+
+  async function saveFields() {
+    setError(null);
+    setSaving(true);
+    try {
+      const yrsRaw = yearsExperience.trim();
+      const yrsParsed = yrsRaw === "" ? null : Number.parseInt(yrsRaw, 10);
+      if (yrsRaw !== "" && (!Number.isFinite(yrsParsed) || (yrsParsed as number) < 0 || (yrsParsed as number) > 70)) {
+        setError("Стаж: число от 0 до 70");
+        return;
+      }
+      const r = await fetch(`/api/masters/${master.id}/marketplace/profile`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          publicTitle: publicTitle.trim() || null,
+          publicBio: publicBio.trim() || null,
+          yearsExperience: yrsRaw === "" ? null : yrsParsed,
+          seoTitle: seoTitle.trim() || null,
+          seoDescription: seoDescription.trim() || null,
+        }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data?.error ?? "Не удалось сохранить");
+      onMasterUpdate(master.id, {
+        publicTitle: publicTitle.trim() || null,
+        publicBio: publicBio.trim() || null,
+        yearsExperience: yrsRaw === "" ? null : (yrsParsed as number),
+        seoTitle: seoTitle.trim() || null,
+        seoDescription: seoDescription.trim() || null,
+      });
+      setSavedFlash(true);
+      setTimeout(() => setSavedFlash(false), 1800);
+    } catch (e: any) {
+      setError(e?.message ?? "Ошибка сохранения");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function publishOverride() {
+    setError(null);
+    const reason = window.prompt("Причина публикации (override). Будет записана в audit log:");
+    if (!reason || !reason.trim()) return;
+    setPublishing(true);
+    try {
+      const r = await fetch(`/api/masters/${master.id}/marketplace/publish`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: reason.trim() }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data?.error ?? "Не удалось опубликовать");
+      onMasterUpdate(master.id, {
+        isPublished: true,
+        slug: data.slug ?? master.slug ?? null,
+        publishedAt: data.publishedAt ?? master.publishedAt ?? new Date().toISOString(),
+      });
+    } catch (e: any) {
+      setError(e?.message ?? "Ошибка публикации");
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  async function unpublish() {
+    setError(null);
+    const reason = window.prompt("Причина снятия с публикации (жалоба, нарушение и т.д.). Будет записана в audit log:");
+    if (!reason || !reason.trim()) return;
+    setUnpublishing(true);
+    try {
+      const r = await fetch(`/api/masters/${master.id}/marketplace/unpublish`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: reason.trim() }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data?.error ?? "Не удалось снять с публикации");
+      onMasterUpdate(master.id, { isPublished: false });
+    } catch (e: any) {
+      setError(e?.message ?? "Ошибка");
+    } finally {
+      setUnpublishing(false);
+    }
+  }
+
+  const titleLen = publicTitle.length;
+  const bioLen = publicBio.length;
+  const seoTitleLen = seoTitle.length;
+  const seoDescLen = seoDescription.length;
+
+  return (
+    <div className="p-4 space-y-4">
+      {/* Status block */}
+      <div
+        className={`rounded-xl border p-3.5 ${
+          master.isPublished
+            ? "border-emerald-200 bg-emerald-50"
+            : "border-gray-200 bg-gray-50"
+        }`}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {master.isPublished ? (
+              <>
+                <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                <span className="text-sm font-semibold text-emerald-800">
+                  Опубликован на маркетплейсе
+                </span>
+              </>
+            ) : (
+              <>
+                <ShieldOff className="w-4 h-4 text-gray-400" />
+                <span className="text-sm font-semibold text-gray-600">
+                  Не опубликован
+                </span>
+              </>
+            )}
+          </div>
+          {profileUrl && (
+            <a
+              href={profileUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[11px] inline-flex items-center gap-1 text-emerald-700 hover:text-emerald-900 font-medium"
+            >
+              <ExternalLink className="w-3 h-3" />
+              Открыть
+            </a>
+          )}
+        </div>
+        {master.slug && (
+          <p className="text-[11px] text-gray-500 mt-1.5 break-all font-mono">
+            /master/{master.slug}
+          </p>
+        )}
+        {master.publishedAt && (
+          <p className="text-[11px] text-gray-400 mt-0.5">
+            Впервые опубликован: {format(parseISO(master.publishedAt), "d MMM yyyy", { locale: ru })}
+          </p>
+        )}
+      </div>
+
+      {/* Action buttons */}
+      <div className="flex gap-2">
+        {master.isPublished ? (
+          <button
+            type="button"
+            onClick={unpublish}
+            disabled={unpublishing}
+            className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-red-50 border border-red-200 text-red-700 hover:bg-red-100 px-3 py-2 text-xs font-semibold transition-colors disabled:opacity-50"
+          >
+            {unpublishing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldBan className="w-3.5 h-3.5" />}
+            Снять с публикации
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={publishOverride}
+            disabled={publishing}
+            className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 text-xs font-semibold transition-colors disabled:opacity-50"
+          >
+            {publishing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+            Опубликовать (override)
+          </button>
+        )}
+      </div>
+
+      {/* Edit form */}
+      <div className="space-y-3 bg-white border border-gray-100 rounded-xl p-3.5">
+        <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+          Публичные поля
+        </p>
+
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-medium text-gray-500 flex items-center justify-between">
+            <span>Заголовок</span>
+            <span className={`text-[10px] ${titleLen > 150 ? "text-red-500" : "text-gray-300"}`}>
+              {titleLen}/150
+            </span>
+          </label>
+          <input
+            type="text"
+            value={publicTitle}
+            onChange={(e) => setPublicTitle(e.target.value)}
+            maxLength={200}
+            placeholder='Например: "Плиточник в Краснодаре · 12 лет опыта"'
+            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-100 bg-gray-50"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-medium text-gray-500 flex items-center justify-between">
+            <span>О мастере</span>
+            <span className={`text-[10px] ${bioLen > 2000 ? "text-red-500" : "text-gray-300"}`}>
+              {bioLen}/2000
+            </span>
+          </label>
+          <textarea
+            value={publicBio}
+            onChange={(e) => setPublicBio(e.target.value)}
+            maxLength={2200}
+            rows={5}
+            placeholder="Опыт, подход, виды работ..."
+            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-100 bg-gray-50 resize-none"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-medium text-gray-500">Стаж (лет)</label>
+          <input
+            type="number"
+            min={0}
+            max={70}
+            value={yearsExperience}
+            onChange={(e) => setYearsExperience(e.target.value)}
+            placeholder="0..70"
+            className="w-32 text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-100 bg-gray-50"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-medium text-gray-500 flex items-center justify-between">
+            <span>SEO Title</span>
+            <span className={`text-[10px] ${seoTitleLen > 70 ? "text-red-500" : "text-gray-300"}`}>
+              {seoTitleLen}/70
+            </span>
+          </label>
+          <input
+            type="text"
+            value={seoTitle}
+            onChange={(e) => setSeoTitle(e.target.value)}
+            maxLength={90}
+            placeholder="Title для поисковиков (можно оставить пустым)"
+            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-100 bg-gray-50"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-medium text-gray-500 flex items-center justify-between">
+            <span>SEO Description</span>
+            <span className={`text-[10px] ${seoDescLen > 180 ? "text-red-500" : "text-gray-300"}`}>
+              {seoDescLen}/180
+            </span>
+          </label>
+          <textarea
+            value={seoDescription}
+            onChange={(e) => setSeoDescription(e.target.value)}
+            maxLength={220}
+            rows={3}
+            placeholder="Description для поисковиков (можно оставить пустым)"
+            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-100 bg-gray-50 resize-none"
+          />
+        </div>
+
+        {error && (
+          <div className="text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+            {error}
+          </div>
+        )}
+
+        <div className="flex items-center gap-2 pt-1">
+          <button
+            type="button"
+            onClick={saveFields}
+            disabled={saving}
+            className="flex items-center gap-1.5 rounded-lg bg-blue-500 hover:bg-blue-600 text-white px-3.5 py-2 text-xs font-semibold transition-colors disabled:opacity-50"
+          >
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+            Сохранить
+          </button>
+          {savedFlash && (
+            <span className="text-[11px] text-emerald-600 font-medium flex items-center gap-1">
+              <CheckCircle2 className="w-3 h-3" /> Сохранено
+            </span>
+          )}
+        </div>
+
+        <p className="text-[10px] text-gray-400 leading-relaxed pt-1">
+          Поля редактируются за мастера (override). Каждое изменение записывается в audit log.
+          На публичной странице обновление подхватывается через ISR (≈30 сек).
+        </p>
+      </div>
     </div>
   );
 }
@@ -849,6 +1189,7 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
     { id: "orders",  label: "Заказы",    icon: History },
     { id: "tasks",   label: "Задачи",    icon: CheckSquare },
     { id: "reviews", label: "Отзывы",   icon: MessageCircle },
+    { id: "marketplace", label: "Маркетплейс", icon: Globe },
   ];
 
   const colName = columns.find(c => c.id === master.voronkaColumnId)?.name ?? (master.voronkaColumnId ? "Колонка" : "Без колонки");
@@ -2126,6 +2467,11 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
               </div>
 
             </div>
+          )}
+
+          {/* MARKETPLACE — operator publication override (11.5) */}
+          {tab === "marketplace" && (
+            <MarketplacePublicationTab master={master} onMasterUpdate={onMasterUpdate} />
           )}
 
         </div>
