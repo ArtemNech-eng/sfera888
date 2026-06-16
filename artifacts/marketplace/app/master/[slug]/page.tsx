@@ -4,6 +4,11 @@ import type { Metadata } from "next";
 import { fetchCities, fetchMaster, fetchServices } from "../../../lib/api";
 import { publicUrl } from "../../../lib/env";
 import { LeadForm } from "../../../components/LeadForm";
+import {
+  breadcrumbJsonLd,
+  masterProfileJsonLd,
+  toJsonLdScript,
+} from "../../../lib/jsonLd";
 import type { City, Service, MasterPortfolioItem, MasterPublicReview } from "../../../lib/types";
 
 // Dynamic [slug] route — Next won't prerender these at build anyway, but we
@@ -126,8 +131,45 @@ export default async function MasterPage(
   const yearsExperience = master.yearsExperience;
   const visibleSpecs = (master.specializations ?? []).slice(0, 8);
 
+  // ── schema.org JSON-LD ─────────────────────────────────────────────────
+  // Built only from trusted server-side data. Reviews come from the
+  // backend filtered by `moderation_status = 'approved'`, so embedding
+  // them here is safe.
+  const breadcrumbsLd = breadcrumbJsonLd([
+    { name: "Главная", url: `${publicUrl()}/` },
+    { name: displayName, url: sourcePageUrl },
+  ]);
+  const profileLd = masterProfileJsonLd({
+    name: displayName,
+    description: master.publicBio ?? null,
+    url: sourcePageUrl,
+    image: master.avatarUrl ?? null,
+    cityName: master.city ?? null,
+    knowsAbout: master.specializations ?? [],
+    rating: rating != null && reviewsCount > 0
+      ? { ratingValue: rating, reviewCount: reviewsCount }
+      : null,
+    // Cap embedded reviews at 10 — enough for rich-snippet eligibility
+    // without bloating the HTML.
+    reviews: reviews.slice(0, 10).map((r) => ({
+      authorName: r.clientName,
+      rating: r.rating,
+      text: r.text,
+      createdAt: r.createdAt,
+    })),
+  });
+
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: toJsonLdScript(breadcrumbsLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: toJsonLdScript(profileLd) }}
+      />
+
       {/* Hero */}
       <section className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
         <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">

@@ -117,6 +117,96 @@ export function faqJsonLd(items: FaqItem[]): Record<string, unknown> {
 }
 
 /* ──────────────────────────────────────────────────────────────────────── */
+/* Master profile (ProfessionalService + AggregateRating + Review)          */
+/* ──────────────────────────────────────────────────────────────────────── */
+
+export interface MasterProfileReviewInput {
+  /** Free-form public name from `master_reviews_public.client_name`. */
+  authorName: string;
+  /** 1..5 integer rating. */
+  rating: number;
+  /** Review body text. */
+  text: string;
+  /** ISO timestamp from the DB. */
+  createdAt: string;
+}
+
+export interface MasterProfileJsonLdInput {
+  /** Display name of the master. */
+  name: string;
+  /** Optional bio shown on the public profile. */
+  description?: string | null;
+  /** Public profile URL — must be absolute. */
+  url: string;
+  /** Optional avatar URL (absolute). */
+  image?: string | null;
+  /** City name where the master operates ("Краснодар"). Optional. */
+  cityName?: string | null;
+  /** List of service NAMES the master offers ("Сантехника", "Электромонтаж"). */
+  knowsAbout: string[];
+  /** Aggregated rating values from `masters.public_rating` + count. */
+  rating?: {
+    /** Already a string "4.9" or null when no reviews yet. */
+    ratingValue: string;
+    reviewCount: number;
+  } | null;
+  /** Up to N approved reviews to embed inline. */
+  reviews: MasterProfileReviewInput[];
+}
+
+/**
+ * Build a schema.org JSON-LD payload describing a master's public profile
+ * as a `ProfessionalService` (subclass of `LocalBusiness`). Includes
+ * `aggregateRating` when ≥ 1 review is available, and an inline `review`
+ * array for the embedded most-recent reviews so Yandex/Google can surface
+ * them as rich snippets.
+ *
+ * Authority of input: ALWAYS server-side data from the api-server. Never
+ * accept user form input — review bodies come from `master_reviews_public`
+ * filtered by `moderation_status = 'approved'` upstream.
+ */
+export function masterProfileJsonLd(input: MasterProfileJsonLdInput): Record<string, unknown> {
+  const node: Record<string, unknown> = {
+    "@context": "https://schema.org",
+    "@type": "ProfessionalService",
+    name: input.name,
+    url: input.url,
+  };
+  if (input.description) node.description = input.description;
+  if (input.image) node.image = input.image;
+  if (input.cityName) {
+    node.areaServed = { "@type": "City", name: input.cityName };
+  }
+  if (input.knowsAbout.length > 0) {
+    node.knowsAbout = input.knowsAbout;
+  }
+  if (input.rating && input.rating.reviewCount > 0) {
+    node.aggregateRating = {
+      "@type": "AggregateRating",
+      ratingValue: input.rating.ratingValue,
+      reviewCount: input.rating.reviewCount,
+      bestRating: "5",
+      worstRating: "1",
+    };
+  }
+  if (input.reviews.length > 0) {
+    node.review = input.reviews.map((r) => ({
+      "@type": "Review",
+      author: { "@type": "Person", name: r.authorName },
+      reviewRating: {
+        "@type": "Rating",
+        ratingValue: String(r.rating),
+        bestRating: "5",
+        worstRating: "1",
+      },
+      reviewBody: r.text,
+      datePublished: r.createdAt,
+    }));
+  }
+  return node;
+}
+
+/* ──────────────────────────────────────────────────────────────────────── */
 /* Inline-safe serialisation                                                */
 /* ──────────────────────────────────────────────────────────────────────── */
 
