@@ -24,6 +24,8 @@ import {
   serviceTypesTable,
   mastersTable,
   leadsTable,
+  masterPortfolioTable,
+  masterReviewsPublicTable,
 } from "@workspace/db";
 import { and, asc, desc, eq, gte, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { timingSafeEqual } from "node:crypto";
@@ -138,6 +140,62 @@ function toMasterDto(m: MasterRow) {
     yearsExperience: m.yearsExperience,
     avatarUrl: m.customAvatarUrl,
     hasContract: m.contractSignedAt != null,
+  };
+}
+
+// ── Portfolio DTO mapper ────────────────────────────────────────────────────
+// Public portfolio items shown on /master/[slug]. Joined with the service and
+// city to give the frontend ready-to-render labels + slugs (so it can build
+// a `/[serviceSlug]/[citySlug]` link from each portfolio card).
+//
+// Strict allow-list. NEVER returns: master_id (already in path), service_type_id
+// or city_id raw integers, view_count (internal analytics), is_published
+// (filtered already), created_at / updated_at (operational).
+type PortfolioRow = typeof masterPortfolioTable.$inferSelect;
+type PortfolioJoin = {
+  portfolio: PortfolioRow;
+  service: { name: string; slug: string | null } | null;
+  city: { name: string; slug: string | null } | null;
+};
+function toMasterPortfolioDto(row: PortfolioJoin) {
+  const p = row.portfolio;
+  return {
+    id: p.id,
+    slug: p.slug,
+    title: p.title,
+    description: p.description,
+    beforePhotos: p.beforePhotos,
+    afterPhotos: p.afterPhotos,
+    priceFrom: p.priceFrom,
+    priceTo: p.priceTo,
+    area: p.area,
+    completedAt: p.completedAt,
+    clientReviewText: p.clientReviewText,
+    clientRating: p.clientRating,
+    isFeatured: p.isFeatured,
+    sortOrder: p.sortOrder,
+    service: row.service ? { name: row.service.name, slug: row.service.slug } : null,
+    city: row.city ? { name: row.city.name, slug: row.city.slug } : null,
+  };
+}
+
+// ── Public review DTO mapper ────────────────────────────────────────────────
+// Reviews published on /master/[slug] after operator-side moderation.
+//
+// Strict allow-list. NEVER returns: client_phone_hash (PII), moderation_*
+// (operator-internal), moderated_by (user id), order_id (internal link),
+// master_id (already known), updated_at.
+type ReviewRow = typeof masterReviewsPublicTable.$inferSelect;
+function toMasterPublicReviewDto(r: ReviewRow) {
+  return {
+    id: r.id,
+    clientName: r.clientName,
+    clientCity: r.clientCity,
+    rating: r.rating,
+    text: r.text,
+    photos: r.photos,
+    isFeatured: r.isFeatured,
+    createdAt: r.createdAt,
   };
 }
 
@@ -336,9 +394,16 @@ router.get("/masters", async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/marketplace/master/:slug — single published master profile.
-// portfolio/reviews are empty for now (no entries yet, will be filled when
-// CRM publication UI is built).
+// Returns the master DTO + published portfolio items (with service+city labels)
+// + approved public reviews. Hard caps prevent very large payloads on masters
+// with hundreds of items: 30 portfolio items, 20 reviews per request. The UI
+// can paginate later via dedicated endpoints once we have masters with that
+// much published content.
 // ─────────────────────────────────────────────────────────────────────────────
+
+const PORTFOLIO_LIMIT = 30;
+const REVIEWS_LIMIT = 20;
+
 router.get("/master/:slug", async (req, res) => {
   const { slug } = req.params as { slug?: string };
   if (!slug) {
@@ -360,11 +425,59 @@ router.get("/master/:slug", async (req, res) => {
       res.status(404).json({ error: "not_found" });
       return;
     }
+
+    // Portfolio: published cases only, JOIN service + city for ready-to-render
+    // chips. Featured first, then by sortOrder, then most recent completed,
+    // then by id desc as a deterministic tiebreaker.
+    const portfolioRows = await db
+      .select({
+        portfolio: masterPortfolioTable,
+        service: {
+          name: serviceTypesTable.name,
+          slug: serviceTypesTable.slug,
+        },
+        city: {
+          name: citiesTable.name,
+          slug: citiesTable.slug,
+        },
+      })
+      .from(masterPortfolioTable)
+      .leftJoin(serviceTypesTable, eq(masterPortfolioTable.serviceTypeId, serviceTypesTable.id))
+      .leftJoin(citiesTable, eq(masterPortfolioTable.cityId, citiesTable.id))
+      .where(and(
+        eq(masterPortfolioTable.masterId, master.id),
+        eq(masterPortfolioTable.isPublished, true),
+      ))
+      .orderBy(
+        desc(masterPortfolioTable.isFeatured),
+        asc(masterPortfolioTable.sortOrder),
+        sql`${masterPortfolioTable.completedAt} DESC NULLS LAST`,
+        desc(masterPortfolioTable.id),
+      )
+      .limit(PORTFOLIO_LIMIT);
+
+    // Reviews: only `approved`. Featured first, then most recent. PII stays
+    // on the server — toMasterPublicReviewDto() does not expose phone hash
+    // or moderation metadata.
+    const reviewRows = await db
+      .select()
+      .from(masterReviewsPublicTable)
+      .where(and(
+        eq(masterReviewsPublicTable.masterId, master.id),
+        eq(masterReviewsPublicTable.moderationStatus, "approved"),
+      ))
+      .orderBy(
+        desc(masterReviewsPublicTable.isFeatured),
+        desc(masterReviewsPublicTable.createdAt),
+        desc(masterReviewsPublicTable.id),
+      )
+      .limit(REVIEWS_LIMIT);
+
     setOkCache(res);
     res.json({
       master: toMasterDto(master),
-      portfolio: [],
-      reviews: [],
+      portfolio: portfolioRows.map(toMasterPortfolioDto),
+      reviews: reviewRows.map(toMasterPublicReviewDto),
     });
   } catch (e: unknown) {
     console.error("[marketplace/master]", e instanceof Error ? e.message : e);
