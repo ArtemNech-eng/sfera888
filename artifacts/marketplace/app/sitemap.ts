@@ -17,6 +17,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${base}/`, lastModified: now, changeFrequency: "weekly", priority: 1 },
     { url: `${base}/uslugi`, lastModified: now, changeFrequency: "weekly", priority: 0.8 },
     { url: `${base}/dizajn`, lastModified: now, changeFrequency: "weekly", priority: 0.7 },
+    { url: `${base}/o-nas`, lastModified: now, changeFrequency: "monthly", priority: 0.5 },
+    { url: `${base}/kontakty`, lastModified: now, changeFrequency: "monthly", priority: 0.5 },
   ];
 
   // If the API is unreachable (e.g. during a degraded deploy) we still want a

@@ -10,6 +10,9 @@ export function Footer() {
         </div>
         <nav className="flex flex-wrap gap-4">
           <Link href="/uslugi" className="hover:text-[var(--color-primary)]">Услуги</Link>
+          <Link href="/dizajn" className="hover:text-[var(--color-primary)]">AI-дизайнер</Link>
+          <Link href="/o-nas" className="hover:text-[var(--color-primary)]">О сервисе</Link>
+          <Link href="/kontakty" className="hover:text-[var(--color-primary)]">Контакты</Link>
           <a
             href="https://sfera-master.ru/masteram"
             className="hover:text-[var(--color-primary)]"
