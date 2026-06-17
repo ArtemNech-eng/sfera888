@@ -8,13 +8,12 @@ import type { RabotyListItem } from "../../lib/types";
 import { ROOM_CATEGORIES, DEMO_CASES } from "../../lib/demoCases";
 
 /**
- * Public feed of all portfolio cases (Houzz-model main entry, plan §11.7).
+ * Public catalog of all portfolio cases (plan §11.7, §21).
  *
- * V1.5 redesign: dark cover hero, room-category chip rail for fast
- * orientation, 3-column responsive grid using the new card chrome shared
- * with the home page and case detail. When the DB has fewer than 3 real
- * published cases, the grid falls back to the curated Unsplash references
- * with a clear "Пример" badge on each tile (plan §20.4 photo policy).
+ * Editorial redesign — replaces the dark cover hero with a magazine-style
+ * head section: breadcrumbs, eyebrow, oversized serif headline. Cards lose
+ * the rounded-2xl + shadow chrome in favour of plain photo-led layout.
+ * Demo notice and pagination follow the new minimal tone.
  */
 
 export const dynamic = "force-dynamic";
@@ -68,74 +67,52 @@ export default async function RabotyIndexPage(
         dangerouslySetInnerHTML={{ __html: toJsonLdScript(breadcrumbsLd) }}
       />
 
-      {/* ── Cover hero ── */}
-      <section className="relative overflow-hidden bg-[var(--color-text)]">
-        {/* Soft tinted overlay so the dark band doesn't feel flat. */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -top-40 right-0 h-96 w-96 rounded-full bg-[var(--color-secondary)] opacity-30 blur-3xl"
-        />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -bottom-32 left-0 h-72 w-72 rounded-full bg-[var(--color-accent)] opacity-25 blur-3xl"
-        />
-
-        <div className="relative mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16 lg:py-20">
-          <nav className="mb-6 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-white/70">
-            <Link href="/" className="hover:text-white">Главная</Link>
+      {/* ── Editorial header ────────────────────────────────────── */}
+      <header className="bg-[var(--color-background)]">
+        <div className="mx-auto max-w-6xl px-4 pb-12 pt-10 sm:px-6 sm:pt-14 lg:pt-20">
+          <nav className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--color-muted)]">
+            <Link href="/" className="transition hover:text-[var(--color-text)]">Главная</Link>
             <span aria-hidden>/</span>
-            <span className="text-white/85">Работы</span>
+            <span className="text-[var(--color-text)]">Работы</span>
           </nav>
 
-          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-secondary)]">
-            Реальные ремонты
-          </p>
-          <h1 className="mt-1 max-w-3xl text-3xl font-extrabold tracking-tight text-white sm:text-5xl lg:text-6xl">
-            Работы наших мастеров —{" "}
-            <span className="text-white/85">фото, цены, сроки</span>
+          <p className="font-eyebrow mt-9 text-[var(--color-primary)]">Реальные ремонты</p>
+          <h1 className="font-editorial mt-5 max-w-4xl text-5xl text-[var(--color-text)] sm:text-6xl lg:text-[4.25rem]">
+            Работы наших мастеров — фото, цены, сроки.
           </h1>
-          <p className="mt-4 max-w-2xl text-base text-white/75 sm:text-lg">
-            Каждая работа — это реальный объект с проверенным мастером, ценой по договору и
-            длительностью по факту. Понравится — отправьте заявку «Хочу такую же», она уйдёт автору
+          <p className="mt-7 max-w-2xl text-base leading-relaxed text-[var(--color-muted)] sm:text-lg">
+            Каждая работа — реальный объект с проверенным мастером, цена по договору
+            и срок по факту. Понравится — отправьте «Хочу такую же», заявка уйдёт автору
             работы первой.
           </p>
 
-          {/* Stats strip */}
-          <dl className="mt-8 flex flex-wrap items-end gap-x-10 gap-y-5 border-t border-white/10 pt-6 text-white">
-            <div>
-              <dt className="text-[11px] font-semibold uppercase tracking-wider text-white/55">
-                Всего работ
-              </dt>
-              <dd className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">
-                {data.total > 0 ? `${formatNumber(data.total)} ${pluralWorks(data.total)}` : "Каталог формируется"}
-              </dd>
-            </div>
-            {data.total > 0 ? (
-              <div>
-                <dt className="text-[11px] font-semibold uppercase tracking-wider text-white/55">
-                  Страница
-                </dt>
-                <dd className="mt-1 text-base font-bold">
-                  {page} из {totalPages}
-                </dd>
-              </div>
-            ) : null}
-          </dl>
+          {data.total > 0 ? (
+            <p className="mt-9 inline-flex items-baseline gap-3 text-sm text-[var(--color-muted)]">
+              <span className="font-editorial text-2xl text-[var(--color-text)]">
+                {formatNumber(data.total)}
+              </span>
+              <span>{pluralWorks(data.total)} в каталоге</span>
+              {totalPages > 1 ? (
+                <>
+                  <span aria-hidden>·</span>
+                  <span>стр. {page} из {totalPages}</span>
+                </>
+              ) : null}
+            </p>
+          ) : null}
         </div>
-      </section>
+      </header>
 
-      {/* ── Room category chip rail ── */}
-      <section className="border-b border-[var(--color-border)] bg-white">
-        <div className="mx-auto max-w-6xl px-4 py-4 sm:px-6">
-          <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted)]">
-            По комнатам
-          </p>
+      {/* ── Room category chip rail ─────────────────────────────── */}
+      <section className="border-y border-[var(--color-border)] bg-[var(--color-surface)]">
+        <div className="mx-auto max-w-6xl px-4 py-5 sm:px-6">
+          <p className="font-eyebrow mb-3">По комнатам</p>
           <ul className="flex flex-wrap gap-2">
             {ROOM_CATEGORIES.map((c) => (
               <li key={c.slug}>
                 <Link
                   href={`/raboty?room=${c.slug}`}
-                  className="inline-flex items-center rounded-full border border-[var(--color-border)] bg-white px-4 py-1.5 text-sm font-medium text-[var(--color-text)] transition hover:border-[var(--color-secondary)] hover:text-[var(--color-secondary)]"
+                  className="inline-flex items-center border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-1.5 text-sm font-medium text-[var(--color-text)] transition hover:border-[var(--color-text)]"
                 >
                   {c.label}
                 </Link>
@@ -145,14 +122,12 @@ export default async function RabotyIndexPage(
         </div>
       </section>
 
-      {/* ── Cases grid ── */}
-      <section className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
-        {isDemoMode ? (
-          <DemoNotice />
-        ) : null}
+      {/* ── Cases grid ──────────────────────────────────────────── */}
+      <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
+        {isDemoMode ? <DemoNotice /> : null}
 
         {data.items.length > 0 ? (
-          <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <ul className="grid gap-x-3 gap-y-10 sm:grid-cols-2 sm:gap-x-4 lg:grid-cols-3">
             {data.items.map((item) => (
               <RealCaseCard key={item.id} item={item} />
             ))}
@@ -160,22 +135,20 @@ export default async function RabotyIndexPage(
         ) : null}
 
         {isDemoMode ? (
-          <ul className={`${data.items.length > 0 ? "mt-4" : ""} grid gap-4 sm:grid-cols-2 lg:grid-cols-3`}>
+          <ul className={`${data.items.length > 0 ? "mt-10" : ""} grid gap-x-3 gap-y-10 sm:grid-cols-2 sm:gap-x-4 lg:grid-cols-3`}>
             {DEMO_CASES.map((d) => (
               <DemoCardLi key={d.id} demo={d} />
             ))}
           </ul>
         ) : null}
 
-        {totalPages > 1 ? (
-          <Pagination currentPage={page} totalPages={totalPages} />
-        ) : null}
+        {totalPages > 1 ? <Pagination currentPage={page} totalPages={totalPages} /> : null}
       </section>
     </>
   );
 }
 
-// ── Cards ────────────────────────────────────────────────────────────────────
+// ── Cards (no rounded chrome — photo-led editorial) ────────────────────────
 
 function RealCaseCard({ item }: { item: RabotyListItem }) {
   if (!item.slug) return null;
@@ -187,18 +160,15 @@ function RealCaseCard({ item }: { item: RabotyListItem }) {
 
   return (
     <li>
-      <Link
-        href={`/raboty/${item.slug}`}
-        className="group flex h-full flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg hover:border-[var(--color-secondary)]"
-      >
-        <div className="relative aspect-[4/3] overflow-hidden bg-[var(--color-background)]">
+      <Link href={`/raboty/${item.slug}`} className="group block">
+        <div className="relative aspect-[4/3] overflow-hidden bg-[var(--color-border)]">
           {cover ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={cover}
               alt={`${item.title}${cityPart} — фото работы`}
               loading="lazy"
-              className="block h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.05]"
+              className="block h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-xs text-[var(--color-muted)]">
@@ -206,17 +176,14 @@ function RealCaseCard({ item }: { item: RabotyListItem }) {
             </div>
           )}
           {item.isFeatured ? (
-            <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full bg-[var(--color-accent)] px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-white shadow">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                <path d="m12 2 3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z" />
-              </svg>
+            <span className="absolute left-3 top-3 inline-flex items-center bg-[var(--color-text)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-white">
               Топ
             </span>
           ) : null}
         </div>
 
-        <div className="flex flex-1 flex-col gap-2 p-4 sm:p-5">
-          <h3 className="line-clamp-2 text-base font-semibold leading-snug text-[var(--color-text)] group-hover:text-[var(--color-secondary)]">
+        <div className="mt-4 space-y-2">
+          <h3 className="font-editorial line-clamp-2 text-xl leading-snug text-[var(--color-text)] group-hover:text-[var(--color-primary)] sm:text-2xl">
             {item.title}
           </h3>
 
@@ -236,20 +203,23 @@ function RealCaseCard({ item }: { item: RabotyListItem }) {
             ) : null}
           </div>
 
-          <div className="mt-auto flex items-end justify-between gap-3 pt-3 border-t border-[var(--color-border)]">
+          <div className="flex items-end justify-between gap-3 pt-1">
             {priceFrom != null ? (
-              <div>
-                <p className="text-[11px] uppercase tracking-wider text-[var(--color-muted)]">от</p>
-                <p className="text-base font-bold text-[var(--color-text)]">
+              <p className="text-sm">
+                <span className="text-[var(--color-faint)]">от </span>
+                <span className="font-semibold text-[var(--color-text)]">
                   {formatNumber(priceFrom)} ₽
-                </p>
-              </div>
+                </span>
+              </p>
             ) : <span />}
             <div className="text-right text-xs text-[var(--color-muted)]">
               <div className="line-clamp-1">{masterName}</div>
               {item.master.publicRating ? (
-                <div className="text-[var(--color-text)] font-semibold">
-                  ★ {parseFloat(item.master.publicRating).toFixed(1)}
+                <div className="text-[var(--color-text)]">
+                  <span aria-hidden className="text-[var(--color-primary)]">★ </span>
+                  <span className="font-semibold">
+                    {parseFloat(item.master.publicRating).toFixed(1)}
+                  </span>
                 </div>
               ) : null}
             </div>
@@ -263,31 +233,26 @@ function RealCaseCard({ item }: { item: RabotyListItem }) {
 function DemoCardLi({ demo }: { demo: typeof DEMO_CASES[number] }) {
   return (
     <li>
-      <Link
-        href="/raboty"
-        className="group flex h-full flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg hover:border-[var(--color-secondary)]"
-      >
-        <div className="relative aspect-[4/3] overflow-hidden bg-[var(--color-background)]">
+      <Link href="/raboty" className="group block">
+        <div className="relative aspect-[4/3] overflow-hidden bg-[var(--color-border)]">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={demo.imageUrl}
             alt={demo.alt}
             loading="lazy"
-            className="block h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.05]"
+            className="block h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
           />
-          <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-[var(--color-muted)] shadow-sm ring-1 ring-[var(--color-border)]">
+          <span className="absolute left-3 top-3 inline-flex items-center bg-[var(--color-surface)]/95 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--color-faint)]">
             Пример
           </span>
         </div>
-        <div className="flex flex-1 flex-col gap-2 p-4 sm:p-5">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--color-secondary)]">
-            {demo.category}
-          </span>
-          <h3 className="line-clamp-2 text-base font-semibold leading-snug text-[var(--color-text)] group-hover:text-[var(--color-secondary)]">
+        <div className="mt-4 space-y-2">
+          <p className="font-eyebrow text-[var(--color-primary)]">{demo.category}</p>
+          <h3 className="font-editorial line-clamp-2 text-xl leading-snug text-[var(--color-text)] group-hover:text-[var(--color-primary)] sm:text-2xl">
             {demo.title}
           </h3>
-          <p className="mt-auto pt-3 border-t border-[var(--color-border)] text-xs text-[var(--color-muted)]">
-            Стилевой референс. Найдите мастера, который реализует похожий проект.
+          <p className="text-xs text-[var(--color-muted)]">
+            Стилевой референс — найдите мастера, который реализует похоже.
           </p>
         </div>
       </Link>
@@ -297,21 +262,14 @@ function DemoCardLi({ demo }: { demo: typeof DEMO_CASES[number] }) {
 
 function DemoNotice() {
   return (
-    <div className="mb-8 flex items-start gap-3 rounded-2xl border border-[var(--color-secondary-soft)] bg-[var(--color-secondary-soft)]/60 p-5 sm:items-center">
-      <span className="inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-white text-[var(--color-secondary)]">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-        </svg>
-      </span>
-      <div>
-        <p className="text-sm font-semibold text-[var(--color-text)]">
-          Каталог только формируется
-        </p>
-        <p className="mt-1 text-xs text-[var(--color-muted)]">
-          Пока мастера публикуют свои работы, мы показываем стилевые референсы.
-          По мере появления реальных кейсов они автоматически вытесняют референсы.
-        </p>
-      </div>
+    <div className="mb-12 border border-[var(--color-border)] bg-[var(--color-surface)] p-6 sm:p-7">
+      <p className="font-eyebrow">Каталог только формируется</p>
+      <p className="font-editorial mt-3 text-xl text-[var(--color-text)] sm:text-2xl">
+        Пока мастера публикуют свои работы, мы показываем стилевые референсы.
+      </p>
+      <p className="mt-3 text-sm text-[var(--color-muted)]">
+        По мере появления реальных кейсов референсы автоматически вытесняются.
+      </p>
     </div>
   );
 }
@@ -320,45 +278,45 @@ function Pagination({ currentPage, totalPages }: { currentPage: number; totalPag
   const prev = currentPage > 1 ? currentPage - 1 : null;
   const next = currentPage < totalPages ? currentPage + 1 : null;
   return (
-    <nav className="mt-12 flex items-center justify-center gap-3">
+    <nav className="mt-16 flex items-center justify-between gap-3 border-t border-[var(--color-border)] pt-8">
       {prev ? (
         <Link
           href={prev === 1 ? `/raboty` : `/raboty?page=${prev}`}
-          className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] bg-white px-5 py-2.5 text-sm font-semibold text-[var(--color-text)] shadow-sm transition hover:border-[var(--color-secondary)] hover:text-[var(--color-secondary)]"
+          className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--color-text)] underline decoration-[var(--color-border-strong)] underline-offset-4 transition hover:decoration-[var(--color-text)]"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <path d="m12 19-7-7 7-7" />
             <path d="M19 12H5" />
           </svg>
           Назад
         </Link>
       ) : (
-        <span className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] px-5 py-2.5 text-sm text-[var(--color-muted)]">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <span className="inline-flex items-center gap-2 text-sm text-[var(--color-faint)]">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <path d="m12 19-7-7 7-7" />
             <path d="M19 12H5" />
           </svg>
           Назад
         </span>
       )}
-      <span className="text-sm font-semibold text-[var(--color-muted)]">
+      <span className="text-sm text-[var(--color-muted)]">
         Стр. {currentPage} из {totalPages}
       </span>
       {next ? (
         <Link
           href={`/raboty?page=${next}`}
-          className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-primary)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--color-primary-hover)]"
+          className="inline-flex items-center gap-2 bg-[var(--color-text)] px-5 py-2.5 text-sm font-semibold tracking-wide text-white transition hover:bg-[var(--color-primary)]"
         >
           Дальше
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <path d="M5 12h14" />
             <path d="m12 5 7 7-7 7" />
           </svg>
         </Link>
       ) : (
-        <span className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] px-5 py-2.5 text-sm text-[var(--color-muted)]">
+        <span className="inline-flex items-center gap-2 text-sm text-[var(--color-faint)]">
           Дальше
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <path d="M5 12h14" />
             <path d="m12 5 7 7-7 7" />
           </svg>

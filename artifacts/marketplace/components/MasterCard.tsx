@@ -3,14 +3,17 @@ import type { Master } from "../lib/types";
 import { buildMasterAvatarAlt } from "../lib/seoMeta";
 
 /**
- * Compact master card used in catalogs (`/mastera`) and on service-city
- * pages (`/[serviceSlug]/[citySlug]`). The whole card is a Link to the
- * master profile so click-through is single-tap on mobile.
+ * Editorial master card (plan §21).
  *
- * Server component — no client JS needed; click is just a navigation.
+ * Used on `/mastera` catalog and on service-city pages. Replaces the previous
+ * rounded-2xl card with hairline-bordered byline-style row: square avatar,
+ * serif name, comma-separated meta line, hairline divider, plain spec list.
+ * The whole row is a Link for one-tap navigation on mobile.
+ *
+ * Server component, zero JS.
  */
 export function MasterCard({ master }: { master: Master }) {
-  if (!master.slug) return null; // safety: published master must have slug
+  if (!master.slug) return null;
 
   const displayName = pickDisplayName(master);
   const initials = displayName
@@ -28,29 +31,31 @@ export function MasterCard({ master }: { master: Master }) {
   return (
     <Link
       href={`/master/${master.slug}`}
-      className="group block overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] transition hover:border-[var(--color-primary)] hover:shadow-md"
+      className="group block border border-[var(--color-border)] bg-[var(--color-surface)] transition hover:border-[var(--color-text)]"
     >
-      <div className="flex items-start gap-3 p-4">
+      <div className="flex items-start gap-4 p-5">
         {master.avatarUrl ? (
           <img
             src={master.avatarUrl}
             alt={buildMasterAvatarAlt(master)}
             loading="lazy"
-            className="h-16 w-16 flex-none rounded-2xl border border-[var(--color-border)] bg-[var(--color-background)] object-cover"
+            className="h-16 w-16 flex-none object-cover sm:h-20 sm:w-20"
           />
         ) : (
           <div
             aria-hidden
-            className="flex h-16 w-16 flex-none items-center justify-center rounded-2xl border border-[var(--color-border)] bg-[var(--color-primary)] text-lg font-semibold text-white"
+            className="flex h-16 w-16 flex-none items-center justify-center bg-[var(--color-text)] text-base font-semibold text-white sm:h-20 sm:w-20 sm:text-lg"
           >
             {initials}
           </div>
         )}
+
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-base font-semibold text-[var(--color-text)] group-hover:text-[var(--color-primary)]">
+          <h3 className="font-editorial truncate text-lg leading-snug text-[var(--color-text)] group-hover:text-[var(--color-primary)] sm:text-xl">
             {displayName}
           </h3>
-          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-[var(--color-muted)]">
+
+          <p className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs text-[var(--color-muted)]">
             {master.city ? <span>{master.city}</span> : null}
             {master.yearsExperience != null && master.yearsExperience > 0 ? (
               <>
@@ -58,41 +63,39 @@ export function MasterCard({ master }: { master: Master }) {
                 <span>опыт {master.yearsExperience} {pluralYears(master.yearsExperience)}</span>
               </>
             ) : null}
-          </div>
-          {(rating || reviewsCount > 0) ? (
-            <div className="mt-1.5 flex items-center gap-1.5 text-xs">
+          </p>
+
+          {rating || reviewsCount > 0 ? (
+            <p className="mt-1.5 flex items-center gap-1.5 text-xs">
               {rating ? (
-                <span className="inline-flex items-center gap-0.5 font-medium text-[var(--color-text)]">
-                  <span aria-hidden>★</span>
-                  <span>{rating}</span>
+                <span className="inline-flex items-baseline gap-1 text-[var(--color-text)]">
+                  <span aria-hidden className="text-[var(--color-primary)]">★</span>
+                  <span className="font-semibold">{rating}</span>
                 </span>
               ) : null}
               {reviewsCount > 0 ? (
-                <span className="text-[var(--color-muted)]">· {reviewsCount} {pluralReviews(reviewsCount)}</span>
+                <span className="text-[var(--color-muted)]">
+                  {rating ? " · " : ""}{reviewsCount} {pluralReviews(reviewsCount)}
+                </span>
               ) : null}
-            </div>
+            </p>
           ) : null}
         </div>
+
         {minPrice != null ? (
           <div className="ml-2 flex-none text-right">
-            <div className="text-xs text-[var(--color-muted)]">от</div>
-            <div className="text-sm font-semibold text-[var(--color-text)] whitespace-nowrap">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-faint)]">от</p>
+            <p className="mt-0.5 whitespace-nowrap text-sm font-semibold text-[var(--color-text)]">
               {formatNumber(minPrice)} ₽
-            </div>
+            </p>
           </div>
         ) : null}
       </div>
+
       {visibleSpecs.length > 0 ? (
-        <ul className="flex flex-wrap gap-1.5 border-t border-[var(--color-border)] bg-[var(--color-background)] px-4 py-2.5">
-          {visibleSpecs.map((s) => (
-            <li
-              key={s}
-              className="rounded-full bg-[var(--color-surface)] px-2.5 py-0.5 text-[11px] text-[var(--color-muted)]"
-            >
-              {s}
-            </li>
-          ))}
-        </ul>
+        <p className="border-t border-[var(--color-border)] px-5 py-3 text-xs text-[var(--color-muted)]">
+          {visibleSpecs.join(" · ")}
+        </p>
       ) : null}
     </Link>
   );
