@@ -141,3 +141,81 @@ export async function uploadPhoto(file: File): Promise<string> {
 }
 
 export { CabinetApiError };
+
+
+// ── Home / Dashboard ────────────────────────────────────────────────────────
+
+export interface FomoBlock {
+  isBlocked: boolean;
+  type: string | null;
+  reason: string | null;
+  orderId: number | null;
+  hoursElapsed: number | null;
+}
+
+export interface OrderHomeCard {
+  id: number;
+  leadId: number | null;
+  city: string;
+  district: string | null;
+  serviceType: string;
+  services: string | null;
+  area: number;
+  scheduledAt: string | null;
+  comment: string | null;
+  photos: string[];
+  dispatchedAt: string | null;
+  competitorCount: number;
+  isRepeatClient: boolean;
+  paymentModel?: string;
+}
+
+export interface ActiveOrderHomeCard {
+  id: number;
+  leadId: number | null;
+  city: string;
+  district: string | null;
+  serviceType: string;
+  area: number;
+  scheduledAt: string | null;
+  status: string;
+  masterWorkStatus: string | null;
+  proposedAmount?: number | null;
+  paymentModel?: string;
+  tokensCharged?: number | null;
+  assignedAt?: string | null;
+}
+
+export interface MissedOrderCard {
+  id: number;
+  serviceType: string;
+  district: string | null;
+  area: number;
+  takenAt: string;
+  wasDispatched: boolean;
+}
+
+export interface CabinetHome {
+  master: {
+    id: number;
+    alias: string;
+    city: string;
+    specialization: string;
+    rating: number;
+    debt: number;
+    isTestMaster: boolean;
+    isAvailable: boolean;
+    orderLimit: number;
+    activeOrdersCount: number;
+  };
+  fomoBlock: FomoBlock;
+  availableOrders: OrderHomeCard[];
+  pendingOrders: OrderHomeCard[];
+  missedOrders: MissedOrderCard[];
+  todayActivity: { total: number; taken: number };
+  activeOrders: ActiveOrderHomeCard[];
+}
+
+export const cabinetHome = {
+  fetch: () => req<CabinetHome>("GET", "/home"),
+};
