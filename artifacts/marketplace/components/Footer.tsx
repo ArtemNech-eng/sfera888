@@ -1,55 +1,118 @@
 import Link from "next/link";
 
+/**
+ * Editorial footer (plan §21 visual direction).
+ *
+ * Magazine masthead at the bottom — wordmark + lead on the left, three
+ * columns of grouped links on the right. Hairlines and small caps replace
+ * the previous flat bullet list. Discrete Unsplash credit at the bottom.
+ *
+ * Server component, zero JS.
+ */
 export function Footer() {
   return (
     <footer className="mt-auto border-t border-[var(--color-border)] bg-[var(--color-surface)]">
-      <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
-        <div className="flex flex-col gap-4 text-sm text-[var(--color-muted)] sm:flex-row sm:items-center sm:justify-between">
+      <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
+        <div className="grid gap-12 lg:grid-cols-[1.4fr,1fr,1fr,1fr] lg:gap-10">
+          {/* Wordmark column */}
           <div>
-            <div className="font-medium text-[var(--color-text)]">Честные мастера</div>
-            <div className="mt-1">Планировщик ремонта и подбор проверенных мастеров</div>
+            <Link href="/" className="font-editorial text-2xl text-[var(--color-text)]">
+              Честные мастера
+            </Link>
+            <p className="mt-4 max-w-xs text-sm leading-relaxed text-[var(--color-muted)]">
+              Планировщик ремонта: реальные работы с фото и ценами,
+              AI-визуализация и подбор проверенных мастеров в вашем городе.
+            </p>
           </div>
-          <nav className="flex flex-wrap gap-x-4 gap-y-2">
-            <Link href="/raboty" className="hover:text-[var(--color-primary)]">Работы</Link>
-            <Link href="/mastera" className="hover:text-[var(--color-primary)]">Мастера</Link>
-            <Link href="/uslugi" className="hover:text-[var(--color-primary)]">Услуги</Link>
-            <Link href="/dizajn" className="hover:text-[var(--color-primary)]">AI-дизайн</Link>
-            <Link href="/kalkulyator" className="hover:text-[var(--color-primary)]">Калькулятор</Link>
-            <Link href="/o-nas" className="hover:text-[var(--color-primary)]">О сервисе</Link>
-            <Link href="/kontakty" className="hover:text-[var(--color-primary)]">Контакты</Link>
-            <a
-              href="https://sfera-master.ru/masteram"
-              className="hover:text-[var(--color-primary)]"
-              rel="noopener noreferrer"
-            >
-              Для мастеров
-            </a>
-            <Link href="/policy/privacy" className="hover:text-[var(--color-primary)]">
-              Политика конфиденциальности
-            </Link>
-            <Link href="/policy/terms" className="hover:text-[var(--color-primary)]">
-              Пользовательское соглашение
-            </Link>
-          </nav>
+
+          <FooterColumn
+            title="Сервис"
+            links={[
+              { href: "/raboty", label: "Работы" },
+              { href: "/dizajn", label: "AI-дизайн" },
+              { href: "/uslugi", label: "Услуги" },
+              { href: "/mastera", label: "Мастера" },
+              { href: "/kalkulyator", label: "Калькулятор" },
+            ]}
+          />
+
+          <FooterColumn
+            title="О нас"
+            links={[
+              { href: "/o-nas", label: "О сервисе" },
+              { href: "/kontakty", label: "Контакты" },
+              {
+                href: "https://sfera-master.ru/masteram",
+                label: "Для мастеров",
+                external: true,
+              },
+            ]}
+          />
+
+          <FooterColumn
+            title="Документы"
+            links={[
+              { href: "/policy/privacy", label: "Конфиденциальность" },
+              { href: "/policy/terms", label: "Пользовательское соглашение" },
+            ]}
+          />
         </div>
 
-        {/* Discreet credit line for Unsplash placeholder photography. We're
-            not legally required to attribute (CC0 license), but signalling
-            it builds trust with users who recognise the photos. Removed
-            automatically once we have ≥50 real published cases. */}
-        <p className="mt-6 border-t border-[var(--color-border)] pt-4 text-xs text-[var(--color-muted)]">
-          Изображения‑референсы в подборках идей — фотобанк{" "}
-          <a
-            href="https://unsplash.com/license"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-[var(--color-primary)] underline-offset-2 hover:underline"
-          >
-            Unsplash
-          </a>{" "}
-          (CC0). По мере публикации работ нашими мастерами они вытесняют референсы.
-        </p>
+        {/* Hairline + Unsplash credit */}
+        <div className="mt-14 border-t border-[var(--color-border)] pt-6">
+          <p className="text-xs leading-relaxed text-[var(--color-faint)]">
+            Изображения-референсы в подборках идей —{" "}
+            <a
+              href="https://unsplash.com/license"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[var(--color-muted)] underline underline-offset-2 hover:text-[var(--color-text)]"
+            >
+              Unsplash
+            </a>
+            {" "}(CC0). По мере публикации работ нашими мастерами они вытесняют
+            референсы. © {new Date().getFullYear()} Честные мастера.
+          </p>
+        </div>
       </div>
     </footer>
+  );
+}
+
+interface FooterLink {
+  href: string;
+  label: string;
+  external?: boolean;
+}
+
+function FooterColumn({ title, links }: { title: string; links: FooterLink[] }) {
+  return (
+    <div>
+      <p className="font-eyebrow">{title}</p>
+      <ul className="mt-5 space-y-2.5">
+        {links.map((link) =>
+          link.external ? (
+            <li key={link.href}>
+              <a
+                href={link.href}
+                rel="noopener noreferrer"
+                className="text-sm text-[var(--color-text)] transition hover:text-[var(--color-primary)]"
+              >
+                {link.label}
+              </a>
+            </li>
+          ) : (
+            <li key={link.href}>
+              <Link
+                href={link.href}
+                className="text-sm text-[var(--color-text)] transition hover:text-[var(--color-primary)]"
+              >
+                {link.label}
+              </Link>
+            </li>
+          ),
+        )}
+      </ul>
+    </div>
   );
 }
