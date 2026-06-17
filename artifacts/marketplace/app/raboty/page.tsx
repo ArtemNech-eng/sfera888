@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { fetchRabotyList } from "../../lib/api";
 import { publicUrl } from "../../lib/env";
 import { breadcrumbJsonLd, toJsonLdScript } from "../../lib/jsonLd";
+import { buildRabotyIndexMeta } from "../../lib/seoMeta";
 import type { RabotyListItem } from "../../lib/types";
 
 /**
@@ -17,17 +18,28 @@ export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 24;
 
-export async function generateMetadata(): Promise<Metadata> {
-  return {
-    title: { absolute: "Работы мастеров — фото до и после, цены, сроки — Честные мастера" },
-    description:
-      "Фото реальных ремонтов с ценами, сроками и контактами мастеров. Откройте понравившуюся работу и оставьте заявку — мы свяжем вас с её автором.",
-    alternates: { canonical: `${publicUrl()}/raboty` },
-  };
-}
-
 interface SearchParams {
   page?: string;
+}
+
+export async function generateMetadata(
+  { searchParams }: { searchParams: Promise<SearchParams> },
+): Promise<Metadata> {
+  const sp = await searchParams;
+  const pageRaw = parseInt(String(sp.page ?? "1"), 10);
+  const page = Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1;
+
+  // Cheap pre-fetch only when we need pagination meta. Cache TTL handles repeats.
+  const data = await fetchRabotyList({ page, limit: PAGE_SIZE });
+  const totalPages = Math.max(1, Math.ceil((data.total ?? 0) / data.limit));
+  const meta = buildRabotyIndexMeta({ total: data.total ?? 0, page, totalPages });
+
+  return {
+    title: { absolute: meta.title },
+    description: meta.description,
+    alternates: { canonical: page > 1 ? `${publicUrl()}/raboty?page=${page}` : `${publicUrl()}/raboty` },
+    // Pages 2+ are still indexable but lower-priority via canonical chaining.
+  };
 }
 
 export default async function RabotyIndexPage(

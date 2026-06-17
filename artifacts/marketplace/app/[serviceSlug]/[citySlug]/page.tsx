@@ -10,6 +10,7 @@ import {
   serviceJsonLd,
   toJsonLdScript,
 } from "../../../lib/jsonLd";
+import { buildServiceCityMeta } from "../../../lib/seoMeta";
 
 // Dynamic [params] route — Next won't prerender these at build anyway, but we
 // declare it explicitly so generateMetadata + fetch can use server-only env.
@@ -26,12 +27,11 @@ export async function generateMetadata(
   const { serviceSlug, citySlug } = await params;
   const data = await fetchServiceCity(serviceSlug, citySlug);
   if (!data) return { robots: { index: false, follow: false } };
-  const cityPrepositional = data.city.nameIn ?? data.city.name;
-  const pageH1 = `${data.service.name} в ${cityPrepositional}`;
   const path = `/${serviceSlug}/${citySlug}`;
+  const meta = buildServiceCityMeta(data);
   return {
-    title: `${pageH1} — Честные мастера`,
-    description: `Оставьте заявку на услугу «${data.service.name}» в ${cityPrepositional}. Подберём проверенного мастера.`,
+    title: { absolute: meta.title },
+    description: meta.description,
     alternates: { canonical: `${publicUrl()}${path}` },
   };
 }

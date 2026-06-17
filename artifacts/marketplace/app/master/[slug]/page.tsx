@@ -9,6 +9,7 @@ import {
   masterProfileJsonLd,
   toJsonLdScript,
 } from "../../../lib/jsonLd";
+import { buildMasterMeta } from "../../../lib/seoMeta";
 import type { City, Service, MasterPortfolioItem, MasterPublicReview } from "../../../lib/types";
 
 // Dynamic [slug] route — Next won't prerender these at build anyway, but we
@@ -26,17 +27,10 @@ export async function generateMetadata(
   const data = await fetchMaster(slug);
   if (!data) return { robots: { index: false, follow: false } };
   const path = `/master/${slug}`;
-  const displayName = pickDisplayName(data.master);
-  const city = data.master.city ?? "";
-  const titleBase = city ? `${displayName} — мастер в ${city}` : `${displayName} — мастер`;
-  const specs = (data.master.specializations ?? []).slice(0, 3).join(", ");
-  const description =
-    specs.length > 0
-      ? `${displayName}, ${city}. Услуги: ${specs}. ${data.master.publicReviewsCount} отзыва.`
-      : `${displayName}, ${city}. Оставьте заявку — свяжемся в течение часа.`;
+  const meta = buildMasterMeta(data.master, data.stats);
   return {
-    title: { absolute: `${titleBase} — Честные мастера` },
-    description,
+    title: { absolute: meta.title },
+    description: meta.description,
     alternates: { canonical: `${publicUrl()}${path}` },
   };
 }

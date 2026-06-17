@@ -9,6 +9,7 @@ import {
   caseJsonLd,
   toJsonLdScript,
 } from "../../../lib/jsonLd";
+import { buildCaseMeta, buildPortfolioImageAlt, buildMasterAvatarAlt } from "../../../lib/seoMeta";
 import type { RabotyDetailResponse, RabotySimilarItem } from "../../../lib/types";
 
 /**
@@ -35,50 +36,20 @@ export async function generateMetadata(
   if (!data) return { robots: { index: false, follow: false } };
 
   const path = `/raboty/${slug}`;
-  const cityName = data.portfolio.city?.name ?? data.master.city ?? "";
-  const priceFmt = formatPriceForMeta(data.portfolio.priceFrom);
-
-  // Title pattern: "{title} в {city} — {price}, {area} м² — {master}"
-  const parts: string[] = [data.portfolio.title];
-  if (cityName) parts.push(`в ${cityName}`);
-  let titleBase = parts.join(" ");
-  const tail: string[] = [];
-  if (priceFmt) tail.push(priceFmt);
-  if (data.portfolio.area) {
-    const a = parseFloat(data.portfolio.area);
-    if (Number.isFinite(a) && a > 0) tail.push(`${formatNumber(a)} м²`);
-  }
-  if (tail.length > 0) titleBase += ` — ${tail.join(", ")}`;
-  const masterName = pickMasterDisplayName(data.master);
-  if (masterName) titleBase += ` — ${masterName}`;
-
-  // Truncate to ~70 chars total for SERP comfort.
-  const title = titleBase.length > 70 ? titleBase.slice(0, 67).trimEnd() + "…" : titleBase;
-
-  // Description: first 150 chars of description + price/master tail.
-  const descBody = (data.portfolio.description ?? "").slice(0, 150);
-  const descTail = priceFmt && masterName
-    ? ` Цена ${priceFmt}. Мастер ${masterName}.`
-    : priceFmt
-      ? ` Цена ${priceFmt}.`
-      : masterName
-        ? ` Мастер ${masterName}.`
-        : "";
-  const description = (descBody + descTail).trim() || `${data.portfolio.title} — фото, цена, мастер. Честные мастера.`;
-
+  const meta = buildCaseMeta(data.portfolio, data.master);
   const cover = data.portfolio.afterPhotos[0] ?? data.portfolio.beforePhotos[0] ?? null;
 
   return {
-    title: { absolute: title },
-    description: description.slice(0, 180),
+    title: { absolute: meta.title },
+    description: meta.description,
     alternates: { canonical: `${publicUrl()}${path}` },
     openGraph: cover
       ? {
-        title,
-        description: description.slice(0, 180),
+        title: meta.title,
+        description: meta.description,
         url: `${publicUrl()}${path}`,
         type: "article",
-        images: [{ url: cover }],
+        images: [{ url: cover, alt: buildPortfolioImageAlt(data.portfolio, "after", 0) }],
       }
       : undefined,
   };
