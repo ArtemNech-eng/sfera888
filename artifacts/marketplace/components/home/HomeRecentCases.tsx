@@ -7,14 +7,12 @@ interface Props {
 }
 
 /**
- * "Идеи" / "Реальные ремонты" section on the homepage (plan §20.2 [3] [7]).
+ * Editorial cases rail (plan §20.2 [3] [7], §21 direction).
  *
- * - When ≥3 real cases are published → renders them with full data (price,
- *   area, master, rating). Title swaps to "Реальные ремонты с ценами".
+ * - When ≥3 real cases are published → renders them with full data.
+ *   Title becomes "Реальные ремонты с ценами и сроками".
  * - When fewer than 3 → falls back to Unsplash CC0 stylistic references
- *   (plan §20.4 photo policy, plan §20.3.10 graceful demo). Each demo card
- *   carries a "Пример" badge instead of price/master so we never imply a
- *   fake case. Title softens to "Идеи для ремонта".
+ *   marked clearly with «Пример». Title softens to "Идеи для вашего ремонта".
  *
  * Both modes link to /raboty so the user lands on the real catalog.
  *
@@ -24,9 +22,6 @@ export function HomeRecentCases({ cases }: Props) {
   const isDemoMode = cases.length < 3;
   const realVisible = cases.slice(0, 6);
 
-  // While bootstrapping (no real cases yet) we show only demos. Once 3+
-  // real cases exist, demos disappear entirely — at that point our own
-  // content is enough to fill the rail.
   const items: Array<RealCaseItem | DemoCaseItem> = isDemoMode
     ? DEMO_CASES.slice(0, 6).map((d) => ({ kind: "demo", data: d }))
     : realVisible.map((r) => ({ kind: "real", data: r }));
@@ -34,56 +29,56 @@ export function HomeRecentCases({ cases }: Props) {
   if (items.length === 0) return null;
 
   return (
-    <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-secondary)]">
-            Идеи
-          </p>
-          <h2 className="mt-1 text-2xl font-bold tracking-tight text-[var(--color-text)] sm:text-3xl">
-            {isDemoMode ? "Идеи для вашего ремонта" : "Реальные ремонты с ценами и сроками"}
-          </h2>
-          <p className="mt-2 max-w-xl text-sm text-[var(--color-muted)] sm:text-base">
-            {isDemoMode
-              ? "Стилевые референсы, которые помогут определиться с направлением. По мере появления реальных работ мастеров заменяем подборку их кейсами."
-              : "Каждая работа — фото до и после, бюджет, длительность. Можно отправить заявку по понравившемуся проекту."}
-          </p>
+    <section className="bg-[var(--color-background)]">
+      <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-28">
+        <div className="flex flex-wrap items-end justify-between gap-6">
+          <div className="max-w-2xl">
+            <p className="font-eyebrow">{isDemoMode ? "Идеи" : "Реальные работы"}</p>
+            <h2 className="font-editorial mt-4 text-4xl text-[var(--color-text)] sm:text-5xl">
+              {isDemoMode
+                ? "Идеи для вашего ремонта."
+                : "Реальные ремонты с ценами и сроками."}
+            </h2>
+            <p className="mt-5 text-base leading-relaxed text-[var(--color-muted)]">
+              {isDemoMode
+                ? "Стилевые референсы — пока мастера наполняют каталог собственными работами. Сохраняйте, что зацепило, и ищите похожих исполнителей."
+                : "Каждая работа — фото до и после, бюджет, длительность. Понравился проект — оставьте заявку, подберём мастера, который сделает похоже."}
+            </p>
+          </div>
+          <Link
+            href="/raboty"
+            className="hidden text-sm font-semibold text-[var(--color-text)] underline decoration-[var(--color-border-strong)] underline-offset-4 transition hover:decoration-[var(--color-text)] sm:inline"
+          >
+            {isDemoMode ? "К каталогу работ →" : "Все работы →"}
+          </Link>
         </div>
-        <Link
-          href="/raboty"
-          className="hidden text-sm font-semibold text-[var(--color-secondary)] hover:underline sm:inline"
-        >
-          {isDemoMode ? "К каталогу работ →" : "Все работы →"}
-        </Link>
-      </div>
 
-      <ul className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {items.map((item) =>
-          item.kind === "real" ? (
-            <li key={`r-${item.data.id}`}>
-              <RealCaseCard data={item.data} />
-            </li>
-          ) : (
-            <li key={`d-${item.data.id}`}>
-              <DemoCaseCard data={item.data} />
-            </li>
-          ),
-        )}
-      </ul>
+        <ul className="mt-12 grid gap-x-3 gap-y-10 sm:grid-cols-2 sm:gap-x-4 lg:grid-cols-3">
+          {items.map((item) =>
+            item.kind === "real" ? (
+              <li key={`r-${item.data.id}`}>
+                <RealCaseCard data={item.data} />
+              </li>
+            ) : (
+              <li key={`d-${item.data.id}`}>
+                <DemoCaseCard data={item.data} />
+              </li>
+            ),
+          )}
+        </ul>
 
-      <div className="mt-6 sm:hidden">
-        <Link
-          href="/raboty"
-          className="inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--color-secondary)]"
-        >
-          {isDemoMode ? "К каталогу работ →" : "Все работы →"}
-        </Link>
+        <div className="mt-10 sm:hidden">
+          <Link
+            href="/raboty"
+            className="text-sm font-semibold text-[var(--color-text)] underline underline-offset-4"
+          >
+            {isDemoMode ? "К каталогу работ →" : "Все работы →"}
+          </Link>
+        </div>
       </div>
     </section>
   );
 }
-
-// ── Variants ─────────────────────────────────────────────────────────────────
 
 interface RealCaseItem {
   kind: "real";
@@ -106,15 +101,15 @@ function RealCaseCard({ data }: { data: RabotyListItem }) {
   return (
     <Link
       href={`/raboty/${data.slug}`}
-      className="group flex h-full flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white transition hover:-translate-y-0.5 hover:shadow-lg hover:border-[var(--color-secondary)]"
+      className="group block"
     >
-      <div className="relative aspect-[4/3] w-full overflow-hidden bg-[var(--color-background)]">
+      <div className="relative aspect-[4/3] w-full overflow-hidden bg-[var(--color-border)]">
         {cover ? (
           <img
             src={cover}
             alt={`${data.title}${cityPart} — фото работы`}
             loading="lazy"
-            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+            className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-xs text-[var(--color-muted)]">
@@ -123,17 +118,14 @@ function RealCaseCard({ data }: { data: RabotyListItem }) {
         )}
 
         {data.isFeatured ? (
-          <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full bg-[var(--color-accent)] px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-white shadow">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-              <path d="m12 2 3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z" />
-            </svg>
+          <span className="absolute left-3 top-3 inline-flex items-center gap-1 bg-[var(--color-text)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white">
             Топ
           </span>
         ) : null}
       </div>
 
-      <div className="flex flex-1 flex-col gap-2 p-4">
-        <h3 className="line-clamp-2 text-base font-semibold leading-snug text-[var(--color-text)] group-hover:text-[var(--color-secondary)]">
+      <div className="mt-4 space-y-2">
+        <h3 className="font-editorial text-xl text-[var(--color-text)] group-hover:text-[var(--color-primary)] sm:text-2xl">
           {data.title}
         </h3>
 
@@ -153,21 +145,22 @@ function RealCaseCard({ data }: { data: RabotyListItem }) {
           ) : null}
         </div>
 
-        <div className="mt-auto flex items-end justify-between gap-3 pt-2">
+        <div className="flex items-end justify-between gap-3 pt-1">
           {priceFrom != null ? (
-            <div>
-              <div className="text-[11px] uppercase tracking-wider text-[var(--color-muted)]">
-                от
-              </div>
-              <div className="text-base font-bold text-[var(--color-text)]">
+            <p className="text-sm">
+              <span className="text-[var(--color-faint)]">от </span>
+              <span className="font-semibold text-[var(--color-text)]">
                 {formatPrice(priceFrom)} ₽
-              </div>
-            </div>
+              </span>
+            </p>
           ) : <span />}
           <div className="text-right text-xs text-[var(--color-muted)]">
             <div className="line-clamp-1">{masterName}</div>
             {data.master.publicRating ? (
-              <div className="text-[var(--color-text)]">★ {parseFloat(data.master.publicRating).toFixed(1)}</div>
+              <div className="text-[var(--color-text)]">
+                <span aria-hidden>★ </span>
+                {parseFloat(data.master.publicRating).toFixed(1)}
+              </div>
             ) : null}
           </div>
         </div>
@@ -176,39 +169,31 @@ function RealCaseCard({ data }: { data: RabotyListItem }) {
   );
 }
 
-/**
- * Demo card. Visually similar to a real case so the rail looks consistent,
- * but **never** renders a price or master attribution. The "Пример" badge
- * sits where the "Топ" badge would, so a glance is enough to know it's a
- * placeholder.
- */
 function DemoCaseCard({ data }: { data: DemoCase }) {
   return (
     <Link
       href="/raboty"
-      className="group flex h-full flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white transition hover:-translate-y-0.5 hover:shadow-lg hover:border-[var(--color-secondary)]"
+      className="group block"
     >
-      <div className="relative aspect-[4/3] w-full overflow-hidden bg-[var(--color-background)]">
+      <div className="relative aspect-[4/3] w-full overflow-hidden bg-[var(--color-border)]">
         <img
           src={data.imageUrl}
           alt={data.alt}
           loading="lazy"
-          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+          className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
         />
-        <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-[var(--color-muted)] shadow-sm ring-1 ring-[var(--color-border)]">
+        <span className="absolute left-3 top-3 inline-flex items-center bg-[var(--color-surface)]/95 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-faint)]">
           Пример
         </span>
       </div>
 
-      <div className="flex flex-1 flex-col gap-2 p-4">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--color-secondary)]">
-          {data.category}
-        </span>
-        <h3 className="line-clamp-2 text-base font-semibold leading-snug text-[var(--color-text)] group-hover:text-[var(--color-secondary)]">
+      <div className="mt-4 space-y-2">
+        <p className="font-eyebrow text-[var(--color-primary)]">{data.category}</p>
+        <h3 className="font-editorial text-xl text-[var(--color-text)] group-hover:text-[var(--color-primary)] sm:text-2xl">
           {data.title}
         </h3>
-        <p className="mt-auto pt-1 text-xs text-[var(--color-muted)]">
-          Стилевой референс. Найдите мастера, который реализует похожий проект →
+        <p className="text-xs text-[var(--color-muted)]">
+          Стилевой референс — найдите мастера, который реализует похоже.
         </p>
       </div>
     </Link>

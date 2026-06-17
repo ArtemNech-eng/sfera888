@@ -1,45 +1,41 @@
 /**
- * "Как это работает" — funnel-aware version (plan §20.2 [9]). Replaces the
- * V1 1-2-3 abstract flow with the four planning stages (idea → visualise →
- * budget → match) that match the new top-funnel-first positioning.
+ * Editorial four-step narrative (plan §20.2 [9], §21 visual direction).
  *
- * Pulled out of the page module so each home block is its own file and can
- * be re-arranged or A/B-tested without touching app/page.tsx layout.
+ * Four planning stages — idea → visualise → budget → match — laid out as
+ * an editorial list rather than dashboard cards. Big serif numerals, each
+ * step ties to the corresponding entry point on the page.
  *
  * Server component, zero JS.
  */
 export function HomeHowItWorks() {
   return (
     <section className="border-t border-[var(--color-border)] bg-[var(--color-background)]">
-      <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
-        <div className="mx-auto max-w-2xl text-center">
-          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-primary)]">
-            Как это работает
-          </p>
-          <h2 className="mt-1 text-2xl font-bold tracking-tight text-[var(--color-text)] sm:text-3xl">
-            Четыре шага от идеи до готового ремонта
+      <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-28">
+        <div className="max-w-2xl">
+          <p className="font-eyebrow">Как это работает</p>
+          <h2 className="font-editorial mt-4 text-4xl text-[var(--color-text)] sm:text-5xl">
+            Четыре шага от идеи до готового ремонта.
           </h2>
-          <p className="mt-3 text-base text-[var(--color-muted)]">
+          <p className="mt-5 text-base leading-relaxed text-[var(--color-muted)]">
             Не нужно сразу искать подрядчика — сначала спланируйте, потом найдёте.
           </p>
         </div>
 
-        <ol className="mt-10 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <ol className="mt-16 grid gap-px overflow-hidden bg-[var(--color-border)] md:grid-cols-2 lg:grid-cols-4">
           {STEPS.map((step) => (
-            <li
-              key={step.n}
-              className="rounded-2xl border border-[var(--color-border)] bg-white p-6 shadow-sm"
-            >
-              <div className="flex items-center gap-3">
-                <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--color-primary-soft)] text-sm font-bold text-[var(--color-primary)]">
-                  {step.n}
-                </span>
-                <span className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">
-                  {step.kicker}
-                </span>
-              </div>
-              <h3 className="mt-4 text-lg font-bold text-[var(--color-text)]">{step.title}</h3>
-              <p className="mt-1 text-sm text-[var(--color-muted)]">{step.description}</p>
+            <li key={step.n} className="bg-[var(--color-surface)] p-7 sm:p-9">
+              <p className="font-editorial text-6xl text-[var(--color-text)]/15 sm:text-7xl">
+                {step.n}
+              </p>
+              <p className="mt-4 font-eyebrow text-[var(--color-primary)]">
+                {step.kicker}
+              </p>
+              <h3 className="font-editorial mt-3 text-2xl text-[var(--color-text)] sm:text-[1.625rem]">
+                {step.title}
+              </h3>
+              <p className="mt-3 text-sm leading-relaxed text-[var(--color-muted)]">
+                {step.description}
+              </p>
             </li>
           ))}
         </ol>
@@ -53,24 +49,28 @@ const STEPS = [
     n: "1",
     kicker: "Идеи",
     title: "Найдите идею",
-    description: "Просматривайте реальные ремонты с фото до и после, ценами и сроками.",
+    description:
+      "Реальные ремонты с фото до и после, бюджетом и сроками. Сохраняйте те, что зацепили.",
   },
   {
     n: "2",
     kicker: "AI-дизайн",
     title: "Визуализируйте",
-    description: "Загрузите фото вашей комнаты и получите дизайн в нужном стиле.",
+    description:
+      "Загрузите фото своей комнаты — получите дизайн в выбранном стиле, без долгих обсуждений с дизайнером.",
   },
   {
     n: "3",
     kicker: "Калькулятор",
     title: "Узнайте бюджет",
-    description: "Считаем смету по реальным сделкам в вашем городе.",
+    description:
+      "Считаем по фактическим сделкам в вашем городе. Не «от 5 000 ₽/м²», а близко к жизни.",
   },
   {
     n: "4",
     kicker: "Подбор",
     title: "Найдите мастера",
-    description: "Подберём проверенных специалистов и пришлём предложения.",
+    description:
+      "Подберём проверенных специалистов под ваш проект. Договор, без авансов, оплата по этапам.",
   },
 ] as const;
