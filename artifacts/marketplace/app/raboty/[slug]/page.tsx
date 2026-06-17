@@ -9,17 +9,26 @@ import {
   caseJsonLd,
   toJsonLdScript,
 } from "../../../lib/jsonLd";
-import { buildCaseMeta, buildPortfolioImageAlt, buildMasterAvatarAlt } from "../../../lib/seoMeta";
-import type { RabotyDetailResponse, RabotySimilarItem } from "../../../lib/types";
+import {
+  buildCaseMeta,
+  buildPortfolioImageAlt,
+  buildMasterAvatarAlt,
+} from "../../../lib/seoMeta";
+import type {
+  Master,
+  RabotyDetailResponse,
+  RabotySimilarItem,
+} from "../../../lib/types";
 
 /**
  * Standalone portfolio case page — `/raboty/[slug]`.
  *
  * Houzz-model first-class SEO asset (plan §11.7). Each published case is
  * its own indexable page with a self-contained CreativeWork + Service+Offer
- * schema. Photo galleries (before/after), price, duration, master profile
- * link, similar works rail, and a "Хочу такую же" lead form pre-filled with
- * the case context.
+ * schema. This V1.5 redesign moves the visuals first (cover hero, dramatic
+ * before/after pairing, full gallery rail), then context (description,
+ * author card, client review), then the conversion paths (similar cases,
+ * sticky lead form, calculator deep-link).
  */
 
 export const dynamic = "force-dynamic";
@@ -55,6 +64,8 @@ export async function generateMetadata(
   };
 }
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
 function pickMasterDisplayName(m: { publicTitle: string | null; alias: string | null; id: number }): string {
   if (m.publicTitle && m.publicTitle.trim().length > 0) return m.publicTitle.trim();
   if (m.alias && m.alias.trim().length > 0) return m.alias.trim();
@@ -65,20 +76,19 @@ function formatNumber(n: number): string {
   return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, "\u00A0");
 }
 
-function formatPriceForMeta(priceFrom: string | null): string | null {
-  if (!priceFrom) return null;
-  const n = parseFloat(priceFrom);
-  if (!Number.isFinite(n) || n <= 0) return null;
-  return `${formatNumber(n)} ₽`;
+function parseNumeric(value: string | null | undefined): number | null {
+  if (value == null) return null;
+  const n = parseFloat(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-function formatPriceRange(from: string | null, to: string | null): string | null {
-  const a = from ? parseFloat(from) : NaN;
-  const b = to ? parseFloat(to) : NaN;
-  if (Number.isFinite(a) && Number.isFinite(b) && a !== b) return `${formatNumber(a)}–${formatNumber(b)} ₽`;
-  if (Number.isFinite(a) && a > 0) return `от ${formatNumber(a)} ₽`;
-  if (Number.isFinite(b) && b > 0) return `до ${formatNumber(b)} ₽`;
-  return null;
+function formatPriceRange(from: string | null, to: string | null): { range: string | null; total: number | null } {
+  const a = parseNumeric(from);
+  const b = parseNumeric(to);
+  if (a != null && b != null && a !== b) return { range: `${formatNumber(a)}–${formatNumber(b)} ₽`, total: a };
+  if (a != null) return { range: `от ${formatNumber(a)} ₽`, total: a };
+  if (b != null) return { range: `до ${formatNumber(b)} ₽`, total: b };
+  return { range: null, total: null };
 }
 
 function formatDate(iso: string | null): string | null {
@@ -86,6 +96,13 @@ function formatDate(iso: string | null): string | null {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
   return d.toLocaleDateString("ru-RU", { year: "numeric", month: "long" });
+}
+
+function formatRating(value: string | null): string | null {
+  if (!value) return null;
+  const n = parseFloat(value);
+  if (!Number.isFinite(n)) return null;
+  return n.toFixed(1);
 }
 
 function pluralReviews(n: number): string {
@@ -97,14 +114,16 @@ function pluralReviews(n: number): string {
   return "отзывов";
 }
 
+// ── Page ─────────────────────────────────────────────────────────────────────
+
 export default async function RabotyCasePage(
   { params }: { params: Promise<RouteParams> },
 ) {
   const { slug } = await params;
   const [data, cities, services] = await Promise.all([
     fetchRabotyCase(slug),
-    fetchCities(),
-    fetchServices(),
+    fetchCities().catch(() => []),
+    fetchServices().catch(() => []),
   ]);
   if (!data) notFound();
 
@@ -113,10 +132,10 @@ export default async function RabotyCasePage(
   const sourcePageUrl = `${publicUrl()}/raboty/${slug}`;
 
   const cityName = portfolio.city?.name ?? master.city ?? null;
-  const priceTotalNum = portfolio.priceFrom ? parseFloat(portfolio.priceFrom) : null;
-  const areaNum = portfolio.area ? parseFloat(portfolio.area) : null;
+  const areaNum = parseNumeric(portfolio.area);
   const completedAtFormatted = formatDate(portfolio.completedAt);
-  const priceRange = formatPriceRange(portfolio.priceFrom, portfolio.priceTo);
+  const { range: priceRange, total: priceTotalNum } = formatPriceRange(portfolio.priceFrom, portfolio.priceTo);
+  const cover = portfolio.afterPhotos[0] ?? portfolio.beforePhotos[0] ?? null;
 
   // Resolve a default city/service for the lead form. Server-side fallback to
   // the first known city/service so the form is always usable.
@@ -131,21 +150,17 @@ export default async function RabotyCasePage(
     : null) ?? cities[0] ?? null;
   const fallbackService = matchService ?? services[0] ?? null;
 
-  // ── JSON-LD ─────────────────────────────────────────────────────────────
-  // Breadcrumbs: Home → Работы → этот кейс. Filtered hub URLs
-  // (/raboty/[service]/[city]) are a future addition (plan §11.7), so for now
-  // we keep breadcrumbs flat to avoid linking to 404 routes.
+  const allPhotoUrls = [
+    ...portfolio.afterPhotos,
+    ...portfolio.beforePhotos,
+  ];
+
+  // ── JSON-LD ─────────────────────────────────────────────────────────────────
   const breadcrumbsLd = breadcrumbJsonLd([
     { name: "Главная", url: `${publicUrl()}/` },
     { name: "Работы", url: `${publicUrl()}/raboty` },
     { name: portfolio.title, url: sourcePageUrl },
   ]);
-
-  const cover = portfolio.afterPhotos[0] ?? portfolio.beforePhotos[0] ?? null;
-  const allPhotoUrls = [
-    ...portfolio.afterPhotos,
-    ...portfolio.beforePhotos,
-  ];
 
   const caseLd = caseJsonLd({
     url: sourcePageUrl,
@@ -154,8 +169,8 @@ export default async function RabotyCasePage(
     coverImageUrl: cover,
     imageUrls: allPhotoUrls,
     completedAt: portfolio.completedAt,
-    areaSqm: areaNum && Number.isFinite(areaNum) ? areaNum : null,
-    priceTotal: priceTotalNum && Number.isFinite(priceTotalNum) ? priceTotalNum : null,
+    areaSqm: areaNum,
+    priceTotal: priceTotalNum,
     service: portfolio.service,
     city: portfolio.city,
     master: {
@@ -181,231 +196,366 @@ export default async function RabotyCasePage(
         dangerouslySetInnerHTML={{ __html: toJsonLdScript(caseLd) }}
       />
 
-      {/* Breadcrumbs (visual) */}
-      <nav className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
-        <div className="mx-auto max-w-6xl px-4 py-3 text-xs text-[var(--color-muted)] sm:px-6">
-          <Link href="/" className="hover:text-[var(--color-primary)]">Главная</Link>
-          <span aria-hidden className="mx-1.5">›</span>
-          <Link href="/raboty" className="hover:text-[var(--color-primary)]">Работы</Link>
-          {portfolio.service?.name ? (
-            <>
-              <span aria-hidden className="mx-1.5">›</span>
-              <span>{portfolio.service.name}</span>
-            </>
-          ) : null}
-          {(portfolio.city?.name || cityName) ? (
-            <>
-              <span aria-hidden className="mx-1.5">›</span>
-              <span>{portfolio.city?.name ?? cityName}</span>
-            </>
-          ) : null}
-        </div>
-      </nav>
+      {/* ── Cover hero ── */}
+      <CaseHero
+        portfolio={portfolio}
+        cityName={cityName}
+        completedAt={completedAtFormatted}
+        priceRange={priceRange}
+        areaNum={areaNum}
+      />
 
-      {/* Hero — H1 + meta */}
-      <section className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
-        <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-12">
-          <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--color-muted)]">
-            {portfolio.service?.name ? <span>{portfolio.service.name}</span> : null}
-            {cityName ? (
-              <>
-                {portfolio.service?.name ? <span aria-hidden>·</span> : null}
-                <span>{cityName}</span>
-              </>
-            ) : null}
-            {completedAtFormatted ? (
-              <>
-                <span aria-hidden>·</span>
-                <span>{completedAtFormatted}</span>
-              </>
-            ) : null}
-            {portfolio.isFeatured ? (
-              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-                Рекомендуется
-              </span>
-            ) : null}
-          </div>
-          <h1 className="mt-2 text-3xl font-semibold text-[var(--color-text)] sm:text-4xl">
-            {portfolio.title}
-          </h1>
-          <div className="mt-4 flex flex-wrap gap-3 text-sm">
-            {priceRange ? (
-              <span className="rounded-full bg-[var(--color-background)] px-3 py-1 font-medium text-[var(--color-text)]">
-                {priceRange}
-              </span>
-            ) : null}
-            {areaNum && Number.isFinite(areaNum) && areaNum > 0 ? (
-              <span className="rounded-full bg-[var(--color-background)] px-3 py-1 text-[var(--color-text)]">
-                {formatNumber(areaNum)} м²
-              </span>
-            ) : null}
-          </div>
-        </div>
-      </section>
+      {/* ── Before / After dramatic pairing ── */}
+      <BeforeAfterPair
+        title={portfolio.title}
+        beforePhotos={portfolio.beforePhotos}
+        afterPhotos={portfolio.afterPhotos}
+        city={portfolio.city}
+      />
 
-      {/* Photo gallery */}
-      <section className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-        <PhotoGallery
-          beforePhotos={portfolio.beforePhotos}
-          afterPhotos={portfolio.afterPhotos}
-          title={portfolio.title}
-          city={portfolio.city}
-        />
-      </section>
-
-      {/* Main content + lead form */}
-      <section className="mx-auto max-w-6xl px-4 pb-10 sm:px-6 sm:pb-14">
-        <div className="grid gap-8 lg:grid-cols-[1.3fr,1fr]">
-          <div className="space-y-10 lg:order-1">
-            {/* Description */}
-            {portfolio.description ? (
-              <div>
-                <h2 className="text-2xl font-semibold text-[var(--color-text)]">Что было сделано</h2>
-                <div className="mt-4 whitespace-pre-line text-[var(--color-text)] leading-relaxed">
-                  {portfolio.description}
-                </div>
-              </div>
-            ) : null}
-
-            {/* Author / master card */}
-            <MasterAuthorCard master={master} masterName={masterName} />
-
-            {/* Client review (if exists) */}
-            {portfolio.clientReviewText && portfolio.clientRating ? (
-              <div>
-                <h2 className="text-2xl font-semibold text-[var(--color-text)]">Отзыв клиента</h2>
-                <div className="mt-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-                  <div className="inline-flex items-center gap-1 rounded-full bg-[var(--color-background)] px-2 py-1 text-xs font-medium text-[var(--color-text)]">
-                    <span aria-hidden>★</span>
-                    <span>{portfolio.clientRating}</span>
+      {/* ── Description + extra gallery + author + review + similar ── */}
+      <section className="border-t border-[var(--color-border)] bg-white">
+        <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
+          <div className="grid gap-10 lg:grid-cols-[1.4fr_1fr] lg:gap-12">
+            <div className="space-y-12">
+              {/* Description */}
+              {portfolio.description ? (
+                <div>
+                  <h2 className="text-2xl font-bold tracking-tight text-[var(--color-text)] sm:text-3xl">
+                    Что было сделано
+                  </h2>
+                  <div className="mt-4 whitespace-pre-line text-base leading-relaxed text-[var(--color-text)]">
+                    {portfolio.description}
                   </div>
-                  <p className="mt-3 text-[var(--color-text)]">{portfolio.clientReviewText}</p>
                 </div>
-              </div>
-            ) : null}
+              ) : null}
 
-            {/* Similar works */}
-            {similar.length > 0 ? (
-              <div>
-                <h2 className="text-2xl font-semibold text-[var(--color-text)]">Похожие работы</h2>
-                <ul className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {similar.map((s) => (
-                    <SimilarCaseCard key={s.id} item={s} />
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-          </div>
+              {/* Extra gallery */}
+              <ExtraGallery
+                title={portfolio.title}
+                city={portfolio.city}
+                beforePhotos={portfolio.beforePhotos}
+                afterPhotos={portfolio.afterPhotos}
+              />
 
-          {/* Lead form sticky aside */}
-          <aside className="lg:order-2">
-            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm sm:p-6 lg:sticky lg:top-6">
-              <h2 className="text-xl font-semibold text-[var(--color-text)] sm:text-2xl">
-                Хочу такую же
-              </h2>
-              <p className="mt-1 text-sm text-[var(--color-muted)]">
-                Заявка уйдёт автору работы первой. Перезвоним в течение часа.
-              </p>
-              <div className="mt-5">
-                {fallbackCity && fallbackService ? (
-                  <LeadForm
-                    citySlug={fallbackCity.slug}
-                    serviceSlug={fallbackService.slug}
-                    sourcePageUrl={sourcePageUrl}
-                    attachedMasterId={master.id}
-                    attachedMasterTitle={masterName}
-                  />
-                ) : (
-                  <div className="text-sm text-[var(--color-muted)]">
-                    Заявка через эту страницу временно недоступна. Перейдите{" "}
-                    <Link href={master.slug ? `/master/${master.slug}` : "/mastera"} className="underline hover:text-[var(--color-primary)]">
-                      на страницу мастера
-                    </Link>
-                    , чтобы оставить заявку.
-                  </div>
-                )}
-              </div>
+              {/* Master / author */}
+              <MasterAuthorCard master={master} masterName={masterName} />
+
+              {/* Client review */}
+              {portfolio.clientReviewText && portfolio.clientRating ? (
+                <ClientReview text={portfolio.clientReviewText} rating={portfolio.clientRating} />
+              ) : null}
+
+              {/* Calculator deep-link */}
+              {areaNum != null && portfolio.city?.slug ? (
+                <CalculatorTeaser areaSqm={areaNum} citySlug={portfolio.city.slug} />
+              ) : null}
             </div>
-          </aside>
+
+            {/* ── Sticky lead form ── */}
+            <aside>
+              <div className="rounded-2xl border border-[var(--color-border)] bg-white p-5 shadow-md sm:p-6 lg:sticky lg:top-20">
+                <h2 id="lead-form" className="text-xl font-bold tracking-tight text-[var(--color-text)] sm:text-2xl">
+                  Хочу такую же
+                </h2>
+                <p className="mt-2 text-sm text-[var(--color-muted)]">
+                  Заявка уйдёт автору работы первой. Если не возьмёт за 30 минут —
+                  передадим похожим мастерам.
+                </p>
+                <ul className="mt-3 space-y-1 text-xs text-[var(--color-muted)]">
+                  {portfolio.service?.name ? (
+                    <li className="flex items-center gap-1.5">
+                      <CheckIcon /> Услуга: {portfolio.service.name}
+                    </li>
+                  ) : null}
+                  {cityName ? (
+                    <li className="flex items-center gap-1.5">
+                      <CheckIcon /> Город: {cityName}
+                    </li>
+                  ) : null}
+                  {areaNum != null ? (
+                    <li className="flex items-center gap-1.5">
+                      <CheckIcon /> Площадь референса: {areaNum} м²
+                    </li>
+                  ) : null}
+                </ul>
+                <div className="mt-5">
+                  {fallbackCity && fallbackService ? (
+                    <LeadForm
+                      citySlug={fallbackCity.slug}
+                      serviceSlug={fallbackService.slug}
+                      sourcePageUrl={sourcePageUrl}
+                      attachedMasterId={master.id}
+                      attachedMasterTitle={masterName}
+                    />
+                  ) : (
+                    <div className="text-sm text-[var(--color-muted)]">
+                      Заявка через эту страницу временно недоступна. Перейдите{" "}
+                      <Link
+                        href={master.slug ? `/master/${master.slug}` : "/mastera"}
+                        className="underline hover:text-[var(--color-primary)]"
+                      >
+                        на страницу мастера
+                      </Link>
+                      .
+                    </div>
+                  )}
+                </div>
+              </div>
+            </aside>
+          </div>
         </div>
       </section>
+
+      {/* ── Similar cases ── */}
+      {similar.length >= 3 ? (
+        <SimilarCases similar={similar} />
+      ) : null}
     </>
   );
 }
 
-function PhotoGallery({
+// ── Cover hero ───────────────────────────────────────────────────────────────
+
+function CaseHero({
+  portfolio,
+  cityName,
+  completedAt,
+  priceRange,
+  areaNum,
+}: {
+  portfolio: RabotyDetailResponse["portfolio"];
+  cityName: string | null;
+  completedAt: string | null;
+  priceRange: string | null;
+  areaNum: number | null;
+}) {
+  const cover = portfolio.afterPhotos[0] ?? portfolio.beforePhotos[0] ?? null;
+  return (
+    <section className="relative overflow-hidden bg-[var(--color-text)]">
+      {cover ? (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={cover}
+            alt=""
+            aria-hidden
+            className="absolute inset-0 h-full w-full object-cover opacity-55"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/35 via-black/55 to-black/85" />
+        </>
+      ) : (
+        <div className="absolute inset-0 bg-gradient-to-br from-[var(--color-secondary)]/95 to-[var(--color-secondary-hover)]" />
+      )}
+
+      <div className="relative mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16 lg:py-20">
+        {/* Breadcrumbs */}
+        <nav className="mb-6 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-white/70">
+          <Link href="/" className="hover:text-white">Главная</Link>
+          <span aria-hidden>/</span>
+          <Link href="/raboty" className="hover:text-white">Работы</Link>
+          {portfolio.service?.name ? (
+            <>
+              <span aria-hidden>/</span>
+              <span className="text-white/85">{portfolio.service.name}</span>
+            </>
+          ) : null}
+          {cityName ? (
+            <>
+              <span aria-hidden>/</span>
+              <span className="text-white/85">{cityName}</span>
+            </>
+          ) : null}
+        </nav>
+
+        {/* Eyebrow tags */}
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          {portfolio.service?.name ? (
+            <Tag tone="indigo">{portfolio.service.name}</Tag>
+          ) : null}
+          {cityName ? <Tag tone="primary">{cityName}</Tag> : null}
+          {portfolio.isFeatured ? <Tag tone="amber">Рекомендуем</Tag> : null}
+        </div>
+
+        <h1 className="mt-4 max-w-4xl text-3xl font-extrabold tracking-tight text-white sm:text-5xl lg:text-6xl">
+          {portfolio.title}
+        </h1>
+
+        {/* Stats strip */}
+        <dl className="mt-8 flex flex-wrap items-end gap-x-10 gap-y-5 border-t border-white/10 pt-6 text-white">
+          {priceRange ? (
+            <Stat label="Стоимость" value={priceRange} large />
+          ) : null}
+          {areaNum != null ? (
+            <Stat label="Площадь" value={`${formatNumber(areaNum)} м²`} large />
+          ) : null}
+          {completedAt ? (
+            <Stat label="Завершено" value={completedAt} />
+          ) : null}
+        </dl>
+
+        <div className="mt-8 flex flex-wrap gap-3">
+          <Link
+            href="#lead-form"
+            className="inline-flex h-12 items-center gap-2 rounded-xl bg-[var(--color-primary)] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--color-primary-hover)]"
+          >
+            Получить такую же
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M5 12h14" />
+              <path d="m12 5 7 7-7 7" />
+            </svg>
+          </Link>
+          <Link
+            href="/kalkulyator"
+            className="inline-flex h-12 items-center rounded-xl border border-white/30 bg-white/10 px-5 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/20"
+          >
+            Калькулятор
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Tag({ tone, children }: { tone: "indigo" | "primary" | "amber"; children: React.ReactNode }) {
+  const cls =
+    tone === "indigo"
+      ? "bg-[var(--color-secondary)] text-white"
+      : tone === "amber"
+        ? "bg-[var(--color-accent)] text-white"
+        : "bg-[var(--color-primary)] text-white";
+  return (
+    <span className={`inline-flex items-center rounded-full px-2.5 py-1 font-bold uppercase tracking-wider shadow-sm ${cls}`}>
+      {children}
+    </span>
+  );
+}
+
+function Stat({ label, value, large }: { label: string; value: string; large?: boolean }) {
+  return (
+    <div>
+      <dt className="text-[11px] font-semibold uppercase tracking-wider text-white/55">{label}</dt>
+      <dd className={`mt-1 font-bold tracking-tight ${large ? "text-2xl sm:text-3xl" : "text-base"}`}>{value}</dd>
+    </div>
+  );
+}
+
+// ── Before / After ───────────────────────────────────────────────────────────
+
+function BeforeAfterPair({
+  title,
   beforePhotos,
   afterPhotos,
-  title,
   city,
 }: {
+  title: string;
   beforePhotos: string[];
   afterPhotos: string[];
-  title: string;
   city: { name: string; slug: string | null } | null;
 }) {
   const before = beforePhotos[0] ?? null;
   const after = afterPhotos[0] ?? null;
-  const remaining = [...afterPhotos.slice(1), ...beforePhotos.slice(1)];
+  if (!before && !after) return null;
 
-  if (!before && !after && remaining.length === 0) {
-    return null;
-  }
-
-  // Build SEO-friendly alt-texts using the shared helper. Each photo gets
-  // a unique alt with city + before/after context — much better for image
-  // search than just the title.
   const portfolioRef = { title, city };
-  const beforeAlt = buildPortfolioImageAlt(portfolioRef, "before", 0);
-  const afterAlt = buildPortfolioImageAlt(portfolioRef, "after", 0);
+  const beforeAlt = before ? buildPortfolioImageAlt(portfolioRef, "before", 0) : "";
+  const afterAlt = after ? buildPortfolioImageAlt(portfolioRef, "after", 0) : "";
 
   return (
-    <div className="space-y-3">
-      {(before || after) ? (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <PhotoTile src={before} label="До" alt={beforeAlt} />
-          <PhotoTile src={after} label="После" alt={afterAlt} />
+    <section className="bg-[var(--color-background)] py-10 sm:py-14">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
+          <PairTile src={before} label="До" tone="muted" alt={beforeAlt} />
+          <PairTile src={after} label="После" tone="primary" alt={afterAlt} />
         </div>
-      ) : null}
-      {remaining.length > 0 ? (
-        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-          {remaining.slice(0, 8).map((u, i) => {
-            // First entries from afterPhotos[1..], then beforePhotos[1..].
-            const fromAfter = i < afterPhotos.length - 1;
-            const altType: "after" | "before" = fromAfter ? "after" : "before";
-            const indexWithinType = fromAfter ? i + 1 : i - (afterPhotos.length - 1) + 1;
-            const photoAlt = buildPortfolioImageAlt(portfolioRef, altType, indexWithinType);
-            return (
-              <li key={`${u}-${i}`} className="aspect-[4/3] overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-background)]">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={u} alt={photoAlt} loading="lazy" className="block h-full w-full object-cover" />
-              </li>
-            );
-          })}
-        </ul>
-      ) : null}
-    </div>
+        {before && after ? (
+          <p className="mt-4 text-center text-xs text-[var(--color-muted)]">
+            Слева — состояние до работ, справа — финальный результат.
+          </p>
+        ) : null}
+      </div>
+    </section>
   );
 }
 
-function PhotoTile({ src, label, alt }: { src: string | null; label: string; alt: string }) {
+function PairTile({ src, label, tone, alt }: { src: string | null; label: string; tone: "muted" | "primary"; alt: string }) {
+  const labelCls = tone === "primary"
+    ? "bg-[var(--color-primary)] text-white"
+    : "bg-white/95 text-[var(--color-text)]";
+
   if (!src) {
     return (
-      <div className="relative flex aspect-[4/3] items-center justify-center rounded-2xl border border-dashed border-[var(--color-border)] bg-[var(--color-background)] text-sm text-[var(--color-muted)]">
-        {label}
+      <div className="relative flex aspect-[4/3] items-center justify-center rounded-2xl border border-dashed border-[var(--color-border)] bg-white text-sm text-[var(--color-muted)]">
+        <span className={`absolute left-3 top-3 inline-flex items-center rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-wider ${labelCls}`}>
+          {label}
+        </span>
+        Фото отсутствует
       </div>
     );
   }
   return (
-    <div className="relative aspect-[4/3] overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-background)]">
+    <figure className="group relative aspect-[4/3] overflow-hidden rounded-2xl bg-[var(--color-text)] shadow-md ring-1 ring-black/5">
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={src} alt={alt} className="block h-full w-full object-cover" loading="eager" />
-      <span className="absolute left-3 top-3 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white">
+      <img
+        src={src}
+        alt={alt}
+        loading="eager"
+        className="block h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+      />
+      <span className={`absolute left-3 top-3 inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-wider shadow ${labelCls}`}>
         {label}
       </span>
+    </figure>
+  );
+}
+
+// ── Extra gallery ────────────────────────────────────────────────────────────
+
+function ExtraGallery({
+  title,
+  city,
+  beforePhotos,
+  afterPhotos,
+}: {
+  title: string;
+  city: { name: string; slug: string | null } | null;
+  beforePhotos: string[];
+  afterPhotos: string[];
+}) {
+  // First photo of each set is in the BeforeAfterPair already; use the rest.
+  const remaining: { url: string; type: "before" | "after"; idx: number }[] = [
+    ...afterPhotos.slice(1).map((url, i) => ({ url, type: "after" as const, idx: i + 1 })),
+    ...beforePhotos.slice(1).map((url, i) => ({ url, type: "before" as const, idx: i + 1 })),
+  ];
+
+  if (remaining.length === 0) return null;
+
+  return (
+    <div>
+      <h2 className="text-2xl font-bold tracking-tight text-[var(--color-text)] sm:text-3xl">
+        Ещё фото с объекта
+      </h2>
+      <ul className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
+        {remaining.slice(0, 9).map((item, i) => (
+          <li
+            key={`${item.url}-${i}`}
+            className="aspect-[4/3] overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-background)]"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={item.url}
+              alt={buildPortfolioImageAlt({ title, city }, item.type, item.idx)}
+              loading="lazy"
+              className="block h-full w-full object-cover transition-transform duration-300 hover:scale-[1.05]"
+            />
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
+
+// ── Author / Master card ─────────────────────────────────────────────────────
 
 function MasterAuthorCard({
   master,
@@ -414,94 +564,218 @@ function MasterAuthorCard({
   master: RabotyDetailResponse["master"];
   masterName: string;
 }) {
-  const rating = master.publicRating ? formatRating(master.publicRating) : null;
-  const reviewsCount = master.publicReviewsCount ?? 0;
+  const rating = formatRating(master.publicRating ?? master.rating);
+  const reviewsCount = master.publicReviewsCount;
+  const initials = masterName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? "")
+    .join("") || "М";
+
   return (
     <div>
-      <h2 className="text-2xl font-semibold text-[var(--color-text)]">Автор работы</h2>
+      <h2 className="text-2xl font-bold tracking-tight text-[var(--color-text)] sm:text-3xl">
+        Автор работы
+      </h2>
       <Link
         href={master.slug ? `/master/${master.slug}` : "/mastera"}
-        className="mt-4 flex items-center gap-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 hover:border-[var(--color-primary)]"
+        className="group mt-4 flex items-center gap-4 rounded-2xl border border-[var(--color-border)] bg-white p-5 shadow-sm transition hover:border-[var(--color-primary)] hover:shadow-md sm:p-6"
       >
         {master.avatarUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={master.avatarUrl}
             alt={buildMasterAvatarAlt(master)}
-            className="h-16 w-16 flex-none rounded-2xl border border-[var(--color-border)] object-cover"
+            className="h-16 w-16 flex-none rounded-2xl border border-[var(--color-border)] object-cover sm:h-20 sm:w-20"
           />
         ) : (
-          <div className="flex h-16 w-16 flex-none items-center justify-center rounded-2xl border border-[var(--color-border)] bg-[var(--color-primary)] text-lg font-semibold text-white">
-            {masterName.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("") || "М"}
+          <div
+            aria-hidden
+            className="flex h-16 w-16 flex-none items-center justify-center rounded-2xl border border-[var(--color-border)] bg-[var(--color-primary)] text-lg font-bold text-white sm:h-20 sm:w-20 sm:text-xl"
+          >
+            {initials}
           </div>
         )}
-        <div className="flex-1">
-          <div className="text-base font-semibold text-[var(--color-text)]">{masterName}</div>
-          <div className="mt-0.5 text-sm text-[var(--color-muted)]">
+        <div className="flex-1 min-w-0">
+          <p className="truncate text-base font-bold text-[var(--color-text)] group-hover:text-[var(--color-primary)] sm:text-lg">
+            {masterName}
+          </p>
+          <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs text-[var(--color-muted)] sm:text-sm">
             {master.city ? <span>{master.city}</span> : null}
             {rating ? (
-              <>
-                {master.city ? <span aria-hidden className="mx-1.5">·</span> : null}
-                <span>★ {rating}</span>
-              </>
+              <span className="inline-flex items-center gap-0.5 font-semibold text-[var(--color-text)]">
+                <span aria-hidden>★</span>
+                <span>{rating}</span>
+              </span>
             ) : null}
-            {reviewsCount > 0 ? (
-              <>
-                <span aria-hidden className="mx-1.5">·</span>
-                <span>{reviewsCount} {pluralReviews(reviewsCount)}</span>
-              </>
-            ) : null}
+            {reviewsCount > 0 ? <span>{reviewsCount} {pluralReviews(reviewsCount)}</span> : null}
           </div>
         </div>
+        <span
+          aria-hidden
+          className="hidden self-center text-sm font-semibold text-[var(--color-primary)] transition group-hover:translate-x-1 sm:inline-flex sm:items-center sm:gap-1"
+        >
+          К профилю
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M5 12h14" />
+            <path d="m12 5 7 7-7 7" />
+          </svg>
+        </span>
       </Link>
     </div>
   );
 }
 
-function formatRating(value: string | null): string | null {
-  if (!value) return null;
-  const n = parseFloat(value);
-  if (!Number.isFinite(n)) return null;
-  return n.toFixed(1);
+// ── Client review ────────────────────────────────────────────────────────────
+
+function ClientReview({ text, rating }: { text: string; rating: number }) {
+  return (
+    <div>
+      <h2 className="text-2xl font-bold tracking-tight text-[var(--color-text)] sm:text-3xl">
+        Отзыв клиента
+      </h2>
+      <blockquote className="mt-4 rounded-2xl border border-[var(--color-border)] bg-white p-6 shadow-sm sm:p-8">
+        <div className="mb-4 inline-flex items-center gap-1 rounded-full bg-[var(--color-accent-soft)] px-3 py-1 text-xs font-bold text-[var(--color-accent-hover)]">
+          <span aria-hidden>★</span>
+          <span>{rating} / 5</span>
+        </div>
+        <p className="text-base leading-relaxed text-[var(--color-text)] sm:text-lg">
+          {`«${text}»`}
+        </p>
+      </blockquote>
+    </div>
+  );
 }
 
-function SimilarCaseCard({ item }: { item: RabotySimilarItem }) {
-  const cover = item.afterPhotos[0] ?? item.beforePhotos[0] ?? null;
-  const priceFrom = item.priceFrom ? parseFloat(item.priceFrom) : null;
-  const area = item.area ? parseFloat(item.area) : null;
-  if (!item.slug) {
-    // No slug → don't expose as a link (would 404).
-    return null;
-  }
+// ── Calculator deep-link ─────────────────────────────────────────────────────
+
+function CalculatorTeaser({ areaSqm, citySlug }: { areaSqm: number; citySlug: string }) {
   return (
-    <li className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-primary)]">
-      <Link href={`/raboty/${item.slug}`} className="block">
-        {cover ? (
-          <div className="relative aspect-[4/3] w-full bg-[var(--color-background)]">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+    <Link
+      href={`/kalkulyator?area=${Math.round(areaSqm)}&city=${encodeURIComponent(citySlug)}`}
+      className="group flex flex-col gap-3 rounded-2xl border border-[var(--color-border)] bg-gradient-to-br from-[var(--color-primary-soft)] to-white p-6 shadow-sm transition hover:border-[var(--color-primary)] hover:shadow-md sm:flex-row sm:items-center sm:gap-5"
+    >
+      <span className="inline-flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl bg-white text-[var(--color-primary)] shadow-sm">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <rect x="4" y="3" width="16" height="18" rx="2" />
+          <path d="M8 7h8" />
+          <path d="M8 12h2" />
+          <path d="M14 12h2" />
+          <path d="M8 17h2" />
+          <path d="M14 17h2" />
+        </svg>
+      </span>
+      <div className="flex-1">
+        <p className="text-base font-bold text-[var(--color-text)]">
+          Сравнить с региональным калькулятором
+        </p>
+        <p className="mt-1 text-sm text-[var(--color-muted)]">
+          Покажем диапазон цен на ремонт {Math.round(areaSqm)} м² в этом городе по нашей методике.
+        </p>
+      </div>
+      <span className="self-end text-sm font-semibold text-[var(--color-primary)] transition group-hover:translate-x-1 sm:self-center">
+        Открыть →
+      </span>
+    </Link>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 text-[var(--color-primary)]" aria-hidden>
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  );
+}
+
+// ── Similar cases ────────────────────────────────────────────────────────────
+
+function SimilarCases({ similar }: { similar: RabotySimilarItem[] }) {
+  return (
+    <section className="bg-[var(--color-background)]">
+      <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-secondary)]">
+              Похожие работы
+            </p>
+            <h2 className="mt-1 text-2xl font-bold tracking-tight text-[var(--color-text)] sm:text-3xl">
+              Возможно, вам также понравится
+            </h2>
+          </div>
+          <Link
+            href="/raboty"
+            className="hidden text-sm font-semibold text-[var(--color-secondary)] hover:underline sm:inline"
+          >
+            Все работы →
+          </Link>
+        </div>
+
+        <ul className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {similar.map((s) => (
+            <SimilarCard key={s.id} item={s} />
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
+
+function SimilarCard({ item }: { item: RabotySimilarItem }) {
+  if (!item.slug) return null;
+  const cover = item.afterPhotos[0] ?? item.beforePhotos[0] ?? null;
+  const priceFrom = parseNumeric(item.priceFrom);
+  const area = parseNumeric(item.area);
+
+  return (
+    <li>
+      <Link
+        href={`/raboty/${item.slug}`}
+        className="group flex h-full flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg hover:border-[var(--color-secondary)]"
+      >
+        <div className="relative aspect-[4/3] overflow-hidden bg-[var(--color-background)]">
+          {cover ? (
+            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={cover}
               alt={buildPortfolioImageAlt(item, "after", 0)}
               loading="lazy"
-              className="block h-full w-full object-cover"
+              className="block h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.05]"
             />
-          </div>
-        ) : null}
-        <div className="p-4">
-          <div className="text-sm font-medium text-[var(--color-text)] line-clamp-2">{item.title}</div>
-          <div className="mt-2 flex flex-wrap gap-1.5 text-xs text-[var(--color-muted)]">
-            {priceFrom && Number.isFinite(priceFrom) && priceFrom > 0 ? (
-              <span className="rounded-full bg-[var(--color-background)] px-2 py-0.5 text-[var(--color-text)]">
-                от {formatNumber(priceFrom)} ₽
-              </span>
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-xs text-[var(--color-muted)]">
+              Без фото
+            </div>
+          )}
+        </div>
+        <div className="flex flex-1 flex-col gap-2 p-5">
+          <h3 className="line-clamp-2 text-base font-semibold leading-snug text-[var(--color-text)] group-hover:text-[var(--color-secondary)]">
+            {item.title}
+          </h3>
+          <div className="flex flex-wrap gap-x-2 gap-y-1 text-xs text-[var(--color-muted)]">
+            {item.service?.name ? <span>{item.service.name}</span> : null}
+            {item.city?.name ? (
+              <>
+                <span aria-hidden>·</span>
+                <span>{item.city.name}</span>
+              </>
             ) : null}
-            {area && Number.isFinite(area) && area > 0 ? (
-              <span className="rounded-full bg-[var(--color-background)] px-2 py-0.5 text-[var(--color-text)]">
-                {formatNumber(area)} м²
-              </span>
+            {area != null ? (
+              <>
+                <span aria-hidden>·</span>
+                <span>{area} м²</span>
+              </>
             ) : null}
-            {item.city?.name ? <span>{item.city.name}</span> : null}
           </div>
+          {priceFrom != null ? (
+            <div className="mt-auto pt-2">
+              <span className="text-[11px] uppercase tracking-wider text-[var(--color-muted)]">от</span>
+              <span className="ml-1 text-base font-bold text-[var(--color-text)]">
+                {formatNumber(priceFrom)} ₽
+              </span>
+            </div>
+          ) : null}
         </div>
       </Link>
     </li>
