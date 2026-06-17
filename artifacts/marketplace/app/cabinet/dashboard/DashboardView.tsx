@@ -11,6 +11,7 @@ import {
   type OrderHomeCard,
   type ActiveOrderHomeCard,
 } from "../_lib/cabinetClient";
+import { PushNotificationCard } from "../_components/PushNotificationCard";
 
 /**
  * Master's `/cabinet/dashboard` — overview screen that loads after login.
@@ -91,6 +92,9 @@ export function DashboardView() {
 
       {/* Daily checkin chip */}
       <CheckinChip />
+
+      {/* Push notifications opt-in (hides itself when already subscribed) */}
+      <PushNotificationCard compact />
 
       {/* FOMO banner */}
       {data.fomoBlock.isBlocked ? <FomoBanner block={data.fomoBlock} /> : null}

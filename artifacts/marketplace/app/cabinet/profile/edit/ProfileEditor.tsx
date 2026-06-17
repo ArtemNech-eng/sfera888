@@ -20,6 +20,7 @@ import { OrderFiltersSection } from "./_sections/OrderFiltersSection";
 import { ServicePricesSection } from "./_sections/ServicePricesSection";
 import { AvailabilityCard } from "./_sections/AvailabilityCard";
 import { AvatarCard } from "./_sections/AvatarCard";
+import { PushNotificationCard } from "../../_components/PushNotificationCard";
 
 /**
  * Top-level orchestrator for the cabinet profile editor.
@@ -169,6 +170,9 @@ export function ProfileEditor() {
 
       {/* Service prices */}
       <ServicePricesSection data={data} onPatch={patch} />
+
+      {/* Push notifications */}
+      <PushNotificationCard />
     </div>
   );
 }

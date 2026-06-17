@@ -666,3 +666,18 @@ export const cabinetWallet = {
       { amount, note },
     ),
 };
+
+
+// ── Web Push subscription ───────────────────────────────────────────────────
+
+export interface VapidKey {
+  key: string;
+}
+
+export const cabinetPush = {
+  vapidKey: () => req<VapidKey>("GET", "/push/vapid-public-key"),
+  subscribe: (sub: { endpoint: string; keys: { p256dh: string; auth: string } }) =>
+    req<{ ok: true }>("POST", "/push/subscribe", sub),
+  unsubscribe: (endpoint: string) =>
+    req<{ ok: true }>("DELETE", "/push/unsubscribe", { endpoint }),
+};
