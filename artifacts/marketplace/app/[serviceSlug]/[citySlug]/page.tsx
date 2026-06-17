@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import type { Metadata } from "next";
 import { fetchServiceCity } from "../../../lib/api";
 import { publicUrl } from "../../../lib/env";
@@ -49,22 +50,26 @@ const WORK_EXAMPLES = [
   "Консультация по задаче",
 ];
 
-const TRUST_BLOCKS: Array<{ t: string; d: string }> = [
+const TRUST_BLOCKS: Array<{ t: string; d: string; icon: React.ReactNode }> = [
   {
     t: "Заявки не публикуются открыто",
     d: "Ваше описание задачи не появится в открытом доступе на сайте.",
+    icon: <ShieldIcon />,
   },
   {
     t: "Телефон не показывается публично",
     d: "Контакт получает только мастер, которого подбираем под вашу задачу.",
+    icon: <PhoneIcon />,
   },
   {
     t: "Задача уходит в систему",
     d: "Мастера получают её в личном кабинете — без массовых рассылок и спама.",
+    icon: <BellIcon />,
   },
   {
     t: "Можно описать задачу заранее",
     d: "Опишите подробно, что нужно сделать, ещё до звонка мастера.",
+    icon: <PencilIcon />,
   },
 ];
 
@@ -87,6 +92,10 @@ const FAQ: Array<{ q: string; a: string }> = [
   },
 ];
 
+function formatNumber(n: number): string {
+  return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(n);
+}
+
 export default async function ServiceCityPage(
   { params }: { params: Promise<RouteParams> },
 ) {
@@ -99,14 +108,10 @@ export default async function ServiceCityPage(
   const sourcePageUrl = `${publicUrl()}/${serviceSlug}/${citySlug}`;
   const hasPrice = data.service.priceFrom != null;
 
-  // Description that mirrors generateMetadata so the schema.org block,
-  // <meta description>, and the visible body all tell the same story.
   const seoDescription =
-    `Оставьте заявку на услугу «${data.service.name}» в ${cityPrepositional}. ` +
-    `Подберём проверенного мастера.`;
+    `Оставьте заявку на услугу «${data.service.name}» в ${cityPrepositional}. Подберём проверенного мастера.`;
 
-  // schema.org payloads. Built only from trusted server-side data
-  // (api-server response + env), never from request body or query string.
+  // schema.org payloads
   const breadcrumbsLd = breadcrumbJsonLd([
     { name: "Главная", url: `${publicUrl()}/` },
     { name: "Услуги", url: `${publicUrl()}/uslugi` },
@@ -125,7 +130,6 @@ export default async function ServiceCityPage(
 
   return (
     <>
-      {/* schema.org JSON-LD — emitted server-side, never built from user input. */}
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: toJsonLdScript(breadcrumbsLd) }}
@@ -139,107 +143,211 @@ export default async function ServiceCityPage(
         dangerouslySetInnerHTML={{ __html: toJsonLdScript(faqLd) }}
       />
 
-      {/* Hero */}
-      <section className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
-        <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-16">
-          <h1 className="text-3xl font-semibold text-[var(--color-text)] sm:text-5xl">
+      {/* ── Cover hero ── */}
+      <section className="relative overflow-hidden bg-[var(--color-text)]">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -top-40 right-1/3 h-96 w-96 rounded-full bg-[var(--color-primary)] opacity-30 blur-3xl"
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -bottom-32 left-0 h-72 w-72 rounded-full bg-[var(--color-secondary)] opacity-25 blur-3xl"
+        />
+
+        <div className="relative mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16 lg:py-20">
+          <nav className="mb-6 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-white/70">
+            <Link href="/" className="hover:text-white">Главная</Link>
+            <span aria-hidden>/</span>
+            <Link href="/uslugi" className="hover:text-white">Услуги</Link>
+            <span aria-hidden>/</span>
+            <span className="text-white/85">{pageH1}</span>
+          </nav>
+
+          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-primary)]">
+            {data.city.name}
+          </p>
+          <h1 className="mt-1 max-w-3xl text-3xl font-extrabold tracking-tight text-white sm:text-5xl lg:text-6xl">
             {pageH1}
           </h1>
-          <p className="mt-3 text-base text-[var(--color-muted)] sm:text-lg">
-            Оставьте заявку — подберём проверенного мастера в вашем городе.
+          <p className="mt-4 max-w-2xl text-base text-white/75 sm:text-lg">
+            Оставьте заявку — подберём проверенного мастера. Без звонков в десять мест,
+            без публичных объявлений с вашим номером.
           </p>
-          <ul className="mt-5 flex flex-wrap gap-2">
+
+          <ul className="mt-6 flex flex-wrap gap-2">
             {HERO_BADGES.map((badge) => (
               <li
                 key={badge}
-                className="rounded-full border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-1 text-sm text-[var(--color-muted)]"
+                className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white backdrop-blur"
               >
+                <CheckMicroIcon />
                 {badge}
               </li>
             ))}
           </ul>
-          <a
-            href="#lead-form"
-            className="mt-6 inline-flex w-full items-center justify-center rounded-xl bg-[var(--color-primary)] px-5 py-3 text-base font-medium text-white transition hover:bg-[var(--color-primary-hover)] sm:hidden"
-          >
-            Оставить заявку
-          </a>
-        </div>
-      </section>
 
-      {/* Form + side info — form first on mobile */}
-      <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
-        <div className="grid gap-6 lg:grid-cols-2 lg:gap-8">
-          {/* Lead form */}
-          <div
-            id="lead-form"
-            className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm sm:p-6 lg:order-2"
-          >
-            <h2 className="text-xl font-semibold text-[var(--color-text)] sm:text-2xl">
-              Опишите задачу — подберём мастера
-            </h2>
-            <p className="mt-1 text-sm text-[var(--color-muted)]">
-              Перезвоним в течение часа в рабочее время.
-            </p>
-            <div className="mt-5">
-              <LeadForm
-                citySlug={data.city.slug}
-                serviceSlug={data.service.slug}
-                sourcePageUrl={sourcePageUrl}
-              />
-            </div>
-          </div>
-
-          {/* Price + examples + stats */}
-          <div className="grid content-start gap-4 lg:order-1">
-            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 sm:p-6">
-              <h2 className="text-xl font-semibold text-[var(--color-text)] sm:text-2xl">
-                {hasPrice ? `Цены от ${data.service.priceFrom} ₽` : "Сколько стоит услуга"}
-              </h2>
-              <p className="mt-2 text-sm text-[var(--color-muted)] sm:text-base">
-                {hasPrice
-                  ? `Базовая ставка для услуги «${data.service.name}» в ${cityPrepositional}. Точную стоимость мастер сориентирует после уточнения задачи.`
-                  : "Стоимость зависит от объёма работ — мастер сориентирует после уточнения задачи."}
-              </p>
-              <ul className="mt-4 grid gap-2 text-sm text-[var(--color-text)] sm:text-base">
-                {WORK_EXAMPLES.map((item) => (
-                  <li key={item} className="flex items-start gap-2">
-                    <span
-                      aria-hidden
-                      className="mt-2 inline-block h-1.5 w-1.5 flex-none rounded-full bg-[var(--color-primary)]"
-                    />
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <Stat label="Мастеров в городе" value={String(data.stats.mastersCount)} />
+          {/* Stats strip */}
+          <dl className="mt-8 grid gap-x-10 gap-y-5 border-t border-white/10 pt-6 text-white sm:grid-cols-4">
+            <Stat
+              label="Мастеров в городе"
+              value={data.stats.mastersCount > 0 ? formatNumber(data.stats.mastersCount) : "Подбираем"}
+            />
+            {hasPrice && data.service.priceFrom != null ? (
               <Stat
                 label="Цена от"
-                value={data.stats.minPrice != null ? `${data.stats.minPrice} ₽` : "—"}
+                value={`${formatNumber(data.service.priceFrom)} ₽`}
               />
+            ) : data.stats.minPrice != null ? (
+              <Stat label="Цена от" value={`${formatNumber(data.stats.minPrice)} ₽`} />
+            ) : null}
+            {data.stats.avgRating != null ? (
+              <Stat label="Средняя оценка" value={`★ ${data.stats.avgRating.toFixed(1)}`} />
+            ) : null}
+            {data.stats.reviewsCount > 0 ? (
               <Stat
-                label="Средняя оценка"
-                value={data.stats.avgRating != null ? data.stats.avgRating.toFixed(1) : "—"}
+                label="Отзывов"
+                value={formatNumber(data.stats.reviewsCount)}
               />
-              <Stat label="Отзывы клиентов" value={String(data.stats.reviewsCount)} />
-            </div>
+            ) : null}
+          </dl>
+
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Link
+              href="#lead-form"
+              className="inline-flex h-12 items-center gap-2 rounded-xl bg-[var(--color-primary)] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--color-primary-hover)]"
+            >
+              Оставить заявку
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M5 12h14" />
+                <path d="m12 5 7 7-7 7" />
+              </svg>
+            </Link>
+            <Link
+              href={`/kalkulyator?city=${encodeURIComponent(citySlug)}`}
+              className="inline-flex h-12 items-center rounded-xl border border-white/30 bg-white/10 px-5 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/20"
+            >
+              Калькулятор бюджета
+            </Link>
           </div>
         </div>
       </section>
 
-      {/* Masters list — top published in this city offering this service */}
+      {/* ── Form + price card two-column ── */}
+      <section className="border-b border-[var(--color-border)] bg-white">
+        <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
+          <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr] lg:gap-10">
+            {/* Price + work examples */}
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-[var(--color-border)] bg-white p-6 shadow-sm sm:p-8">
+                <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-primary)]">
+                  Стоимость
+                </p>
+                <h2 className="mt-1 text-2xl font-bold tracking-tight text-[var(--color-text)] sm:text-3xl">
+                  {hasPrice && data.service.priceFrom != null
+                    ? `${data.service.name} от ${formatNumber(data.service.priceFrom)} ₽`
+                    : `Сколько стоит ${data.service.name.toLowerCase()}`}
+                </h2>
+                <p className="mt-3 text-sm text-[var(--color-muted)] sm:text-base">
+                  {hasPrice
+                    ? `Базовая ставка по услуге «${data.service.name}» в ${cityPrepositional}. Точную сумму мастер сориентирует после уточнения задачи.`
+                    : "Стоимость зависит от объёма работ — мастер сориентирует после уточнения задачи. Базовый выезд на осмотр обычно бесплатный."}
+                </p>
+
+                <p className="mt-6 text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">
+                  Подходит для
+                </p>
+                <ul className="mt-3 grid gap-2 text-sm text-[var(--color-text)] sm:grid-cols-2">
+                  {WORK_EXAMPLES.map((item) => (
+                    <li key={item} className="flex items-start gap-2">
+                      <CheckIcon />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* Calculator teaser */}
+              <Link
+                href={`/kalkulyator?city=${encodeURIComponent(citySlug)}`}
+                className="group flex items-center gap-4 rounded-2xl border border-[var(--color-border)] bg-gradient-to-br from-[var(--color-primary-soft)] to-white p-5 shadow-sm transition hover:border-[var(--color-primary)] hover:shadow-md sm:p-6"
+              >
+                <span className="inline-flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-white text-[var(--color-primary)] shadow-sm">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <rect x="4" y="3" width="16" height="18" rx="2" />
+                    <path d="M8 7h8" />
+                    <path d="M8 12h2" />
+                    <path d="M14 12h2" />
+                    <path d="M8 17h2" />
+                    <path d="M14 17h2" />
+                  </svg>
+                </span>
+                <div className="flex-1">
+                  <p className="text-base font-bold text-[var(--color-text)]">
+                    Прикинуть бюджет ремонта в {cityPrepositional}
+                  </p>
+                  <p className="mt-1 text-sm text-[var(--color-muted)]">
+                    Калькулятор по реальным сделкам и региональным коэффициентам.
+                  </p>
+                </div>
+                <span className="hidden text-sm font-semibold text-[var(--color-primary)] transition group-hover:translate-x-1 sm:inline">
+                  →
+                </span>
+              </Link>
+            </div>
+
+            {/* Lead form sticky */}
+            <aside>
+              <div
+                id="lead-form"
+                className="rounded-2xl border border-[var(--color-border)] bg-white p-5 shadow-md sm:p-6 lg:sticky lg:top-20"
+              >
+                <h2 className="text-xl font-bold tracking-tight text-[var(--color-text)] sm:text-2xl">
+                  Опишите задачу
+                </h2>
+                <p className="mt-2 text-sm text-[var(--color-muted)]">
+                  Подберём мастера и перезвоним в течение часа в рабочее время.
+                </p>
+                <ul className="mt-3 space-y-1 text-xs text-[var(--color-muted)]">
+                  <li className="flex items-center gap-1.5">
+                    <CheckMicroIcon />
+                    Услуга: {data.service.name}
+                  </li>
+                  <li className="flex items-center gap-1.5">
+                    <CheckMicroIcon />
+                    Город: {data.city.name}
+                  </li>
+                </ul>
+                <div className="mt-5">
+                  <LeadForm
+                    citySlug={data.city.slug}
+                    serviceSlug={data.service.slug}
+                    sourcePageUrl={sourcePageUrl}
+                  />
+                </div>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Masters list ── */}
       {data.masters.length > 0 ? (
-        <section className="border-t border-[var(--color-border)] bg-[var(--color-background)]">
-          <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
-            <div className="flex flex-wrap items-end justify-between gap-2">
-              <h2 className="text-2xl font-semibold text-[var(--color-text)]">
-                Мастера: {data.service.name} в {cityPrepositional}
-              </h2>
-              <span className="text-sm text-[var(--color-muted)]">
-                Найдено: {data.masters.length}
+        <section className="bg-[var(--color-background)]">
+          <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-primary)]">
+                  Подбор
+                </p>
+                <h2 className="mt-1 text-2xl font-bold tracking-tight text-[var(--color-text)] sm:text-3xl">
+                  Мастера: {data.service.name} в {cityPrepositional}
+                </h2>
+                <p className="mt-2 max-w-xl text-sm text-[var(--color-muted)]">
+                  Каждый прошёл собеседование, стажировку и работает по договору.
+                </p>
+              </div>
+              <span className="hidden text-sm text-[var(--color-muted)] sm:inline">
+                {data.masters.length} {pluralMasters(data.masters.length)}
               </span>
             </div>
             <ul className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -253,11 +361,18 @@ export default async function ServiceCityPage(
         </section>
       ) : null}
 
-      {/* How it works */}
-      <section className="border-y border-[var(--color-border)] bg-[var(--color-surface)]">
-        <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
-          <h2 className="text-2xl font-semibold text-[var(--color-text)]">Как это работает</h2>
-          <ol className="mt-6 grid gap-4 sm:grid-cols-3">
+      {/* ── How it works ── */}
+      <section className="bg-white">
+        <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
+          <div className="mx-auto max-w-2xl text-center">
+            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-primary)]">
+              Как это работает
+            </p>
+            <h2 className="mt-1 text-2xl font-bold tracking-tight text-[var(--color-text)] sm:text-3xl">
+              Три шага до мастера
+            </h2>
+          </div>
+          <ol className="mt-8 grid gap-4 md:grid-cols-3">
             {[
               {
                 n: "1",
@@ -279,51 +394,67 @@ export default async function ServiceCityPage(
                 key={s.n}
                 className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-background)] p-6"
               >
-                <div className="text-3xl font-semibold text-[var(--color-primary)]">{s.n}</div>
-                <div className="mt-2 text-base font-medium text-[var(--color-text)]">{s.t}</div>
-                <div className="mt-1 text-sm text-[var(--color-muted)]">{s.d}</div>
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--color-primary-soft)] text-sm font-bold text-[var(--color-primary)]">
+                    {s.n}
+                  </span>
+                </div>
+                <h3 className="mt-4 text-lg font-bold text-[var(--color-text)]">{s.t}</h3>
+                <p className="mt-1 text-sm text-[var(--color-muted)]">{s.d}</p>
               </li>
             ))}
           </ol>
         </div>
       </section>
 
-      {/* Trust */}
-      <section className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
-        <h2 className="text-2xl font-semibold text-[var(--color-text)]">
-          Почему через «Честных мастеров»
-        </h2>
-        <ul className="mt-6 grid gap-4 sm:grid-cols-2">
-          {TRUST_BLOCKS.map((b) => (
-            <li
-              key={b.t}
-              className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5"
-            >
-              <div className="text-base font-medium text-[var(--color-text)]">{b.t}</div>
-              <div className="mt-1 text-sm text-[var(--color-muted)]">{b.d}</div>
-            </li>
-          ))}
-        </ul>
+      {/* ── Trust block ── */}
+      <section className="border-y border-[var(--color-border)] bg-[var(--color-background)]">
+        <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
+          <div className="mx-auto max-w-2xl text-center">
+            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-secondary)]">
+              Почему через нас
+            </p>
+            <h2 className="mt-1 text-2xl font-bold tracking-tight text-[var(--color-text)] sm:text-3xl">
+              Защищаем ваше время и контакт
+            </h2>
+          </div>
+          <ul className="mt-8 grid gap-4 sm:grid-cols-2">
+            {TRUST_BLOCKS.map((b) => (
+              <li
+                key={b.t}
+                className="flex items-start gap-4 rounded-2xl border border-[var(--color-border)] bg-white p-6 shadow-sm"
+              >
+                <span className="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
+                  {b.icon}
+                </span>
+                <div>
+                  <p className="text-base font-bold text-[var(--color-text)]">{b.t}</p>
+                  <p className="mt-1 text-sm text-[var(--color-muted)]">{b.d}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
       </section>
 
-      {/* SEO body text */}
-      <section className="border-y border-[var(--color-border)] bg-[var(--color-surface)]">
-        <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
-          <h2 className="text-2xl font-semibold text-[var(--color-text)]">
+      {/* ── SEO body text ── */}
+      <section className="bg-white">
+        <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6 sm:py-16">
+          <h2 className="text-2xl font-bold tracking-tight text-[var(--color-text)] sm:text-3xl">
             {pageH1}: как мы помогаем
           </h2>
-          <div className="mt-4 grid gap-3 text-base text-[var(--color-muted)]">
-            <p>
+          <div className="prose prose-slate mt-5 max-w-none text-base leading-relaxed text-[var(--color-text)]">
+            <p className="text-[var(--color-muted)]">
               Услуга «{data.service.name}» в {cityPrepositional} — частый запрос среди жителей
               города. Мы помогаем найти проверенного мастера, который возьмёт задачу на себя:
               согласует объём, рассчитает стоимость и приедет в удобное время.
             </p>
-            <p>
+            <p className="mt-4 text-[var(--color-muted)]">
               Оставьте заявку с описанием задачи и телефоном — её получит мастер, работающий
               по услуге «{data.service.name}» в {cityPrepositional}. Никаких звонков в десять
               разных мест и никаких публичных объявлений с вашим номером.
             </p>
-            <p>
+            <p className="mt-4 text-[var(--color-muted)]">
               Если задача срочная или объёмная, отметьте это в комментарии. Мастер свяжется
               первым и предложит ближайшее окно для выезда или начала работ.
             </p>
@@ -331,32 +462,132 @@ export default async function ServiceCityPage(
         </div>
       </section>
 
-      {/* FAQ */}
-      <section className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
-        <h2 className="text-2xl font-semibold text-[var(--color-text)]">Частые вопросы</h2>
-        <div className="mt-6 grid gap-3">
-          {FAQ.map((item) => (
-            <details
-              key={item.q}
-              className="group rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5"
-            >
-              <summary className="cursor-pointer list-none text-base font-medium text-[var(--color-text)]">
-                {item.q}
-              </summary>
-              <p className="mt-3 text-sm text-[var(--color-muted)]">{item.a}</p>
-            </details>
-          ))}
+      {/* ── FAQ ── */}
+      <section className="bg-[var(--color-background)]">
+        <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6 sm:py-16">
+          <div className="text-center">
+            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-primary)]">
+              Частые вопросы
+            </p>
+            <h2 className="mt-1 text-2xl font-bold tracking-tight text-[var(--color-text)] sm:text-3xl">
+              Что важно знать
+            </h2>
+          </div>
+          <div className="mt-8 grid gap-3">
+            {FAQ.map((item) => (
+              <details
+                key={item.q}
+                className="group rounded-2xl border border-[var(--color-border)] bg-white p-5 shadow-sm sm:p-6"
+              >
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-base font-semibold text-[var(--color-text)]">
+                  {item.q}
+                  <span
+                    aria-hidden
+                    className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[var(--color-primary-soft)] text-[var(--color-primary)] transition-transform group-open:rotate-45"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                      <path d="M12 5v14" />
+                      <path d="M5 12h14" />
+                    </svg>
+                  </span>
+                </summary>
+                <p className="mt-4 text-sm leading-relaxed text-[var(--color-muted)]">{item.a}</p>
+              </details>
+            ))}
+          </div>
         </div>
       </section>
     </>
   );
 }
 
+// ── Small components ────────────────────────────────────────────────────────
+
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-      <div className="text-xs uppercase tracking-wide text-[var(--color-muted)]">{label}</div>
-      <div className="mt-1 text-xl font-semibold text-[var(--color-text)]">{value}</div>
+    <div>
+      <dt className="text-[11px] font-semibold uppercase tracking-wider text-white/55">{label}</dt>
+      <dd className="mt-1 text-xl font-bold tracking-tight text-white sm:text-2xl">{value}</dd>
     </div>
   );
+}
+
+function CheckIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="mt-0.5 flex-shrink-0 text-[var(--color-primary)]"
+      aria-hidden
+    >
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  );
+}
+
+function CheckMicroIcon() {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="flex-shrink-0 text-[var(--color-primary)]"
+      aria-hidden
+    >
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  );
+}
+
+function ShieldIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 22s8-4 8-10V6l-8-3-8 3v6c0 6 8 10 8 10z" />
+    </svg>
+  );
+}
+
+function PhoneIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.37 1.9.72 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.35 1.85.59 2.81.72A2 2 0 0 1 22 16.92z" />
+    </svg>
+  );
+}
+
+function BellIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+    </svg>
+  );
+}
+
+function PencilIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z" />
+    </svg>
+  );
+}
+
+function pluralMasters(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return "мастеров";
+  if (mod10 === 1) return "мастер";
+  if (mod10 >= 2 && mod10 <= 4) return "мастера";
+  return "мастеров";
 }
