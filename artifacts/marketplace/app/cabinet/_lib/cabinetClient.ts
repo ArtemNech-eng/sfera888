@@ -276,3 +276,29 @@ export interface ProfileData {
 export const cabinetProfile = {
   fetch: () => req<ProfileData>("GET", "/profile"),
 };
+
+
+// ── Orders (read-only list) ─────────────────────────────────────────────────
+
+export interface OrderListItem {
+  id: number;
+  leadId: number | null;
+  city: string;
+  district: string | null;
+  serviceType: string;
+  area: number;
+  scheduledAt: string | null;
+  status: string;
+  masterWorkStatus: string | null;
+  proposedAmount: number | null;
+  paymentModel?: string;
+  tokensCharged?: number | null;
+  assignedAt?: string | null;
+  createdAt?: string;
+}
+
+export const cabinetOrders = {
+  fetchMy: (filter?: "active" | "completed" | "all") =>
+    req<OrderListItem[]>("GET", `/orders/my${filter ? `?filter=${filter}` : ""}`),
+  fetchAvailable: () => req<OrderListItem[]>("GET", "/orders/available"),
+};
