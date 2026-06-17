@@ -334,6 +334,95 @@ export interface PortfolioListResponse {
   used: number;
 }
 
+export interface PortfolioValidationError {
+  field: string;
+  code: string;
+  message: string;
+}
+
+export interface PortfolioCreateInput {
+  title?: string | null;
+  description?: string | null;
+  serviceTypeId?: number | null;
+  cityId?: number | null;
+  priceFrom?: string | number | null;
+  priceTo?: string | number | null;
+  area?: string | number | null;
+  completedAt?: string | null;
+}
+
+export type PortfolioUpdateInput = PortfolioCreateInput;
+
+export interface PortfolioMutateResponse {
+  ok: true;
+  item: PortfolioItem;
+}
+
+export interface PortfolioPhotoUploadResponse {
+  ok: true;
+  url: string;
+  item: PortfolioItem;
+}
+
+/**
+ * Multipart photo upload through the cabinet proxy.
+ *
+ * The api-server's `POST /master-pwa/portfolio/:id/photos?type=...` accepts
+ * a single `photo` field. The cabinet catch-all proxy forwards multipart
+ * bodies as-is (Content-Type with boundary preserved), so we send a plain
+ * `FormData` and let the proxy do the work.
+ */
+async function portfolioUploadPhoto(
+  id: number,
+  type: "before" | "after",
+  file: File,
+): Promise<PortfolioPhotoUploadResponse> {
+  const fd = new FormData();
+  fd.append("photo", file);
+  const res = await fetch(`${BASE}/portfolio/${id}/photos?type=${type}`, {
+    method: "POST",
+    credentials: "same-origin",
+    body: fd,
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({ error: res.statusText }));
+    const message =
+      (data as { errors?: { message?: string }[] }).errors?.[0]?.message
+      ?? (data as { message?: string }).message
+      ?? (data as { error?: string }).error
+      ?? "Не удалось загрузить фото";
+    throw new CabinetApiError(message, res.status, data);
+  }
+  return res.json() as Promise<PortfolioPhotoUploadResponse>;
+}
+
 export const cabinetPortfolio = {
   list: () => req<PortfolioListResponse>("GET", "/portfolio"),
+  create: (input: PortfolioCreateInput) =>
+    req<PortfolioMutateResponse>("POST", "/portfolio", input),
+  update: (id: number, input: PortfolioUpdateInput) =>
+    req<PortfolioMutateResponse>("PATCH", `/portfolio/${id}`, input),
+  remove: (id: number) =>
+    req<{ ok: true }>("DELETE", `/portfolio/${id}`),
+  uploadPhoto: portfolioUploadPhoto,
+  removePhoto: (id: number, type: "before" | "after", url: string) =>
+    req<PortfolioMutateResponse>("DELETE", `/portfolio/${id}/photos`, { type, url }),
+  assembleDescription: (input: {
+    before?: string;
+    steps?: string;
+    materials?: string;
+    challenges?: string;
+    otherDetails?: string;
+  }) => req<{ ok: boolean; description: string }>(
+    "POST",
+    "/portfolio/assemble-description",
+    input,
+  ),
+  smoothDescription: (text: string) =>
+    req<{
+      ok: boolean;
+      description: string | null;
+      note?: string;
+      meta?: { tokensUsed: number; model: string };
+    }>("POST", "/portfolio/smooth-description", { text }),
 };

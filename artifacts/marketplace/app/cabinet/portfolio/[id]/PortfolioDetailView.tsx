@@ -6,8 +6,6 @@ import { toast } from "sonner";
 import { cabinetPortfolio, type PortfolioItem } from "../../_lib/cabinetClient";
 import { resolvePhotoUrl } from "../../_lib/photo";
 
-const MASTER_PWA_URL = "https://sfera-master.ru/master-pwa/";
-
 interface Props {
   id: number | null;
 }
@@ -142,7 +140,12 @@ export function PortfolioDetailView({ id }: Props) {
         <div className="rounded-2xl border border-dashed border-[var(--color-border)] bg-white p-10 text-center text-sm text-[var(--color-muted)]">
           В кейсе ещё нет фотографий.
           <br />
-          Загрузить «до / после» можно в редакторе старого приложения.
+          <Link
+            href={`/cabinet/portfolio/${item.id}/edit`}
+            className="mt-2 inline-flex items-center gap-1 text-sm font-semibold text-[var(--color-primary)] hover:underline"
+          >
+            Загрузить «до / после» →
+          </Link>
         </div>
       )}
 
@@ -175,26 +178,25 @@ export function PortfolioDetailView({ id }: Props) {
         </section>
       ) : null}
 
-      {/* Editor handoff */}
+      {/* Editor link */}
       <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-background)] p-5 sm:p-6">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-[var(--color-muted)]">
           Редактирование
         </h2>
         <p className="mt-3 text-sm text-[var(--color-text)]">
-          Изменить название, описание, фото и метаданные кейса можно в старом
-          приложении. Помощник описания и AI-улучшение тоже там.
+          Изменить название, описание, фото и метаданные кейса. Помощник описания
+          и AI-улучшение текста — на странице редактора.
         </p>
-        <a
-          href={MASTER_PWA_URL}
-          rel="noopener noreferrer"
+        <Link
+          href={`/cabinet/portfolio/${item.id}/edit`}
           className="mt-4 inline-flex items-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[var(--color-primary-strong)]"
         >
-          Открыть редактор
+          Редактировать кейс
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <path d="M5 12h14" />
             <path d="m12 5 7 7-7 7" />
           </svg>
-        </a>
+        </Link>
       </section>
     </article>
   );

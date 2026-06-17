@@ -6,8 +6,6 @@ import { toast } from "sonner";
 import { cabinetPortfolio, type PortfolioItem } from "../_lib/cabinetClient";
 import { resolvePhotoUrl } from "../_lib/photo";
 
-const MASTER_PWA_URL = "https://sfera-master.ru/master-pwa/";
-
 /**
  * Read-only `/cabinet/portfolio` grid.
  *
@@ -53,18 +51,34 @@ export function PortfolioListView() {
   return (
     <div className="space-y-6">
       <header>
-        <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-primary)]">
-          Кейсы и портфолио
-        </p>
-        <h1 className="mt-1 text-3xl font-bold tracking-tight text-[var(--color-text)] sm:text-4xl">
-          Ваши работы
-        </h1>
-        <p className="mt-1 text-sm text-[var(--color-muted)]">
-          Опубликованные кейсы попадают на страницу
-          {" "}
-          <span className="font-semibold text-[var(--color-text)]">/raboty</span>{" "}
-          и в каталог Идей. Чем больше реальных фото — тем выше карточка в выдаче.
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-primary)]">
+              Кейсы и портфолио
+            </p>
+            <h1 className="mt-1 text-3xl font-bold tracking-tight text-[var(--color-text)] sm:text-4xl">
+              Ваши работы
+            </h1>
+            <p className="mt-1 text-sm text-[var(--color-muted)]">
+              Опубликованные кейсы попадают на страницу
+              {" "}
+              <span className="font-semibold text-[var(--color-text)]">/raboty</span>{" "}
+              и в каталог Идей. Чем больше реальных фото — тем выше карточка в выдаче.
+            </p>
+          </div>
+          {items !== null && used < limit ? (
+            <Link
+              href="/cabinet/portfolio/new"
+              className="inline-flex flex-shrink-0 items-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--color-primary-strong)]"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M5 12h14" />
+                <path d="M12 5v14" />
+              </svg>
+              Новый кейс
+            </Link>
+          ) : null}
+        </div>
       </header>
 
       {/* Stats strip */}
@@ -107,20 +121,19 @@ export function PortfolioListView() {
       {/* Editor handoff */}
       <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-background)] p-5 text-sm text-[var(--color-muted)]">
         <p className="font-semibold text-[var(--color-text)]">
-          Редактор кейсов — в старом приложении
+          Редактор кейсов теперь здесь
         </p>
         <p className="mt-1">
-          Создание новых кейсов, загрузка фото «до / после», помощник описания
-          и публикация — пока в старом приложении мастера. Перенос на
-          chestnye-mastera.ru идёт по плану.
+          Создавайте новые кейсы, загружайте фото «до / после» и редактируйте
+          описания прямо на chestnye-mastera.ru. Помощник описания и AI-улучшение
+          текста доступны на странице кейса.
         </p>
-        <a
-          href={MASTER_PWA_URL}
-          rel="noopener noreferrer"
+        <Link
+          href="/cabinet/portfolio/new"
           className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-[var(--color-primary)] hover:underline"
         >
-          Открыть редактор кейсов →
-        </a>
+          Создать новый кейс →
+        </Link>
       </div>
     </div>
   );
@@ -250,8 +263,7 @@ function EmptyState() {
         Добавьте первый — это поднимает карточку в Яндексе и каталоге Идей.
       </p>
       <a
-        href={MASTER_PWA_URL}
-        rel="noopener noreferrer"
+        href="/cabinet/portfolio/new"
         className="mt-5 inline-flex items-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[var(--color-primary-strong)]"
       >
         Создать первый кейс
