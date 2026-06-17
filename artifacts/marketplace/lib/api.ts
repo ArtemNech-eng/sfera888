@@ -6,6 +6,7 @@ import type {
   ServiceCityResponse,
   MasterDetailResponse,
   MasterListResponse,
+  MarketplaceStats,
   RabotyListResponse,
   RabotyDetailResponse,
 } from "./types";
@@ -288,4 +289,14 @@ export async function fetchRabotyCase(slug: string): Promise<RabotyDetailRespons
     if (e instanceof MarketplaceApiError && e.status === 404) return null;
     throw e;
   }
+}
+
+
+/**
+ * Platform-wide aggregate stats for the homepage trust block. Cached for
+ * 5 min — counts move slowly enough that this is plenty fresh, and the
+ * homepage is the highest-traffic page on the site.
+ */
+export async function fetchMarketplaceStats(): Promise<MarketplaceStats> {
+  return call<MarketplaceStats>(`/stats`);
 }

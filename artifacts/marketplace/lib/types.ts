@@ -223,3 +223,24 @@ export interface RabotyDetailResponse {
   master: Master;
   similar: RabotySimilarItem[];
 }
+
+
+// ── Marketplace stats (homepage trust block, plan §20.2 [10]) ───────────────
+
+/**
+ * Platform-wide aggregate counts. All numbers are nullable / can be 0; the UI
+ * hides empty cards rather than showing a misleading zero. Source:
+ * `GET /api/marketplace/stats`.
+ */
+export interface MarketplaceStats {
+  /** Orders moved to status='completed' (Source of "X завершённых ремонтов"). */
+  completedOrders: number;
+  /** Masters whose public profile is live on the marketplace. */
+  publishedMasters: number;
+  /** Cases visible at /raboty. */
+  publishedCases: number;
+  /** Average rating across published masters with a non-zero rating. */
+  avgRating: number | null;
+  /** Active cities in the catalog. */
+  citiesCount: number;
+}

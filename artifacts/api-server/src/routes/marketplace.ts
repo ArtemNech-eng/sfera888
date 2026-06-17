@@ -256,6 +256,70 @@ router.get("/services", async (_req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GET /api/marketplace/stats — platform-wide counts for the homepage trust
+// block (plan §20.2 [10]). Always returns numbers; if the marketplace is just
+// bootstrapping and a count is 0, the UI hides that card. Cached for 5 min on
+// the api-server side and another 5 min in marketplace ISR — counts move
+// slowly enough that 10-min freshness is fine.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get("/stats", async (_req, res) => {
+  try {
+    const [completedOrdersResult] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(ordersTable)
+      .where(and(eq(ordersTable.status, "completed"), isNull(ordersTable.deletedAt)));
+
+    const [publishedMastersResult] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(mastersTable)
+      .where(and(
+        eq(mastersTable.isPublished, true),
+        isNull(mastersTable.deletedAt),
+        isNotNull(mastersTable.slug),
+      ));
+
+    const [publishedCasesResult] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(masterPortfolioTable)
+      .where(and(
+        eq(masterPortfolioTable.isPublished, true),
+        isNotNull(masterPortfolioTable.slug),
+      ));
+
+    // Average rating across published masters with at least one rating point.
+    // Returns null if there are none yet (avoids `0` displaying as a falsely
+    // confident metric).
+    const [avgRatingResult] = await db
+      .select({
+        avg: sql<number | null>`avg(${mastersTable.rating})::float`,
+      })
+      .from(mastersTable)
+      .where(and(
+        eq(mastersTable.isPublished, true),
+        isNull(mastersTable.deletedAt),
+        sql`${mastersTable.rating} > 0`,
+      ));
+
+    const [citiesResult] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(citiesTable)
+      .where(eq(citiesTable.isActive, true));
+
+    setOkCache(res);
+    res.json({
+      completedOrders: completedOrdersResult?.count ?? 0,
+      publishedMasters: publishedMastersResult?.count ?? 0,
+      publishedCases: publishedCasesResult?.count ?? 0,
+      avgRating: avgRatingResult?.avg ?? null,
+      citiesCount: citiesResult?.count ?? 0,
+    });
+  } catch (e: unknown) {
+    console.error("[marketplace/stats]", e instanceof Error ? e.message : e);
+    res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GET /api/marketplace/service-city/:serviceSlug/:citySlug
 // SEO URL maps to /[serviceSlug]/[citySlug] (e.g. /santehnika/krasnodar).
 // ─────────────────────────────────────────────────────────────────────────────

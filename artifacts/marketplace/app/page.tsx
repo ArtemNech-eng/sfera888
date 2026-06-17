@@ -1,9 +1,10 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { fetchCities, fetchServices } from "../lib/api";
-import type { City, Service } from "../lib/types";
+import { fetchCities, fetchMarketplaceStats, fetchServices } from "../lib/api";
+import type { City, MarketplaceStats, Service } from "../lib/types";
 import { HomeHero } from "../components/home/HomeHero";
 import { HomeTrustStrip } from "../components/home/HomeTrustStrip";
+import { HomeTrustBlock } from "../components/home/HomeTrustBlock";
 
 // Skip prerender at build time — page depends on the marketplace API which is
 // only available at runtime. ISR caching (5 min) lives in lib/api.ts.
@@ -25,18 +26,26 @@ function defaultLink(service: Service, cities: City[]): string {
 }
 
 export default async function HomePage() {
-  // Both fetches are cached for 5 min in lib/api.ts; failures are tolerated
+  // All fetches are cached for 5 min in lib/api.ts; failures are tolerated
   // because the hero + trust strip render without any DB data — only the
-  // service grid below depends on these.
-  const [services, cities] = await Promise.all([
+  // service grid and trust block depend on these.
+  const [services, cities, stats] = await Promise.all([
     fetchServices().catch(() => [] as Service[]),
     fetchCities().catch(() => [] as City[]),
+    fetchMarketplaceStats().catch((): MarketplaceStats => ({
+      completedOrders: 0,
+      publishedMasters: 0,
+      publishedCases: 0,
+      avgRating: null,
+      citiesCount: 0,
+    })),
   ]);
 
   return (
     <>
       <HomeHero />
       <HomeTrustStrip />
+      <HomeTrustBlock stats={stats} />
 
       {/* Popular services — kept from V1 while we build the visual idea
           masonry (plan §11.11). Layout cleaned up: one card per service,
