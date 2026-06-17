@@ -2,64 +2,65 @@ import Link from "next/link";
 import { DEMO_CASES } from "../../lib/demoCases";
 
 /**
- * Editorial hero (plan §20.2 block [2], §21 visual direction).
+ * Cozy editorial hero (plan §20.2 [2], §21 cozy iteration).
  *
- * Houzz / AD-style: large serif headline carries the page, supporting
- * paragraph reads as a lead, three CTAs sit below. Right column is a
- * 3-photo collage rendered without rounded corners and minimal chrome —
- * looks like a magazine spread, not a product card.
- *
- * Photo collage uses Unsplash CC0 references until masters publish their
- * own work (plan §20.4 photo policy). Each tile clicks through to /raboty.
+ * Three-photo collage stays — that part felt right. What changed:
+ *   • headline scaled down from text-7xl to text-4xl/5xl so it reads as
+ *     a warm invitation, not a SaaS billboard
+ *   • hero shorter overall — `lg:aspect-[5/4]` instead of [4/5] so the
+ *     collage doesn't eat half the viewport on desktop
+ *   • photos rounded again (rounded-2xl) and lifted with warm shadows
+ *   • CTAs in clay terracotta with cozy shadows, not Apple-cold black
+ *   • handwritten kicker ("в нашем доме") gives the page personality
  */
 export function HomeHero() {
   const collage = [
-    DEMO_CASES[1], // wide composition — left column, full height
+    DEMO_CASES[1], // wide composition — left tile, full height
     DEMO_CASES[0], // top-right
     DEMO_CASES[3], // bottom-right
   ].filter((d): d is NonNullable<typeof d> => Boolean(d));
 
   return (
-    <section className="border-b border-[var(--color-border)] bg-[var(--color-background)]">
-      <div className="mx-auto max-w-6xl px-4 pb-20 pt-14 sm:px-6 sm:pb-24 sm:pt-20 lg:pt-28">
-        <div className="grid gap-12 lg:grid-cols-[1.1fr,1fr] lg:gap-16">
-          {/* ── Left: editorial copy ─────────────────────────────────── */}
+    <section className="relative overflow-hidden bg-[var(--color-background)]">
+      <div className="mx-auto max-w-6xl px-4 pb-16 pt-10 sm:px-6 sm:pb-20 sm:pt-14 lg:pb-24 lg:pt-20">
+        <div className="grid items-center gap-12 lg:grid-cols-[1.05fr,1fr] lg:gap-14">
+          {/* ── Left: copy ──────────────────────────────────────────── */}
           <div className="flex flex-col">
-            <p className="font-eyebrow">
-              Планировщик ремонта
+            <p className="font-handwritten text-2xl text-[var(--color-primary)] sm:text-3xl">
+              в нашем доме
             </p>
 
-            <h1 className="font-editorial mt-5 text-5xl text-[var(--color-text)] sm:text-6xl lg:text-[4.5rem]">
+            <h1 className="font-editorial mt-3 text-3xl text-[var(--color-text)] sm:text-4xl lg:text-5xl">
               Спланируйте ремонт прежде, чем искать мастера.
             </h1>
 
-            <p className="mt-7 max-w-xl text-base leading-relaxed text-[var(--color-muted)] sm:text-lg">
+            <p className="mt-6 max-w-xl text-base leading-relaxed text-[var(--color-muted)]">
               Реальные ремонты с фото и ценами, AI-визуализация интерьера и
               калькулятор по фактическим сделкам. Подбор проверенных мастеров
               остаётся на потом — когда вы уже знаете, чего хотите.
             </p>
 
-            <div className="mt-9 flex flex-wrap gap-3">
+            <div className="mt-8 flex flex-wrap gap-3">
               <PrimaryCta href="/raboty" label="Смотреть идеи" />
               <SecondaryCta href="/dizajn" label="AI-дизайн" />
               <SecondaryCta href="/kalkulyator" label="Калькулятор" />
             </div>
 
-            <p className="mt-10 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-[var(--color-faint)]">
+            <p className="mt-8 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-[var(--color-faint)]">
               <FootnoteItem>Договор на каждую работу</FootnoteItem>
               <FootnoteItem>Без авансов до выезда</FootnoteItem>
               <FootnoteItem>Бесплатно, без регистрации</FootnoteItem>
             </p>
           </div>
 
-          {/* ── Right: photo collage (no rounded corners, no shadows) ── */}
-          <div className="relative grid h-[26rem] grid-cols-2 grid-rows-2 gap-3 sm:h-[32rem] sm:gap-4 lg:h-auto lg:aspect-[4/5]">
+          {/* ── Right: 3-photo collage (kept, just shorter & rounded) ── */}
+          <div className="relative grid h-[22rem] grid-cols-2 grid-rows-2 gap-3 sm:h-[26rem] sm:gap-4 lg:h-auto lg:aspect-[5/4]">
             <CollageTile data={collage[0]!} className="row-span-2" />
             <CollageTile data={collage[1]!} />
             <CollageTile data={collage[2]!} />
 
-            <span className="absolute right-3 top-3 inline-flex items-center gap-1 bg-[var(--color-text)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white">
-              Идеи
+            <span className="font-handwritten absolute -top-2 -right-2 inline-flex rotate-[6deg] items-center bg-[var(--color-text)] px-3 py-1 text-base text-white shadow-cozy sm:text-lg">
+              идеи
             </span>
           </div>
         </div>
@@ -74,7 +75,7 @@ function PrimaryCta({ href, label }: { href: string; label: string }) {
   return (
     <Link
       href={href}
-      className="group inline-flex items-center gap-2 bg-[var(--color-text)] px-7 py-3.5 text-sm font-semibold tracking-wide text-white transition hover:bg-[var(--color-primary)]"
+      className="group inline-flex items-center gap-2 rounded-full bg-[var(--color-primary)] px-7 py-3.5 text-sm font-semibold tracking-wide text-white shadow-cozy transition hover:bg-[var(--color-primary-hover)] hover:shadow-cozy-md"
     >
       {label}
       <svg
@@ -100,7 +101,7 @@ function SecondaryCta({ href, label }: { href: string; label: string }) {
   return (
     <Link
       href={href}
-      className="inline-flex items-center gap-2 border border-[var(--color-border-strong)] bg-transparent px-6 py-3.5 text-sm font-semibold text-[var(--color-text)] transition hover:border-[var(--color-text)]"
+      className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-6 py-3.5 text-sm font-semibold text-[var(--color-text)] transition hover:border-[var(--color-text)] hover:shadow-cozy"
     >
       {label}
     </Link>
@@ -119,6 +120,7 @@ function FootnoteItem({ children }: { children: React.ReactNode }) {
         strokeWidth="2.4"
         strokeLinecap="round"
         strokeLinejoin="round"
+        className="text-[var(--color-primary)]"
         aria-hidden
       >
         <path d="M20 6 9 17l-5-5" />
@@ -140,7 +142,7 @@ function CollageTile({
   return (
     <Link
       href="/raboty"
-      className={`group relative overflow-hidden bg-[var(--color-border)] transition ${className}`}
+      className={`group relative overflow-hidden rounded-2xl bg-[var(--color-border)] shadow-cozy transition hover:shadow-cozy-md ${className}`}
     >
       <img
         src={data.imageUrl}
@@ -148,8 +150,8 @@ function CollageTile({
         loading="lazy"
         className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
       />
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-      <span className="absolute bottom-3 left-3 inline-flex bg-[var(--color-surface)]/95 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text)]">
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+      <span className="absolute bottom-3 left-3 inline-flex rounded-full bg-[var(--color-surface)]/95 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text)]">
         {data.category}
       </span>
     </Link>

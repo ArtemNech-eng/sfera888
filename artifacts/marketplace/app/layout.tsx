@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Manrope, Lora } from "next/font/google";
+import { Manrope, Lora, Caveat } from "next/font/google";
 import { headers } from "next/headers";
 import "./globals.css";
 import { Header } from "../components/Header";
@@ -7,10 +7,8 @@ import { Footer } from "../components/Footer";
 import { YandexMetrika } from "../components/YandexMetrika";
 import { publicUrl } from "../lib/env";
 
-// Manrope is the brand sans-serif. Loaded via `next/font/google` so it ships
+// Manrope — body / UI sans-serif. Loaded via `next/font/google` so it ships
 // with `font-display: swap` and Next handles the CSS-variable wiring.
-// `globals.css` aliases `--font-manrope` to `--font-sans` so utility classes
-// (`font-sans`, `font-medium`, etc.) keep resolving.
 const manrope = Manrope({
   subsets: ["latin", "cyrillic"],
   variable: "--font-manrope",
@@ -18,16 +16,23 @@ const manrope = Manrope({
   display: "swap",
 });
 
-// Lora is the editorial serif used for h1/h2 display headings. We prefer it
-// over Fraunces / EB Garamond because it ships full Cyrillic coverage in
-// Google Fonts (our market is RU-first). Variable axis is `wght` 400-700,
-// both regular and italic. The `--font-serif` token in globals.css points
-// at this variable.
+// Lora — editorial serif for h1/h2. Variable axis covers wght 400-700,
+// regular and italic. Cyrillic supported.
 const lora = Lora({
   subsets: ["latin", "cyrillic"],
   variable: "--font-lora",
   weight: ["400", "500", "600", "700"],
   style: ["normal", "italic"],
+  display: "swap",
+});
+
+// Caveat — handwritten warmth for kickers and accents. One-or-two-word
+// labels above sections; never used for body or whole sentences.
+// Cyrillic supported.
+const caveat = Caveat({
+  subsets: ["latin", "cyrillic"],
+  variable: "--font-caveat",
+  weight: ["400", "500", "600", "700"],
   display: "swap",
 });
 
@@ -94,7 +99,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const ownChrome = isOwnChromeRoute(pathname);
 
   return (
-    <html lang="ru" className={`${manrope.variable} ${lora.variable}`}>
+    <html lang="ru" className={`${manrope.variable} ${lora.variable} ${caveat.variable}`}>
       <body>
         {ownChrome ? null : <Header />}
         <main className="flex-1">{children}</main>

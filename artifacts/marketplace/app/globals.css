@@ -1,74 +1,80 @@
 @import "tailwindcss";
 
-/* ─── Warm editorial palette ───────────────────────────────────────
-   Hand-tuned for an interior-design / planning service. Reads
-   premium and architectural rather than e-commerce. References:
-   Houzz, Architectural Digest, The Spruce, Apple HIG.
+/* ─── Cozy editorial palette ────────────────────────────────────────
+   Warmer iteration of the editorial direction. Tuned for an at-home
+   intimate feel: cream surfaces, softer rounded geometry, warm-tone
+   shadows. Less "architectural magazine", more "home & living blog".
+   References: The Spruce, Apartment Therapy, Real Simple, INMYROOM.
 
-   Naming convention is unchanged from the previous palette so the
-   token swap is a no-touch refactor for component code: every place
-   that used `var(--color-primary)` keeps working, it just renders in
-   muted clay terracotta now instead of teal.
+   Token names are unchanged from the previous palette so component
+   code keeps working — this is a tone shift, not a refactor.
    ───────────────────────────────────────────────────────────────── */
 @theme {
-  /* Text — graphite scale, no blue. */
+  /* Text — graphite stays, stays warm-readable on cream. */
   --color-text: #1A1A1A;
-  --color-muted: #5C5C5C;
-  --color-faint: #8A8A8A;
+  --color-muted: #5F5853;
+  --color-faint: #8E867F;
 
-  /* Surfaces — warm-white, not cold cyan. */
-  --color-background: #FAFAF7;
+  /* Surfaces — warm cream is the primary background, white on top
+     for cards and elevated content. */
+  --color-background: #FBF6EC;       /* page cream */
+  --color-cream-deep: #F1E8D6;       /* alt section accent */
   --color-surface: #FFFFFF;
   --color-surface-elevated: #FFFFFF;
-  --color-border: #E8E5E0;
-  --color-border-strong: #D4CFC7;
+  --color-border: #EADFCB;           /* warm beige hairline */
+  --color-border-strong: #D6C7A6;
 
-  /* Primary accent — muted clay (terracotta with sand). The single
-     colour the brand leans on for CTAs, links, focus rings.
-     Carries an "interior" association without screaming for attention. */
-  --color-primary: #A4642A;
-  --color-primary-hover: #8B5424;
-  --color-primary-strong: #8B5424;
-  --color-primary-soft: #F4ECE3;
-  --color-primary-ring: #C99775;
+  /* Primary — softer terracotta (more red, less mud), keeps the
+     "interior" association without going corporate-orange. */
+  --color-primary: #B5683B;
+  --color-primary-hover: #9A5530;
+  --color-primary-strong: #9A5530;
+  --color-primary-soft: #F8EBDA;
+  --color-primary-ring: #D6A07A;
 
-  /* Money / calculator surface — deep forest. Used sparingly: only
-     where the user is dealing with rubles (calculator, balance,
-     payment proofs). Avoids the "marketplace green" association. */
-  --color-money: #2D5F3F;
-  --color-money-soft: #E8F0EA;
+  /* Money / "ok" — soft sage. Used only on calculator + balance
+     surfaces so green never reads as "marketplace" elsewhere. */
+  --color-money: #5E7A4D;
+  --color-money-soft: #E9EFE2;
 
-  /* Semantic status colours. Status pills, banners, tags. */
-  --color-ok: #2D5F3F;
-  --color-ok-soft: #E8F0EA;
-  --color-warning: #A4642A;
-  --color-warning-soft: #F4ECE3;
+  /* Status colours — kept gentle. */
+  --color-ok: #5E7A4D;
+  --color-ok-soft: #E9EFE2;
+  --color-warning: #B5683B;
+  --color-warning-soft: #F8EBDA;
   --color-danger: #9F2828;
   --color-danger-soft: #FBEBEB;
 
   /* Legacy aliases — kept so callsites that imported `--color-accent`
-     or `--color-secondary` still resolve. They now point at the
-     warm palette, not the old amber/indigo. */
-  --color-accent: #A4642A;
-  --color-accent-hover: #8B5424;
-  --color-accent-soft: #F4ECE3;
-  --color-secondary: #2D5F3F;
-  --color-secondary-hover: #234B30;
-  --color-secondary-soft: #E8F0EA;
+     or `--color-secondary` still resolve. */
+  --color-accent: #B5683B;
+  --color-accent-hover: #9A5530;
+  --color-accent-soft: #F8EBDA;
+  --color-secondary: #5E7A4D;
+  --color-secondary-hover: #4D6440;
+  --color-secondary-soft: #E9EFE2;
 
-  /* Less rounded — editorial / architectural feel, not iOS-app.
-     Photos and hero sections override this with rounded-none. */
-  --radius-card: 8px;
+  /* Geometry — softer round corners on cards & photos.
+     Hero / cover photos override individually. */
+  --radius-card: 16px;
 
-  /* ─── Typography ─────────────────────────────────────────────────
-     Lora is the variable serif loaded in app/layout.tsx via
-     next/font/google. It powers display headings only (RU+Latin). Manrope
-     stays for body, UI, numerals — it pairs cleanly with Lora and we
-     don't sacrifice the screen-readability we already had.
-     ──────────────────────────────────────────────────────────────── */
+  /* Cozy warm shadows — barely-there ambient tint instead of cold
+     near-black. Used as `.shadow-cozy` / `.shadow-cozy-md` below. */
+  --shadow-cozy: 0 1px 2px rgba(120, 75, 30, 0.05),
+                 0 4px 16px rgba(120, 75, 30, 0.05);
+  --shadow-cozy-md: 0 2px 4px rgba(120, 75, 30, 0.06),
+                    0 12px 28px rgba(120, 75, 30, 0.07);
+
+  /* ─── Typography ───────────────────────────────────────────────
+     Lora — editorial serif (h1/h2). Manrope — body / UI / numerals.
+     Caveat — handwritten warmth for kicker labels and accents.
+     All three load via next/font/google in app/layout.tsx and
+     expose CSS variables aliased here.
+     ─────────────────────────────────────────────────────────── */
   --font-serif: var(--font-lora), "EB Garamond", Georgia, serif;
   --font-sans: var(--font-manrope), -apple-system, BlinkMacSystemFont,
     "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-handwritten: var(--font-caveat), "Caveat", "Kalam", cursive;
 }
 
 html {
@@ -85,17 +91,17 @@ body {
   flex-direction: column;
 }
 
-/* Editorial display heading utility. Apply via `className="font-editorial"`
-   to give an h1/h2 the magazine-spread feel — tight tracking, slight
-   weight, serif. Headings without this class stay sans (UI feel). */
+/* Editorial display heading — applied to large hero / section titles.
+   Slight letter-spacing pull, snug line-height for that magazine feel. */
 .font-editorial {
   font-family: var(--font-serif);
   font-weight: 500;
-  letter-spacing: -0.02em;
-  line-height: 1.05;
+  letter-spacing: -0.015em;
+  line-height: 1.1;
 }
 
-/* Optional: editorial small-caps eyebrow above titles. */
+/* Editorial small-caps eyebrow — quiet, neutral. Use this when a
+   section needs a clean structural label. */
 .font-eyebrow {
   font-family: var(--font-sans);
   font-weight: 600;
@@ -103,4 +109,23 @@ body {
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--color-muted);
+}
+
+/* Handwritten kicker — adds the "personal voice" feel above warm
+   sections (Идеи, Как это работает, Цифры платформы и т.п.).
+   Use sparingly — one per section; overuse tips back into kitsch. */
+.font-handwritten {
+  font-family: var(--font-handwritten);
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+/* Soft warm shadow utility classes — applied to lift cards above the
+   cream background without the cold near-black drop of `shadow-md`. */
+.shadow-cozy {
+  box-shadow: var(--shadow-cozy);
+}
+.shadow-cozy-md {
+  box-shadow: var(--shadow-cozy-md);
 }

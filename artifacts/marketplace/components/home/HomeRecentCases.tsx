@@ -7,16 +7,15 @@ interface Props {
 }
 
 /**
- * Editorial cases rail (plan §20.2 [3] [7], §21 direction).
+ * Cozy cases rail (plan §21 cozy iteration).
  *
  * - When ≥3 real cases are published → renders them with full data.
- *   Title becomes "Реальные ремонты с ценами и сроками".
  * - When fewer than 3 → falls back to Unsplash CC0 stylistic references
- *   marked clearly with «Пример». Title softens to "Идеи для вашего ремонта".
+ *   marked clearly with «Пример».
  *
- * Both modes link to /raboty so the user lands on the real catalog.
- *
- * Server component, zero JS.
+ * Cards have rounded corners and warm soft shadows, sit on white surface
+ * to contrast against the cream page bg. Reads like a cozy magazine
+ * pull-out, not a marketplace listing.
  */
 export function HomeRecentCases({ cases }: Props) {
   const isDemoMode = cases.length < 3;
@@ -29,31 +28,33 @@ export function HomeRecentCases({ cases }: Props) {
   if (items.length === 0) return null;
 
   return (
-    <section className="bg-[var(--color-background)]">
-      <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-28">
+    <section className="bg-[var(--color-surface)]">
+      <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
         <div className="flex flex-wrap items-end justify-between gap-6">
           <div className="max-w-2xl">
-            <p className="font-eyebrow">{isDemoMode ? "Идеи" : "Реальные работы"}</p>
-            <h2 className="font-editorial mt-4 text-4xl text-[var(--color-text)] sm:text-5xl">
+            <p className="font-handwritten text-2xl text-[var(--color-primary)] sm:text-3xl">
+              {isDemoMode ? "идеи" : "реальные ремонты"}
+            </p>
+            <h2 className="font-editorial mt-3 text-3xl text-[var(--color-text)] sm:text-4xl">
               {isDemoMode
                 ? "Идеи для вашего ремонта."
-                : "Реальные ремонты с ценами и сроками."}
+                : "Ремонты с фото, ценами и сроками."}
             </h2>
-            <p className="mt-5 text-base leading-relaxed text-[var(--color-muted)]">
+            <p className="mt-4 max-w-xl text-base leading-relaxed text-[var(--color-muted)]">
               {isDemoMode
-                ? "Стилевые референсы — пока мастера наполняют каталог собственными работами. Сохраняйте, что зацепило, и ищите похожих исполнителей."
+                ? "Стилевые референсы — пока мастера наполняют каталог собственными работами. Сохраняйте, что зацепило."
                 : "Каждая работа — фото до и после, бюджет, длительность. Понравился проект — оставьте заявку, подберём мастера, который сделает похоже."}
             </p>
           </div>
           <Link
             href="/raboty"
-            className="hidden text-sm font-semibold text-[var(--color-text)] underline decoration-[var(--color-border-strong)] underline-offset-4 transition hover:decoration-[var(--color-text)] sm:inline"
+            className="hidden text-sm font-semibold text-[var(--color-text)] underline decoration-[var(--color-primary)] decoration-2 underline-offset-4 transition hover:decoration-[var(--color-text)] sm:inline"
           >
             {isDemoMode ? "К каталогу работ →" : "Все работы →"}
           </Link>
         </div>
 
-        <ul className="mt-12 grid gap-x-3 gap-y-10 sm:grid-cols-2 sm:gap-x-4 lg:grid-cols-3">
+        <ul className="mt-10 grid gap-x-4 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
           {items.map((item) =>
             item.kind === "real" ? (
               <li key={`r-${item.data.id}`}>
@@ -67,10 +68,10 @@ export function HomeRecentCases({ cases }: Props) {
           )}
         </ul>
 
-        <div className="mt-10 sm:hidden">
+        <div className="mt-8 sm:hidden">
           <Link
             href="/raboty"
-            className="text-sm font-semibold text-[var(--color-text)] underline underline-offset-4"
+            className="text-sm font-semibold text-[var(--color-text)] underline decoration-[var(--color-primary)] decoration-2 underline-offset-4"
           >
             {isDemoMode ? "К каталогу работ →" : "Все работы →"}
           </Link>
@@ -103,7 +104,7 @@ function RealCaseCard({ data }: { data: RabotyListItem }) {
       href={`/raboty/${data.slug}`}
       className="group block"
     >
-      <div className="relative aspect-[4/3] w-full overflow-hidden bg-[var(--color-border)]">
+      <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-[var(--color-border)] shadow-cozy transition group-hover:shadow-cozy-md">
         {cover ? (
           <img
             src={cover}
@@ -118,13 +119,13 @@ function RealCaseCard({ data }: { data: RabotyListItem }) {
         )}
 
         {data.isFeatured ? (
-          <span className="absolute left-3 top-3 inline-flex items-center gap-1 bg-[var(--color-text)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white">
+          <span className="absolute left-3 top-3 inline-flex items-center rounded-full bg-[var(--color-primary)] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white">
             Топ
           </span>
         ) : null}
       </div>
 
-      <div className="mt-4 space-y-2">
+      <div className="mt-4 space-y-2 px-1">
         <h3 className="font-editorial text-xl text-[var(--color-text)] group-hover:text-[var(--color-primary)] sm:text-2xl">
           {data.title}
         </h3>
@@ -158,8 +159,8 @@ function RealCaseCard({ data }: { data: RabotyListItem }) {
             <div className="line-clamp-1">{masterName}</div>
             {data.master.publicRating ? (
               <div className="text-[var(--color-text)]">
-                <span aria-hidden>★ </span>
-                {parseFloat(data.master.publicRating).toFixed(1)}
+                <span aria-hidden className="text-[var(--color-primary)]">★ </span>
+                <span className="font-semibold">{parseFloat(data.master.publicRating).toFixed(1)}</span>
               </div>
             ) : null}
           </div>
@@ -175,19 +176,19 @@ function DemoCaseCard({ data }: { data: DemoCase }) {
       href="/raboty"
       className="group block"
     >
-      <div className="relative aspect-[4/3] w-full overflow-hidden bg-[var(--color-border)]">
+      <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-[var(--color-border)] shadow-cozy transition group-hover:shadow-cozy-md">
         <img
           src={data.imageUrl}
           alt={data.alt}
           loading="lazy"
           className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
         />
-        <span className="absolute left-3 top-3 inline-flex items-center bg-[var(--color-surface)]/95 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-faint)]">
+        <span className="absolute left-3 top-3 inline-flex items-center rounded-full bg-[var(--color-surface)]/95 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-faint)]">
           Пример
         </span>
       </div>
 
-      <div className="mt-4 space-y-2">
+      <div className="mt-4 space-y-2 px-1">
         <p className="font-eyebrow text-[var(--color-primary)]">{data.category}</p>
         <h3 className="font-editorial text-xl text-[var(--color-text)] group-hover:text-[var(--color-primary)] sm:text-2xl">
           {data.title}
