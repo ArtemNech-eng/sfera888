@@ -1,7 +1,11 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { cabinetChat } from "../_lib/cabinetClient";
+
+const UNREAD_POLL_MS = 30_000;
 
 const ITEMS: Array<{
   href: string;
@@ -81,14 +85,55 @@ interface Props {
   variant: "sidebar" | "bottom";
 }
 
+/**
+ * Lightweight chat-unread polling. 30-second cadence is the right balance —
+ * fast enough for "I just got a message" feedback, slow enough that polling
+ * doesn't show up in tab CPU profiles. Pauses when the user is on `/cabinet/chat`
+ * since the page itself reloads messages and the badge is redundant there.
+ */
+function useChatUnread(): number {
+  const pathname = usePathname() ?? "";
+  const onChat = pathname === "/cabinet/chat" || pathname.startsWith("/cabinet/chat/");
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    async function load() {
+      try {
+        const res = await cabinetChat.unread();
+        if (!cancelled) setCount(res.count);
+      } catch {
+        // Silent — never spam toasts from a background poller.
+      }
+    }
+
+    void load();
+    if (!onChat) {
+      timer = setInterval(() => void load(), UNREAD_POLL_MS);
+    }
+    return () => {
+      cancelled = true;
+      if (timer) clearInterval(timer);
+    };
+  }, [onChat]);
+
+  // While on the chat page itself, mute the badge — assume the polling on
+  // /cabinet/chat will mark messages read soon.
+  return onChat ? 0 : count;
+}
+
 export function CabinetNav({ variant }: Props) {
   const pathname = usePathname() ?? "";
+  const unread = useChatUnread();
 
   if (variant === "bottom") {
     return (
       <ul className="grid h-16 grid-cols-5 px-2">
         {ITEMS.map((item) => {
           const active = pathname === item.href || pathname.startsWith(item.href + "/");
+          const showBadge = item.href === "/cabinet/chat" && unread > 0;
           return (
             <li key={item.href}>
               <Link
@@ -97,7 +142,10 @@ export function CabinetNav({ variant }: Props) {
                   active ? "text-[var(--color-primary)]" : "text-[var(--color-muted)]"
                 }`}
               >
-                {item.icon}
+                <span className="relative">
+                  {item.icon}
+                  {showBadge ? <BadgeDot count={unread} /> : null}
+                </span>
                 <span>{item.short}</span>
               </Link>
             </li>
@@ -112,6 +160,7 @@ export function CabinetNav({ variant }: Props) {
       <ul className="space-y-1">
         {ITEMS.map((item) => {
           const active = pathname === item.href || pathname.startsWith(item.href + "/");
+          const showBadge = item.href === "/cabinet/chat" && unread > 0;
           return (
             <li key={item.href}>
               <Link
@@ -123,7 +172,8 @@ export function CabinetNav({ variant }: Props) {
                 }`}
               >
                 {item.icon}
-                <span>{item.label}</span>
+                <span className="flex-1">{item.label}</span>
+                {showBadge ? <BadgePill count={unread} active={active} /> : null}
               </Link>
             </li>
           );
@@ -155,5 +205,40 @@ export function CabinetNav({ variant }: Props) {
         </ul>
       </div>
     </nav>
+  );
+}
+
+// ── Unread badges ──────────────────────────────────────────────────────────
+
+/**
+ * Tiny red dot with count that overlays the bottom-nav icon. Caps display at
+ * 99+ so it doesn't blow out the column. Positioned absolutely so it doesn't
+ * shift the icon centerline.
+ */
+function BadgeDot({ count }: { count: number }) {
+  return (
+    <span
+      className="absolute -right-2 -top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white shadow-sm"
+      aria-label={`${count} непрочитанных сообщений`}
+    >
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
+
+/**
+ * Inline pill rendered at the right of a sidebar nav item. Adapts colour
+ * to the active row (white text on primary background) so it stays legible.
+ */
+function BadgePill({ count, active }: { count: number; active: boolean }) {
+  return (
+    <span
+      className={`inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[11px] font-bold ${
+        active ? "bg-white text-[var(--color-primary)]" : "bg-red-500 text-white"
+      }`}
+      aria-label={`${count} непрочитанных сообщений`}
+    >
+      {count > 99 ? "99+" : count}
+    </span>
   );
 }
