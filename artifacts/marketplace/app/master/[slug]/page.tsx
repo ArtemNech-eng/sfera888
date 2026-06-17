@@ -1,16 +1,27 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { fetchCities, fetchMaster, fetchServices } from "../../../lib/api";
+import { fetchCities, fetchMaster, fetchMasters, fetchServices } from "../../../lib/api";
 import { publicUrl } from "../../../lib/env";
 import { LeadForm } from "../../../components/LeadForm";
+import { MasterCard } from "../../../components/MasterCard";
 import {
   breadcrumbJsonLd,
   masterProfileJsonLd,
   toJsonLdScript,
 } from "../../../lib/jsonLd";
-import { buildMasterMeta, buildPortfolioImageAlt, buildMasterAvatarAlt } from "../../../lib/seoMeta";
-import type { City, Service, MasterPortfolioItem, MasterPublicReview } from "../../../lib/types";
+import {
+  buildMasterMeta,
+  buildPortfolioImageAlt,
+  buildMasterAvatarAlt,
+} from "../../../lib/seoMeta";
+import type {
+  City,
+  Master,
+  MasterPortfolioItem,
+  MasterPublicReview,
+  Service,
+} from "../../../lib/types";
 
 // Dynamic [slug] route — Next won't prerender these at build anyway, but we
 // declare it explicitly so generateMetadata + fetch can use server-only env.
@@ -35,14 +46,14 @@ export async function generateMetadata(
   };
 }
 
-/** Best-effort pick of a master's display name across CRM-set fields. */
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
 function pickDisplayName(m: { publicTitle: string | null; alias: string | null; id: number }): string {
   if (m.publicTitle && m.publicTitle.trim().length > 0) return m.publicTitle.trim();
   if (m.alias && m.alias.trim().length > 0) return m.alias.trim();
   return `Мастер #${m.id}`;
 }
 
-/** Resolve master.city (free-form text) to a known city slug from the catalog. */
 function resolveCitySlug(masterCity: string | null, cities: City[]): { slug: string; name: string } | null {
   if (!masterCity) return null;
   const norm = masterCity.trim().toLowerCase();
@@ -50,7 +61,6 @@ function resolveCitySlug(masterCity: string | null, cities: City[]): { slug: str
   return match ? { slug: match.slug, name: match.name } : null;
 }
 
-/** Pick the first specialization the catalog knows about. */
 function resolveServiceSlug(specs: string[] | null, services: Service[]): { slug: string; name: string } | null {
   if (!specs) return null;
   for (const sp of specs) {
@@ -68,10 +78,6 @@ function formatRating(value: string | null): string | null {
   return n.toFixed(1);
 }
 
-/**
- * Build «На платформе 1 год 3 мес.» / «На платформе 5 лет» / «менее месяца».
- * Used to surface the master's tenure as an E-E-A-T signal in the hero meta-line.
- */
 function formatPlatformTenure(createdAt: string | null | undefined): string | null {
   if (!createdAt) return null;
   const start = new Date(createdAt);
@@ -105,6 +111,15 @@ function pluralCompleted(n: number): string {
   return "заказов";
 }
 
+function pluralReviews(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return "отзывов";
+  if (mod10 === 1) return "отзыв";
+  if (mod10 >= 2 && mod10 <= 4) return "отзыва";
+  return "отзывов";
+}
+
 function formatPrice(from: string | null, to: string | null): string | null {
   const a = from ? parseFloat(from) : NaN;
   const b = to ? parseFloat(to) : NaN;
@@ -115,10 +130,7 @@ function formatPrice(from: string | null, to: string | null): string | null {
 }
 
 function formatNumber(n: number): string {
-  // 12345 → "12 345" (locale-independent, server-rendered).
-  return Math.round(n)
-    .toString()
-    .replace(/\B(?=(\d{3})+(?!\d))/g, "\u00A0");
+  return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, "\u00A0");
 }
 
 function formatArea(area: string | null): string | null {
@@ -135,14 +147,31 @@ function formatDate(iso: string | null): string | null {
   return d.toLocaleDateString("ru-RU", { year: "numeric", month: "long" });
 }
 
+/** Pick the best hero photo from the master's portfolio. */
+function pickCoverPhoto(portfolio: MasterPortfolioItem[]): string | null {
+  // Prefer featured items first, then by sortOrder, then most-recent.
+  const sorted = [...portfolio].sort((a, b) => {
+    if (a.isFeatured !== b.isFeatured) return a.isFeatured ? -1 : 1;
+    if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+    return 0;
+  });
+  for (const p of sorted) {
+    if (p.afterPhotos[0]) return p.afterPhotos[0];
+    if (p.beforePhotos[0]) return p.beforePhotos[0];
+  }
+  return null;
+}
+
+// ── Page ─────────────────────────────────────────────────────────────────────
+
 export default async function MasterPage(
   { params }: { params: Promise<RouteParams> },
 ) {
   const { slug } = await params;
   const [data, cities, services] = await Promise.all([
     fetchMaster(slug),
-    fetchCities(),
-    fetchServices(),
+    fetchCities().catch(() => [] as City[]),
+    fetchServices().catch(() => [] as Service[]),
   ]);
   if (!data) notFound();
 
@@ -150,34 +179,34 @@ export default async function MasterPage(
   const displayName = pickDisplayName(master);
   const sourcePageUrl = `${publicUrl()}/master/${slug}`;
 
-  // Resolve a default city/service for the LeadForm. Both fields are
-  // required by /api/marketplace/leads (FK validation). If we can't match,
-  // fall back to the first active city/service in the catalog so the form
-  // is still usable.
-  const cityMatch = resolveCitySlug(master.city, cities) ?? (cities[0] ? { slug: cities[0].slug, name: cities[0].name } : null);
-  const serviceMatch = resolveServiceSlug(master.specializations, services) ?? (services[0] ? { slug: services[0].slug, name: services[0].name } : null);
+  const cityMatch = resolveCitySlug(master.city, cities);
+  const cityFallback = cityMatch ?? (cities[0] ? { slug: cities[0].slug, name: cities[0].name } : null);
+  const serviceMatch = resolveServiceSlug(master.specializations, services);
+  const serviceFallback = serviceMatch ?? (services[0] ? { slug: services[0].slug, name: services[0].name } : null);
 
+  // Fetch up to 5 similar masters in the same city (excluding current). One
+  // extra so we can drop the current master and still have 4 candidates.
+  const similarMasters = cityMatch
+    ? await fetchMasters({ citySlug: cityMatch.slug, limit: 5 })
+        .then((r) => r.items.filter((m) => m.id !== master.id).slice(0, 4))
+        .catch(() => [] as Master[])
+    : [];
+
+  const coverPhoto = pickCoverPhoto(portfolio);
   const rating = formatRating(master.publicRating ?? master.rating);
   const reviewsCount = master.publicReviewsCount;
-  const yearsExperience = master.yearsExperience;
-  const visibleSpecs = (master.specializations ?? []).slice(0, 8);
   const tenure = formatPlatformTenure(master.createdAt);
+  const visibleSpecs = (master.specializations ?? []).slice(0, 8);
 
-  // Build a name → slug map of services for clickable specialization chips.
-  // Falls back to a non-clickable badge when the master self-declared a
-  // specialization that doesn't match the curated catalog.
+  // Service slug map for clickable specialization chips and price rows.
   const serviceSlugByName = new Map<string, string>();
-  for (const s of services) {
-    serviceSlugByName.set(s.name.trim().toLowerCase(), s.slug);
-  }
+  for (const s of services) serviceSlugByName.set(s.name.trim().toLowerCase(), s.slug);
   const masterCitySlug = cityMatch?.slug ?? null;
 
-  // ── schema.org JSON-LD ─────────────────────────────────────────────────
-  // Built only from trusted server-side data. Reviews come from the
-  // backend filtered by `moderation_status = 'approved'`, so embedding
-  // them here is safe.
+  // ── schema.org JSON-LD ─────────────────────────────────────────────────────
   const breadcrumbsLd = breadcrumbJsonLd([
     { name: "Главная", url: `${publicUrl()}/` },
+    { name: "Мастера", url: `${publicUrl()}/mastera` },
     { name: displayName, url: sourcePageUrl },
   ]);
   const profileLd = masterProfileJsonLd({
@@ -191,8 +220,6 @@ export default async function MasterPage(
     rating: rating != null && reviewsCount > 0
       ? { ratingValue: rating, reviewCount: reviewsCount }
       : null,
-    // Cap embedded reviews at 10 — enough for rich-snippet eligibility
-    // without bloating the HTML.
     reviews: reviews.slice(0, 10).map((r) => ({
       authorName: r.clientName,
       rating: r.rating,
@@ -212,230 +239,364 @@ export default async function MasterPage(
         dangerouslySetInnerHTML={{ __html: toJsonLdScript(profileLd) }}
       />
 
-      {/* Hero */}
-      <section className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
-        <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
-          <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
-            <Avatar
-              src={master.avatarUrl}
-              name={displayName}
-              alt={buildMasterAvatarAlt(master)}
-            />
-            <div className="flex-1">
-              <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--color-muted)]">
-                {master.city ? <span>{master.city}</span> : null}
-                {yearsExperience != null && yearsExperience > 0 ? (
-                  <>
-                    {master.city ? <span aria-hidden>·</span> : null}
-                    <span>опыт {yearsExperience} {pluralYears(yearsExperience)}</span>
-                  </>
-                ) : null}
-                {stats.completedOrders > 0 ? (
-                  <>
-                    <span aria-hidden>·</span>
-                    <span>выполнено {stats.completedOrders} {pluralCompleted(stats.completedOrders)}</span>
-                  </>
-                ) : null}
-                {tenure ? (
-                  <>
-                    <span aria-hidden>·</span>
-                    <span>на платформе {tenure}</span>
-                  </>
-                ) : null}
-                {master.hasContract ? (
-                  <>
-                    <span aria-hidden>·</span>
-                    <span className="rounded-full bg-[var(--color-background)] px-2 py-0.5 text-xs text-[var(--color-text)]">
-                      Подписан договор
-                    </span>
-                  </>
-                ) : null}
-              </div>
-              <h1 className="mt-2 text-3xl font-semibold text-[var(--color-text)] sm:text-4xl">
-                {displayName}
-              </h1>
-              {master.publicBio ? (
-                <p className="mt-3 max-w-2xl text-base text-[var(--color-muted)]">{master.publicBio}</p>
-              ) : null}
-              {(rating || reviewsCount > 0) ? (
-                <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
-                  {rating ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-background)] px-3 py-1 font-medium text-[var(--color-text)]">
-                      <span aria-hidden>★</span>
-                      <span>{rating}</span>
-                    </span>
+      {/* ── Hero band ── */}
+      <MasterHero
+        master={master}
+        displayName={displayName}
+        coverPhoto={coverPhoto}
+        rating={rating}
+        reviewsCount={reviewsCount}
+        completedOrders={stats.completedOrders}
+        tenure={tenure}
+      />
+
+      {/* ── Portfolio masonry ── */}
+      {portfolio.length > 0 ? (
+        <MasterPortfolio portfolio={portfolio} />
+      ) : null}
+
+      {/* ── About + lead form (two-column) ── */}
+      <section className="border-y border-[var(--color-border)] bg-white">
+        <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
+          <div className="grid gap-8 lg:grid-cols-[1.4fr_1fr] lg:gap-12">
+            <div className="space-y-10">
+              {/* About + bio */}
+              {master.publicBio || visibleSpecs.length > 0 ? (
+                <div>
+                  <h2 className="text-2xl font-bold tracking-tight text-[var(--color-text)] sm:text-3xl">
+                    О мастере
+                  </h2>
+                  {master.publicBio ? (
+                    <p className="mt-4 whitespace-pre-line text-base leading-relaxed text-[var(--color-text)]">
+                      {master.publicBio}
+                    </p>
                   ) : null}
-                  {reviewsCount > 0 ? (
-                    <span className="text-[var(--color-muted)]">
-                      {reviewsCount} {pluralReviews(reviewsCount)}
-                    </span>
+                  {visibleSpecs.length > 0 ? (
+                    <div className="mt-6">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">
+                        Специализации
+                      </p>
+                      <ul className="mt-2 flex flex-wrap gap-2">
+                        {visibleSpecs.map((s) => {
+                          const sSlug = serviceSlugByName.get(s.trim().toLowerCase());
+                          if (sSlug && masterCitySlug) {
+                            return (
+                              <li key={s}>
+                                <Link
+                                  href={`/${sSlug}/${masterCitySlug}`}
+                                  className="inline-block rounded-full border border-[var(--color-border)] bg-white px-3 py-1 text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+                                >
+                                  {s}
+                                </Link>
+                              </li>
+                            );
+                          }
+                          return (
+                            <li
+                              key={s}
+                              className="inline-block rounded-full border border-[var(--color-border)] bg-white px-3 py-1 text-sm text-[var(--color-text)]"
+                            >
+                              {s}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
                   ) : null}
                 </div>
               ) : null}
-              {visibleSpecs.length > 0 ? (
-                <ul className="mt-5 flex flex-wrap gap-2">
-                  {visibleSpecs.map((s) => {
-                    const slug = serviceSlugByName.get(s.trim().toLowerCase());
-                    const linkable = slug && masterCitySlug;
-                    if (linkable) {
+
+              {/* Service prices */}
+              {master.servicePrices.length > 0 ? (
+                <div>
+                  <h2 className="text-2xl font-bold tracking-tight text-[var(--color-text)] sm:text-3xl">
+                    Цены на услуги
+                  </h2>
+                  <p className="mt-2 text-sm text-[var(--color-muted)]">
+                    Точная стоимость зависит от задачи — уточните при заявке. Можно сравнить с{" "}
+                    <Link href="/kalkulyator" className="font-medium text-[var(--color-primary)] hover:underline">
+                      калькулятором по региону
+                    </Link>
+                    .
+                  </p>
+                  <ul className="mt-5 grid gap-2 sm:grid-cols-2">
+                    {master.servicePrices.map((p, i) => {
+                      const sSlug = serviceSlugByName.get(p.service.trim().toLowerCase());
+                      const linkable = sSlug && masterCitySlug;
+                      const inner = (
+                        <div className="flex h-full items-center justify-between gap-3 rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3.5 transition group-hover:border-[var(--color-primary)]">
+                          <span className="line-clamp-2 text-sm font-medium text-[var(--color-text)]">
+                            {p.service}
+                          </span>
+                          <span className="whitespace-nowrap text-sm font-bold text-[var(--color-primary)]">
+                            от {formatNumber(p.priceFrom)} ₽
+                          </span>
+                        </div>
+                      );
                       return (
-                        <li key={s}>
-                          <Link
-                            href={`/${slug}/${masterCitySlug}`}
-                            className="block rounded-full border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-1 text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
-                          >
-                            {s}
-                          </Link>
+                        <li key={`${p.service}-${i}`}>
+                          {linkable ? (
+                            <Link href={`/${sSlug}/${masterCitySlug}`} className="group block h-full">
+                              {inner}
+                            </Link>
+                          ) : (
+                            <div className="group">{inner}</div>
+                          )}
                         </li>
                       );
-                    }
-                    return (
-                      <li
-                        key={s}
-                        className="rounded-full border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-1 text-sm text-[var(--color-text)]"
-                      >
-                        {s}
-                      </li>
-                    );
-                  })}
-                </ul>
+                    })}
+                  </ul>
+                </div>
+              ) : null}
+
+              {/* Reviews */}
+              {reviews.length > 0 ? (
+                <div>
+                  <div className="flex items-end justify-between gap-3">
+                    <h2 className="text-2xl font-bold tracking-tight text-[var(--color-text)] sm:text-3xl">
+                      Отзывы клиентов
+                    </h2>
+                    <span className="text-sm text-[var(--color-muted)]">
+                      {reviews.length} {pluralReviews(reviews.length)}
+                    </span>
+                  </div>
+                  <ul className="mt-6 grid gap-4 sm:grid-cols-2">
+                    {reviews.map((r) => (
+                      <ReviewCard key={r.id} review={r} />
+                    ))}
+                  </ul>
+                </div>
               ) : null}
             </div>
-          </div>
-        </div>
-      </section>
 
-      {/* Portfolio + Form */}
-      <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
-        <div className="grid gap-8 lg:grid-cols-[1.3fr,1fr]">
-          {/* Portfolio + reviews — main column */}
-          <div className="grid gap-10 lg:order-1">
-            {/* Service prices */}
-            {master.servicePrices.length > 0 ? (
-              <div>
-                <h2 className="text-2xl font-semibold text-[var(--color-text)]">Цены на услуги</h2>
-                <p className="mt-1 text-sm text-[var(--color-muted)]">
-                  Финальная стоимость зависит от задачи. Уточните при заявке.
+            {/* Sticky lead form */}
+            <aside>
+              <div className="rounded-2xl border border-[var(--color-border)] bg-white p-5 shadow-sm sm:p-6 lg:sticky lg:top-20">
+                <h2 id="lead-form" className="text-xl font-bold tracking-tight text-[var(--color-text)] sm:text-2xl">
+                  Связаться с {displayName}
+                </h2>
+                <p className="mt-2 text-sm text-[var(--color-muted)]">
+                  Опишите задачу — мастер свяжется в течение часа в рабочее время.
+                  Можно прикрепить фото объекта.
                 </p>
-                <ul className="mt-6 divide-y divide-[var(--color-border)] overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]">
-                  {master.servicePrices.map((p, i) => {
-                    const slug = serviceSlugByName.get(p.service.trim().toLowerCase());
-                    const linkable = slug && masterCitySlug;
-                    const inner = (
-                      <div className="flex items-center justify-between gap-4 p-4">
-                        <span className="text-[var(--color-text)]">{p.service}</span>
-                        <span className="font-semibold text-[var(--color-text)] whitespace-nowrap">
-                          от {formatNumber(p.priceFrom)} ₽
-                        </span>
-                      </div>
-                    );
-                    return (
-                      <li key={`${p.service}-${i}`}>
-                        {linkable ? (
-                          <Link
-                            href={`/${slug}/${masterCitySlug}`}
-                            className="block hover:bg-[var(--color-background)]"
-                          >
-                            {inner}
-                          </Link>
-                        ) : inner}
-                      </li>
-                    );
-                  })}
-                </ul>
+                <div className="mt-5">
+                  {cityFallback && serviceFallback ? (
+                    <LeadForm
+                      citySlug={cityFallback.slug}
+                      serviceSlug={serviceFallback.slug}
+                      sourcePageUrl={sourcePageUrl}
+                      attachedMasterId={master.id}
+                      attachedMasterTitle={displayName}
+                    />
+                  ) : (
+                    <div className="text-sm text-[var(--color-muted)]">
+                      Прямая заявка временно недоступна. Перейдите{" "}
+                      <Link href="/uslugi" className="underline hover:text-[var(--color-primary)]">
+                        в каталог услуг
+                      </Link>
+                      .
+                    </div>
+                  )}
+                </div>
               </div>
-            ) : null}
-
-            {/* Portfolio */}
-            {portfolio.length > 0 ? (
-              <div>
-                <h2 className="text-2xl font-semibold text-[var(--color-text)]">Работы мастера</h2>
-                <ul className="mt-6 grid gap-4 sm:grid-cols-2">
-                  {portfolio.map((p) => (
-                    <PortfolioCard key={p.id} item={p} />
-                  ))}
-                </ul>
-              </div>
-            ) : (
-              <div className="rounded-2xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-sm text-[var(--color-muted)]">
-                Мастер ещё не опубликовал работы. Оставьте заявку — обсудите задачу напрямую.
-              </div>
-            )}
-
-            {/* Reviews */}
-            {reviews.length > 0 ? (
-              <div>
-                <h2 className="text-2xl font-semibold text-[var(--color-text)]">Отзывы клиентов</h2>
-                <ul className="mt-6 grid gap-4 sm:grid-cols-2">
-                  {reviews.map((r) => (
-                    <ReviewCard key={r.id} review={r} />
-                  ))}
-                </ul>
-              </div>
-            ) : null}
+            </aside>
           </div>
-
-          {/* Lead form — sticky on desktop, top on mobile */}
-          <aside className="lg:order-2">
-            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm sm:p-6 lg:sticky lg:top-6">
-              <h2 className="text-xl font-semibold text-[var(--color-text)] sm:text-2xl">
-                Связаться с мастером
-              </h2>
-              <p className="mt-1 text-sm text-[var(--color-muted)]">
-                Перезвоним в течение часа в рабочее время.
-              </p>
-              <div className="mt-5">
-                {cityMatch && serviceMatch ? (
-                  <LeadForm
-                    citySlug={cityMatch.slug}
-                    serviceSlug={serviceMatch.slug}
-                    sourcePageUrl={sourcePageUrl}
-                    attachedMasterId={master.id}
-                    attachedMasterTitle={displayName}
-                  />
-                ) : (
-                  <div className="text-sm text-[var(--color-muted)]">
-                    Прямая заявка временно недоступна. Перейдите{" "}
-                    <Link href="/uslugi" className="underline hover:text-[var(--color-primary)]">
-                      в каталог услуг
-                    </Link>
-                    , чтобы оставить заявку.
-                  </div>
-                )}
-              </div>
-            </div>
-          </aside>
         </div>
       </section>
+
+      {/* ── Similar masters ── */}
+      {similarMasters.length >= 3 ? (
+        <section className="bg-[var(--color-background)]">
+          <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
+            <div className="flex items-end justify-between gap-3">
+              <h2 className="text-2xl font-bold tracking-tight text-[var(--color-text)] sm:text-3xl">
+                Другие мастера {master.city ? `в городе ${master.city}` : ""}
+              </h2>
+              {cityMatch ? (
+                <Link
+                  href={`/mastera?city=${encodeURIComponent(cityMatch.slug)}`}
+                  className="hidden text-sm font-semibold text-[var(--color-primary)] hover:underline sm:inline"
+                >
+                  Все →
+                </Link>
+              ) : null}
+            </div>
+            <ul className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:gap-4">
+              {similarMasters.map((m) => (
+                <li key={m.id}>
+                  <MasterCard master={m} />
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      ) : null}
     </>
   );
 }
 
-function pluralReviews(n: number): string {
-  // Russian plural for "отзыв": 1 отзыв, 2-4 отзыва, 5+ отзывов; 11-14 — отзывов.
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod100 >= 11 && mod100 <= 14) return "отзывов";
-  if (mod10 === 1) return "отзыв";
-  if (mod10 >= 2 && mod10 <= 4) return "отзыва";
-  return "отзывов";
+// ── Hero ─────────────────────────────────────────────────────────────────────
+
+interface HeroProps {
+  master: Master;
+  displayName: string;
+  coverPhoto: string | null;
+  rating: string | null;
+  reviewsCount: number;
+  completedOrders: number;
+  tenure: string | null;
+}
+
+function MasterHero({
+  master,
+  displayName,
+  coverPhoto,
+  rating,
+  reviewsCount,
+  completedOrders,
+  tenure,
+}: HeroProps) {
+  return (
+    <section className="relative overflow-hidden bg-[var(--color-text)]">
+      {/* Cover image with strong overlay so the text overlays remain crisp */}
+      {coverPhoto ? (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={coverPhoto}
+            alt=""
+            aria-hidden
+            className="absolute inset-0 h-full w-full object-cover opacity-50"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/55 to-black/85" />
+        </>
+      ) : (
+        <div className="absolute inset-0 bg-gradient-to-br from-[var(--color-primary)]/90 to-[var(--color-primary-hover)]" />
+      )}
+
+      <div className="relative mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16 lg:py-20">
+        <nav className="mb-6 flex items-center gap-2 text-xs text-white/70">
+          <Link href="/" className="hover:text-white">Главная</Link>
+          <span aria-hidden>/</span>
+          <Link href="/mastera" className="hover:text-white">Мастера</Link>
+          <span aria-hidden>/</span>
+          <span className="text-white">{displayName}</span>
+        </nav>
+
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-end">
+          <Avatar src={master.avatarUrl} name={displayName} alt={buildMasterAvatarAlt(master)} />
+          <div className="flex-1">
+            {master.city ? (
+              <p className="text-sm font-medium text-white/80">{master.city}</p>
+            ) : null}
+            <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-white sm:text-5xl">
+              {displayName}
+            </h1>
+            {master.publicTitle && master.publicBio ? (
+              <p className="mt-2 max-w-2xl text-base text-white/85 sm:text-lg">
+                {master.publicTitle}
+              </p>
+            ) : null}
+
+            {/* Stats line */}
+            <div className="mt-5 flex flex-wrap gap-x-5 gap-y-3 text-sm text-white/85">
+              {rating ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 backdrop-blur">
+                  <span aria-hidden className="text-[var(--color-accent)]">★</span>
+                  <span className="font-semibold text-white">{rating}</span>
+                  {reviewsCount > 0 ? (
+                    <span className="text-white/70">· {reviewsCount} {pluralReviews(reviewsCount)}</span>
+                  ) : null}
+                </span>
+              ) : null}
+              {completedOrders > 0 ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <DotIcon />
+                  {completedOrders} {pluralCompleted(completedOrders)}
+                </span>
+              ) : null}
+              {master.yearsExperience != null && master.yearsExperience > 0 ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <DotIcon />
+                  опыт {master.yearsExperience} {pluralYears(master.yearsExperience)}
+                </span>
+              ) : null}
+              {tenure ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <DotIcon />
+                  на платформе {tenure}
+                </span>
+              ) : null}
+            </div>
+
+            {/* Badge row — hasContract is the strongest trust signal we have
+                exposed publicly today. passportVerified / isFeatured stay on
+                the internal session DTO; promote them to Master DTO when we
+                want to surface them. */}
+            <div className="mt-5 flex flex-wrap gap-2">
+              {master.hasContract ? (
+                <Badge label="Подписан договор" tone="emerald" />
+              ) : null}
+            </div>
+
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link
+                href="#lead-form"
+                className="inline-flex h-11 items-center gap-2 rounded-xl bg-[var(--color-primary)] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--color-primary-hover)]"
+              >
+                Получить смету
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M5 12h14" />
+                  <path d="m12 5 7 7-7 7" />
+                </svg>
+              </Link>
+              <Link
+                href="/kalkulyator"
+                className="inline-flex h-11 items-center rounded-xl border border-white/30 bg-white/10 px-5 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/20"
+              >
+                Прикинуть бюджет
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Badge({ label, tone }: { label: string; tone: "emerald" | "indigo" | "amber" }) {
+  const cls =
+    tone === "emerald"
+      ? "bg-emerald-100 text-emerald-800"
+      : tone === "indigo"
+        ? "bg-indigo-100 text-indigo-800"
+        : "bg-amber-100 text-amber-900";
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ${cls}`}>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M20 6 9 17l-5-5" />
+      </svg>
+      {label}
+    </span>
+  );
+}
+
+function DotIcon() {
+  return <span aria-hidden className="inline-block h-1.5 w-1.5 rounded-full bg-white/40" />;
 }
 
 function Avatar({ src, name, alt }: { src: string | null; name: string; alt?: string }) {
   if (src) {
     return (
-      // Raw <img>: avatars come from arbitrary R2/S3 hosts that aren't
-      // pre-configured in next.config; next/image would refuse them.
       // eslint-disable-next-line @next/next/no-img-element
       <img
         src={src}
         alt={alt ?? name}
         loading="eager"
-        className="h-24 w-24 flex-none rounded-2xl border border-[var(--color-border)] bg-[var(--color-background)] object-cover"
+        className="h-24 w-24 flex-none rounded-2xl border-2 border-white/20 bg-white object-cover shadow-2xl sm:h-28 sm:w-28"
       />
     );
   }
-  // Initials fallback so the layout never collapses.
   const initials = name
     .split(/\s+/)
     .filter(Boolean)
@@ -445,127 +606,177 @@ function Avatar({ src, name, alt }: { src: string | null; name: string; alt?: st
   return (
     <div
       aria-hidden
-      className="flex h-24 w-24 flex-none items-center justify-center rounded-2xl border border-[var(--color-border)] bg-[var(--color-primary)] text-2xl font-semibold text-white"
+      className="flex h-24 w-24 flex-none items-center justify-center rounded-2xl border-2 border-white/20 bg-[var(--color-primary)] text-3xl font-bold text-white shadow-2xl sm:h-28 sm:w-28"
     >
       {initials || "М"}
     </div>
   );
 }
 
+// ── Portfolio masonry ────────────────────────────────────────────────────────
+
+function MasterPortfolio({ portfolio }: { portfolio: MasterPortfolioItem[] }) {
+  return (
+    <section className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-secondary)]">
+            Работы
+          </p>
+          <h2 className="mt-1 text-2xl font-bold tracking-tight text-[var(--color-text)] sm:text-3xl">
+            Реальные ремонты этого мастера
+          </h2>
+          <p className="mt-2 max-w-2xl text-sm text-[var(--color-muted)]">
+            Фото до и после, цены и сроки. Кликните по работе — увидите детали и сможете заказать похожий проект.
+          </p>
+        </div>
+        <span className="hidden text-sm text-[var(--color-muted)] sm:block">
+          {portfolio.length} {portfolio.length === 1 ? "работа" : "работ"}
+        </span>
+      </div>
+
+      <ul className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {portfolio.map((p) => (
+          <PortfolioCard key={p.id} item={p} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function PortfolioCard({ item }: { item: MasterPortfolioItem }) {
-  const before = item.beforePhotos[0] ?? null;
   const after = item.afterPhotos[0] ?? null;
+  const before = item.beforePhotos[0] ?? null;
+  const hero = after ?? before ?? null;
   const price = formatPrice(item.priceFrom, item.priceTo);
   const area = formatArea(item.area);
   const completedAt = formatDate(item.completedAt);
 
-  // When the case has its own slug, the whole card becomes a link to the
-  // standalone /raboty/[slug] page (Houzz-model). Without a slug we render
-  // the static card (legacy cases backfilled later).
-  const cardContent = (
-    <>
-      {(before || after) ? (
-        <div className="grid grid-cols-2 gap-1 bg-[var(--color-background)]">
-          <PortfolioPhoto
-            src={before}
-            label="До"
-            alt={buildPortfolioImageAlt(item, "before", 0)}
+  const card = (
+    <article className="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-xl hover:border-[var(--color-secondary)]">
+      <div className="relative aspect-[4/3] w-full overflow-hidden bg-[var(--color-background)]">
+        {hero ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={hero}
+            alt={buildPortfolioImageAlt(item, after ? "after" : "before", 0)}
+            loading="lazy"
+            className="block h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
           />
-          <PortfolioPhoto
-            src={after}
-            label="После"
-            alt={buildPortfolioImageAlt(item, "after", 0)}
-          />
-        </div>
-      ) : null}
-      <div className="p-5">
-        <div className="text-base font-medium text-[var(--color-text)]">{item.title}</div>
-        {item.description ? (
-          <p className="mt-1 line-clamp-3 text-sm text-[var(--color-muted)]">{item.description}</p>
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-xs text-[var(--color-muted)]">
+            Без фото
+          </div>
+        )}
+
+        {/* Featured badge */}
+        {item.isFeatured ? (
+          <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full bg-[var(--color-accent)] px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-white shadow">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+              <path d="m12 2 3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z" />
+            </svg>
+            Топ
+          </span>
         ) : null}
-        <div className="mt-3 flex flex-wrap gap-2 text-xs text-[var(--color-muted)]">
-          {item.service?.slug && item.city?.slug ? (
-            <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-background)] px-2 py-1 text-[var(--color-text)]">
-              {item.service.name}, {item.city.name}
+
+        {/* Before-photo peek on hover (when both photos present) */}
+        {before && after ? (
+          <div className="absolute inset-x-3 bottom-3 flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100">
+            <span className="rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-[var(--color-text)] backdrop-blur">
+              До · После
             </span>
-          ) : item.service?.name ? (
-            <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-background)] px-2 py-1 text-[var(--color-text)]">
-              {item.service.name}
-            </span>
-          ) : null}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="flex flex-1 flex-col p-5">
+        <h3 className="line-clamp-2 text-base font-semibold leading-snug text-[var(--color-text)] group-hover:text-[var(--color-secondary)]">
+          {item.title}
+        </h3>
+        {item.description ? (
+          <p className="mt-2 line-clamp-2 text-sm text-[var(--color-muted)]">{item.description}</p>
+        ) : null}
+
+        <div className="mt-3 flex flex-wrap gap-1.5 text-xs text-[var(--color-muted)]">
+          {item.service?.name ? <Chip>{item.service.name}</Chip> : null}
+          {item.city?.name ? <Chip>{item.city.name}</Chip> : null}
+          {area ? <Chip>{area}</Chip> : null}
+        </div>
+
+        <div className="mt-auto flex items-end justify-between gap-3 pt-4">
           {price ? (
-            <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-background)] px-2 py-1 text-[var(--color-text)]">
-              {price}
-            </span>
+            <div>
+              <p className="text-[11px] uppercase tracking-wider text-[var(--color-muted)]">
+                Стоимость
+              </p>
+              <p className="text-base font-bold text-[var(--color-text)]">{price}</p>
+            </div>
+          ) : <span />}
+          {completedAt ? (
+            <p className="text-xs text-[var(--color-muted)]">Завершено {completedAt}</p>
           ) : null}
-          {area ? (
-            <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-background)] px-2 py-1 text-[var(--color-text)]">
-              {area}
-            </span>
-          ) : null}
-          {completedAt ? <span>{completedAt}</span> : null}
         </div>
       </div>
-    </>
+    </article>
   );
 
   if (item.slug) {
     return (
-      <li className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-primary)]">
-        <Link href={`/raboty/${item.slug}`} className="block">
-          {cardContent}
+      <li>
+        <Link href={`/raboty/${item.slug}`} className="block h-full">
+          {card}
         </Link>
       </li>
     );
   }
+  return <li>{card}</li>;
+}
 
+function Chip({ children }: { children: React.ReactNode }) {
   return (
-    <li className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]">
-      {cardContent}
-    </li>
+    <span className="inline-flex items-center rounded-full bg-[var(--color-background)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-text)]">
+      {children}
+    </span>
   );
 }
 
-function PortfolioPhoto({ src, label, alt }: { src: string | null; label: string; alt: string }) {
-  if (!src) {
-    return (
-      <div className="relative aspect-[4/3] w-full">
-        <div className="flex h-full w-full items-center justify-center text-xs text-[var(--color-muted)]">
-          {label}
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div className="relative aspect-[4/3] w-full">
-      {/* Raw <img>: portfolio photos come from many remote hosts. */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={src} alt={alt} loading="lazy" className="block h-full w-full object-cover" />
-      <span className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white">
-        {label}
-      </span>
-    </div>
-  );
-}
+// ── Review card ──────────────────────────────────────────────────────────────
 
 function ReviewCard({ review }: { review: MasterPublicReview }) {
   const date = formatDate(review.createdAt);
   return (
-    <li className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-      <div className="flex items-center justify-between gap-3 text-sm">
-        <div>
-          <div className="font-medium text-[var(--color-text)]">{review.clientName}</div>
+    <li className="flex h-full flex-col gap-4 rounded-2xl border border-[var(--color-border)] bg-white p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="line-clamp-1 text-sm font-semibold text-[var(--color-text)]">
+            {review.clientName}
+          </p>
           {review.clientCity ? (
-            <div className="text-xs text-[var(--color-muted)]">{review.clientCity}</div>
+            <p className="text-xs text-[var(--color-muted)]">{review.clientCity}</p>
           ) : null}
         </div>
-        <div className="inline-flex items-center gap-1 rounded-full bg-[var(--color-background)] px-2 py-1 text-xs font-medium text-[var(--color-text)]">
+        <span className="inline-flex flex-shrink-0 items-center gap-1 rounded-full bg-[var(--color-accent-soft)] px-2.5 py-0.5 text-xs font-bold text-[var(--color-accent-hover)]">
           <span aria-hidden>★</span>
           <span>{review.rating}</span>
-        </div>
+        </span>
       </div>
-      <p className="mt-3 text-sm text-[var(--color-text)]">{review.text}</p>
-      {date ? <div className="mt-3 text-xs text-[var(--color-muted)]">{date}</div> : null}
+      <p className="flex-1 text-sm leading-relaxed text-[var(--color-text)]">{review.text}</p>
+      {review.photos.length > 0 ? (
+        <ul className="flex gap-2">
+          {review.photos.slice(0, 3).map((url, i) => (
+            <li key={i}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={url}
+                alt={`Фото к отзыву ${review.clientName}`}
+                loading="lazy"
+                className="h-16 w-16 rounded-lg border border-[var(--color-border)] object-cover"
+              />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {date ? <p className="text-xs text-[var(--color-muted)]">{date}</p> : null}
     </li>
   );
 }
