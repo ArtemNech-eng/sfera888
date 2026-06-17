@@ -244,3 +244,29 @@ export interface MarketplaceStats {
   /** Active cities in the catalog. */
   citiesCount: number;
 }
+
+
+// ── Calculator (plan §19.3, §20.2 [6]) ──────────────────────────────────────
+
+export type CalcCategory = "kosmetic" | "evro" | "premium";
+
+export interface CalculatorEstimate {
+  /**
+   * Resolved city DTO if `citySlug` matched an active row, otherwise null —
+   * the engine still produced an estimate, just using regional baseline.
+   */
+  city: City | null;
+  service: Service | null;
+  category: CalcCategory;
+  /** Echoed back so the UI doesn't need to re-parse the input. */
+  areaSqm: number;
+  pricePerSqm: { low: number; mid: number; high: number };
+  totalPrice: { low: number; mid: number; high: number };
+  duration: { low: number; high: number };
+  /** Source tagline, e.g. "Ориентир в Москве по средним коэффициентам региона". */
+  source: string;
+  isRegionalEstimate: boolean;
+  cityNameIn: string;
+  /** How many published cases match the (city, area±30%) bucket — for social proof. */
+  matchingRealCasesCount: number;
+}

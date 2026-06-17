@@ -14,6 +14,7 @@ export function Footer() {
             <Link href="/mastera" className="hover:text-[var(--color-primary)]">Мастера</Link>
             <Link href="/uslugi" className="hover:text-[var(--color-primary)]">Услуги</Link>
             <Link href="/dizajn" className="hover:text-[var(--color-primary)]">AI-дизайн</Link>
+            <Link href="/kalkulyator" className="hover:text-[var(--color-primary)]">Калькулятор</Link>
             <Link href="/o-nas" className="hover:text-[var(--color-primary)]">О сервисе</Link>
             <Link href="/kontakty" className="hover:text-[var(--color-primary)]">Контакты</Link>
             <a

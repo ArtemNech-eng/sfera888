@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import {
+  fetchCities,
   fetchMarketplaceStats,
   fetchMasters,
   fetchRabotyList,
 } from "../lib/api";
 import type {
+  City,
   MarketplaceStats,
   Master,
   RabotyListItem,
@@ -13,6 +15,7 @@ import { HomeHero } from "../components/home/HomeHero";
 import { HomeTrustStrip } from "../components/home/HomeTrustStrip";
 import { HomeIdeasCategories } from "../components/home/HomeIdeasCategories";
 import { HomeRecentCases } from "../components/home/HomeRecentCases";
+import { HomeCalculator } from "../components/home/HomeCalculator";
 import { HomeTopMasters } from "../components/home/HomeTopMasters";
 import { HomeTrustBlock } from "../components/home/HomeTrustBlock";
 import { HomeHowItWorks } from "../components/home/HomeHowItWorks";
@@ -34,8 +37,8 @@ export default async function HomePage() {
   // Parallel fetches with per-source error fallbacks: hero + trust strip +
   // idea categories + how-it-works render without any DB data, so a single
   // upstream blip degrades only the data-driven sections (cases, masters,
-  // stats) instead of taking down the homepage.
-  const [stats, masters, cases] = await Promise.all([
+  // stats, calculator) instead of taking down the homepage.
+  const [stats, masters, cases, cities] = await Promise.all([
     fetchMarketplaceStats().catch((): MarketplaceStats => ({
       completedOrders: 0,
       publishedMasters: 0,
@@ -49,6 +52,7 @@ export default async function HomePage() {
     fetchRabotyList({ limit: 6 })
       .then((r) => r.items)
       .catch(() => [] as RabotyListItem[]),
+    fetchCities().catch(() => [] as City[]),
   ]);
 
   return (
@@ -57,6 +61,7 @@ export default async function HomePage() {
       <HomeTrustStrip />
       <HomeIdeasCategories />
       <HomeRecentCases cases={cases} />
+      <HomeCalculator cities={cities} />
       <HomeTopMasters masters={masters} />
       <HomeTrustBlock stats={stats} />
       <HomeHowItWorks />

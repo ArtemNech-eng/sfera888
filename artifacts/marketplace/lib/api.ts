@@ -1,6 +1,8 @@
 import "server-only";
 import { internalApiBase, internalApiToken } from "./env";
 import type {
+  CalcCategory,
+  CalculatorEstimate,
   City,
   Service,
   ServiceCityResponse,
@@ -299,4 +301,25 @@ export async function fetchRabotyCase(slug: string): Promise<RabotyDetailRespons
  */
 export async function fetchMarketplaceStats(): Promise<MarketplaceStats> {
   return call<MarketplaceStats>(`/stats`);
+}
+
+
+/**
+ * Renovation cost estimate (plan §19.3, §20.2 [6]). Server-side calibrated
+ * coefficients live on api-server (see `lib/calculatorEngine.ts`); the
+ * marketplace only renders. We use `noStore` because every input combination
+ * has a unique answer and we don't want stale Edge entries.
+ */
+export async function fetchCalculatorEstimate(input: {
+  citySlug: string | null;
+  serviceSlug?: string | null;
+  category: CalcCategory;
+  areaSqm: number;
+}): Promise<CalculatorEstimate> {
+  const params = new URLSearchParams();
+  if (input.citySlug) params.set("citySlug", input.citySlug);
+  if (input.serviceSlug) params.set("serviceSlug", input.serviceSlug);
+  params.set("category", input.category);
+  params.set("areaSqm", String(input.areaSqm));
+  return call<CalculatorEstimate>(`/calculator/estimate?${params.toString()}`, { noStore: true });
 }

@@ -92,7 +92,7 @@ export function HomeHero() {
                 }
               />
               <CtaButton
-                href="/uslugi"
+                href="/kalkulyator"
                 tint="teal"
                 label="Калькулятор"
                 sub="Бюджет за 30 секунд"

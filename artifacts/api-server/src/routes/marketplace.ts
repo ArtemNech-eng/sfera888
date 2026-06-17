@@ -32,6 +32,7 @@ import { and, asc, desc, eq, gte, isNotNull, isNull, ne, sql } from "drizzle-orm
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { notifyManagerNewLead } from "../managerBot.js";
+import { computeEstimate, isCalcCategory } from "../lib/calculatorEngine.js";
 
 declare const console: { error: (...args: unknown[]) => void };
 
@@ -315,6 +316,121 @@ router.get("/stats", async (_req, res) => {
     });
   } catch (e: unknown) {
     console.error("[marketplace/stats]", e instanceof Error ? e.message : e);
+    res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/marketplace/calculator/estimate
+//
+// Renovation cost estimator (plan §19.3, §20.2 [6]). Wraps `calculatorEngine`
+// (server-side, calibrated regional coefficients) and additionally counts
+// real `master_portfolio` cases that match the (city, area) bucket — the UI
+// uses that count to switch from "Ориентир" to "По N реальным проектам" once
+// we cross 5 matching cases.
+//
+// Query params:
+//   citySlug   — optional, falls back to baseline if missing or unknown
+//   serviceSlug — optional, used purely to refine the matching-cases count
+//   category   — required: "kosmetic" | "evro" | "premium"
+//   areaSqm    — required, [8, 500]
+// ─────────────────────────────────────────────────────────────────────────────
+router.get("/calculator/estimate", async (req, res) => {
+  try {
+    const citySlug = typeof req.query["citySlug"] === "string" && req.query["citySlug"].trim().length > 0
+      ? req.query["citySlug"].trim()
+      : null;
+    const serviceSlug = typeof req.query["serviceSlug"] === "string" && req.query["serviceSlug"].trim().length > 0
+      ? req.query["serviceSlug"].trim()
+      : null;
+    const categoryRaw = String(req.query["category"] ?? "").trim();
+    const areaRaw = parseFloat(String(req.query["areaSqm"] ?? ""));
+
+    if (!isCalcCategory(categoryRaw)) {
+      res.status(400).json({ error: "invalid_category", message: "Категория должна быть одной из: kosmetic, evro, premium" });
+      return;
+    }
+    if (!Number.isFinite(areaRaw) || areaRaw < 8 || areaRaw > 500) {
+      res.status(400).json({ error: "invalid_area", message: "Площадь должна быть от 8 до 500 м²" });
+      return;
+    }
+
+    // Resolve city + service for the response shape and for the matching
+    // count query. Both are optional — engine falls back if absent.
+    let cityRow: CityRow | null = null;
+    if (citySlug) {
+      const rows = await db
+        .select()
+        .from(citiesTable)
+        .where(and(
+          eq(citiesTable.slug, citySlug),
+          eq(citiesTable.isActive, true),
+        ))
+        .limit(1);
+      cityRow = rows[0] ?? null;
+    }
+    let serviceRow: typeof serviceTypesTable.$inferSelect | null = null;
+    if (serviceSlug) {
+      const rows = await db
+        .select()
+        .from(serviceTypesTable)
+        .where(and(
+          eq(serviceTypesTable.slug, serviceSlug),
+          eq(serviceTypesTable.isActive, true),
+        ))
+        .limit(1);
+      serviceRow = rows[0] ?? null;
+    }
+
+    // Compute estimate using the calibrated regional coefficients.
+    const result = computeEstimate({
+      citySlug: cityRow?.slug ?? citySlug,
+      category: categoryRaw,
+      areaSqm: areaRaw,
+    });
+
+    // Count real published cases that fall in the (city, area±30%) bucket.
+    // Useful both for "you're not the first" social proof and for the UI to
+    // promote the response from "regional estimate" to "based on N real
+    // projects" once we cross a threshold (planned: 5). Count failure is
+    // non-fatal; we just report 0.
+    let matchingRealCasesCount = 0;
+    try {
+      const areaMinStr = (areaRaw * 0.7).toFixed(2);
+      const areaMaxStr = (areaRaw * 1.3).toFixed(2);
+      const conds = [
+        eq(masterPortfolioTable.isPublished, true),
+        isNotNull(masterPortfolioTable.area),
+        sql`${masterPortfolioTable.area}::numeric BETWEEN ${areaMinStr}::numeric AND ${areaMaxStr}::numeric`,
+        isNotNull(masterPortfolioTable.priceFrom),
+      ];
+      if (cityRow) conds.push(eq(masterPortfolioTable.cityId, cityRow.id));
+      if (serviceRow) conds.push(eq(masterPortfolioTable.serviceTypeId, serviceRow.id));
+      const [{ count }] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(masterPortfolioTable)
+        .where(and(...conds));
+      matchingRealCasesCount = count ?? 0;
+    } catch (e) {
+      console.error("[marketplace/calculator] matching count failed", e instanceof Error ? e.message : e);
+    }
+
+    setOkCache(res);
+    res.json({
+      city: cityRow ? toCityDto(cityRow) : null,
+      service: serviceRow ? toServiceDto(serviceRow) : null,
+      category: categoryRaw,
+      areaSqm: Math.round(areaRaw),
+      pricePerSqm: result.pricePerSqm,
+      totalPrice: result.totalPrice,
+      duration: result.duration,
+      source: result.source,
+      isRegionalEstimate: result.isRegionalEstimate,
+      cityNameIn: result.cityNameIn,
+      matchingRealCasesCount,
+    });
+  } catch (e: unknown) {
+    console.error("[marketplace/calculator/estimate]", e instanceof Error ? e.message : e);
     res.status(500).json({ error: "internal_error" });
   }
 });
