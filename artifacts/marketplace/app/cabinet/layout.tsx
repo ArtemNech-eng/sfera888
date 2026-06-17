@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
+import { Toaster } from "sonner";
 import { getCurrentMaster } from "@/lib/cabinetAuth";
 import { CabinetNav } from "./_components/CabinetNav";
 import { CabinetTopbar } from "./_components/CabinetTopbar";
@@ -72,6 +73,11 @@ export default async function CabinetLayout({ children }: { children: React.Reac
       <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--color-border)] bg-white shadow-lg lg:hidden">
         <CabinetNav variant="bottom" />
       </nav>
+
+      {/* Toast notifications used by cabinet client components. Mounted once
+          at the layout level so individual pages just import `toast` from
+          `sonner` and call it. */}
+      <Toaster position="top-center" richColors closeButton />
     </div>
   );
 }

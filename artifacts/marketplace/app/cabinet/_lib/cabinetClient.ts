@@ -1,0 +1,143 @@
+"use client";
+
+/**
+ * Client-side cabinet API helpers (plan §18).
+ *
+ * Cabinet pages talk to the api-server master-pwa endpoints through the
+ * marketplace's `/api/cabinet/*` proxy (see app/api/cabinet/[...path]/route.ts).
+ * The proxy attaches the browser cookie and forwards the request, so cabinet
+ * UI stays a thin REST consumer.
+ *
+ * Naming mirrors the original master-pwa `lib/api.ts` so the port preserves
+ * call sites verbatim where possible. The `req` wrapper is identical, only
+ * the BASE prefix changes.
+ */
+
+const BASE = "/api/cabinet";
+
+class CabinetApiError extends Error {
+  status: number;
+  data: unknown;
+  constructor(message: string, status: number, data: unknown) {
+    super(message);
+    this.status = status;
+    this.data = data;
+  }
+}
+
+async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : {},
+    credentials: "same-origin",
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({ error: res.statusText }));
+    const message = (data as { message?: string; error?: string }).message
+      ?? (data as { error?: string }).error
+      ?? "Ошибка запроса";
+    throw new CabinetApiError(message, res.status, data);
+  }
+  return res.json() as Promise<T>;
+}
+
+// ── Auth ─────────────────────────────────────────────────────────────────────
+
+export const cabinetAuth = {
+  me: () => req<unknown>("GET", "/auth/me"),
+  logout: () => req<unknown>("POST", "/auth/logout"),
+};
+
+// ── Balance ──────────────────────────────────────────────────────────────────
+
+export interface PartialPayment {
+  id: number;
+  amount: number;
+  note: string | null;
+  paidAt: string;
+}
+
+export interface BalanceTransaction {
+  id: number;
+  orderId: number;
+  orderServiceType: string | null;
+  orderCity: string | null;
+  orderAmount: number;
+  commission: number;
+  netPayable: number;
+  prepaymentDeducted: number;
+  totalPartialPaid: number;
+  partialPayments: PartialPayment[];
+  paymentStatus: "paid" | "pending" | "debt" | "cancelled" | string;
+  createdAt: string;
+  paidAt: string | null;
+}
+
+export interface BalanceData {
+  debt: number;
+  totalEarned: number;
+  totalPaidCommission: number;
+  pendingCommission: number;
+  pendingEarnings: number;
+  transactions: BalanceTransaction[];
+}
+
+export const cabinetBalance = {
+  fetch: () => req<BalanceData>("GET", "/balance"),
+  paymentProof: (photoUrl: string) =>
+    req<{ ok: true }>("POST", "/balance/payment-proof", { photoUrl }),
+};
+
+// ── Photo upload helper ──────────────────────────────────────────────────────
+
+interface UploadInit {
+  uploadURL: string;
+  objectPath: string;
+}
+
+/**
+ * Two-step image upload mirroring master-pwa's helper:
+ *   1. POST /api/storage/uploads/request-url → signed PUT URL
+ *   2. PUT the file directly to that URL (skips the proxy)
+ *
+ * Returns the api-server-relative path that the backend stores in DB.
+ */
+export async function uploadPhoto(file: File): Promise<string> {
+  const initRes = await fetch("/api/storage/uploads/request-url", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify({
+      name: file.name,
+      size: file.size,
+      contentType: file.type,
+    }),
+  });
+  if (!initRes.ok) {
+    const data = await initRes.json().catch(() => ({ error: initRes.statusText }));
+    throw new CabinetApiError(
+      (data as { message?: string }).message ?? "Не удалось получить URL загрузки",
+      initRes.status,
+      data,
+    );
+  }
+  const init = (await initRes.json()) as UploadInit;
+
+  const putRes = await fetch(init.uploadURL, {
+    method: "PUT",
+    body: file,
+    headers: { "Content-Type": file.type },
+  });
+  if (!putRes.ok) {
+    throw new CabinetApiError(
+      "Не удалось загрузить файл в хранилище",
+      putRes.status,
+      null,
+    );
+  }
+  // The UI displays / sends back the api-server-relative path.
+  return `/api/storage${init.objectPath}`;
+}
+
+export { CabinetApiError };
