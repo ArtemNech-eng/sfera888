@@ -9,16 +9,21 @@
  * Dry-run by default. Pass `--apply` to run UPDATE.
  *
  *   # dry-run
- *   pnpm --filter @workspace/scripts exec tsx ./src/backfill-portfolio-slugs.ts
+ *   railway run --service Postgres -- node ./_proxy-run.cjs \
+ *     pnpm --filter @workspace/scripts exec tsx ./src/backfill-portfolio-slugs.ts
  *
  *   # apply
- *   pnpm --filter @workspace/scripts exec tsx ./src/backfill-portfolio-slugs.ts --apply
+ *   railway run --service Postgres -- node ./_proxy-run.cjs \
+ *     pnpm --filter @workspace/scripts exec tsx ./src/backfill-portfolio-slugs.ts --apply
  *
- *   # limit (canary)
- *   pnpm --filter @workspace/scripts exec tsx ./src/backfill-portfolio-slugs.ts --apply --limit=10
+ *   # canary with limit
+ *   ... ./src/backfill-portfolio-slugs.ts --apply --limit=10
  *
  * NOTE: DATABASE_URL must be set in env. The script never prints it.
  *       Only touches `master_portfolio.slug` — no other columns or tables.
+ *       Uses raw SQL via the pool from @workspace/db so it doesn't pull
+ *       in drizzle-orm directly (matches the pattern in
+ *       backfill-marketplace-slugs.ts).
  */
 
 interface CliOpts {
@@ -84,70 +89,96 @@ function buildSlug(title: string | null | undefined, id: number): string {
   return `${cleaned}${suffix}`;
 }
 
+interface DbQueryResult<T> { rows: T[]; rowCount: number | null }
+interface DbClient {
+  query<T = unknown>(text: string, params?: unknown[]): Promise<DbQueryResult<T>>;
+  release(): void;
+}
+interface DbPool {
+  query<T = unknown>(text: string, params?: unknown[]): Promise<DbQueryResult<T>>;
+  connect(): Promise<DbClient>;
+  end(): Promise<void>;
+}
+
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   console.log(`[backfill-portfolio-slugs] mode=${opts.apply ? "APPLY" : "dry-run"}${opts.limit != null ? ` limit=${opts.limit}` : ""}`);
 
-  const { db, masterPortfolioTable } = await import("@workspace/db");
-  const { eq, isNull, or, sql } = await import("drizzle-orm");
+  if (!process.env["DATABASE_URL"]) {
+    console.error("[backfill-portfolio-slugs] FATAL: DATABASE_URL not set");
+    process.exit(1);
+  }
 
-  // Find cases without a slug.
-  const conds = or(
-    isNull(masterPortfolioTable.slug),
-    eq(masterPortfolioTable.slug, ""),
+  // @workspace/db exports `pool` (pg.Pool) — same pattern as
+  // backfill-marketplace-slugs.ts.
+  const dbModule = await import("@workspace/db") as unknown as { pool: DbPool };
+  const pool = dbModule.pool;
+  if (!pool) {
+    console.error("[backfill-portfolio-slugs] FATAL: @workspace/db did not export `pool`");
+    process.exit(1);
+  }
+
+  const limitClause = opts.limit ? `LIMIT ${opts.limit}` : "";
+  const rows = await pool.query<{ id: number; title: string; slug: string | null }>(
+    `SELECT id, title, slug FROM master_portfolio
+     WHERE slug IS NULL OR slug = ''
+     ORDER BY id ASC
+     ${limitClause}`,
   );
 
-  const rows = await db
-    .select({
-      id: masterPortfolioTable.id,
-      title: masterPortfolioTable.title,
-      slug: masterPortfolioTable.slug,
-    })
-    .from(masterPortfolioTable)
-    .where(conds)
-    .orderBy(masterPortfolioTable.id)
-    .limit(opts.limit ?? 100000);
-
-  console.log(`[backfill-portfolio-slugs] found ${rows.length} case(s) without a slug`);
-  if (rows.length === 0) {
+  console.log(`[backfill-portfolio-slugs] found ${rows.rows.length} case(s) without a slug`);
+  if (rows.rows.length === 0) {
     console.log(`[backfill-portfolio-slugs] nothing to do`);
+    await pool.end().catch(() => {});
     return;
   }
 
+  // Print full plan in dry-run, sample in apply mode.
+  const sample = rows.rows.slice(0, 20);
+  for (const row of sample) {
+    const newSlug = buildSlug(row.title, row.id);
+    console.log(`  case#${row.id}  "${row.title}"  ->  "${newSlug}"`);
+  }
+  if (rows.rows.length > sample.length) {
+    console.log(`  … and ${rows.rows.length - sample.length} more`);
+  }
+
+  if (!opts.apply) {
+    console.log(`\n[backfill-portfolio-slugs] dry-run done — would update ${rows.rows.length} row(s); pass --apply to commit`);
+    await pool.end().catch(() => {});
+    return;
+  }
+
+  // Apply mode — single transaction.
+  const client = await pool.connect();
   let updated = 0;
   let skipped = 0;
-  for (const row of rows) {
-    const newSlug = buildSlug(row.title, row.id);
-    if (!opts.apply) {
-      console.log(`[dry-run] case#${row.id} "${row.title}" -> "${newSlug}"`);
-      skipped++;
-      continue;
-    }
-    try {
-      await db
-        .update(masterPortfolioTable)
-        .set({ slug: newSlug })
-        .where(eq(masterPortfolioTable.id, row.id));
-      updated++;
-      if (updated % 50 === 0) {
-        console.log(`[backfill-portfolio-slugs] applied ${updated}/${rows.length}`);
+  try {
+    await client.query("BEGIN");
+    for (const row of rows.rows) {
+      const newSlug = buildSlug(row.title, row.id);
+      try {
+        const r = await client.query(
+          `UPDATE master_portfolio SET slug = $1 WHERE id = $2 AND (slug IS NULL OR slug = '')`,
+          [newSlug, row.id],
+        );
+        if ((r.rowCount ?? 0) > 0) updated++; else skipped++;
+      } catch (e: unknown) {
+        // Unique-violation should be impossible (id suffix), but log and skip.
+        console.error(`[backfill-portfolio-slugs] case#${row.id} failed:`, e instanceof Error ? e.message : e);
+        skipped++;
       }
-    } catch (e: unknown) {
-      // Unique-violation should be impossible thanks to id suffix, but log
-      // and skip just in case so a single bad row doesn't kill the batch.
-      console.error(`[backfill-portfolio-slugs] case#${row.id} failed:`, e instanceof Error ? e.message : e);
-      skipped++;
     }
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw e;
+  } finally {
+    client.release();
   }
 
-  if (opts.apply) {
-    console.log(`[backfill-portfolio-slugs] DONE — applied ${updated}, skipped ${skipped}`);
-  } else {
-    console.log(`[backfill-portfolio-slugs] dry-run done — would update ${rows.length} row(s); pass --apply to commit`);
-  }
-
-  // Drizzle's pool stays open; force exit.
-  process.exit(0);
+  console.log(`\n[backfill-portfolio-slugs] DONE — applied ${updated}, skipped ${skipped}`);
+  await pool.end().catch(() => {});
 }
 
 main().catch((e) => {
