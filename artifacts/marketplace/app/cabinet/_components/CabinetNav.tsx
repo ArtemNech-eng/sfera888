@@ -72,6 +72,7 @@ const ITEMS: Array<{
 const SIDEBAR_EXTRA: Array<{ href: string; label: string }> = [
   { href: "/cabinet/dashboard", label: "Метрики" },
   { href: "/cabinet/analytics", label: "Аналитика" },
+  { href: "/cabinet/wallet", label: "Кошелёк" },
   { href: "/cabinet/checkin", label: "Чек-ин" },
   { href: "/cabinet/profile", label: "Настройки профиля" },
 ];

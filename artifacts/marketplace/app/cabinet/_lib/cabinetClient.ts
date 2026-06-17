@@ -606,3 +606,63 @@ export interface AnalyticsData {
 export const cabinetAnalytics = {
   fetch: () => req<AnalyticsData>("GET", "/analytics"),
 };
+
+
+// ── Wallet (account-balance — separate token bucket) ────────────────────────
+
+const EXTRA_BASE = "/api/cabinet-extra";
+
+async function reqExtra<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${EXTRA_BASE}${path}`, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : {},
+    credentials: "same-origin",
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({ error: res.statusText }));
+    const message = (data as { message?: string; error?: string }).message
+      ?? (data as { error?: string }).error
+      ?? "Ошибка запроса";
+    throw new CabinetApiError(message, res.status, data);
+  }
+  return res.json() as Promise<T>;
+}
+
+export interface WalletBalance {
+  balance: number;
+  creditLimit: number;
+  available: number;
+  totalServiceFeesSpent: number;
+  totalTopups: number;
+}
+
+export interface ServiceFeeRow {
+  id: number;
+  orderId: number | null;
+  amount: number;
+  type: string;
+  reason: string | null;
+  createdAt: string;
+}
+
+export interface TopupRequestRow {
+  id: number;
+  amount: number;
+  status: "pending" | "approved" | "rejected" | string;
+  note: string | null;
+  createdAt: string;
+  approvedAt: string | null;
+}
+
+export const cabinetWallet = {
+  fetch: () => reqExtra<WalletBalance>("GET", "/account-balance/my"),
+  serviceFees: () => reqExtra<ServiceFeeRow[]>("GET", "/account-balance/my/service-fees"),
+  topupRequests: () => reqExtra<TopupRequestRow[]>("GET", "/account-balance/my/topup-requests"),
+  topupRequest: (amount: number, note?: string) =>
+    reqExtra<{ success: true; requestId: number; status: string }>(
+      "POST",
+      "/account-balance/my/topup-request",
+      { amount, note },
+    ),
+};
