@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { Master } from "../lib/types";
+import { buildMasterAvatarAlt } from "../lib/seoMeta";
 
 /**
  * Compact master card used in catalogs (`/mastera`) and on service-city
@@ -33,7 +34,7 @@ export function MasterCard({ master }: { master: Master }) {
         {master.avatarUrl ? (
           <img
             src={master.avatarUrl}
-            alt={displayName}
+            alt={buildMasterAvatarAlt(master)}
             loading="lazy"
             className="h-16 w-16 flex-none rounded-2xl border border-[var(--color-border)] bg-[var(--color-background)] object-cover"
           />

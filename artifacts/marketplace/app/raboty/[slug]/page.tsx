@@ -427,7 +427,7 @@ function MasterAuthorCard({
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={master.avatarUrl}
-            alt={masterName}
+            alt={buildMasterAvatarAlt(master)}
             className="h-16 w-16 flex-none rounded-2xl border border-[var(--color-border)] object-cover"
           />
         ) : (
@@ -479,7 +479,12 @@ function SimilarCaseCard({ item }: { item: RabotySimilarItem }) {
         {cover ? (
           <div className="relative aspect-[4/3] w-full bg-[var(--color-background)]">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={cover} alt={item.title} loading="lazy" className="block h-full w-full object-cover" />
+            <img
+              src={cover}
+              alt={buildPortfolioImageAlt(item, "after", 0)}
+              loading="lazy"
+              className="block h-full w-full object-cover"
+            />
           </div>
         ) : null}
         <div className="p-4">

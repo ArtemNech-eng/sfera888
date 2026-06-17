@@ -98,20 +98,24 @@ async function uploadPortfolioPhotoToGCS(
   if (!bucketId) throw new Error("Object storage not configured");
   const ts = Date.now();
   const rand = Math.random().toString(36).slice(2, 10);
-  const filename = `pwa-master-${masterId}-${type}-${ts}-${rand}.jpg`;
+  // WebP for better Core Web Vitals (LCP) — 25-35% smaller than JPEG at
+  // equivalent visual quality. Supported by 97%+ of browsers in 2026
+  // including Yandex.Bot / Yandex.Images. Old .jpg uploads continue to
+  // work via the proxy (regex below accepts both extensions).
+  const filename = `pwa-master-${masterId}-${type}-${ts}-${rand}.webp`;
   const key = `${PORTFOLIO_PHOTO_PREFIX}${filename}`;
 
-  const jpegBuffer = await sharp(buffer)
+  const webpBuffer = await sharp(buffer)
     .rotate()
     .resize(PORTFOLIO_PHOTO_MAX_SIDE, PORTFOLIO_PHOTO_MAX_SIDE, {
       fit: "inside",
       withoutEnlargement: true,
     })
-    .jpeg({ quality: PORTFOLIO_PHOTO_QUALITY, progressive: true, mozjpeg: true })
+    .webp({ quality: PORTFOLIO_PHOTO_QUALITY, effort: 4 })
     .toBuffer();
 
   const bucket = objectStorageClient.bucket(bucketId);
-  await bucket.file(key).save(jpegBuffer, { contentType: "image/jpeg", resumable: false });
+  await bucket.file(key).save(webpBuffer, { contentType: "image/webp", resumable: false });
   return `/api/master-pwa/portfolio-photo/${filename}`;
 }
 
@@ -1713,11 +1717,14 @@ router.get("/portfolio-photo/:filename", async (req, res) => {
       return res.status(200).send(TRANSPARENT_PIXEL_PNG);
     }
     // Defensive: only allow filenames matching our generated pattern.
-    if (!/^[a-zA-Z0-9._-]+\.jpg$/i.test(req.params.filename)) {
+    // Accepts .jpg (legacy uploads) and .webp (new uploads).
+    if (!/^[a-zA-Z0-9._-]+\.(jpg|webp)$/i.test(req.params.filename)) {
       return res.status(400).json({ error: "Bad filename" });
     }
     const key = `${PORTFOLIO_PHOTO_PREFIX}${req.params.filename}`;
     const response = await s3Client.send(new GetObjectCommand({ Bucket: bucketId, Key: key }));
+    // Use S3 stored content-type (image/webp or image/jpeg) so browsers
+    // decode correctly. Fall back to image/jpeg only if R2 didn't store one.
     res.setHeader("Content-Type", response.ContentType || "image/jpeg");
     res.setHeader("Cache-Control", "public, max-age=86400");
     if (response.Body) {

@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { fetchRabotyList } from "../../lib/api";
 import { publicUrl } from "../../lib/env";
 import { breadcrumbJsonLd, toJsonLdScript } from "../../lib/jsonLd";
-import { buildRabotyIndexMeta } from "../../lib/seoMeta";
+import { buildRabotyIndexMeta, buildPortfolioImageAlt } from "../../lib/seoMeta";
 import type { RabotyListItem } from "../../lib/types";
 
 /**
@@ -115,7 +115,12 @@ function CaseCard({ item }: { item: RabotyListItem }) {
         {cover ? (
           <div className="relative aspect-[4/3] w-full bg-[var(--color-background)]">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={cover} alt={item.title} loading="lazy" className="block h-full w-full object-cover" />
+            <img
+              src={cover}
+              alt={buildPortfolioImageAlt(item, "after", 0)}
+              loading="lazy"
+              className="block h-full w-full object-cover"
+            />
             {item.isFeatured ? (
               <span className="absolute left-3 top-3 rounded-full bg-amber-500 px-2 py-0.5 text-xs font-medium text-white">
                 Рекомендуется

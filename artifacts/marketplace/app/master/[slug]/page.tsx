@@ -9,7 +9,7 @@ import {
   masterProfileJsonLd,
   toJsonLdScript,
 } from "../../../lib/jsonLd";
-import { buildMasterMeta } from "../../../lib/seoMeta";
+import { buildMasterMeta, buildPortfolioImageAlt, buildMasterAvatarAlt } from "../../../lib/seoMeta";
 import type { City, Service, MasterPortfolioItem, MasterPublicReview } from "../../../lib/types";
 
 // Dynamic [slug] route — Next won't prerender these at build anyway, but we
@@ -216,7 +216,11 @@ export default async function MasterPage(
       <section className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
         <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
           <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
-            <Avatar src={master.avatarUrl} name={displayName} />
+            <Avatar
+              src={master.avatarUrl}
+              name={displayName}
+              alt={buildMasterAvatarAlt(master)}
+            />
             <div className="flex-1">
               <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--color-muted)]">
                 {master.city ? <span>{master.city}</span> : null}
@@ -417,7 +421,7 @@ function pluralReviews(n: number): string {
   return "отзывов";
 }
 
-function Avatar({ src, name }: { src: string | null; name: string }) {
+function Avatar({ src, name, alt }: { src: string | null; name: string; alt?: string }) {
   if (src) {
     return (
       // Raw <img>: avatars come from arbitrary R2/S3 hosts that aren't
@@ -425,7 +429,7 @@ function Avatar({ src, name }: { src: string | null; name: string }) {
       // eslint-disable-next-line @next/next/no-img-element
       <img
         src={src}
-        alt={name}
+        alt={alt ?? name}
         loading="eager"
         className="h-24 w-24 flex-none rounded-2xl border border-[var(--color-border)] bg-[var(--color-background)] object-cover"
       />
@@ -462,8 +466,16 @@ function PortfolioCard({ item }: { item: MasterPortfolioItem }) {
     <>
       {(before || after) ? (
         <div className="grid grid-cols-2 gap-1 bg-[var(--color-background)]">
-          <PortfolioPhoto src={before} label="До" />
-          <PortfolioPhoto src={after} label="После" />
+          <PortfolioPhoto
+            src={before}
+            label="До"
+            alt={buildPortfolioImageAlt(item, "before", 0)}
+          />
+          <PortfolioPhoto
+            src={after}
+            label="После"
+            alt={buildPortfolioImageAlt(item, "after", 0)}
+          />
         </div>
       ) : null}
       <div className="p-5">
@@ -514,7 +526,7 @@ function PortfolioCard({ item }: { item: MasterPortfolioItem }) {
   );
 }
 
-function PortfolioPhoto({ src, label }: { src: string | null; label: string }) {
+function PortfolioPhoto({ src, label, alt }: { src: string | null; label: string; alt: string }) {
   if (!src) {
     return (
       <div className="relative aspect-[4/3] w-full">
@@ -528,7 +540,7 @@ function PortfolioPhoto({ src, label }: { src: string | null; label: string }) {
     <div className="relative aspect-[4/3] w-full">
       {/* Raw <img>: portfolio photos come from many remote hosts. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={src} alt={label} loading="lazy" className="block h-full w-full object-cover" />
+      <img src={src} alt={alt} loading="lazy" className="block h-full w-full object-cover" />
       <span className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white">
         {label}
       </span>
