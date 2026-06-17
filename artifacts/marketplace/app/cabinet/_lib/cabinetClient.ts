@@ -219,3 +219,60 @@ export interface CabinetHome {
 export const cabinetHome = {
   fetch: () => req<CabinetHome>("GET", "/home"),
 };
+
+
+// ── Profile ─────────────────────────────────────────────────────────────────
+
+export interface WorkingHours {
+  start: string;
+  end: string;
+  days: number[];
+}
+
+export interface ServicePrice {
+  service: string;
+  priceFrom: number;
+}
+
+export interface ProfileData {
+  id: number;
+  alias: string;
+  city: string;
+  specialization: string;
+  specializations: string[];
+  phone: string | null;
+  rating: number;
+  debt: number;
+  totalOrders: number;
+  acceptedOrders: number;
+  isTestMaster: boolean;
+  customAvatarUrl: string | null;
+  contractSignedAt: string | null;
+  tags: string[];
+  workingHours: WorkingHours | null;
+  preferredDistricts: string[];
+  minArea: number;
+  servicePrices: ServicePrice[];
+  stats: {
+    conversionRate: number;
+    paymentRate: number;
+  };
+  activeCount: number;
+  completedCount: number;
+  cancelledCount: number;
+  createdAt: string;
+  maxChatId: string | null;
+  maxBotLink: string | null;
+  // Marketplace publication state:
+  slug: string | null;
+  isPublished: boolean;
+  publishedAt: string | null;
+  publicTitle: string | null;
+  publicBio: string | null;
+  yearsExperience: number | null;
+  profileUrl: string | null;
+}
+
+export const cabinetProfile = {
+  fetch: () => req<ProfileData>("GET", "/profile"),
+};
