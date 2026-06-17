@@ -302,3 +302,38 @@ export const cabinetOrders = {
     req<OrderListItem[]>("GET", `/orders/my${filter ? `?filter=${filter}` : ""}`),
   fetchAvailable: () => req<OrderListItem[]>("GET", "/orders/available"),
 };
+
+
+// ── Portfolio (cases) ───────────────────────────────────────────────────────
+
+export interface PortfolioItem {
+  id: number;
+  title: string;
+  slug: string | null;
+  description: string | null;
+  serviceTypeId: number | null;
+  cityId: number | null;
+  beforePhotos: string[];
+  afterPhotos: string[];
+  priceFrom: string | null;
+  priceTo: string | null;
+  area: string | null;
+  completedAt: string | null;
+  clientReviewText: string | null;
+  clientRating: number | null;
+  isPublished: boolean;
+  isFeatured: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PortfolioListResponse {
+  items: PortfolioItem[];
+  limit: number;
+  used: number;
+}
+
+export const cabinetPortfolio = {
+  list: () => req<PortfolioListResponse>("GET", "/portfolio"),
+};
