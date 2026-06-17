@@ -275,9 +275,68 @@ export interface ProfileData {
 
 export const cabinetProfile = {
   fetch: () => req<ProfileData>("GET", "/profile"),
+  update: (input: ProfileUpdateInput) =>
+    req<ProfileUpdateResponse>("PATCH", "/profile", input),
+  setAvailability: (available: boolean) =>
+    req<{ ok: true; isAvailable: boolean }>("PATCH", "/availability", { available }),
+  uploadAvatar: profileUploadAvatar,
 };
 
+export interface ProfileUpdateInput {
+  alias?: string;
+  phone?: string | null;
+  specializations?: string[];
+  workingHours?: WorkingHours | null;
+  preferredDistricts?: string[];
+  minArea?: number;
+  servicePrices?: ServicePrice[];
+  publicTitle?: string | null;
+  publicBio?: string | null;
+  yearsExperience?: number | null;
+}
 
+export interface ProfileUpdateResponse {
+  ok: true;
+  success: true;
+  autoPublished: boolean;
+  isPublished: boolean;
+  slug: string | null;
+  publishedAt: string | null;
+  profileUrl: string | null;
+  readinessErrors: { field: string; code: string; message: string }[];
+}
+
+export interface ProfileValidationError {
+  field: string;
+  code: string;
+  message: string;
+}
+
+/**
+ * Multipart avatar upload through the cabinet proxy.
+ *
+ * Mirrors `POST /master-pwa/profile/avatar`. Returns the api-server-relative
+ * URL stored in `customAvatarUrl`. Caller should refetch profile to pick up
+ * any side-effects.
+ */
+async function profileUploadAvatar(file: File): Promise<{ customAvatarUrl: string }> {
+  const fd = new FormData();
+  fd.append("avatar", file);
+  const res = await fetch(`${BASE}/profile/avatar`, {
+    method: "POST",
+    credentials: "same-origin",
+    body: fd,
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({ error: res.statusText }));
+    const message =
+      (data as { message?: string }).message
+      ?? (data as { error?: string }).error
+      ?? "Не удалось загрузить аватар";
+    throw new CabinetApiError(message, res.status, data);
+  }
+  return res.json() as Promise<{ customAvatarUrl: string }>;
+}
 // ── Orders (read-only list) ─────────────────────────────────────────────────
 
 export interface OrderListItem {

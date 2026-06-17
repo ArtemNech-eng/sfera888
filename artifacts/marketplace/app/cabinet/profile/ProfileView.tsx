@@ -91,14 +91,13 @@ export function ProfileView() {
               ) : null}
             </div>
           </div>
-          <a
-            href="https://sfera-master.ru/master-pwa/"
-            rel="noopener noreferrer"
+          <Link
+            href="/cabinet/profile/edit"
             className="inline-flex h-10 flex-shrink-0 items-center gap-1 rounded-xl bg-[var(--color-primary)] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--color-primary-hover)]"
           >
             Редактировать
             <ArrowRightIcon />
-          </a>
+          </Link>
         </div>
       </header>
 
