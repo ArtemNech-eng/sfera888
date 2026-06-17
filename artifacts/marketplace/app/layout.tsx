@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Manrope } from "next/font/google";
+import { Manrope, Lora } from "next/font/google";
 import { headers } from "next/headers";
 import "./globals.css";
 import { Header } from "../components/Header";
@@ -18,11 +18,24 @@ const manrope = Manrope({
   display: "swap",
 });
 
+// Lora is the editorial serif used for h1/h2 display headings. We prefer it
+// over Fraunces / EB Garamond because it ships full Cyrillic coverage in
+// Google Fonts (our market is RU-first). Variable axis is `wght` 400-700,
+// both regular and italic. The `--font-serif` token in globals.css points
+// at this variable.
+const lora = Lora({
+  subsets: ["latin", "cyrillic"],
+  variable: "--font-lora",
+  weight: ["400", "500", "600", "700"],
+  style: ["normal", "italic"],
+  display: "swap",
+});
+
 // Theme color drives the iOS / Chrome status-bar tint when the cabinet is
-// installed as a PWA. Matches the brand teal used in `app/icon.svg` and the
-// manifest `theme_color`.
+// installed as a PWA. Matches the brand graphite text colour — works with
+// both the warm-white pages and the clay accent without clashing.
 export const viewport = {
-  themeColor: "#0F766E",
+  themeColor: "#1A1A1A",
 };
 
 /**
@@ -81,7 +94,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const ownChrome = isOwnChromeRoute(pathname);
 
   return (
-    <html lang="ru" className={manrope.variable}>
+    <html lang="ru" className={`${manrope.variable} ${lora.variable}`}>
       <body>
         {ownChrome ? null : <Header />}
         <main className="flex-1">{children}</main>

@@ -1,37 +1,72 @@
 @import "tailwindcss";
 
-/* Brand tokens — matches the design brief. */
+/* ─── Warm editorial palette ───────────────────────────────────────
+   Hand-tuned for an interior-design / planning service. Reads
+   premium and architectural rather than e-commerce. References:
+   Houzz, Architectural Digest, The Spruce, Apple HIG.
+
+   Naming convention is unchanged from the previous palette so the
+   token swap is a no-touch refactor for component code: every place
+   that used `var(--color-primary)` keeps working, it just renders in
+   muted clay terracotta now instead of teal.
+   ───────────────────────────────────────────────────────────────── */
 @theme {
-  /* Primary — teal/green, the established brand colour. */
-  --color-primary: #0F766E;
-  --color-primary-hover: #0E6660;
-  --color-primary-soft: #CCFBF1;
-  --color-primary-ring: #5EEAD4;
+  /* Text — graphite scale, no blue. */
+  --color-text: #1A1A1A;
+  --color-muted: #5C5C5C;
+  --color-faint: #8A8A8A;
 
-  /* Accent — warm amber. Used to break up the all-green palette on
-     CTAs, AI-design promo, and gradient highlights. */
-  --color-accent: #F59E0B;
-  --color-accent-hover: #D97706;
-  --color-accent-soft: #FEF3C7;
-
-  /* Secondary — indigo. Reserved for Ideas/inspiration surfaces so
-     they read distinct from the commercial green primary. */
-  --color-secondary: #6366F1;
-  --color-secondary-hover: #4F46E5;
-  --color-secondary-soft: #EEF2FF;
-
-  /* Surfaces, text, borders. */
-  --color-background: #F8FAFC;
+  /* Surfaces — warm-white, not cold cyan. */
+  --color-background: #FAFAF7;
   --color-surface: #FFFFFF;
-  --color-text: #0F172A;
-  --color-muted: #64748B;
-  --color-border: #E2E8F0;
+  --color-surface-elevated: #FFFFFF;
+  --color-border: #E8E5E0;
+  --color-border-strong: #D4CFC7;
 
-  --radius-card: 16px;
+  /* Primary accent — muted clay (terracotta with sand). The single
+     colour the brand leans on for CTAs, links, focus rings.
+     Carries an "interior" association without screaming for attention. */
+  --color-primary: #A4642A;
+  --color-primary-hover: #8B5424;
+  --color-primary-strong: #8B5424;
+  --color-primary-soft: #F4ECE3;
+  --color-primary-ring: #C99775;
 
-  /* Manrope is loaded via `next/font/google` in app/layout.tsx and
-     exposes its CSS variable as `--font-manrope`. We alias it to
-     `--font-sans` so existing utility classes keep working. */
+  /* Money / calculator surface — deep forest. Used sparingly: only
+     where the user is dealing with rubles (calculator, balance,
+     payment proofs). Avoids the "marketplace green" association. */
+  --color-money: #2D5F3F;
+  --color-money-soft: #E8F0EA;
+
+  /* Semantic status colours. Status pills, banners, tags. */
+  --color-ok: #2D5F3F;
+  --color-ok-soft: #E8F0EA;
+  --color-warning: #A4642A;
+  --color-warning-soft: #F4ECE3;
+  --color-danger: #9F2828;
+  --color-danger-soft: #FBEBEB;
+
+  /* Legacy aliases — kept so callsites that imported `--color-accent`
+     or `--color-secondary` still resolve. They now point at the
+     warm palette, not the old amber/indigo. */
+  --color-accent: #A4642A;
+  --color-accent-hover: #8B5424;
+  --color-accent-soft: #F4ECE3;
+  --color-secondary: #2D5F3F;
+  --color-secondary-hover: #234B30;
+  --color-secondary-soft: #E8F0EA;
+
+  /* Less rounded — editorial / architectural feel, not iOS-app.
+     Photos and hero sections override this with rounded-none. */
+  --radius-card: 8px;
+
+  /* ─── Typography ─────────────────────────────────────────────────
+     Lora is the variable serif loaded in app/layout.tsx via
+     next/font/google. It powers display headings only (RU+Latin). Manrope
+     stays for body, UI, numerals — it pairs cleanly with Lora and we
+     don't sacrifice the screen-readability we already had.
+     ──────────────────────────────────────────────────────────────── */
+  --font-serif: var(--font-lora), "EB Garamond", Georgia, serif;
   --font-sans: var(--font-manrope), -apple-system, BlinkMacSystemFont,
     "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
@@ -48,4 +83,24 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+}
+
+/* Editorial display heading utility. Apply via `className="font-editorial"`
+   to give an h1/h2 the magazine-spread feel — tight tracking, slight
+   weight, serif. Headings without this class stay sans (UI feel). */
+.font-editorial {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+
+/* Optional: editorial small-caps eyebrow above titles. */
+.font-eyebrow {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 0.75rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-muted);
 }
