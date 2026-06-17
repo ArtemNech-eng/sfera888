@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Manrope, Lora, Caveat } from "next/font/google";
+import { Manrope, Spectral } from "next/font/google";
 import { headers } from "next/headers";
 import "./globals.css";
 import { Header } from "../components/Header";
@@ -7,8 +7,7 @@ import { Footer } from "../components/Footer";
 import { YandexMetrika } from "../components/YandexMetrika";
 import { publicUrl } from "../lib/env";
 
-// Manrope — body / UI sans-serif. Loaded via `next/font/google` so it ships
-// with `font-display: swap` and Next handles the CSS-variable wiring.
+// Manrope — body / UI sans-serif.
 const manrope = Manrope({
   subsets: ["latin", "cyrillic"],
   variable: "--font-manrope",
@@ -16,23 +15,14 @@ const manrope = Manrope({
   display: "swap",
 });
 
-// Lora — editorial serif for h1/h2. Variable axis covers wght 400-700,
-// regular and italic. Cyrillic supported.
-const lora = Lora({
+// Spectral — Adobe×Google modern transitional serif. Reads scandi-premium
+// without the vintage feel of EB Garamond. Full Cyrillic coverage.
+// Used for h1/h2/h3 display headings via the .font-editorial utility.
+const spectral = Spectral({
   subsets: ["latin", "cyrillic"],
-  variable: "--font-lora",
-  weight: ["400", "500", "600", "700"],
+  variable: "--font-spectral",
+  weight: ["300", "400", "500", "600", "700"],
   style: ["normal", "italic"],
-  display: "swap",
-});
-
-// Caveat — handwritten warmth for kickers and accents. One-or-two-word
-// labels above sections; never used for body or whole sentences.
-// Cyrillic supported.
-const caveat = Caveat({
-  subsets: ["latin", "cyrillic"],
-  variable: "--font-caveat",
-  weight: ["400", "500", "600", "700"],
   display: "swap",
 });
 
@@ -99,7 +89,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const ownChrome = isOwnChromeRoute(pathname);
 
   return (
-    <html lang="ru" className={`${manrope.variable} ${lora.variable} ${caveat.variable}`}>
+    <html lang="ru" className={`${manrope.variable} ${spectral.variable}`}>
       <body>
         {ownChrome ? null : <Header />}
         <main className="flex-1">{children}</main>

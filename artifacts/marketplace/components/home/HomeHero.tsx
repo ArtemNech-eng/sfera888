@@ -2,22 +2,17 @@ import Link from "next/link";
 import { DEMO_CASES } from "../../lib/demoCases";
 
 /**
- * Cozy editorial hero (plan §20.2 [2], §21 cozy iteration).
+ * Scandi-warm hero (plan §21 scandi iteration).
  *
- * Three-photo collage stays — that part felt right. What changed:
- *   • headline scaled down from text-7xl to text-4xl/5xl so it reads as
- *     a warm invitation, not a SaaS billboard
- *   • hero shorter overall — `lg:aspect-[5/4]` instead of [4/5] so the
- *     collage doesn't eat half the viewport on desktop
- *   • photos rounded again (rounded-2xl) and lifted with warm shadows
- *   • CTAs in clay terracotta with cozy shadows, not Apple-cold black
- *   • handwritten kicker ("в нашем доме") gives the page personality
+ * Three-photo collage stays. Removed the handwritten kicker and clay
+ * accents — replaced with a quiet eyebrow label and sage-eucalyptus
+ * primary. Reads grown-up and well-made instead of blog-cute.
  */
 export function HomeHero() {
   const collage = [
-    DEMO_CASES[1], // wide composition — left tile, full height
-    DEMO_CASES[0], // top-right
-    DEMO_CASES[3], // bottom-right
+    DEMO_CASES[1],
+    DEMO_CASES[0],
+    DEMO_CASES[3],
   ].filter((d): d is NonNullable<typeof d> => Boolean(d));
 
   return (
@@ -26,11 +21,9 @@ export function HomeHero() {
         <div className="grid items-center gap-12 lg:grid-cols-[1.05fr,1fr] lg:gap-14">
           {/* ── Left: copy ──────────────────────────────────────────── */}
           <div className="flex flex-col">
-            <p className="font-handwritten text-2xl text-[var(--color-primary)] sm:text-3xl">
-              в нашем доме
-            </p>
+            <p className="font-eyebrow">Планировщик ремонта</p>
 
-            <h1 className="font-editorial mt-3 text-3xl text-[var(--color-text)] sm:text-4xl lg:text-5xl">
+            <h1 className="font-editorial mt-5 text-3xl text-[var(--color-text)] sm:text-4xl lg:text-5xl">
               Спланируйте ремонт прежде, чем искать мастера.
             </h1>
 
@@ -53,15 +46,11 @@ export function HomeHero() {
             </p>
           </div>
 
-          {/* ── Right: 3-photo collage (kept, just shorter & rounded) ── */}
+          {/* ── Right: 3-photo collage ──────────────────────────────── */}
           <div className="relative grid h-[22rem] grid-cols-2 grid-rows-2 gap-3 sm:h-[26rem] sm:gap-4 lg:h-auto lg:aspect-[5/4]">
             <CollageTile data={collage[0]!} className="row-span-2" />
             <CollageTile data={collage[1]!} />
             <CollageTile data={collage[2]!} />
-
-            <span className="font-handwritten absolute -top-2 -right-2 inline-flex rotate-[6deg] items-center bg-[var(--color-text)] px-3 py-1 text-base text-white shadow-cozy sm:text-lg">
-              идеи
-            </span>
           </div>
         </div>
       </div>
@@ -75,7 +64,7 @@ function PrimaryCta({ href, label }: { href: string; label: string }) {
   return (
     <Link
       href={href}
-      className="group inline-flex items-center gap-2 rounded-full bg-[var(--color-primary)] px-7 py-3.5 text-sm font-semibold tracking-wide text-white shadow-cozy transition hover:bg-[var(--color-primary-hover)] hover:shadow-cozy-md"
+      className="group inline-flex items-center gap-2 rounded-lg bg-[var(--color-primary)] px-7 py-3.5 text-sm font-semibold tracking-wide text-white shadow-cozy transition hover:bg-[var(--color-primary-hover)] hover:shadow-cozy-md"
     >
       {label}
       <svg
@@ -101,7 +90,7 @@ function SecondaryCta({ href, label }: { href: string; label: string }) {
   return (
     <Link
       href={href}
-      className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-6 py-3.5 text-sm font-semibold text-[var(--color-text)] transition hover:border-[var(--color-text)] hover:shadow-cozy"
+      className="inline-flex items-center gap-2 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-6 py-3.5 text-sm font-semibold text-[var(--color-text)] transition hover:border-[var(--color-text)]"
     >
       {label}
     </Link>
@@ -142,7 +131,7 @@ function CollageTile({
   return (
     <Link
       href="/raboty"
-      className={`group relative overflow-hidden rounded-2xl bg-[var(--color-border)] shadow-cozy transition hover:shadow-cozy-md ${className}`}
+      className={`group relative overflow-hidden rounded-xl bg-[var(--color-border)] shadow-cozy transition hover:shadow-cozy-md ${className}`}
     >
       <img
         src={data.imageUrl}
@@ -150,8 +139,8 @@ function CollageTile({
         loading="lazy"
         className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
       />
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-      <span className="absolute bottom-3 left-3 inline-flex rounded-full bg-[var(--color-surface)]/95 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text)]">
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+      <span className="absolute bottom-3 left-3 inline-flex rounded bg-[var(--color-surface)]/95 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text)]">
         {data.category}
       </span>
     </Link>

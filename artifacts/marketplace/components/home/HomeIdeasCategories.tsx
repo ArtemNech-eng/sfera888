@@ -2,26 +2,21 @@ import Link from "next/link";
 import { ROOM_CATEGORIES, type RoomCategory } from "../../lib/demoCases";
 
 /**
- * Cozy room-categories rail (plan §21 cozy iteration).
+ * Scandi-warm room-categories rail (plan §21 scandi iteration).
  *
- * Six rooms as photo cards with rounded corners and warm shadows. Photo
- * size dialled down (4:5 ratio kept tight, 6 columns at lg) so the rail
- * doesn't feel like a Pinterest board, but a friendly invitation.
- * Section sits on cream background, contrasts with white surface above
- * for natural separation without a heavy hairline.
+ * Six rooms as photo cards with rounded-xl corners and soft warm shadows.
+ * Replaces the handwritten kicker with a structural eyebrow label.
  *
  * Server component, zero JS.
  */
 export function HomeIdeasCategories() {
   return (
-    <section className="bg-[var(--color-background)]">
+    <section className="bg-[var(--color-surface)]">
       <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
         <div className="flex flex-wrap items-end justify-between gap-6">
           <div className="max-w-2xl">
-            <p className="font-handwritten text-2xl text-[var(--color-primary)] sm:text-3xl">
-              идеи по комнатам
-            </p>
-            <h2 className="font-editorial mt-3 text-3xl text-[var(--color-text)] sm:text-4xl">
+            <p className="font-eyebrow">Идеи по комнатам</p>
+            <h2 className="font-editorial mt-4 text-3xl text-[var(--color-text)] sm:text-4xl">
               С чего начнём ремонт?
             </h2>
             <p className="mt-4 max-w-xl text-base leading-relaxed text-[var(--color-muted)]">
@@ -64,7 +59,7 @@ function CategoryCard({ category }: { category: RoomCategory }) {
       href="/raboty"
       className="group block"
     >
-      <div className="relative aspect-[4/5] w-full overflow-hidden rounded-2xl bg-[var(--color-border)] shadow-cozy transition group-hover:shadow-cozy-md">
+      <div className="relative aspect-[4/5] w-full overflow-hidden rounded-xl bg-[var(--color-border)] shadow-cozy transition group-hover:shadow-cozy-md">
         <img
           src={category.imageUrl}
           alt={category.alt}

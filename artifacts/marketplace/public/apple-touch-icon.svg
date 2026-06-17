@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" width="180" height="180" role="img" aria-label="Честные мастера">
-  <rect width="180" height="180" fill="#1A1A1A"/>
-  <path d="M45 90 L90 45 L135 90" stroke="#FAFAF7" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-  <path d="M62 113 L82 132 L124 90" stroke="#A4642A" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <rect width="180" height="180" fill="#1F1D1A"/>
+  <path d="M45 90 L90 45 L135 90" stroke="#FAF6F0" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <path d="M62 113 L82 132 L124 90" stroke="#5E7A4D" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
 </svg>

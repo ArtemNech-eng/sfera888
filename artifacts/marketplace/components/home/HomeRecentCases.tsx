@@ -7,15 +7,13 @@ interface Props {
 }
 
 /**
- * Cozy cases rail (plan §21 cozy iteration).
+ * Scandi-warm cases rail (plan §21 scandi iteration).
  *
  * - When ≥3 real cases are published → renders them with full data.
- * - When fewer than 3 → falls back to Unsplash CC0 stylistic references
- *   marked clearly with «Пример».
+ * - When fewer than 3 → falls back to Unsplash CC0 stylistic references.
  *
- * Cards have rounded corners and warm soft shadows, sit on white surface
- * to contrast against the cream page bg. Reads like a cozy magazine
- * pull-out, not a marketplace listing.
+ * Cards use rounded-xl photos with soft warm shadows. Sits on cream-deep
+ * accent for natural separation from the white surface above.
  */
 export function HomeRecentCases({ cases }: Props) {
   const isDemoMode = cases.length < 3;
@@ -28,21 +26,19 @@ export function HomeRecentCases({ cases }: Props) {
   if (items.length === 0) return null;
 
   return (
-    <section className="bg-[var(--color-surface)]">
+    <section className="bg-[var(--color-cream-deep)]">
       <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
         <div className="flex flex-wrap items-end justify-between gap-6">
           <div className="max-w-2xl">
-            <p className="font-handwritten text-2xl text-[var(--color-primary)] sm:text-3xl">
-              {isDemoMode ? "идеи" : "реальные ремонты"}
-            </p>
-            <h2 className="font-editorial mt-3 text-3xl text-[var(--color-text)] sm:text-4xl">
+            <p className="font-eyebrow">{isDemoMode ? "Идеи" : "Реальные ремонты"}</p>
+            <h2 className="font-editorial mt-4 text-3xl text-[var(--color-text)] sm:text-4xl">
               {isDemoMode
                 ? "Идеи для вашего ремонта."
                 : "Ремонты с фото, ценами и сроками."}
             </h2>
             <p className="mt-4 max-w-xl text-base leading-relaxed text-[var(--color-muted)]">
               {isDemoMode
-                ? "Стилевые референсы — пока мастера наполняют каталог собственными работами. Сохраняйте, что зацепило."
+                ? "Стилевые референсы — пока мастера наполняют каталог собственными работами."
                 : "Каждая работа — фото до и после, бюджет, длительность. Понравился проект — оставьте заявку, подберём мастера, который сделает похоже."}
             </p>
           </div>
@@ -104,7 +100,7 @@ function RealCaseCard({ data }: { data: RabotyListItem }) {
       href={`/raboty/${data.slug}`}
       className="group block"
     >
-      <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-[var(--color-border)] shadow-cozy transition group-hover:shadow-cozy-md">
+      <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-[var(--color-border)] shadow-cozy transition group-hover:shadow-cozy-md">
         {cover ? (
           <img
             src={cover}
@@ -119,7 +115,7 @@ function RealCaseCard({ data }: { data: RabotyListItem }) {
         )}
 
         {data.isFeatured ? (
-          <span className="absolute left-3 top-3 inline-flex items-center rounded-full bg-[var(--color-primary)] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white">
+          <span className="absolute left-3 top-3 inline-flex items-center rounded bg-[var(--color-primary)] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white">
             Топ
           </span>
         ) : null}
@@ -176,14 +172,14 @@ function DemoCaseCard({ data }: { data: DemoCase }) {
       href="/raboty"
       className="group block"
     >
-      <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-[var(--color-border)] shadow-cozy transition group-hover:shadow-cozy-md">
+      <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-[var(--color-border)] shadow-cozy transition group-hover:shadow-cozy-md">
         <img
           src={data.imageUrl}
           alt={data.alt}
           loading="lazy"
           className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
         />
-        <span className="absolute left-3 top-3 inline-flex items-center rounded-full bg-[var(--color-surface)]/95 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-faint)]">
+        <span className="absolute left-3 top-3 inline-flex items-center rounded bg-[var(--color-surface)]/95 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-faint)]">
           Пример
         </span>
       </div>

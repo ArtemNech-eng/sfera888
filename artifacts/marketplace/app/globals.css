@@ -1,80 +1,79 @@
 @import "tailwindcss";
 
-/* ─── Cozy editorial palette ────────────────────────────────────────
-   Warmer iteration of the editorial direction. Tuned for an at-home
-   intimate feel: cream surfaces, softer rounded geometry, warm-tone
-   shadows. Less "architectural magazine", more "home & living blog".
-   References: The Spruce, Apartment Therapy, Real Simple, INMYROOM.
+/* ─── Scandi-warm palette ─────────────────────────────────────────
+   Hybrid of Scandinavian minimalism with a touch of warmth — meant to
+   read calm, well-made and grown-up rather than blog-cute or SaaS-cold.
+   References: IKEA Family, Hem, Muuto, Norrgavel, with a quieter take
+   on Aesop's typography.
 
-   Token names are unchanged from the previous palette so component
-   code keeps working — this is a tone shift, not a refactor.
-   ───────────────────────────────────────────────────────────────── */
+   Token names are unchanged; component code keeps working.
+   ─────────────────────────────────────────────────────────────── */
 @theme {
-  /* Text — graphite stays, stays warm-readable on cream. */
-  --color-text: #1A1A1A;
-  --color-muted: #5F5853;
-  --color-faint: #8E867F;
+  /* Text — graphite scale, slightly warmer than pure black. */
+  --color-text: #1F1D1A;
+  --color-muted: #5A5550;
+  --color-faint: #8B8480;
 
-  /* Surfaces — warm cream is the primary background, white on top
-     for cards and elevated content. */
-  --color-background: #FBF6EC;       /* page cream */
-  --color-cream-deep: #F1E8D6;       /* alt section accent */
+  /* Surfaces — very light warm-bone, almost white. White used on
+     cards / elevated content so they read clean against the page. */
+  --color-background: #FAF6F0;     /* nearly-white warm bone */
+  --color-cream-deep: #F0E9DC;     /* alternating section accent */
   --color-surface: #FFFFFF;
   --color-surface-elevated: #FFFFFF;
-  --color-border: #EADFCB;           /* warm beige hairline */
-  --color-border-strong: #D6C7A6;
+  --color-border: #E5DCC9;         /* warm hairline */
+  --color-border-strong: #D0C4AB;
 
-  /* Primary — softer terracotta (more red, less mud), keeps the
-     "interior" association without going corporate-orange. */
-  --color-primary: #B5683B;
-  --color-primary-hover: #9A5530;
-  --color-primary-strong: #9A5530;
-  --color-primary-soft: #F8EBDA;
-  --color-primary-ring: #D6A07A;
+  /* Primary — eucalyptus sage. The single colour the brand leans on.
+     Reads natural and grounded; avoids both teal-marketplace and
+     terracotta-blog-cute associations. */
+  --color-primary: #5E7A4D;
+  --color-primary-hover: #4D6440;
+  --color-primary-strong: #4D6440;
+  --color-primary-soft: #E8EDE3;
+  --color-primary-ring: #98AC85;
 
-  /* Money / "ok" — soft sage. Used only on calculator + balance
-     surfaces so green never reads as "marketplace" elsewhere. */
+  /* Money / "ok" — same eucalyptus family. Not a separate hue any
+     more; the calculator and balance now share the primary tone. */
   --color-money: #5E7A4D;
-  --color-money-soft: #E9EFE2;
+  --color-money-soft: #E8EDE3;
 
-  /* Status colours — kept gentle. */
+  /* Status — gentle warm-rust for warning, deep oxblood for danger. */
   --color-ok: #5E7A4D;
-  --color-ok-soft: #E9EFE2;
-  --color-warning: #B5683B;
-  --color-warning-soft: #F8EBDA;
+  --color-ok-soft: #E8EDE3;
+  --color-warning: #B8783F;
+  --color-warning-soft: #F4E9D9;
   --color-danger: #9F2828;
   --color-danger-soft: #FBEBEB;
 
-  /* Legacy aliases — kept so callsites that imported `--color-accent`
-     or `--color-secondary` still resolve. */
-  --color-accent: #B5683B;
-  --color-accent-hover: #9A5530;
-  --color-accent-soft: #F8EBDA;
+  /* Legacy aliases — keep callsites that imported `--color-accent` /
+     `--color-secondary` working, just route them at the new palette. */
+  --color-accent: #B8783F;        /* warm amber for the rare amber CTA */
+  --color-accent-hover: #9C5F30;
+  --color-accent-soft: #F4E9D9;
   --color-secondary: #5E7A4D;
   --color-secondary-hover: #4D6440;
-  --color-secondary-soft: #E9EFE2;
+  --color-secondary-soft: #E8EDE3;
 
-  /* Geometry — softer round corners on cards & photos.
-     Hero / cover photos override individually. */
-  --radius-card: 16px;
+  /* Geometry — smaller round corners for the scandi feel. Photos and
+     hero blocks use this; UI buttons stay rounded-lg manually. */
+  --radius-card: 12px;
 
-  /* Cozy warm shadows — barely-there ambient tint instead of cold
-     near-black. Used as `.shadow-cozy` / `.shadow-cozy-md` below. */
-  --shadow-cozy: 0 1px 2px rgba(120, 75, 30, 0.05),
-                 0 4px 16px rgba(120, 75, 30, 0.05);
-  --shadow-cozy-md: 0 2px 4px rgba(120, 75, 30, 0.06),
-                    0 12px 28px rgba(120, 75, 30, 0.07);
+  /* Soft warm shadows — barely-there ambient lift. */
+  --shadow-cozy: 0 1px 2px rgba(80, 70, 50, 0.04),
+                 0 4px 16px rgba(80, 70, 50, 0.05);
+  --shadow-cozy-md: 0 2px 4px rgba(80, 70, 50, 0.05),
+                    0 12px 28px rgba(80, 70, 50, 0.06);
 
   /* ─── Typography ───────────────────────────────────────────────
-     Lora — editorial serif (h1/h2). Manrope — body / UI / numerals.
-     Caveat — handwritten warmth for kicker labels and accents.
-     All three load via next/font/google in app/layout.tsx and
-     expose CSS variables aliased here.
+     Spectral — modern transitional serif by Adobe×Google. Reads as
+     Aesop / scandi-premium without going vintage. Full Cyrillic
+     coverage. Used for h1/h2/section headlines and pull-quotes.
+
+     Manrope — body / UI / numerals. Pairs cleanly with Spectral.
      ─────────────────────────────────────────────────────────── */
-  --font-serif: var(--font-lora), "EB Garamond", Georgia, serif;
+  --font-serif: var(--font-spectral), "EB Garamond", Georgia, serif;
   --font-sans: var(--font-manrope), -apple-system, BlinkMacSystemFont,
     "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-handwritten: var(--font-caveat), "Caveat", "Kalam", cursive;
 }
 
 html {
@@ -91,17 +90,17 @@ body {
   flex-direction: column;
 }
 
-/* Editorial display heading — applied to large hero / section titles.
-   Slight letter-spacing pull, snug line-height for that magazine feel. */
+/* Editorial display heading. Slight letter-spacing pull, generous
+   line-height that's still tight enough to feel deliberate. */
 .font-editorial {
   font-family: var(--font-serif);
   font-weight: 500;
-  letter-spacing: -0.015em;
-  line-height: 1.1;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
 }
 
-/* Editorial small-caps eyebrow — quiet, neutral. Use this when a
-   section needs a clean structural label. */
+/* Eyebrow label — quiet, neutral, structural. Used above section
+   titles in place of the previous handwritten kicker. */
 .font-eyebrow {
   font-family: var(--font-sans);
   font-weight: 600;
@@ -111,18 +110,8 @@ body {
   color: var(--color-muted);
 }
 
-/* Handwritten kicker — adds the "personal voice" feel above warm
-   sections (Идеи, Как это работает, Цифры платформы и т.п.).
-   Use sparingly — one per section; overuse tips back into kitsch. */
-.font-handwritten {
-  font-family: var(--font-handwritten);
-  font-weight: 600;
-  letter-spacing: 0;
-  line-height: 1;
-}
-
 /* Soft warm shadow utility classes — applied to lift cards above the
-   cream background without the cold near-black drop of `shadow-md`. */
+   warm-bone background without the cold near-black drop of `shadow-md`. */
 .shadow-cozy {
   box-shadow: var(--shadow-cozy);
 }

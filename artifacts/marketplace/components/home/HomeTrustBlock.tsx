@@ -5,12 +5,10 @@ interface Props {
 }
 
 /**
- * Cozy numbers section (plan §21 cozy iteration).
+ * Scandi-warm numbers section (plan §21 scandi iteration).
  *
- * Live database stats as warm serif figures on a soft cream-deep band.
- * Removes the hard hairline divisions in favour of cozy white pill-cards
- * with soft warm shadow — looks like a friendly stat sheet, not a
- * dashboard.
+ * Live database stats as warm serif figures on white pill-cards. Sits on
+ * cream-deep accent. Eyebrow kicker replaces handwritten label.
  */
 export function HomeTrustBlock({ stats }: Props) {
   const cards: TrustCard[] = [];
@@ -50,13 +48,11 @@ export function HomeTrustBlock({ stats }: Props) {
   if (cards.length === 0) return null;
 
   return (
-    <section className="bg-[var(--color-cream-deep)]">
+    <section className="bg-[var(--color-surface)]">
       <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
         <div className="max-w-2xl">
-          <p className="font-handwritten text-2xl text-[var(--color-primary)] sm:text-3xl">
-            живые цифры
-          </p>
-          <h2 className="font-editorial mt-3 text-3xl text-[var(--color-text)] sm:text-4xl">
+          <p className="font-eyebrow">Цифры платформы</p>
+          <h2 className="font-editorial mt-4 text-3xl text-[var(--color-text)] sm:text-4xl">
             Каждое число — из живой базы заказов.
           </h2>
           <p className="mt-4 text-base leading-relaxed text-[var(--color-muted)]">
@@ -73,7 +69,7 @@ export function HomeTrustBlock({ stats }: Props) {
           {cards.map((card, idx) => (
             <li
               key={idx}
-              className="rounded-2xl bg-[var(--color-surface)] p-6 shadow-cozy sm:p-7"
+              className="rounded-xl bg-[var(--color-background)] p-6 shadow-cozy sm:p-7"
             >
               <p className="font-editorial text-4xl text-[var(--color-text)] sm:text-5xl">
                 {card.decoration === "stars" ? (
