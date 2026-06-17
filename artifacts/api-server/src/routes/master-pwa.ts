@@ -28,7 +28,12 @@ import {
   type ValidationError,
 } from "../lib/marketplaceModeration.js";
 import { revalidateMarketplacePaths, masterPublicationPaths } from "../lib/marketplaceRevalidate.js";
-
+import {
+  smoothPortfolioDescription,
+  assemblePortfolioDescription,
+  AiContentDisabledError,
+  type AssembleInput,
+} from "../lib/aiContent.js";
 const authRateLimit = createRateLimiter({ windowMs: 60_000, maxAttempts: 5 });
 const registerRateLimit = createRateLimiter({ windowMs: 60_000, maxAttempts: 3 });
 const forgotPasswordRateLimit = createRateLimiter({ windowMs: 60_000, maxAttempts: 3 });
@@ -2214,6 +2219,70 @@ router.delete("/portfolio/:id/photos", requireMasterPwa, async (req, res) => {
   }
 
   res.json({ ok: true, item: toPortfolioPwaDto(updated) });
+});
+
+// ─── Portfolio description helpers (V1.7 — assemble + AI smooth) ────────────
+//
+// These two endpoints power the "Помощник" UI in the master-pwa portfolio
+// editor (plan §11.7.6 / discussion in chat about SEO + AI safety):
+//
+//   POST /portfolio/assemble-description  — pure template, no AI. Takes
+//        5 short structured fields and returns a coherent paragraph.
+//   POST /portfolio/smooth-description    — AI light copy-edit. Takes one
+//        text and returns the same text with grammar smoothed. Strictly
+//        no fact additions (see lib/aiContent.ts SMOOTH_SYSTEM_PROMPT).
+//
+// Both endpoints are pure transformations — they do NOT touch the DB.
+// The frontend takes the result, lets the master review/edit, and only
+// then sends it to PATCH /portfolio/:id with `description`.
+
+router.post("/portfolio/assemble-description", requireMasterPwa, async (req, res) => {
+  const body = req.body ?? {};
+  // We accept a 5-field object. Any extra fields are ignored (defensive
+  // against the frontend sending stale form state).
+  const input: AssembleInput = {
+    before: typeof body.before === "string" ? body.before.slice(0, 500) : undefined,
+    steps: typeof body.steps === "string" ? body.steps.slice(0, 1500) : undefined,
+    materials: typeof body.materials === "string" ? body.materials.slice(0, 1000) : undefined,
+    challenges: typeof body.challenges === "string" ? body.challenges.slice(0, 600) : undefined,
+    otherDetails: typeof body.otherDetails === "string" ? body.otherDetails.slice(0, 600) : undefined,
+  };
+  const description = assemblePortfolioDescription(input);
+  res.json({ ok: true, description });
+});
+
+router.post("/portfolio/smooth-description", requireMasterPwa, async (req, res) => {
+  const text = typeof req.body?.text === "string" ? req.body.text : "";
+  if (!text.trim()) {
+    return res.status(400).json({ ok: false, error: "text is required" });
+  }
+  try {
+    const result = await smoothPortfolioDescription(text);
+    if (!result.text) {
+      return res.json({
+        ok: true,
+        description: null,
+        note: "Текст слишком короткий или пустой — добавьте больше тезисов.",
+      });
+    }
+    res.json({
+      ok: true,
+      description: result.text,
+      meta: { tokensUsed: result.tokensUsed, model: result.model },
+    });
+  } catch (e: unknown) {
+    if (e instanceof AiContentDisabledError) {
+      return res.status(503).json({
+        ok: false,
+        error: "AI-помощник временно недоступен. Опишите работу самостоятельно.",
+      });
+    }
+    console.error("[portfolio/smooth-description]", e instanceof Error ? e.message : e);
+    res.status(502).json({
+      ok: false,
+      error: "Не удалось обработать текст. Попробуйте ещё раз через минуту.",
+    });
+  }
 });
 
 // ─── REGISTRATION ─────────────────────────────────────────────────────────────

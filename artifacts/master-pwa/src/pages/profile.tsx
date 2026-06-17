@@ -9,6 +9,7 @@ import {
   BadgeCheck, Camera, Pencil, Check, X, Loader2,
   BarChart2, Clock, Filter, ChevronDown, Plus, Download, FileText,
   DollarSign, ChevronRight, BookOpen, FileSignature, Globe, Image as ImageIcon, Trash2,
+  Sparkles, Wand2,
 } from "lucide-react";
 import { useInstallPrompt } from "@/lib/useInstallPrompt";
 
@@ -1147,6 +1148,84 @@ function PortfolioEditor({
   const beforeInputRef = useRef<HTMLInputElement>(null);
   const afterInputRef = useRef<HTMLInputElement>(null);
 
+  // ── "Помощник" state — structured description builder + AI smoother ─────
+  // Discussed in chat (auto-generated text hurts SEO; structured user-supplied
+  // tezisy + optional AI light-edit is the safe pattern). The fields below
+  // are NOT persisted server-side — they live only inside the editor session
+  // and are converted into the `description` paragraph via api.portfolio.assembleDescription().
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistBefore, setAssistBefore] = useState("");
+  const [assistSteps, setAssistSteps] = useState("");
+  const [assistMaterials, setAssistMaterials] = useState("");
+  const [assistChallenges, setAssistChallenges] = useState("");
+  const [assistOther, setAssistOther] = useState("");
+  const [assistantBusy, setAssistantBusy] = useState(false);
+  const [smoothBusy, setSmoothBusy] = useState(false);
+  // 503 from /smooth-description means AI is not configured — hide the
+  // button after the first failure to avoid teasing masters with a feature
+  // that doesn't work on this deployment.
+  const [smoothDisabled, setSmoothDisabled] = useState(false);
+
+  const handleAssemble = async () => {
+    setAssistantBusy(true);
+    try {
+      const res = await api.portfolio.assembleDescription({
+        before: assistBefore.trim() || undefined,
+        steps: assistSteps.trim() || undefined,
+        materials: assistMaterials.trim() || undefined,
+        challenges: assistChallenges.trim() || undefined,
+        otherDetails: assistOther.trim() || undefined,
+      });
+      const text = (res.description ?? "").trim();
+      if (!text) {
+        toast.error("Заполните хотя бы одно поле в помощнике.");
+        return;
+      }
+      // If user already had a description, ask before overwriting.
+      if (description.trim().length > 0
+          && !confirm("Заменить текущее описание собранным текстом?")) {
+        return;
+      }
+      setDescription(text.slice(0, 2000));
+      toast.success("Готово. Можно отредактировать вручную.");
+      setAssistantOpen(false);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Не удалось собрать абзац");
+    } finally {
+      setAssistantBusy(false);
+    }
+  };
+
+  const handleSmooth = async () => {
+    const text = description.trim();
+    if (text.length < 20) {
+      toast.error("Слишком короткий текст для AI-редактирования.");
+      return;
+    }
+    setSmoothBusy(true);
+    try {
+      const res = await api.portfolio.smoothDescription(text);
+      if (!res.description) {
+        toast.error(res.note ?? "Не удалось обработать текст.");
+        return;
+      }
+      if (!confirm("Заменить текущее описание AI-улучшенным вариантом?\n\nAI не добавляет фактов — только полирует грамматику и связки.")) {
+        return;
+      }
+      setDescription(res.description.slice(0, 2000));
+      toast.success("Готово.");
+    } catch (e: any) {
+      if (e?.status === 503) {
+        setSmoothDisabled(true);
+        toast.error("AI-помощник временно недоступен.");
+        return;
+      }
+      toast.error(e?.message ?? "Ошибка");
+    } finally {
+      setSmoothBusy(false);
+    }
+  };
+
   useEffect(() => {
     fetch("/api/settings/services")
       .then((r) => (r.ok ? r.json() : []))
@@ -1311,6 +1390,87 @@ function PortfolioEditor({
             ))}
           </div>
 
+          {/* Description Assistant — structured fields → assembled paragraph */}
+          <div className="rounded-xl border border-primary/20 bg-primary/5 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setAssistantOpen((v) => !v)}
+              className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left active:bg-primary/10"
+            >
+              <span className="flex items-center gap-2 text-xs font-semibold text-foreground">
+                <Wand2 size={14} className="text-primary" />
+                Помощник: собрать описание из тезисов
+              </span>
+              <ChevronDown
+                size={16}
+                className={`text-muted-foreground transition-transform ${assistantOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+            {assistantOpen ? (
+              <div className="px-3 pb-3 space-y-2 border-t border-primary/15">
+                <p className="text-[11px] text-muted-foreground pt-2 leading-relaxed">
+                  Заполните 1-3 поля своими словами. Из тезисов соберём связный абзац — без AI, без вымысла.
+                </p>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-medium text-foreground">Что было ДО ремонта</label>
+                  <input
+                    value={assistBefore}
+                    onChange={(e) => setAssistBefore(e.target.value.slice(0, 500))}
+                    placeholder="старая плитка, плесень, проводка наружу"
+                    className="w-full h-9 px-3 rounded-lg border border-border bg-card text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-medium text-foreground">Что вы сделали (по шагам, каждый шаг с новой строки)</label>
+                  <textarea
+                    value={assistSteps}
+                    onChange={(e) => setAssistSteps(e.target.value.slice(0, 1500))}
+                    rows={4}
+                    placeholder={"снял старое покрытие\nпроложил новые трубы\nположил тёплый пол"}
+                    className="w-full px-3 py-2 rounded-lg border border-border bg-card text-xs resize-y leading-relaxed"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-medium text-foreground">Использованные материалы</label>
+                  <textarea
+                    value={assistMaterials}
+                    onChange={(e) => setAssistMaterials(e.target.value.slice(0, 1000))}
+                    rows={2}
+                    placeholder="плитка Cersanit 30×60, затирка Litokol, гидроизоляция"
+                    className="w-full px-3 py-2 rounded-lg border border-border bg-card text-xs resize-y"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-medium text-foreground">Что было сложно (если что-то)</label>
+                  <input
+                    value={assistChallenges}
+                    onChange={(e) => setAssistChallenges(e.target.value.slice(0, 600))}
+                    placeholder="трубы под полом нужно было перекладывать"
+                    className="w-full h-9 px-3 rounded-lg border border-border bg-card text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-medium text-foreground">Что-то ещё (опционально)</label>
+                  <input
+                    value={assistOther}
+                    onChange={(e) => setAssistOther(e.target.value.slice(0, 600))}
+                    placeholder="клиент остался доволен, заехал через неделю"
+                    className="w-full h-9 px-3 rounded-lg border border-border bg-card text-xs"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAssemble}
+                  disabled={assistantBusy || (!assistBefore.trim() && !assistSteps.trim() && !assistMaterials.trim() && !assistChallenges.trim() && !assistOther.trim())}
+                  className="w-full h-10 rounded-xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {assistantBusy ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
+                  Собрать абзац
+                </button>
+              </div>
+            ) : null}
+          </div>
+
           {/* Description */}
           <div className="space-y-1">
             <label className="text-xs font-semibold text-foreground flex items-center justify-between">
@@ -1326,6 +1486,22 @@ function PortfolioEditor({
               placeholder="Что делали, какие материалы, сложности, результат. Без телефонов и ссылок."
               className="w-full px-3 py-2 rounded-xl border border-border bg-muted/40 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-y leading-relaxed"
             />
+            {!smoothDisabled && description.trim().length >= 20 ? (
+              <div className="flex items-center justify-between gap-2 pt-0.5">
+                <p className="text-[10px] text-muted-foreground leading-relaxed flex-1">
+                  AI не добавит фактов — только подправит грамматику и сделает связнее. Используйте после ручного редактирования.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleSmooth}
+                  disabled={smoothBusy}
+                  className="h-8 px-2.5 rounded-lg border border-primary/30 bg-card text-[11px] font-semibold text-primary disabled:opacity-50 flex items-center gap-1.5 flex-shrink-0"
+                >
+                  {smoothBusy ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+                  Сделать читаемым
+                </button>
+              </div>
+            ) : null}
             {errorsByField("description").map((e, i) => (
               <p key={i} className="text-xs text-destructive">{e.message}</p>
             ))}

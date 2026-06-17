@@ -92,6 +92,31 @@ export const api = {
       }
       return res.json();
     },
+    /**
+     * Pure template-based assembly of a portfolio description from 5 short
+     * fields. No AI, deterministic. Returns the assembled paragraph text.
+     */
+    assembleDescription: (input: {
+      before?: string;
+      steps?: string;
+      materials?: string;
+      challenges?: string;
+      otherDetails?: string;
+    }) => req<{ ok: boolean; description: string }>(
+      "POST",
+      "/portfolio/assemble-description",
+      input,
+    ),
+    /**
+     * AI light copy-edit. Returns smoothed text. Never adds facts.
+     * 503 when AI is not configured (caller should silently hide the button).
+     */
+    smoothDescription: (text: string) => req<{
+      ok: boolean;
+      description: string | null;
+      note?: string;
+      meta?: { tokensUsed: number; model: string };
+    }>("POST", "/portfolio/smooth-description", { text }),
   },
   chat: {
     messages: () => req<any>("GET", "/chat"),
