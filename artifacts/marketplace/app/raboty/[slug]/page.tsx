@@ -161,15 +161,12 @@ export default async function RabotyCasePage(
   const fallbackService = matchService ?? services[0] ?? null;
 
   // ── JSON-LD ─────────────────────────────────────────────────────────────
+  // Breadcrumbs: Home → Работы → этот кейс. Filtered hub URLs
+  // (/raboty/[service]/[city]) are a future addition (plan §11.7), so for now
+  // we keep breadcrumbs flat to avoid linking to 404 routes.
   const breadcrumbsLd = breadcrumbJsonLd([
     { name: "Главная", url: `${publicUrl()}/` },
     { name: "Работы", url: `${publicUrl()}/raboty` },
-    ...(portfolio.service?.slug
-      ? [{ name: portfolio.service.name, url: `${publicUrl()}/raboty/${portfolio.service.slug}` }]
-      : []),
-    ...(portfolio.service?.slug && portfolio.city?.slug
-      ? [{ name: portfolio.city.name, url: `${publicUrl()}/raboty/${portfolio.service.slug}/${portfolio.city.slug}` }]
-      : []),
     { name: portfolio.title, url: sourcePageUrl },
   ]);
 
@@ -219,23 +216,16 @@ export default async function RabotyCasePage(
           <Link href="/" className="hover:text-[var(--color-primary)]">Главная</Link>
           <span aria-hidden className="mx-1.5">›</span>
           <Link href="/raboty" className="hover:text-[var(--color-primary)]">Работы</Link>
-          {portfolio.service?.slug ? (
+          {portfolio.service?.name ? (
             <>
               <span aria-hidden className="mx-1.5">›</span>
-              <Link href={`/raboty/${portfolio.service.slug}`} className="hover:text-[var(--color-primary)]">
-                {portfolio.service.name}
-              </Link>
+              <span>{portfolio.service.name}</span>
             </>
           ) : null}
-          {portfolio.service?.slug && portfolio.city?.slug ? (
+          {(portfolio.city?.name || cityName) ? (
             <>
               <span aria-hidden className="mx-1.5">›</span>
-              <Link
-                href={`/raboty/${portfolio.service.slug}/${portfolio.city.slug}`}
-                className="hover:text-[var(--color-primary)]"
-              >
-                {portfolio.city.name}
-              </Link>
+              <span>{portfolio.city?.name ?? cityName}</span>
             </>
           ) : null}
         </div>
