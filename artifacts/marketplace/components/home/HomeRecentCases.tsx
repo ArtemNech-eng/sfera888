@@ -1,24 +1,37 @@
 import Link from "next/link";
 import type { RabotyListItem } from "../../lib/types";
+import { DEMO_CASES, type DemoCase } from "../../lib/demoCases";
 
 interface Props {
   cases: RabotyListItem[];
 }
 
 /**
- * "Реальные ремонты" section on the homepage (plan §20.2 [7]).
+ * "Идеи" / "Реальные ремонты" section on the homepage (plan §20.2 [3] [7]).
  *
- * Mirrors the case-card style used on /raboty but compacted for an above-
- * the-fold rail: only cover photo + title + price + master ref. Up to 6
- * cards, hidden when fewer than 3 published cases exist (anti-thin-content
- * per plan §20.3.10).
+ * - When ≥3 real cases are published → renders them with full data (price,
+ *   area, master, rating). Title swaps to "Реальные ремонты с ценами".
+ * - When fewer than 3 → falls back to Unsplash CC0 stylistic references
+ *   (plan §20.4 photo policy, plan §20.3.10 graceful demo). Each demo card
+ *   carries a "Пример" badge instead of price/master so we never imply a
+ *   fake case. Title softens to "Идеи для ремонта".
+ *
+ * Both modes link to /raboty so the user lands on the real catalog.
  *
  * Server component, zero JS.
  */
 export function HomeRecentCases({ cases }: Props) {
-  if (cases.length < 3) return null;
+  const isDemoMode = cases.length < 3;
+  const realVisible = cases.slice(0, 6);
 
-  const visible = cases.slice(0, 6);
+  // While bootstrapping (no real cases yet) we show only demos. Once 3+
+  // real cases exist, demos disappear entirely — at that point our own
+  // content is enough to fill the rail.
+  const items: Array<RealCaseItem | DemoCaseItem> = isDemoMode
+    ? DEMO_CASES.slice(0, 6).map((d) => ({ kind: "demo", data: d }))
+    : realVisible.map((r) => ({ kind: "real", data: r }));
+
+  if (items.length === 0) return null;
 
   return (
     <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
@@ -28,26 +41,34 @@ export function HomeRecentCases({ cases }: Props) {
             Идеи
           </p>
           <h2 className="mt-1 text-2xl font-bold tracking-tight text-[var(--color-text)] sm:text-3xl">
-            Реальные ремонты с ценами и сроками
+            {isDemoMode ? "Идеи для вашего ремонта" : "Реальные ремонты с ценами и сроками"}
           </h2>
           <p className="mt-2 max-w-xl text-sm text-[var(--color-muted)] sm:text-base">
-            Каждая работа — фото до и после, бюджет, длительность. Можно отправить заявку по понравившемуся проекту.
+            {isDemoMode
+              ? "Стилевые референсы, которые помогут определиться с направлением. По мере появления реальных работ мастеров заменяем подборку их кейсами."
+              : "Каждая работа — фото до и после, бюджет, длительность. Можно отправить заявку по понравившемуся проекту."}
           </p>
         </div>
         <Link
           href="/raboty"
           className="hidden text-sm font-semibold text-[var(--color-secondary)] hover:underline sm:inline"
         >
-          Все работы →
+          {isDemoMode ? "К каталогу работ →" : "Все работы →"}
         </Link>
       </div>
 
       <ul className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {visible.map((c) => (
-          <li key={c.id}>
-            <RecentCaseCard data={c} />
-          </li>
-        ))}
+        {items.map((item) =>
+          item.kind === "real" ? (
+            <li key={`r-${item.data.id}`}>
+              <RealCaseCard data={item.data} />
+            </li>
+          ) : (
+            <li key={`d-${item.data.id}`}>
+              <DemoCaseCard data={item.data} />
+            </li>
+          ),
+        )}
       </ul>
 
       <div className="mt-6 sm:hidden">
@@ -55,20 +76,32 @@ export function HomeRecentCases({ cases }: Props) {
           href="/raboty"
           className="inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--color-secondary)]"
         >
-          Все работы →
+          {isDemoMode ? "К каталогу работ →" : "Все работы →"}
         </Link>
       </div>
     </section>
   );
 }
 
-function RecentCaseCard({ data }: { data: RabotyListItem }) {
+// ── Variants ─────────────────────────────────────────────────────────────────
+
+interface RealCaseItem {
+  kind: "real";
+  data: RabotyListItem;
+}
+interface DemoCaseItem {
+  kind: "demo";
+  data: DemoCase;
+}
+
+function RealCaseCard({ data }: { data: RabotyListItem }) {
   if (!data.slug) return null;
 
   const cover = data.afterPhotos[0] ?? data.beforePhotos[0] ?? null;
   const priceFrom = parseNumeric(data.priceFrom);
   const area = parseNumeric(data.area);
   const masterName = data.master.publicTitle?.trim() || data.master.alias?.trim() || `Мастер #${data.master.id}`;
+  const cityPart = data.city?.name ? ` в ${data.city.name}` : "";
 
   return (
     <Link
@@ -79,7 +112,7 @@ function RecentCaseCard({ data }: { data: RabotyListItem }) {
         {cover ? (
           <img
             src={cover}
-            alt={buildAlt(data)}
+            alt={`${data.title}${cityPart} — фото работы`}
             loading="lazy"
             className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
           />
@@ -143,6 +176,45 @@ function RecentCaseCard({ data }: { data: RabotyListItem }) {
   );
 }
 
+/**
+ * Demo card. Visually similar to a real case so the rail looks consistent,
+ * but **never** renders a price or master attribution. The "Пример" badge
+ * sits where the "Топ" badge would, so a glance is enough to know it's a
+ * placeholder.
+ */
+function DemoCaseCard({ data }: { data: DemoCase }) {
+  return (
+    <Link
+      href="/raboty"
+      className="group flex h-full flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white transition hover:-translate-y-0.5 hover:shadow-lg hover:border-[var(--color-secondary)]"
+    >
+      <div className="relative aspect-[4/3] w-full overflow-hidden bg-[var(--color-background)]">
+        <img
+          src={data.imageUrl}
+          alt={data.alt}
+          loading="lazy"
+          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+        />
+        <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-[var(--color-muted)] shadow-sm ring-1 ring-[var(--color-border)]">
+          Пример
+        </span>
+      </div>
+
+      <div className="flex flex-1 flex-col gap-2 p-4">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--color-secondary)]">
+          {data.category}
+        </span>
+        <h3 className="line-clamp-2 text-base font-semibold leading-snug text-[var(--color-text)] group-hover:text-[var(--color-secondary)]">
+          {data.title}
+        </h3>
+        <p className="mt-auto pt-1 text-xs text-[var(--color-muted)]">
+          Стилевой референс. Найдите мастера, который реализует похожий проект →
+        </p>
+      </div>
+    </Link>
+  );
+}
+
 function parseNumeric(value: string | null | undefined): number | null {
   if (value == null) return null;
   const n = parseFloat(value);
@@ -151,9 +223,4 @@ function parseNumeric(value: string | null | undefined): number | null {
 
 function formatPrice(n: number): string {
   return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(n);
-}
-
-function buildAlt(c: RabotyListItem): string {
-  const cityPart = c.city?.name ? ` в ${c.city.name}` : "";
-  return `${c.title}${cityPart} — фото работы`;
 }
