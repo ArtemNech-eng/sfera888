@@ -354,13 +354,53 @@ export interface OrderListItem {
   tokensCharged?: number | null;
   assignedAt?: string | null;
   createdAt?: string;
+  // Optional rich fields populated on /orders/available and /home cards.
+  services?: string | null;
+  comment?: string | null;
+  photos?: string[];
+  dispatchedAt?: string | null;
+  competitorCount?: number;
+  isRepeatClient?: boolean;
 }
 
 export const cabinetOrders = {
   fetchMy: (filter?: "active" | "completed" | "all") =>
     req<OrderListItem[]>("GET", `/orders/my${filter ? `?filter=${filter}` : ""}`),
   fetchAvailable: () => req<OrderListItem[]>("GET", "/orders/available"),
+  accept: (id: number) =>
+    req<{ ok: true } & Record<string, unknown>>("POST", `/orders/${id}/accept`),
+  respond: (id: number, responseNote?: string) =>
+    req<{ ok: true } & Record<string, unknown>>("POST", `/orders/${id}/respond`, {
+      responseNote,
+    }),
+  reject: (id: number, reason?: string) =>
+    req<{ ok: true } & Record<string, unknown>>("POST", `/orders/${id}/reject`, {
+      reason,
+    }),
+  updateStatus: (id: number, masterWorkStatus: WorkStatus) =>
+    req<{ ok: true } & Record<string, unknown>>("PATCH", `/orders/${id}/status`, {
+      masterWorkStatus,
+    }),
+  complete: (id: number, proposedAmount: number) =>
+    req<{ ok: true } & Record<string, unknown>>("POST", `/orders/${id}/complete`, {
+      proposedAmount,
+    }),
+  cancel: (id: number, cancelType: CancelType, reason?: string) =>
+    req<{ ok: true } & Record<string, unknown>>("POST", `/orders/${id}/cancel`, {
+      cancelType,
+      reason,
+    }),
 };
+
+export type WorkStatus =
+  | "on_the_way"
+  | "on_site"
+  | "estimating"
+  | "in_progress"
+  | "finishing"
+  | "completed";
+
+export type CancelType = "master_cancel" | "client_cancel" | "refund_request";
 
 
 // ── Portfolio (cases) ───────────────────────────────────────────────────────

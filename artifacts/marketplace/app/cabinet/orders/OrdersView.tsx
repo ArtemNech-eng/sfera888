@@ -144,24 +144,6 @@ export function OrdersView() {
           ))}
         </ul>
       ) : null}
-
-      {/* Action notice */}
-      <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-background)] p-5 text-sm text-[var(--color-muted)]">
-        <p className="font-semibold text-[var(--color-text)]">
-          Действия по заказам — в старом приложении
-        </p>
-        <p className="mt-1">
-          Принять заявку, отправить смету, отметить статус, завершить заказ — пока эти кнопки
-          работают только в старом приложении мастера. Перенос идёт по плану.
-        </p>
-        <a
-          href="https://sfera-master.ru/master-pwa/"
-          rel="noopener noreferrer"
-          className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-[var(--color-primary)] hover:underline"
-        >
-          Открыть в старом приложении →
-        </a>
-      </div>
     </div>
   );
 }
@@ -171,66 +153,67 @@ export function OrdersView() {
 function OrderCard({ order, variant }: { order: OrderListItem; variant: Tab }) {
   const status = STATUS_BY_VARIANT[variant](order);
   return (
-    <li className="rounded-2xl border border-[var(--color-border)] bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:p-5">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-bold text-[var(--color-text)] sm:text-base">
-            {order.serviceType} <span className="text-[var(--color-muted)]">№{order.id}</span>
-          </p>
-          <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs text-[var(--color-muted)]">
-            <span>{order.city}</span>
-            {order.district ? (
-              <>
-                <span aria-hidden>·</span>
-                <span>{order.district}</span>
-              </>
+    <li className="rounded-2xl border border-[var(--color-border)] bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+      <Link
+        href={`/cabinet/orders/${order.id}`}
+        className="block p-4 sm:p-5"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-bold text-[var(--color-text)] sm:text-base">
+              {order.serviceType} <span className="text-[var(--color-muted)]">№{order.id}</span>
+            </p>
+            <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs text-[var(--color-muted)]">
+              <span>{order.city}</span>
+              {order.district ? (
+                <>
+                  <span aria-hidden>·</span>
+                  <span>{order.district}</span>
+                </>
+              ) : null}
+              {Number.isFinite(order.area) && order.area > 0 ? (
+                <>
+                  <span aria-hidden>·</span>
+                  <span>{order.area} м²</span>
+                </>
+              ) : null}
+            </div>
+            {order.scheduledAt ? (
+              <p className="mt-1 text-xs text-[var(--color-muted)]">
+                На {formatDateTime(order.scheduledAt)}
+              </p>
             ) : null}
-            {Number.isFinite(order.area) && order.area > 0 ? (
-              <>
-                <span aria-hidden>·</span>
-                <span>{order.area} м²</span>
-              </>
+            {order.assignedAt ? (
+              <p className="mt-1 text-xs text-[var(--color-muted)]">
+                Назначен {formatDateTime(order.assignedAt)}
+              </p>
             ) : null}
           </div>
-          {order.scheduledAt ? (
-            <p className="mt-1 text-xs text-[var(--color-muted)]">
-              На {formatDateTime(order.scheduledAt)}
-            </p>
-          ) : null}
-          {order.assignedAt ? (
-            <p className="mt-1 text-xs text-[var(--color-muted)]">
-              Назначен {formatDateTime(order.assignedAt)}
-            </p>
-          ) : null}
+          {status ? <StatusPill {...status} /> : null}
         </div>
-        {status ? <StatusPill {...status} /> : null}
-      </div>
 
-      <div className="mt-4 flex items-center justify-between gap-3 border-t border-[var(--color-border)] pt-3">
-        <div className="text-sm">
-          {order.proposedAmount != null && order.proposedAmount > 0 ? (
-            <>
-              <span className="text-[var(--color-muted)]">Сумма работ:</span>{" "}
-              <span className="font-bold text-[var(--color-text)]">
-                {formatRubles(order.proposedAmount)} ₽
-              </span>
-            </>
-          ) : variant === "available" ? (
-            <span className="text-[var(--color-muted)]">Сумму уточнит мастер</span>
-          ) : null}
+        <div className="mt-4 flex items-center justify-between gap-3 border-t border-[var(--color-border)] pt-3">
+          <div className="text-sm">
+            {order.proposedAmount != null && order.proposedAmount > 0 ? (
+              <>
+                <span className="text-[var(--color-muted)]">Сумма работ:</span>{" "}
+                <span className="font-bold text-[var(--color-text)]">
+                  {formatRubles(order.proposedAmount)} ₽
+                </span>
+              </>
+            ) : variant === "available" ? (
+              <span className="text-[var(--color-muted)]">Сумму уточнит мастер</span>
+            ) : null}
+          </div>
+          <span className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--color-primary)]">
+            {variant === "available" ? "Открыть и принять" : "Открыть"}
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M5 12h14" />
+              <path d="m12 5 7 7-7 7" />
+            </svg>
+          </span>
         </div>
-        <a
-          href="https://sfera-master.ru/master-pwa/"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--color-primary)] hover:underline"
-        >
-          {variant === "available" ? "Открыть и принять" : "Открыть"}
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-            <path d="M5 12h14" />
-            <path d="m12 5 7 7-7 7" />
-          </svg>
-        </a>
-      </div>
+      </Link>
     </li>
   );
 }
