@@ -1,10 +1,22 @@
 import type { Metadata } from "next";
+import { Manrope } from "next/font/google";
 import { headers } from "next/headers";
 import "./globals.css";
 import { Header } from "../components/Header";
 import { Footer } from "../components/Footer";
 import { YandexMetrika } from "../components/YandexMetrika";
 import { publicUrl } from "../lib/env";
+
+// Manrope is the brand sans-serif. Loaded via `next/font/google` so it ships
+// with `font-display: swap` and Next handles the CSS-variable wiring.
+// `globals.css` aliases `--font-manrope` to `--font-sans` so utility classes
+// (`font-sans`, `font-medium`, etc.) keep resolving.
+const manrope = Manrope({
+  subsets: ["latin", "cyrillic"],
+  variable: "--font-manrope",
+  weight: ["400", "500", "600", "700", "800"],
+  display: "swap",
+});
 
 /**
  * Routes that own their own chrome (cabinet shell, login form). The root
@@ -59,7 +71,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const ownChrome = isOwnChromeRoute(pathname);
 
   return (
-    <html lang="ru">
+    <html lang="ru" className={manrope.variable}>
       <body>
         {ownChrome ? null : <Header />}
         <main className="flex-1">{children}</main>
