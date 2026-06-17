@@ -585,3 +585,24 @@ export const cabinetCheckin = {
   submit: (isAvailable: boolean) =>
     req<{ ok: true }>("POST", "/checkin/today", { isAvailable }),
 };
+
+
+// ── Analytics ───────────────────────────────────────────────────────────────
+
+export interface AnalyticsData {
+  totalDispatched: number;
+  totalResponded: number;
+  totalAssigned: number;
+  winRate: number;
+  last30Days: {
+    dispatched: number;
+    responded: number;
+    assigned: number;
+  };
+  avgOrderAmount: number;
+  rejectionReasons: Record<string, number>;
+}
+
+export const cabinetAnalytics = {
+  fetch: () => req<AnalyticsData>("GET", "/analytics"),
+};
