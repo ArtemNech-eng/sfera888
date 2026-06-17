@@ -354,6 +354,7 @@ export interface OrderListItem {
   tokensCharged?: number | null;
   assignedAt?: string | null;
   createdAt?: string;
+  updatedAt?: string;
   // Optional rich fields populated on /orders/available and /home cards.
   services?: string | null;
   comment?: string | null;
@@ -361,7 +362,21 @@ export interface OrderListItem {
   dispatchedAt?: string | null;
   competitorCount?: number;
   isRepeatClient?: boolean;
+  // Master-side photo galleries (only on /orders/my).
+  photosBefore?: string[];
+  photosAfter?: string[];
+  photoAct?: string | null;
+  // Client identity (only on /orders/my, after assignment).
+  clientName?: string | null;
+  clientPhone?: string | null;
+  orderAmount?: number | null;
+  commission?: number | null;
+  paymentState?: string;
+  agreementAmountSource?: string | null;
+  hasOwnReceipt?: boolean;
 }
+
+export type OrderPhotoType = "before" | "after" | "act";
 
 export const cabinetOrders = {
   fetchMy: (filter?: "active" | "completed" | "all") =>
@@ -390,6 +405,8 @@ export const cabinetOrders = {
       cancelType,
       reason,
     }),
+  addPhoto: (id: number, type: OrderPhotoType, url: string) =>
+    req<{ success: true }>("PATCH", `/orders/${id}/photos`, { type, url }),
 };
 
 export type WorkStatus =

@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   cabinetOrders,
+  uploadPhoto,
   CabinetApiError,
   type CancelType,
   type OrderListItem,
+  type OrderPhotoType,
   type WorkStatus,
 } from "../../_lib/cabinetClient";
 import { resolvePhotoUrl } from "../../_lib/photo";
@@ -200,6 +202,29 @@ export function OrderDetailView({ id }: Props) {
     }
   };
 
+  const handleUploadPhoto = async (orderId: number, type: OrderPhotoType, file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast.error("Выберите изображение");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("Файл больше 10 МБ");
+      return;
+    }
+    setBusy(true);
+    try {
+      const url = await uploadPhoto(file);
+      await cabinetOrders.addPhoto(orderId, type, url);
+      toast.success("Фото загружено");
+      await refresh();
+    } catch (err) {
+      const msg = err instanceof CabinetApiError ? err.message : err instanceof Error ? err.message : "Ошибка загрузки";
+      toast.error(msg);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   // ── Render ───────────────────────────────────────────────────────────────
 
   if (loading) {
@@ -313,6 +338,15 @@ export function OrderDetailView({ id }: Props) {
             ))}
           </div>
         </section>
+      ) : null}
+
+      {/* Master photo galleries — only on active/completed orders */}
+      {source !== "available" ? (
+        <MasterPhotoSections
+          item={item}
+          busy={busy}
+          onUpload={(type, file) => handleUploadPhoto(item.id, type, file)}
+        />
       ) : null}
 
       {/* Actions */}
@@ -680,6 +714,136 @@ function CheckIcon() {
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <polyline points="20 6 9 17 4 12" />
     </svg>
+  );
+}
+
+// ── Master photo galleries (before / work / act) ───────────────────────────
+
+function MasterPhotoSections({
+  item,
+  busy,
+  onUpload,
+}: {
+  item: OrderListItem;
+  busy: boolean;
+  onUpload: (type: OrderPhotoType, file: File) => void;
+}) {
+  return (
+    <section className="space-y-5 rounded-2xl border border-[var(--color-border)] bg-white p-5 shadow-sm sm:p-6">
+      <div>
+        <h2 className="text-base font-bold text-[var(--color-text)]">Ваши фото по работе</h2>
+        <p className="mt-0.5 text-xs text-[var(--color-muted)]">
+          «До» и «после» нужны для подтверждения работы и идут в общую галерею кейсов.
+          «Акт» — фото подписанного клиентом документа (если используется).
+        </p>
+      </div>
+      <PhotoUploadGroup
+        type="before"
+        label="До работ"
+        photos={item.photosBefore ?? []}
+        busy={busy}
+        onAdd={(file) => onUpload("before", file)}
+      />
+      <PhotoUploadGroup
+        type="after"
+        label="После работ"
+        photos={item.photosAfter ?? []}
+        busy={busy}
+        onAdd={(file) => onUpload("after", file)}
+      />
+      <PhotoUploadGroup
+        type="act"
+        label="Акт работ"
+        photos={item.photoAct ? [item.photoAct] : []}
+        busy={busy}
+        onAdd={(file) => onUpload("act", file)}
+        single
+      />
+    </section>
+  );
+}
+
+function PhotoUploadGroup({
+  type,
+  label,
+  photos,
+  busy,
+  onAdd,
+  single,
+}: {
+  type: OrderPhotoType;
+  label: string;
+  photos: string[];
+  busy: boolean;
+  onAdd: (file: File) => void;
+  single?: boolean;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const limit = single ? 1 : 8;
+  const tone = type === "after" ? "primary" : type === "act" ? "amber" : "muted";
+  const labelClass =
+    tone === "primary"
+      ? "bg-[var(--color-primary-soft)] text-[var(--color-primary)]"
+      : tone === "amber"
+        ? "bg-amber-50 text-amber-700"
+        : "bg-[var(--color-background)] text-[var(--color-muted)]";
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-3">
+        <span className={`rounded-full px-3 py-0.5 text-xs font-semibold uppercase tracking-wider ${labelClass}`}>
+          {label}
+        </span>
+        <span className="text-xs text-[var(--color-muted)]">
+          {photos.length}{single ? "" : ` / ${limit}`}
+        </span>
+      </div>
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 sm:gap-3 lg:grid-cols-5">
+        {photos.map((url) => (
+          <a
+            key={url}
+            href={resolvePhotoUrl(url)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block aspect-square overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-background)]"
+          >
+            <img
+              src={resolvePhotoUrl(url)}
+              alt={label}
+              className="h-full w-full object-cover transition-transform duration-300 hover:scale-105"
+              loading="lazy"
+            />
+          </a>
+        ))}
+        {photos.length < limit ? (
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            disabled={busy}
+            className="flex aspect-square items-center justify-center rounded-xl border-2 border-dashed border-[var(--color-border)] bg-[var(--color-background)]/40 transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-soft)]/30 disabled:opacity-50"
+          >
+            {busy ? (
+              <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-[var(--color-primary)] border-t-transparent" />
+            ) : (
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--color-muted)]" aria-hidden>
+                <path d="M5 12h14" />
+                <path d="M12 5v14" />
+              </svg>
+            )}
+          </button>
+        ) : null}
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) onAdd(f);
+          if (inputRef.current) inputRef.current.value = "";
+        }}
+      />
+    </div>
   );
 }
 
