@@ -1,9 +1,21 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import "./globals.css";
 import { Header } from "../components/Header";
 import { Footer } from "../components/Footer";
 import { YandexMetrika } from "../components/YandexMetrika";
 import { publicUrl } from "../lib/env";
+
+/**
+ * Routes that own their own chrome (cabinet shell, login form). The root
+ * layout still wraps them with `<html>`/`<body>` so global CSS, fonts and
+ * analytics keep working, but we skip the public Header/Footer to avoid
+ * double navigation. Pathname comes from `middleware.ts`, which injects an
+ * `x-pathname` header on every request.
+ */
+function isOwnChromeRoute(pathname: string): boolean {
+  return pathname.startsWith("/cabinet") || pathname === "/login" || pathname.startsWith("/login/");
+}
 
 export function generateMetadata(): Metadata {
   const url = publicUrl();
@@ -41,13 +53,17 @@ export function generateMetadata(): Metadata {
   };
 }
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const headersList = await headers();
+  const pathname = headersList.get("x-pathname") ?? "/";
+  const ownChrome = isOwnChromeRoute(pathname);
+
   return (
     <html lang="ru">
       <body>
-        <Header />
+        {ownChrome ? null : <Header />}
         <main className="flex-1">{children}</main>
-        <Footer />
+        {ownChrome ? null : <Footer />}
         <YandexMetrika />
       </body>
     </html>

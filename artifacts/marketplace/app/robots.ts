@@ -8,7 +8,15 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: "*",
         allow: ["/"],
-        disallow: ["/api/", "/zayavka/spasibo", "/dizajn/new"],
+        disallow: [
+          "/api/",
+          "/zayavka/spasibo",
+          "/dizajn/new",
+          // Cabinet shell — master's private workspace, never indexed.
+          "/cabinet",
+          "/cabinet/",
+          "/login",
+        ],
       },
     ],
     sitemap: `${base}/sitemap.xml`,
