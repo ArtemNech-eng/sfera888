@@ -127,11 +127,22 @@ export default async function MasteraPage(
       />
 
       {/* Hero */}
-      <section className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
-        <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-12">
-          <h1 className="text-3xl font-semibold text-[var(--color-text)] sm:text-4xl">{h1}</h1>
-          <p className="mt-2 text-sm text-[var(--color-muted)] sm:text-base">
+      <section className="border-b border-[var(--color-border)] bg-gradient-to-b from-[var(--color-primary-soft)]/40 to-white">
+        <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14 lg:py-16">
+          <nav className="mb-5 flex items-center gap-2 text-xs text-[var(--color-muted)]">
+            <Link href="/" className="hover:text-[var(--color-primary)]">Главная</Link>
+            <span aria-hidden>/</span>
+            <span className="text-[var(--color-text)]">Мастера</span>
+          </nav>
+          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-primary)]">
+            Каталог
+          </p>
+          <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-[var(--color-text)] sm:text-5xl">
+            {h1}
+          </h1>
+          <p className="mt-3 max-w-2xl text-base text-[var(--color-muted)] sm:text-lg">
             Проверенные специалисты с рейтингом и реальными отзывами клиентов.
+            Договор с каждым мастером, без авансов.
           </p>
         </div>
       </section>
