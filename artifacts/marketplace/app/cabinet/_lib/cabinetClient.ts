@@ -426,3 +426,28 @@ export const cabinetPortfolio = {
       meta?: { tokensUsed: number; model: string };
     }>("POST", "/portfolio/smooth-description", { text }),
 };
+
+
+// ── Chat ────────────────────────────────────────────────────────────────────
+
+export interface ChatMessage {
+  id: number;
+  text: string;
+  photoUrl: string | null;
+  fromMaster: boolean;
+  senderName: string | null;
+  isRead: boolean;
+  editedAt: string | null;
+  createdAt: string;
+}
+
+export interface ChatUnread {
+  count: number;
+}
+
+export const cabinetChat = {
+  fetch: () => req<ChatMessage[]>("GET", "/chat"),
+  send: (text: string, photoUrl?: string) =>
+    req<ChatMessage>("POST", "/chat", { text, photoUrl }),
+  unread: () => req<ChatUnread>("GET", "/chat/unread"),
+};
