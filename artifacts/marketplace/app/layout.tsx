@@ -18,6 +18,13 @@ const manrope = Manrope({
   display: "swap",
 });
 
+// Theme color drives the iOS / Chrome status-bar tint when the cabinet is
+// installed as a PWA. Matches the brand teal used in `app/icon.svg` and the
+// manifest `theme_color`.
+export const viewport = {
+  themeColor: "#0F766E",
+};
+
 /**
  * Routes that own their own chrome (cabinet shell, login form). The root
  * layout still wraps them with `<html>`/`<body>` so global CSS, fonts and
@@ -37,9 +44,12 @@ export function generateMetadata(): Metadata {
     metadataBase: new URL(url),
     title: { default: "Честные мастера", template: "%s · Честные мастера" },
     description,
-    // `app/icon.svg` and `app/apple-icon.svg` are picked up automatically by
-    // Next.js — no need to declare `icons` here. Removing the previous
-    // hard-coded `/favicon.ico` reference (the file never existed).
+    // `app/icon.svg` is picked up by Next.js automatically. Apple ignores PWA
+    // manifest icons for the home-screen install on iOS, so we still expose
+    // a dedicated `apple-touch-icon` (SVG path served from `public/`).
+    icons: {
+      apple: "/apple-touch-icon.svg",
+    },
     openGraph: {
       type: "website",
       locale: "ru_RU",
