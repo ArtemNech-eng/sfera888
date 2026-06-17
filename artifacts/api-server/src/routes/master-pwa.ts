@@ -27,7 +27,7 @@ import {
   checkMasterPublishReadiness,
   type ValidationError,
 } from "../lib/marketplaceModeration.js";
-import { revalidateMarketplacePaths, masterPublicationPaths } from "../lib/marketplaceRevalidate.js";
+import { revalidateMarketplacePaths, masterPublicationPaths, casePublicationPaths } from "../lib/marketplaceRevalidate.js";
 import {
   smoothPortfolioDescription,
   assemblePortfolioDescription,
@@ -2037,21 +2037,24 @@ router.patch("/portfolio/:id", requireMasterPwa, async (req, res) => {
   // overwrites an existing slug, so updates here are safe even if the master
   // changes the title later.
   const finalSlug = await ensurePortfolioSlug(updated.id, updated.slug, updated.title);
+  const slugForRevalidate = finalSlug ?? updated.slug;
 
-  // Refresh public master page if portfolio visibility changed
-  if (existing.isPublished !== updated.isPublished) {
+  // Revalidate marketplace whenever a published (or formerly-published)
+  // case is touched. We always revalidate the case page itself + the master
+  // profile + the /raboty feed; the IndexNow ping inside revalidateMarketplacePaths
+  // submits the URLs to Yandex/Bing for instant indexing.
+  const wasOrIsPublished = existing.isPublished || updated.isPublished;
+  if (wasOrIsPublished) {
     const [m] = await db.select({ slug: mastersTable.slug, isPublished: mastersTable.isPublished })
       .from(mastersTable)
       .where(eq(mastersTable.id, masterId))
       .limit(1);
     if (m?.isPublished && m.slug) {
-      revalidateMarketplacePaths(masterPublicationPaths(m.slug)).catch(() => {});
+      revalidateMarketplacePaths(casePublicationPaths(m.slug, slugForRevalidate)).catch(() => {});
     }
   }
 
-  res.json({ ok: true, item: toPortfolioPwaDto({ ...updated, slug: finalSlug ?? updated.slug }) });
-
-  res.json({ ok: true, item: toPortfolioPwaDto(updated) });
+  res.json({ ok: true, item: toPortfolioPwaDto({ ...updated, slug: slugForRevalidate }) });
 });
 
 // DELETE /portfolio/:id — hard-delete (V1; can switch to soft-delete later).
@@ -2061,7 +2064,11 @@ router.delete("/portfolio/:id", requireMasterPwa, async (req, res) => {
   if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: "Bad id" });
 
   const [existing] = await db
-    .select({ id: masterPortfolioTable.id, wasPublished: masterPortfolioTable.isPublished })
+    .select({
+      id: masterPortfolioTable.id,
+      slug: masterPortfolioTable.slug,
+      wasPublished: masterPortfolioTable.isPublished,
+    })
     .from(masterPortfolioTable)
     .where(and(eq(masterPortfolioTable.id, id), eq(masterPortfolioTable.masterId, masterId)));
   if (!existing) return res.status(404).json({ error: "Кейс не найден" });
@@ -2076,7 +2083,9 @@ router.delete("/portfolio/:id", requireMasterPwa, async (req, res) => {
       .where(eq(mastersTable.id, masterId))
       .limit(1);
     if (m?.isPublished && m.slug) {
-      revalidateMarketplacePaths(masterPublicationPaths(m.slug)).catch(() => {});
+      // Revalidate the deleted case URL so it 404s instantly + master profile
+      // + /raboty feed where the card disappears.
+      revalidateMarketplacePaths(casePublicationPaths(m.slug, existing.slug)).catch(() => {});
     }
   }
 
@@ -2143,21 +2152,25 @@ router.post("/portfolio/:id/photos", requireMasterPwa, portfolioPhotoUpload.sing
     .where(eq(masterPortfolioTable.id, id))
     .returning();
 
-  if (existing.isPublished !== updated.isPublished) {
+  // Adding a photo can flip canPublish to true; ensure we have a slug for
+  // the case so /raboty/{slug} can be linked from the master profile.
+  const finalSlug = await ensurePortfolioSlug(updated.id, updated.slug, updated.title);
+  const slugForRevalidate = finalSlug ?? updated.slug;
+
+  // Revalidate marketplace whenever a published (or formerly-published) case
+  // is touched. Adding a new photo to a published case changes the gallery,
+  // so we need to refresh ISR even when the publish state hasn't flipped.
+  if (existing.isPublished || updated.isPublished) {
     const [m] = await db.select({ slug: mastersTable.slug, isPublished: mastersTable.isPublished })
       .from(mastersTable)
       .where(eq(mastersTable.id, masterId))
       .limit(1);
     if (m?.isPublished && m.slug) {
-      revalidateMarketplacePaths(masterPublicationPaths(m.slug)).catch(() => {});
+      revalidateMarketplacePaths(casePublicationPaths(m.slug, slugForRevalidate)).catch(() => {});
     }
   }
 
-  // Adding a photo can flip canPublish to true; ensure we have a slug for
-  // the case so /raboty/{slug} can be linked from the master profile.
-  const finalSlug = await ensurePortfolioSlug(updated.id, updated.slug, updated.title);
-
-  res.json({ ok: true, url, item: toPortfolioPwaDto({ ...updated, slug: finalSlug ?? updated.slug }) });
+  res.json({ ok: true, url, item: toPortfolioPwaDto({ ...updated, slug: slugForRevalidate }) });
 });
 
 // DELETE /portfolio/:id/photos — remove one URL from before/after arrays.
@@ -2208,13 +2221,13 @@ router.delete("/portfolio/:id/photos", requireMasterPwa, async (req, res) => {
     .where(eq(masterPortfolioTable.id, id))
     .returning();
 
-  if (existing.isPublished !== updated.isPublished) {
+  if (existing.isPublished || updated.isPublished) {
     const [m] = await db.select({ slug: mastersTable.slug, isPublished: mastersTable.isPublished })
       .from(mastersTable)
       .where(eq(mastersTable.id, masterId))
       .limit(1);
     if (m?.isPublished && m.slug) {
-      revalidateMarketplacePaths(masterPublicationPaths(m.slug)).catch(() => {});
+      revalidateMarketplacePaths(casePublicationPaths(m.slug, updated.slug)).catch(() => {});
     }
   }
 

@@ -248,7 +248,8 @@ export default async function RabotyCasePage(
         <PhotoGallery
           beforePhotos={portfolio.beforePhotos}
           afterPhotos={portfolio.afterPhotos}
-          alt={portfolio.title}
+          title={portfolio.title}
+          city={portfolio.city}
         />
       </section>
 
@@ -335,11 +336,13 @@ export default async function RabotyCasePage(
 function PhotoGallery({
   beforePhotos,
   afterPhotos,
-  alt,
+  title,
+  city,
 }: {
   beforePhotos: string[];
   afterPhotos: string[];
-  alt: string;
+  title: string;
+  city: { name: string; slug: string | null } | null;
 }) {
   const before = beforePhotos[0] ?? null;
   const after = afterPhotos[0] ?? null;
@@ -349,22 +352,36 @@ function PhotoGallery({
     return null;
   }
 
+  // Build SEO-friendly alt-texts using the shared helper. Each photo gets
+  // a unique alt with city + before/after context — much better for image
+  // search than just the title.
+  const portfolioRef = { title, city };
+  const beforeAlt = buildPortfolioImageAlt(portfolioRef, "before", 0);
+  const afterAlt = buildPortfolioImageAlt(portfolioRef, "after", 0);
+
   return (
     <div className="space-y-3">
       {(before || after) ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <PhotoTile src={before} label="До" alt={`${alt} — до`} />
-          <PhotoTile src={after} label="После" alt={`${alt} — после`} />
+          <PhotoTile src={before} label="До" alt={beforeAlt} />
+          <PhotoTile src={after} label="После" alt={afterAlt} />
         </div>
       ) : null}
       {remaining.length > 0 ? (
         <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-          {remaining.slice(0, 8).map((u, i) => (
-            <li key={`${u}-${i}`} className="aspect-[4/3] overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-background)]">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={u} alt={alt} loading="lazy" className="block h-full w-full object-cover" />
-            </li>
-          ))}
+          {remaining.slice(0, 8).map((u, i) => {
+            // First entries from afterPhotos[1..], then beforePhotos[1..].
+            const fromAfter = i < afterPhotos.length - 1;
+            const altType: "after" | "before" = fromAfter ? "after" : "before";
+            const indexWithinType = fromAfter ? i + 1 : i - (afterPhotos.length - 1) + 1;
+            const photoAlt = buildPortfolioImageAlt(portfolioRef, altType, indexWithinType);
+            return (
+              <li key={`${u}-${i}`} className="aspect-[4/3] overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-background)]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={u} alt={photoAlt} loading="lazy" className="block h-full w-full object-cover" />
+              </li>
+            );
+          })}
         </ul>
       ) : null}
     </div>

@@ -10,7 +10,7 @@ import { Readable } from "stream";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { objectStorageClient, s3Client, ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage.js";
 import { slugify, pickUniqueSlug } from "../lib/slug.js";
-import { revalidateMarketplacePaths, masterPublicationPaths } from "../lib/marketplaceRevalidate.js";
+import { revalidateMarketplacePaths, masterPublicationPaths, casePublicationPaths } from "../lib/marketplaceRevalidate.js";
 
 const objectStorage = new ObjectStorageService();
 
@@ -1513,7 +1513,7 @@ router.post("/:id/marketplace/portfolio/:caseId/unpublish", allMasterRoles, asyn
   const [m] = await db.select({ slug: mastersTable.slug, isPublished: mastersTable.isPublished })
     .from(mastersTable).where(eq(mastersTable.id, id));
   if (m?.isPublished && m.slug) {
-    revalidateMarketplacePaths(masterPublicationPaths(m.slug)).catch(() => {});
+    revalidateMarketplacePaths(casePublicationPaths(m.slug, existing.slug)).catch(() => {});
   }
 
   res.json({ ok: true });
@@ -1554,7 +1554,7 @@ router.delete("/:id/marketplace/portfolio/:caseId", allMasterRoles, async (req, 
     const [m] = await db.select({ slug: mastersTable.slug, isPublished: mastersTable.isPublished })
       .from(mastersTable).where(eq(mastersTable.id, id));
     if (m?.isPublished && m.slug) {
-      revalidateMarketplacePaths(masterPublicationPaths(m.slug)).catch(() => {});
+      revalidateMarketplacePaths(casePublicationPaths(m.slug, existing.slug)).catch(() => {});
     }
   }
 

@@ -10,6 +10,10 @@
  *   - portfolio item is published or removed (Iteration 2);
  *   - operator updates `service_city_overrides` (Iteration 11.6).
  *
+ * Also pings IndexNow (Yandex/Bing/Naver) for the same paths so search
+ * engines pick up the change in hours instead of weeks. See
+ * `MARKETPLACE_PRODUCTION_PLAN.md §11.8.7`.
+ *
  * The marketplace endpoint `/api/revalidate` calls Next.js `revalidatePath()`
  * for each path in the request body. Auth is the same shared token that
  * protects `/api/marketplace/*` (`MARKETPLACE_INGEST_TOKEN` on this side ≡
@@ -20,6 +24,8 @@
  * succeed — sitemap/page just lags by the ISR window. The function logs
  * warnings so operators can react.
  */
+
+import { pingIndexNow } from "./indexNow.js";
 
 declare const console: { warn: (...args: unknown[]) => void; error: (...args: unknown[]) => void };
 
@@ -70,6 +76,14 @@ export async function revalidateMarketplacePaths(paths: string[]): Promise<void>
   } finally {
     clearTimeout(timeout);
   }
+
+  // Ping IndexNow for content paths (sitemap.xml is filtered out inside
+  // pingIndexNow). This runs after revalidation so the search engine
+  // doesn't fetch a stale ISR cache when it crawls.
+  pingIndexNow(paths).catch((e: unknown) => {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`[marketplace-revalidate] indexnow error: ${msg}`);
+  });
 }
 
 /**
@@ -83,5 +97,25 @@ export async function revalidateMarketplacePaths(paths: string[]): Promise<void>
 export function masterPublicationPaths(slug: string | null | undefined): string[] {
   const paths = ["/sitemap.xml", "/mastera"];
   if (slug) paths.push(`/master/${slug}`);
+  return paths;
+}
+
+/**
+ * Default paths to revalidate when a portfolio case is added / edited /
+ * unpublished / deleted.
+ *
+ * Includes:
+ *   - `/sitemap.xml` — the case URL appears or disappears;
+ *   - `/raboty` — the global feed where the case appears;
+ *   - `/raboty/<caseSlug>` — the case page itself (only if slug is set);
+ *   - `/master/<masterSlug>` — the master profile that aggregates cases.
+ */
+export function casePublicationPaths(
+  masterSlug: string | null | undefined,
+  caseSlug: string | null | undefined,
+): string[] {
+  const paths = ["/sitemap.xml", "/raboty"];
+  if (caseSlug) paths.push(`/raboty/${caseSlug}`);
+  if (masterSlug) paths.push(`/master/${masterSlug}`);
   return paths;
 }
