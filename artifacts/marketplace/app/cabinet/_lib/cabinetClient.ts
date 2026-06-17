@@ -567,3 +567,21 @@ export const cabinetChat = {
     req<ChatMessage>("POST", "/chat", { text, photoUrl }),
   unread: () => req<ChatUnread>("GET", "/chat/unread"),
 };
+
+
+// ── Daily checkin ───────────────────────────────────────────────────────────
+
+export interface CheckinToday {
+  id: number;
+  masterId: number;
+  date: string;
+  isAvailable: boolean | null;
+  respondedAt: string | null;
+  reason?: string | null;
+}
+
+export const cabinetCheckin = {
+  today: () => req<CheckinToday | null>("GET", "/checkin/today"),
+  submit: (isAvailable: boolean) =>
+    req<{ ok: true }>("POST", "/checkin/today", { isAvailable }),
+};

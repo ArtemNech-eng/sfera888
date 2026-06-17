@@ -5,7 +5,9 @@ import Link from "next/link";
 import { toast } from "sonner";
 import {
   cabinetHome,
+  cabinetCheckin,
   type CabinetHome,
+  type CheckinToday,
   type OrderHomeCard,
   type ActiveOrderHomeCard,
 } from "../_lib/cabinetClient";
@@ -86,6 +88,9 @@ export function DashboardView() {
         </div>
         <AvailabilityBadge available={m.isAvailable} />
       </header>
+
+      {/* Daily checkin chip */}
+      <CheckinChip />
 
       {/* FOMO banner */}
       {data.fomoBlock.isBlocked ? <FomoBanner block={data.fomoBlock} /> : null}
@@ -515,6 +520,47 @@ function AvailabilityBadge({ available }: { available: boolean }) {
       />
       {available ? "На связи" : "Не принимаю заказы"}
     </span>
+  );
+}
+
+/**
+ * Daily checkin chip — calls GET /checkin/today and renders nothing while
+ * loading (avoid layout shift on dashboard). On no-record or unanswered,
+ * shows an amber prompt that links to the full /cabinet/checkin page.
+ */
+function CheckinChip() {
+  const [today, setToday] = useState<CheckinToday | null | undefined>(undefined);
+
+  useEffect(() => {
+    cabinetCheckin
+      .today()
+      .then((res) => setToday(res ?? null))
+      .catch(() => setToday(null));
+  }, []);
+
+  if (today === undefined) return null;
+
+  let cls: string;
+  let label: string;
+  if (today == null || today.respondedAt == null) {
+    cls = "border-amber-200 bg-amber-50 text-amber-800";
+    label = "Подтвердите готовность на сегодня";
+  } else if (today.isAvailable === true) {
+    cls = "border-emerald-200 bg-emerald-50 text-emerald-800";
+    label = "Готов работать сегодня";
+  } else {
+    cls = "border-[var(--color-border)] bg-[var(--color-background)] text-[var(--color-muted)]";
+    label = "Сегодня вы не работаете";
+  }
+
+  return (
+    <Link
+      href="/cabinet/checkin"
+      className={`flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold transition hover:shadow-sm ${cls}`}
+    >
+      <span>{label}</span>
+      <span className="text-xs font-normal opacity-70">Изменить →</span>
+    </Link>
   );
 }
 
