@@ -4,8 +4,9 @@ import { fetchRabotyList } from "../../lib/api";
 import { publicUrl } from "../../lib/env";
 import { breadcrumbJsonLd, toJsonLdScript } from "../../lib/jsonLd";
 import { buildRabotyIndexMeta } from "../../lib/seoMeta";
+import type { RabotyListItem } from "../../lib/types";
 import { ROOM_CATEGORIES, DEMO_CASES } from "../../lib/demoCases";
-import { ObjectCard, rabotyToObjectData } from "../../components/ObjectCard";
+import { CaseCard } from "../../components/CaseCard";
 
 /**
  * `/raboty` — каталог идей в Pinterest-masonry стиле (план §22.4).
@@ -13,10 +14,10 @@ import { ObjectCard, rabotyToObjectData } from "../../components/ObjectCard";
  * Главный товар платформы — РЕЗУЛЬТАТ РЕМОНТА (объект). Эта страница —
  * витрина, где пользователь приходит за вдохновением. Поэтому:
  *
- *   • masonry-сетка из ObjectCard (порт. 4:5), не utility-таблица
+ *   • masonry-сетка из CaseCard (порт. 4:5), не utility-таблица
  *   • большие фото на первом плане, текст вторичен
- *   • browse-by chip rails сверху (по комнатам / по стилю), AirBnB-style
- *   • subtle paginаtion внизу
+ *   • sticky browse-by chip rails сверху (по комнатам / по стилю), AirBnB-style
+ *   • subtle pagination внизу
  *
  * Воронка: visitor browses → opens a case at /raboty/[slug] → reads the
  * story → either keeps browsing or hits "Хочу такую же" lead form.
@@ -125,7 +126,7 @@ export default async function RabotyIndexPage(
         </div>
       </header>
 
-      {/* ── Browse-by chip rails (AirBnB-style filters) ─────────── */}
+      {/* ── Sticky browse-by chip rails (AirBnB-style filters) ─── */}
       <section className="sticky top-0 z-20 border-b border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur">
         <div className="mx-auto max-w-6xl space-y-3 px-4 py-4 sm:px-6 sm:py-5">
           <ChipRail
@@ -172,9 +173,9 @@ export default async function RabotyIndexPage(
 
           {data.items.length > 0 ? (
             <div className="masonry">
-              {data.items.map((item, i) => (
+              {data.items.map((item) => (
                 <div key={item.id} className="masonry-item">
-                  <ObjectCard data={rabotyToObjectData(item)} priority={i < 3} />
+                  <CaseCard {...rabotyToCardProps(item)} />
                 </div>
               ))}
             </div>
@@ -184,7 +185,15 @@ export default async function RabotyIndexPage(
             <div className={`${data.items.length > 0 ? "mt-12" : ""} masonry`}>
               {DEMO_CASES.map((d) => (
                 <div key={d.id} className="masonry-item">
-                  <DemoMasonryTile demo={d} />
+                  <CaseCard
+                    href="/raboty"
+                    cover={d.imageUrl}
+                    title={d.title}
+                    alt={d.alt}
+                    metaParts={[d.category, "стилевой референс"]}
+                    priceLabel={null}
+                    badge={{ tone: "demo", label: "Пример" }}
+                  />
                 </div>
               ))}
             </div>
@@ -203,7 +212,34 @@ export default async function RabotyIndexPage(
   );
 }
 
-// ── Chip rail (browse-by) ────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function rabotyToCardProps(item: RabotyListItem) {
+  const cover = item.afterPhotos[0] ?? item.beforePhotos[0] ?? null;
+  const priceFrom = parseNumeric(item.priceFrom);
+  const area = parseNumeric(item.area);
+  const cityName = item.city?.name ?? item.master.city ?? null;
+  const masterName =
+    item.master.publicTitle?.trim() ||
+    item.master.alias?.trim() ||
+    `Мастер #${item.master.id}`;
+
+  return {
+    href: `/raboty/${item.slug}`,
+    cover,
+    title: item.title,
+    alt: `${item.title}${cityName ? ` в ${cityName}` : ""} — фото ремонта`,
+    metaParts: [
+      cityName,
+      area != null ? `${area} м²` : null,
+      masterName,
+    ],
+    priceLabel: priceFrom != null ? `от ${formatNumber(priceFrom)} ₽` : null,
+    badge: item.isFeatured ? ({ tone: "featured" as const, label: "Топ" }) : null,
+    views: null,
+    saves: null,
+  };
+}
 
 function ChipRail({
   label,
@@ -241,39 +277,6 @@ function ChipRail({
         })}
       </ul>
     </div>
-  );
-}
-
-// ── Demo masonry tile (Pinterest-style portrait) ────────────────────────────
-
-function DemoMasonryTile({ demo }: { demo: typeof DEMO_CASES[number] }) {
-  return (
-    <Link href="/raboty" className="group block">
-      <div className="relative aspect-[4/5] w-full overflow-hidden rounded-xl bg-[var(--color-border)]">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={demo.imageUrl}
-          alt={demo.alt}
-          loading="lazy"
-          className="block h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
-        />
-        <span className="absolute left-3 top-3 inline-flex items-center rounded-full bg-[var(--color-surface)]/95 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-faint)]">
-          Пример
-        </span>
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/45 via-black/15 to-transparent" />
-        <div className="absolute inset-x-0 bottom-0 p-3 text-white">
-          <p className="text-[10px] uppercase tracking-[0.14em] opacity-80">{demo.category}</p>
-        </div>
-      </div>
-      <div className="mt-3 px-1">
-        <h3 className="line-clamp-2 text-base font-semibold leading-snug text-[var(--color-text)] group-hover:text-[var(--color-primary)]">
-          {demo.title}
-        </h3>
-        <p className="mt-1 truncate text-xs text-[var(--color-muted)]">
-          Стилевой референс — найдите мастера, который реализует похоже.
-        </p>
-      </div>
-    </Link>
   );
 }
 
@@ -333,7 +336,11 @@ function Pagination({
   );
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+function parseNumeric(value: string | null | undefined): number | null {
+  if (value == null) return null;
+  const n = parseFloat(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
 
 function formatNumber(n: number): string {
   return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, "\u00A0");
