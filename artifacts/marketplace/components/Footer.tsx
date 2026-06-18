@@ -43,11 +43,11 @@ export function Footer() {
           <FooterColumn
             title="Сервис"
             links={[
-              { href: "/raboty", label: "Работы" },
+              { href: "/raboty", label: "Идеи" },
               { href: "/dizajn", label: "AI-дизайн" },
+              { href: "/kalkulyator", label: "Калькулятор" },
               { href: "/uslugi", label: "Услуги" },
               { href: "/mastera", label: "Мастера" },
-              { href: "/kalkulyator", label: "Калькулятор" },
             ]}
           />
 

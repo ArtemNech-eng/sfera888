@@ -46,7 +46,7 @@ export function HomeRecentCases({ cases }: Props) {
             href="/raboty"
             className="hidden text-sm font-semibold text-[var(--color-text)] underline decoration-[var(--color-primary)] decoration-2 underline-offset-4 transition hover:decoration-[var(--color-text)] sm:inline"
           >
-            {isDemoMode ? "К каталогу работ →" : "Все работы →"}
+            {isDemoMode ? "К каталогу идей →" : "Все идеи →"}
           </Link>
         </div>
 
@@ -69,7 +69,7 @@ export function HomeRecentCases({ cases }: Props) {
             href="/raboty"
             className="text-sm font-semibold text-[var(--color-text)] underline decoration-[var(--color-primary)] decoration-2 underline-offset-4"
           >
-            {isDemoMode ? "К каталогу работ →" : "Все работы →"}
+            {isDemoMode ? "К каталогу идей →" : "Все идеи →"}
           </Link>
         </div>
       </div>

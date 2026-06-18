@@ -8,16 +8,19 @@ interface Props {
 }
 
 /**
- * Portal-grade hero (plan §21 portal iteration).
+ * Inspiration-first hero (plan §21.9 + §22 funnel correction).
  *
- * Functional-first hero, the way serious country-scale platforms (Госуслуги,
- * Profi.ru, Yandex.Services, ЦИАН) lay out their first screen:
- *   1. tight headline + subtitle
- *   2. search form — пользователь сразу делает что-то полезное, а не любуется
- *   3. live platform stats inline as a credibility row
- *   4. quick-pick category chips for the most common rooms / services
- *   5. visual banner (3-photo strip) underneath as the "this is interior",
- *      not a hero-collage that eats the viewport
+ * Wir reposition the home around the project's actual concept: people come
+ * for inspiration, leave with a master and a renovation. So the hero leads
+ * with idea-browsing, not master-search:
+ *
+ *   1. headline + lead targeted at "find an idea" not "find a contractor"
+ *   2. search form returns ремонтные кейсы in /raboty (the inspiration
+ *      catalog), not masters in /mastera
+ *   3. quick-pick chips deep-link into /raboty?room=... or
+ *      /raboty?service=... so the second click is still a browse
+ *   4. live platform stats stay inline as credibility
+ *   5. 3-photo collage strip remains as the visual anchor
  */
 export function HomeHero({ stats, cities }: Props) {
   const collage = [
@@ -31,17 +34,17 @@ export function HomeHero({ stats, cities }: Props) {
       <div className="mx-auto max-w-6xl px-4 pb-10 pt-10 sm:px-6 sm:pb-12 sm:pt-14">
         <p className="font-eyebrow">Планировщик ремонта</p>
         <h1 className="font-editorial mt-4 max-w-3xl text-3xl text-[var(--color-text)] sm:text-4xl lg:text-[2.75rem]">
-          Найдите мастера для ремонта в вашем городе.
+          Найдите идею ремонта — мастера найдём потом.
         </h1>
         <p className="mt-4 max-w-2xl text-base leading-relaxed text-[var(--color-muted)]">
-          Реальные ремонты с фото и ценами, AI-визуализация интерьера,
-          калькулятор по фактическим сделкам и подбор проверенных мастеров.
-          Без агрегаторов, без авансов, по договору.
+          Тысячи реальных ремонтов с фото и ценами, AI-визуализация интерьера,
+          калькулятор бюджета по сделкам в вашем городе. Вдохновение — первое,
+          мастер — когда уже знаете, чего хотите.
         </p>
 
-        {/* Search form — primary action of the page */}
+        {/* Search form — submits to /raboty (idea catalog), not /mastera */}
         <form
-          action="/mastera"
+          action="/raboty"
           method="GET"
           className="mt-7 grid grid-cols-1 gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-cozy sm:grid-cols-[1fr_1fr_auto] sm:gap-2"
         >
@@ -65,21 +68,21 @@ export function HomeHero({ stats, cities }: Props) {
               <circle cx="11" cy="11" r="7" />
               <path d="m20 20-4-4" />
             </svg>
-            Найти мастера
+            Смотреть идеи
           </button>
         </form>
 
-        {/* Live platform stats — inline credibility row */}
+        {/* Live platform stats */}
         <p className="mt-5 flex flex-wrap items-baseline gap-x-6 gap-y-2 text-sm text-[var(--color-muted)]">
-          <StatItem value={formatCount(Math.max(stats.publishedMasters, 0))} label="проверенных мастеров" />
+          <StatItem value={formatCount(stats.publishedCases)} label="идей в каталоге" />
           <StatItem value={formatCount(stats.citiesCount)} label="городов" />
-          <StatItem value={formatCount(stats.publishedCases)} label="работ в каталоге" />
+          <StatItem value={formatCount(Math.max(stats.publishedMasters, 0))} label="мастеров готовы повторить" />
           {stats.completedOrders > 0 ? (
             <StatItem value={formatCount(stats.completedOrders)} label="ремонтов завершено" />
           ) : null}
         </p>
 
-        {/* Quick category chips */}
+        {/* Quick category chips — deep-link into /raboty (browse), not /mastera */}
         <div className="mt-7">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-faint)]">
             Популярные направления
@@ -99,8 +102,7 @@ export function HomeHero({ stats, cities }: Props) {
         </div>
       </div>
 
-      {/* Visual banner — 3 photos in a tight strip under the hero
-          (not eating the viewport like the previous magazine collage). */}
+      {/* Visual banner — 3-photo strip */}
       <div className="mx-auto max-w-6xl px-4 pb-12 sm:px-6 sm:pb-16">
         <div className="grid h-44 grid-cols-3 gap-2 sm:h-56 sm:gap-3">
           {collage.map((data, idx) => (
@@ -113,18 +115,18 @@ export function HomeHero({ stats, cities }: Props) {
 }
 
 const QUICK_PICKS: { label: string; href: string }[] = [
-  { label: "Ванная под ключ", href: "/mastera?room=vannaya" },
-  { label: "Кухня", href: "/mastera?room=kuhnya" },
-  { label: "Квартира под ключ", href: "/mastera?service=kompleksnyy-remont" },
-  { label: "Электрика", href: "/mastera?service=elektrika" },
-  { label: "Сантехника", href: "/mastera?service=santehnika" },
-  { label: "Плиточные работы", href: "/mastera?service=plitochnye-raboty" },
-  { label: "Натяжные потолки", href: "/mastera?service=natyazhnye-potolki" },
-  { label: "Поклейка обоев", href: "/mastera?service=poklejka-oboev" },
-  { label: "Демонтаж", href: "/mastera?service=demontazh" },
-  { label: "Малярные работы", href: "/mastera?service=malyarnye-raboty" },
-  { label: "Балкон / лоджия", href: "/mastera?room=balkon" },
-  { label: "Ремонт офисов", href: "/uslugi" },
+  { label: "Ванная под ключ", href: "/raboty?room=vannaya" },
+  { label: "Кухня", href: "/raboty?room=kuhnya" },
+  { label: "Гостиная", href: "/raboty?room=gostinaya" },
+  { label: "Спальня", href: "/raboty?room=spalnya" },
+  { label: "Прихожая", href: "/raboty?room=prihozhaya" },
+  { label: "Балкон / лоджия", href: "/raboty?room=balkon" },
+  { label: "Современный стиль", href: "/raboty?style=sovremennyy" },
+  { label: "Скандинавский", href: "/raboty?style=skandinavskiy" },
+  { label: "Лофт", href: "/raboty?style=loft" },
+  { label: "Минимализм", href: "/raboty?style=minimalizm" },
+  { label: "Неоклассика", href: "/raboty?style=neoklassika" },
+  { label: "Светлый ремонт", href: "/raboty?style=svetlyy" },
 ];
 
 // ── Subcomponents ──────────────────────────────────────────────────────────

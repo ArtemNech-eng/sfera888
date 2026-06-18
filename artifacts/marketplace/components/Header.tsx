@@ -21,11 +21,11 @@ interface NavItem {
  * (plan §11.10.3). For now it links to /mastera as a sane catch-all.
  */
 const NAV: NavItem[] = [
-  { href: "/raboty", label: "Работы" },
+  { href: "/raboty", label: "Идеи" },
   { href: "/dizajn", label: "AI-дизайн" },
+  { href: "/kalkulyator", label: "Калькулятор" },
   { href: "/uslugi", label: "Услуги" },
   { href: "/mastera", label: "Мастера" },
-  { href: "/kalkulyator", label: "Калькулятор" },
 ];
 
 const EXTERNAL_FOR_MASTERS = "https://sfera-master.ru/masteram";

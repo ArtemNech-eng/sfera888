@@ -58,9 +58,9 @@ export default async function HomePage() {
       <HomeHero stats={stats} cities={cities} />
       <HomeIdeasCategories />
       <HomeRecentCases cases={cases} />
+      <HomeHowItWorks />
       <HomeCalculator cities={cities} />
       <HomeTopMasters masters={masters} />
-      <HomeHowItWorks />
     </>
   );
 }
