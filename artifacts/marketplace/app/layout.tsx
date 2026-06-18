@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Manrope, Spectral } from "next/font/google";
+import { Manrope } from "next/font/google";
 import { headers } from "next/headers";
 import "./globals.css";
 import { Header } from "../components/Header";
@@ -7,7 +7,9 @@ import { Footer } from "../components/Footer";
 import { YandexMetrika } from "../components/YandexMetrika";
 import { publicUrl } from "../lib/env";
 
-// Manrope — body / UI sans-serif.
+// Manrope — the only typeface in the portal. Body, UI, headings, numerals.
+// We dropped the editorial serif so pages read as "infrastructure portal"
+// rather than "interior studio".
 const manrope = Manrope({
   subsets: ["latin", "cyrillic"],
   variable: "--font-manrope",
@@ -15,22 +17,11 @@ const manrope = Manrope({
   display: "swap",
 });
 
-// Spectral — Adobe×Google modern transitional serif. Reads scandi-premium
-// without the vintage feel of EB Garamond. Full Cyrillic coverage.
-// Used for h1/h2/h3 display headings via the .font-editorial utility.
-const spectral = Spectral({
-  subsets: ["latin", "cyrillic"],
-  variable: "--font-spectral",
-  weight: ["300", "400", "500", "600", "700"],
-  style: ["normal", "italic"],
-  display: "swap",
-});
-
 // Theme color drives the iOS / Chrome status-bar tint when the cabinet is
-// installed as a PWA. Matches the brand graphite text colour — works with
-// both the warm-white pages and the clay accent without clashing.
+// installed as a PWA. Brand green matches the manifest theme_color and
+// the app/icon.svg accent.
 export const viewport = {
-  themeColor: "#1A1A1A",
+  themeColor: "#0E7C5E",
 };
 
 /**
@@ -89,7 +80,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const ownChrome = isOwnChromeRoute(pathname);
 
   return (
-    <html lang="ru" className={`${manrope.variable} ${spectral.variable}`}>
+    <html lang="ru" className={manrope.variable}>
       <body>
         {ownChrome ? null : <Header />}
         <main className="flex-1">{children}</main>

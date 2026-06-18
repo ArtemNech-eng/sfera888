@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Честные мастера">
-  <rect width="64" height="64" rx="14" fill="#1F1D1A"/>
+  <rect width="64" height="64" rx="12" fill="#0E7C5E"/>
   <path d="M16 32 L32 16 L48 32"
-        stroke="#FAF6F0" stroke-width="5"
+        stroke="#FFFFFF" stroke-width="5"
         stroke-linecap="round" stroke-linejoin="round" fill="none"/>
   <path d="M22 40 L29 47 L44 32"
-        stroke="#5E7A4D" stroke-width="5"
+        stroke="#FFFFFF" stroke-width="5"
         stroke-linecap="round" stroke-linejoin="round" fill="none"/>
 </svg>

@@ -12,12 +12,10 @@ import type {
   RabotyListItem,
 } from "../lib/types";
 import { HomeHero } from "../components/home/HomeHero";
-import { HomeTrustStrip } from "../components/home/HomeTrustStrip";
 import { HomeIdeasCategories } from "../components/home/HomeIdeasCategories";
 import { HomeRecentCases } from "../components/home/HomeRecentCases";
 import { HomeCalculator } from "../components/home/HomeCalculator";
 import { HomeTopMasters } from "../components/home/HomeTopMasters";
-import { HomeTrustBlock } from "../components/home/HomeTrustBlock";
 import { HomeHowItWorks } from "../components/home/HomeHowItWorks";
 
 // Skip prerender at build time — page depends on the marketplace API which is
@@ -57,13 +55,11 @@ export default async function HomePage() {
 
   return (
     <>
-      <HomeHero />
-      <HomeTrustStrip />
+      <HomeHero stats={stats} cities={cities} />
       <HomeIdeasCategories />
       <HomeRecentCases cases={cases} />
       <HomeCalculator cities={cities} />
       <HomeTopMasters masters={masters} />
-      <HomeTrustBlock stats={stats} />
       <HomeHowItWorks />
     </>
   );
