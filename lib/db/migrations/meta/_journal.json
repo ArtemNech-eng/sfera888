@@ -57,6 +57,13 @@
       "when": 1781609790240,
       "tag": "0007_master_publication_log",
       "breakpoints": false
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1781813087191,
+      "tag": "0008_portfolio_rich_fields",
+      "breakpoints": false
     }
   ]
 }

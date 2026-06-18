@@ -9,6 +9,7 @@ import {
   CabinetApiError,
   type PortfolioItem,
   type PortfolioValidationError,
+  type CabinetHousingType,
 } from "../_lib/cabinetClient";
 import { resolvePhotoUrl } from "../_lib/photo";
 
@@ -48,6 +49,19 @@ export function PortfolioEditor({ existingItem, masterCity }: Props) {
   const [area, setArea] = useState(existingItem?.area ?? "");
   const [completedAt, setCompletedAt] = useState(
     existingItem?.completedAt ? new Date(existingItem.completedAt).toISOString().slice(0, 10) : "",
+  );
+  // ── Iteration 2 fields (plan §22) ────────────────────────────────────────
+  const [durationDays, setDurationDays] = useState<string>(
+    existingItem?.durationDays != null ? String(existingItem.durationDays) : "",
+  );
+  const [housingType, setHousingType] = useState<CabinetHousingType | "">(
+    existingItem?.housingType ?? "",
+  );
+  const [estimateWorks, setEstimateWorks] = useState<string>(
+    existingItem?.estimate?.works != null ? String(existingItem.estimate.works) : "",
+  );
+  const [estimateMaterials, setEstimateMaterials] = useState<string>(
+    existingItem?.estimate?.materials != null ? String(existingItem.estimate.materials) : "",
   );
   const [beforePhotos, setBeforePhotos] = useState<string[]>(existingItem?.beforePhotos ?? []);
   const [afterPhotos, setAfterPhotos] = useState<string[]>(existingItem?.afterPhotos ?? []);
@@ -148,8 +162,30 @@ export function PortfolioEditor({ existingItem, masterCity }: Props) {
 
   // ── Photo upload (auto-creates draft on first add) ───────────────────────
 
+  /**
+   * Build the Iteration-2 payload bits (durationDays / housingType / estimate)
+   * from the form state. Returns an object with keys to spread into the
+   * cabinet API call. Empty fields produce explicit `null` so the user can
+   * clear them on save.
+   */
+  const buildIter2Payload = () => {
+    const durationParsed = durationDays.trim().length > 0 ? parseInt(durationDays, 10) : null;
+    const worksNum = estimateWorks.trim().length > 0 ? parseInt(estimateWorks, 10) : null;
+    const materialsNum = estimateMaterials.trim().length > 0 ? parseInt(estimateMaterials, 10) : null;
+    const estimate =
+      worksNum != null && materialsNum != null && Number.isFinite(worksNum) && Number.isFinite(materialsNum)
+        ? { works: worksNum, materials: materialsNum }
+        : null;
+    return {
+      durationDays: durationParsed != null && Number.isFinite(durationParsed) ? durationParsed : null,
+      housingType: (housingType === "" ? null : housingType) as CabinetHousingType | null,
+      estimate,
+    };
+  };
+
   const ensureCaseId = async (): Promise<number> => {
     if (currentId) return currentId;
+    const iter2 = buildIter2Payload();
     const res = await cabinetPortfolio.create({
       title: title.trim() || undefined,
       description: description.trim() || undefined,
@@ -157,6 +193,9 @@ export function PortfolioEditor({ existingItem, masterCity }: Props) {
       priceTo: priceTo || undefined,
       area: area || undefined,
       completedAt: completedAt || undefined,
+      durationDays: iter2.durationDays,
+      housingType: iter2.housingType,
+      estimate: iter2.estimate,
     });
     setCurrentId(res.item.id);
     // Replace URL so refresh keeps the draft id intact (without history spam).
@@ -211,6 +250,7 @@ export function PortfolioEditor({ existingItem, masterCity }: Props) {
     setErrors([]);
     try {
       const id = await ensureCaseId();
+      const iter2 = buildIter2Payload();
       const res = await cabinetPortfolio.update(id, {
         title: title.trim() || null,
         description: description.trim() || null,
@@ -218,6 +258,9 @@ export function PortfolioEditor({ existingItem, masterCity }: Props) {
         priceTo: priceTo || null,
         area: area || null,
         completedAt: completedAt || null,
+        durationDays: iter2.durationDays,
+        housingType: iter2.housingType,
+        estimate: iter2.estimate,
       });
       toast.success(
         res.item.isPublished
@@ -484,6 +527,98 @@ export function PortfolioEditor({ existingItem, masterCity }: Props) {
           Город — <span className="font-semibold text-[var(--color-text)]">{masterCity}</span> (берётся из профиля).
         </p>
       ) : null}
+
+      {/* ── Iteration 2: срок, тип жилья, смета (план §22) ──────────────── */}
+      <section className="space-y-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-background)] p-4 sm:p-5">
+        <div>
+          <h2 className="text-sm font-semibold text-[var(--color-text)]">
+            Детали объекта
+          </h2>
+          <p className="mt-1 text-xs leading-relaxed text-[var(--color-muted)]">
+            Срок, тип жилья и смета — заполните чтобы кейс получал больше просмотров и заявок.
+            Поля необязательные, но кейсы со сметой выдают +30% переходов на форму.
+          </p>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field
+            label="Срок выполнения, дней"
+            errors={errorsByField("durationDays")}
+          >
+            <input
+              type="text"
+              inputMode="numeric"
+              value={durationDays}
+              onChange={(e) => setDurationDays(e.target.value.replace(/[^\d]/g, "").slice(0, 4))}
+              placeholder="14"
+              className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-white px-3 text-sm focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-soft)]"
+            />
+          </Field>
+          <Field
+            label="Тип жилья"
+            errors={errorsByField("housingType")}
+          >
+            <select
+              value={housingType}
+              onChange={(e) => setHousingType((e.target.value as CabinetHousingType | "") || "")}
+              className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-white px-3 text-sm focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-soft)]"
+            >
+              <option value="">— не указано —</option>
+              <option value="novostroyka">Новостройка</option>
+              <option value="vtorichka">Вторичка</option>
+              <option value="chastnyy_dom">Частный дом</option>
+              <option value="kommerciya">Коммерческое помещение</option>
+            </select>
+          </Field>
+        </div>
+
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">
+            Смета
+          </h3>
+          <div className="mt-2 grid gap-4 sm:grid-cols-2">
+            <Field
+              label="Стоимость работ, ₽"
+              errors={errorsByField("estimate.works")}
+            >
+              <input
+                type="text"
+                inputMode="numeric"
+                value={estimateWorks}
+                onChange={(e) => setEstimateWorks(e.target.value.replace(/[^\d]/g, ""))}
+                placeholder="85000"
+                className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-white px-3 text-sm focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-soft)]"
+              />
+            </Field>
+            <Field
+              label="Стоимость материалов, ₽"
+              errors={errorsByField("estimate.materials")}
+            >
+              <input
+                type="text"
+                inputMode="numeric"
+                value={estimateMaterials}
+                onChange={(e) => setEstimateMaterials(e.target.value.replace(/[^\d]/g, ""))}
+                placeholder="52000"
+                className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-white px-3 text-sm focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-soft)]"
+              />
+            </Field>
+          </div>
+          {estimateWorks && estimateMaterials ? (
+            <p className="mt-2 text-xs text-[var(--color-muted)]">
+              Итого:{" "}
+              <span className="font-semibold text-[var(--color-text)]">
+                {(parseInt(estimateWorks, 10) + parseInt(estimateMaterials, 10)).toLocaleString("ru-RU")} ₽
+              </span>
+              {priceFrom && Math.abs(parseInt(estimateWorks, 10) + parseInt(estimateMaterials, 10) - parseInt(priceFrom, 10)) > parseInt(priceFrom, 10) * 0.1 ? (
+                <span className="ml-2 text-amber-700">
+                  ⚠️ Расходится с «Цена от» больше чем на 10%
+                </span>
+              ) : null}
+            </p>
+          ) : null}
+        </div>
+      </section>
 
       {/* Photos */}
       <section className="space-y-4">

@@ -19,6 +19,7 @@ import type {
 import { CaseGallery } from "../../../components/raboty/CaseGallery";
 import { CaseChips } from "../../../components/raboty/CaseChips";
 import { CasePrimaryCTA } from "../../../components/raboty/CasePrimaryCTA";
+import { CaseEstimate } from "../../../components/raboty/CaseEstimate";
 import { CaseMasterSummary } from "../../../components/raboty/CaseMasterSummary";
 import { CaseAIDesigns } from "../../../components/raboty/CaseAIDesigns";
 import { CaseLeadBlock } from "../../../components/raboty/CaseLeadBlock";
@@ -149,6 +150,13 @@ export default async function RabotyCasePage(
     { name: portfolio.title, url: sourcePageUrl },
   ]);
 
+  const HOUSING_LABEL_MAP: Record<string, string> = {
+    novostroyka: "Новостройка",
+    vtorichka: "Вторичка",
+    chastnyy_dom: "Частный дом",
+    kommerciya: "Коммерция",
+  };
+
   const caseLd = caseJsonLd({
     url: sourcePageUrl,
     title: portfolio.title,
@@ -169,6 +177,11 @@ export default async function RabotyCasePage(
     siteUrl: publicUrl(),
     clientReview: portfolio.clientReviewText && portfolio.clientRating
       ? { rating: portfolio.clientRating, text: portfolio.clientReviewText }
+      : null,
+    durationDays: portfolio.durationDays,
+    housingTypeLabel: portfolio.housingType ? HOUSING_LABEL_MAP[portfolio.housingType] ?? null : null,
+    estimate: portfolio.estimate
+      ? { works: portfolio.estimate.works, materials: portfolio.estimate.materials }
       : null,
   });
 
@@ -199,12 +212,14 @@ export default async function RabotyCasePage(
         afterPhotos={portfolio.afterPhotos}
       />
 
-      {/* 2. Chips — city / area / price / service (срок и тип жилья — в Iter 2) */}
+      {/* 2. Chips — city / area / срок / price / service / тип жилья */}
       <CaseChips
         cityName={cityName}
         area={areaNum}
         priceRange={priceRange}
         serviceName={portfolio.service?.name ?? null}
+        durationDays={portfolio.durationDays}
+        housingType={portfolio.housingType}
       />
 
       {/* 3. Primary CTA + Save + Share */}
@@ -230,6 +245,9 @@ export default async function RabotyCasePage(
       {portfolio.clientReviewText && portfolio.clientRating ? (
         <ClientReview text={portfolio.clientReviewText} rating={portfolio.clientRating} />
       ) : null}
+
+      {/* 6. Смета — Iter 2 */}
+      <CaseEstimate estimate={portfolio.estimate} />
 
       {/* 7. Master — strong byline */}
       <CaseMasterSummary master={master} masterName={masterName} stats={masterStats} />

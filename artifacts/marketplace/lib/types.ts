@@ -116,6 +116,10 @@ export interface MasterPortfolioItem {
   priceFrom: string | null;
   priceTo: string | null;
   area: string | null;
+  /** Iteration 2 — same fields as on RabotyDetailResponse.portfolio. */
+  durationDays: number | null;
+  housingType: HousingType | null;
+  estimate: PortfolioEstimate | null;
   completedAt: string | null;
   clientReviewText: string | null;
   clientRating: number | null;
@@ -144,6 +148,23 @@ export interface MasterDetailResponse {
 }
 
 // ── Standalone portfolio case page (Houzz-model, /raboty/[slug]) ────────────
+
+/**
+ * Portfolio housing type — must mirror the DB enum on api-server:
+ * `lib/db/src/schema/master-portfolio.ts` (housingTypeEnum).
+ */
+export type HousingType = "novostroyka" | "vtorichka" | "chastnyy_dom" | "kommerciya";
+
+/**
+ * Structured estimate for a portfolio case (plan §22 Iter 2). Stored as
+ * JSONB on api-server side; here it's the runtime shape after parse.
+ */
+export interface PortfolioEstimate {
+  works: number;
+  materials: number;
+  total?: number;
+  breakdown?: { label: string; cost: number }[];
+}
 
 /** Compact master info embedded into a case-list item. */
 export interface RabotyMasterRef {
@@ -213,6 +234,12 @@ export interface RabotyDetailResponse {
     priceFrom: string | null;
     priceTo: string | null;
     area: string | null;
+    /** Iteration 2 (plan §22 Req 2.4): срок выполнения, дни. */
+    durationDays: number | null;
+    /** Iteration 2 (plan §22 Req 2.5): тип жилья объекта. */
+    housingType: HousingType | null;
+    /** Iteration 2 (plan §22 Req 3): структурированная смета. */
+    estimate: PortfolioEstimate | null;
     completedAt: string | null;
     clientReviewText: string | null;
     clientRating: number | null;

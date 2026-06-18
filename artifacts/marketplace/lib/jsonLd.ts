@@ -269,6 +269,15 @@ export interface CaseJsonLdInput {
   siteUrl: string;
   /** If the case has a public client review. */
   clientReview: { rating: number; text: string } | null;
+  /** Iteration 2 (plan §22 §13.1): срок выполнения, дни. */
+  durationDays?: number | null;
+  /** Iteration 2: тип жилья — человекочитаемое название («Новостройка» / …). */
+  housingTypeLabel?: string | null;
+  /**
+   * Iteration 2: смета — works/materials в составе additionalProperty[].
+   * total в JSON-LD не дублируем (есть Offer.price выше).
+   */
+  estimate?: { works: number; materials: number } | null;
 }
 
 /**
@@ -324,6 +333,55 @@ export function caseJsonLd(input: CaseJsonLdInput): Record<string, unknown> {
   }
   if (input.service) {
     creativeWork.about = { "@type": "Service", name: input.service.name };
+  }
+
+  // Iteration 2: structured properties (Plan §22 §13.1) — duration, housing,
+  // estimate. Schema.org additionalProperty[] is the canonical container for
+  // free-form CreativeWork attributes that don't have first-class fields.
+  const additionalProperty: Record<string, unknown>[] = [];
+  if (input.areaSqm != null && input.areaSqm > 0) {
+    additionalProperty.push({
+      "@type": "PropertyValue",
+      name: "Площадь",
+      value: input.areaSqm,
+      unitText: "м²",
+    });
+  }
+  if (input.durationDays != null && input.durationDays > 0) {
+    additionalProperty.push({
+      "@type": "PropertyValue",
+      name: "Срок выполнения",
+      value: input.durationDays,
+      unitText: "дней",
+    });
+  }
+  if (input.housingTypeLabel) {
+    additionalProperty.push({
+      "@type": "PropertyValue",
+      name: "Тип жилья",
+      value: input.housingTypeLabel,
+    });
+  }
+  if (input.estimate) {
+    if (input.estimate.works > 0) {
+      additionalProperty.push({
+        "@type": "PropertyValue",
+        name: "Стоимость работ",
+        value: input.estimate.works,
+        unitText: "RUB",
+      });
+    }
+    if (input.estimate.materials > 0) {
+      additionalProperty.push({
+        "@type": "PropertyValue",
+        name: "Стоимость материалов",
+        value: input.estimate.materials,
+        unitText: "RUB",
+      });
+    }
+  }
+  if (additionalProperty.length > 0) {
+    creativeWork.additionalProperty = additionalProperty;
   }
 
   const nodes: Record<string, unknown>[] = [creativeWork];

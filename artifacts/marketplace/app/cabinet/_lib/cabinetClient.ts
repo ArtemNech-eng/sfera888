@@ -422,6 +422,23 @@ export type CancelType = "master_cancel" | "client_cancel" | "refund_request";
 
 // ── Portfolio (cases) ───────────────────────────────────────────────────────
 
+/**
+ * Portfolio housing type — must mirror the DB enum on api-server
+ * (`lib/db/src/schema/master-portfolio.ts` housingTypeEnum).
+ */
+export type CabinetHousingType = "novostroyka" | "vtorichka" | "chastnyy_dom" | "kommerciya";
+
+/**
+ * Structured estimate breakdown for a portfolio case (plan §22 Iter 2).
+ * Mirrors `PortfolioEstimate` on api-server side. Stored as JSONB upstream.
+ */
+export interface CabinetPortfolioEstimate {
+  works: number;
+  materials: number;
+  total?: number;
+  breakdown?: { label: string; cost: number }[];
+}
+
 export interface PortfolioItem {
   id: number;
   title: string;
@@ -434,6 +451,12 @@ export interface PortfolioItem {
   priceFrom: string | null;
   priceTo: string | null;
   area: string | null;
+  /** Iter 2 — duration in days, 1..365. */
+  durationDays: number | null;
+  /** Iter 2 — housing type enum. */
+  housingType: CabinetHousingType | null;
+  /** Iter 2 — structured estimate. */
+  estimate: CabinetPortfolioEstimate | null;
   completedAt: string | null;
   clientReviewText: string | null;
   clientRating: number | null;
@@ -464,6 +487,12 @@ export interface PortfolioCreateInput {
   priceFrom?: string | number | null;
   priceTo?: string | number | null;
   area?: string | number | null;
+  /** Iter 2 — срок выполнения в днях. null чистит поле. */
+  durationDays?: number | null;
+  /** Iter 2 — тип жилья. null чистит поле. */
+  housingType?: CabinetHousingType | null;
+  /** Iter 2 — смета. null чистит поле. */
+  estimate?: CabinetPortfolioEstimate | null;
   completedAt?: string | null;
 }
 

@@ -1,14 +1,13 @@
+import type { HousingType } from "../../lib/types";
+
 interface CaseChipsProps {
   cityName: string | null;
   area: number | null;
   priceRange: string | null;
   serviceName: string | null;
-  // Iter 2 fields — props в API будут добавлены позже, сейчас фронт уже умеет их рендерить.
   durationDays?: number | null;
   housingType?: HousingType | null;
 }
-
-export type HousingType = "novostroyka" | "vtorichka" | "chastnyy_dom" | "kommerciya";
 
 const HOUSING_LABEL: Record<HousingType, string> = {
   novostroyka: "Новостройка",

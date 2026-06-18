@@ -1761,6 +1761,9 @@ function toPortfolioPwaDto(p: typeof masterPortfolioTable.$inferSelect) {
     priceFrom: p.priceFrom,
     priceTo: p.priceTo,
     area: p.area,
+    durationDays: p.durationDays,
+    housingType: p.housingType,
+    estimate: p.estimate,
     completedAt: p.completedAt,
     clientReviewText: p.clientReviewText,
     clientRating: p.clientRating,
@@ -1965,7 +1968,7 @@ router.patch("/portfolio/:id", requireMasterPwa, async (req, res) => {
     .where(and(eq(masterPortfolioTable.id, id), eq(masterPortfolioTable.masterId, masterId)));
   if (!existing) return res.status(404).json({ error: "Кейс не найден" });
 
-  const { title, description, serviceTypeId, cityId, priceFrom, priceTo, area, completedAt } = req.body ?? {};
+  const { title, description, serviceTypeId, cityId, priceFrom, priceTo, area, completedAt, durationDays, housingType, estimate } = req.body ?? {};
 
   const moderationErrors: ValidationError[] = [];
   const updates: Partial<typeof masterPortfolioTable.$inferInsert> = {};
@@ -2017,6 +2020,80 @@ router.patch("/portfolio/:id", requireMasterPwa, async (req, res) => {
   }
   if (completedAt !== undefined) {
     updates.completedAt = completedAt ? new Date(completedAt) : null;
+  }
+  // ── Iteration 2 fields (plan §22) ──────────────────────────────────────
+  if (durationDays !== undefined) {
+    if (durationDays == null || durationDays === "") {
+      updates.durationDays = null;
+    } else {
+      const n = parseInt(String(durationDays), 10);
+      if (!Number.isFinite(n) || n < 1 || n > 365) {
+        moderationErrors.push({
+          field: "durationDays",
+          code: "OUT_OF_RANGE",
+          message: "Срок должен быть от 1 до 365 дней.",
+        });
+      } else {
+        updates.durationDays = n;
+      }
+    }
+  }
+  if (housingType !== undefined) {
+    if (housingType == null || housingType === "") {
+      updates.housingType = null;
+    } else {
+      const allowed = ["novostroyka", "vtorichka", "chastnyy_dom", "kommerciya"] as const;
+      if (allowed.includes(housingType as (typeof allowed)[number])) {
+        updates.housingType = housingType as (typeof allowed)[number];
+      } else {
+        moderationErrors.push({
+          field: "housingType",
+          code: "INVALID_VALUE",
+          message: "Неизвестный тип жилья.",
+        });
+      }
+    }
+  }
+  if (estimate !== undefined) {
+    if (estimate == null) {
+      updates.estimate = null;
+    } else if (typeof estimate === "object" && estimate !== null) {
+      const works = Number((estimate as { works?: unknown }).works);
+      const materials = Number((estimate as { materials?: unknown }).materials);
+      const totalRaw = (estimate as { total?: unknown }).total;
+      const totalParsed = totalRaw == null ? undefined : Number(totalRaw);
+      if (!Number.isFinite(works) || works < 0 || works > 10_000_000) {
+        moderationErrors.push({
+          field: "estimate.works",
+          code: "OUT_OF_RANGE",
+          message: "Стоимость работ должна быть от 0 до 10 000 000 ₽.",
+        });
+      } else if (!Number.isFinite(materials) || materials < 0 || materials > 10_000_000) {
+        moderationErrors.push({
+          field: "estimate.materials",
+          code: "OUT_OF_RANGE",
+          message: "Стоимость материалов должна быть от 0 до 10 000 000 ₽.",
+        });
+      } else if (totalParsed != null && (!Number.isFinite(totalParsed) || totalParsed < 0 || totalParsed > 20_000_000)) {
+        moderationErrors.push({
+          field: "estimate.total",
+          code: "OUT_OF_RANGE",
+          message: "Итог сметы должен быть от 0 до 20 000 000 ₽.",
+        });
+      } else {
+        updates.estimate = {
+          works: Math.round(works),
+          materials: Math.round(materials),
+          ...(totalParsed != null ? { total: Math.round(totalParsed) } : {}),
+        };
+      }
+    } else {
+      moderationErrors.push({
+        field: "estimate",
+        code: "INVALID_VALUE",
+        message: "Смета должна быть объектом со стоимостью работ и материалов.",
+      });
+    }
   }
 
   if (moderationErrors.length > 0) {
