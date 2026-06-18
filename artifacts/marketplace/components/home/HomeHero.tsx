@@ -94,14 +94,21 @@ export function HomeHero({ stats, cities: _cities }: Props) {
           </button>
         </form>
 
-        {/* Visual category chips — 4 крупные cards-chip, photo-led */}
-        <ul className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
-          {visualChips.map((chip) => (
-            <li key={chip.label}>
-              <VisualChip chip={chip} />
-            </li>
-          ))}
-        </ul>
+        {/* Visual category chips — 4 cards-chip in Airbnb category style:
+            landscape photo + label below (not overlaid). Keeps the strip
+            compact (~200 px tall) so it doesn't dominate the hero. */}
+        <div className="mt-9">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-faint)]">
+            Что хотите сделать?
+          </p>
+          <ul className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
+            {visualChips.map((chip) => (
+              <li key={chip.label}>
+                <VisualChip chip={chip} />
+              </li>
+            ))}
+          </ul>
+        </div>
 
         {/* Live stats — приземлённое доверие, не маркетинговое преувеличение */}
         <p className="mt-10 flex flex-wrap items-baseline gap-x-6 gap-y-2 text-sm text-[var(--color-muted)]">
@@ -128,19 +135,20 @@ function VisualChip({
   return (
     <Link
       href={href}
-      className="group relative block aspect-[4/3] overflow-hidden rounded-xl bg-[var(--color-border)] transition hover:shadow-cozy-md sm:aspect-[3/4]"
+      className="group block focus:outline-none"
     >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={chip.imageUrl}
-        alt={chip.alt}
-        loading="eager"
-        className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.06]"
-      />
-      <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/10 to-transparent" />
-      <span className="absolute inset-x-0 bottom-0 px-4 pb-4 text-base font-semibold text-white sm:text-lg">
+      <div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-[var(--color-cream-deep)] shadow-cozy transition group-hover:shadow-cozy-md">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={chip.imageUrl}
+          alt={chip.alt}
+          loading="eager"
+          className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.06]"
+        />
+      </div>
+      <p className="mt-2.5 px-1 text-sm font-semibold text-[var(--color-text)] transition group-hover:text-[var(--color-primary)] sm:text-base">
         {chip.label}
-      </span>
+      </p>
     </Link>
   );
 }
