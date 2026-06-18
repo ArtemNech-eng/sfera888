@@ -1282,6 +1282,28 @@ router.get("/raboty/:slug", async (req, res) => {
     }
 
     setOkCache(res);
+
+    // Aggregate stats for the master byline (Req 5 of the redesign):
+    // portfolio count and completed orders. Two cheap aggregate queries
+    // run in parallel — keeps the response under one round-trip overhead.
+    const [portfolioCountRow, completedOrdersRow] = await Promise.all([
+      db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(masterPortfolioTable)
+        .where(and(
+          eq(masterPortfolioTable.masterId, row.master.id),
+          eq(masterPortfolioTable.isPublished, true),
+        )),
+      db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(ordersTable)
+        .where(and(
+          eq(ordersTable.masterId, row.master.id),
+          eq(ordersTable.status, "completed"),
+          isNull(ordersTable.deletedAt),
+        )),
+    ]);
+
     res.json({
       portfolio: {
         id: row.portfolio.id,
@@ -1301,6 +1323,10 @@ router.get("/raboty/:slug", async (req, res) => {
         city: row.city ? { name: row.city.name, slug: row.city.slug } : null,
       },
       master: toMasterDto(row.master),
+      masterStats: {
+        portfolioCount: Number(portfolioCountRow[0]?.n ?? 0),
+        completedOrders: Number(completedOrdersRow[0]?.n ?? 0),
+      },
       similar,
     });
   } catch (e: unknown) {

@@ -221,6 +221,14 @@ export interface RabotyDetailResponse {
     city: { name: string; slug: string | null } | null;
   };
   master: Master;
+  /**
+   * Aggregate counts for the master byline on `/raboty/[slug]` (plan §22 redesign,
+   * Requirement 5). Computed in one extra round-trip on the api-server side.
+   */
+  masterStats: {
+    portfolioCount: number;
+    completedOrders: number;
+  };
   similar: RabotySimilarItem[];
 }
 
