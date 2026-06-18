@@ -143,42 +143,33 @@ export default async function ServiceCityPage(
         dangerouslySetInnerHTML={{ __html: toJsonLdScript(faqLd) }}
       />
 
-      {/* ── Cover hero ── */}
-      <section className="relative overflow-hidden bg-[var(--color-text)]">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -top-40 right-1/3 h-96 w-96 rounded-full bg-[var(--color-primary)] opacity-30 blur-3xl"
-        />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -bottom-32 left-0 h-72 w-72 rounded-full bg-[var(--color-secondary)] opacity-25 blur-3xl"
-        />
-
-        <div className="relative mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16 lg:py-20">
-          <nav className="mb-6 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-white/70">
-            <Link href="/" className="hover:text-white">Главная</Link>
+      {/* ── Hero ── */}
+      <section className="bg-[var(--color-surface)]">
+        <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
+          <nav className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--color-muted)]">
+            <Link href="/" className="hover:text-[var(--color-text)]">Главная</Link>
             <span aria-hidden>/</span>
-            <Link href="/uslugi" className="hover:text-white">Услуги</Link>
+            <Link href="/uslugi" className="hover:text-[var(--color-text)]">Услуги</Link>
             <span aria-hidden>/</span>
-            <span className="text-white/85">{pageH1}</span>
+            <span className="text-[var(--color-text)]">{pageH1}</span>
           </nav>
 
-          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-primary)]">
+          <p className="font-eyebrow mt-7 text-[var(--color-primary)]">
             {data.city.name}
           </p>
-          <h1 className="mt-1 max-w-3xl text-3xl font-extrabold tracking-tight text-white sm:text-5xl lg:text-6xl">
+          <h1 className="font-editorial mt-3 max-w-3xl text-3xl text-[var(--color-text)] sm:text-4xl lg:text-5xl">
             {pageH1}
           </h1>
-          <p className="mt-4 max-w-2xl text-base text-white/75 sm:text-lg">
+          <p className="mt-4 max-w-2xl text-base leading-relaxed text-[var(--color-muted)]">
             Оставьте заявку — подберём проверенного мастера. Без звонков в десять мест,
             без публичных объявлений с вашим номером.
           </p>
 
-          <ul className="mt-6 flex flex-wrap gap-2">
+          <ul className="mt-5 flex flex-wrap gap-2">
             {HERO_BADGES.map((badge) => (
               <li
                 key={badge}
-                className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white backdrop-blur"
+                className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-primary-soft)] px-3 py-1 text-xs font-semibold text-[var(--color-primary-strong)]"
               >
                 <CheckMicroIcon />
                 {badge}
@@ -186,35 +177,50 @@ export default async function ServiceCityPage(
             ))}
           </ul>
 
-          {/* Stats strip */}
-          <dl className="mt-8 grid gap-x-10 gap-y-5 border-t border-white/10 pt-6 text-white sm:grid-cols-4">
-            <Stat
-              label="Мастеров в городе"
-              value={data.stats.mastersCount > 0 ? formatNumber(data.stats.mastersCount) : "Подбираем"}
-            />
+          {/* Inline stats row */}
+          <p className="mt-6 flex flex-wrap items-baseline gap-x-6 gap-y-2 text-sm text-[var(--color-muted)]">
+            <span className="inline-flex items-baseline gap-1.5">
+              <span className="text-base font-bold text-[var(--color-text)]">
+                {data.stats.mastersCount > 0 ? formatNumber(data.stats.mastersCount) : "—"}
+              </span>
+              <span>мастеров в городе</span>
+            </span>
             {hasPrice && data.service.priceFrom != null ? (
-              <Stat
-                label="Цена от"
-                value={`${formatNumber(data.service.priceFrom)} ₽`}
-              />
+              <span className="inline-flex items-baseline gap-1.5">
+                <span className="text-base font-bold text-[var(--color-text)]">
+                  от {formatNumber(data.service.priceFrom)} ₽
+                </span>
+                <span>цена</span>
+              </span>
             ) : data.stats.minPrice != null ? (
-              <Stat label="Цена от" value={`${formatNumber(data.stats.minPrice)} ₽`} />
+              <span className="inline-flex items-baseline gap-1.5">
+                <span className="text-base font-bold text-[var(--color-text)]">
+                  от {formatNumber(data.stats.minPrice)} ₽
+                </span>
+                <span>цена</span>
+              </span>
             ) : null}
             {data.stats.avgRating != null ? (
-              <Stat label="Средняя оценка" value={`★ ${data.stats.avgRating.toFixed(1)}`} />
+              <span className="inline-flex items-baseline gap-1.5">
+                <span aria-hidden className="text-[var(--color-primary)]">★</span>
+                <span className="font-bold text-[var(--color-text)]">{data.stats.avgRating.toFixed(1)}</span>
+                <span>средняя оценка</span>
+              </span>
             ) : null}
             {data.stats.reviewsCount > 0 ? (
-              <Stat
-                label="Отзывов"
-                value={formatNumber(data.stats.reviewsCount)}
-              />
+              <span className="inline-flex items-baseline gap-1.5">
+                <span className="text-base font-bold text-[var(--color-text)]">
+                  {formatNumber(data.stats.reviewsCount)}
+                </span>
+                <span>отзывов</span>
+              </span>
             ) : null}
-          </dl>
+          </p>
 
-          <div className="mt-8 flex flex-wrap gap-3">
+          <div className="mt-7 flex flex-wrap gap-3">
             <Link
               href="#lead-form"
-              className="inline-flex h-12 items-center gap-2 rounded-xl bg-[var(--color-primary)] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--color-primary-hover)]"
+              className="inline-flex h-11 items-center gap-2 rounded-md bg-[var(--color-primary)] px-5 text-sm font-semibold text-white transition hover:bg-[var(--color-primary-hover)]"
             >
               Оставить заявку
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -224,7 +230,7 @@ export default async function ServiceCityPage(
             </Link>
             <Link
               href={`/kalkulyator?city=${encodeURIComponent(citySlug)}`}
-              className="inline-flex h-12 items-center rounded-xl border border-white/30 bg-white/10 px-5 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/20"
+              className="inline-flex h-11 items-center rounded-md border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-5 text-sm font-semibold text-[var(--color-text)] transition hover:border-[var(--color-text)]"
             >
               Калькулятор бюджета
             </Link>
@@ -502,15 +508,6 @@ export default async function ServiceCityPage(
 }
 
 // ── Small components ────────────────────────────────────────────────────────
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="text-[11px] font-semibold uppercase tracking-wider text-white/55">{label}</dt>
-      <dd className="mt-1 text-xl font-bold tracking-tight text-white sm:text-2xl">{value}</dd>
-    </div>
-  );
-}
 
 function CheckIcon() {
   return (

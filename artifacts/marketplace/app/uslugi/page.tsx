@@ -63,42 +63,48 @@ export default async function ServicesPage() {
       />
 
       {/* ── Hero ── */}
-      <section className="border-b border-[var(--color-border)] bg-gradient-to-b from-[var(--color-primary-soft)]/40 to-white">
-        <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16 lg:py-20">
-          <nav className="mb-5 flex items-center gap-2 text-xs text-[var(--color-muted)]">
-            <Link href="/" className="hover:text-[var(--color-primary)]">Главная</Link>
+      <section className="bg-[var(--color-surface)]">
+        <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
+          <nav className="flex items-center gap-2 text-xs text-[var(--color-muted)]">
+            <Link href="/" className="hover:text-[var(--color-text)]">Главная</Link>
             <span aria-hidden>/</span>
             <span className="text-[var(--color-text)]">Услуги</span>
           </nav>
 
-          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-primary)]">
-            Каталог
-          </p>
-          <h1 className="mt-1 max-w-3xl text-3xl font-extrabold tracking-tight text-[var(--color-text)] sm:text-5xl">
+          <p className="font-eyebrow mt-7">Каталог</p>
+          <h1 className="font-editorial mt-3 max-w-3xl text-3xl text-[var(--color-text)] sm:text-4xl">
             Все услуги Честных мастеров
           </h1>
-          <p className="mt-4 max-w-2xl text-base text-[var(--color-muted)] sm:text-lg">
+          <p className="mt-4 max-w-2xl text-base leading-relaxed text-[var(--color-muted)]">
             Сантехника, электрика, отделочные работы, монтаж, демонтаж — всё в одном каталоге.
             Каждая услуга открывает страницу мастеров с ценами и подбором по вашему городу.
           </p>
 
-          <dl className="mt-8 flex flex-wrap items-end gap-x-10 gap-y-5 text-[var(--color-text)]">
-            <Stat
-              label="Услуг в каталоге"
-              value={services.length > 0 ? `${formatNumber(services.length)} ${pluralServices(services.length)}` : "Каталог формируется"}
-            />
+          <p className="mt-6 flex flex-wrap items-baseline gap-x-6 gap-y-2 text-sm text-[var(--color-muted)]">
+            {services.length > 0 ? (
+              <span className="inline-flex items-baseline gap-1.5">
+                <span className="text-base font-bold text-[var(--color-text)]">
+                  {formatNumber(services.length)}
+                </span>
+                <span>{pluralServices(services.length)} в каталоге</span>
+              </span>
+            ) : (
+              <span>Каталог формируется</span>
+            )}
             {cities.length > 0 ? (
-              <Stat
-                label="Городов работаем"
-                value={`${formatNumber(cities.length)} ${pluralCities(cities.length)}`}
-              />
+              <span className="inline-flex items-baseline gap-1.5">
+                <span className="text-base font-bold text-[var(--color-text)]">
+                  {formatNumber(cities.length)}
+                </span>
+                <span>{pluralCities(cities.length)}</span>
+              </span>
             ) : null}
-          </dl>
+          </p>
 
-          <div className="mt-8 flex flex-wrap gap-3">
+          <div className="mt-7 flex flex-wrap gap-3">
             <Link
               href="/kalkulyator"
-              className="inline-flex h-11 items-center gap-2 rounded-xl bg-[var(--color-primary)] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--color-primary-hover)]"
+              className="inline-flex h-11 items-center gap-2 rounded-md bg-[var(--color-primary)] px-5 text-sm font-semibold text-white transition hover:bg-[var(--color-primary-hover)]"
             >
               Прикинуть бюджет
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -108,7 +114,7 @@ export default async function ServicesPage() {
             </Link>
             <Link
               href="/raboty"
-              className="inline-flex h-11 items-center rounded-xl border border-[var(--color-border)] bg-white px-5 text-sm font-semibold text-[var(--color-text)] backdrop-blur transition hover:border-[var(--color-secondary)] hover:text-[var(--color-secondary)]"
+              className="inline-flex h-11 items-center rounded-md border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-5 text-sm font-semibold text-[var(--color-text)] transition hover:border-[var(--color-text)]"
             >
               Посмотреть работы
             </Link>
@@ -135,7 +141,7 @@ export default async function ServicesPage() {
                 <li key={service.id}>
                   <Link
                     href={href}
-                    className="group relative flex h-full flex-col rounded-2xl border border-[var(--color-border)] bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md hover:border-[var(--color-primary)] sm:p-6"
+                    className="group relative flex h-full flex-col rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-5 transition hover:border-[var(--color-primary)] sm:p-6"
                   >
                     <div className="flex items-start gap-3">
                       <span className="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
@@ -177,15 +183,13 @@ export default async function ServicesPage() {
 
       {/* ── Cities rail ── */}
       {cities.length > 0 ? (
-        <section className="border-t border-[var(--color-border)] bg-[var(--color-background)]">
+        <section className="border-t border-[var(--color-border)] bg-[var(--color-cream-deep)]">
           <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
-            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-secondary)]">
-              Города
-            </p>
-            <h2 className="mt-1 text-2xl font-bold tracking-tight text-[var(--color-text)] sm:text-3xl">
+            <p className="font-eyebrow">Города</p>
+            <h2 className="font-editorial mt-3 text-2xl text-[var(--color-text)] sm:text-3xl">
               Работаем по всей стране
             </h2>
-            <p className="mt-2 max-w-2xl text-sm text-[var(--color-muted)]">
+            <p className="mt-3 max-w-2xl text-sm text-[var(--color-muted)]">
               В каждом городе свои мастера — выбирайте локального для быстрого выезда.
             </p>
             <ul className="mt-6 flex flex-wrap gap-2">
@@ -193,7 +197,7 @@ export default async function ServicesPage() {
                 <li key={c.slug}>
                   <Link
                     href={`/mastera?city=${encodeURIComponent(c.slug)}`}
-                    className="inline-flex items-center rounded-full border border-[var(--color-border)] bg-white px-4 py-1.5 text-sm font-medium text-[var(--color-text)] transition hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+                    className="inline-flex items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-1.5 text-sm font-medium text-[var(--color-text)] transition hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
                   >
                     {c.name}
                   </Link>
@@ -204,15 +208,6 @@ export default async function ServicesPage() {
         </section>
       ) : null}
     </>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted)]">{label}</dt>
-      <dd className="mt-1 text-2xl font-bold tracking-tight text-[var(--color-text)] sm:text-3xl">{value}</dd>
-    </div>
   );
 }
 
