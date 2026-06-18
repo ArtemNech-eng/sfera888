@@ -20,7 +20,7 @@ import { CaseCard } from "../../components/CaseCard";
  *   • subtle pagination внизу
  *
  * Воронка: visitor browses → opens a case at /raboty/[slug] → reads the
- * story → either keeps browsing or hits "Хочу такую же" lead form.
+ * story → either keeps browsing or hits "Хочу такой же" lead form.
  */
 
 export const dynamic = "force-dynamic";

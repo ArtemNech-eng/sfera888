@@ -10,7 +10,7 @@ import Link from "next/link";
  * social network (visible "save" affordance).
  *
  * Click target is the entire tile → opens `/raboty/{slug}` where the real
- * "Хочу такую же" lead form lives. The bottom-right pill on the photo is
+ * "Хочу такой же" lead form lives. The bottom-right pill on the photo is
  * a visual affordance only — keeps Pinterest DNA without nesting <button>
  * inside <a>.
  *
@@ -91,13 +91,13 @@ export function CaseCard({
           </svg>
         </span>
 
-        {/* Hover-only "Хочу такую же" pill — keeps Pinterest CTA pattern.
+        {/* Hover-only "Хочу такой же" pill — keeps Pinterest CTA pattern.
             Real action happens on the detail page (lead form). */}
         <span
           aria-hidden
           className="pointer-events-none absolute bottom-3 right-3 inline-flex translate-y-1 items-center gap-1.5 rounded-full bg-[var(--color-primary)] px-3 py-1.5 text-[11px] font-semibold text-white opacity-0 shadow-cozy-md transition group-hover:translate-y-0 group-hover:opacity-100"
         >
-          Хочу такую же
+          Хочу такой же
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
             <path d="M5 12h14" />
             <path d="m12 5 7 7-7 7" />

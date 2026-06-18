@@ -64,8 +64,8 @@ export function HomeHero({ stats, cities: _cities }: Props) {
           Самая большая база реальных ремонтов в России.
         </h1>
         <p className="mt-4 max-w-2xl text-base leading-relaxed text-[var(--color-muted)] sm:text-lg">
-          Найдите ремонт, который хотите повторить. Сохраните в подборку, посмотрите
-          бюджет и сроки. Когда определитесь — мастер сам напишет.
+          Найдите ремонт, который хотите повторить. С фото, ценами и сроками.
+          Понравился — оставьте заявку, подберём мастера, который сделает похоже.
         </p>
 
         {/* Search-bar — single text field, submits to /raboty */}

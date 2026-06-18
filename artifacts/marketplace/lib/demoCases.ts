@@ -91,7 +91,7 @@ export const ROOM_CATEGORIES: RoomCategory[] = [
   {
     slug: "kuhnya",
     label: "Кухня",
-    imageUrl: `https://images.unsplash.com/photo-1556910103-1c02745aae4d?${UNSPLASH_PARAMS}`,
+    imageUrl: `https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?${UNSPLASH_PARAMS}`,
     alt: "Светлая кухня с островом и встроенной техникой",
     blurb: "Гарнитуры, острова, кухни-гостиные",
   },
@@ -105,8 +105,8 @@ export const ROOM_CATEGORIES: RoomCategory[] = [
   {
     slug: "spalnya",
     label: "Спальня",
-    imageUrl: `https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?${UNSPLASH_PARAMS}`,
-    alt: "Спальня с мягким изголовьем и нейтральными тонами",
+    imageUrl: `https://images.unsplash.com/photo-1616594039964-ae9021a400a0?${UNSPLASH_PARAMS}`,
+    alt: "Современная минималистичная спальня в светлых тонах",
     blurb: "Уют, текстиль, освещение",
   },
   {

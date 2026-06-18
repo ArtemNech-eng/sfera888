@@ -243,13 +243,13 @@ export default async function RabotyCasePage(
 
             <aside className="lg:pt-2">
               <div className="border border-[var(--color-border)] bg-[var(--color-surface)] p-6 sm:p-7 lg:sticky lg:top-24">
-                <p className="font-eyebrow">Заявка автору</p>
+                <p className="font-eyebrow">Заявка на ремонт</p>
                 <h2 id="lead-form" className="font-editorial mt-3 text-2xl text-[var(--color-text)] sm:text-3xl">
-                  Хочу такую же.
+                  Хочу такой же.
                 </h2>
                 <p className="mt-3 text-sm leading-relaxed text-[var(--color-muted)]">
-                  Уйдёт автору работы первой. Если не возьмёт за 30 минут —
-                  передадим похожим мастерам в вашем городе.
+                  Оставьте заявку — оператор сам подберёт мастера, который сделает похоже,
+                  и согласует с вами замер. Без авансов, оплата по этапам, договор.
                 </p>
                 <ul className="mt-5 space-y-1.5 text-xs text-[var(--color-muted)]">
                   {portfolio.service?.name ? (
@@ -268,17 +268,15 @@ export default async function RabotyCasePage(
                       citySlug={fallbackCity.slug}
                       serviceSlug={fallbackService.slug}
                       sourcePageUrl={sourcePageUrl}
-                      attachedMasterId={master.id}
-                      attachedMasterTitle={masterName}
                     />
                   ) : (
                     <p className="text-sm text-[var(--color-muted)]">
                       Заявка через эту страницу временно недоступна. Перейдите{" "}
                       <Link
-                        href={master.slug ? `/master/${master.slug}` : "/mastera"}
+                        href="/mastera"
                         className="text-[var(--color-text)] underline underline-offset-2 hover:text-[var(--color-primary)]"
                       >
-                        на страницу мастера
+                        в каталог мастеров
                       </Link>
                       .
                     </p>
@@ -414,7 +412,7 @@ function ArticleStatsBar({
             href="#lead-form"
             className="inline-flex items-center gap-2 bg-[var(--color-text)] px-6 py-3 text-sm font-semibold tracking-wide text-white transition hover:bg-[var(--color-primary)]"
           >
-            Хочу такую же
+            Хочу такой же
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
               <path d="M5 12h14" />
               <path d="m12 5 7 7-7 7" />
