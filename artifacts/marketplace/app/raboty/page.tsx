@@ -4,24 +4,21 @@ import { fetchRabotyList } from "../../lib/api";
 import { publicUrl } from "../../lib/env";
 import { breadcrumbJsonLd, toJsonLdScript } from "../../lib/jsonLd";
 import { buildRabotyIndexMeta } from "../../lib/seoMeta";
-import type { RabotyListItem } from "../../lib/types";
 import { ROOM_CATEGORIES, DEMO_CASES } from "../../lib/demoCases";
+import { ObjectCard, rabotyToObjectData } from "../../components/ObjectCard";
 
 /**
- * `/raboty` — inspiration catalog of finished renovations
- * (plan §11.7, §21.9 funnel correction).
+ * `/raboty` — каталог идей в Pinterest-masonry стиле (план §22.4).
  *
- * The heart of the project: people come here to **browse for ideas**, not to
- * pick a contractor. So this page intentionally is NOT styled like
- * /mastera or /uslugi (utility catalogs with filters and sort first). It
- * stays photo-led, large-card, "gallery of inspiration":
+ * Главный товар платформы — РЕЗУЛЬТАТ РЕМОНТА (объект). Эта страница —
+ * витрина, где пользователь приходит за вдохновением. Поэтому:
  *
- *   • compact header with eyebrow + headline, no functional bar
- *   • horizontal "browse by room / style" chip rail above the grid
- *   • large photo cards, minimal meta beneath (title, master, price)
- *   • subtle result count + sort link, not a primary control
+ *   • masonry-сетка из ObjectCard (порт. 4:5), не utility-таблица
+ *   • большие фото на первом плане, текст вторичен
+ *   • browse-by chip rails сверху (по комнатам / по стилю), AirBnB-style
+ *   • subtle paginаtion внизу
  *
- * Funnel: visitor browses → opens a case at /raboty/[slug] → reads the
+ * Воронка: visitor browses → opens a case at /raboty/[slug] → reads the
  * story → either keeps browsing or hits "Хочу такую же" lead form.
  */
 
@@ -42,6 +39,7 @@ interface SearchParams {
   page?: string;
   room?: string;
   style?: string;
+  q?: string;
 }
 
 export async function generateMetadata(
@@ -71,9 +69,6 @@ export default async function RabotyIndexPage(
   const pageRaw = parseInt(String(sp.page ?? "1"), 10);
   const page = Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1;
 
-  // Active browse-by selection. Backend filtering by room/style is not yet
-  // wired in fetchRabotyList — for now we surface the param visually and
-  // pass it through pagination links so the URL is a stable share-link.
   const activeRoom = typeof sp.room === "string" ? sp.room : null;
   const activeStyle = typeof sp.style === "string" ? sp.style : null;
 
@@ -86,7 +81,6 @@ export default async function RabotyIndexPage(
     { name: "Идеи", url: `${publicUrl()}/raboty` },
   ]);
 
-  // Build pagination URL preserving room/style params.
   const paginationUrl = (p: number) => {
     const params = new URLSearchParams();
     if (activeRoom) params.set("room", activeRoom);
@@ -96,12 +90,12 @@ export default async function RabotyIndexPage(
     return `/raboty${qs ? `?${qs}` : ""}`;
   };
   const browseUrl = (params: { room?: string | null; style?: string | null }) => {
-    const sp = new URLSearchParams();
+    const sp2 = new URLSearchParams();
     const r = params.room === undefined ? activeRoom : params.room;
     const s = params.style === undefined ? activeStyle : params.style;
-    if (r) sp.set("room", r);
-    if (s) sp.set("style", s);
-    const qs = sp.toString();
+    if (r) sp2.set("room", r);
+    if (s) sp2.set("style", s);
+    const qs = sp2.toString();
     return `/raboty${qs ? `?${qs}` : ""}`;
   };
 
@@ -114,26 +108,26 @@ export default async function RabotyIndexPage(
 
       {/* ── Compact inspiration header ──────────────────────────── */}
       <header className="bg-[var(--color-surface)]">
-        <div className="mx-auto max-w-6xl px-4 pb-8 pt-10 sm:px-6 sm:pt-14">
+        <div className="mx-auto max-w-6xl px-4 pb-7 pt-10 sm:px-6 sm:pt-14">
           <nav className="flex items-center gap-2 text-xs text-[var(--color-muted)]">
             <Link href="/" className="hover:text-[var(--color-text)]">Главная</Link>
             <span aria-hidden>/</span>
             <span className="text-[var(--color-text)]">Идеи</span>
           </nav>
 
-          <p className="font-eyebrow mt-7">Каталог идей</p>
+          <p className="font-eyebrow mt-7">Каталог ремонтов</p>
           <h1 className="font-editorial mt-3 max-w-3xl text-3xl text-[var(--color-text)] sm:text-4xl">
-            Реальные ремонты с фото и ценами.
+            Самая большая база реальных ремонтов.
           </h1>
           <p className="mt-3 max-w-2xl text-base leading-relaxed text-[var(--color-muted)]">
-            Сохраняйте кейсы, что зацепили. Подбор мастера, который повторит — на странице каждой работы.
+            Сохраняйте идеи, что зацепили. Подбор мастера, который повторит — на странице каждой работы.
           </p>
         </div>
       </header>
 
-      {/* ── Browse-by chip rails ────────────────────────────────── */}
-      <section className="bg-[var(--color-cream-deep)]">
-        <div className="mx-auto max-w-6xl space-y-4 px-4 py-6 sm:px-6 sm:py-7">
+      {/* ── Browse-by chip rails (AirBnB-style filters) ─────────── */}
+      <section className="sticky top-0 z-20 border-b border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur">
+        <div className="mx-auto max-w-6xl space-y-3 px-4 py-4 sm:px-6 sm:py-5">
           <ChipRail
             label="По комнатам"
             items={[
@@ -155,15 +149,15 @@ export default async function RabotyIndexPage(
         </div>
       </section>
 
-      {/* ── Grid ────────────────────────────────────────────────── */}
+      {/* ── Masonry grid (Pinterest-feel) ────────────────────────── */}
       <section className="bg-[var(--color-surface)]">
-        <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
+        <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
           <div className="mb-8 flex flex-wrap items-baseline justify-between gap-3 text-sm text-[var(--color-muted)]">
             <span>
               {data.total > 0 ? (
                 <>
                   <span className="font-bold text-[var(--color-text)]">{formatNumber(data.total)}</span>{" "}
-                  {pluralWorks(data.total)}
+                  {pluralRemonts(data.total)}
                 </>
               ) : (
                 "Каталог формируется"
@@ -177,19 +171,23 @@ export default async function RabotyIndexPage(
           {isDemoMode ? <DemoNotice /> : null}
 
           {data.items.length > 0 ? (
-            <ul className="grid gap-x-4 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
-              {data.items.map((item) => (
-                <RealCaseCard key={item.id} item={item} />
+            <div className="masonry">
+              {data.items.map((item, i) => (
+                <div key={item.id} className="masonry-item">
+                  <ObjectCard data={rabotyToObjectData(item)} priority={i < 3} />
+                </div>
               ))}
-            </ul>
+            </div>
           ) : null}
 
           {isDemoMode ? (
-            <ul className={`${data.items.length > 0 ? "mt-12" : ""} grid gap-x-4 gap-y-12 sm:grid-cols-2 lg:grid-cols-3`}>
+            <div className={`${data.items.length > 0 ? "mt-12" : ""} masonry`}>
               {DEMO_CASES.map((d) => (
-                <DemoCardLi key={d.id} demo={d} />
+                <div key={d.id} className="masonry-item">
+                  <DemoMasonryTile demo={d} />
+                </div>
               ))}
-            </ul>
+            </div>
           ) : null}
 
           {totalPages > 1 ? (
@@ -220,17 +218,17 @@ function ChipRail({
 }) {
   return (
     <div>
-      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-faint)]">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-faint)]">
         {label}
       </p>
-      <ul className="mt-2 flex flex-wrap gap-1.5">
+      <ul className="mt-1.5 flex flex-wrap gap-1.5">
         {items.map((item) => {
           const isActive = item.slug === active;
           return (
             <li key={item.slug ?? "all"}>
               <Link
                 href={buildHref(item.slug)}
-                className={`inline-flex items-center rounded-full border px-3.5 py-1.5 text-sm font-medium transition ${
+                className={`inline-flex items-center rounded-full border px-3.5 py-1.5 text-xs font-medium transition sm:text-sm ${
                   isActive
                     ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
                     : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
@@ -246,92 +244,36 @@ function ChipRail({
   );
 }
 
-// ── Cards (large photo-led, minimal meta) ───────────────────────────────────
+// ── Demo masonry tile (Pinterest-style portrait) ────────────────────────────
 
-function RealCaseCard({ item }: { item: RabotyListItem }) {
-  if (!item.slug) return null;
-  const cover = item.afterPhotos[0] ?? item.beforePhotos[0] ?? null;
-  const priceFrom = parseNumeric(item.priceFrom);
-  const masterName = item.master.publicTitle?.trim() || item.master.alias?.trim() || `Мастер #${item.master.id}`;
-  const cityPart = item.city?.name ? ` в ${item.city.name}` : "";
-
+function DemoMasonryTile({ demo }: { demo: typeof DEMO_CASES[number] }) {
   return (
-    <li>
-      <Link href={`/raboty/${item.slug}`} className="group block">
-        <div className="relative aspect-[4/3] overflow-hidden rounded-lg bg-[var(--color-border)]">
-          {cover ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={cover}
-              alt={`${item.title}${cityPart} — фото работы`}
-              loading="lazy"
-              className="block h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
-            />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center text-xs text-[var(--color-muted)]">
-              Без фото
-            </div>
-          )}
-          {item.isFeatured ? (
-            <span className="absolute left-3 top-3 inline-flex items-center rounded-full bg-[var(--color-primary)] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white">
-              Топ
-            </span>
-          ) : null}
+    <Link href="/raboty" className="group block">
+      <div className="relative aspect-[4/5] w-full overflow-hidden rounded-xl bg-[var(--color-border)]">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={demo.imageUrl}
+          alt={demo.alt}
+          loading="lazy"
+          className="block h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
+        />
+        <span className="absolute left-3 top-3 inline-flex items-center rounded-full bg-[var(--color-surface)]/95 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-faint)]">
+          Пример
+        </span>
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/45 via-black/15 to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 p-3 text-white">
+          <p className="text-[10px] uppercase tracking-[0.14em] opacity-80">{demo.category}</p>
         </div>
-
-        <div className="mt-4 px-1">
-          <h3 className="line-clamp-2 text-base font-semibold leading-snug text-[var(--color-text)] group-hover:text-[var(--color-primary)] sm:text-lg">
-            {item.title}
-          </h3>
-          <p className="mt-1 truncate text-xs text-[var(--color-muted)]">
-            {[item.service?.name, item.city?.name ?? item.master.city].filter(Boolean).join(" · ")}
-          </p>
-          <div className="mt-2 flex items-baseline justify-between gap-3 text-xs">
-            {priceFrom != null ? (
-              <span>
-                <span className="text-[var(--color-faint)]">от </span>
-                <span className="font-semibold text-[var(--color-text)]">
-                  {formatNumber(priceFrom)} ₽
-                </span>
-              </span>
-            ) : <span />}
-            <span className="truncate text-[var(--color-muted)]">{masterName}</span>
-          </div>
-        </div>
-      </Link>
-    </li>
-  );
-}
-
-function DemoCardLi({ demo }: { demo: typeof DEMO_CASES[number] }) {
-  return (
-    <li>
-      <Link href="/raboty" className="group block">
-        <div className="relative aspect-[4/3] overflow-hidden rounded-lg bg-[var(--color-border)]">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={demo.imageUrl}
-            alt={demo.alt}
-            loading="lazy"
-            className="block h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
-          />
-          <span className="absolute left-3 top-3 inline-flex items-center rounded-full bg-[var(--color-surface)]/95 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-faint)]">
-            Пример
-          </span>
-        </div>
-        <div className="mt-4 px-1">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-primary)]">
-            {demo.category}
-          </p>
-          <h3 className="mt-1 line-clamp-2 text-base font-semibold leading-snug text-[var(--color-text)] group-hover:text-[var(--color-primary)] sm:text-lg">
-            {demo.title}
-          </h3>
-          <p className="mt-2 text-xs text-[var(--color-muted)]">
-            Стилевой референс — найдите мастера, который реализует похоже.
-          </p>
-        </div>
-      </Link>
-    </li>
+      </div>
+      <div className="mt-3 px-1">
+        <h3 className="line-clamp-2 text-base font-semibold leading-snug text-[var(--color-text)] group-hover:text-[var(--color-primary)]">
+          {demo.title}
+        </h3>
+        <p className="mt-1 truncate text-xs text-[var(--color-muted)]">
+          Стилевой референс — найдите мастера, который реализует похоже.
+        </p>
+      </div>
+    </Link>
   );
 }
 
@@ -393,21 +335,15 @@ function Pagination({
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function parseNumeric(value: string | null | undefined): number | null {
-  if (value == null) return null;
-  const n = parseFloat(value);
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
-
 function formatNumber(n: number): string {
   return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, "\u00A0");
 }
 
-function pluralWorks(n: number): string {
+function pluralRemonts(n: number): string {
   const mod10 = n % 10;
   const mod100 = n % 100;
-  if (mod100 >= 11 && mod100 <= 14) return "идей";
-  if (mod10 === 1) return "идея";
-  if (mod10 >= 2 && mod10 <= 4) return "идеи";
-  return "идей";
+  if (mod100 >= 11 && mod100 <= 14) return "ремонтов";
+  if (mod10 === 1) return "ремонт";
+  if (mod10 >= 2 && mod10 <= 4) return "ремонта";
+  return "ремонтов";
 }
