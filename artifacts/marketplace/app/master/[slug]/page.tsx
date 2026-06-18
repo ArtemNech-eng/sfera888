@@ -457,92 +457,75 @@ function MasterHero({
   tenure,
 }: HeroProps) {
   return (
-    <section className="relative overflow-hidden bg-[var(--color-text)]">
-      {/* Cover image with strong overlay so the text overlays remain crisp */}
-      {coverPhoto ? (
-        <>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={coverPhoto}
-            alt=""
-            aria-hidden
-            className="absolute inset-0 h-full w-full object-cover opacity-50"
-          />
-          <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/55 to-black/85" />
-        </>
-      ) : (
-        <div className="absolute inset-0 bg-gradient-to-br from-[var(--color-primary)]/90 to-[var(--color-primary-hover)]" />
-      )}
-
-      <div className="relative mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16 lg:py-20">
-        <nav className="mb-6 flex items-center gap-2 text-xs text-white/70">
-          <Link href="/" className="hover:text-white">Главная</Link>
+    <section className="bg-[var(--color-surface)]">
+      <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
+        <nav className="flex items-center gap-2 text-xs text-[var(--color-muted)]">
+          <Link href="/" className="hover:text-[var(--color-text)]">Главная</Link>
           <span aria-hidden>/</span>
-          <Link href="/mastera" className="hover:text-white">Мастера</Link>
+          <Link href="/mastera" className="hover:text-[var(--color-text)]">Мастера</Link>
           <span aria-hidden>/</span>
-          <span className="text-white">{displayName}</span>
+          <span className="text-[var(--color-text)]">{displayName}</span>
         </nav>
 
-        <div className="flex flex-col gap-6 sm:flex-row sm:items-end">
+        <div className="mt-8 flex flex-col gap-6 sm:flex-row sm:items-start">
           <Avatar src={master.avatarUrl} name={displayName} alt={buildMasterAvatarAlt(master)} />
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             {master.city ? (
-              <p className="text-sm font-medium text-white/80">{master.city}</p>
+              <p className="text-sm font-medium text-[var(--color-muted)]">{master.city}</p>
             ) : null}
-            <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-white sm:text-5xl">
+            <h1 className="mt-1 text-3xl font-bold tracking-tight text-[var(--color-text)] sm:text-4xl">
               {displayName}
             </h1>
-            {master.publicTitle && master.publicBio ? (
-              <p className="mt-2 max-w-2xl text-base text-white/85 sm:text-lg">
+            {master.publicTitle ? (
+              <p className="mt-2 max-w-2xl text-base text-[var(--color-muted)] sm:text-lg">
                 {master.publicTitle}
               </p>
             ) : null}
 
-            {/* Stats line */}
-            <div className="mt-5 flex flex-wrap gap-x-5 gap-y-3 text-sm text-white/85">
+            {/* Inline meta strip */}
+            <div className="mt-5 flex flex-wrap items-baseline gap-x-5 gap-y-2 text-sm text-[var(--color-muted)]">
               {rating ? (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 backdrop-blur">
-                  <span aria-hidden className="text-[var(--color-accent)]">★</span>
-                  <span className="font-semibold text-white">{rating}</span>
+                <span className="inline-flex items-baseline gap-1">
+                  <span aria-hidden className="text-[var(--color-primary)]">★</span>
+                  <span className="font-semibold text-[var(--color-text)]">{rating}</span>
                   {reviewsCount > 0 ? (
-                    <span className="text-white/70">· {reviewsCount} {pluralReviews(reviewsCount)}</span>
+                    <span className="text-[var(--color-muted)]">· {reviewsCount} {pluralReviews(reviewsCount)}</span>
                   ) : null}
                 </span>
               ) : null}
               {completedOrders > 0 ? (
-                <span className="inline-flex items-center gap-1.5">
-                  <DotIcon />
-                  {completedOrders} {pluralCompleted(completedOrders)}
+                <span>
+                  <span className="font-semibold text-[var(--color-text)]">{completedOrders}</span>{" "}
+                  {pluralCompleted(completedOrders)}
                 </span>
               ) : null}
               {master.yearsExperience != null && master.yearsExperience > 0 ? (
-                <span className="inline-flex items-center gap-1.5">
-                  <DotIcon />
-                  опыт {master.yearsExperience} {pluralYears(master.yearsExperience)}
+                <span>
+                  опыт{" "}
+                  <span className="font-semibold text-[var(--color-text)]">
+                    {master.yearsExperience} {pluralYears(master.yearsExperience)}
+                  </span>
                 </span>
               ) : null}
               {tenure ? (
-                <span className="inline-flex items-center gap-1.5">
-                  <DotIcon />
-                  на платформе {tenure}
+                <span>
+                  на платформе{" "}
+                  <span className="font-semibold text-[var(--color-text)]">{tenure}</span>
                 </span>
               ) : null}
             </div>
 
-            {/* Badge row — hasContract is the strongest trust signal we have
-                exposed publicly today. passportVerified / isFeatured stay on
-                the internal session DTO; promote them to Master DTO when we
-                want to surface them. */}
-            <div className="mt-5 flex flex-wrap gap-2">
-              {master.hasContract ? (
+            {/* Trust badges */}
+            {master.hasContract ? (
+              <div className="mt-4 flex flex-wrap gap-2">
                 <Badge label="Подписан договор" tone="emerald" />
-              ) : null}
-            </div>
+              </div>
+            ) : null}
 
             <div className="mt-6 flex flex-wrap gap-3">
               <Link
                 href="#lead-form"
-                className="inline-flex h-11 items-center gap-2 rounded-xl bg-[var(--color-primary)] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--color-primary-hover)]"
+                className="inline-flex h-11 items-center gap-2 rounded-md bg-[var(--color-primary)] px-5 text-sm font-semibold text-white transition hover:bg-[var(--color-primary-hover)]"
               >
                 Получить смету
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -552,12 +535,25 @@ function MasterHero({
               </Link>
               <Link
                 href="/kalkulyator"
-                className="inline-flex h-11 items-center rounded-xl border border-white/30 bg-white/10 px-5 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/20"
+                className="inline-flex h-11 items-center rounded-md border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-5 text-sm font-semibold text-[var(--color-text)] transition hover:border-[var(--color-text)]"
               >
                 Прикинуть бюджет
               </Link>
             </div>
           </div>
+
+          {/* Cover photo as side card on desktop, hidden on mobile */}
+          {coverPhoto ? (
+            <div className="hidden aspect-[4/3] w-72 flex-shrink-0 overflow-hidden rounded-lg bg-[var(--color-border)] shadow-cozy lg:block">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={coverPhoto}
+                alt={`Работа мастера ${displayName}`}
+                loading="eager"
+                className="h-full w-full object-cover"
+              />
+            </div>
+          ) : null}
         </div>
       </div>
     </section>
@@ -567,10 +563,10 @@ function MasterHero({
 function Badge({ label, tone }: { label: string; tone: "emerald" | "indigo" | "amber" }) {
   const cls =
     tone === "emerald"
-      ? "bg-emerald-100 text-emerald-800"
+      ? "bg-[var(--color-primary-soft)] text-[var(--color-primary-strong)]"
       : tone === "indigo"
-        ? "bg-indigo-100 text-indigo-800"
-        : "bg-amber-100 text-amber-900";
+        ? "bg-blue-50 text-blue-700"
+        : "bg-amber-50 text-amber-900";
   return (
     <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ${cls}`}>
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -581,10 +577,6 @@ function Badge({ label, tone }: { label: string; tone: "emerald" | "indigo" | "a
   );
 }
 
-function DotIcon() {
-  return <span aria-hidden className="inline-block h-1.5 w-1.5 rounded-full bg-white/40" />;
-}
-
 function Avatar({ src, name, alt }: { src: string | null; name: string; alt?: string }) {
   if (src) {
     return (
@@ -593,7 +585,7 @@ function Avatar({ src, name, alt }: { src: string | null; name: string; alt?: st
         src={src}
         alt={alt ?? name}
         loading="eager"
-        className="h-24 w-24 flex-none rounded-2xl border-2 border-white/20 bg-white object-cover shadow-2xl sm:h-28 sm:w-28"
+        className="h-20 w-20 flex-none rounded-lg bg-[var(--color-border)] object-cover sm:h-24 sm:w-24"
       />
     );
   }
@@ -606,7 +598,7 @@ function Avatar({ src, name, alt }: { src: string | null; name: string; alt?: st
   return (
     <div
       aria-hidden
-      className="flex h-24 w-24 flex-none items-center justify-center rounded-2xl border-2 border-white/20 bg-[var(--color-primary)] text-3xl font-bold text-white shadow-2xl sm:h-28 sm:w-28"
+      className="flex h-20 w-20 flex-none items-center justify-center rounded-lg bg-[var(--color-primary)] text-2xl font-bold text-white sm:h-24 sm:w-24 sm:text-3xl"
     >
       {initials || "М"}
     </div>

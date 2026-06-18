@@ -10,13 +10,15 @@ interface NavItem {
 }
 
 /**
- * Editorial public header (plan §21 visual direction).
+ * Portal-grade public header (plan §21.9).
  *
- * Magazine-masthead approach — a single thin band with the wordmark on the
- * left, primary nav as text links in the middle, secondary entrance ("Войти",
- * "Для мастеров") on the right. No icon-in-coloured-tile logo, no gradient
- * tint on the active link, no rounded buttons. Active state is a tracked
- * underline. Sticky, with a hairline border that appears on scroll.
+ * Dense single-band layout with the green-tile wordmark on the left, primary
+ * nav text links in the middle, city picker + login CTA on the right.
+ * Sticky band, hairline border that appears on scroll. Mobile drawer
+ * exposes the same options stacked.
+ *
+ * The city picker is a placeholder until the city-detection backend ships
+ * (plan §11.10.3). For now it links to /mastera as a sane catch-all.
  */
 const NAV: NavItem[] = [
   { href: "/raboty", label: "Работы" },
@@ -61,39 +63,25 @@ export function Header() {
       className={`sticky top-0 z-40 transition-colors ${
         scrolled
           ? "border-b border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur"
-          : "border-b border-transparent bg-[var(--color-background)]/95 backdrop-blur"
+          : "border-b border-transparent bg-[var(--color-surface)]/95 backdrop-blur"
       }`}
     >
       <div className="mx-auto flex h-16 max-w-6xl items-center px-4 sm:px-6">
-        {/* Wordmark — text-led, no icon-in-tile chrome. */}
-        <Link
-          href="/"
-          className="flex items-center gap-2 text-[var(--color-text)]"
-        >
-          <span aria-hidden className="inline-flex h-7 w-7 items-center justify-center bg-[var(--color-text)]">
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="text-white"
-              aria-hidden
-            >
+        {/* Wordmark with green tile icon */}
+        <Link href="/" className="flex items-center gap-2 text-[var(--color-text)]">
+          <span aria-hidden className="inline-flex h-8 w-8 items-center justify-center rounded bg-[var(--color-primary)]">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
               <path d="M4 12 12 4l8 8" />
-              <path d="m9 16 3 3 6-6" stroke="#A4642A" />
+              <path d="m9 16 3 3 6-6" />
             </svg>
           </span>
-          <span className="font-editorial text-lg leading-none sm:text-xl">
+          <span className="text-base font-bold leading-none sm:text-lg">
             Честные мастера
           </span>
         </Link>
 
-        {/* Desktop nav — text links with tracked underline on active. */}
-        <nav className="ml-12 hidden items-center gap-7 lg:flex">
+        {/* Desktop nav */}
+        <nav className="ml-10 hidden items-center gap-6 lg:flex">
           {NAV.map((item) => {
             const active = pathname === item.href || pathname.startsWith(item.href + "/");
             return (
@@ -102,7 +90,7 @@ export function Header() {
                 href={item.href}
                 className={`text-sm transition ${
                   active
-                    ? "font-semibold text-[var(--color-text)] underline decoration-[var(--color-primary)] decoration-2 underline-offset-[6px]"
+                    ? "font-semibold text-[var(--color-primary)]"
                     : "font-medium text-[var(--color-muted)] hover:text-[var(--color-text)]"
                 }`}
               >
@@ -112,7 +100,22 @@ export function Header() {
           })}
         </nav>
 
-        <div className="ml-auto flex items-center gap-5">
+        <div className="ml-auto flex items-center gap-3 sm:gap-4">
+          {/* City picker — placeholder, links to catalog until detection ships */}
+          <Link
+            href="/mastera"
+            className="hidden items-center gap-1.5 text-sm font-medium text-[var(--color-text)] transition hover:text-[var(--color-primary)] lg:inline-flex"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z" />
+              <circle cx="12" cy="10" r="3" />
+            </svg>
+            Москва
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </Link>
+
           <a
             href={EXTERNAL_FOR_MASTERS}
             className="hidden text-sm font-medium text-[var(--color-muted)] transition hover:text-[var(--color-text)] lg:inline"
@@ -123,7 +126,7 @@ export function Header() {
 
           <Link
             href="/login"
-            className="hidden text-sm font-semibold text-[var(--color-text)] underline decoration-[var(--color-border-strong)] underline-offset-4 transition hover:decoration-[var(--color-text)] sm:inline"
+            className="hidden h-10 items-center rounded-md bg-[var(--color-primary)] px-4 text-sm font-semibold text-white transition hover:bg-[var(--color-primary-hover)] sm:inline-flex"
           >
             Войти
           </Link>
@@ -133,7 +136,7 @@ export function Header() {
             onClick={() => setMenuOpen((v) => !v)}
             aria-expanded={menuOpen}
             aria-label={menuOpen ? "Закрыть меню" : "Открыть меню"}
-            className="inline-flex h-10 w-10 items-center justify-center text-[var(--color-text)] lg:hidden"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-md text-[var(--color-text)] hover:bg-[var(--color-cream-deep)] lg:hidden"
           >
             {menuOpen ? <CloseIcon /> : <MenuIcon />}
           </button>
@@ -145,6 +148,18 @@ export function Header() {
         <div className="lg:hidden">
           <nav className="border-t border-[var(--color-border)] bg-[var(--color-surface)]">
             <ul className="mx-auto flex max-w-6xl flex-col divide-y divide-[var(--color-border)] px-4 sm:px-6">
+              <li>
+                <Link
+                  href="/mastera"
+                  className="flex items-center gap-2 py-4 text-base text-[var(--color-text)]"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z" />
+                    <circle cx="12" cy="10" r="3" />
+                  </svg>
+                  Город: <span className="font-semibold">Москва</span>
+                </Link>
+              </li>
               {NAV.map((item) => {
                 const active = pathname === item.href || pathname.startsWith(item.href + "/");
                 return (
@@ -152,9 +167,7 @@ export function Header() {
                     <Link
                       href={item.href}
                       className={`block py-4 text-base ${
-                        active
-                          ? "font-semibold text-[var(--color-text)]"
-                          : "text-[var(--color-text)]"
+                        active ? "font-semibold text-[var(--color-primary)]" : "text-[var(--color-text)]"
                       }`}
                     >
                       {item.label}
@@ -174,9 +187,9 @@ export function Header() {
               <li>
                 <Link
                   href="/login"
-                  className="block py-4 text-base font-semibold text-[var(--color-text)]"
+                  className="my-3 inline-flex w-full items-center justify-center rounded-md bg-[var(--color-primary)] px-4 py-3 text-base font-semibold text-white"
                 >
-                  Войти в кабинет →
+                  Войти в кабинет
                 </Link>
               </li>
             </ul>

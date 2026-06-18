@@ -331,7 +331,7 @@ function ArticleHeader({
           {eyebrowParts.length > 0 ? eyebrowParts.join(" · ") : "Кейс"}
         </p>
 
-        <h1 className="font-editorial mt-5 max-w-4xl text-4xl text-[var(--color-text)] sm:text-6xl lg:text-[4.25rem]">
+        <h1 className="font-editorial mt-5 max-w-4xl text-3xl text-[var(--color-text)] sm:text-4xl lg:text-5xl">
           {portfolio.title}
         </h1>
 
@@ -402,7 +402,7 @@ function ArticleStatsBar({
           {items.map((item) => (
             <div key={item.label} className="px-2 py-6 sm:px-7 sm:py-7">
               <dt className="font-eyebrow">{item.label}</dt>
-              <dd className="font-editorial mt-3 text-3xl text-[var(--color-text)] sm:text-4xl">
+              <dd className="font-editorial mt-3 text-2xl text-[var(--color-text)] sm:text-3xl">
                 {item.value}
               </dd>
             </div>
@@ -608,24 +608,20 @@ function MasterAuthorCard({
   );
 }
 
-// ── Client review (pull quote) ───────────────────────────────────────────────
+// ── Client review (portal-style box) ─────────────────────────────────────────
 
 function ClientReview({ text, rating }: { text: string; rating: number }) {
   return (
     <div>
       <p className="font-eyebrow">Отзыв клиента</p>
-      <blockquote className="mt-5 border-l-2 border-[var(--color-primary)] pl-6 sm:pl-8">
-        <p className="font-editorial text-2xl italic leading-snug text-[var(--color-text)] sm:text-3xl">
+      <blockquote className="mt-5 rounded-lg border border-[var(--color-border)] bg-[var(--color-cream-deep)] p-6 sm:p-8">
+        <div className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-[var(--color-surface)] px-3 py-1 text-xs font-bold text-[var(--color-text)] shadow-cozy">
+          <span aria-hidden className="text-[var(--color-primary)]">★</span>
+          <span>{rating} / 5</span>
+        </div>
+        <p className="text-base leading-relaxed text-[var(--color-text)] sm:text-lg">
           «{text}»
         </p>
-        <footer className="mt-5 flex items-center gap-3 text-sm text-[var(--color-muted)]">
-          <span className="inline-flex items-center gap-1 text-[var(--color-primary)]">
-            <span aria-hidden>★</span>
-            <span className="font-semibold text-[var(--color-text)]">{rating} / 5</span>
-          </span>
-          <span aria-hidden>—</span>
-          <span>оценка клиента</span>
-        </footer>
       </blockquote>
     </div>
   );
