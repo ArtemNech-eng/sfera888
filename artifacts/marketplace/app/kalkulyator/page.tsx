@@ -99,13 +99,11 @@ export default async function KalkulyatorPage({
         </nav>
 
         <header className="max-w-3xl">
-          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-primary)]">
-            Калькулятор
-          </p>
-          <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-[var(--color-text)] sm:text-4xl">
+          <p className="font-eyebrow">Калькулятор</p>
+          <h1 className="font-editorial mt-3 text-3xl text-[var(--color-text)] sm:text-4xl">
             Сколько стоит ремонт квартиры в 2026
           </h1>
-          <p className="mt-3 text-base text-[var(--color-muted)] sm:text-lg">
+          <p className="mt-4 text-base leading-relaxed text-[var(--color-muted)]">
             Считаем бюджет «под ключ» — работа, материалы, инженерия. Используем реальные сделки наших мастеров и
             региональные коэффициенты, чтобы цифры были близки к жизни, а не к рекламным «от 5 000 ₽/м²».
           </p>

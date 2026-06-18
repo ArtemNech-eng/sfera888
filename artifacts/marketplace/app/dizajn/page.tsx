@@ -51,31 +51,29 @@ export default function DesignerLandingPage() {
   return (
     <>
       {/* Hero */}
-      <section className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
-        <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-20">
+      <section className="bg-[var(--color-surface)]">
+        <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
           <div className="grid gap-10 lg:grid-cols-[1.1fr,1fr] lg:items-center">
             <div>
-              <span className="inline-flex rounded-full border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-1 text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
-                Beta · Лид-магнит для ремонта
-              </span>
-              <h1 className="mt-4 text-4xl font-semibold leading-tight text-[var(--color-text)] sm:text-6xl">
+              <p className="font-eyebrow text-[var(--color-primary)]">Beta · Лид-магнит для ремонта</p>
+              <h1 className="font-editorial mt-3 text-3xl text-[var(--color-text)] sm:text-4xl lg:text-5xl">
                 AI-дизайнер интерьера
               </h1>
-              <p className="mt-4 max-w-xl text-base text-[var(--color-muted)] sm:text-lg">
+              <p className="mt-4 max-w-xl text-base leading-relaxed text-[var(--color-muted)]">
                 Загрузите фото комнаты и получите идеи ремонта в разных стилях.
                 А если понравится результат — оставьте заявку, и мы подберём
                 мастера.
               </p>
-              <div className="mt-8 flex flex-wrap gap-3">
+              <div className="mt-7 flex flex-wrap gap-3">
                 <Link
                   href="/dizajn/new"
-                  className="inline-flex items-center justify-center rounded-xl bg-[var(--color-primary)] px-6 py-3 text-base font-medium text-white transition hover:bg-[var(--color-primary-hover)]"
+                  className="inline-flex items-center justify-center rounded-md bg-[var(--color-primary)] px-6 py-3 text-base font-semibold text-white transition hover:bg-[var(--color-primary-hover)]"
                 >
                   Попробовать бесплатно
                 </Link>
                 <Link
                   href="/uslugi"
-                  className="inline-flex items-center justify-center rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] px-6 py-3 text-base font-medium text-[var(--color-text)] transition hover:border-[var(--color-primary)]"
+                  className="inline-flex items-center justify-center rounded-md border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-6 py-3 text-base font-semibold text-[var(--color-text)] transition hover:border-[var(--color-text)]"
                 >
                   Подобрать мастера
                 </Link>
